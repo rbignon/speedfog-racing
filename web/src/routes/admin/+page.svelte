@@ -32,6 +32,7 @@
   } from "$lib/api";
   import { statusLabel } from "$lib/format";
   import { formatPoolName } from "$lib/utils/format";
+  import SectionTitle from "$lib/components/SectionTitle.svelte";
   import { Chart, registerables } from "chart.js";
   Chart.register(...registerables);
 
@@ -472,10 +473,7 @@
   }
 
   function placementClass(p: number | null): string {
-    if (p === 1) return "gold";
-    if (p === 2) return "silver";
-    if (p === 3) return "bronze";
-    return "";
+    return p === 1 ? "first" : "";
   }
 
   async function changeRole(user: AdminUser, newRole: string) {
@@ -921,7 +919,7 @@
                 </td>
                 <td>
                   {#if user.role === "admin"}
-                    <span class="role-badge admin">admin</span>
+                    <span class="chip">admin</span>
                   {:else}
                     <select
                       value={user.role}
@@ -950,7 +948,7 @@
       <p class="empty">No seed pools found.</p>
     {:else}
       <div class="reported-section">
-        <h2 class="section-title">Reported Seeds</h2>
+        <SectionTitle>Reported Seeds</SectionTitle>
         {#if reportedSeeds.length > 0}
           <div class="table-wrapper">
             <table>
@@ -1002,7 +1000,7 @@
           <p class="empty">No reported seeds.</p>
         {/if}
       </div>
-      <h2 class="section-title">Seed Pools</h2>
+      <SectionTitle>Seed Pools</SectionTitle>
       <div class="table-wrapper">
         <table>
           <thead>
@@ -1075,7 +1073,7 @@
     {#if dailyLoading && dailySchedule.length === 0}
       <p class="loading">Loading daily schedule...</p>
     {:else}
-      <h2 class="section-title">Daily Seed Schedule</h2>
+      <SectionTitle>Daily Seed Schedule</SectionTitle>
       <div class="table-wrapper daily-schedule">
         <table>
           <thead>
@@ -1166,14 +1164,14 @@
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Daily Participants</div>
-          <div class="kpi-value kpi-gold">
+          <div class="kpi-value kpi-verdigris">
             {analytics.kpis.total_daily_participants}
           </div>
           <div class="kpi-sub">qualified runs across all dailies</div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Solo Sessions</div>
-          <div class="kpi-value kpi-purple">{analytics.kpis.total_solo}</div>
+          <div class="kpi-value kpi-steel">{analytics.kpis.total_solo}</div>
           <div class="kpi-sub">
             {analytics.kpis.solo_completion_pct}% finished
           </div>
@@ -1401,7 +1399,7 @@
       </div>
 
       <div class="stats-section">
-        <h2 class="section-title">Recalculate</h2>
+        <SectionTitle>Recalculate</SectionTitle>
         <p class="stats-description">
           Recompute cached statistics for all users and participants from raw
           race data.
@@ -1480,21 +1478,31 @@
             <div class="col-context">
               <div class="badge-row">
                 {#if item.type === "race_participant"}
-                  <span class="activity-badge participant">Race</span>
+                  <span class="act-kind">
+                    <span class="mark mark-race" aria-hidden="true"></span>Race
+                  </span>
                   {#if item.is_organizer}
-                    <span class="activity-badge organizer">Organized</span>
+                    <span class="chip">Organized</span>
                   {/if}
                 {:else if item.type === "race_organizer"}
-                  <span class="activity-badge organizer">Organized</span>
+                  <span class="act-kind">
+                    <span class="mark mark-race" aria-hidden="true"></span>Race
+                  </span>
+                  <span class="chip">Organized</span>
                 {:else if item.type === "race_caster"}
-                  <span class="activity-badge caster">Casted</span>
+                  <span class="act-kind">
+                    <span class="mark mark-race" aria-hidden="true"></span>Race
+                  </span>
+                  <span class="chip">Casted</span>
                 {:else if item.type === "training"}
-                  <span class="activity-badge training">Solo</span>
+                  <span class="act-kind">
+                    <span class="mark mark-solo" aria-hidden="true"></span>Solo
+                  </span>
                 {:else if item.type === "daily_participant"}
-                  <span class="activity-badge daily">Daily</span>
-                  {#if item.status === "running"}
-                    <span class="activity-badge daily-active">Active</span>
-                  {/if}
+                  <span class="act-kind">
+                    <span class="mark mark-daily" aria-hidden="true"
+                    ></span>Daily
+                  </span>
                 {/if}
                 <span class="signal signal-{item.status}"
                   >{statusLabel(item.status)}</span
@@ -1508,12 +1516,12 @@
                     </span>
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span>{item.death_count} deaths</span>
+                  <span class="mono">&dagger; {item.death_count}</span>
                 {:else if item.type === "race_organizer"}
                   <span>{item.participant_count} players</span>
                 {:else if item.type === "training"}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span>{item.death_count} deaths</span>
+                  <span class="mono">&dagger; {item.death_count}</span>
                 {:else if item.type === "daily_participant"}
                   {#if item.placement}
                     <span class="placement {placementClass(item.placement)}">
@@ -1525,7 +1533,7 @@
                     >
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span>{item.death_count} deaths</span>
+                  <span class="mono">&dagger; {item.death_count}</span>
                 {/if}
               </div>
             </div>
@@ -1809,13 +1817,10 @@
     border-collapse: collapse;
   }
 
+  /* The global th spec carries the mono micro-label look; only layout is
+   * page-owned here */
   th {
-    text-align: left;
     padding: 0.75rem 1rem;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
     border-bottom: 1px solid var(--color-border);
   }
 
@@ -1870,9 +1875,9 @@
     text-decoration: none;
   }
 
+  /* Username hovers change color only, never underline */
   .username-link:hover {
     color: var(--color-purple);
-    text-decoration: underline;
   }
 
   .num-col {
@@ -1884,8 +1889,10 @@
     font-family: var(--font-mono);
   }
 
+  /* Dates run through the mono face, like everywhere else */
   .date-cell {
-    font-size: var(--font-size-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
     white-space: nowrap;
   }
@@ -1953,19 +1960,6 @@
     color: white;
   }
 
-  .role-badge {
-    display: inline-block;
-    padding: 0.2rem 0.6rem;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-  }
-
-  .role-badge.admin {
-    background: rgba(220, 106, 81, 0.15);
-    color: var(--color-danger);
-  }
-
   select {
     padding: 0.35rem 0.5rem;
     border: 1px solid var(--color-border);
@@ -2018,7 +2012,6 @@
 
   .activity-user:hover .activity-username {
     color: var(--color-purple);
-    text-decoration: underline;
   }
 
   .activity-avatar {
@@ -2066,12 +2059,11 @@
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--color-success, #4aae8c);
+    background: var(--color-success);
   }
 
   .activity-title:hover {
     color: var(--color-purple);
-    text-decoration: underline;
   }
 
   .col-context {
@@ -2099,44 +2091,43 @@
     color: var(--color-warning);
   }
 
-  .activity-badge {
-    font-size: 0.65rem;
-    font-weight: 600;
+  /* Category markers reuse the network vocabulary (see ActivityList):
+   * station ring = race, boss diamond = daily, terminal square = solo. */
+  .act-kind {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.1rem 0.4rem;
-    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
     white-space: nowrap;
   }
 
-  .activity-badge.participant {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
+  .mark {
+    flex: none;
+    display: inline-block;
   }
 
-  .activity-badge.organizer {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
+  .mark-race {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--color-gold);
   }
 
-  .activity-badge.caster {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
+  .mark-daily {
+    width: 8px;
+    height: 8px;
+    background: var(--color-success);
+    transform: rotate(45deg);
   }
 
-  .activity-badge.training {
-    background: rgba(169, 155, 201, 0.15);
-    color: var(--color-purple);
-  }
-
-  .activity-badge.daily {
-    background: rgba(45, 212, 191, 0.15);
-    color: #3ec4ae;
-  }
-
-  .activity-badge.daily-active {
-    background: rgba(200, 164, 78, 0.15);
-    color: var(--color-gold);
+  .mark-solo {
+    width: 8px;
+    height: 8px;
+    border: 2px solid var(--color-info);
   }
 
   .activity-details {
@@ -2151,55 +2142,18 @@
     font-weight: 600;
   }
 
-  .placement.gold {
+  .placement.first {
     color: var(--color-gold);
-  }
-
-  .placement.silver {
-    color: #c0c0c0;
-  }
-
-  .placement.bronze {
-    color: #cd7f32;
   }
 
   .mono {
     font-family: var(--font-mono);
   }
 
+  /* The global .btn/.btn-secondary styles apply to the load-more button */
   .load-more {
     margin-top: 1rem;
     width: 100%;
-  }
-
-  .btn-secondary {
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: var(--color-surface);
-    color: var(--color-text);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    transition:
-      background 0.15s,
-      border-color 0.15s;
-  }
-
-  .btn-secondary:hover:not(:disabled) {
-    border-color: var(--color-text-secondary);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .section-title {
-    font-size: var(--font-size-lg);
-    font-weight: 600;
-    color: var(--color-text);
-    margin-bottom: 0.75rem;
   }
 
   .stats-description {
@@ -2215,13 +2169,13 @@
   }
 
   .action-btn.recalc {
-    color: var(--color-warning, #d97706);
-    border-color: var(--color-warning, #d97706);
+    color: var(--color-warning);
+    border-color: var(--color-warning);
   }
 
   .action-btn.recalc:hover:not(:disabled) {
-    background: var(--color-warning, #d97706);
-    color: white;
+    background: var(--color-warning);
+    color: var(--color-ink-on-accent);
   }
 
   .recalc-message {
@@ -2229,11 +2183,11 @@
   }
 
   .recalc-message.success {
-    color: var(--color-success, #4aae8c);
+    color: var(--color-success);
   }
 
   .recalc-message.error {
-    color: var(--color-danger, #dc6a51);
+    color: var(--color-danger);
   }
 
   .reported-section {
@@ -2258,10 +2212,12 @@
   }
 
   .feedback-stat-label {
-    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
     color: var(--color-text-secondary);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.09em;
   }
 
   .feedback-stat-value {
@@ -2332,9 +2288,11 @@
   }
 
   .kpi-label {
-    font-size: var(--font-size-xs);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.09em;
     color: var(--color-text-secondary);
   }
 
@@ -2346,12 +2304,18 @@
     font-family: var(--font-mono);
   }
 
+  /* KPI values wear their category's hue (race brass, daily verdigris,
+   * solo steel), like the category markers across the app. */
   .kpi-gold {
     color: var(--color-gold);
   }
 
-  .kpi-purple {
-    color: var(--color-purple);
+  .kpi-verdigris {
+    color: var(--color-success);
+  }
+
+  .kpi-steel {
+    color: var(--color-info);
   }
 
   .kpi-sub {
@@ -2378,9 +2342,12 @@
   }
 
   .chart-title {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
     margin-bottom: 0.75rem;
   }
 
@@ -2391,13 +2358,7 @@
   }
 
   .analytics-table thead th {
-    text-align: left;
     padding: 0.4rem 0.6rem;
-    color: var(--color-text-secondary);
-    font-weight: 500;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
     border-bottom: 1px solid var(--color-border);
   }
 
@@ -2438,7 +2399,7 @@
   }
 
   .analytics-table .runs-bar-training {
-    background: var(--color-purple);
+    background: var(--color-info);
   }
 
   .analytics-table .runs-value {
@@ -2448,7 +2409,6 @@
 
   .analytics-table .pool-name {
     font-weight: 600;
-    color: var(--color-gold);
     vertical-align: middle;
   }
 
@@ -2462,7 +2422,7 @@
   }
 
   .analytics-table .training-type {
-    color: var(--color-purple);
+    color: var(--color-info);
   }
 
   .analytics-table .race-row td,
@@ -2493,7 +2453,7 @@
   }
 
   .organizer-link:hover .organizer-name {
-    text-decoration: underline;
+    color: var(--color-purple);
   }
 
   .organizer-avatar {
@@ -2525,8 +2485,11 @@
   }
 
   .heatmap-title {
-    font-size: var(--font-size-sm);
-    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
     margin-bottom: 0.75rem;
   }
 
@@ -2573,7 +2536,7 @@
   .heatmap-cell {
     height: 1.5rem;
     border-radius: 2px;
-    background: var(--color-bg, #0d1117);
+    background: var(--color-bg);
   }
 
   .heatmap-legend {
@@ -2659,18 +2622,20 @@
   }
 
   .daily-schedule tr.today td {
-    background: var(--color-bg-elevated, rgba(200, 164, 78, 0.08));
+    background: var(--color-surface-elevated);
   }
 
+  /* A superlative micro-label, not a pill (same treatment as the week
+   * grid's TODAY marker) */
   .today-badge {
     display: inline-block;
     margin-left: 0.5rem;
-    padding: 0.05rem 0.4rem;
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    color: var(--color-bg, #1a1a1a);
-    background: var(--color-accent, #c8a44e);
-    border-radius: 0.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-gold);
     vertical-align: middle;
   }
 
