@@ -13,16 +13,32 @@
         ? "finished"
         : "setup",
   );
+  let progress = $derived(
+    session.status === "active" &&
+      session.current_layer != null &&
+      session.seed_total_layers
+      ? Math.min(1, session.current_layer / session.seed_total_layers)
+      : null,
+  );
 </script>
 
-<a href="/training/{session.id}" class="card">
-  <div class="route route-{routeState}" aria-hidden="true">
+<a href="/training/{session.id}" class="card route-{routeState}">
+  <div
+    class="route route-{routeState}"
+    class:route-progress={progress != null}
+    style={progress != null ? `--route-progress: ${progress}` : null}
+    aria-hidden="true"
+  >
     <span class="line"></span>
+    {#if progress != null}
+      <span class="line-progress"></span>
+      <span class="m-pos"></span>
+    {/if}
     <span class="m-start"></span>
     {#if routeState !== "setup"}
       <span class="m-end"></span>
     {/if}
-    {#if session.status === "active"}
+    {#if session.status === "active" && progress == null}
       <span class="m-train"></span>
     {/if}
   </div>
@@ -46,16 +62,6 @@
     </span>
   </div>
 
-  {#if session.current_layer != null && session.seed_total_layers}
-    <div class="progress-bar">
-      <div
-        class="progress-fill"
-        style="width: {(session.current_layer / session.seed_total_layers) *
-          100}%"
-      ></div>
-    </div>
-  {/if}
-
   <div class="card-meta">
     <span>{timeAgo(session.created_at)}</span>
     <span class="action-label">Resume &rarr;</span>
@@ -75,8 +81,9 @@
     transition: border-color var(--transition);
   }
 
+  /* Hover in the route line's hue (from the root's route-{state} class) */
   .card:hover {
-    border-color: var(--color-purple);
+    border-color: var(--route-color, var(--color-purple));
   }
 
   .card > :global(.route) {
@@ -129,22 +136,6 @@
   .stat-value {
     font-weight: 600;
     font-family: var(--font-mono);
-  }
-
-  /* The run's progress rides in the playing hue, like its route line */
-  .progress-bar {
-    height: 4px;
-    background: var(--color-border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-bottom: 0.5rem;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--color-warning);
-    border-radius: 2px;
-    transition: width 0.3s ease;
   }
 
   .card-meta {

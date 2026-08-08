@@ -429,60 +429,68 @@ th {
   height: 8px;
 }
 
+/* Each state exposes its hue as --route-color so every consumer (line,
+ * markers, the host card's hover border) resolves it from one place.
+ * Consumers put the route-{state} class on the card root as well as on
+ * the .route strip. Setup's line keeps the darker border grey; its
+ * --route-color is the lighter disabled grey so a hover highlight on an
+ * upcoming card stays visible against the resting border. */
+.route-setup {
+  --route-color: var(--color-text-disabled);
+}
+
 .route-setup .line {
   border-top-style: dashed;
   border-top-color: var(--color-border);
 }
 
+.route-open {
+  --route-color: var(--color-success);
+}
+
 .route-open .line {
   border-top-style: dashed;
-  border-top-color: var(--color-success);
+  border-top-color: var(--route-color);
 }
 
 .route-open .m-start {
-  border-color: var(--color-success);
+  border-color: var(--route-color);
 }
 
 /* Terminal squares are always filled, in the segment's color (only the
  * start ring stays hollow: the station you board from). */
 .route-open .m-end {
-  background: var(--color-success);
+  background: var(--route-color);
 }
 
-.route-running .line {
-  border-top-color: var(--color-danger);
+.route-running {
+  --route-color: var(--color-danger);
 }
 
-.route-running .m-start {
-  border-color: var(--color-danger);
+.route-playing {
+  --route-color: var(--color-warning);
 }
 
-.route-running .m-end {
-  background: var(--color-danger);
+.route-finished {
+  --route-color: var(--color-info);
 }
 
-.route-playing .line {
-  border-top-color: var(--color-warning);
-}
-
-.route-playing .m-start {
-  border-color: var(--color-warning);
-}
-
-.route-playing .m-end {
-  background: var(--color-warning);
-}
-
+.route-running .line,
+.route-playing .line,
 .route-finished .line {
-  border-top-color: var(--color-info);
+  border-top-color: var(--route-color);
 }
 
+.route-running .m-start,
+.route-playing .m-start,
 .route-finished .m-start {
-  border-color: var(--color-info);
+  border-color: var(--route-color);
 }
 
+.route-running .m-end,
+.route-playing .m-end,
 .route-finished .m-end {
-  background: var(--color-info);
+  background: var(--route-color);
 }
 
 /* Traveling dot: a full-track element whose painted dot rides on a
@@ -505,20 +513,11 @@ th {
   inset: 0;
   background: radial-gradient(
     circle 3px at 3px 3px,
-    var(--color-danger) 98%,
+    var(--route-color, var(--color-danger)) 98%,
     transparent
   );
   background-repeat: no-repeat;
   animation: route-ride 3.2s linear infinite;
-}
-
-.route-playing .m-train::before {
-  background: radial-gradient(
-    circle 3px at 3px 3px,
-    var(--color-warning) 98%,
-    transparent
-  );
-  background-repeat: no-repeat;
 }
 
 @keyframes route-ride {
@@ -534,4 +533,48 @@ th {
   .route .m-train {
     display: none;
   }
+}
+
+/* Progress variant: a route tracking the viewer's own run, filled to
+ * --route-progress (0-1). The base line drops to dashed border grey (the
+ * stretch not yet ridden); the solid segment and the position dot at its
+ * head cover the ridden part in the state hue, and the terminal stays dim
+ * until the run actually finishes (the state then leaves the variant). */
+.route-progress .line {
+  border-top-style: dashed;
+  border-top-color: var(--color-border);
+}
+
+.route-progress .line-progress {
+  position: absolute;
+  left: 14px;
+  top: 6px;
+  width: calc((100% - 28px) * var(--route-progress, 0));
+  border-top: 2px solid var(--route-color);
+  transition: width var(--transition);
+}
+
+.route-progress .m-pos {
+  position: absolute;
+  left: calc(14px + (100% - 28px) * var(--route-progress, 0));
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: var(--route-color);
+  transition: left var(--transition);
+  /* Paints above the dim terminal square when progress approaches 1 */
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-progress .line-progress,
+  .route-progress .m-pos {
+    transition: none;
+  }
+}
+
+.route-progress .m-end {
+  background: var(--color-text-disabled);
 }

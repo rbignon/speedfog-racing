@@ -59,7 +59,7 @@
 
 <a
   href="/race/{race.id}"
-  class="race-card"
+  class="race-card route-{routeState}"
   class:compact={variant === "compact"}
   class:joinable={race.can_join}
 >
@@ -246,8 +246,10 @@
     right: -10px;
   }
 
+  /* Hover highlights in the route line's own hue (set by the root's
+   * route-{state} class), tying the affordance to the card's status. */
   .race-card:hover {
-    border-color: var(--color-purple);
+    border-color: var(--route-color, var(--color-purple));
   }
 
   .card-inner {

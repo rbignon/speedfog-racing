@@ -42,7 +42,7 @@ What changed versus charter v1, in one list:
 
 **Brass usage (exhaustive list):** logo glyph and the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else. (The week line's own edge markers and the finish board's terminal squares are state- or player-colored, not brass.)
 
-**Fog usage:** interactive hover states (card borders, secondary buttons), links, focus rings, boss diamonds on the DAG, radio/checkbox checked states (outside player-colored contexts).
+**Fog usage:** interactive hover states (secondary buttons), links, focus rings, boss diamonds on the DAG, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog.
 
 ### Text
 
@@ -155,15 +155,16 @@ Radius `--radius-md` (3px), display face, caps.
 
 ### Route-line cards
 
-The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border, hover border fog. A 2px **route line** rides the card's actual top border, spanning nearly its full width (markers sit just inside the corners and straddle the edge, punched with the surface color), so full-height side elements like the Join strip reach the top edge. The line's style encodes status:
+The standard clickable card (races, dailies). Radius `--radius-lg` (2px), surface background, `1px` border; hover recolors the border in the route line's own status hue (an upcoming card, whose line is border grey, hovers in the lighter disabled grey so the highlight stays visible). A 2px **route line** rides the card's actual top border, spanning nearly its full width (markers sit just inside the corners and straddle the edge, punched with the surface color), so full-height side elements like the Join strip reach the top edge. The line's style encodes status:
 
 - **Open**: dashed verdigris line, hollow ring at the start, filled terminal square at the end.
 - **Running**: solid ember line, small dot traveling along it (CSS animation; respect `prefers-reduced-motion`), filled terminal.
 - **Finished**: solid steel line, filled square terminal at the right end.
+- **Progress** (a card tracking the viewer's own run: dashboard Active Now, solo sessions): the ridden stretch is solid in the state hue and ends on a position dot; the stretch ahead stays dashed border grey, and the terminal square stays dim until the run actually finishes. It replaces both the traveling dot and any separate progress bar.
 
 Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race, whose route line is dashed border-grey with no terminal. Further variants cover the rest of the platform's statuses: `● Active/Playing` (brass dot), `○ Ready` (verdigris ring), `○ Registered` (secondary ring), `■ DNF/Abandoned` (secondary square), `■ Cancelled` (disabled square). A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a bordered mono chip. Card anatomy: title row (display caps + signals), meta row (mono: `N players · Mode`), foot row (avatar stack + winner `1st Name` or `No finishers` on the left; `by organizer · time ago` on the right, time in mono).
 
-The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is fully retired: the `.badge-*` classes are gone from `app.css`, every status renders as a signal and every label-like fact as a chip. The route-line vocabulary (`.route`, `.route-open/-running/-playing/-finished/-setup`, `--route-hole` punch-through) lives in `app.css` and serves the route-line cards (races, solo sessions); the timetable's continuous week line is its own scoped implementation in `DailyWeekGrid`. The traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
+The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is fully retired: the `.badge-*` classes are gone from `app.css`, every status renders as a signal and every label-like fact as a chip. The route-line vocabulary (`.route`, `.route-open/-running/-playing/-finished/-setup`, the `.route-progress` variant, `--route-hole` punch-through) lives in `app.css`; each state exposes its hue as `--route-color`, which the host card also uses for its hover border (the card root carries the `route-{state}` class too). It serves the route-line cards (races, solo sessions); the timetable's continuous week line is its own scoped implementation in `DailyWeekGrid`. The traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
 
 ### Daily timetable
 

@@ -367,12 +367,40 @@
               race.participant_count - race.participant_previews.length,
             )}
             {@const relativeTime = raceDisplayDate(race)}
-            <a
-              href="/race/{race.id}"
-              class="active-card border-{race.status === 'running'
-                ? 'running'
-                : 'setup'}"
-            >
+            {@const raceRoute =
+              race.status === "finished"
+                ? "finished"
+                : race.status === "running"
+                  ? "running"
+                  : "setup"}
+            {@const raceProgress =
+              (race.status === "running" || race.status === "finished") &&
+              race.my_current_layer != null &&
+              race.seed_total_layers
+                ? Math.min(1, race.my_current_layer / race.seed_total_layers)
+                : null}
+            <a href="/race/{race.id}" class="active-card route-{raceRoute}">
+              <div
+                class="route route-{raceRoute}"
+                class:route-progress={raceProgress != null}
+                style={raceProgress != null
+                  ? `--route-progress: ${raceProgress}`
+                  : null}
+                aria-hidden="true"
+              >
+                <span class="line"></span>
+                {#if raceProgress != null}
+                  <span class="line-progress"></span>
+                  <span class="m-pos"></span>
+                {/if}
+                <span class="m-start"></span>
+                {#if raceRoute !== "setup"}
+                  <span class="m-end"></span>
+                {/if}
+                {#if race.status === "running" && raceProgress == null}
+                  <span class="m-train"></span>
+                {/if}
+              </div>
               <div class="active-card-header">
                 <div class="active-title">
                   {#if race.status === "running"}
@@ -450,23 +478,33 @@
                   </button>
                 </span>
               </div>
-              {#if (race.status === "running" || race.status === "finished") && race.my_current_layer != null && race.seed_total_layers}
-                <div class="progress-bar">
-                  <div
-                    class="progress-fill"
-                    style="width: {(race.my_current_layer /
-                      race.seed_total_layers) *
-                      100}%"
-                  ></div>
-                </div>
-              {/if}
             </a>
           {/each}
           {#each activeTraining as session}
-            <a
-              href="/training/{session.id}"
-              class="active-card border-training"
-            >
+            {@const trainingProgress =
+              session.current_layer != null && session.seed_total_layers
+                ? Math.min(1, session.current_layer / session.seed_total_layers)
+                : null}
+            <a href="/training/{session.id}" class="active-card route-playing">
+              <div
+                class="route route-playing"
+                class:route-progress={trainingProgress != null}
+                style={trainingProgress != null
+                  ? `--route-progress: ${trainingProgress}`
+                  : null}
+                aria-hidden="true"
+              >
+                <span class="line"></span>
+                {#if trainingProgress != null}
+                  <span class="line-progress"></span>
+                  <span class="m-pos"></span>
+                {/if}
+                <span class="m-start"></span>
+                <span class="m-end"></span>
+                {#if trainingProgress == null}
+                  <span class="m-train"></span>
+                {/if}
+              </div>
               <div class="active-card-header">
                 <span class="active-name"
                   >{session.pool_display_name ||
@@ -488,16 +526,6 @@
                   <span class="training-stat-value">{session.death_count}</span>
                 </span>
               </div>
-              {#if session.current_layer != null && session.seed_total_layers}
-                <div class="progress-bar">
-                  <div
-                    class="progress-fill progress-fill-training"
-                    style="width: {(session.current_layer /
-                      session.seed_total_layers) *
-                      100}%"
-                  ></div>
-                </div>
-              {/if}
             </a>
           {/each}
         </div>
@@ -779,6 +807,7 @@
   }
 
   .active-card {
+    position: relative;
     display: flex;
     flex-direction: column;
     padding: 1rem 1.25rem;
@@ -793,21 +822,19 @@
       box-shadow var(--transition);
   }
 
+  /* The route rides the card's real top border (see RaceCard) and, when
+   * the run's layer progress is known, doubles as its progress line. */
+  .active-card > :global(.route) {
+    position: absolute;
+    top: -7px;
+    left: -7px;
+    right: -7px;
+  }
+
+  /* Hover in the route line's hue (from the root's route-{state} class) */
   .active-card:hover {
-    border-color: var(--color-purple);
+    border-color: var(--route-color, var(--color-purple));
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .border-setup {
-    border-left: 3px solid var(--color-info);
-  }
-
-  .border-running {
-    border-left: 3px solid var(--color-danger);
-  }
-
-  .border-training {
-    border-left: 3px solid var(--color-purple);
   }
 
   .active-card-header {
@@ -946,25 +973,6 @@
   .training-stat-value {
     font-weight: 600;
     font-family: var(--font-mono);
-  }
-
-  .progress-bar {
-    height: 4px;
-    background: var(--color-border);
-    border-radius: 2px;
-    overflow: hidden;
-    margin-top: auto;
-  }
-
-  .progress-fill {
-    height: 100%;
-    background: var(--color-gold);
-    border-radius: 2px;
-    transition: width 0.3s ease;
-  }
-
-  .progress-fill-training {
-    background: var(--color-purple);
   }
 
   /* Races to Join */
