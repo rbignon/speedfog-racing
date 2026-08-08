@@ -33,6 +33,12 @@ _TEMPLATE_BY_STATUS = {
     "daily": "og/daily.svg.j2",
 }
 
+# Folded into cache filenames so a visual redesign of the templates stops
+# serving stale pre-redesign PNGs. Bump on every template refresh.
+_TEMPLATE_VERSION = 2
+
+_FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
+
 
 def render_svg(status: str, ctx: dict[str, Any]) -> str:
     """Render the OG SVG for a given race status."""
@@ -42,8 +48,12 @@ def render_svg(status: str, ctx: dict[str, Any]) -> str:
 
 
 def rasterize_svg(svg: str) -> bytes:
-    """Rasterize an SVG string to PNG bytes at the SVG's intrinsic size."""
-    return bytes(resvg_py.svg_to_bytes(svg_string=svg))
+    """Rasterize an SVG string to PNG bytes at the SVG's intrinsic size.
+
+    System fonts stay enabled as a fallback for glyphs outside our latin
+    subsets (e.g. non-latin Twitch display names).
+    """
+    return bytes(resvg_py.svg_to_bytes(svg_string=svg, font_dirs=[str(_FONT_DIR)]))
 
 
 _MAX_RACE_NAME = 36
@@ -57,9 +67,9 @@ STATUS_LABEL = {
 }
 
 ACCENT_COLOR = {
-    RaceStatus.SETUP: "#3b82f6",
-    RaceStatus.RUNNING: "#ef4444",
-    RaceStatus.FINISHED: "#10b981",
+    RaceStatus.SETUP: "#4aae8c",  # verdigris (open)
+    RaceStatus.RUNNING: "#dc6a51",  # ember
+    RaceStatus.FINISHED: "#7ba2cc",  # steel
 }
 
 assert ACCENT_COLOR.keys() == STATUS_LABEL.keys(), (
@@ -239,7 +249,7 @@ async def render_race_og(
 ) -> tuple[bytes, str]:
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = _cache_key(race)
-    cached = cache_dir / f"{race.id}-{key}.png"
+    cached = cache_dir / f"{race.id}-v{_TEMPLATE_VERSION}-{key}.png"
     if cached.exists():
         return cached.read_bytes(), key
     ctx = await build_context(race, avatar_lookup=avatar_lookup)
@@ -255,9 +265,10 @@ async def render_daily_og(race: Race, *, cache_dir: Path) -> bytes:
     The cache key is just the daily date: the rendered output is fully
     determined by ``race.daily_date`` and the pool's display name (immutable
     after creation), so there is no need for a hashed key.
+    The template version joins the name so redesigns invalidate old renders.
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cached = cache_dir / f"daily-{race.daily_date}.png"
+    cached = cache_dir / f"daily-v{_TEMPLATE_VERSION}-{race.daily_date}.png"
     if cached.exists():
         return cached.read_bytes()
     ctx = _build_daily_context(race)
