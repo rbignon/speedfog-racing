@@ -168,11 +168,37 @@ def _set_family_name(font: TTFont, family: str) -> None:
         name_table.setName(family, name_id, 1, 0, 0)
 
 
+def _break_subset_weight_tie(font: TTFont) -> None:
+    """Nudge a latin-ext face's OS/2 weight off its latin sibling's value.
+
+    Each weight in each family ships as two files (a latin subset and a
+    latin-ext subset covering accented characters), both meant to register
+    under the same family and weight so either can serve a glyph. But two
+    faces tied on the exact same (family, weight, style, stretch) is
+    exactly the condition where resvg's fontdb selection was found to be
+    unreliable: an exact-weight query can spuriously fail to disambiguate
+    between the tied pair and abandon the family match entirely, falling
+    back to substituting glyphs from an unrelated loaded font. This was
+    verified directly against resvg's fontdb output (not just by reading
+    name tables back), and the failure was observed to depend on
+    incidental byte-level differences (even an unrelated embedded
+    timestamp) rather than any single font property, so the robust fix is
+    to remove the exact tie altogether rather than tune flags and hope. A
+    latin-ext face is never the only candidate for a plain-Latin query, so
+    nudging its weight by 1 doesn't change which face serves normal text;
+    it only stops the two files from being indistinguishable to fontdb's
+    exact-match lookup.
+    """
+    font["OS/2"].usWeightClass += 1
+
+
 def convert_server_fonts() -> None:
     SERVER_FONTS.mkdir(parents=True, exist_ok=True)
     for stem in STATIC_FACES:
         font = TTFont(str(WEB_FONTS / f"{stem}.woff2"))
         _set_family_name(font, _family_for_stem(stem))
+        if stem.endswith("-ext"):
+            _break_subset_weight_tie(font)
         font.flavor = None
         font.save(str(SERVER_FONTS / f"{stem}.ttf"))
     for subset in ("latin", "latin-ext"):
@@ -185,6 +211,8 @@ def convert_server_fonts() -> None:
             # resvg's fontdb matches by OS/2 weight; make the pin explicit
             font["OS/2"].usWeightClass = wght
             _set_family_name(font, "Spline Sans Mono")
+            if subset == "latin-ext":
+                _break_subset_weight_tie(font)
             font.flavor = None
             font.save(str(SERVER_FONTS / f"spline-sans-mono-{wght}-{subset}.ttf"))
 
