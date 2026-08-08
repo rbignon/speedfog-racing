@@ -581,17 +581,6 @@ export const CONTENT_ITEMS: ContentItem[] = [
     },
   },
   {
-    id: "quick-darklight-catacombs-skip",
-    kind: "skip",
-    zoneId: "scadualtus_catacombs",
-    difficulty: 5,
-    title: "Quick Darklight Catacombs Skip",
-    short: "",
-    video: {
-      youtubeId: "BkxpWreZKxY",
-    },
-  },
-  {
     id: "rauhbase-forge-skip",
     kind: "skip",
     zoneId: "rauhbase_forge",
