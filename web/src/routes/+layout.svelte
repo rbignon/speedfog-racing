@@ -100,21 +100,6 @@
     <header>
       <div class="header-content">
         <a href={auth.isLoggedIn ? "/dashboard" : "/"} class="logo">
-          <svg width="30" height="30" viewBox="0 0 36 32" aria-hidden="true">
-            <path class="g-solid" d="M4 12.5 L11 16 L4 19.5 Z" />
-            <path class="g-line" d="M11 16 L15 12 H24 L28 16" />
-            <path class="g-line" d="M11 16 L15 20 H24 L28 16" />
-            <circle class="g-ring" cx="19.5" cy="12" r="2.6" />
-            <rect
-              class="g-boss"
-              x="17.7"
-              y="18.2"
-              width="3.6"
-              height="3.6"
-              transform="rotate(45 19.5 20)"
-            />
-            <rect class="g-solid" x="28" y="13.5" width="5" height="5" />
-          </svg>
           <span class="wordmark"
             >SpeedFog <span class="brass">Racing</span></span
           >
@@ -343,42 +328,7 @@
   .logo {
     display: flex;
     align-items: center;
-    gap: 0.55rem;
     text-decoration: none;
-  }
-
-  .logo svg {
-    display: block;
-    flex: none;
-  }
-
-  .logo .g-solid {
-    fill: var(--color-gold);
-  }
-
-  .logo .g-line {
-    fill: none;
-    stroke: var(--color-gold);
-    stroke-width: 2;
-  }
-
-  .logo .g-ring {
-    fill: var(--color-bg);
-    stroke: var(--color-gold);
-    stroke-width: 1.8;
-  }
-
-  .logo .g-boss {
-    fill: var(--color-purple);
-  }
-
-  .logo:hover .g-solid {
-    fill: var(--color-gold-hover);
-  }
-
-  .logo:hover .g-line,
-  .logo:hover .g-ring {
-    stroke: var(--color-gold-hover);
   }
 
   .wordmark {
