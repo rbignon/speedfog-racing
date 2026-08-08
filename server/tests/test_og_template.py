@@ -30,16 +30,16 @@ def _ctx(**overrides: object) -> dict:
 @pytest.mark.parametrize(
     "status,label,accent",
     [
-        ("setup", "Upcoming", "#3b82f6"),
-        ("running", "Live", "#ef4444"),
-        ("finished", "Finished", "#10b981"),
+        ("setup", "Upcoming", "#4aae8c"),
+        ("running", "Live", "#dc6a51"),
+        ("finished", "Finished", "#7ba2cc"),
     ],
 )
 def test_each_template_renders_valid_svg(status: str, label: str, accent: str) -> None:
     svg = render_svg(status, _ctx(status_label=label, accent_color=accent))
     root = ET.fromstring(svg)
     assert root.tag.endswith("svg")
-    assert "Friday Night Fog #42" in svg
+    assert "FRIDAY NIGHT FOG #42" in svg
     assert label.upper() in svg
     assert "Linear Route" in svg
     assert "crazydiamond" in svg

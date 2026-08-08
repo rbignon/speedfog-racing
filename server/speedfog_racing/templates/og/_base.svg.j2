@@ -7,48 +7,25 @@
     </clipPath>
   </defs>
   <rect width="1200" height="630" fill="#0f1923"/>
-  {# Caller-supplied accent color for the 12px left border. #}
-  <rect x="0" y="0" width="12" height="630" fill="{{ accent_color }}"/>
 
-  {# Header: brand mark + wordmark left, badge right (overridable). #}
-  <g transform="translate(60, 60)">
-    <g transform="scale(0.094)">
-      {# Inline favicon (checkered flag dissolving into fog) #}
-      <defs>
-        <linearGradient id="fogFade" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stop-color="white"/>
-          <stop offset="25%" stop-color="white"/>
-          <stop offset="60%" stop-color="white" stop-opacity="0.3"/>
-          <stop offset="90%" stop-color="white" stop-opacity="0"/>
-        </linearGradient>
-        <mask id="dissolve"><rect width="512" height="512" fill="url(#fogFade)"/></mask>
-      </defs>
-      <rect width="512" height="512" rx="160" fill="#0f1923"/>
-      <g mask="url(#dissolve)">
-        {% for row in range(4) %}{% for col in range(5) %}
-        <rect x="{{ 48 + col*72 }}" y="{{ 112 + row*72 }}" width="72" height="72" fill="{{ '#e8e6e1' if (row+col) % 2 == 0 else '#1c2a3f' }}"/>
-        {% endfor %}{% endfor %}
-      </g>
-    </g>
-    <text x="68" y="39" font-family="Inter, sans-serif" font-size="38" font-weight="600" fill="#e8e6e1">SpeedFog Racing</text>
-  </g>
+  {# Status-colored route line riding the top edge, echoing the site's cards.
+     Children override to restyle it (dashed setup, traveling dot, terminal). #}
+  {% block route %}
+    <rect x="0" y="0" width="1200" height="6" fill="{{ accent_color }}"/>
+  {% endblock %}
 
-  {# Default badge uses status_label and accent_color. Override the block
-     to suppress it on templates with no status concept. #}
+  {# Header: wordmark lockup left, status signal right (overridable). #}
+  <text x="60" y="99" font-family="Barlow Condensed" font-size="44" letter-spacing="1.8"><tspan font-weight="700" fill="#e8e6e1">SPEEDFOG </tspan><tspan font-weight="600" fill="#c8a44e">RACING</tspan></text>
+
   {% block badge %}
-    {% set badge_bg = {"Upcoming": "#1d3050", "Live": "#3a1818", "Finished": "#0f3c2c"}[status_label] %}
-    <g transform="translate(1140, 56)">
-      {% set badge_w = (status_label|length * 16) + 44 %}
-      <rect x="-{{ badge_w }}" y="0" width="{{ badge_w }}" height="52" rx="6" fill="{{ badge_bg }}"/>
-      <text x="-{{ badge_w / 2 }}" y="35" text-anchor="middle" font-family="Inter, sans-serif" font-size="24" font-weight="600" letter-spacing="1.2" fill="{{ accent_color }}">{{ status_label.upper() }}</text>
-    </g>
+    <text x="1140" y="99" text-anchor="end" font-family="Spline Sans Mono" font-size="24" font-weight="500" letter-spacing="2.2" fill="{{ accent_color }}">{{ status_label.upper() }}</text>
   {% endblock %}
 
   {% block body %}{% endblock %}
 
   {# Meta row (bottom). Default = "{participant_count} · {pool_name}". #}
   {% block meta_left %}
-    <text x="60" y="572" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+    <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
   {% endblock %}
   {% block meta_right %}{% endblock %}
 </svg>

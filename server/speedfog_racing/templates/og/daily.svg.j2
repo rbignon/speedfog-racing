@@ -1,14 +1,9 @@
 {% extends "og/_base.svg.j2" %}
 {% block badge %}{% endblock %}
 {% block body %}
-  <text x="600" y="280" text-anchor="middle"
-        font-family="Inter, sans-serif" font-size="36" font-weight="600"
-        letter-spacing="6" fill="#c8a44e">DAILY SEED</text>
-  <text x="600" y="380" text-anchor="middle"
-        font-family="Inter, sans-serif" font-size="72" font-weight="600"
-        fill="#e8e6e1">{{ date_label }}</text>
+  <text x="600" y="280" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="500" letter-spacing="6" fill="#c8a44e">DAILY SEED</text>
+  <text x="600" y="380" text-anchor="middle" font-family="Barlow Condensed" font-size="80" font-weight="600" letter-spacing="2.4" fill="#e8e6e1">{{ date_label }}</text>
 {% endblock %}
 {% block meta_left %}
-  <text x="60" y="572" font-family="Inter, sans-serif" font-size="33"
-        fill="#e8e6e1">{{ pool_display_name }}</text>
+  <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#e8e6e1">{{ pool_display_name }}</text>
 {% endblock %}

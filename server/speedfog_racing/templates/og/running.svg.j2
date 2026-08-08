@@ -1,8 +1,12 @@
 {% extends "og/_base.svg.j2" %}
+{% block route %}
+  <rect x="0" y="0" width="1200" height="6" fill="{{ accent_color }}"/>
+  <circle cx="880" cy="3" r="9" fill="{{ accent_color }}"/>
+{% endblock %}
 {% block body %}
-  <circle cx="80" cy="262" r="14" fill="#ef4444"/>
-  <circle cx="80" cy="262" r="22" fill="#ef4444" fill-opacity="0.2"/>
-  <text x="118" y="280" font-family="Inter, sans-serif" font-size="68" font-weight="600" fill="#e8e6e1">{{ race_name }}</text>
+  <circle cx="80" cy="262" r="14" fill="{{ accent_color }}"/>
+  <circle cx="80" cy="262" r="22" fill="{{ accent_color }}" fill-opacity="0.2"/>
+  <text x="118" y="280" font-family="Barlow Condensed" font-size="76" font-weight="600" letter-spacing="2.3" fill="#e8e6e1">{{ race_name.upper() }}</text>
   {% set ax = 60 %}
   {% for p in participants %}
     <image x="{{ ax + loop.index0 * 60 }}" y="340" width="72" height="72" clip-path="url(#avatar-clip)" href="{{ p.avatar_b64 }}"/>
@@ -10,9 +14,9 @@
   {% endfor %}
   {% if overflow_count %}
     <circle cx="{{ ax + participants|length * 60 + 36 }}" cy="376" r="36" fill="#1c2a3f" stroke="#0f1923" stroke-width="6"/>
-    <text x="{{ ax + participants|length * 60 + 36 }}" y="386" text-anchor="middle" font-family="Inter, sans-serif" font-size="22" font-weight="600" fill="#9ca3af">+{{ overflow_count }}</text>
+    <text x="{{ ax + participants|length * 60 + 36 }}" y="384" text-anchor="middle" font-family="Spline Sans Mono" font-size="22" font-weight="500" fill="#96a0ad">+{{ overflow_count }}</text>
   {% endif %}
 {% endblock %}
 {% block meta_right %}
-  <text x="1140" y="572" text-anchor="end" font-family="Inter, sans-serif" font-size="33" fill="#9ca3af">by <tspan fill="#e8e6e1" font-weight="500">{{ organizer_name }}</tspan></text>
+  <text x="1140" y="570" text-anchor="end" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">by <tspan fill="#e8e6e1">{{ organizer_name }}</tspan></text>
 {% endblock %}
