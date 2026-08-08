@@ -106,18 +106,18 @@
     overflow: hidden;
   }
 
+  /* A superlative micro-label, not a pill: mono brass caps like the
+   * timetable's "1st" tags. */
   .tag {
     position: absolute;
-    top: 1.1rem;
+    top: 1.2rem;
     right: 1.2rem;
-    font-size: 0.62rem;
-    font-weight: 700;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.09em;
     color: var(--color-gold);
-    background: rgba(200, 164, 78, 0.12);
-    padding: 0.22rem 0.5rem;
-    border-radius: var(--radius-sm);
   }
 
   .name {

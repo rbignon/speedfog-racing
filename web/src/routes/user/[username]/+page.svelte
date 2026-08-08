@@ -173,13 +173,13 @@
               </svg>
             </a>
             {#if profile.role === "admin"}
-              <span class="role-badge admin">admin</span>
+              <span class="chip">admin</span>
             {/if}
             {#if profile.stats.organized_count > 0}
-              <span class="role-badge organizer">organizer</span>
+              <span class="chip">organizer</span>
             {/if}
             {#if profile.stats.casted_count > 0}
-              <span class="role-badge caster">caster</span>
+              <span class="chip">caster</span>
             {/if}
           </div>
           <p class="profile-joined">
@@ -314,32 +314,6 @@
     font-size: 1.9rem;
     font-weight: 700;
     color: var(--color-text);
-  }
-
-  .role-badge {
-    font-family: var(--font-mono);
-    font-size: 0.65rem;
-    padding: 0.1rem 0.4rem;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-  }
-
-  .role-badge.organizer {
-    border-color: rgba(169, 155, 201, 0.4);
-    color: var(--color-purple);
-  }
-
-  .role-badge.caster {
-    border-color: rgba(123, 162, 204, 0.4);
-    color: var(--color-info);
-  }
-
-  .role-badge.admin {
-    border-color: rgba(220, 106, 81, 0.4);
-    color: var(--color-danger);
   }
 
   .profile-joined {

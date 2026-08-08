@@ -51,12 +51,12 @@
       <span class="act-main">
         <span class="t">
           <span class="title">{titleFor(item)}</span>
-          {#if item.type === "race_participant" && item.is_organizer}
-            <span class="chip">Organized</span>
-          {/if}
         </span>
         <span class="m">
           {#if item.type === "race_participant" || item.type === "daily_participant"}
+            {#if item.type === "race_participant" && item.is_organizer}
+              <span>Organized</span>
+            {/if}
             <!-- item.status is the RACE status: a finished run inside a
                  still-running race (every daily for 24h) already carries its
                  placement, so the placement always wins over the state. -->
