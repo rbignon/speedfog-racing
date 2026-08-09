@@ -45,7 +45,7 @@
 
   /* Typography */
   --font-family:
-    "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-mono:
     "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;

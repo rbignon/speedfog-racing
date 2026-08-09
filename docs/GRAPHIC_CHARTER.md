@@ -8,7 +8,7 @@ The sobriety discipline of the previous charter survives intact: the dark theme 
 
 What changed versus charter v1, in one list:
 
-- Inter is replaced by the **Barlow superfamily** (Condensed for display, regular for UI) plus **Spline Sans Mono** for data. Three roles, one voice.
+- Inter is replaced by **Barlow Condensed** for display and **Public Sans** for UI text (a grotesque from the same public-signage world, drawn for interface sizes where Barlow's single optical size turned mushy), plus **Spline Sans Mono** for data. Three faces, three roles.
 - The violet-500 secondary becomes **fog** (`#A99BC9`), and every semantic color leaves the Tailwind default palette for a hue tuned to the navy/brass world.
 - Cards drop the 8px radius, the colored left border and the pill status chip for a near-sharp plate carrying a **route line** on its top edge.
 - Section headers use the **station-and-line device** instead of free-floating letterspaced caps.
@@ -83,7 +83,7 @@ Three faces, three roles. All self-hosted (latin + latin-ext subsets in `web/sta
 | Role    | Face                                | Weights            | Used for                                                                    |
 | ------- | ----------------------------------- | ------------------ | --------------------------------------------------------------------------- |
 | Display | Barlow Condensed (`--font-display`) | 500 / 600 / 700    | Wordmark, page + section titles, race names, nav items, buttons, big labels |
-| UI      | Barlow (`--font-family`)            | 400 / 500 / 600    | Body text, descriptions, chat, form values                                  |
+| UI      | Public Sans (`--font-family`)       | 400-600 (variable) | Body text, descriptions, chat, form values                                  |
 | Data    | Spline Sans Mono (`--font-mono`)    | 400-600 (variable) | IGT, deltas, seeds, dates, ranks, counts, signals, micro-labels             |
 
 Loading: the `@font-face` declarations live in `web/static/fonts/fonts.css`,
@@ -94,7 +94,7 @@ faces and every text on screen flashes). Faces are
 declared with `font-display: fallback` (never `swap`; the app is
 client-rendered, so faces load at consumption after first paint, and `swap`
 turns that window into a visible system-font flash). The latin files
-(Barlow 400/500/600, Barlow Condensed 600/700, the mono) are preloaded in
+(Public Sans, Barlow Condensed 600/700, the mono) are preloaded in
 `app.html`; latin-ext stays lazy. `/fonts/` is served long-cached by nginx.
 
 ### Scale
@@ -237,7 +237,7 @@ Wordmark only; the v1 network glyph is retired everywhere (header, favicon, OG i
 
 `REWARDS.md` owns the rewards visual spec. Charter-relevant contract:
 
-- **Name templates remain the only zone** allowed gradients, translucent backdrops, `text-shadow` and alternative font families, on the name span only. The `name_css` allowlist's default stack is now the Barlow stack; the serif (Georgia) and mono system stacks are unchanged.
+- **Name templates remain the only zone** allowed gradients, translucent backdrops, `text-shadow` and alternative font families, on the name span only. The `name_css` allowlist's default stack is now the UI stack (Public Sans); the serif (Georgia) and mono system stacks are unchanged.
 - Player line colors and name templates coexist: line color on structure, template on the name.
 - The badge palette (`#9CA3AF` steel grey, `#A78BFA` purple, ambers) predates this charter; retune it to the new accent values when badges are next touched.
 
@@ -284,7 +284,7 @@ Authoritative token block in `web/src/app.css` (self-hosted `@font-face` declara
 
   /* Typography */
   --font-family:
-    "Barlow", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
   --font-mono:
     "Spline Sans Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
