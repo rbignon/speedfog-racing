@@ -177,8 +177,10 @@ pub(crate) struct CachedColors {
 
 /// ImGui font ids for the overlay's three faces, registered at ImGui init.
 /// Body is the atlas default; display carries the race name, mono the data
-/// columns (IGT, gaps, counters, debug).
+/// columns (IGT, gaps, counters, debug). Body is also carried explicitly so
+/// mono blocks can push back to it (leaderboard names).
 pub(crate) struct OverlayFonts {
+    pub body: FontId,
     pub display: FontId,
     pub mono: FontId,
 }

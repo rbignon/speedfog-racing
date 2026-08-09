@@ -74,11 +74,20 @@ impl ImguiRenderLoop for RaceTracker {
             ])
         };
 
+        // The mono face runs a step smaller, like the site (data 0.8rem
+        // against body 0.9375rem): at equal pixel size its tall x-height
+        // reads a size bigger than the other faces.
+        const MONO_SCALE: f32 = 0.85;
+
         // First added face is the atlas default (body)
-        let _body = add_face(body_data, font_size);
+        let body = add_face(body_data, font_size);
         let display = add_face(EMBEDDED_FONT_DISPLAY, font_size);
-        let mono = add_face(EMBEDDED_FONT_MONO, font_size);
-        self.overlay_fonts = Some(OverlayFonts { display, mono });
+        let mono = add_face(EMBEDDED_FONT_MONO, (font_size * MONO_SCALE).round());
+        self.overlay_fonts = Some(OverlayFonts {
+            body,
+            display,
+            mono,
+        });
 
         info!(
             size = font_size,
@@ -588,8 +597,12 @@ impl RaceTracker {
         let tier_color = if has_tier { gold } else { c.text };
 
         let tier_max = max_width - right_total - gap;
-        let tier_truncated = truncate_to_width(ui, &buf_left, tier_max);
-        ui.text_colored(tier_color, &tier_truncated);
+        {
+            // Tier and depth are data: mono like the right columns
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            let tier_truncated = truncate_to_width(ui, &buf_left, tier_max);
+            ui.text_colored(tier_color, &tier_truncated);
+        }
 
         ui.same_line_with_pos(max_width - right_total);
         let _mono = fonts.map(|f| ui.push_font(f.mono));
@@ -720,25 +733,19 @@ impl RaceTracker {
             right_x
         };
 
-        // Left (name): truncate to fit before gap column
+        // Left: mono rank prefix (the column alignment the timing board is
+        // for), body-face name (names are identity, not data).
         left_buf.clear();
-        write!(left_buf, "{:2}. {}", rank, name).ok();
+        write!(left_buf, "{:2}. ", rank).ok();
         let left_max = gap_x - spacing;
-        let truncated = truncate_to_width(ui, left_buf, left_max);
-
-        // Split "12. NAME" into the rank prefix (status-colored) and the name
-        // (template-colored or status-colored fallback).
-        // Prefix is "{rank:2}. ", 4 bytes for ranks 1-99 but 5+ for 100+, so we
-        // locate ". " dynamically rather than hardcoding the length.
-        let truncated_str: &str = truncated.as_ref();
-        let prefix_len = truncated_str.find(". ").map(|i| i + 2).unwrap_or(0);
-        if prefix_len == 0 || truncated_str.len() <= prefix_len {
-            // Pathological narrow column or no separator found: render the whole thing in status color.
-            ui.text_colored(color, truncated_str);
-        } else {
-            let (prefix, name_part) = truncated_str.split_at(prefix_len);
-            ui.text_colored(color, prefix);
-            ui.same_line_with_spacing(0.0, 0.0);
+        let prefix_width = ui.calc_text_size(&left_buf)[0];
+        ui.text_colored(color, &*left_buf);
+        ui.same_line_with_spacing(0.0, 0.0);
+        {
+            let _body = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.body));
+            let name_max = (left_max - prefix_width).max(0.0);
+            let truncated = truncate_to_width(ui, name, name_max);
+            let name_part: &str = truncated.as_ref();
             match name_color {
                 Some(crate::dll::tracker::ResolvedNameColor::Solid(c)) => {
                     ui.text_colored(*c, name_part);
