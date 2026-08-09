@@ -2613,10 +2613,6 @@
     }
   }
 
-  .daily-schedule {
-    max-width: 28rem;
-  }
-
   .daily-schedule .day-cell {
     font-weight: 500;
   }
