@@ -144,13 +144,14 @@
         </div>
         {#if winner}
           <span class="winner-info">
-            <span class="place">1st</span>
             {#if winner.twitch_avatar_url}
               <img
                 src={winner.twitch_avatar_url}
-                alt=""
+                alt="Winner"
                 class="winner-avatar"
               />
+            {:else}
+              <span class="place">1st</span>
             {/if}
             <span class="winner-name"
               >{winner.twitch_display_name || winner.twitch_username}</span
@@ -470,9 +471,12 @@
     flex-shrink: 0;
   }
 
+  /* The brass ring IS the winner mark next to an avatar; the mono 1st
+   * tag only steps in when the winner has no avatar to ring. */
   .winner-avatar {
-    width: 20px;
-    height: 20px;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--color-gold);
     border-radius: 50%;
     object-fit: cover;
   }

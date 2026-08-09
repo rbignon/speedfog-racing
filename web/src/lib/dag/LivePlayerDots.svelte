@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import type { WsParticipant } from "$lib/websocket";
   import type { PositionedNode } from "./types";
   import {
@@ -234,15 +235,15 @@
   {@const pos = nodeMap.get(skull.nodeId)}
   {@const progress = (performance.now() - skull.startTime) / LIVE_SKULL_ANIM_MS}
   {#if pos && progress < 1}
-    <text
-      x={pos.x}
-      y={pos.y}
-      text-anchor="middle"
-      dominant-baseline="central"
-      font-size={18 * skullScale(progress)}
+    {@const s = (18 / 24) * skullScale(progress)}
+    <path
+      d={SKULL_PATH}
+      fill="var(--color-danger)"
+      fill-rule="evenodd"
+      transform="translate({pos.x - 12 * s} {pos.y - 12 * s}) scale({s})"
       opacity={skullOpacity(progress)}
-      class="skull-anim">&#x1F480;</text
-    >
+      class="skull-anim"
+    />
   {/if}
 {/each}
 

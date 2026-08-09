@@ -194,15 +194,30 @@
     <div class="grid-right">
       {#if displayedWeek.winners && displayedWeek.winners.length > 0}
         <span class="grid-winners">
-          <span class="place">1st</span>
           {#if displayedWeek.winners.length === 1}
-            <UserLink user={displayedWeek.winners[0].user} showBadge />
+            <UserLink
+              user={displayedWeek.winners[0].user}
+              showAvatar
+              showBadge
+            />
           {:else if displayedWeek.winners.length === 2}
-            <UserLink user={displayedWeek.winners[0].user} showBadge />
+            <UserLink
+              user={displayedWeek.winners[0].user}
+              showAvatar
+              showBadge
+            />
             <span class="and"> &amp; </span>
-            <UserLink user={displayedWeek.winners[1].user} showBadge />
+            <UserLink
+              user={displayedWeek.winners[1].user}
+              showAvatar
+              showBadge
+            />
           {:else}
-            <UserLink user={displayedWeek.winners[0].user} showBadge />
+            <UserLink
+              user={displayedWeek.winners[0].user}
+              showAvatar
+              showBadge
+            />
             <span class="extra">+{displayedWeek.winners.length - 1}</span>
           {/if}
         </span>
@@ -313,7 +328,6 @@
                 {@const winner =
                   day.podium.find((e) => e.placement === 1) ?? null}
                 {#if winner}
-                  <span class="place">1st</span>
                   <div class="winner">
                     <span class="name"
                       >{winner.twitch_display_name ??
@@ -613,14 +627,6 @@
     font-size: var(--font-size-xs);
   }
 
-  .place {
-    flex: none;
-    font-size: var(--font-size-xs);
-    text-align: center;
-    font-family: var(--font-mono);
-    color: var(--color-gold);
-  }
-
   .winner .name {
     color: var(--color-text);
     overflow: hidden;
@@ -681,8 +687,8 @@
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    padding-left: .874rem;
-    padding-right: .874rem;
+    padding-left: 0.874rem;
+    padding-right: 0.874rem;
     gap: 0.4rem;
     color: var(--color-success);
   }
@@ -763,10 +769,9 @@
     font-weight: 500;
   }
 
-  .grid-winners .place {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    color: var(--color-gold);
+  /* The brass ring on the avatar is the winner mark */
+  .grid-winners :global(.user-link-avatar) {
+    border: 2px solid var(--color-gold);
   }
 
   .grid-winners .and,

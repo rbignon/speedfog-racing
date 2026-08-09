@@ -2,6 +2,7 @@
   import type { ActivityItem } from "$lib/api";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
+  import SkullIcon from "./SkullIcon.svelte";
 
   interface Props {
     items: ActivityItem[];
@@ -84,7 +85,10 @@
             {/if}
             {#if item.igt_ms > 0}
               <span>{formatIgt(item.igt_ms)}</span>
-              <span>&dagger; {item.death_count}</span>
+              <span class="deaths">
+                <SkullIcon size={10} />
+                {item.death_count}</span
+              >
             {/if}
           {:else if item.type === "race_organizer"}
             <span>Organized</span>
@@ -103,7 +107,10 @@
             {/if}
             {#if item.igt_ms > 0}
               <span>{formatIgt(item.igt_ms)}</span>
-              <span>&dagger; {item.death_count}</span>
+              <span class="deaths">
+                <SkullIcon size={10} />
+                {item.death_count}</span
+              >
             {/if}
           {/if}
         </span>
@@ -210,6 +217,11 @@
 
   .m .dnf {
     color: var(--color-danger);
+  }
+
+  .m .deaths {
+    color: var(--color-danger);
+    white-space: nowrap;
   }
 
   .m .place.first {

@@ -3,6 +3,7 @@
   import { formatIgt } from "./popupData";
   import { NODE_COLORS } from "./constants";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
+  import SkullIcon from "$lib/components/SkullIcon.svelte";
   import { skipCountForZones } from "$lib/content/zones";
 
   interface Props {
@@ -178,7 +179,8 @@
             >{#if visitor.outcome === "backed"}↩{:else if visitor.outcome === "playing" && !data.raceFinished}⏳{:else if visitor.outcome === "abandoned" || (visitor.outcome === "playing" && data.raceFinished)}✗{/if}</span
           >
           <span class="visitor-deaths"
-            >{#if visitor.deaths}&dagger; {visitor.deaths}{/if}</span
+            >{#if visitor.deaths}<SkullIcon size={10} />
+              {visitor.deaths}{/if}</span
           >
           <span class="visitor-weapons">
             {#if visitor.weapons && visitor.weapons.length > 0}

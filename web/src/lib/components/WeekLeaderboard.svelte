@@ -4,6 +4,7 @@
     WeeklyLeaderboardUser,
   } from "$lib/api";
   import UserLink from "$lib/components/UserLink.svelte";
+  import SkullIcon from "$lib/components/SkullIcon.svelte";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
 
@@ -61,7 +62,10 @@
             <div class="points">{entry.total_points} pts</div>
             <div class="sub-right">
               {#if entry.total_deaths > 0}
-                <span class="deaths">{entry.total_deaths}</span>
+                <span class="deaths">
+                  <SkullIcon size={10} />
+                  {entry.total_deaths}</span
+                >
               {/if}
               {#if entry.weapon_combos.length > 0}
                 <WeaponsPopover
@@ -171,12 +175,9 @@
     margin-top: 1px;
   }
 
-  .deaths::before {
-    content: "† ";
-  }
-
   .deaths {
     color: var(--color-danger);
+    white-space: nowrap;
   }
 
   .empty {

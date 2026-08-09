@@ -33,6 +33,7 @@
   import { statusLabel } from "$lib/format";
   import { formatPoolName } from "$lib/utils/format";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
+  import SkullIcon from "$lib/components/SkullIcon.svelte";
   import { Chart, registerables } from "chart.js";
   Chart.register(...registerables);
 
@@ -1516,12 +1517,16 @@
                     </span>
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span class="mono">&dagger; {item.death_count}</span>
+                  <span class="mono deaths"
+                    ><SkullIcon size={10} /> {item.death_count}</span
+                  >
                 {:else if item.type === "race_organizer"}
                   <span>{item.participant_count} players</span>
                 {:else if item.type === "training"}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span class="mono">&dagger; {item.death_count}</span>
+                  <span class="mono deaths"
+                    ><SkullIcon size={10} /> {item.death_count}</span
+                  >
                 {:else if item.type === "daily_participant"}
                   {#if item.placement}
                     <span class="placement {placementClass(item.placement)}">
@@ -1533,7 +1538,9 @@
                     >
                   {/if}
                   <span class="mono">{formatIgt(item.igt_ms)}</span>
-                  <span class="mono">&dagger; {item.death_count}</span>
+                  <span class="mono deaths"
+                    ><SkullIcon size={10} /> {item.death_count}</span
+                  >
                 {/if}
               </div>
             </div>
@@ -2148,6 +2155,11 @@
 
   .mono {
     font-family: var(--font-mono);
+  }
+
+  .deaths {
+    color: var(--color-danger);
+    white-space: nowrap;
   }
 
   /* The global .btn/.btn-secondary styles apply to the load-more button */

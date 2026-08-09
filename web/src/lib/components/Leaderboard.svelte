@@ -2,6 +2,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import LiveBadge from "./LiveBadge.svelte";
+  import SkullIcon from "./SkullIcon.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
   import WeaponsPopover from "./WeaponsPopover.svelte";
   import { aggregateAllCombos } from "$lib/weapons";
@@ -243,7 +244,10 @@
                 {/if}
                 <span class="stats-right">
                   {#if showRunDetails && participant.death_count > 0}
-                    <span class="death-count">{participant.death_count}</span>
+                    <span class="death-count">
+                      <SkullIcon />
+                      {participant.death_count}</span
+                    >
                   {/if}
                   {#if showRunDetails && participant.zone_history}
                     {@const combos = aggregateAllCombos(
@@ -509,10 +513,7 @@
 
   .death-count {
     color: var(--color-danger);
-  }
-
-  .death-count::before {
-    content: "† ";
+    white-space: nowrap;
     margin-left: 0.25em;
   }
 

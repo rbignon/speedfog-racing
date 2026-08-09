@@ -13,7 +13,7 @@ What changed versus charter v1, in one list:
 - Cards drop the 8px radius, the colored left border and the pill status chip for a near-sharp plate carrying a **route line** on its top edge.
 - Section headers use the **station-and-line device** instead of free-floating letterspaced caps.
 - Ranks, times, seeds, deltas and dates all run through the mono face.
-- Emoji leave the chrome: medals become typographic `1st / 2nd / 3rd`, the skull becomes the dagger `†`, "Abandoned" in data rows becomes `DNF`.
+- Emoji leave the chrome: medals become typographic `1st / 2nd / 3rd` in data rows (a brass avatar ring marks the winner beside names), deaths wear a small drawn skull in ember (the same path serves the map's death animation), "Abandoned" in data rows becomes `DNF`.
 - Per-participant **player line colors** thread the results rail, map traces and chat dots. They never color the player's name itself, which belongs to the equipped name template (see `REWARDS.md`).
 
 ---
@@ -40,7 +40,7 @@ What changed versus charter v1, in one list:
 | Fog (secondary)    | Misty heliotrope | `#A99BC9` |
 | Fog (hover)        | Light heliotrope | `#C0B4DC` |
 
-**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the `Participating` role mark's square, 1st-place markers (`1st` labels), the amber "running" daily strip. Nowhere else. (The week line's own edge markers are state-colored, not brass.)
+**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the `Participating` role mark's square, 1st-place markers (`1st` labels in data rows, the ring on winner avatars), the amber "running" daily strip. Nowhere else. (The week line's own edge markers are state-colored, not brass.)
 
 **Fog usage:** interactive hover states (secondary buttons), links, focus rings, boss diamonds on the DAG, the `Organizing` role mark's diamond, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog.
 
@@ -132,7 +132,7 @@ The DAG's own iconography, reused as the app's structural language. Draw these a
 | Filled square           | Terminal / finished                                 |
 | Moving dot on a line    | Race in progress                                    |
 | Dashed line             | Not started / upcoming                              |
-| `†` (dagger, ember)     | Deaths                                              |
+| Skull glyph (ember)     | Deaths (`SkullIcon`, shared with the map)           |
 | `DNF` (mono)            | Abandoned, in data rows                             |
 
 **Section header device**: a small station ring + line segment in brass, followed by the display-caps title. This is the only decoration section titles get.
@@ -163,13 +163,13 @@ The standard clickable card (races, solo sessions). Radius `--radius-lg` (2px), 
 - **Running, viewer finished**: solid verdigris.
 - **Finished**: solid steel, whoever looks at it.
 
-Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race. Further variants cover the rest of the platform's statuses: `● Active/Playing` (brass dot), `○ Ready` (verdigris ring), `○ Registered` (secondary ring), `■ DNF/Abandoned` (secondary square), `■ Cancelled` (disabled square). A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a **role mark** in the signals row, with non-circle glyphs so the row never strings identical rings: fog diamond `Organizing`, brass square `Participating`, twitch triangle `Casting`; label and glyph share the hue, except `Casting`, whose label stays secondary (both twitch purples fail the text contrast floor on surface). Card anatomy: title row (display caps + signals), crew row (avatar stack on the left, winner `1st Name` or `No finishers` centered, time ago on the right in mono), foot row (mono `N players · Mode` on the left, `by organizer` on the right).
+Status text is a **signal**, not a pill: a 7px square/ring in the status color + mono caps label, right-aligned on the title row. Signals reuse the existing status labels: `■ Finished` (steel), `● Live` (ember), `○ Open` (verdigris), and `○ Upcoming` (secondary grey ring) for a closed setup race. Further variants cover the rest of the platform's statuses: `● Active/Playing` (brass dot), `○ Ready` (verdigris ring), `○ Registered` (secondary ring), `■ DNF/Abandoned` (secondary square), `■ Cancelled` (disabled square). A joinable card keeps its verdigris `Join` strip on the right edge; the viewer's role renders as a **role mark** in the signals row, with non-circle glyphs so the row never strings identical rings: fog diamond `Organizing`, brass square `Participating`, twitch triangle `Casting`; label and glyph share the hue, except `Casting`, whose label stays secondary (both twitch purples fail the text contrast floor on surface). Card anatomy: title row (display caps + signals), crew row (avatar stack on the left, winner (brass-ringed avatar + name, a mono `1st` standing in when the winner has no avatar) or `No finishers` centered, time ago on the right in mono), foot row (mono `N players · Mode` on the left, `by organizer` on the right).
 
 The old vocabulary (8px radius, colored `border-left`, translucent pill chips) is fully retired: the `.badge-*` classes are gone from `app.css`, every status renders as a signal and every label-like fact as a chip. The route-line vocabulary (`.route`, `.route-setup/-running/-done/-finished`, the `.route-progress` variant carrying the viewer's brass run, `--route-hole` punch-through) lives in `app.css`; each state exposes its hue as `--route-color`, which the host card also uses for its hover border (the card root carries the state classes too). RaceCard and TrainingSessionCard are the only implementations; every surface listing races or sessions (home, `/races`, `/training`, the dashboard's Active Now) composes them. The timetable's continuous week line is its own scoped implementation in `DailyWeekGrid`. The traveling dot animates a transform only and disappears under `prefers-reduced-motion`.
 
 ### Daily timetable
 
-The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Riding the plate's top border runs **one continuous week line**: a start triangle before the first day and a filled terminal square after the last day, each taking its rim segment's color (the square is always filled, echoing the hero underline's terminal), with one hollow station centered on each day (straddling the border, punched with its cell's background). Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, and for today the seed's own state: ember with the traveling dot while it runs, brass line and dot while the viewer is riding it, verdigris with no dot once they are done; dashed border-grey for future or missing days; segments meet at hairline-thin breaks aligned with the column separators, reading as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`1st Name · IGT`). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners under a mono brass `1st` tag.
+The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Riding the plate's top border runs **one continuous week line**: a start triangle before the first day and a filled terminal square after the last day, each taking its rim segment's color (the square is always filled, echoing the hero underline's terminal), with one hollow station centered on each day (straddling the border, punched with its cell's background). Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, and for today the seed's own state: ember with the traveling dot while it runs, brass line and dot while the viewer is riding it, verdigris with no dot once they are done; dashed border-grey for future or missing days; segments meet at hairline-thin breaks aligned with the column separators, reading as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`Name · IGT`, no tag: the only name a closed cell shows is its winner). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners as brass-ringed avatars + names.
 
 **The today cell is the button**: the whole cell is one link, with a full-width strip pinned to its bottom edge. Strip hue taxonomy (kept from v1 behavior, hexes retuned):
 
@@ -191,7 +191,7 @@ Vertical list, one entry per participant:
 - 3px **left border** in the player's line color (top/bottom inset).
 - Rank as plain mono `1.` in disabled grey; no circles, no medals.
 - Name rendered through the equipped **name template** (`REWARDS.md`); background_css backdrops stay always-on here.
-- Second row in mono: IGT, delta (`+13:36`), deaths (`† 16`) right-aligned; `DNF` for abandons, entry at `0.55` opacity.
+- Second row in mono: IGT, delta (`+13:36`), deaths (skull + count, ember) right-aligned; `DNF` for abandons, entry at `0.55` opacity.
 - `● LIVE` ember signal; `✓` verdigris check for finished dailies.
 - Click-to-filter mode: checkboxes appear per entry, checked state filled with the player's line color.
 
@@ -209,7 +209,7 @@ Element-level defaults in `app.css` (wrapped in `:where()` so any component's sc
 
 The SVG rendering (nodes, traces, animations, and its own color constants in `web/src/lib/dag/constants.ts`) is deliberately **out of the refresh's scope**: the current representation is kept as-is, and any cosmetic realignment is re-evaluated only once the rest of the refresh has shipped. It already speaks the network language: generous node sizes (they are click targets), rotated zone labels, boss diamonds, faint base network behind bundled player traces (parallel offsets, 45° elbows), abandoned traces ending on a hollow ring mid-network.
 
-The HTML node popup does adopt the charter, but only through tokens (fonts, surface, border), keeping its structure: elevated surface, radius `--radius-lg`, zone title, mono meta row (`BOSS ARENA` / brass-bordered `TIER n` chip / `DEPTH n`; `FINAL BOSS` label in brass), caps `ENTRANCES` / `EXITS` sections with `←`/`→` arrows and mono `to:`/`from:` sub-notes, and a `VISITED BY` section listing per-player line-color dot + name + `† deaths · time` (DNF rows dimmed).
+The HTML node popup does adopt the charter, but only through tokens (fonts, surface, border), keeping its structure: elevated surface, radius `--radius-lg`, zone title, mono meta row (`BOSS ARENA` / brass-bordered `TIER n` chip / `DEPTH n`; `FINAL BOSS` label in brass), caps `ENTRANCES` / `EXITS` sections with `←`/`→` arrows and mono `to:`/`from:` sub-notes, and a `VISITED BY` section listing per-player line-color dot + name + skull-count deaths and time (DNF rows dimmed).
 
 ### Chat
 

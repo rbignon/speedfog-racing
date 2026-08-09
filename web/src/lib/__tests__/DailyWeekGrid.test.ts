@@ -901,7 +901,7 @@ describe("DailyWeekGrid: winners block", () => {
     expect(container.querySelector(".grid-winners")).toBeNull();
   });
 
-  it("renders the 1st tag and Alice for one winner", () => {
+  it("renders Alice for one winner, marked by the avatar, not a tag", () => {
     const { container } = render(DailyWeekGrid, {
       props: {
         week: fixtureWithWinners([makeWinner(0, "Alice")]),
@@ -909,8 +909,8 @@ describe("DailyWeekGrid: winners block", () => {
       },
     });
     const block = container.querySelector(".grid-winners");
-    expect(block?.textContent ?? "").toMatch(/1st/);
     expect(block?.textContent ?? "").toMatch(/Alice/);
+    expect(block?.textContent ?? "").not.toMatch(/1st/);
   });
 
   it("renders Alice & Bob for two winners", () => {
