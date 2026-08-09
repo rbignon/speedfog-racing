@@ -41,7 +41,11 @@ TAGLINE = "Competitive Elden Ring racing through randomized fog gates"
 
 
 def text_to_path(
-    font_path: Path, text: str, size: float, letter_spacing: float = 0.0
+    font_path: Path,
+    text: str,
+    size: float,
+    letter_spacing: float = 0.0,
+    wght: int | None = None,
 ) -> tuple[str, float]:
     """Lay out ``text`` at ``size`` px; return (svg path data, advance width).
 
@@ -49,8 +53,15 @@ def text_to_path(
     Plain advance widths, no kerning: fine for short display strings.
     The width excludes the trailing letter-spacing, so concatenated runs
     should be placed at ``x + width + letter_spacing``.
+
+    ``wght`` pins a variable font to that weight before outlining (a VF's
+    glyf table holds the default instance, which for Public Sans is Thin).
     """
     font = TTFont(str(font_path))
+    if wght is not None and "fvar" in font:
+        instantiateVariableFont(
+            font, {"wght": wght}, inplace=True, updateFontNames=False
+        )
     upem = font["head"].unitsPerEm
     scale = size / upem
     cmap = font.getBestCmap()
@@ -94,14 +105,14 @@ def build_favicon() -> str:
 def build_og_image() -> str:
     cond700 = WEB_FONTS / "barlow-condensed-700-latin.woff2"
     cond600 = WEB_FONTS / "barlow-condensed-600-latin.woff2"
-    barlow400 = WEB_FONTS / "barlow-400-latin.woff2"
+    ui400 = WEB_FONTS / "public-sans-latin.woff2"
     wm_size, wm_spacing = 126.0, 5.0
     d1, w1 = text_to_path(cond700, "SPEEDFOG", wm_size, wm_spacing)
     d2, w2 = text_to_path(cond600, "RACING", wm_size, wm_spacing)
     gap = char_advance(cond700, " ", wm_size) + 2 * wm_spacing
     total = w1 + gap + w2
     x0 = (1200 - total) / 2
-    d_t, w_t = text_to_path(barlow400, TAGLINE, 30.0)
+    d_t, w_t = text_to_path(ui400, TAGLINE, 30.0, wght=400)
     x_t = (1200 - w_t) / 2
     return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
   <rect width="1200" height="630" fill="{BG}"/>
@@ -133,20 +144,19 @@ STATIC_FACES = [
     "barlow-condensed-600-latin-ext",
     "barlow-condensed-700-latin",
     "barlow-condensed-700-latin-ext",
-    "barlow-400-latin",
-    "barlow-400-latin-ext",
 ]
-MONO_WEIGHTS = [400, 500, 600]
+# Variable web faces instanced per weight for resvg (family, stem, weights);
+# the OG templates only use Public Sans at the regular weight.
+VARIABLE_FACES = [
+    ("Spline Sans Mono", "spline-sans-mono", [400, 500, 600]),
+    ("Public Sans", "public-sans", [400]),
+]
 
 
 def _family_for_stem(stem: str) -> str:
     """Derive the canonical family name resvg should key a face under."""
     if stem.startswith("barlow-condensed"):
         return "Barlow Condensed"
-    if stem.startswith("barlow-"):
-        return "Barlow"
-    if stem.startswith("spline-sans-mono"):
-        return "Spline Sans Mono"
     raise ValueError(f"unrecognized font stem: {stem!r}")
 
 
@@ -201,20 +211,21 @@ def convert_server_fonts() -> None:
             _break_subset_weight_tie(font)
         font.flavor = None
         font.save(str(SERVER_FONTS / f"{stem}.ttf"))
-    for subset in ("latin", "latin-ext"):
-        for wght in MONO_WEIGHTS:
-            font = TTFont(str(WEB_FONTS / f"spline-sans-mono-{subset}.woff2"))
-            if "fvar" in font:
-                instantiateVariableFont(
-                    font, {"wght": wght}, inplace=True, updateFontNames=False
-                )
-            # resvg's fontdb matches by OS/2 weight; make the pin explicit
-            font["OS/2"].usWeightClass = wght
-            _set_family_name(font, "Spline Sans Mono")
-            if subset == "latin-ext":
-                _break_subset_weight_tie(font)
-            font.flavor = None
-            font.save(str(SERVER_FONTS / f"spline-sans-mono-{wght}-{subset}.ttf"))
+    for family, prefix, weights in VARIABLE_FACES:
+        for subset in ("latin", "latin-ext"):
+            for wght in weights:
+                font = TTFont(str(WEB_FONTS / f"{prefix}-{subset}.woff2"))
+                if "fvar" in font:
+                    instantiateVariableFont(
+                        font, {"wght": wght}, inplace=True, updateFontNames=False
+                    )
+                # resvg's fontdb matches by OS/2 weight; make the pin explicit
+                font["OS/2"].usWeightClass = wght
+                _set_family_name(font, family)
+                if subset == "latin-ext":
+                    _break_subset_weight_tie(font)
+                font.flavor = None
+                font.save(str(SERVER_FONTS / f"{prefix}-{wght}-{subset}.ttf"))
 
 
 def main() -> None:
