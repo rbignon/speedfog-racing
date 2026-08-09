@@ -76,13 +76,16 @@ impl ImguiRenderLoop for RaceTracker {
 
         // The mono face runs a step smaller, like the site (data 0.8rem
         // against body 0.9375rem): at equal pixel size its tall x-height
-        // reads a size bigger than the other faces.
+        // reads a size bigger than the other faces. The condensed display
+        // face runs a step bigger for the same reason in reverse: its
+        // narrow set reads a size smaller.
         const MONO_SCALE: f32 = 0.85;
+        const DISPLAY_SCALE: f32 = 1.15;
         let small_size = (font_size * MONO_SCALE).round();
 
         // First added face is the atlas default (body)
         let _body = add_face(body_data, font_size);
-        let display = add_face(EMBEDDED_FONT_DISPLAY, font_size);
+        let display = add_face(EMBEDDED_FONT_DISPLAY, (font_size * DISPLAY_SCALE).round());
         let mono = add_face(EMBEDDED_FONT_MONO, small_size);
         // Body at the mono pixel size: names inside mono rows
         let body_small = add_face(body_data, small_size);
@@ -514,11 +517,17 @@ impl RaceTracker {
         };
 
         if let Some(z) = zone {
-            write!(buf_left, "  {}", z.display_name).ok();
+            buf_left.push_str(&z.display_name);
         }
         let zone_max = max_width - right_width - gap;
-        let zone_truncated = truncate_to_width(ui, &buf_left, zone_max);
-        ui.text(&zone_truncated);
+        {
+            // The zone is the overlay's operative title: display face,
+            // flush left with the tier line and the exits below (the race
+            // name above stays the dimmed context line)
+            let _display = fonts.map(|f| ui.push_font(f.display));
+            let zone_truncated = truncate_to_width(ui, &buf_left, zone_max);
+            ui.text(&zone_truncated);
+        }
 
         ui.same_line_with_pos(max_width - right_width);
         {
@@ -577,9 +586,9 @@ impl RaceTracker {
         if let Some(z) = zone {
             if let Some(t) = z.tier {
                 if let Some(ot) = z.original_tier.filter(|&ot| ot != t) {
-                    write!(buf_left, "  tier {}, normally {}", t, ot).ok();
+                    write!(buf_left, "tier {}, normally {}", t, ot).ok();
                 } else {
-                    write!(buf_left, "  tier {}", t).ok();
+                    write!(buf_left, "tier {}", t).ok();
                 }
                 // Show current layer when backtracking (zone layer < max layer reached)
                 if let Some(zl) = z.layer {
@@ -592,7 +601,7 @@ impl RaceTracker {
             // Only fall back to current_layer_tier when NOT waiting for reveal,
             // otherwise this would show the new zone's tier before its name.
             if let Some(tier) = me.and_then(|p| p.current_layer_tier) {
-                write!(buf_left, "  tier {}", tier).ok();
+                write!(buf_left, "tier {}", tier).ok();
             }
         }
         let has_tier = zone.is_some_and(|z| z.tier.is_some())
@@ -628,6 +637,13 @@ impl RaceTracker {
     ///   Soldier of Godrick front        (description, dimmed)
     /// ```
     fn render_exits(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
+        // Exits run at the row scale, like the leaderboard names; the push
+        // covers the cache build so the pre-truncated lines are measured
+        // under the font that draws them.
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         let zone = match self.machine.race_state.current_zone.as_ref() {
             Some(z) if !z.exits.is_empty() => z,
             _ => return,
