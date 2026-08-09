@@ -963,7 +963,6 @@
   .toc-card strong {
     display: block;
     color: var(--color-gold);
-    font-size: var(--font-size-sm);
     margin-bottom: 0.15rem;
   }
 
@@ -987,9 +986,6 @@
   }
 
   .section h3 {
-    font-size: var(--font-size-base);
-    font-weight: 600;
-    color: var(--color-text);
     margin: 1.5rem 0 0.5rem;
   }
 

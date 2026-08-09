@@ -694,7 +694,6 @@
     border: none;
     border-radius: var(--radius-md);
     font-family: var(--font-display);
-    font-size: 0.85rem;
     font-weight: 600;
     letter-spacing: 0.07em;
     text-transform: uppercase;

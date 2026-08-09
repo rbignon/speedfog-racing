@@ -33,8 +33,8 @@
   <header class="game-changes-hero">
     <h1>Game Changes</h1>
     <p>
-      SpeedFog modifies Elden Ring well beyond shuffling fog gates.<br>This page
-      lists everything that differs from the base game.
+      SpeedFog modifies Elden Ring well beyond shuffling fog gates.<br />This
+      page lists everything that differs from the base game.
     </p>
   </header>
 

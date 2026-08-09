@@ -87,7 +87,6 @@
 
   .heatmap-panel h2 {
     margin: 0 0 0.75rem 0;
-    font-size: var(--font-size-base);
     font-weight: 600;
     color: var(--color-text);
   }

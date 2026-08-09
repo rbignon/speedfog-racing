@@ -216,8 +216,6 @@
   }
 
   .version h3 {
-    font-size: var(--font-size-base);
-    font-weight: 600;
     color: var(--color-text);
     margin: 1.25rem 0 0.4rem;
   }

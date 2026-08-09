@@ -1784,8 +1784,8 @@
   .race-header h1 {
     margin: 0;
     color: var(--color-text);
-    font-size: var(--font-size-2xl);
     font-weight: 600;
+    letter-spacing: 0.03em;
   }
 
   .race-header h1.frog {

@@ -401,7 +401,7 @@
     flex-direction: column;
     gap: 0.25rem;
     padding: 0 0.875rem 0.75rem;
-    min-height: 150px;
+    min-height: 165px;
     min-width: 0;
     border-left: 1px solid var(--color-border);
     text-decoration: none;
