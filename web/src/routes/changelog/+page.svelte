@@ -108,9 +108,6 @@
       <div class="version-header">
         <h2>
           {entry.version}
-          {#if i === 0}
-            <span class="latest-badge">Latest</span>
-          {/if}
         </h2>
         <time datetime={entry.date}>{entry.date}</time>
       </div>
@@ -216,16 +213,6 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     white-space: nowrap;
-  }
-
-  /* A superlative micro-label, not a pill */
-  .latest-badge {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.09em;
-    color: var(--color-gold);
   }
 
   .version h3 {
