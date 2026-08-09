@@ -2,6 +2,7 @@
 //!
 //! Tracks player progress via EMEVD event flags and communicates with the racing server.
 
+use hudhook::imgui::FontId;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -166,13 +167,29 @@ pub(crate) struct CachedColors {
     pub text_disabled: [f32; 4],
     pub border: [f32; 4],
     // Charter tokens
-    pub gold: [f32; 4],        // #C8A44E
-    pub success: [f32; 4],     // #10B981
-    pub danger: [f32; 4],      // #EF4444
-    pub danger_dark: [f32; 4], // #DC2626
-    pub purple: [f32; 4],      // #A78BFA - local player accent
-    pub purple_bg: [f32; 4],   // rgba(139,92,246,0.10) - leaderboard row bg
+    pub gold: [f32; 4],        // #C8A44E - brass
+    pub success: [f32; 4],     // #4AAE8C - verdigris
+    pub danger: [f32; 4],      // #DC6A51 - ember
+    pub danger_dark: [f32; 4], // #B5462F
+    pub purple: [f32; 4],      // #A99BC9 - fog, local player accent
+    pub purple_bg: [f32; 4],   // fog at 0.12 - leaderboard row bg
 }
+
+/// ImGui font ids for the overlay's three faces, registered at ImGui init.
+/// Body is the atlas default; display carries the race name, mono the data
+/// columns (IGT, gaps, counters, debug).
+pub(crate) struct OverlayFonts {
+    pub display: FontId,
+    pub mono: FontId,
+}
+
+// SAFETY: FontId wraps a raw pointer into the ImGui font atlas, which makes
+// it !Send + !Sync and would poison RaceTracker's Send + Sync bounds that
+// hudhook's builder requires. The ids are opaque handles: they are only
+// created and dereferenced on the render thread, and the ImGui context that
+// owns the atlas outlives the tracker.
+unsafe impl Send for OverlayFonts {}
+unsafe impl Sync for OverlayFonts {}
 
 // =============================================================================
 // RACE TRACKER
@@ -194,6 +211,9 @@ pub struct RaceTracker {
 
     // Font data loaded from file (for ImGui registration)
     pub(crate) font_data: Option<Vec<u8>>,
+
+    // Font ids registered at ImGui init (None until initialize runs)
+    pub(crate) overlay_fonts: Option<OverlayFonts>,
 
     // Death icon texture (loaded during ImGui initialization)
     pub(crate) death_icon: Option<DeathIcon>,
@@ -307,11 +327,11 @@ impl RaceTracker {
                 [0.0, 0.0, 0.0, 0.0]
             },
             gold: parse_hex_color("#C8A44E", 1.0),
-            success: parse_hex_color("#10B981", 1.0),
-            danger: parse_hex_color("#EF4444", 1.0),
-            danger_dark: parse_hex_color("#DC2626", 1.0),
-            purple: parse_hex_color("#A78BFA", 1.0),
-            purple_bg: parse_hex_color("#8B5CF6", 0.10),
+            success: parse_hex_color("#4AAE8C", 1.0),
+            danger: parse_hex_color("#DC6A51", 1.0),
+            danger_dark: parse_hex_color("#B5462F", 1.0),
+            purple: parse_hex_color("#A99BC9", 1.0),
+            purple_bg: parse_hex_color("#A99BC9", 0.12),
         };
 
         let config_seed_id = config.server.seed_id.clone();
@@ -330,6 +350,7 @@ impl RaceTracker {
             config,
             cached_colors,
             font_data,
+            overlay_fonts: None,
             death_icon: None,
             machine: RaceMachine::new(
                 SystemTime::now()
@@ -839,22 +860,32 @@ impl RaceTracker {
 // FONT LOADING
 // =============================================================================
 
-/// Embedded Source Sans 3 Regular (SIL OFL 1.1). Default overlay font; no
-/// filesystem dependency unless the user sets `overlay.font_path`. Chosen
-/// over Inter because its digits are tabular by default, which ImGui needs
-/// for column-aligned chrono and gap values (it does not apply OpenType
-/// `tnum` features).
-const EMBEDDED_FONT: &[u8] = include_bytes!("../../assets/fonts/SourceSans3-Regular.ttf");
+/// Embedded overlay faces (all SIL OFL 1.1): the site's three roles, from
+/// the same instanced latin subsets the web self-hosts (see
+/// `docs/GRAPHIC_CHARTER.md`). Public Sans is the body face (overridable via
+/// `overlay.font_path`), Barlow Condensed the display face (race name),
+/// Spline Sans Mono the data face (IGT, gaps, counters; tabular digits by
+/// design, which ImGui needs since it applies no OpenType `tnum`). Source
+/// Sans 3 stays as the symbol face merged into each of them: the charter
+/// faces lack the geometric shapes and arrows the overlay draws (●, →).
+pub(crate) const EMBEDDED_FONT: &[u8] =
+    include_bytes!("../../assets/fonts/public-sans-400-latin.ttf");
+pub(crate) const EMBEDDED_FONT_DISPLAY: &[u8] =
+    include_bytes!("../../assets/fonts/barlow-condensed-600-latin.ttf");
+pub(crate) const EMBEDDED_FONT_MONO: &[u8] =
+    include_bytes!("../../assets/fonts/spline-sans-mono-400-latin.ttf");
+pub(crate) const EMBEDDED_FONT_SYMBOLS: &[u8] =
+    include_bytes!("../../assets/fonts/SourceSans3-Regular.ttf");
 
-/// Resolve the overlay TTF bytes.
+/// Resolve the overlay body-face TTF bytes.
 ///
-///   - Empty `font_path` → embedded Source Sans 3 (default, no disk access).
+///   - Empty `font_path` → embedded Public Sans (default, no disk access).
 ///   - Filename only → try `C:\Windows\Fonts\` then DLL directory.
 ///   - Relative path with separators → relative to DLL directory.
 ///   - Absolute path → use directly.
 ///
 /// Falls back to `None` only when an explicit `font_path` was set but no
-/// candidate exists; ImGui then uses its built-in font.
+/// candidate exists; the renderer then uses the embedded body face.
 fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
     const WINDOWS_FONTS_DIR: &str = r"C:\Windows\Fonts";
 
@@ -894,7 +925,7 @@ fn load_font_data(dll_dir: &Path, font_path: &str) -> Option<Vec<u8>> {
         .map(|p| p.display().to_string())
         .collect::<Vec<_>>()
         .join(", ");
-    warn!(tried_paths = %tried, "Configured font not found, using imgui default");
+    warn!(tried_paths = %tried, "Configured font not found, using the embedded body face");
     None
 }
 
@@ -907,7 +938,10 @@ mod tests {
         // Empty font_path uses the bundled font, no filesystem access.
         let dummy = Path::new("/this/path/does/not/exist");
         let data = load_font_data(dummy, "").expect("embedded font should always load");
-        assert!(data.len() > 100_000, "embedded TTF should be substantial");
+        assert_eq!(
+            data, EMBEDDED_FONT,
+            "empty path must return the embedded body face"
+        );
         // TTF magic: 0x00010000 (TrueType) or "OTTO" (CFF/OpenType)
         let magic = &data[0..4];
         assert!(

@@ -53,14 +53,13 @@ mod tests {
         // the source of truth.
         let tokens = [
             ("#C8A44E", "gold"),
-            ("#10B981", "success"),
-            ("#EF4444", "danger"),
-            ("#DC2626", "danger_dark"),
-            ("#A78BFA", "purple"),
-            ("#8B5CF6", "purple_bg"),
+            ("#4AAE8C", "success"),
+            ("#DC6A51", "danger"),
+            ("#B5462F", "danger_dark"),
+            ("#A99BC9", "purple"),
             ("#0F1923", "background"),
             ("#E8E6E1", "text"),
-            ("#9CA3AF", "text_disabled"),
+            ("#96A0AD", "text_disabled"),
             ("#253550", "border"),
         ];
         let white_fallback = [1.0, 1.0, 1.0, 1.0];

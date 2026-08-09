@@ -17,7 +17,8 @@ use crate::profile_span;
 use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
 use super::tracker::{
-    ExitRow, ExitsRenderCache, FlagReadResult, LeaderboardRowCache, RaceTracker, RenderBuffers,
+    ExitRow, ExitsRenderCache, FlagReadResult, LeaderboardRowCache, OverlayFonts, RaceTracker,
+    RenderBuffers, EMBEDDED_FONT_DISPLAY, EMBEDDED_FONT_MONO, EMBEDDED_FONT_SYMBOLS,
     LEADERBOARD_REFRESH_INTERVAL_MS, MAX_CONSECUTIVE_UPDATE_PANICS,
 };
 use super::websocket::ConnectionStatus;
@@ -28,31 +29,61 @@ impl ImguiRenderLoop for RaceTracker {
         ctx: &mut hudhook::imgui::Context,
         render_context: &'a mut dyn RenderContext,
     ) {
-        if let Some(ref font_data) = self.font_data {
-            let font_size = self.config.overlay.font_size;
+        let font_size = self.config.overlay.font_size;
 
-            // Glyph ranges: Basic Latin + Punctuation + Box/Geometric + Arrows + Dagger
-            let glyph_ranges = FontGlyphRanges::from_slice(&[
-                0x0020, 0x00FF, // Basic Latin + Latin Supplement
-                0x2000, 0x206F, // General Punctuation (…, –)
-                0x2500, 0x25FF, // Box Drawing + Block Elements + Geometric Shapes (●)
-                0x2190, 0x21FF, // Arrows (→)
-                0,
-            ]);
+        // The charter faces carry the latin ranges; the symbol ranges come
+        // from Source Sans 3, merged into every face (Public Sans, Barlow
+        // Condensed and Spline Sans Mono all lack ● and →).
+        const LATIN_RANGES: &[u32] = &[
+            0x0020, 0x00FF, // Basic Latin + Latin Supplement
+            0x2000, 0x206F, // General Punctuation (…, –)
+            0,
+        ];
+        const SYMBOL_RANGES: &[u32] = &[
+            0x2500, 0x25FF, // Box Drawing + Block Elements + Geometric Shapes (●)
+            0x2190, 0x21FF, // Arrows (→)
+            0,
+        ];
 
-            ctx.fonts().add_font(&[FontSource::TtfData {
-                data: font_data,
-                size_pixels: font_size,
-                config: Some(FontConfig {
-                    glyph_ranges,
-                    ..FontConfig::default()
-                }),
-            }]);
+        // A failed explicit font_path used to fall back to ImGui's builtin
+        // face; falling back to the embedded body keeps the overlay coherent.
+        let body_data: &[u8] = match self.font_data {
+            Some(ref d) => d,
+            None => super::tracker::EMBEDDED_FONT,
+        };
 
-            info!(size = font_size, "Custom font registered with imgui");
-        } else {
-            info!("Using default imgui font");
-        }
+        let fonts = ctx.fonts();
+        let mut add_face = |data: &[u8], size_pixels: f32| {
+            fonts.add_font(&[
+                FontSource::TtfData {
+                    data,
+                    size_pixels,
+                    config: Some(FontConfig {
+                        glyph_ranges: FontGlyphRanges::from_slice(LATIN_RANGES),
+                        ..FontConfig::default()
+                    }),
+                },
+                FontSource::TtfData {
+                    data: EMBEDDED_FONT_SYMBOLS,
+                    size_pixels,
+                    config: Some(FontConfig {
+                        glyph_ranges: FontGlyphRanges::from_slice(SYMBOL_RANGES),
+                        ..FontConfig::default()
+                    }),
+                },
+            ])
+        };
+
+        // First added face is the atlas default (body)
+        let _body = add_face(body_data, font_size);
+        let display = add_face(EMBEDDED_FONT_DISPLAY, font_size);
+        let mono = add_face(EMBEDDED_FONT_MONO, font_size);
+        self.overlay_fonts = Some(OverlayFonts { display, mono });
+
+        info!(
+            size = font_size,
+            "Overlay fonts registered (body, display, mono)"
+        );
 
         // Load death icon texture.
         // Wrapped in catch_unwind because render_context.load_texture() can panic
@@ -291,6 +322,8 @@ impl RaceTracker {
                             let secs = remaining_seconds % 60;
                             write!(bufs.banner_text, "{}:{:02} left", mins, secs).ok();
                         }
+                        // Countdown is data: mono, like the other right columns
+                        let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
                         let text_width = ui.calc_text_size(&bufs.banner_text)[0];
                         let y = ui.cursor_pos()[1];
                         ui.set_cursor_pos([max_width - text_width, y]);
@@ -320,6 +353,7 @@ impl RaceTracker {
         buf_left.clear();
 
         let c = &self.cached_colors;
+        let fonts = self.overlay_fonts.as_ref();
         let purple = c.purple;
         let gold = c.gold;
         let success = c.success;
@@ -392,7 +426,12 @@ impl RaceTracker {
                 purple
             }
         };
-        let igt_width = ui.calc_text_size(&buf_right)[0];
+        // The right column is data (mono); measure it under the font that
+        // draws it so the right-alignment holds.
+        let igt_width = {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            ui.calc_text_size(&buf_right)[0]
+        };
 
         let dot_str = "\u{25CF} "; // "● "
         let dot_width = ui.calc_text_size(dot_str)[0];
@@ -407,11 +446,18 @@ impl RaceTracker {
         } else {
             buf_left.push_str("Connecting...");
         }
-        let truncated = truncate_to_width(ui, &buf_left, name_max);
-        ui.text_colored(self.cached_colors.text_disabled, &truncated);
+        {
+            // The race name is the overlay's title: display face
+            let _display = fonts.map(|f| ui.push_font(f.display));
+            let truncated = truncate_to_width(ui, &buf_left, name_max);
+            ui.text_colored(self.cached_colors.text_disabled, &truncated);
+        }
 
         ui.same_line_with_pos(max_width - igt_width);
-        ui.text_colored(right_color, &buf_right);
+        {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            ui.text_colored(right_color, &buf_right);
+        }
 
         // --- Line 2: zone name (left), progress X/Y (right; X status-colored, /Y default) ---
         buf_right.clear();
@@ -450,7 +496,10 @@ impl RaceTracker {
                 c.text_disabled
             }
         };
-        let right_width = ui.calc_text_size(&buf_right)[0];
+        let right_width = {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            ui.calc_text_size(&buf_right)[0]
+        };
 
         if let Some(z) = zone {
             write!(buf_left, "  {}", z.display_name).ok();
@@ -460,7 +509,10 @@ impl RaceTracker {
         ui.text(&zone_truncated);
 
         ui.same_line_with_pos(max_width - right_width);
-        ui.text_colored(right_color, &buf_right);
+        {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            ui.text_colored(right_color, &buf_right);
+        }
 
         // --- Line 3: tier info (left), deathless tag + death icon + count (right) ---
         buf_right.clear();
@@ -490,15 +542,21 @@ impl RaceTracker {
             }
             _ => None,
         };
-        let tag_width = deathless_tag
-            .map(|(t, _)| ui.calc_text_size(t)[0] + gap)
-            .unwrap_or(0.0);
+        let (tag_width, count_width) = {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            (
+                deathless_tag
+                    .map(|(t, _)| ui.calc_text_size(t)[0] + gap)
+                    .unwrap_or(0.0),
+                ui.calc_text_size(&buf_right)[0],
+            )
+        };
 
         let right_total = tag_width
             + if self.death_icon.is_some() {
-                icon_size + icon_gap + ui.calc_text_size(&buf_right)[0]
+                icon_size + icon_gap + count_width
             } else {
-                ui.calc_text_size(&buf_right)[0]
+                count_width
             };
 
         let current_layer = frozen_layer
@@ -534,6 +592,7 @@ impl RaceTracker {
         ui.text_colored(tier_color, &tier_truncated);
 
         ui.same_line_with_pos(max_width - right_total);
+        let _mono = fonts.map(|f| ui.push_font(f.mono));
         if let Some((text, color)) = deathless_tag {
             ui.text_colored(color, text);
             ui.same_line_with_spacing(0.0, gap);
@@ -744,6 +803,9 @@ impl RaceTracker {
         bufs: &mut RenderBuffers,
     ) {
         profile_span!("render_leaderboard");
+        // Timing board: the whole block rides the mono face, names included,
+        // so the cached column measurements always match the draw font.
+        let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
         if self.participants().is_empty() {
             ui.text_disabled("No participants");
             return;
@@ -945,6 +1007,8 @@ impl RaceTracker {
     }
 
     fn render_debug(&self, ui: &hudhook::imgui::Ui) {
+        // Raw data dump: mono throughout
+        let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
         let c = &self.cached_colors;
         ui.text_colored(c.gold, "Debug");
 

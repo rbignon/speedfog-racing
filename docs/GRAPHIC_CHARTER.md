@@ -211,6 +211,10 @@ The SVG rendering (nodes, traces, animations, and its own color constants in `we
 
 The HTML node popup does adopt the charter, but only through tokens (fonts, surface, border), keeping its structure: elevated surface, radius `--radius-lg`, zone title, mono meta row (`BOSS ARENA` / brass-bordered `TIER n` chip / `DEPTH n`; `FINAL BOSS` label in brass), caps `ENTRANCES` / `EXITS` sections with `←`/`→` arrows and mono `to:`/`from:` sub-notes, and a `VISITED BY` section listing per-player line-color dot + name + skull-count deaths and time (DNF rows dimmed).
 
+### In-game overlay (mod)
+
+The ImGui overlay speaks the charter. The three faces ship embedded (the same instanced latin subsets the web self-hosts): Public Sans as the body and atlas default (the only face `overlay.font_path` can override), Barlow Condensed for the race name, Spline Sans Mono for the data columns (IGT, gaps, counters, the DEATHLESS tag, the debug block) and the whole leaderboard block, which rides mono end to end like a timing board. Source Sans 3 stays merged into each face for the symbols the charter faces lack (`●`, `→`). The semantic tokens color statuses (verdigris/ember/brass, fog as the local player's accent and row fill); the configurable base colors default to the foundations, except `text_disabled`, which sits one contrast step up at the secondary grey (`#96A0AD`): the overlay lies on live gameplay at partial opacity.
+
 ### Chat
 
 System messages in mono `11px` muted with right-aligned timestamps. User messages: identity disc in the player's line color (slate for non-participants, e.g. spectators in public chat), name through the name template, mono timestamp, plain body. `ORG` tag as a small brass-bordered mono chip. Reactions as small bordered mono chips; the emoji itself is user content, not chrome, and is kept as-is next to its mono count.

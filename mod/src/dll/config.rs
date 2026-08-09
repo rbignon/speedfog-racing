@@ -62,8 +62,9 @@ pub struct OverlaySettings {
     #[serde(default = "default_enabled")]
     pub enabled: bool,
 
-    /// Path to TTF font file.
-    ///   - Empty "" (default): uses the embedded Source Sans 3 font shipped with the mod.
+    /// Path to TTF font file (overrides the body face only; the display and
+    /// mono faces stay embedded).
+    ///   - Empty "" (default): uses the embedded Public Sans font shipped with the mod.
     ///   - Filename only "arial.ttf": looks in C:\Windows\Fonts\ then DLL directory.
     ///   - Relative path "fonts/custom.ttf": relative to DLL directory.
     ///   - Absolute path "C:\Fonts\MyFont.ttf": uses the specified file.
@@ -128,7 +129,9 @@ fn default_text_color() -> String {
     "#E8E6E1".to_string()
 }
 fn default_text_disabled_color() -> String {
-    "#9CA3AF".to_string()
+    // The charter's secondary grey, not its disabled grey: the overlay sits
+    // on live gameplay at partial opacity, one contrast step above the site
+    "#96A0AD".to_string()
 }
 fn default_border_color() -> String {
     "#253550".to_string()
