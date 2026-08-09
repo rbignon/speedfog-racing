@@ -1,7 +1,7 @@
 <script lang="ts">
   import { fetchZoneDetail, type ZoneDetailResponse } from "$lib/api";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
-  import VideoEmbed from "$lib/components/VideoEmbed.svelte";
+  import VideoLink from "$lib/components/VideoLink.svelte";
   import { skipsForZones, zoneTipsForZones } from "$lib/content/zones";
 
   interface Props {
@@ -180,7 +180,7 @@
               <p class="credit">video by {skip.credit}</p>
             {/if}
             {#if skip.video}
-              <VideoEmbed
+              <VideoLink
                 youtubeId={skip.video.youtubeId}
                 title={skip.title}
                 start={skip.video.start}

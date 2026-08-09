@@ -7,39 +7,29 @@
 
   let { youtubeId, title, start = 0 }: Props = $props();
 
-  let playing = $state(false);
-
   const thumbnail = $derived(
     `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
   );
-  const embedUrl = $derived(
-    `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=1${start ? `&start=${start}` : ""}`,
+  const watchUrl = $derived(
+    `https://www.youtube.com/watch?v=${youtubeId}${start ? `&t=${start}s` : ""}`,
   );
 </script>
 
-<div class="video-embed">
-  {#if playing}
-    <iframe
-      src={embedUrl}
-      {title}
-      allow="autoplay; encrypted-media; picture-in-picture"
-      allowfullscreen
-    ></iframe>
-  {:else}
-    <button
-      class="facade"
-      onclick={() => (playing = true)}
-      aria-label={`Play video: ${title}`}
-    >
-      <img src={thumbnail} alt="" loading="lazy" />
-      <span class="play-icon" aria-hidden="true"></span>
-    </button>
-  {/if}
-</div>
+<a
+  class="video-link"
+  href={watchUrl}
+  target="_blank"
+  rel="noopener noreferrer"
+  aria-label={`Watch on YouTube (opens in new tab): ${title}`}
+>
+  <img src={thumbnail} alt="" loading="lazy" />
+  <span class="play-icon" aria-hidden="true"></span>
+</a>
 
 <style>
-  .video-embed {
+  .video-link {
     position: relative;
+    display: block;
     width: 100%;
     aspect-ratio: 16 / 9;
     border-radius: var(--radius-sm);
@@ -47,24 +37,7 @@
     background: var(--color-bg);
   }
 
-  iframe {
-    width: 100%;
-    height: 100%;
-    border: 0;
-  }
-
-  .facade {
-    width: 100%;
-    height: 100%;
-    padding: 0;
-    border: none;
-    background: none;
-    cursor: pointer;
-    display: block;
-    position: relative;
-  }
-
-  .facade img {
+  .video-link img {
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -93,7 +66,7 @@
     border-color: transparent transparent transparent var(--color-bg);
   }
 
-  .facade:hover .play-icon {
+  .video-link:hover .play-icon {
     background: var(--color-gold-hover, #d4a520);
   }
 </style>
