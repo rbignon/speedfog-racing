@@ -400,7 +400,6 @@
   }
 
   a.cell:hover,
-  .cell.today,
   .cell.selected {
     background: var(--color-surface-elevated);
     --wl-hole: var(--color-surface-elevated);
@@ -542,10 +541,6 @@
     cursor: not-allowed;
   }
 
-  .cell.selected {
-    box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.45);
-  }
-
   .header {
     display: flex;
     justify-content: space-between;
@@ -649,6 +644,8 @@
     font-size: 0.75rem;
     letter-spacing: 0.09em;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
   }
 
   .strip-play-now {
