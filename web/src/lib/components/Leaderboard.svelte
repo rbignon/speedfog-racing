@@ -466,7 +466,7 @@
   .stats-right {
     display: inline-flex;
     align-items: center;
-    gap: 0.25rem;
+    gap: 6px;
     flex-shrink: 0;
     white-space: nowrap;
     margin-left: auto;
