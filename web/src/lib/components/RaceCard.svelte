@@ -46,30 +46,54 @@
     (race.open_registration && race.status === "setup") ||
       (race.status === "running" && race.can_join),
   );
-  let routeState = $derived(
-    race.status === "finished"
-      ? "finished"
-      : race.status === "running"
-        ? "running"
-        : race.open_registration
-          ? "open"
-          : "setup",
+  /* The route line reads from the viewer's seat (see the route vocabulary
+   * in app.css): grey dashes while the race is in setup, ember with the
+   * traveling dot when it runs without them, their brass progress while
+   * they ride (from registration on), verdigris once they finished, steel
+   * when the race is over. */
+  let myProgress = $derived(
+    race.my_current_layer != null && race.seed_total_layers
+      ? Math.min(1, race.my_current_layer / race.seed_total_layers)
+      : 0,
   );
+  let routeView = $derived.by(() => {
+    const mine = race.my_participant_status != null;
+    if (race.status === "finished")
+      return { classes: "route-finished", progress: null as number | null };
+    if (race.status === "running") {
+      if (!mine) return { classes: "route-running", progress: null };
+      if (race.my_participant_status === "finished")
+        return { classes: "route-done", progress: null };
+      return { classes: "route-progress", progress: myProgress };
+    }
+    return {
+      classes: mine ? "route-setup route-progress" : "route-setup",
+      progress: mine ? myProgress : null,
+    };
+  });
 </script>
 
 <a
   href="/race/{race.id}"
-  class="race-card route-{routeState}"
+  class="race-card {routeView.classes}"
   class:compact={variant === "compact"}
   class:joinable={race.can_join}
 >
-  <div class="route route-{routeState}" aria-hidden="true">
+  <div
+    class="route {routeView.classes}"
+    style={routeView.progress != null
+      ? `--route-progress: ${routeView.progress}`
+      : null}
+    aria-hidden="true"
+  >
     <span class="line"></span>
-    <span class="m-start"></span>
-    {#if routeState !== "setup"}
-      <span class="m-end"></span>
+    {#if routeView.progress != null}
+      <span class="line-progress"></span>
+      <span class="m-pos"></span>
     {/if}
-    {#if isRunning}
+    <span class="m-start"></span>
+    <span class="m-end"></span>
+    {#if routeView.classes === "route-running"}
       <span class="m-train"></span>
     {/if}
   </div>
@@ -228,6 +252,9 @@
     display: block;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
+    /* The route line IS the top edge: the border under it stays
+     * transparent so dashes never sit on a second stroke. */
+    border-top-color: transparent;
     border-radius: var(--radius-lg);
     padding: 0;
     text-decoration: none;
@@ -247,9 +274,10 @@
   }
 
   /* Hover highlights in the route line's own hue (set by the root's
-   * route-{state} class), tying the affordance to the card's status. */
+   * route state classes), tying the affordance to the card's status. */
   .race-card:hover {
     border-color: var(--route-color, var(--color-purple));
+    border-top-color: transparent;
   }
 
   .card-inner {

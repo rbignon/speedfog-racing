@@ -389,11 +389,13 @@ th {
 }
 
 /* Route lines: the card's top border becomes the line (consumers position
- * .route over their real border; markers straddle the edge). Same
- * vocabulary as signals: dashed = not ridden, dot = moving, filled
- * square = terminal reached. Hollow markers punch through with
- * --route-hole (defaults to surface). The timetable's continuous week
- * line is its own wl-* implementation in DailyWeekGrid. */
+ * .route over their real border, which stays transparent under it; markers
+ * straddle the edge). The states read from the viewer's seat, like the
+ * daily week line: grey = not started or not mine, brass = my run,
+ * verdigris = I finished, ember = running without me, steel = closed.
+ * Dashes are reserved for a race still in setup. Hollow markers punch
+ * through with --route-hole (defaults to surface). The timetable's
+ * continuous week line is its own wl-* implementation in DailyWeekGrid. */
 .route {
   position: relative;
   height: 14px;
@@ -402,6 +404,7 @@ th {
   pointer-events: none;
 }
 
+/* The base line is the "not ridden" grey; state classes recolor it */
 .route .line {
   position: absolute;
   left: 14px;
@@ -421,74 +424,61 @@ th {
   background: var(--route-hole, var(--color-surface));
 }
 
+/* Terminal squares are always drawn and always filled, dim grey until the
+ * state colors them: the terminal exists whatever the status (only the
+ * start ring stays hollow: the station you board from). */
 .route .m-end {
   position: absolute;
   right: 8px;
   top: 3px;
   width: 8px;
   height: 8px;
+  background: var(--color-text-disabled);
 }
 
 /* Each state exposes its hue as --route-color so every consumer (line,
  * markers, the host card's hover border) resolves it from one place.
- * Consumers put the route-{state} class on the card root as well as on
- * the .route strip. Setup's line keeps the darker border grey; its
- * --route-color is the lighter disabled grey so a hover highlight on an
- * upcoming card stays visible against the resting border. */
+ * Consumers put the state classes on the card root as well as on the
+ * .route strip. */
+
+/* Race in setup: nothing ridden yet, the whole line waits as dashes */
 .route-setup {
   --route-color: var(--color-text-disabled);
 }
 
 .route-setup .line {
   border-top-style: dashed;
-  border-top-color: var(--color-border);
 }
 
-.route-open {
-  --route-color: var(--color-success);
-}
-
-.route-open .line {
-  border-top-style: dashed;
-  border-top-color: var(--route-color);
-}
-
-.route-open .m-start {
-  border-color: var(--route-color);
-}
-
-/* Terminal squares are always filled, in the segment's color (only the
- * start ring stays hollow: the station you board from). */
-.route-open .m-end {
-  background: var(--route-color);
-}
-
+/* Race running without the viewer aboard */
 .route-running {
   --route-color: var(--color-danger);
 }
 
-.route-playing {
-  --route-color: var(--color-warning);
+/* The viewer finished while the race still runs */
+.route-done {
+  --route-color: var(--color-success);
 }
 
+/* Race over */
 .route-finished {
   --route-color: var(--color-info);
 }
 
 .route-running .line,
-.route-playing .line,
+.route-done .line,
 .route-finished .line {
   border-top-color: var(--route-color);
 }
 
 .route-running .m-start,
-.route-playing .m-start,
+.route-done .m-start,
 .route-finished .m-start {
   border-color: var(--route-color);
 }
 
 .route-running .m-end,
-.route-playing .m-end,
+.route-done .m-end,
 .route-finished .m-end {
   background: var(--route-color);
 }
@@ -535,14 +525,14 @@ th {
   }
 }
 
-/* Progress variant: a route tracking the viewer's own run, filled to
- * --route-progress (0-1). The base line drops to dashed border grey (the
- * stretch not yet ridden); the solid segment and the position dot at its
- * head cover the ridden part in the state hue, and the terminal stays dim
- * until the run actually finishes (the state then leaves the variant). */
-.route-progress .line {
-  border-top-style: dashed;
-  border-top-color: var(--color-border);
+/* Progress variant: the viewer's own run (registered onward), filled to
+ * --route-progress (0-1). The ridden segment and the position dot at its
+ * head always ride in brass, the "you are here" hue of the week line's
+ * riding state, over the grey base line; at 0 the dot waits in the start
+ * ring. Combines with route-setup (dashes + waiting dot). Declared after
+ * route-setup so the combined card still hovers brass. */
+.route-progress {
+  --route-color: var(--color-warning);
 }
 
 .route-progress .line-progress {
@@ -550,7 +540,7 @@ th {
   left: 14px;
   top: 6px;
   width: calc((100% - 28px) * var(--route-progress, 0));
-  border-top: 2px solid var(--route-color);
+  border-top: 2px solid var(--color-warning);
   transition: width var(--transition);
 }
 
@@ -562,9 +552,10 @@ th {
   height: 6px;
   margin-left: -3px;
   border-radius: 50%;
-  background: var(--route-color);
+  background: var(--color-warning);
   transition: left var(--transition);
-  /* Paints above the dim terminal square when progress approaches 1 */
+  /* Paints above the grey terminal square when progress approaches 1
+   * and above the start ring at 0 */
   z-index: 1;
 }
 
@@ -573,8 +564,4 @@ th {
   .route-progress .m-pos {
     transition: none;
   }
-}
-
-.route-progress .m-end {
-  background: var(--color-text-disabled);
 }

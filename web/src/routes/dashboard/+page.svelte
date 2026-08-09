@@ -15,11 +15,9 @@
     type DailyWeekResponse,
   } from "$lib/api";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
-  import { timeAgo, raceDisplayDate } from "$lib/utils/time";
-  import { formatIgt } from "$lib/utils/training";
-  import { formatPoolName } from "$lib/utils/format";
-  import { statusLabel } from "$lib/format";
+  import { timeAgo } from "$lib/utils/time";
   import RaceCard from "$lib/components/RaceCard.svelte";
+  import TrainingSessionCard from "$lib/components/TrainingSessionCard.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
   import ActivityList from "$lib/components/ActivityList.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
@@ -145,14 +143,6 @@
     } finally {
       loadingMore = false;
     }
-  }
-
-  function activeRaceRole(race: Race): string {
-    const isOrganizer = race.organizer.id === auth.user?.id;
-    const isParticipant = race.my_igt_ms != null || race.my_death_count != null;
-    if (isParticipant) return "Participating";
-    if (isOrganizer) return "Organizing";
-    return "";
   }
 </script>
 
@@ -360,169 +350,11 @@
       <section class="active-section">
         <SectionTitle>Active Now</SectionTitle>
         <div class="active-cards">
-          {#each activeRaces as race}
-            {@const overflowCount = Math.max(
-              0,
-              race.participant_count - race.participant_previews.length,
-            )}
-            {@const relativeTime = raceDisplayDate(race)}
-            {@const raceRoute =
-              race.status === "finished"
-                ? "finished"
-                : race.status === "running"
-                  ? "running"
-                  : "setup"}
-            {@const raceProgress =
-              (race.status === "running" || race.status === "finished") &&
-              race.my_current_layer != null &&
-              race.seed_total_layers
-                ? Math.min(1, race.my_current_layer / race.seed_total_layers)
-                : null}
-            <a href="/race/{race.id}" class="active-card route-{raceRoute}">
-              <div
-                class="route route-{raceRoute}"
-                class:route-progress={raceProgress != null}
-                style={raceProgress != null
-                  ? `--route-progress: ${raceProgress}`
-                  : null}
-                aria-hidden="true"
-              >
-                <span class="line"></span>
-                {#if raceProgress != null}
-                  <span class="line-progress"></span>
-                  <span class="m-pos"></span>
-                {/if}
-                <span class="m-start"></span>
-                {#if raceRoute !== "setup"}
-                  <span class="m-end"></span>
-                {/if}
-                {#if race.status === "running" && raceProgress == null}
-                  <span class="m-train"></span>
-                {/if}
-              </div>
-              <div class="active-card-header">
-                <div class="active-title">
-                  <span class="active-name">{race.name}</span>
-                </div>
-                <div class="active-badges">
-                  {#if activeRaceRole(race)}
-                    <span class="chip">{activeRaceRole(race)}</span>
-                  {/if}
-                  <span class="signal signal-{race.status}"
-                    >{statusLabel(race.status)}</span
-                  >
-                </div>
-              </div>
-              {#if race.participant_previews.length > 0}
-                <div class="avatar-row">
-                  <div class="avatar-stack">
-                    {#each race.participant_previews as user}
-                      {#if user.twitch_avatar_url}
-                        <img
-                          src={user.twitch_avatar_url}
-                          alt={user.twitch_display_name || user.twitch_username}
-                          class="avatar"
-                        />
-                      {:else}
-                        <span class="avatar avatar-placeholder"
-                          >{(user.twitch_display_name || user.twitch_username)
-                            .charAt(0)
-                            .toUpperCase()}</span
-                        >
-                      {/if}
-                    {/each}
-                    {#if overflowCount > 0}
-                      <span class="avatar avatar-overflow"
-                        >+{overflowCount}</span
-                      >
-                    {/if}
-                  </div>
-                  <span class="relative-time">{relativeTime}</span>
-                </div>
-              {:else}
-                <div class="avatar-row">
-                  <span class="no-participants">No players yet</span>
-                  <span class="relative-time">{relativeTime}</span>
-                </div>
-              {/if}
-              <div class="active-card-meta">
-                <span
-                  >{race.participant_count} player{race.participant_count !== 1
-                    ? "s "
-                    : " "}{#if race.pool_name}
-                    &middot; {formatPoolName(race.pool_name)}{/if}</span
-                >
-                <span class="race-organizer">
-                  by
-                  {#if race.organizer.twitch_avatar_url}
-                    <img
-                      src={race.organizer.twitch_avatar_url}
-                      alt=""
-                      class="organizer-avatar"
-                    />
-                  {/if}
-                  <button
-                    class="organizer-link"
-                    onclick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      goto(`/user/${race.organizer.twitch_username}`);
-                    }}
-                  >
-                    {race.organizer.twitch_display_name ||
-                      race.organizer.twitch_username}
-                  </button>
-                </span>
-              </div>
-            </a>
+          {#each activeRaces as race (race.id)}
+            <RaceCard {race} />
           {/each}
-          {#each activeTraining as session}
-            {@const trainingProgress =
-              session.current_layer != null && session.seed_total_layers
-                ? Math.min(1, session.current_layer / session.seed_total_layers)
-                : null}
-            <a href="/training/{session.id}" class="active-card route-playing">
-              <div
-                class="route route-playing"
-                class:route-progress={trainingProgress != null}
-                style={trainingProgress != null
-                  ? `--route-progress: ${trainingProgress}`
-                  : null}
-                aria-hidden="true"
-              >
-                <span class="line"></span>
-                {#if trainingProgress != null}
-                  <span class="line-progress"></span>
-                  <span class="m-pos"></span>
-                {/if}
-                <span class="m-start"></span>
-                <span class="m-end"></span>
-                {#if trainingProgress == null}
-                  <span class="m-train"></span>
-                {/if}
-              </div>
-              <div class="active-card-header">
-                <span class="active-name"
-                  >{session.pool_display_name ||
-                    formatPoolName(session.pool_name)}</span
-                >
-                <div class="active-badges">
-                  <span class="chip">Solo</span>
-                </div>
-              </div>
-              <div class="training-stats">
-                <span class="training-stat">
-                  <span class="training-stat-label">IGT</span>
-                  <span class="training-stat-value"
-                    >{formatIgt(session.igt_ms)}</span
-                  >
-                </span>
-                <span class="training-stat">
-                  <span class="training-stat-label">Deaths</span>
-                  <span class="training-stat-value">{session.death_count}</span>
-                </span>
-              </div>
-            </a>
+          {#each activeTraining as session (session.id)}
+            <TrainingSessionCard {session} />
           {/each}
         </div>
       </section>
@@ -802,175 +634,6 @@
     gap: 0.75rem;
   }
 
-  .active-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    padding: 1rem 1.25rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    text-decoration: none;
-    color: inherit;
-    min-width: 0;
-    transition:
-      border-color var(--transition),
-      box-shadow var(--transition);
-  }
-
-  /* The route rides the card's real top border (see RaceCard) and, when
-   * the run's layer progress is known, doubles as its progress line. */
-  .active-card > :global(.route) {
-    position: absolute;
-    top: -7px;
-    left: -10px;
-    right: -10px;
-  }
-
-  /* Hover in the route line's hue (from the root's route-{state} class) */
-  .active-card:hover {
-    border-color: var(--route-color, var(--color-purple));
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .active-card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .active-title {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .active-name {
-    font-size: 1.05rem;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .active-badges {
-    display: flex;
-    gap: 0.4rem;
-    flex-shrink: 0;
-  }
-
-  /* Avatar row */
-  .avatar-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .avatar-stack {
-    display: flex;
-    align-items: center;
-  }
-
-  .avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    border: 2px solid var(--color-surface);
-    margin-left: -6px;
-    object-fit: cover;
-  }
-
-  .avatar:first-child {
-    margin-left: 0;
-  }
-
-  .avatar-placeholder,
-  .avatar-overflow {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--color-surface-elevated);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-  }
-
-  .no-participants {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-disabled);
-    font-style: italic;
-  }
-
-  .relative-time {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-disabled);
-  }
-
-  .active-card-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    margin-bottom: 0.5rem;
-  }
-
-  .race-organizer {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .organizer-avatar {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-  }
-
-  .organizer-link {
-    background: none;
-    border: none;
-    padding: 0;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  .organizer-link:hover {
-    color: var(--color-purple);
-    text-decoration: underline;
-  }
-
-  /* Training stats */
-  .training-stats {
-    display: flex;
-    gap: 1.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .training-stat {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .training-stat-label {
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 500;
-  }
-
-  .training-stat-value {
-    font-weight: 600;
-    font-family: var(--font-mono);
-  }
-
   /* Races to Join */
   .joinable-section {
     margin-bottom: 2rem;
@@ -1034,10 +697,6 @@
 
     .active-cards {
       grid-template-columns: 1fr;
-    }
-
-    .active-card {
-      padding: 0.75rem 1rem;
     }
 
     .joinable-cards {
