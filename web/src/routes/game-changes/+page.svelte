@@ -33,9 +33,8 @@
   <header class="game-changes-hero">
     <h1>Game Changes</h1>
     <p>
-      SpeedFog modifies Elden Ring well beyond shuffling fog gates. This page
-      lists everything that differs from the base game, so nothing here counts
-      as a spoiler: every racer plays with the same changes.
+      SpeedFog modifies Elden Ring well beyond shuffling fog gates.<br>This page
+      lists everything that differs from the base game.
     </p>
   </header>
 
@@ -50,15 +49,6 @@
       {/each}
     </section>
   {/each}
-
-  <p class="outro">
-    Something changed in the game that is not listed here? Tell us on
-    <a
-      href="https://discord.gg/Qmw67J3mR9"
-      target="_blank"
-      rel="noopener noreferrer">Discord</a
-    >.
-  </p>
 </main>
 
 <style>
@@ -107,7 +97,6 @@
 
   .change h3 {
     margin: 0 0 0.3rem;
-    font-size: var(--font-size-base);
     color: var(--color-text);
   }
 
@@ -116,14 +105,6 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.6;
-  }
-
-  /* Outro */
-  .outro {
-    text-align: center;
-    margin-top: 3rem;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
   }
 
   @media (max-width: 640px) {
