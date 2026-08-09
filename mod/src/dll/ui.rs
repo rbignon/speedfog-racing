@@ -277,6 +277,10 @@ impl RaceTracker {
     /// Danger banner shown when the config's seed_id doesn't match the server's
     /// seed_id. This means the player has an outdated seed pack after a re-roll.
     fn render_seed_mismatch_warning(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         if self.machine.seed_mismatch {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "SEED OUTDATED");
@@ -288,6 +292,10 @@ impl RaceTracker {
     /// (impossible IGT forward jump). Cleared automatically when the race
     /// save is reloaded.
     fn render_wrong_save_warning(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         if self.machine.wrong_save {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "WRONG SAVE LOADED");
@@ -299,6 +307,10 @@ impl RaceTracker {
     /// (wrong save detected server-side, fresh save required). Drops by
     /// itself ~3s after the server stops re-sending it.
     fn render_server_blocking_warning(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         if let Some(message) = self.get_blocking_condition_message() {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, message);
@@ -308,6 +320,10 @@ impl RaceTracker {
     /// Calm amber waiting line (race not started, countdown desync,
     /// inactive solo session).
     fn render_waiting_line(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         if let Some(message) = self.get_waiting_line_message() {
             ui.text_colored(self.cached_colors.gold, message);
         }
@@ -1016,6 +1032,10 @@ impl RaceTracker {
     /// Status message: persistent danger banner for permanent errors,
     /// temporary gold banner otherwise.
     fn render_status_message(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
         let c = &self.cached_colors;
         // Permanent errors are always visible
         if let Some(ref err) = self.machine.permanent_error {
