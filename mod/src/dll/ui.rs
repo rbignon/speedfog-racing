@@ -78,13 +78,16 @@ impl ImguiRenderLoop for RaceTracker {
         // against body 0.9375rem): at equal pixel size its tall x-height
         // reads a size bigger than the other faces.
         const MONO_SCALE: f32 = 0.85;
+        let small_size = (font_size * MONO_SCALE).round();
 
         // First added face is the atlas default (body)
-        let body = add_face(body_data, font_size);
+        let _body = add_face(body_data, font_size);
         let display = add_face(EMBEDDED_FONT_DISPLAY, font_size);
-        let mono = add_face(EMBEDDED_FONT_MONO, (font_size * MONO_SCALE).round());
+        let mono = add_face(EMBEDDED_FONT_MONO, small_size);
+        // Body at the mono pixel size: names inside mono rows
+        let body_small = add_face(body_data, small_size);
         self.overlay_fonts = Some(OverlayFonts {
-            body,
+            body_small,
             display,
             mono,
         });
@@ -742,7 +745,10 @@ impl RaceTracker {
         ui.text_colored(color, &*left_buf);
         ui.same_line_with_spacing(0.0, 0.0);
         {
-            let _body = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.body));
+            let _body = self
+                .overlay_fonts
+                .as_ref()
+                .map(|f| ui.push_font(f.body_small));
             let name_max = (left_max - prefix_width).max(0.0);
             let truncated = truncate_to_width(ui, name, name_max);
             let name_part: &str = truncated.as_ref();

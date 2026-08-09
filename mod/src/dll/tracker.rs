@@ -175,12 +175,14 @@ pub(crate) struct CachedColors {
     pub purple_bg: [f32; 4],   // fog at 0.12 - leaderboard row bg
 }
 
-/// ImGui font ids for the overlay's three faces, registered at ImGui init.
-/// Body is the atlas default; display carries the race name, mono the data
-/// columns (IGT, gaps, counters, debug). Body is also carried explicitly so
-/// mono blocks can push back to it (leaderboard names).
+/// ImGui font ids for the overlay's faces, registered at ImGui init. The
+/// body face (atlas default) carries prose at full size; display carries
+/// the race name; mono the data columns (IGT, gaps, counters, debug); and
+/// body_small is the body face at the mono pixel size, for names inside
+/// mono rows (ImGui top-aligns mixed-size text on a line, so equal pixel
+/// sizes are what keep a shared baseline).
 pub(crate) struct OverlayFonts {
-    pub body: FontId,
+    pub body_small: FontId,
     pub display: FontId,
     pub mono: FontId,
 }
