@@ -213,6 +213,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         exclude_from_stats=race.exclude_from_stats,
         participant_count=participant_count,
         participant_previews=previews,
+        seed_total_layers=race.seed.total_layers if race.seed else None,
         casters=[caster_response(c) for c in race.casters] if "casters" in race.__dict__ else [],
         can_join=can_join,
         my_role=my_role,

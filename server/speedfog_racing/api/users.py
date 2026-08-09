@@ -166,14 +166,7 @@ async def get_my_races(
     result = await db.execute(query)
     races = list(result.scalars().all())
 
-    race_responses = []
-    for r in races:
-        resp = race_response(r, user)
-        if r.seed:
-            resp.seed_total_layers = r.seed.total_layers
-        race_responses.append(resp)
-
-    return RaceListResponse(races=race_responses)
+    return RaceListResponse(races=[race_response(r, user) for r in races])
 
 
 @router.get("/{username}/pool-stats", response_model=UserPoolStatsResponse)
