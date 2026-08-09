@@ -165,6 +165,11 @@ export const LIVE_SKULL_ANIM_MS = 1500;
 /** Skull peak scale (overshoot) */
 export const LIVE_SKULL_PEAK_SCALE = 2.0;
 
+/** Skull height at rest (px); the pop overshoots to PEAK_SCALE times this.
+ * Sized up from the emoji era: the drawn ember skull carries less visual
+ * mass than the bone-white emoji did against the colored traces. */
+export const LIVE_SKULL_SIZE = 26;
+
 /** X offset for finished player dots right of final node (px) */
 export const LIVE_FINISHED_X_OFFSET = 20;
 

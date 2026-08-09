@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { ReplayParticipant, PlayerSnapshot, SkullEvent } from "./types";
   import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
+  import { LIVE_SKULL_SIZE } from "$lib/dag/constants";
   import { REPLAY_DEFAULTS } from "./types";
   import {
     computePlayerPosition,
@@ -194,7 +195,7 @@
   {@const isHiddenSkull =
     hasHighlight && !highlightIds!.has(skull.participantId)}
   {#if pos && !isHiddenSkull}
-    {@const s = (18 / 24) * skullScale(skull.progress)}
+    {@const s = (LIVE_SKULL_SIZE / 24) * skullScale(skull.progress)}
     <path
       d={SKULL_PATH}
       fill="var(--color-danger)"

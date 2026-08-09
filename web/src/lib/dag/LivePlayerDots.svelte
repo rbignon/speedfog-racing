@@ -10,6 +10,7 @@
     LIVE_ORBIT_PERIOD_MS,
     LIVE_SKULL_ANIM_MS,
     LIVE_SKULL_PEAK_SCALE,
+    LIVE_SKULL_SIZE,
     LIVE_FINISHED_X_OFFSET,
     LIVE_START_X_OFFSET,
   } from "./constants";
@@ -235,7 +236,7 @@
   {@const pos = nodeMap.get(skull.nodeId)}
   {@const progress = (performance.now() - skull.startTime) / LIVE_SKULL_ANIM_MS}
   {#if pos && progress < 1}
-    {@const s = (18 / 24) * skullScale(progress)}
+    {@const s = (LIVE_SKULL_SIZE / 24) * skullScale(progress)}
     <path
       d={SKULL_PATH}
       fill="var(--color-danger)"
