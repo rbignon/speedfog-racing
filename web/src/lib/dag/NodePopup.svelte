@@ -286,8 +286,6 @@
     letter-spacing: 0.05em;
     text-transform: uppercase;
     color: var(--color-gold);
-    border: 1px solid rgba(200, 164, 78, 0.4);
-    border-radius: var(--radius-sm);
     padding: 0 0.3rem;
   }
 
