@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WsParticipant } from "$lib/websocket";
+  import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import ZoomableSvg from "./ZoomableSvg.svelte";
   import FollowViewport from "./FollowViewport.svelte";
   import LivePlayerDots from "./LivePlayerDots.svelte";
@@ -658,16 +659,19 @@
 
       <!-- Death icon (opposite side of label) -->
       {#if !anonymous && nodesWithDeaths.has(node.id)}
-        <text
-          x={node.x}
-          y={labelAbove.has(node.id)
-            ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
-            : node.y - nodeRadius(node) - 6}
-          text-anchor="middle"
-          font-size={labelFontSize - 1}
+        {@const ds = (labelFontSize - 1) / 24}
+        {@const baseline = labelAbove.has(node.id)
+          ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
+          : node.y - nodeRadius(node) - 6}
+        <path
+          d={SKULL_PATH}
+          fill="var(--color-danger)"
+          fill-rule="evenodd"
+          transform="translate({node.x - 12 * ds} {baseline -
+            24 * ds}) scale({ds})"
           class="death-icon"
-          class:transparent-label={transparent}>💀</text
-        >
+          class:transparent-label={transparent}
+        />
       {/if}
 
       <!-- Label -->

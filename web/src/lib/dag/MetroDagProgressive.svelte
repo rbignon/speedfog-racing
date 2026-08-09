@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { WsParticipant } from "$lib/websocket";
+  import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import ZoomableSvg from "./ZoomableSvg.svelte";
   import NodePopup from "./NodePopup.svelte";
   import {
@@ -479,15 +480,18 @@
 
         <!-- Death icon (opposite side of label, only for discovered nodes) -->
         {#if isDiscovered(node) && nodesWithDeaths.has(node.id)}
-          <text
-            x={node.x}
-            y={labelAbove.has(node.id)
-              ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
-              : node.y - nodeRadius(node) - 6}
-            text-anchor="middle"
-            font-size={LABEL_FONT_SIZE - 1}
-            class="death-icon">💀</text
-          >
+          {@const ds = (LABEL_FONT_SIZE - 1) / 24}
+          {@const baseline = labelAbove.has(node.id)
+            ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
+            : node.y - nodeRadius(node) - 6}
+          <path
+            d={SKULL_PATH}
+            fill="var(--color-danger)"
+            fill-rule="evenodd"
+            transform="translate({node.x - 12 * ds} {baseline -
+              24 * ds}) scale({ds})"
+            class="death-icon"
+          />
         {/if}
 
         <!-- Label (only for discovered nodes) -->

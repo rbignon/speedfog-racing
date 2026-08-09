@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { ReplayParticipant, PlayerSnapshot, SkullEvent } from "./types";
+  import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import { REPLAY_DEFAULTS } from "./types";
   import {
     computePlayerPosition,
@@ -193,15 +194,15 @@
   {@const isHiddenSkull =
     hasHighlight && !highlightIds!.has(skull.participantId)}
   {#if pos && !isHiddenSkull}
-    <text
-      x={pos.x}
-      y={pos.y}
-      text-anchor="middle"
-      dominant-baseline="central"
-      font-size={18 * skullScale(skull.progress)}
+    {@const s = (18 / 24) * skullScale(skull.progress)}
+    <path
+      d={SKULL_PATH}
+      fill="var(--color-danger)"
+      fill-rule="evenodd"
+      transform="translate({pos.x - 12 * s} {pos.y - 12 * s}) scale({s})"
       opacity={(isGhostSkull ? 0.3 : 1) * skullOpacity(skull.progress)}
-      class="skull-anim">&#x1F480;</text
-    >
+      class="skull-anim"
+    />
   {/if}
 {/each}
 
