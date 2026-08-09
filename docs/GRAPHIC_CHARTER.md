@@ -14,7 +14,7 @@ What changed versus charter v1, in one list:
 - Section headers use the **station-and-line device** instead of free-floating letterspaced caps.
 - Ranks, times, seeds, deltas and dates all run through the mono face.
 - Emoji leave the chrome: medals become typographic `1st / 2nd / 3rd`, the skull becomes the dagger `†`, "Abandoned" in data rows becomes `DNF`.
-- Per-participant **player line colors** thread the results rail, map traces, finish board and chat dots. They never color the player's name itself, which belongs to the equipped name template (see `REWARDS.md`).
+- Per-participant **player line colors** thread the results rail, map traces and chat dots. They never color the player's name itself, which belongs to the equipped name template (see `REWARDS.md`).
 
 ---
 
@@ -40,7 +40,7 @@ What changed versus charter v1, in one list:
 | Fog (secondary)    | Misty heliotrope | `#A99BC9` |
 | Fog (hover)        | Light heliotrope | `#C0B4DC` |
 
-**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the `Participating` role mark's square, 1st-place markers (`1st` labels, finish board place tags), the amber "running" daily strip. Nowhere else. (The week line's own edge markers and the finish board's terminal squares are state- or player-colored, not brass.)
+**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the `Participating` role mark's square, 1st-place markers (`1st` labels), the amber "running" daily strip. Nowhere else. (The week line's own edge markers are state-colored, not brass.)
 
 **Fog usage:** interactive hover states (secondary buttons), links, focus rings, boss diamonds on the DAG, the `Organizing` role mark's diamond, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog.
 
@@ -70,7 +70,7 @@ Frost exists so ice never borrows steel: "finished" owns the medium blue everywh
 
 ### Player lines
 
-Each race participant gets a line color, assigned by join order (the server-side `color_index`), the way a metro line keeps its color across the whole network. It appears on: results rail left borders, map traces, finish board column lines and terminal marks, chat/popup identity dots, and the checked state of the map-filter checkboxes. It **never** colors the player's name (names belong to name templates).
+Each race participant gets a line color, assigned by join order (the server-side `color_index`), the way a metro line keeps its color across the whole network. It appears on: results rail left borders, map traces, chat/popup identity dots, and the checked state of the map-filter checkboxes. It **never** colors the player's name (names belong to name templates).
 
 The palette is the existing 20-hue `PLAYER_COLORS` in `web/src/lib/dag/constants.ts`, the single source of truth for every consumer. Twenty hues, not seven: dailies routinely exceed 20 participants, and bundled parallel map traces sit 5px apart, so mutual contrast is functional, not decorative. Saturated hues are kept on purpose (they read on navy, and real metro lines are saturated). The current values predate this charter (Tailwind-400 hexes); retune them lightly toward the navy/brass temperature when the new components start consuming them, keeping the tier structure and keeping tier 1 (the first six, the only ones most races ever show) clear of brass, ember and fog lookalikes. Cycle the palette past twenty participants.
 
@@ -113,7 +113,7 @@ turns that window into a visible system-font flash). The latin files
 ### Principles
 
 - **Caps diet.** Letterspaced uppercase survives only in two places: display-face titles/buttons, and mono micro-labels inside data panels (seed params, table headers, signals). Section titles never use the free-floating grey eyebrow pattern; they use the line device.
-- **Usernames are never uppercased.** `text-transform` never applies to a player name: casing is part of the identity, and name templates style it deliberately. Display-face contexts (finish board, titles) render names in the display face with their original case. Race names and other non-name titles may be uppercased.
+- **Usernames are never uppercased.** `text-transform` never applies to a player name: casing is part of the identity, and name templates style it deliberately. Display-face contexts render names in the display face with their original case. Race names and other non-name titles may be uppercased.
 - Digits that align in columns always go through `--font-mono` (the face is tabular by design; `font-variant-numeric` is no longer needed for new code).
 - Line-height: `1.5` body, `1.1`-`1.2` display.
 - All transitions `0.2s ease`, never more.
@@ -194,10 +194,6 @@ Vertical list, one entry per participant:
 - Second row in mono: IGT, delta (`+13:36`), deaths (`† 16`) right-aligned; `DNF` for abandons, entry at `0.55` opacity.
 - `● LIVE` ember signal; `✓` verdigris check for finished dailies.
 - Click-to-filter mode: checkboxes appear per entry, checked state filled with the player's line color.
-
-### Finish board (podium)
-
-Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in the display face through the **complete** name template, like a leaderboard row (original case, never uppercased; gradient on an inline link that shrink-wraps the text, equipped badge beside it, `background_css` backdrop on the whole column), IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
 
 ### Forms
 

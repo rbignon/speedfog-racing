@@ -13,7 +13,6 @@
   import CasterList from "$lib/components/CasterList.svelte";
   import WatchLive from "$lib/components/WatchLive.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
-  import Podium from "$lib/components/Podium.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
   import RaceHighlights from "$lib/components/RaceHighlights.svelte";
@@ -1119,7 +1118,6 @@
       </header>
 
       {#if liveSeed?.graph_json && raceStatus === "finished"}
-        <Podium participants={raceStore.leaderboard} />
         <div class="dag-view-toggle">
           <button
             class="toggle-btn"

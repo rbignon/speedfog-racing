@@ -39,7 +39,6 @@
   import RaceControls from "$lib/components/RaceControls.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
   import RaceHighlights from "$lib/components/RaceHighlights.svelte";
-  import Podium from "$lib/components/Podium.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
@@ -654,7 +653,6 @@
       {/if}
 
       {#if raceStatus === "finished" && graphJson}
-        <Podium participants={raceStore.leaderboard} />
         <div class="dag-view-toggle">
           <button
             class="toggle-btn"
