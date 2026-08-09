@@ -39,12 +39,14 @@ async def async_session(async_engine):
     return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
+# tier (difficulty tier) deliberately diverges from layer (DAG depth): progress
+# fields must be computed from layer, never from tier.
 SAMPLE_GRAPH = {
     "nodes": {
-        "start": {"tier": 0, "display_name": "Start"},
-        "limgrave_a": {"tier": 1, "display_name": "Limgrave A"},
-        "liurnia_b": {"tier": 2, "display_name": "Liurnia B"},
-        "boss": {"tier": 3, "display_name": "Final Boss"},
+        "start": {"layer": 0, "display_name": "Start"},
+        "limgrave_a": {"layer": 1, "tier": 4, "display_name": "Limgrave A"},
+        "liurnia_b": {"layer": 2, "tier": 9, "display_name": "Liurnia B"},
+        "boss": {"layer": 3, "tier": 14, "display_name": "Final Boss"},
     },
     "edges": [],
     "total_nodes": 4,
@@ -76,7 +78,7 @@ async def dashboard_user(async_session):
         db.add(seed)
         await db.flush()
 
-        # Active training with progress at tier 2
+        # Active training with progress at layer 2
         training = TrainingSession(
             user_id=user.id,
             seed_id=seed.id,
@@ -140,7 +142,7 @@ async def test_training_list_includes_current_layer(test_client, dashboard_user)
         sessions = response.json()
         active = [s for s in sessions if s["status"] == "active"]
         assert len(active) == 1
-        assert active[0]["current_layer"] == 2  # tier 2 = liurnia_b
+        assert active[0]["current_layer"] == 2  # layer 2 = liurnia_b (not its tier, 9)
         assert active[0]["seed_total_layers"] == 3
 
 

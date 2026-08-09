@@ -31,6 +31,7 @@ from speedfog_racing.schemas import (
     TrainingSessionResponse,
 )
 from speedfog_racing.services import get_pool
+from speedfog_racing.services.layer_service import get_layer_for_node
 from speedfog_racing.services.seed_pack_service import (
     generate_training_config,
     sanitize_filename,
@@ -83,12 +84,12 @@ async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) ->
 def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
     current_layer = 0
     if session.zone_history and session.seed.graph_json:
-        nodes = session.seed.graph_json.get("nodes", {})
         for entry in session.zone_history:
-            node_data = nodes.get(entry.get("node_id"), {})
-            tier = node_data.get("tier")
-            if isinstance(tier, int | float) and int(tier) > current_layer:
-                current_layer = int(tier)
+            node_id = entry.get("node_id")
+            if node_id:
+                layer = get_layer_for_node(node_id, session.seed.graph_json)
+                if layer > current_layer:
+                    current_layer = layer
         if session.status == TrainingSessionStatus.FINISHED:
             current_layer = session.seed.total_layers
 
