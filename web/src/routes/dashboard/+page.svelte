@@ -823,8 +823,8 @@
   .active-card > :global(.route) {
     position: absolute;
     top: -7px;
-    left: -7px;
-    right: -7px;
+    left: -10px;
+    right: -10px;
   }
 
   /* Hover in the route line's hue (from the root's route-{state} class) */
