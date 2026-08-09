@@ -83,7 +83,7 @@
 <div class="zone-sheet">
   <div class="sheet-header">
     <div class="header-text">
-      <h2>{headerName}</h2>
+      <h1>{headerName}</h1>
       {#if headerType}
         <span class="type-badge {typeBadgeClass(headerType)}"
           >{typeLabel(headerType)}</span
@@ -139,7 +139,7 @@
   </div>
 
   <div class="section">
-    <h3>Skips</h3>
+    <h2>Skips</h2>
     {#if skips.length === 0}
       <p class="empty">
         No skips documented yet. Found one? Tell us on
@@ -154,7 +154,7 @@
         {#each skips as skip (skip.id)}
           <div class="skip-card">
             <div class="skip-header">
-              <h4>{skip.title}</h4>
+              <h3>{skip.title}</h3>
               {#if skip.difficulty}
                 <span
                   class="frog-rating"
@@ -194,7 +194,7 @@
 
   {#if tips.length > 0}
     <div class="section">
-      <h3>Zone Tips</h3>
+      <h2>Zone Tips</h2>
       <ul class="tips-list">
         {#each tips as tip (tip.id)}
           <li>
@@ -239,10 +239,9 @@
     gap: 0.5rem;
   }
 
-  .header-text h2 {
+  .header-text h1 {
     margin: 0;
     color: var(--color-gold);
-    font-size: var(--font-size-lg);
   }
 
   .close-btn {
@@ -323,9 +322,12 @@
     font-family: var(--font-mono);
   }
 
+  h2 {
+    margin-top: 0;
+  }
+
   .section h3 {
     margin: 0 0 0.75rem 0;
-    font-size: var(--font-size-base);
     color: var(--color-text);
   }
 
@@ -359,9 +361,8 @@
     flex-wrap: wrap;
   }
 
-  .skip-header h4 {
+  .skip-header h3 {
     margin: 0;
-    font-size: var(--font-size-base);
     font-weight: 600;
   }
 
