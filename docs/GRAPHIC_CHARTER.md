@@ -197,7 +197,7 @@ Vertical list, one entry per participant:
 
 ### Finish board (podium)
 
-Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in the display face through the name template (original case, never uppercased), IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color with a small terminal square. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
+Three columns `1st / 2nd / 3rd` on a surface panel: place tag in mono brass caps, name in the display face through the **complete** name template, like a leaderboard row (original case, never uppercased; gradient on an inline link that shrink-wraps the text, equipped badge beside it, `background_css` backdrop on the whole column), IGT in mono (winner column larger), sub-line `+delta · † deaths`. Each column's top edge carries the player's line color. With fewer than three finishers, render only the existing columns (the board never shows empty slots).
 
 ### Forms
 

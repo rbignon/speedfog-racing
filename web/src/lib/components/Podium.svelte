@@ -31,11 +31,16 @@
     return PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
   }
 
+  function templateFor(p: WsParticipant) {
+    const id = p.equipped_name_template_id;
+    if (!id || id === "default") return null;
+    return rewards.lookupTemplate(id);
+  }
+
   // Names render through the equipped name template; without one they stay
   // default ink (the player's line color lives on the column's top edge).
   function nameStyleFor(p: WsParticipant): string {
-    const id = p.equipped_name_template_id;
-    const t = !id || id === "default" ? null : rewards.lookupTemplate(id);
+    const t = templateFor(p);
     const parts: string[] = [];
     if (t?.gradient) {
       parts.push(
@@ -53,19 +58,44 @@
     }
     return parts.join(" ");
   }
+
+  function backgroundStyleFor(p: WsParticipant): string {
+    const t = templateFor(p);
+    return t?.background_css ? `background: ${t.background_css};` : "";
+  }
 </script>
 
 {#if finishers.length > 0}
   <div class="finish-board">
     {#each finishers as finisher, place (finisher.id)}
+      {@const badge = rewards.lookupBadge(finisher.equipped_badge_id)}
       <div
         class="fb-col"
         class:win={place === 0}
-        style="--line: {playerColor(finisher)}"
+        style="--line: {playerColor(finisher)}; {backgroundStyleFor(finisher)}"
       >
         <span class="fb-place">{PLACE_TAGS[place]}</span>
-        <div class="fb-name" style={nameStyleFor(finisher)}>
-          {finisher.twitch_display_name || finisher.twitch_username}
+        <div class="fb-name">
+          <!-- The ellipsis lives on the link, the template on an inner
+               span: an ellipsis painted by a background-clipped element
+               would inherit its transparent ink. -->
+          <a
+            href="/user/{finisher.twitch_username}"
+            target="_blank"
+            class="fb-name-link"
+          >
+            <span style={nameStyleFor(finisher)}
+              >{finisher.twitch_display_name || finisher.twitch_username}</span
+            >
+          </a>
+          {#if badge}
+            <img
+              src="/badges/{badge.icon_filename}"
+              alt={badge.name}
+              title={badge.name}
+              class="fb-badge"
+            />
+          {/if}
         </div>
         <div class="fb-time">{formatIgt(finisher.igt_ms)}</div>
         <div class="fb-sub">
@@ -106,8 +136,7 @@
     border-left: none;
   }
 
-  /* The player's line runs along the column's top edge, closed by a
-   * small terminal square. */
+  /* The player's line runs along the column's top edge */
   .fb-col::before {
     content: "";
     position: absolute;
@@ -115,16 +144,6 @@
     left: 0;
     right: 0;
     height: 2px;
-    background: var(--line);
-  }
-
-  .fb-col::after {
-    content: "";
-    position: absolute;
-    top: 5px;
-    right: 8px;
-    width: 7px;
-    height: 7px;
     background: var(--line);
   }
 
@@ -137,14 +156,37 @@
   }
 
   .fb-name {
+    display: flex;
+    align-items: center;
+    margin: 0.05rem 0 0.1rem;
+    min-width: 0;
+  }
+
+  /* The template styles an inline link that shrink-wraps the name, so a
+   * gradient spans exactly the text (on a full-width block it would mostly
+   * show its start color). */
+  .fb-name-link {
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 1.2rem;
     letter-spacing: 0.02em;
-    margin: 0.05rem 0 0.1rem;
+    color: inherit;
+    text-decoration: none;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .fb-name-link:hover {
+    text-decoration: underline;
+  }
+
+  .fb-badge {
+    width: 18px;
+    height: 18px;
+    margin-left: 0.25rem;
+    flex-shrink: 0;
   }
 
   .fb-time {
