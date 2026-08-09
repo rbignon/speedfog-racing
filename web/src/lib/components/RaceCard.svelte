@@ -115,12 +115,51 @@
         </div>
       </div>
 
-      <div class="race-meta">
-        {race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
-        player{race.participant_count !== 1 ? "s" : ""}
-        {#if race.pool_name}
-          &middot; {formatPoolName(race.pool_name)}
+      <div class="card-crew" class:has-winner={winner}>
+        <div class="crew">
+          {#if race.participant_previews.length > 0}
+            <div class="avatar-stack">
+              {#each race.participant_previews as user}
+                {#if user.twitch_avatar_url}
+                  <img
+                    src={user.twitch_avatar_url}
+                    alt={user.twitch_display_name || user.twitch_username}
+                    class="avatar"
+                  />
+                {:else}
+                  <span class="avatar avatar-placeholder">
+                    {(user.twitch_display_name || user.twitch_username)
+                      .charAt(0)
+                      .toUpperCase()}
+                  </span>
+                {/if}
+              {/each}
+              {#if overflowCount > 0}
+                <span class="avatar avatar-overflow">+{overflowCount}</span>
+              {/if}
+            </div>
+          {:else}
+            <span class="no-participants">No players yet</span>
+          {/if}
+        </div>
+        {#if winner}
+          <span class="winner-info">
+            <span class="place">1st</span>
+            {#if winner.twitch_avatar_url}
+              <img
+                src={winner.twitch_avatar_url}
+                alt=""
+                class="winner-avatar"
+              />
+            {/if}
+            <span class="winner-name"
+              >{winner.twitch_display_name || winner.twitch_username}</span
+            >
+          </span>
+        {:else if race.status === "finished"}
+          <span class="no-finishers">No finishers</span>
         {/if}
+        <span class="ago">{relativeTime}</span>
       </div>
 
       {#if isRunning && race.casters.length > 0}
@@ -156,48 +195,12 @@
         </div>
       {/if}
 
-      <div class="card-foot" class:has-winner={winner}>
-        <div class="crew">
-          {#if race.participant_previews.length > 0}
-            <div class="avatar-stack">
-              {#each race.participant_previews as user}
-                {#if user.twitch_avatar_url}
-                  <img
-                    src={user.twitch_avatar_url}
-                    alt={user.twitch_display_name || user.twitch_username}
-                    class="avatar"
-                  />
-                {:else}
-                  <span class="avatar avatar-placeholder">
-                    {(user.twitch_display_name || user.twitch_username)
-                      .charAt(0)
-                      .toUpperCase()}
-                  </span>
-                {/if}
-              {/each}
-              {#if overflowCount > 0}
-                <span class="avatar avatar-overflow">+{overflowCount}</span>
-              {/if}
-            </div>
-            {#if winner}
-              <span class="winner-info">
-                <span class="place">1st</span>
-                {#if winner.twitch_avatar_url}
-                  <img
-                    src={winner.twitch_avatar_url}
-                    alt=""
-                    class="winner-avatar"
-                  />
-                {/if}
-                <span class="winner-name"
-                  >{winner.twitch_display_name || winner.twitch_username}</span
-                >
-              </span>
-            {:else if race.status === "finished"}
-              <span class="no-finishers">No finishers</span>
-            {/if}
-          {:else}
-            <span class="no-participants">No players yet</span>
+      <div class="card-foot">
+        <div class="race-meta">
+          {race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
+          player{race.participant_count !== 1 ? "s" : ""}
+          {#if race.pool_name}
+            &middot; {formatPoolName(race.pool_name)}
           {/if}
         </div>
         <span class="byline">
@@ -219,7 +222,6 @@
           >
             {displayName}
           </button>
-          <span class="ago">&middot; {relativeTime}</span>
         </span>
       </div>
       {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
@@ -337,12 +339,12 @@
     flex-shrink: 0;
   }
 
-  /* Meta row */
+  /* Meta: player count + mode, in the foot row */
   .race-meta {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
-    margin-top: 0.1rem;
+    min-width: 0;
   }
 
   /* Caster row */
@@ -381,13 +383,21 @@
     text-decoration: underline;
   }
 
-  /* Foot row: crew + winner on the left, byline on the right */
+  /* Crew row: avatars on the left, winner in the middle, date on the right */
+  .card-crew {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+
+  /* Foot row: players + mode on the left, organizer on the right */
   .card-foot {
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
-    margin-top: 0.8rem;
+    margin-top: 0.6rem;
   }
 
   .crew {
@@ -433,6 +443,8 @@
   }
 
   .no-finishers {
+    flex: 1;
+    text-align: center;
     font-family: var(--font-mono);
     font-size: 0.7rem;
     letter-spacing: 0.07em;
@@ -442,8 +454,10 @@
   }
 
   .winner-info {
+    flex: 1;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
     min-width: 0;
     overflow: hidden;
@@ -500,9 +514,12 @@
   }
 
   .ago {
+    /* Pushes to the row's right edge even when the winner slot is empty */
+    margin-left: auto;
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
+    white-space: nowrap;
   }
 
   .late-join-note {
@@ -532,13 +549,14 @@
   }
 
   @media (max-width: 640px) {
-    .card-foot.has-winner .crew {
+    .card-crew.has-winner {
       flex-wrap: wrap;
     }
 
-    .card-foot.has-winner .winner-info {
+    .card-crew.has-winner .winner-info {
       order: -1;
-      width: 100%;
+      flex: 1 0 100%;
+      justify-content: flex-start;
       margin-bottom: 0.35rem;
     }
   }
