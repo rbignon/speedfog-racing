@@ -374,7 +374,45 @@ th {
   background: var(--color-text-disabled);
 }
 
-/* Chips: bordered mono caps for secondary facts (role, seed, tier) */
+/* Role marks: the viewer's role rides in the signals row with non-circle
+ * glyphs (the status signals own the rings and dots): fog diamond for
+ * the organizer, brass square for a participant, twitch triangle for a
+ * caster. Label and glyph share the hue, like the status signals. */
+.signal-organizing {
+  color: var(--color-purple);
+}
+
+.signal-participating {
+  color: var(--color-warning);
+}
+
+/* Both twitch purples fail the 4:1 text floor on surface: the casting
+ * label stays secondary, the triangle alone carrying the hue */
+.signal-casting {
+  color: var(--color-text-secondary);
+}
+
+.signal-organizing::before {
+  width: 6px;
+  height: 6px;
+  background: var(--color-purple);
+  transform: rotate(45deg);
+}
+
+.signal-participating::before {
+  background: var(--color-warning);
+}
+
+.signal-casting::before {
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  /* The full twitch purple fails the 3:1 graphics floor on surface */
+  border-left: 7px solid var(--color-twitch-hover);
+}
+
+/* Chips: bordered mono caps for secondary facts (seed, tier) */
 .chip {
   display: inline-block;
   font-family: var(--font-mono);
@@ -529,10 +567,16 @@ th {
  * --route-progress (0-1). The ridden segment and the position dot at its
  * head always ride in brass, the "you are here" hue of the week line's
  * riding state, over the grey base line; at 0 the dot waits in the start
- * ring. Combines with route-setup (dashes + waiting dot). Declared after
- * route-setup so the combined card still hovers brass. */
-.route-progress {
+ * ring. Combined with route-setup (a race not yet started) everything
+ * else stays grey, dashes, boarding ring and hover included: the waiting
+ * dot alone marks the viewer. Once the run is underway the boarding ring
+ * and the hover join the brass. */
+.route-progress:not(.route-setup) {
   --route-color: var(--color-warning);
+}
+
+.route-progress:not(.route-setup) .m-start {
+  border-color: var(--color-warning);
 }
 
 .route-progress .line-progress {
@@ -550,7 +594,9 @@ th {
   top: 4px;
   width: 6px;
   height: 6px;
-  margin-left: -3px;
+  /* -4px, not half the dot: at 0 the dot centers on the start ring
+   * (center 13px), one pixel left of the line's own start */
+  margin-left: -4px;
   border-radius: 50%;
   background: var(--color-warning);
   transition: left var(--transition);

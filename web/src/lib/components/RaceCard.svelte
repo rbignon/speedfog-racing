@@ -7,11 +7,9 @@
 
   let {
     race,
-    role,
     variant = "default",
   }: {
     race: Race;
-    role?: string;
     variant?: "default" | "compact";
   } = $props();
 
@@ -34,9 +32,7 @@
     participating: "Participating",
     casting: "Casting",
   };
-  let effectiveRole = $derived(
-    role ?? (race.my_role ? roleLabels[race.my_role] : undefined),
-  );
+  let roleLabel = $derived(race.my_role ? roleLabels[race.my_role] : undefined);
   let relativeTime = $derived(
     race.started_at || (race.scheduled_at && race.status === "setup")
       ? raceDisplayDate(race)
@@ -110,8 +106,8 @@
           {#if showOpenBadge}
             <span class="signal signal-open">Open</span>
           {/if}
-          {#if effectiveRole}
-            <span class="chip">{effectiveRole}</span>
+          {#if roleLabel}
+            <span class="signal signal-{race.my_role}">{roleLabel}</span>
           {/if}
           <span class="signal signal-{race.status}"
             >{statusLabel(race.status)}</span
