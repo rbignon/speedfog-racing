@@ -245,13 +245,12 @@
   {:else if error && !session}
     <div class="error-state">
       <p>{error}</p>
-      <a href="/training" class="btn btn-secondary">Back to Solo</a>
+      <a href="/training" class="btn btn-primary">Back to Solo</a>
     </div>
   {:else if session}
     <!-- Header -->
     <div class="header">
       <div class="header-left">
-        <a href="/training" class="back-link">&larr; Solo</a>
         <h1>
           {session.pool_config?.name || formatPoolName(session.pool_name)}
         </h1>
@@ -344,7 +343,7 @@
       <div class="actions">
         {#if status === "active"}
           <button
-            class="btn btn-secondary"
+            class="btn btn-primary"
             disabled={downloading}
             onclick={() => (showDownloadModal = true)}
           >
@@ -574,16 +573,6 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-  }
-
-  .back-link {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    text-decoration: none;
-  }
-
-  .back-link:hover {
-    color: var(--color-purple);
   }
 
   h1 {

@@ -184,7 +184,6 @@
 
   .card-link:hover {
     border-color: var(--accent-soft);
-    transform: translateY(-1px);
   }
 
   .value {

@@ -56,8 +56,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border);
+    border: none;
     background: transparent;
     color: var(--color-text-secondary);
     cursor: pointer;
@@ -66,11 +65,9 @@
 
   .share-btn:hover {
     color: var(--color-gold);
-    border-color: var(--color-gold);
   }
 
   .share-btn.copied {
     color: var(--color-success, #22c55e);
-    border-color: var(--color-success, #22c55e);
   }
 </style>

@@ -379,7 +379,6 @@
 
   .teaser:hover {
     border-color: rgba(200, 164, 78, 0.32);
-    transform: translateY(-1px);
   }
 
   .teaser-label {

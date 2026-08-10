@@ -385,7 +385,6 @@
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.09em;
-    color: var(--color-gold);
     padding: 0 0.75rem;
   }
 
