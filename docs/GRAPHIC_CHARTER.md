@@ -137,7 +137,7 @@ The DAG's own iconography, reused as the app's structural language. Draw these a
 
 **Section header device**: a small station ring + line segment in brass, followed by the display-caps title. This is the only decoration section titles get.
 
-**Category markers** (dashboard activity, mixed lists): station ring = race, diamond = daily, square = solo, in the respective semantic hue.
+**Category markers** (dashboard activity, mixed lists): station ring = race, diamond = daily, square = solo, in the respective semantic hue. In the activity feed a 1px dim brass rail (`rgba(200, 164, 78, 0.35)`) threads the marks vertically into one route, ending on the first and last marks; hollow marks punch it with the page background (full brass stays reserved for the marks themselves).
 
 ---
 

@@ -46,7 +46,9 @@
     {@const kind = kindFor(item)}
     <a href={linkFor(item)} class="act-row">
       <span class="act-kind">
-        <span class="mark mark-{kind.mark}" aria-hidden="true"></span>
+        <span class="mark-slot" aria-hidden="true">
+          <span class="mark mark-{kind.mark}"></span>
+        </span>
         {kind.label}
       </span>
       <span class="act-main">
@@ -126,6 +128,7 @@
   }
 
   .act-row {
+    position: relative;
     display: grid;
     grid-template-columns: 92px minmax(0, 1fr) auto;
     align-items: center;
@@ -141,6 +144,28 @@
     background: var(--color-surface-elevated);
   }
 
+  /* The rail: a dim brass line threading the marks into one route, drawn
+   * per row so it ends on the first and last marks whatever their row
+   * heights. Full brass is reserved for the marks themselves (the race
+   * ring would vanish on a line of its own hue). */
+  .act-row::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(200, 164, 78, 0.35);
+  }
+
+  .act-row:first-child::before {
+    top: 50%;
+  }
+
+  .act-row:last-child::before {
+    bottom: 50%;
+  }
+
   .act-kind {
     display: flex;
     align-items: center;
@@ -152,9 +177,21 @@
     color: var(--color-text-secondary);
   }
 
+  /* Fixed slot so every mark shape centers on the rail's x whatever its
+   * own width; marks sit above the rail (positioned, later in tree order)
+   * and the hollow ones punch it with the page background. */
+  .mark-slot {
+    flex: none;
+    width: 9px;
+    display: flex;
+    justify-content: center;
+  }
+
   .mark {
     flex: none;
     display: inline-block;
+    position: relative;
+    transition: background var(--transition);
   }
 
   .mark-race {
@@ -162,6 +199,7 @@
     height: 9px;
     border-radius: 50%;
     border: 2px solid var(--color-gold);
+    background: var(--color-bg);
   }
 
   .mark-daily {
@@ -175,6 +213,12 @@
     width: 8px;
     height: 8px;
     border: 2px solid var(--color-info);
+    background: var(--color-bg);
+  }
+
+  .act-row:hover .mark-race,
+  .act-row:hover .mark-solo {
+    background: var(--color-surface-elevated);
   }
 
   .act-main {
