@@ -575,8 +575,16 @@ impl RaceTracker {
 
         let deaths = self.read_deaths().unwrap_or(0);
         write!(buf_right, "{}", deaths).ok();
-        let font_height = ui.text_line_height();
-        let icon_size = font_height;
+        // The icon reads like a glyph of the mono count next to it:
+        // digit-ish height, feet on the text baseline.
+        let (icon_size, icon_dy) = {
+            let _mono = fonts.map(|f| ui.push_font(f.mono));
+            let size = (ui.text_line_height() * 0.8).round();
+            let ascent = fonts
+                .and_then(|f| ui.fonts().get_font(f.mono).map(|x| x.ascent))
+                .unwrap_or_else(|| ui.text_line_height());
+            (size, (ascent - size).max(0.0))
+        };
         let icon_gap = 2.0;
 
         // Deathless tag, left of the death counter: "DEATHLESS" while the
@@ -657,8 +665,14 @@ impl RaceTracker {
             ui.same_line_with_spacing(0.0, gap);
         }
         if let Some(ref icon) = self.death_icon {
+            // Nudge the icon down onto the baseline, then bring the count
+            // back to the line top (same_line inherits the nudged y).
+            let p = ui.cursor_pos();
+            ui.set_cursor_pos([p[0], p[1] + icon_dy]);
             Image::new(icon.texture_id(), [icon_size, icon_size]).build(ui);
             ui.same_line_with_spacing(0.0, icon_gap);
+            let q = ui.cursor_pos();
+            ui.set_cursor_pos([q[0], p[1]]);
         }
         ui.text_colored(self.cached_colors.text, &buf_right);
     }
