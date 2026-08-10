@@ -606,7 +606,6 @@
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--color-danger);
-    cursor: default;
   }
 
   .body {
