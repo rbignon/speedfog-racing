@@ -583,7 +583,10 @@ impl RaceTracker {
             let ascent = fonts
                 .and_then(|f| ui.fonts().get_font(f.mono).map(|x| x.ascent))
                 .unwrap_or_else(|| ui.text_line_height());
-            (size, (ascent - size).max(0.0))
+            // The skull path's jaw ends at 22 of its 24-unit box, so the
+            // VISUAL bottom sits 2/24 above the image edge; drop that much
+            // further so the jaw, not the empty margin, meets the baseline.
+            (size, (ascent - size * 22.0 / 24.0).max(0.0))
         };
         let icon_gap = 2.0;
 
