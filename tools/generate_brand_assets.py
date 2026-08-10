@@ -14,10 +14,13 @@ Outputs:
 - web/static/og-image.svg + og-image.png            (wordmark share card)
 - server/speedfog_racing/static/fonts/*.ttf         (resvg needs real font
   files to rasterize the dynamic per-race/per-daily OG templates)
+- mod/assets/death.png                              (the overlay's death icon,
+  rasterized from the web SkullIcon's path so both draw the same skull)
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import resvg_py
@@ -31,6 +34,8 @@ ROOT = Path(__file__).resolve().parent.parent
 WEB_FONTS = ROOT / "web" / "static" / "fonts"
 WEB_STATIC = ROOT / "web" / "static"
 SERVER_FONTS = ROOT / "server" / "speedfog_racing" / "static" / "fonts"
+MOD_ASSETS = ROOT / "mod" / "assets"
+SKULL_COMPONENT = ROOT / "web" / "src" / "lib" / "components" / "SkullIcon.svelte"
 
 BG = "#0f1923"
 TEXT = "#e8e6e1"
@@ -124,6 +129,25 @@ def build_og_image() -> str:
   <line x1="609" y1="376" x2="811" y2="376" stroke="{BRASS}" stroke-width="3"/>
   <rect x="811" y="369" width="14" height="14" fill="{BRASS}"/>
   <path transform="translate({x_t:.1f} 446)" fill="{GREY}" d="{d_t}"/>
+</svg>
+"""
+
+
+def build_death_icon() -> str:
+    """The overlay's death icon, from the web SkullIcon's path.
+
+    The Svelte component's module export is the single source of truth for
+    the skull; parse its concatenated string literal rather than duplicating
+    the path data here.
+    """
+    src = SKULL_COMPONENT.read_text()
+    m = re.search(r"export const SKULL_PATH =\s*(.+?);", src, re.DOTALL)
+    if not m:
+        raise ValueError(f"SKULL_PATH not found in {SKULL_COMPONENT}")
+    d = "".join(re.findall(r'"([^"]*)"', m.group(1)))
+    ember = "#dc6a51"
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="128" height="128">
+  <path d="{d}" fill="{ember}" fill-rule="evenodd"/>
 </svg>
 """
 
@@ -236,6 +260,7 @@ def main() -> None:
     og = build_og_image()
     (WEB_STATIC / "og-image.svg").write_text(og)
     rasterize(og, WEB_STATIC / "og-image.png")
+    rasterize(build_death_icon(), MOD_ASSETS / "death.png")
     convert_server_fonts()
     print("brand assets regenerated")
 
