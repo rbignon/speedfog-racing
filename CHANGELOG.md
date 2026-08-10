@@ -2,6 +2,25 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.23.0] - 2026-08-10
+
+### Deathless
+
+- New **Deathless** race option: one life for the whole run, your first death eliminates you
+
+### Website
+
+- **Sitewide visual refresh** following a new SpeedFog graphic charter
+- Skip videos now **open on YouTube**, instead of playing in the small embedded player
+
+### Seeds
+
+- The Elden Ring **title screen now wears a SpeedFog badge**
+- **Fog Rift Catacombs** now uses only its main entrance as a spawn point
+- Fix: the **first phase of the Midra fight ignored enemy scaling** and kept its vanilla late-DLC stats whatever the arena's tier. It now scales with its arena like the boss itself
+
+### Zone Codex
+
 ## [1.22.0] - 2026-08-01
 
 ### Saves
