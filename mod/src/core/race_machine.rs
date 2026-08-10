@@ -1188,23 +1188,34 @@ impl RaceMachine {
 
         let position_readable = self.frame_snapshot.position_readable;
 
-        // Reveal pending zone update once the loading screen ends (loading
-        // byte clear) and the player position is readable. The byte really
-        // means "world clock stopped" (see is_world_clock_stopped):
-        // permanently ON on frozen-clock event seeds (weather plugin
-        // FreezeTime), where the defensive timeout bounds the wait instead.
-        // Both paths require a readable position, so a reveal can never
-        // fire before the world is loaded.
+        // Reveal pending zone update once the destination is actually on
+        // screen and the player position is readable. The primary signal is
+        // the direct screen state (CSMenuManImp): in-game with no blackscreen
+        // fade covering it. When that signal is unavailable (unmapped build
+        // or unreadable chain), fall back to the legacy world-clock byte
+        // (see is_world_clock_stopped), which is permanently ON on
+        // frozen-clock event seeds (weather plugin FreezeTime); the
+        // defensive timeout bounds the wait in that case. Both paths require
+        // a readable position, so a reveal can never fire before the world
+        // is loaded.
         if self.pending_zone_update.is_some() {
             let pending_for = self.pending_zone_received_at.map(|t| now.duration_since(t));
             let timed_out = pending_for.is_some_and(|d| d >= ZONE_REVEAL_TIMEOUT);
-            let loading_done = self.frame_snapshot.loading_screen != Some(true);
+            let loading_done = match self.frame_snapshot.screen_in_game {
+                // Direct signal (CSMenuManImp): the destination is on
+                // screen when the menu system reports in-game and no fade
+                // covers it. Immune to the world-clock failure modes
+                // (cutscenes, frozen-clock event seeds).
+                Some(in_game) => in_game && self.frame_snapshot.blackscreen == Some(false),
+                // Unmapped build or unreadable chain: legacy proxy.
+                None => self.frame_snapshot.loading_screen != Some(true),
+            };
             if position_readable && (loading_done || timed_out) {
                 let zone = self.pending_zone_update.take().unwrap();
                 if loading_done {
                     info!(name = %zone.display_name, "[RACE] Zone revealed");
                 } else {
-                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout, loading byte stuck)");
+                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout, reveal signal stuck)");
                 }
                 self.race_state.current_zone = Some(zone);
                 self.zone_version = self.zone_version.wrapping_add(1);
@@ -2427,6 +2438,43 @@ mod tests {
         assert_eq!(zone.display_name, "Stormveil");
         assert!(m.pending_zone_update.is_none());
         assert_eq!(m.zone_version, 1, "reveal bumps the render-cache key");
+    }
+
+    #[test]
+    fn test_zone_reveal_uses_direct_screen_signal() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(zone_update("Stormveil", None), now + ms(100));
+
+        // Menu system says loading screen: not revealed, even though the
+        // legacy world-clock byte already reads clear (the direct signal
+        // wins when present).
+        let mut s = snap_load(Some(1_000), true, Some(false));
+        s.screen_in_game = Some(false);
+        s.blackscreen = Some(false);
+        m.tick(tick_in(s, true, Some(vec![])), now + ms(200));
+        assert!(m.race_state.current_zone.is_none());
+
+        // In game but still under the fade: the player cannot see the
+        // world yet, so the destination is not revealed either.
+        let mut s = snap_load(Some(1_100), true, Some(false));
+        s.screen_in_game = Some(true);
+        s.blackscreen = Some(true);
+        m.tick(tick_in(s, true, None), now + ms(300));
+        assert!(m.race_state.current_zone.is_none());
+
+        // Fade lifted: revealed on that frame.
+        let mut s = snap_load(Some(1_200), true, Some(false));
+        s.screen_in_game = Some(true);
+        s.blackscreen = Some(false);
+        m.tick(tick_in(s, true, None), now + ms(400));
+        assert_eq!(
+            m.race_state
+                .current_zone
+                .as_ref()
+                .map(|z| z.display_name.as_str()),
+            Some("Stormveil")
+        );
     }
 
     #[test]
