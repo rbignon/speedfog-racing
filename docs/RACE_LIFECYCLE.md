@@ -126,7 +126,7 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 
 - Sets `current_layer = total_layers` (progress shows N/N).
 - Sets `finished_at` to current time.
-- Updates the recorded `igt_ms` to the maximum of the reported IGT and the participant's previously recorded IGT (non-decreasing clamp). This ensures that if the player replays a segment after a backup restore (legitimate regression), the finish IGT is based on the furthest point reached, not an intermediate checkpoint.
+- Updates the recorded `igt_ms` to the maximum of the reported IGT and the participant's previously recorded IGT (non-decreasing clamp). This ensures that if the player replays a segment after a backup restore (legitimate regression), the finish IGT is based on the furthest point reached, not an intermediate checkpoint. The mod normalizes IGT before it ever reaches the wire (framerate-independent increments, frozen during blackscreen fades); see `IGT_TIMING.md`.
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
