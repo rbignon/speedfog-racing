@@ -19,8 +19,6 @@ All notable changes to SpeedFog Racing are documented in this file.
 - **Fog Rift Catacombs** now uses only its main entrance as a spawn point
 - Fix: the **first phase of the Midra fight ignored enemy scaling** and kept its vanilla late-DLC stats whatever the arena's tier. It now scales with its arena like the boss itself
 
-### Zone Codex
-
 ## [1.22.0] - 2026-08-01
 
 ### Saves
