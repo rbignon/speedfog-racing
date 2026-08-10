@@ -464,22 +464,36 @@ impl RaceTracker {
             ui.calc_text_size(&buf_right)[0]
         };
 
-        let dot_str = "\u{25CF} "; // "● "
-        let dot_width = ui.calc_text_size(dot_str)[0];
+        // ImGui top-aligns mixed-size text on a line: on the two title
+        // lines the smaller mono column drops by the ascent difference so
+        // it sits on the display face's baseline.
+        let mono_drop = fonts
+            .map(|f| {
+                let atlas = ui.fonts();
+                let da = atlas.get_font(f.display).map(|x| x.ascent).unwrap_or(0.0);
+                let ma = atlas.get_font(f.mono).map(|x| x.ascent).unwrap_or(0.0);
+                (da - ma).max(0.0)
+            })
+            .unwrap_or(0.0);
+
         let gap = ui.calc_text_size(" ")[0];
-        let name_max = max_width - igt_width - gap - dot_width;
-
-        ui.text_colored(dot_color, dot_str);
-        ui.same_line_with_spacing(0.0, 0.0);
-
-        if let Some(race) = self.race_info() {
-            buf_left.push_str(&race.name);
-        } else {
-            buf_left.push_str("Connecting...");
-        }
         {
-            // The race name is the overlay's title: display face
+            // Dot and race name share the display box so they share a
+            // baseline (the dot glyph comes from the symbols face merged
+            // into display at the same size)
             let _display = fonts.map(|f| ui.push_font(f.display));
+            let dot_str = "\u{25CF} "; // "● "
+            let dot_width = ui.calc_text_size(dot_str)[0];
+            let name_max = max_width - igt_width - gap - dot_width;
+
+            ui.text_colored(dot_color, dot_str);
+            ui.same_line_with_spacing(0.0, 0.0);
+
+            if let Some(race) = self.race_info() {
+                buf_left.push_str(&race.name);
+            } else {
+                buf_left.push_str("Connecting...");
+            }
             let truncated = truncate_to_width(ui, &buf_left, name_max);
             ui.text_colored(self.cached_colors.text_disabled, &truncated);
         }
@@ -487,6 +501,8 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - igt_width);
         {
             let _mono = fonts.map(|f| ui.push_font(f.mono));
+            let p = ui.cursor_pos();
+            ui.set_cursor_pos([p[0], p[1] + mono_drop]);
             ui.text_colored(right_color, &buf_right);
         }
 
@@ -548,6 +564,8 @@ impl RaceTracker {
         ui.same_line_with_pos(max_width - right_width);
         {
             let _mono = fonts.map(|f| ui.push_font(f.mono));
+            let p = ui.cursor_pos();
+            ui.set_cursor_pos([p[0], p[1] + mono_drop]);
             ui.text_colored(right_color, &buf_right);
         }
 
