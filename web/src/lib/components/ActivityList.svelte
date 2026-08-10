@@ -151,10 +151,10 @@
   .act-row::before {
     content: "";
     position: absolute;
-    left: 8px;
+    left: 7px;
     top: 0;
     bottom: 0;
-    width: 1px;
+    width: 3px;
     background: rgba(200, 164, 78, 0.35);
   }
 
