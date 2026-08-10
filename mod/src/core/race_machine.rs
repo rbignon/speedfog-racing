@@ -172,6 +172,13 @@ pub struct FrameSnapshot {
     /// not read this frame or unreadable). Stands in for "loading screen
     /// displayed" outside frozen-clock seeds; see the reveal logic.
     pub loading_screen: Option<bool>,
+    /// Direct screen signal (CSMenuManImp): `Some(true)` = in game,
+    /// `Some(false)` = loading screen or main menu, `None` = signal
+    /// unavailable (unmapped build) or not read this frame.
+    pub screen_in_game: Option<bool>,
+    /// Blackscreen fade while in game (SoulSplitter's IsBlackscreenActive).
+    /// `None` follows `screen_in_game`.
+    pub blackscreen: Option<bool>,
 }
 
 // =============================================================================
@@ -186,6 +193,9 @@ pub struct FrameNeeds {
     pub deaths: bool,
     /// Read the loading byte (only while a zone reveal is pending).
     pub loading: bool,
+    /// Read the screen-state/blackscreen chains (mid-run for the IGT
+    /// freeze, or while a zone reveal is pending).
+    pub blackscreen: bool,
     pub poll_flags: bool,
 }
 
@@ -241,6 +251,11 @@ pub enum Effect {
     /// Add a quit-out penalty to the in-game timer (4-byte u32 write; see
     /// `GameState::add_igt_penalty`).
     ApplyIgtPenalty {
+        ms: u32,
+    },
+    /// Blackscreen freeze write-back: overwrite the in-game timer with the
+    /// frozen value (see `GameState::write_igt`). Emitted every fade frame.
+    FreezeIgt {
         ms: u32,
     },
     /// Clear the warp hook's captured grace entity id.
@@ -347,6 +362,10 @@ pub struct RaceMachine {
     /// survives `RaceStart`, so the per-save flush still catches a stale
     /// setup-phase save on the first in-race observation.
     pub last_observed_igt: Option<u32>,
+    /// Blackscreen freeze baseline: last IGT seen outside a freezable
+    /// fade. During a fade the timer is rewritten to this value every
+    /// frame (SoulSplitter's `_inGameTime`).
+    pub freeze_last_igt: Option<u32>,
     /// Cached reads for the current frame (written by the shell each frame)
     pub frame_snapshot: FrameSnapshot,
     /// Bumped on every zone reveal; the shell's exits render cache keys on it.
@@ -399,6 +418,7 @@ impl RaceMachine {
             server_condition: None,
             frozen_igt_ms: None,
             last_observed_igt: None,
+            freeze_last_igt: None,
             frame_snapshot: FrameSnapshot::default(),
             zone_version: 0,
             leaderboard_version: 0,
@@ -449,6 +469,17 @@ impl RaceMachine {
             .as_ref()
             .map(|r| r.quit_out_penalty_ms)
             .unwrap_or(0)
+    }
+
+    /// Whether the blackscreen IGT freeze may fire. Mirrors the quit-out
+    /// penalty gate (mid-run, not finished, not during countdown) plus
+    /// wrong-save: never write the timer of a save that is not the race
+    /// save.
+    fn freeze_gate_open(&self, now: Instant) -> bool {
+        self.is_race_running()
+            && !self.am_i_finished()
+            && !self.is_countdown_active(now)
+            && !self.wrong_save
     }
 
     fn is_deathless(&self) -> bool {
@@ -720,6 +751,7 @@ impl RaceMachine {
                 self.wrong_save = false;
                 self.last_good_igt = None;
                 self.last_good_at = None;
+                self.freeze_last_igt = None;
                 self.bump_leaderboard_version();
             }
             MachineMessage::LeaderboardUpdate {
@@ -959,6 +991,11 @@ impl RaceMachine {
 /// at least this long, so the degraded reveal lands near the loading exit.
 const ZONE_REVEAL_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// SoulSplitter's freeze guard: a fade frame only re-writes the frozen IGT
+/// while the game-side creep stays below this; a bigger jump is a
+/// legitimate discontinuity (save load) and re-seeds the baseline instead.
+const BLACKSCREEN_FREEZE_MAX_STEP_MS: u32 = 1_000;
+
 /// A same-save reload always comes back BELOW the last observation (the
 /// on-disk save lags); a forward jump across an unload beyond this slack
 /// means another, further-along save file.
@@ -988,6 +1025,7 @@ impl RaceMachine {
             igt: live || !self.event_ids.is_empty(),
             deaths: live,
             loading: self.pending_zone_update.is_some(),
+            blackscreen: self.freeze_gate_open(now) || self.pending_zone_update.is_some(),
             poll_flags: !self.wrong_save
                 && !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
@@ -1026,6 +1064,30 @@ impl RaceMachine {
     pub fn tick(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         self.frame_snapshot = input.snapshot;
+
+        // Blackscreen IGT freeze (ported from SoulSplitter's UpdateTimer):
+        // while a fade covers the screen mid-run, hold the timer at its
+        // last visible value by rewriting it every frame, so load-time
+        // differences between machines stop leaking into IGT. Runs BEFORE
+        // the reload/quit-out block and overrides the snapshot, so that
+        // block only ever sees the frozen value: the per-frame write-back
+        // makes the raw IGT sawtooth, which would otherwise read as tiny
+        // regressions and could arm a false quit-out.
+        let raw_igt = self.frame_snapshot.igt_ms.filter(|&v| v > 0);
+        let freezing = self.freeze_gate_open(now)
+            && self.frame_snapshot.blackscreen == Some(true)
+            && matches!(
+                (raw_igt, self.freeze_last_igt),
+                (Some(igt), Some(last))
+                    if igt > last && igt < last.saturating_add(BLACKSCREEN_FREEZE_MAX_STEP_MS)
+            );
+        if freezing {
+            let frozen = self.freeze_last_igt.unwrap();
+            effects.push(Effect::FreezeIgt { ms: frozen });
+            self.frame_snapshot.igt_ms = Some(frozen);
+        } else if let Some(igt) = raw_igt {
+            self.freeze_last_igt = Some(igt);
+        }
 
         // GameDataMan's play_time reads 0 transiently while a menu reload
         // repopulates it (live-observed 2026-07-30); the status-update path
@@ -1185,6 +1247,10 @@ impl RaceMachine {
                 let penalty_ms = self.quit_out_penalty_ms();
                 if penalty_ms > 0 {
                     effects.push(Effect::ApplyIgtPenalty { ms: penalty_ms });
+                    // The write invalidates the frozen baseline; the next
+                    // clear frame re-seeds it from the penalized IGT (one
+                    // unfrozen fade frame at worst).
+                    self.freeze_last_igt = None;
                     let banner = if penalty_ms % 1000 == 0 {
                         format!("Quit-out: +{}s", penalty_ms / 1000)
                     } else {
@@ -2926,6 +2992,177 @@ mod tests {
             !m.flag_buffer.has_pending(),
             "boundary regression flushes per-save state"
         );
+    }
+
+    /// Snapshot with the direct screen signal present (in game), fade state
+    /// per `blackscreen`.
+    fn snap_black(igt: Option<u32>, pos: bool, blackscreen: bool) -> FrameSnapshot {
+        FrameSnapshot {
+            igt_ms: igt,
+            death_count: Some(0),
+            position_readable: pos,
+            loading_screen: Some(false),
+            screen_in_game: Some(true),
+            blackscreen: Some(blackscreen),
+        }
+    }
+
+    #[test]
+    fn test_blackscreen_freeze_holds_and_advances_baseline() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+
+        // Clear frame seeds the baseline.
+        m.tick(
+            tick_in(snap_black(Some(100_000), true, false), true, None),
+            now,
+        );
+        assert_eq!(m.freeze_last_igt, Some(100_000));
+
+        // Fade frames: the game-side creep is written back every frame and
+        // the machine itself sees the frozen value.
+        for i in 1..=3u64 {
+            let fx = m.tick(
+                tick_in(snap_black(Some(100_016), true, true), true, None),
+                now + ms(16 * i),
+            );
+            assert!(fx.contains(&Effect::FreezeIgt { ms: 100_000 }));
+            assert_eq!(m.frame_snapshot.igt_ms, Some(100_000));
+        }
+
+        // Fade over: baseline advances again, no more freeze writes.
+        let fx = m.tick(
+            tick_in(snap_black(Some(100_100), true, false), true, None),
+            now + ms(100),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+        assert_eq!(m.freeze_last_igt, Some(100_100));
+    }
+
+    #[test]
+    fn test_freeze_reseeds_on_large_jump() {
+        // A jump of BLACKSCREEN_FREEZE_MAX_STEP_MS or more during a fade is
+        // a legitimate discontinuity (save load): do not fight it.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap_black(Some(100_000), true, false), true, None),
+            now,
+        );
+        let fx = m.tick(
+            tick_in(snap_black(Some(101_000), true, true), true, None),
+            now + ms(16),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+        assert_eq!(m.freeze_last_igt, Some(101_000));
+    }
+
+    #[test]
+    fn test_freeze_gate_closed_outside_running_race_and_countdown() {
+        let now = Instant::now();
+        // Race in setup: no freeze.
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100], Some(900)), now);
+        m.tick(
+            tick_in(snap_black(Some(1_000), true, false), true, None),
+            now,
+        );
+        let fx = m.tick(
+            tick_in(snap_black(Some(1_016), true, true), true, None),
+            now + ms(16),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+
+        // Countdown: no freeze either.
+        let mut m = running_machine(now);
+        m.handle_message(MachineMessage::RaceStart(10), now);
+        m.tick(
+            tick_in(snap_black(Some(1_000), true, false), true, None),
+            now + ms(20),
+        );
+        let fx = m.tick(
+            tick_in(snap_black(Some(1_016), true, true), true, None),
+            now + ms(40),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+    }
+
+    #[test]
+    fn test_freeze_writeback_never_arms_quit_out() {
+        // The write-back makes the raw game IGT sawtooth (creep up, get
+        // pulled back). Because the freeze block runs before the
+        // reload/quit-out block and overrides the snapshot, the machine
+        // must never read those pull-backs as an IGT regression, even
+        // with position unreadable (fade context).
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap_black(Some(100_000), true, false), true, None),
+            now,
+        );
+        // Raw reads during the fade: 100_033 then 100_016 (below the
+        // previous raw read, exactly the sawtooth a per-frame write-back
+        // produces).
+        m.tick(
+            tick_in(snap_black(Some(100_033), false, true), true, None),
+            now + ms(16),
+        );
+        m.tick(
+            tick_in(snap_black(Some(100_016), false, true), true, None),
+            now + ms(32),
+        );
+        assert!(
+            !m.pending_quit_out,
+            "freeze write-back must not look like a quit-out"
+        );
+    }
+
+    #[test]
+    fn test_real_quit_out_still_detected_with_screen_signal_present() {
+        // A regression never freezes (the freeze only fights forward
+        // creep), so a genuine menu quit-out during a fade context still
+        // arms the penalty even while the blackscreen flag reads true.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(
+            tick_in(snap_black(Some(100_000), true, false), true, None),
+            now,
+        );
+        let fx = m.tick(
+            tick_in(snap_black(Some(97_000), false, true), true, None),
+            now + ms(16),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+        assert!(
+            m.pending_quit_out,
+            "regression through a fade is still a quit-out"
+        );
+    }
+
+    #[test]
+    fn test_freeze_baseline_resets_on_penalty() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let fx = quit_out_cycle(&mut m, now);
+        assert_eq!(penalty_ms(&fx), Some(2000));
+        assert_eq!(
+            m.freeze_last_igt, None,
+            "penalty invalidates the frozen baseline"
+        );
+
+        // First fade frame after the penalty re-seeds from the penalized
+        // IGT instead of freezing back to a pre-penalty value.
+        let fx = m.tick(
+            tick_in(snap_black(Some(10_516), true, true), true, None),
+            now + ms(20),
+        );
+        assert!(!fx.iter().any(|e| matches!(e, Effect::FreezeIgt { .. })));
+        assert_eq!(m.freeze_last_igt, Some(10_516));
+        let fx = m.tick(
+            tick_in(snap_black(Some(10_532), true, true), true, None),
+            now + ms(40),
+        );
+        assert!(fx.contains(&Effect::FreezeIgt { ms: 10_516 }));
     }
 
     #[test]
