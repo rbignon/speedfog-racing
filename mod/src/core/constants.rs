@@ -54,3 +54,10 @@ pub const CHRASM_TERTIARY_RIGHT_WEP_OFFSET: usize = 0x3AC;
 
 /// EquipParamWeapon row 110000 = "Unarmed" (fists). Mapped to None server-side.
 pub const UNARMED_WEAPON_ID: i32 = 110000;
+
+/// CSMenuManImp + 0x18: fade flag word driving blackscreen detection
+/// (SoulSplitter's `IsBlackscreenActive`); offset stable across builds.
+pub const MENUMAN_BLACKSCREEN_FLAGS_OFFSET: usize = 0x18;
+/// CSMenuManImp screen-state value for "in game" (SoulSplitter's
+/// `ScreenState`: 0 = InGame, 1 = Loading, 256 = MainMenu).
+pub const SCREEN_STATE_IN_GAME: i32 = 0;

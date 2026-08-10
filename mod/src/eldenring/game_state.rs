@@ -7,17 +7,35 @@ use std::time::Duration;
 
 use libeldenring::memedit::PointerChain;
 use libeldenring::pointers::Pointers;
+use libeldenring::version::{get_version, Version};
+use tracing::warn;
 
 use crate::core::constants::{
     CHRASM_PRIMARY_LEFT_WEP_OFFSET, CHRASM_PRIMARY_RIGHT_WEP_OFFSET,
     CHRASM_SECONDARY_LEFT_WEP_OFFSET, CHRASM_SECONDARY_RIGHT_WEP_OFFSET,
     CHRASM_TERTIARY_LEFT_WEP_OFFSET, CHRASM_TERTIARY_RIGHT_WEP_OFFSET, CHRASM_WEP_SLOT_LEFT_OFFSET,
     CHRASM_WEP_SLOT_RIGHT_OFFSET, FIELD_AREA_PLAY_REGION_ID_OFFSET, GAMEDATAMAN_DEATH_COUNT_OFFSET,
-    GAMEDATAMAN_IGT_OFFSET, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID, UNARMED_WEAPON_ID,
+    GAMEDATAMAN_IGT_OFFSET, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID,
+    MENUMAN_BLACKSCREEN_FLAGS_OFFSET, SCREEN_STATE_IN_GAME, UNARMED_WEAPON_ID,
 };
 use crate::core::map_utils::format_map_id;
 use crate::core::types::PlayerPosition;
 use crate::profile_span;
+
+/// CSMenuManImp screen-state offset per game build (SoulSplitter's
+/// `InitializeOffsets`, 0x730 group = app 1.12+ / exe 2.2+). Pre-DLC
+/// builds are left unmapped: the platform does not race on them, and an
+/// unmapped build only degrades the blackscreen signals (freeze and
+/// reveal fall back), it never blocks racing.
+fn screen_state_offset(version: Version) -> Option<usize> {
+    use Version::*;
+    match version {
+        V2_02_0 | V2_02_3 | V2_03_0 | V2_04_0 | V2_05_0 | V2_06_0 | V2_06_1 | V2_06_2 => {
+            Some(0x730)
+        }
+        _ => None,
+    }
+}
 
 /// Elden Ring game state reader
 ///
@@ -40,6 +58,11 @@ pub struct GameState {
     /// 4-byte IGT chain for penalty writes. libeldenring's `pointers.igt` is
     /// typed `usize`; writing through it would clobber GameDataMan+0xA4.
     igt_write_ptr: PointerChain<u32>,
+    /// CSMenuManImp screen state (see `SCREEN_STATE_IN_GAME`). `None` on
+    /// builds without a mapped offset: blackscreen signals degrade.
+    screen_state_ptr: Option<PointerChain<i32>>,
+    /// CSMenuManImp fade flag word (`is_blackscreen_active`).
+    blackscreen_flags_ptr: PointerChain<i32>,
 }
 
 impl GameState {
@@ -63,6 +86,22 @@ impl GameState {
         // Create pointer chain for IGT penalty writes (GameDataMan + 0xA0).
         // 4-byte u32, distinct from libeldenring's `pointers.igt` (usize).
         let igt_write_ptr = PointerChain::<u32>::new(&[game_data_man, GAMEDATAMAN_IGT_OFFSET]);
+
+        // CSMenuManImp chains for the blackscreen freeze and zone reveal
+        // (SoulSplitter's IsBlackscreenActive / ScreenState).
+        let cs_menu_man_imp = pointers.base_addresses.cs_menu_man_imp;
+        let screen_state_ptr = match screen_state_offset(get_version()) {
+            Some(offset) => Some(PointerChain::<i32>::new(&[cs_menu_man_imp, offset])),
+            None => {
+                warn!(
+                    "[IGT] No screen-state offset mapped for this game build; \
+                     blackscreen freeze and direct reveal signal disabled"
+                );
+                None
+            }
+        };
+        let blackscreen_flags_ptr =
+            PointerChain::<i32>::new(&[cs_menu_man_imp, MENUMAN_BLACKSCREEN_FLAGS_OFFSET]);
 
         // Create pointer chain for loading screen flag
         // CE table: "In cut-scene/loading screen" at [[EventFlagMan]+0x28]+0x113
@@ -101,6 +140,8 @@ impl GameState {
             wep_slot_right_ptr,
             weapon_slot_ptrs,
             igt_write_ptr,
+            screen_state_ptr,
+            blackscreen_flags_ptr,
         }
     }
 
@@ -151,6 +192,36 @@ impl GameState {
     pub fn is_world_clock_stopped(&self) -> Option<bool> {
         profile_span!("is_world_clock_stopped");
         self.loading_screen_ptr.read().map(|v| v != 0)
+    }
+
+    /// CSMenuManImp screen state: `Some(true)` = in game, `Some(false)` =
+    /// loading screen or main menu, `None` = unmapped build or unreadable
+    /// chain (callers fall back to the legacy world-clock proxy).
+    pub fn is_screen_in_game(&self) -> Option<bool> {
+        profile_span!("is_screen_in_game");
+        let state = self.screen_state_ptr.as_ref()?.read()?;
+        Some(state == SCREEN_STATE_IN_GAME)
+    }
+
+    /// Blackscreen ("meme loading screen") detection, ported from
+    /// SoulSplitter's `IsBlackscreenActive`: in-game screen state with the
+    /// fade flag word reading bit0=1, bit8=0, bit16=1. `Some(false)` when
+    /// simply not fading (or not in game); `None` when the screen-state
+    /// signal itself is unavailable.
+    pub fn is_blackscreen_active(&self) -> Option<bool> {
+        profile_span!("is_blackscreen_active");
+        if !self.is_screen_in_game()? {
+            return Some(false);
+        }
+        let flags = self.blackscreen_flags_ptr.read()?;
+        Some(flags & 0x1 == 0x1 && flags & 0x100 == 0 && flags & 0x1_0000 == 0x1_0000)
+    }
+
+    /// Overwrite the in-game timer (blackscreen freeze write-back). Same
+    /// 4-byte chain as `add_igt_penalty`; `None` when unwritable.
+    pub fn write_igt(&self, ms: u32) -> Option<()> {
+        profile_span!("write_igt");
+        self.igt_write_ptr.write(ms)
     }
 
     /// Read the currently-equipped weapon IDs for the left and right hands.
