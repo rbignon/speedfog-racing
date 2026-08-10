@@ -203,6 +203,12 @@
           {#if race.pool_name}
             &middot; {formatPoolName(race.pool_name)}
           {/if}
+          {#if race.deathless}
+            {#if !race.pool_name}&middot;{/if}
+            <span class="deathless" title="Dying once eliminates you"
+              >Deathless</span
+            >
+          {/if}
         </div>
         <span class="byline">
           by
@@ -346,6 +352,18 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     min-width: 0;
+  }
+
+  /* Same mono ember micro-label as the daily timetable's deathless tag */
+  .race-meta .deathless {
+    display: inline-block;
+    margin-left: 0.3rem;
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-danger);
+    cursor: default;
   }
 
   /* Caster row */
