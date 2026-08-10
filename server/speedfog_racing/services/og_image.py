@@ -23,7 +23,9 @@ logger = logging.getLogger(__name__)
 _TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 _env = Environment(
     loader=FileSystemLoader(_TEMPLATES_DIR),
-    autoescape=select_autoescape(["svg", "xml"]),
+    # select_autoescape matches filename suffixes: ".svg" alone would miss
+    # our "*.svg.j2" template names and silently disable escaping.
+    autoescape=select_autoescape(["svg.j2", "svg", "xml"]),
 )
 
 _TEMPLATE_BY_STATUS = {

@@ -46,6 +46,13 @@ def test_each_template_renders_valid_svg(status: str, label: str, accent: str) -
     assert accent in svg
 
 
+def test_race_name_with_markup_characters_renders_valid_svg() -> None:
+    """XML specials in user-supplied names must be escaped, not break the SVG."""
+    svg = render_svg("running", _ctx(race_name="Fog & Friends <3", status_label="Live"))
+    ET.fromstring(svg)  # raises ParseError if '&' or '<' leaked through raw
+    assert "FOG &amp; FRIENDS &lt;3" in svg
+
+
 def test_setup_with_no_participants_renders_no_players_yet() -> None:
     svg = render_svg("setup", _ctx())
     assert "No players yet" in svg
