@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from speedfog_racing.services.og_image import render_daily_og
+from speedfog_racing.services.og_image import _TEMPLATE_VERSION, render_daily_og
 
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -31,7 +31,7 @@ async def test_render_daily_og_writes_png_to_disk(tmp_path: Path) -> None:
     out_dir = tmp_path / "og"
     png = await render_daily_og(race, cache_dir=out_dir)
     assert png.startswith(_PNG_MAGIC)
-    expected = out_dir / "daily-v2-2026-04-27.png"
+    expected = out_dir / f"daily-v{_TEMPLATE_VERSION}-2026-04-27.png"
     assert expected.exists()
     assert expected.read_bytes() == png
 
@@ -41,7 +41,7 @@ async def test_render_daily_og_reuses_cached_file(tmp_path: Path) -> None:
     race = _race()
     out_dir = tmp_path / "og"
     first = await render_daily_og(race, cache_dir=out_dir)
-    cached = out_dir / "daily-v2-2026-04-27.png"
+    cached = out_dir / f"daily-v{_TEMPLATE_VERSION}-2026-04-27.png"
     # Tamper with the file: a fresh render would overwrite it; a cache hit
     # would return the tampered bytes verbatim.
     cached.write_bytes(b"\x89PNG\r\n\x1a\nTAMPERED")

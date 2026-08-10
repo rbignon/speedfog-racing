@@ -227,7 +227,7 @@ Wordmark only; the v1 network glyph is retired everywhere (header, favicon, OG i
 
 - **Wordmark**: `SPEEDFOG` in Barlow Condensed 700 caps, primary text color; `RACING` same size, weight 600, brass. The header lockup is the wordmark alone; the hero variant adds a brass route underline (triangle → ring → square).
 - **Favicon**: the `SF` initials in Barlow Condensed 700 with the wordmark's double color (S primary, F brass) on a background-color plate, corner radius 112/512. Letterforms are outlined to paths: SVG favicons render without webfont access.
-- **OG images**: the static share card centers the wordmark, the hero route underline and the tagline on the background color. The dynamic per-race and per-daily cards (server-rendered) carry the wordmark header, charter faces and greys, a status-colored route line on the top edge and a mono status signal; accents map setup → verdigris, running → ember, finished → steel, daily → brass.
+- **OG images**: the static share card centers the wordmark, the hero route underline and the tagline on the background color. The dynamic per-race and per-daily cards (server-rendered) carry the wordmark header, charter faces and greys, a status-colored route underline at content width beneath the header (the hero triangle → ring → square device, markers always present; dashed ride while in setup) and a mono status signal; accents map setup → verdigris, running → ember, finished → steel, daily → brass.
 
 `tools/generate_brand_assets.py` regenerates the static assets and the TTF conversions the server needs to rasterize the dynamic cards.
 

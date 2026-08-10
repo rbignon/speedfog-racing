@@ -35,7 +35,7 @@ _TEMPLATE_BY_STATUS = {
 
 # Folded into cache filenames so a visual redesign of the templates stops
 # serving stale pre-redesign PNGs. Bump on every template refresh.
-_TEMPLATE_VERSION = 2
+_TEMPLATE_VERSION = 3
 
 _FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
 
