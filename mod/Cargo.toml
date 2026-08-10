@@ -50,6 +50,9 @@ hudhook = { version = "0.9.1", features = ["dx12", "inject"], default-features =
 # --- retour for function hooking (warp detection) ---
 retour = { version = "0.3", default-features = false }
 
+# --- ilhook for mid-function register hooks (IGT truncation fix) ---
+ilhook = "2.1"
+
 # --- Profiling (optional, behind `profile-tracy` feature) ---
 # `enable` is the master switch on both crates; removing it makes the profiler a no-op.
 tracing-tracy = { version = "0.11", optional = true, default-features = false, features = [

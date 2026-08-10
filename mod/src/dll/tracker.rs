@@ -313,10 +313,11 @@ impl RaceTracker {
             }
         }
 
-        // Warm the quit-out AOB scan off the frame path: the OnceLock's
-        // first resolution walks the whole module image.
+        // Warm the quit-out AOB scan and install the IGT truncation-fix
+        // hook off the frame path: both walk the whole module image.
         std::thread::spawn(|| {
             let _ = crate::eldenring::quitout::is_available();
+            crate::eldenring::igt_hook::install();
         });
 
         // Pre-parse overlay colors

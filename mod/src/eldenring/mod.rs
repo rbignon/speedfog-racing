@@ -8,6 +8,7 @@
 
 mod event_flags;
 mod game_state;
+pub mod igt_hook;
 pub mod item_spawner;
 pub mod quitout;
 mod scan;
