@@ -5,6 +5,7 @@ pub mod color;
 pub mod constants;
 pub mod flag_buffer;
 pub mod format;
+pub mod igt_fix;
 pub mod map_utils;
 pub mod profile;
 pub mod protocol;
