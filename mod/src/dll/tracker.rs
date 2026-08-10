@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
@@ -81,6 +81,10 @@ pub struct DebugInfo {
     pub sample_reads: Vec<(u32, FlagReadResult)>,
     /// Raw loading byte (engine flags 2200-2207, `GameState::read_loading_byte`)
     pub loading_byte: Option<u8>,
+    /// Direct screen signal (`GameState::is_screen_in_game`); None = unmapped build
+    pub screen_in_game: Option<bool>,
+    /// Blackscreen fade active (`GameState::is_blackscreen_active`)
+    pub blackscreen: Option<bool>,
     /// Return-to-title Lua bit, debug-only telemetry (live testing showed it
     /// fires on scripted returns, not menu quit-outs, so detection uses the
     /// title screen + IGT regression instead). None = AOB unresolved or
@@ -98,6 +102,8 @@ impl Default for DebugInfo {
             vanilla_sanity: FlagReadResult::Unreadable,
             sample_reads: Vec::new(),
             loading_byte: None,
+            screen_in_game: None,
+            blackscreen: None,
             quit_out_bit: None,
         }
     }
@@ -452,6 +458,14 @@ impl RaceTracker {
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
                     .flatten(),
+                screen_in_game: needs
+                    .blackscreen
+                    .then(|| self.game_state.is_screen_in_game())
+                    .flatten(),
+                blackscreen: needs
+                    .blackscreen
+                    .then(|| self.game_state.is_blackscreen_active())
+                    .flatten(),
             }
         };
 
@@ -673,6 +687,13 @@ impl RaceTracker {
                         warn!(ms, "[RACE] Quit-out penalty skipped: IGT unwritable");
                     }
                 },
+                Effect::FreezeIgt { ms } => {
+                    // Per-fade-frame write; debug level, a warn would spam
+                    // whole fades when the chain is transiently unwritable.
+                    if self.game_state.write_igt(ms).is_none() {
+                        debug!(ms, "[IGT] Freeze write failed (IGT unwritable)");
+                    }
+                }
                 Effect::ClearWarpCapture => {
                     crate::eldenring::warp_hook::clear_captured_grace_entity_id();
                 }
@@ -855,6 +876,8 @@ impl RaceTracker {
             vanilla_sanity,
             sample_reads,
             loading_byte: self.game_state.read_loading_byte(),
+            screen_in_game: self.game_state.is_screen_in_game(),
+            blackscreen: self.game_state.is_blackscreen_active(),
             quit_out_bit: crate::eldenring::quitout::read_return_title_requested(),
         };
         self.last_debug_refresh = Some(Instant::now());

@@ -1145,6 +1145,27 @@ impl RaceTracker {
             None => ui.text_colored(c.danger, "None"),
         }
 
+        // Direct screen signal + blackscreen fade (CSMenuManImp), the
+        // freeze/reveal inputs. n/a = unmapped build.
+        ui.text("  screen in game:");
+        ui.same_line();
+        match debug.screen_in_game {
+            Some(b) => ui.text_colored(
+                if b { c.text } else { c.gold },
+                if b { "true" } else { "false" },
+            ),
+            None => ui.text_colored(c.danger, "n/a"),
+        }
+        ui.text("  blackscreen:");
+        ui.same_line();
+        match debug.blackscreen {
+            Some(b) => ui.text_colored(
+                if b { c.gold } else { c.text },
+                if b { "true" } else { "false" },
+            ),
+            None => ui.text_colored(c.danger, "n/a"),
+        }
+
         // Return-to-title Lua bit (debug telemetry only; not the quit-out
         // detector). None = AOB unresolved or pointer chain null.
         ui.text("  return-title bit:");
