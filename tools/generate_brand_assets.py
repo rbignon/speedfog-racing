@@ -124,9 +124,9 @@ def build_og_image() -> str:
   <path transform="translate({x0:.1f} 330)" fill="{TEXT}" d="{d1}"/>
   <path transform="translate({x0 + w1 + gap:.1f} 330)" fill="{BRASS}" d="{d2}"/>
   <polygon points="375,368 375,384 389,376" fill="{BRASS}"/>
-  <line x1="389" y1="376" x2="591" y2="376" stroke="{BRASS}" stroke-width="3"/>
+  <line x1="395" y1="376" x2="591" y2="376" stroke="{BRASS}" stroke-width="3"/>
   <circle cx="600" cy="376" r="7" fill="{BG}" stroke="{BRASS}" stroke-width="3"/>
-  <line x1="609" y1="376" x2="811" y2="376" stroke="{BRASS}" stroke-width="3"/>
+  <line x1="609" y1="376" x2="805" y2="376" stroke="{BRASS}" stroke-width="3"/>
   <rect x="811" y="369" width="14" height="14" fill="{BRASS}"/>
   <path transform="translate({x_t:.1f} 446)" fill="{GREY}" d="{d_t}"/>
 </svg>
