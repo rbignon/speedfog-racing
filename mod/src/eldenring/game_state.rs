@@ -2,6 +2,11 @@
 //!
 //! Reads player position and animation state from Elden Ring memory
 //! using libeldenring pointer chains.
+//!
+//! The CSMenuManImp screen-state/blackscreen reading (the version-offset
+//! table and the fade-flag bit test) is ported from SoulSplitter
+//! (https://github.com/FrankvdStam/SoulSplitter, GPLv3; compatible with
+//! this crate's AGPL-3.0).
 
 use std::time::Duration;
 
@@ -196,25 +201,48 @@ impl GameState {
 
     /// CSMenuManImp screen state: `Some(true)` = in game, `Some(false)` =
     /// loading screen or main menu, `None` = unmapped build or unreadable
-    /// chain (callers fall back to the legacy world-clock proxy).
+    /// chain (callers fall back to the legacy world-clock proxy). Thin
+    /// wrapper over `read_screen_signals`; off the per-frame hot path (debug
+    /// panel only), so the redundant screen-state read it implies is fine.
     pub fn is_screen_in_game(&self) -> Option<bool> {
         profile_span!("is_screen_in_game");
-        let state = self.screen_state_ptr.as_ref()?.read()?;
-        Some(state == SCREEN_STATE_IN_GAME)
+        self.read_screen_signals().0
     }
 
     /// Blackscreen ("meme loading screen") detection, ported from
     /// SoulSplitter's `IsBlackscreenActive`: in-game screen state with the
     /// fade flag word reading bit0=1, bit8=0, bit16=1. `Some(false)` when
     /// simply not fading (or not in game); `None` when the screen-state
-    /// signal itself is unavailable.
+    /// signal itself is unavailable. Thin wrapper over `read_screen_signals`;
+    /// off the per-frame hot path (debug panel only).
     pub fn is_blackscreen_active(&self) -> Option<bool> {
         profile_span!("is_blackscreen_active");
-        if !self.is_screen_in_game()? {
-            return Some(false);
+        self.read_screen_signals().1
+    }
+
+    /// Read the CSMenuManImp screen-state and blackscreen-fade signals
+    /// together, evaluating the screen-state pointer chain once instead of
+    /// twice (the per-frame caller, `RaceTracker::update`'s FrameSnapshot,
+    /// needs both; `is_blackscreen_active` depends on `is_screen_in_game`,
+    /// so calling both separately there would read the chain twice per
+    /// frame). Returns `(screen_in_game, blackscreen)`; see
+    /// `is_screen_in_game` / `is_blackscreen_active` for what each value
+    /// means in every case (unmapped build, unreadable chain, menu, in-game
+    /// clear, in-game fade).
+    pub fn read_screen_signals(&self) -> (Option<bool>, Option<bool>) {
+        profile_span!("read_screen_signals");
+        let Some(state) = self.screen_state_ptr.as_ref().and_then(|ptr| ptr.read()) else {
+            return (None, None);
+        };
+        let in_game = state == SCREEN_STATE_IN_GAME;
+        if !in_game {
+            return (Some(false), Some(false));
         }
-        let flags = self.blackscreen_flags_ptr.read()?;
-        Some(flags & 0x1 == 0x1 && flags & 0x100 == 0 && flags & 0x1_0000 == 0x1_0000)
+        let blackscreen = self
+            .blackscreen_flags_ptr
+            .read()
+            .map(|flags| flags & 0x1 == 0x1 && flags & 0x100 == 0 && flags & 0x1_0000 == 0x1_0000);
+        (Some(true), blackscreen)
     }
 
     /// Overwrite the in-game timer (blackscreen freeze write-back). Same

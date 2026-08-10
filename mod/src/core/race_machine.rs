@@ -6,6 +6,10 @@
 //! (`dll/tracker.rs`) reads game memory up front (`FrameSnapshot`,
 //! `TickInput`) and executes the returned `Effect`s afterwards. This is what
 //! makes the state machine testable under `cargo test` on Linux.
+//!
+//! The blackscreen IGT-freeze logic is ported from SoulSplitter
+//! (https://github.com/FrankvdStam/SoulSplitter, GPLv3; compatible with
+//! this crate's AGPL-3.0).
 
 use std::collections::HashMap;
 use std::time::Instant;

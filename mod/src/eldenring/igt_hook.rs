@@ -89,8 +89,8 @@ pub fn install() {
     };
     let Some(match_addr) = scan_pattern_unique(base, size, INCREMENT_IGT_PATTERN) else {
         warn!(
-            "[IGT] increment-IGT pattern not found (game patch, or another IGT tool \
-             already hooked it); truncation fix disabled"
+            "[IGT] increment-IGT pattern absent or ambiguous (game patch, or another \
+             IGT tool already hooked it); truncation fix disabled"
         );
         return;
     };

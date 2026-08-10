@@ -447,6 +447,14 @@ impl RaceTracker {
 
         let snapshot = {
             profile_span!("frame_snapshot");
+            // Screen-state and blackscreen share one pointer-chain read
+            // (`is_blackscreen_active` depends on `is_screen_in_game`);
+            // read both through the combined accessor so the chain is
+            // evaluated once per frame instead of twice.
+            let (screen_in_game, blackscreen) = needs
+                .blackscreen
+                .then(|| self.game_state.read_screen_signals())
+                .unwrap_or_default();
             FrameSnapshot {
                 igt_ms: needs.igt.then(|| self.game_state.read_igt()).flatten(),
                 death_count: needs
@@ -458,14 +466,8 @@ impl RaceTracker {
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
                     .flatten(),
-                screen_in_game: needs
-                    .blackscreen
-                    .then(|| self.game_state.is_screen_in_game())
-                    .flatten(),
-                blackscreen: needs
-                    .blackscreen
-                    .then(|| self.game_state.is_blackscreen_active())
-                    .flatten(),
+                screen_in_game,
+                blackscreen,
             }
         };
 
