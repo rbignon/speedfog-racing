@@ -1,0 +1,25 @@
+# SpeedFog Racing - Fixed Route Pool Configuration
+# Linear run: no branching, every player takes the exact same path.
+extends = "uwyg_rush"
+
+[display]
+name = "UWYG Major Rush"
+sort_order = 91
+description = "\"Use What You Get\" linear major bosses rush"
+rules = """
+Don't change your equipment (weapons, armor, crystal tears, talismans)
+Choose any starting class freely
+If your starting class comes with multiple weapons, keep only one in your right hand
+You can rebirth at a grace to add endurance if necessary
+"""
+
+[structure]
+layers_count = 30
+
+[requirements]
+allowed_types = ["major_boss"]
+major_bosses = 28
+bosses = 0
+
+[enemy]
+randomize_bosses = "none"
