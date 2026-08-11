@@ -109,8 +109,9 @@
     border-bottom: 1px solid var(--color-border);
   }
 
+  /* Brass is the viewer's-own-run hue: "you" marks never ride fog */
   .row.me {
-    background: rgba(169, 155, 201, 0.1);
+    background: rgba(200, 164, 78, 0.1);
     border-radius: var(--radius-sm);
   }
 

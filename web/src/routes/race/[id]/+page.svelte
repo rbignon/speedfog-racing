@@ -1027,7 +1027,7 @@
       {#if myParticipant && (raceStatus === "setup" || raceStatus === "running")}
         {#if seedsReleased}
           <button
-            class="sidebar-download-btn"
+            class="btn btn-primary sidebar-download-btn"
             onclick={() => {
               downloadError = null;
               showDownloadModal = true;
@@ -1957,34 +1957,17 @@
     font-style: italic;
   }
 
+  /* Layout only: color, type and states come from the global .btn-primary.
+   * The narrow rail can't afford .btn's horizontal padding with a display
+   * caps label plus icon: trim it so the label keeps to one line. */
   .sidebar-download-btn {
     width: 100%;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    padding: 0.65rem 1rem;
     margin-top: 0.75rem;
-    border: 2px solid var(--color-purple);
-    border-radius: var(--radius-sm);
-    background: rgba(169, 155, 201, 0.1);
-    color: var(--color-purple);
-    font-family: var(--font-family);
-    font-size: var(--font-size-base);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition);
-  }
-
-  .sidebar-download-btn:hover:not(:disabled) {
-    background: rgba(169, 155, 201, 0.2);
-    border-color: var(--color-purple-hover);
-    color: var(--color-purple-hover);
-  }
-
-  .sidebar-download-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    padding-inline: 0.75rem;
   }
 
   .obs-overlay-btn {

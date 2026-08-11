@@ -158,7 +158,7 @@
   {:else if error}
     <div class="error-state">
       <p>{error}</p>
-      <button class="btn btn-secondary" onclick={() => location.reload()}
+      <button class="btn btn-outline" onclick={() => location.reload()}
         >Retry</button
       >
     </div>

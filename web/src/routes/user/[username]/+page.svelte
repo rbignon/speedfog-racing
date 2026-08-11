@@ -130,7 +130,7 @@
   {:else if error && !profile}
     <div class="error-state">
       <p>{error}</p>
-      <a href="/" class="btn btn-secondary">Home</a>
+      <a href="/" class="btn btn-outline">Home</a>
     </div>
   {:else if profile}
     <div class="profile-header">

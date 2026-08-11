@@ -121,9 +121,11 @@
     border-radius: var(--radius-sm);
   }
 
+  /* Brass is the viewer's-own-run hue (route lines, week line): the "you"
+   * marker rides it too, keeping fog for transient interaction only. */
   .participant-card.current-user {
-    border-left: 3px solid var(--color-purple);
-    background: rgba(169, 155, 201, 0.06);
+    border-left: 3px solid var(--color-warning);
+    background: rgba(200, 164, 78, 0.06);
   }
 
   .status-dot {

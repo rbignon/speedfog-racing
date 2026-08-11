@@ -40,9 +40,9 @@ What changed versus charter v1, in one list:
 | Fog (secondary)    | Misty heliotrope | `#A99BC9` |
 | Fog (hover)        | Light heliotrope | `#C0B4DC` |
 
-**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the `Participating` role mark's square, 1st-place markers (`1st` labels in data rows, the ring on winner avatars), the amber "running" daily strip. Nowhere else. (The week line's own edge markers are state-colored, not brass.)
+**Brass usage (exhaustive list):** the "Racing" half of the wordmark, section header device + title, primary CTA button, the hero underline's and the DAG's start/terminal markers, the week line's playing-state segment and dot, the route lines' riding segment, position dot and boarded ring (the viewer's own run), the current-user marker in participant lists (left border + tint), the `Participating` role mark's square, 1st-place markers (`1st` labels in data rows, the ring on winner avatars), the amber "running" daily strip. Nowhere else. (The week line's own edge markers are state-colored, not brass.)
 
-**Fog usage:** interactive hover states (secondary buttons), links, focus rings, boss diamonds on the DAG, the `Organizing` role mark's diamond, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog.
+**Fog usage:** interactive hover states (outline buttons, nav icons, quiet links), links, focus rings, boss diamonds on the DAG, the `Organizing` role mark's diamond, radio/checkbox checked states (outside player-colored contexts). Route-line cards are the exception: they hover in their own line's status hue, not fog. Fog never marks "you" in the web UI: structural own-run marks (participant lists, the week leaderboard row, the caster list's badge) ride brass, keeping fog a transient interaction accent. The in-game overlay is the documented exception (fog is the local player's accent there).
 
 ### Text
 
@@ -147,8 +147,9 @@ The DAG's own iconography, reused as the app's structural language. Draw these a
 
 Radius `--radius-md` (3px), display face, caps.
 
-- **Primary**: brass background, near-black text (`#14100A`), hover `--color-gold-hover` + `--glow-gold`. Sparingly: one primary per view.
-- **Secondary**: transparent, `1px` border `--color-border`, hover border + text fog.
+- **Primary**: brass background, near-black text (`#14100A`), hover `--color-gold-hover` + `--glow-gold`. Sparingly: one primary per view. The participant sidebar's download-package button is a primary (it is the participant's next action); when the organizer also rides, it coexists with the toolbar's own primary.
+- **Secondary**: transparent and borderless, secondary-grey text, hover primary text. A quiet option that only ever sits next to a primary (hero pair, form footer, modal actions): the anchored primary is what makes the ghost read as a button.
+- **Outline**: transparent, `1px` border `--color-border`, primary text, hover border + text fog. For quiet actions standing alone, with no primary anchoring the row (single-control toolbars, error-state exits, the solo page's small toolbar buttons).
 - **Twitch**: unchanged (`#6441A5` / `#7C5BBF`).
 - **Danger**: transparent, ember border/text, hover translucent ember fill.
 - **Rage Quit**: the documented skeuomorphic exception (radial gradient, 3D press) survives as-is.

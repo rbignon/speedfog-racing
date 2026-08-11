@@ -275,7 +275,7 @@
         {#if auth.isLoggedIn}
           <button
             type="button"
-            class="btn btn-secondary btn-sm"
+            class="btn btn-outline btn-sm"
             onclick={() => (showFeedback = true)}
           >
             Feedback
@@ -406,14 +406,14 @@
         {:else if status === "active" && dagParticipants.length > 0}
           <div class="dag-toolbar">
             <button
-              class="btn btn-secondary btn-sm"
+              class="btn btn-outline btn-sm"
               onclick={() => (showFullDag = !showFullDag)}
             >
               {showFullDag ? "Hide Spoiler" : "Show Spoiler"}
             </button>
             {#if isOwner}
               <button
-                class="btn btn-secondary btn-sm"
+                class="btn btn-outline btn-sm"
                 onclick={() => (showObsModal = true)}
               >
                 OBS Overlay

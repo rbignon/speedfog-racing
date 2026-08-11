@@ -308,7 +308,7 @@
       {:else if raceStatus === "running"}
         {#if canReroll}
           <button
-            class="btn btn-secondary"
+            class="btn btn-outline"
             onclick={handleReroll}
             disabled={loading}
           >
@@ -316,7 +316,7 @@
           </button>
         {:else}
           <button
-            class="btn btn-secondary"
+            class="btn btn-outline"
             onclick={handleForceFinish}
             disabled={loading}
           >

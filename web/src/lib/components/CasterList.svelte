@@ -229,12 +229,13 @@
     color: var(--color-purple);
   }
 
+  /* Brass is the viewer's-own-run hue: "you" marks never ride fog */
   .you-badge {
     font-size: 0.65rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: var(--color-purple);
-    background: rgba(169, 155, 201, 0.15);
+    color: var(--color-warning);
+    background: rgba(200, 164, 78, 0.15);
     padding: 0.1rem 0.35rem;
     border-radius: 3px;
     font-weight: 600;
