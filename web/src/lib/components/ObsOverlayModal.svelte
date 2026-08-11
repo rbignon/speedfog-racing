@@ -107,7 +107,7 @@
       </div>
       <div class="url-row">
         <input type="text" readonly value={dagUrl} class="url-input" />
-        <button class="copy-btn" onclick={() => copyUrl(dagUrl, "dag")}>
+        <button class="btn btn-primary copy-btn" onclick={() => copyUrl(dagUrl, "dag")}>
           {dagCopied ? "Copied!" : "Copy"}
         </button>
       </div>
@@ -131,7 +131,7 @@
         </div>
         <div class="url-row">
           <input type="text" readonly value={lbUrl} class="url-input" />
-          <button class="copy-btn" onclick={() => copyUrl(lbUrl, "lb")}>
+          <button class="btn btn-primary copy-btn" onclick={() => copyUrl(lbUrl, "lb")}>
             {lbCopied ? "Copied!" : "Copy"}
           </button>
         </div>
@@ -234,20 +234,7 @@
   }
 
   .copy-btn {
-    padding: 0.5rem 1rem;
-    background: var(--color-purple);
-    color: white;
-    border: none;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-family);
     font-size: var(--font-size-sm);
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background var(--transition);
-  }
-
-  .copy-btn:hover {
-    background: var(--color-purple-hover, #7c3aed);
   }
 
   .config-row {

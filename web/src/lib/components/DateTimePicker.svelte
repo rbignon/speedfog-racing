@@ -760,7 +760,7 @@
   }
 
   .day-cell.selected {
-    background: var(--color-purple);
+    background: var(--color-surface);
     color: white;
     font-weight: 600;
   }

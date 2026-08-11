@@ -306,7 +306,7 @@
     </div>
     {#if pendingCount > 0 && !atBottom}
       <button type="button" class="new-messages-pill" onclick={jumpToLatest}>
-        &darr; {pendingCount} new {pendingCount === 1 ? "message" : "messages"}
+        {pendingCount} new {pendingCount === 1 ? "message" : "messages"}
       </button>
     {/if}
   </div>
