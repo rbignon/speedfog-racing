@@ -633,11 +633,11 @@
           {/if}
           {#if initialRace.deathless}
             <span
-              class="deathless-badge"
+              class="chip deathless-badge"
               title="Your first death eliminates you">Deathless</span
             >
           {/if}
-          <span class="daily-pill" class:ended={dailyEnded}>
+          <span class="chip daily-pill" class:ended={dailyEnded}>
             {dailyEnded ? "Ended" : countdownLabel}
           </span>
         </div>
@@ -1114,27 +1114,15 @@
     color: var(--color-text-secondary);
   }
 
+  /* Both compose the global .chip; only the hue departs from it */
   .deathless-badge {
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    border: 1px solid var(--color-danger);
+    border-color: var(--color-danger);
     color: var(--color-danger);
-    border-radius: var(--radius-sm);
-    padding: 0.2rem 0.5rem;
   }
 
   .daily-pill {
-    padding: 0.25rem 0.6rem;
-    border: 1px solid var(--color-success);
+    border-color: var(--color-success);
     color: var(--color-success);
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    white-space: nowrap;
   }
 
   .daily-pill.ended {
