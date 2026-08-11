@@ -76,6 +76,8 @@
       label: "Organized",
       value: profile.stats.organized_count,
       series: padSeries(profile.stats.weekly.organized),
+      // Fog speaks the organizer role vocabulary here (the Organizing role
+      // mark's fog diamond), not a generic data hue.
       accent: "var(--color-purple)",
       accentSoft: "rgba(169, 155, 201, 0.36)",
       emptyCopy: "Never organized",

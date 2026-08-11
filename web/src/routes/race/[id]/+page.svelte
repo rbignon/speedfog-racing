@@ -1067,8 +1067,9 @@
       {/if}
 
       {#if raceStatus === "setup" && (isOrganizer || auth.isAdmin || isCaster || myParticipant)}
-        <button class="obs-overlay-btn" onclick={() => (showObsModal = true)}
-          >OBS Overlays</button
+        <button
+          class="btn btn-outline obs-overlay-btn"
+          onclick={() => (showObsModal = true)}>OBS Overlays</button
         >
       {/if}
 
@@ -1970,23 +1971,10 @@
     padding-inline: 0.75rem;
   }
 
+  /* Layout only: the rest comes from the global .btn-outline */
   .obs-overlay-btn {
     width: 100%;
     margin-top: 0.5rem;
-    padding: 0.5rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    background: none;
-    color: var(--color-text-secondary);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    cursor: pointer;
-    transition: all var(--transition);
-  }
-
-  .obs-overlay-btn:hover {
-    border-color: var(--color-purple);
-    color: var(--color-purple);
   }
 
   :global(.race-page .zoomable-container) {

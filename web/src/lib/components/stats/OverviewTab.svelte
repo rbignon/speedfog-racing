@@ -161,8 +161,8 @@
     {
       key: "hours",
       label: "Hours raced",
-      accent: "var(--color-purple)",
-      accentSoft: "rgba(169, 155, 201, 0.36)",
+      accent: "var(--color-info)",
+      accentSoft: "rgba(123, 162, 204, 0.36)",
     },
   ] as const;
 

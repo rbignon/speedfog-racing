@@ -316,8 +316,9 @@
     background: var(--color-danger);
   }
 
+  /* Steel, not fog: fog is the interaction accent, not a data hue */
   .bar-backtrack {
-    background: var(--color-purple);
+    background: var(--color-info);
   }
 
   .bar-time {

@@ -372,7 +372,7 @@
     bottom: 0.5rem;
     left: 50%;
     transform: translateX(-50%);
-    background: var(--color-purple);
+    background: var(--color-gold);
     color: var(--color-ink-on-accent);
     border: none;
     border-radius: var(--radius-md);
@@ -386,7 +386,7 @@
   }
 
   .new-messages-pill:hover {
-    background: var(--color-purple-hover);
+    background: var(--color-gold-hover);
   }
 
   .empty {
