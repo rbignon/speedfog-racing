@@ -371,6 +371,7 @@
     display: flex;
     align-items: center;
     gap: 1rem;
+    justify-content: end;
   }
 
   .success-msg {
