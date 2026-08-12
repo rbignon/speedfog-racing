@@ -1118,6 +1118,54 @@
         </div>
       </header>
 
+      {#if displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
+        <div class="race-rules-card">
+          <div class="race-rules-head">
+            <h3>Race Rules</h3>
+            {#if isOrganizer && canEditRules && !editingRules}
+              <button class="btn-edit" onclick={startEditRules}>
+                {customRuleLines.length > 0 ? "Edit" : "Add"}
+              </button>
+            {/if}
+          </div>
+          {#if editingRules}
+            <textarea
+              class="race-rules-input"
+              bind:value={rulesInput}
+              maxlength="1000"
+              rows="5"
+              placeholder="One rule per line"
+              disabled={rulesSaving}
+            ></textarea>
+            <div class="schedule-edit-actions">
+              <button
+                class="btn-inline"
+                onclick={saveRules}
+                disabled={rulesSaving}
+              >
+                {rulesSaving ? "..." : "Save"}
+              </button>
+              <button
+                class="btn-inline btn-inline-secondary"
+                onclick={() => (editingRules = false)}
+                disabled={rulesSaving}
+              >
+                Cancel
+              </button>
+            </div>
+            {#if rulesError}
+              <span class="schedule-error">{rulesError}</span>
+            {/if}
+          {:else if displayRuleLines.length > 0}
+            <ul class="race-rules-list">
+              {#each displayRuleLines as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
+
       {#if liveSeed?.graph_json && raceStatus === "finished"}
         <div class="dag-view-toggle">
           <button
@@ -1446,54 +1494,6 @@
           {/if}
         </div>
       </div>
-
-      {#if displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
-        <div class="race-rules-card">
-          <div class="race-rules-head">
-            <h3>Race Rules</h3>
-            {#if isOrganizer && canEditRules && !editingRules}
-              <button class="btn-edit" onclick={startEditRules}>
-                {customRuleLines.length > 0 ? "Edit" : "Add"}
-              </button>
-            {/if}
-          </div>
-          {#if editingRules}
-            <textarea
-              class="race-rules-input"
-              bind:value={rulesInput}
-              maxlength="1000"
-              rows="5"
-              placeholder="One rule per line"
-              disabled={rulesSaving}
-            ></textarea>
-            <div class="schedule-edit-actions">
-              <button
-                class="btn-inline"
-                onclick={saveRules}
-                disabled={rulesSaving}
-              >
-                {rulesSaving ? "..." : "Save"}
-              </button>
-              <button
-                class="btn-inline btn-inline-secondary"
-                onclick={() => (editingRules = false)}
-                disabled={rulesSaving}
-              >
-                Cancel
-              </button>
-            </div>
-            {#if rulesError}
-              <span class="schedule-error">{rulesError}</span>
-            {/if}
-          {:else if displayRuleLines.length > 0}
-            <ul class="race-rules-list">
-              {#each displayRuleLines as line}
-                <li>{line}</li>
-              {/each}
-            </ul>
-          {/if}
-        </div>
-      {/if}
 
       {#if initialRace.pool_config}
         <PoolSettingsCard

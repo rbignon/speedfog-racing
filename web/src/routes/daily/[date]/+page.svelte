@@ -651,6 +651,19 @@
         />
       {/if}
 
+      {#if initialRace.deathless}
+        <!-- Read-only mirror of the race page's rules card; dailies carry no
+             custom rules, so deathless is the only line it can show. -->
+        <div class="race-rules-card">
+          <div class="race-rules-head">
+            <h3>Race Rules</h3>
+          </div>
+          <ul class="race-rules-list">
+            <li>Deathless: dying once eliminates you from the race</li>
+          </ul>
+        </div>
+      {/if}
+
       {#if raceStatus === "finished" && graphJson}
         <div class="dag-view-toggle">
           <button
@@ -779,19 +792,6 @@
             goto("/daily");
           }}
         />
-      {/if}
-
-      {#if initialRace.deathless}
-        <!-- Read-only mirror of the race page's rules card; dailies carry no
-             custom rules, so deathless is the only line it can show. -->
-        <div class="race-rules-card">
-          <div class="race-rules-head">
-            <h3>Race Rules</h3>
-          </div>
-          <ul class="race-rules-list">
-            <li>Deathless: dying once eliminates you from the race</li>
-          </ul>
-        </div>
       {/if}
 
       {#if initialRace.pool_name && initialRace.pool_config}
