@@ -54,6 +54,13 @@
       <button class="close-btn" onclick={onClose}>&times;</button>
     </div>
 
+    {#if deathless}
+      <div class="section deathless-rule">
+        <h3>Deathless</h3>
+        <p>Dying once eliminates you from the race</p>
+      </div>
+    {/if}
+
     <div class="section">
       <h3>Rules</h3>
       <ul>
@@ -61,9 +68,6 @@
         <li>Quit-outs are allowed</li>
         <li>Using other mods is not allowed</li>
         <li>Skips are allowed</li>
-        {#if deathless}
-          <li>Deathless: dying once eliminates you from the race</li>
-        {/if}
       </ul>
     </div>
 
@@ -220,6 +224,26 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: 0.75rem 1rem;
+  }
+
+  /* Ember variant of the left-accent callout: the one rule that ends your
+     run, placed first so it never sits below the fold. */
+  .deathless-rule {
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-danger);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+  }
+
+  .deathless-rule h3 {
+    color: var(--color-danger);
+  }
+
+  .deathless-rule p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   /* Gold left-accent callout: marks pool-specific rules as distinct from the

@@ -632,9 +632,8 @@
             <span class="seed-badge">Seed {initialRace.seed_number}</span>
           {/if}
           {#if initialRace.deathless}
-            <span
-              class="chip deathless-badge"
-              title="Your first death eliminates you">Deathless</span
+            <span class="chip deathless-badge" title="Dying once eliminates you"
+              >Deathless</span
             >
           {/if}
           <span class="chip daily-pill" class:ended={dailyEnded}>
@@ -780,6 +779,19 @@
             goto("/daily");
           }}
         />
+      {/if}
+
+      {#if initialRace.deathless}
+        <!-- Read-only mirror of the race page's rules card; dailies carry no
+             custom rules, so deathless is the only line it can show. -->
+        <div class="race-rules-card">
+          <div class="race-rules-head">
+            <h3>Race Rules</h3>
+          </div>
+          <ul class="race-rules-list">
+            <li>Deathless: dying once eliminates you from the race</li>
+          </ul>
+        </div>
       {/if}
 
       {#if initialRace.pool_name && initialRace.pool_config}
@@ -1128,6 +1140,35 @@
   .daily-pill.ended {
     border-color: var(--color-text-disabled);
     color: var(--color-text-disabled);
+  }
+
+  /* Same card as the race page's "Race Rules", without the edit affordances */
+  .race-rules-card {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-gold);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1rem;
+  }
+
+  .race-rules-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .race-rules-head h3 {
+    margin: 0;
+    font-size: var(--font-size-base);
+    color: var(--color-text);
+  }
+
+  .race-rules-list {
+    margin: 0.5rem 0 0;
+    padding-left: 1.25rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .dag-wrapper {

@@ -430,7 +430,7 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
     ]
 
     if race.deathless:
-        description_lines.insert(1, "💀 **Deathless**: your first death eliminates you.")
+        description_lines.insert(1, "💀 **Deathless**: dying once eliminates you.")
 
     if previous_race is not None:
         finishers = sorted(
