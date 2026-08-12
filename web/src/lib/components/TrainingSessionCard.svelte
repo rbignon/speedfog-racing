@@ -50,7 +50,7 @@
 
   <div class="card-meta">
     <span>{timeAgo(session.created_at)}</span>
-    <span class="action-label">Resume &rarr;</span>
+    <span class="action-label">Resume</span>
   </div>
 </a>
 

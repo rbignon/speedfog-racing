@@ -169,7 +169,7 @@
       {#if zoneSheet}
         <div class="chat-header">
           <button class="tab back-btn" onclick={onZoneSheetClose}>
-            &larr; Back to chat
+            Back to chat
             {#if unreadCount > 0}
               <span class="tab-badge"
                 >{unreadCount > 99 ? "99+" : unreadCount}</span
