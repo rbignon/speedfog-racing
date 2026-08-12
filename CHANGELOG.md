@@ -2,6 +2,24 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.24.0] - 2026-08-12
+
+### Timer
+
+- **The race timer now matches LiveSplit**: the mod backports [SoulSplitter's IGT corrections](https://github.com/FrankvdStam/SoulSplitter/wiki/IGT-in-soulsgames-explained):
+  - **The timer is now framerate-independent**. Elden Ring silently drops a fraction of a millisecond every frame unless it holds a locked 60 FPS, so weaker machines quietly accumulated shorter timers. Every lost fraction is now restored, keeping IGT comparable across machines
+  - **Blackscreen loading fades no longer count** (deaths, fast travels, fog gate crossings): fade length depends on your hardware, not your run, so the timer now freezes while the screen fades
+- The overlay now **reveals your new zone the exact moment the loading fade ends**, instead of inferring it from the in-game clock
+
+### Seeds
+
+- **Launching a seed while Elden Ring is already running is now refused** with an error popup
+- The **save-backup helper now stops as soon as the game exits**, instead of lingering in the background
+
+### Mod
+
+- The overlay's **death counter now wears SpeedFog's drawn skull**
+
 ## [1.23.0] - 2026-08-10
 
 ### Deathless
