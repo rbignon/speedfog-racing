@@ -163,14 +163,19 @@
 
   <!-- Visitors (results only) -->
   {#if data.visitors && data.visitors.length > 0}
-    <!-- Delta reference: the first row (the fastest cleared visitor when one exists) -->
+    <!-- Delta reference: the first row, i.e. the fastest cleared visitor.
+         Only cleared rows show a gap: backed/playing/abandoned visitors did
+         not complete the zone, so comparing their time spent is meaningless. -->
     {@const refTimeMs = data.visitors[0].timeSpentMs}
     <div class="popup-section">
       <div class="section-title">Visited by</div>
       <div class="visitor-grid">
         {#each data.visitors as visitor, i}
           {@const gapMs =
-            i > 0 && refTimeMs != null && visitor.timeSpentMs != null
+            i > 0 &&
+            visitor.outcome === "cleared" &&
+            refTimeMs != null &&
+            visitor.timeSpentMs != null
               ? visitor.timeSpentMs - refTimeMs
               : null}
           <div class="visitor-row" class:me={visitor.isMe}>
@@ -205,10 +210,7 @@
                   visitor.timeSpentMs,
                 )}{/if}</span
             >
-            <span
-              class="visitor-gap"
-              class:ahead={gapMs != null && gapMs < 0}
-              class:behind={gapMs != null && gapMs > 0}
+            <span class="visitor-gap" class:behind={gapMs != null && gapMs > 0}
               >{#if gapMs != null}{formatGapCompact(gapMs)}{/if}</span
             >
           </div>
@@ -483,10 +485,6 @@
     font-family: var(--font-mono);
     font-size: 0.75rem;
     justify-self: end;
-  }
-
-  .visitor-gap.ahead {
-    color: var(--color-success);
   }
 
   .visitor-gap.behind {
