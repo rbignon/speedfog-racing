@@ -44,6 +44,7 @@ export interface PopupVisitor {
   deaths?: number;
   outcome: VisitOutcome;
   weapons?: WeaponCombo[];
+  isMe?: boolean; // the viewer's own participant
 }
 
 export interface NodePopupData {
@@ -216,6 +217,7 @@ export function computeVisitors(
   nodeId: string,
   participants: WsParticipant[],
   nodeLayers?: Map<string, number>,
+  myParticipantId?: string | null,
 ): PopupVisitor[] {
   const visitors: PopupVisitor[] = [];
   for (const p of participants) {
@@ -279,6 +281,7 @@ export function computeVisitors(
       deaths: totalDeaths > 0 ? totalDeaths : undefined,
       outcome,
       weapons: weaponsForZone.length > 0 ? weaponsForZone : undefined,
+      isMe: myParticipantId != null && p.id === myParticipantId,
     });
   }
   // Cleared first (by time asc), then others

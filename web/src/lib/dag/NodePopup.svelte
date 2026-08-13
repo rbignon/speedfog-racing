@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { NodePopupData } from "./popupData";
   import { formatIgt } from "./popupData";
+  import { formatGapCompact } from "$lib/gap";
   import { NODE_COLORS } from "./constants";
   import WeaponsPopover from "$lib/components/WeaponsPopover.svelte";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
@@ -162,40 +163,55 @@
 
   <!-- Visitors (results only) -->
   {#if data.visitors && data.visitors.length > 0}
+    <!-- Delta reference: the first row (the fastest cleared visitor when one exists) -->
+    {@const refTimeMs = data.visitors[0].timeSpentMs}
     <div class="popup-section">
       <div class="section-title">Visited by</div>
       <div class="visitor-grid">
-        {#each data.visitors as visitor}
-          <span class="player-dot" style="background: {visitor.color};"></span>
-          <span
-            class="visitor-name"
-            class:visitor-backed={visitor.outcome === "backed"}
-            class:visitor-abandoned={visitor.outcome === "abandoned" ||
-              (visitor.outcome === "playing" && data.raceFinished)}
-            class:visitor-playing={visitor.outcome === "playing" &&
-              !data.raceFinished}>{visitor.displayName}</span
-          >
-          <span class="visitor-outcome"
-            >{#if visitor.outcome === "backed"}↩{:else if visitor.outcome === "playing" && !data.raceFinished}⏳{:else if visitor.outcome === "abandoned" || (visitor.outcome === "playing" && data.raceFinished)}✗{/if}</span
-          >
-          <span class="visitor-deaths"
-            >{#if visitor.deaths}<SkullIcon size={10} />
-              {visitor.deaths}{/if}</span
-          >
-          <span class="visitor-weapons">
-            {#if visitor.weapons && visitor.weapons.length > 0}
-              <WeaponsPopover
-                combos={visitor.weapons}
-                maxRows={1}
-                showPercent={false}
-              />
-            {/if}
-          </span>
-          <span class="visitor-duration"
-            >{#if visitor.timeSpentMs}{formatIgt(
-                visitor.timeSpentMs,
-              )}{/if}</span
-          >
+        {#each data.visitors as visitor, i}
+          {@const gapMs =
+            i > 0 && refTimeMs != null && visitor.timeSpentMs != null
+              ? visitor.timeSpentMs - refTimeMs
+              : null}
+          <div class="visitor-row" class:me={visitor.isMe}>
+            <span class="player-dot" style="background: {visitor.color};"
+            ></span>
+            <span
+              class="visitor-name"
+              class:visitor-backed={visitor.outcome === "backed"}
+              class:visitor-abandoned={visitor.outcome === "abandoned" ||
+                (visitor.outcome === "playing" && data.raceFinished)}
+              class:visitor-playing={visitor.outcome === "playing" &&
+                !data.raceFinished}>{visitor.displayName}</span
+            >
+            <span class="visitor-outcome"
+              >{#if visitor.outcome === "backed"}↩{:else if visitor.outcome === "playing" && !data.raceFinished}⏳{:else if visitor.outcome === "abandoned" || (visitor.outcome === "playing" && data.raceFinished)}✗{/if}</span
+            >
+            <span class="visitor-deaths"
+              >{#if visitor.deaths}<SkullIcon size={10} />
+                {visitor.deaths}{/if}</span
+            >
+            <span class="visitor-weapons">
+              {#if visitor.weapons && visitor.weapons.length > 0}
+                <WeaponsPopover
+                  combos={visitor.weapons}
+                  maxRows={1}
+                  showPercent={false}
+                />
+              {/if}
+            </span>
+            <span class="visitor-duration"
+              >{#if visitor.timeSpentMs}{formatIgt(
+                  visitor.timeSpentMs,
+                )}{/if}</span
+            >
+            <span
+              class="visitor-gap"
+              class:ahead={gapMs != null && gapMs < 0}
+              class:behind={gapMs != null && gapMs > 0}
+              >{#if gapMs != null}{formatGapCompact(gapMs)}{/if}</span
+            >
+          </div>
         {/each}
       </div>
     </div>
@@ -396,10 +412,28 @@
   /* Names stay in the UI face; only the digit cells below go mono. */
   .visitor-grid {
     display: grid;
-    grid-template-columns: auto 1fr auto auto auto auto;
+    grid-template-columns: auto 1fr auto auto auto auto auto;
     gap: 2px 6px;
-    align-items: center;
     font-size: 0.8rem;
+  }
+
+  /* Each visitor is a subgrid row so it can carry a background (the "me"
+     tint) while its cells stay column-aligned across rows. The explicit
+     column list is the fallback for pre-subgrid engines (old OBS/CEF):
+     rows keep their layout, only cross-row alignment degrades. */
+  .visitor-row {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: auto 1fr auto auto auto auto auto;
+    grid-template-columns: subgrid;
+    column-gap: 6px;
+    align-items: center;
+  }
+
+  /* Brass is the viewer's-own-run hue: "you" marks never ride fog */
+  .visitor-row.me {
+    background: rgba(200, 164, 78, 0.1);
+    border-radius: var(--radius-sm);
   }
 
   .visitor-name {
@@ -443,6 +477,20 @@
     font-size: 0.75rem;
     color: var(--color-text-secondary);
     justify-self: end;
+  }
+
+  .visitor-gap {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    justify-self: end;
+  }
+
+  .visitor-gap.ahead {
+    color: var(--color-success);
+  }
+
+  .visitor-gap.behind {
+    color: var(--color-gold);
   }
 
   .codex-link {

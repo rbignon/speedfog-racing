@@ -33,6 +33,8 @@
     participants: WsParticipant[];
     focusNodeId?: string | null;
     highlightIds?: Set<string>;
+    /** Viewer's participant id; highlights their row in the node popup. */
+    myParticipantId?: string | null;
   }
 
   let {
@@ -40,6 +42,7 @@
     participants,
     focusNodeId = null,
     highlightIds,
+    myParticipantId = null,
   }: Props = $props();
 
   // Pre-compute all replay data (runs once, memoized via $derived)
@@ -129,7 +132,12 @@
       exitTexts,
       entranceTexts,
     );
-    const visitors = computeVisitors(nodeId, participants, nodeLayers);
+    const visitors = computeVisitors(
+      nodeId,
+      participants,
+      nodeLayers,
+      myParticipantId,
+    );
 
     popupData = {
       nodeId,
@@ -168,7 +176,12 @@
       exitTexts,
       entranceTexts,
     );
-    const visitors = computeVisitors(nodeId, participants, nodeLayers);
+    const visitors = computeVisitors(
+      nodeId,
+      participants,
+      nodeLayers,
+      myParticipantId,
+    );
 
     popupData = {
       nodeId,

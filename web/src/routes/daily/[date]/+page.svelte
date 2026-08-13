@@ -737,6 +737,7 @@
               {raceStatus}
               highlightIds={selectedParticipantIds}
               focusNodeId={highlightFocusNodeId}
+              myParticipantId={myWsParticipant?.id}
               onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {:else}
@@ -745,6 +746,7 @@
               participants={raceStore.leaderboard}
               focusNodeId={highlightFocusNodeId}
               highlightIds={selectedParticipantIds}
+              myParticipantId={myWsParticipant?.id}
             />
           {/if}
         {:else if graphJson && canShowFullDag}
@@ -754,6 +756,7 @@
             {raceStatus}
             highlightIds={selectedParticipantIds}
             focusNodeId={highlightFocusNodeId}
+            myParticipantId={myWsParticipant?.id}
             onzonecodex={showChatSidebar ? openZoneCodex : undefined}
           />
         {:else if graphJson && canShowProgressiveDag}

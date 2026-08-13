@@ -1216,6 +1216,7 @@
               participants={raceStore.leaderboard}
               {raceStatus}
               highlightIds={selectedParticipantIds}
+              myParticipantId={myWsParticipantId}
               onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {/if}
@@ -1227,6 +1228,7 @@
               {raceStatus}
               highlightIds={selectedParticipantIds}
               focusNodeId={highlightFocusNodeId}
+              myParticipantId={myWsParticipantId}
               onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
           {:else}
@@ -1235,6 +1237,7 @@
               participants={raceStore.leaderboard}
               focusNodeId={highlightFocusNodeId}
               highlightIds={selectedParticipantIds}
+              myParticipantId={myWsParticipantId}
             />
           {/if}
         {:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}

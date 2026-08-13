@@ -55,6 +55,8 @@
     maxLayers?: number;
     fullPathOpacity?: boolean;
     labelFontSize?: number;
+    /** Viewer's participant id; highlights their row in the node popup. */
+    myParticipantId?: string | null;
     onzonecodex?: (
       nodeId: string,
       displayName: string,
@@ -75,6 +77,7 @@
     maxLayers = 5,
     fullPathOpacity = false,
     labelFontSize = LABEL_FONT_SIZE,
+    myParticipantId = null,
     onzonecodex,
   }: Props = $props();
 
@@ -294,7 +297,12 @@
       entranceTexts,
     );
     const playersHere = computePlayersAtNode(nodeId, participants);
-    const visitors = computeVisitors(nodeId, participants, nodeLayers);
+    const visitors = computeVisitors(
+      nodeId,
+      participants,
+      nodeLayers,
+      myParticipantId,
+    );
 
     popupData = {
       nodeId,
@@ -335,7 +343,12 @@
       entranceTexts,
     );
     const playersHere = computePlayersAtNode(nodeId, participants);
-    const visitors = computeVisitors(nodeId, participants, nodeLayers);
+    const visitors = computeVisitors(
+      nodeId,
+      participants,
+      nodeLayers,
+      myParticipantId,
+    );
 
     popupData = {
       nodeId,
