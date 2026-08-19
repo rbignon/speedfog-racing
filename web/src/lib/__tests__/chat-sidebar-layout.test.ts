@@ -89,37 +89,4 @@ describe("chatSidebarLayout", () => {
       expect(r.publicTabDisabled).toBe(false);
     });
   });
-
-  describe("showPublicOnly (Daily Seeds)", () => {
-    it("hides tabs even when participants access exists", () => {
-      const r = layout({
-        participantsAccess: true,
-        showPublicOnly: true,
-        activeTab: "participants",
-      });
-      expect(r.showTabs).toBe(false);
-      expect(r.effectiveTab).toBe("public");
-    });
-
-    it("does not bypass the public lock", () => {
-      const r = layout({
-        participantsAccess: true,
-        showPublicOnly: true,
-        activeTab: "public",
-        publicAccess: "locked",
-      });
-      expect(r.showLockedPane).toBe(true);
-    });
-
-    it("still works for an anonymous viewer (no participants access)", () => {
-      // Daily Seed for a logged-out viewer: single pane, lock honored.
-      const r = layout({
-        participantsAccess: false,
-        showPublicOnly: true,
-        publicAccess: "locked",
-      });
-      expect(r.showTabs).toBe(false);
-      expect(r.showLockedPane).toBe(true);
-    });
-  });
 });

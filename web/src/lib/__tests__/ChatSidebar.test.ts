@@ -34,7 +34,6 @@ const baseProps = {
   currentUsername: null,
   participantsAccess: true,
   publicAccess: "readable" as const,
-  showPublicOnly: false,
   activeTab: "participants" as const,
   historyVersion: 1,
   onSend: () => {},

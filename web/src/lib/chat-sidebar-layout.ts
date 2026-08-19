@@ -18,10 +18,6 @@ export type ChatTab = "participants" | "public";
 export interface ChatSidebarInputs {
   publicAccess: PublicAccess;
   participantsAccess: boolean;
-  /** When true the participants tab is hidden even if the viewer has
-   * access (Daily Seeds use this to keep the UI single-pane). The
-   * publicAccess lock still applies. */
-  showPublicOnly?: boolean;
   /** Active tab as decided by the parent. We may override it (forcing
    * "public") when participants is unavailable. */
   activeTab: ChatTab;
@@ -42,7 +38,7 @@ export interface ChatSidebarLayout {
 export function chatSidebarLayout(
   inputs: ChatSidebarInputs,
 ): ChatSidebarLayout {
-  const showTabs = inputs.participantsAccess && !inputs.showPublicOnly;
+  const showTabs = inputs.participantsAccess;
 
   // Without the participants tab the only meaningful active tab is "public".
   const effectiveTab: ChatTab = showTabs ? inputs.activeTab : "public";

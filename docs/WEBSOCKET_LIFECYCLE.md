@@ -221,7 +221,7 @@ Chat send, history load, and per-message broadcast all flow through the same `se
 
 Public-chat unlocks during a race (late-join window closing for a spectator, participant finishing or abandoning, race transitioning to FINISHED) are detected by the client from data it already receives: the registration deadline travels in `race_info`, participant status updates ride on `player_update`/`leaderboard_update`, and the race status flip rides on `race_status_change`. When the locally-computed access flips from locked to readable, the client sends a `request_chat_history` (see `docs/PROTOCOL.md`); the server revalidates and replies with a `chat_history` for the requested channel, or silently drops the request. No server-initiated push or scheduled task is involved, which keeps the lifecycle robust to server restart and avoids divergence between the broadcast filter and any out-of-band history-push code path.
 
-The frontend mirror of the access matrix lives in `web/src/lib/public-chat-access.ts` (`computePublicAccess`, `computePublicLockedReason`); the locked-pane UX and the `showPublicOnly` Daily-Seeds variant live in `web/src/lib/components/ChatSidebar.svelte` and `web/src/lib/chat-sidebar-layout.ts`.
+The frontend mirror of the access matrix lives in `web/src/lib/public-chat-access.ts` (`computePublicAccess`, `computePublicLockedReason`); the locked-pane UX lives in `web/src/lib/components/ChatSidebar.svelte` and `web/src/lib/chat-sidebar-layout.ts`.
 
 ---
 

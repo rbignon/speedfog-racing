@@ -17,7 +17,6 @@
     participantsAccess: boolean;
     publicAccess: PublicAccess;
     publicLockedReason?: string;
-    showPublicOnly?: boolean;
     activeTab: ChatTab;
     historyVersion: number;
     onSend: (message: string, channel: ChatTab, replyTo?: string) => void;
@@ -37,7 +36,6 @@
     participantsAccess,
     publicAccess,
     publicLockedReason,
-    showPublicOnly = false,
     activeTab,
     historyVersion,
     onSend,
@@ -52,7 +50,6 @@
     chatSidebarLayout({
       publicAccess,
       participantsAccess,
-      showPublicOnly,
       activeTab,
     }),
   );
