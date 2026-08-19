@@ -263,7 +263,8 @@
             {#if layout.effectiveTab === "participants"}
               Private chat between participants. Avoid sharing spoilers here.
             {:else}
-              Open discussion, spoilers allowed. Visible to everyone.
+              Open discussion, spoilers allowed. Visible to everyone except
+              racers who haven't finished yet.
             {/if}
           </div>
         {/if}
