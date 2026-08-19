@@ -107,7 +107,10 @@
       </div>
       <div class="url-row">
         <input type="text" readonly value={dagUrl} class="url-input" />
-        <button class="btn btn-primary copy-btn" onclick={() => copyUrl(dagUrl, "dag")}>
+        <button
+          class="btn btn-primary copy-btn"
+          onclick={() => copyUrl(dagUrl, "dag")}
+        >
           {dagCopied ? "Copied!" : "Copy"}
         </button>
       </div>
@@ -131,7 +134,10 @@
         </div>
         <div class="url-row">
           <input type="text" readonly value={lbUrl} class="url-input" />
-          <button class="btn btn-primary copy-btn" onclick={() => copyUrl(lbUrl, "lb")}>
+          <button
+            class="btn btn-primary copy-btn"
+            onclick={() => copyUrl(lbUrl, "lb")}
+          >
             {lbCopied ? "Copied!" : "Copy"}
           </button>
         </div>
