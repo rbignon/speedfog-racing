@@ -67,7 +67,7 @@ from speedfog_racing.websocket.schemas import (
 
 logger = logging.getLogger(__name__)
 
-MAX_CHAT_HISTORY_MESSAGES = 50  # recent messages sent to each new spectator
+MAX_CHAT_HISTORY_MESSAGES = 100  # recent messages sent to each new spectator
 
 
 def build_seed_info(
@@ -117,7 +117,6 @@ async def load_chat_history(
     Capped at MAX_CHAT_HISTORY_MESSAGES (most recent). This keeps the
     payload and DB load bounded when a long-running race accumulates
     hundreds of messages and many spectators connect in rapid succession.
-    The chat is ephemeral; older messages are not exposed to new viewers.
     """
     async with session_maker() as db:
         # Fetch the most recent N messages via created_at DESC + LIMIT, then

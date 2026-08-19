@@ -873,7 +873,7 @@ A chat message broadcast to the connections that have read access to the channel
 
 #### `chat_history`
 
-Sent on connection for each accessible channel. Contains all persisted messages for that channel. Also sent in response to a [`request_chat_history`](#request_chat_history) message when a viewer's local access for that channel has just unlocked.
+Sent on connection for each accessible channel. Contains the most recent persisted messages for that channel (up to 100), oldest first. Also sent in response to a [`request_chat_history`](#request_chat_history) message when a viewer's local access for that channel has just unlocked.
 
 ```json
 {

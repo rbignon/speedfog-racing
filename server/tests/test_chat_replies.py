@@ -276,3 +276,27 @@ async def test_history_rebuilds_reply_context_for_original_outside_window(sessio
     assert reply_msg["reply_to"]["id"] == str(original_id)
     assert reply_msg["reply_to"]["snippet"] == "ancient"
     assert all(m["id"] is not None for m in payload["messages"])
+
+
+@pytest.mark.asyncio
+async def test_history_caps_at_most_recent_messages(session_maker):
+    """More messages than the cap: history keeps the most recent cap-sized
+    window, in chronological order (oldest of the kept set first)."""
+    race_id, organizer_id, _ = await _seed_race(session_maker)
+    total = MAX_CHAT_HISTORY_MESSAGES + 10
+    base = datetime.now(UTC) - timedelta(seconds=total)
+    for i in range(total):
+        await _add_message(
+            session_maker,
+            race_id,
+            organizer_id,
+            f"msg-{i:03d}",
+            created_at=base + timedelta(seconds=i),
+        )
+    async with session_maker() as db:
+        race = await db.get(Race, race_id)
+
+    history = await load_chat_history(session_maker, race_id, race, ChatChannel.PARTICIPANTS)
+    assert len(history.messages) == MAX_CHAT_HISTORY_MESSAGES
+    assert history.messages[0].message == f"msg-{total - MAX_CHAT_HISTORY_MESSAGES:03d}"
+    assert history.messages[-1].message == f"msg-{total - 1:03d}"
