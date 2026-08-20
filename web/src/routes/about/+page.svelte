@@ -177,11 +177,16 @@
       live leaderboard shows <strong>time gaps</strong> between players, zone by zone.
     </p>
     <div class="screenshot-container">
-      <img
-        src="/screenshots/ingame.png"
-        alt="SpeedFog Racing in-game overlay showing leaderboard and progression"
-        class="screenshot"
-      />
+      <a
+        href="/screenshots/ingame.png"
+        target="_blank"
+      >
+        <img
+          src="/screenshots/ingame.png"
+          alt="SpeedFog Racing in-game overlay showing leaderboard and progression"
+          class="screenshot"
+        />
+      </a>
     </div>
     <p class="screenshot-caption">
       The in-game overlay during a race. Leaderboard, progression, exits, and
