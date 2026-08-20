@@ -22,7 +22,7 @@ run_complete_message = [
     "BURN, FOR THE SAKE OF THE NEW LORD", # Melina
 ]
 chapel_grace = true
-sentry_torch_shop = true
+sentry_torch_shop = false
 
 [budget]
 tolerance = 5
@@ -38,8 +38,8 @@ crosslinks = true
 start_tier = 3
 
 [starting_items]
-academy_key = true
-rusty_key = true
+academy_key = false
+rusty_key = false
 pureblood_medal = false
 drawing_room_key = true
 lantern = true
