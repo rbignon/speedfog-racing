@@ -2,6 +2,11 @@
 # ~5 hour races through most of the Lands Between
 extends = "_base"
 
+# Path spread scales with layers_count: at 90 layers the median spread is
+# ~11 min, so _base's tolerance = 5 would reroll every candidate.
+[budget]
+tolerance = 15
+
 [display]
 name = "Expedition"
 sort_order = 50
