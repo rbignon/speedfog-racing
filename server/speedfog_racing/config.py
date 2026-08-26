@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
 
+    # Site-wide announcement shown as a banner on every web page (served via
+    # /health so it can change without a frontend deploy). None hides it; the
+    # optional URL adds a "Read more" link.
+    announcement: str | None = None
+    announcement_url: str | None = None
+
     # Server
     log_level: str = "INFO"
     log_json: bool = False

@@ -62,3 +62,52 @@ describe("AppUpdateStore.check", () => {
     expect(store.dismissed).toBe(true);
   });
 });
+
+describe("AppUpdateStore announcement", () => {
+  it("exposes the announcement text and link from /health", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Mods may break on Friday.",
+      announcement_url: "/help#faq-game-update",
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcement).toBe("Mods may break on Friday.");
+    expect(store.announcementUrl).toBe("/help#faq-game-update");
+  });
+
+  it("clears the announcement once the server stops sending one", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Old notice",
+      announcement_url: null,
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    stubHealth({ status: "ok", version: __APP_VERSION__, announcement: null });
+    await store.check();
+    expect(store.announcement).toBeNull();
+    expect(store.announcementUrl).toBeNull();
+  });
+
+  it("drops a blank announcement URL", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Notice",
+      announcement_url: "  ",
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcementUrl).toBeNull();
+  });
+
+  it("treats a blank announcement as none", async () => {
+    stubHealth({ status: "ok", version: __APP_VERSION__, announcement: "   " });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcement).toBeNull();
+  });
+});

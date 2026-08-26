@@ -105,6 +105,13 @@ The script:
 6. Swaps the frontend build atomically
 7. Restarts the service and checks health
 
+## Site announcement
+
+To show a banner on every page (game patch warnings, maintenance...), set
+`ANNOUNCEMENT` (and optionally `ANNOUNCEMENT_URL`) in `.env` on the VPS and
+`sudo systemctl restart speedfog-racing`. No deploy needed; open tabs pick it
+up within 15 minutes. Comment the variables out and restart to remove it.
+
 ## Files
 
 | File                         | Purpose                                                   |

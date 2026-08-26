@@ -13,6 +13,7 @@
   import { rewards } from "$lib/stores/rewards.svelte";
   import NavUserSearch from "$lib/components/NavUserSearch.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
+  import AnnouncementBanner from "$lib/components/AnnouncementBanner.svelte";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
 
   let { children } = $props();
@@ -243,6 +244,11 @@
         </nav>
       </div>
     </header>
+
+    <AnnouncementBanner
+      text={appUpdate.announcement}
+      url={appUpdate.announcementUrl}
+    />
 
     <div class="content">
       {@render children()}

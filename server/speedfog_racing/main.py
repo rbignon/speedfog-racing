@@ -161,9 +161,14 @@ app.include_router(api_router, prefix="/api")
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    """Health check endpoint."""
-    return {"status": "ok", "version": __version__}
+async def health_check() -> dict[str, str | None]:
+    """Health check endpoint; also carries the site-wide announcement, if any."""
+    return {
+        "status": "ok",
+        "version": __version__,
+        "announcement": settings.announcement,
+        "announcement_url": settings.announcement_url,
+    }
 
 
 # WebSocket routes

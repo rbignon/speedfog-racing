@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
+  import { page } from "$app/state";
   import { PUBLIC_BASE_URL } from "$env/static/public";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import { fetchPoolStats, type PoolStats, type PoolInfo } from "$lib/api";
@@ -51,6 +52,17 @@
       timeZoneName: "short",
     });
     loadPools();
+  });
+
+  // Deep links such as /help#faq-game-update open the targeted accordion,
+  // both on first load and when the hash changes while already on this page.
+  // Scrolling to the id is handled by the browser / SvelteKit.
+  $effect(() => {
+    const target = page.url.hash.slice(1);
+    if (!target.startsWith("faq-")) return;
+    untrack(() => {
+      if (!openDetails.has(target)) toggleDetail(target);
+    });
   });
 
   async function loadPools() {
@@ -492,6 +504,7 @@
     <h3>Gameplay</h3>
 
     <button
+      id="faq-respec"
       class="accordion"
       class:open={isOpen("faq-respec")}
       aria-expanded={isOpen("faq-respec")}
@@ -510,6 +523,7 @@
     {/if}
 
     <button
+      id="faq-smithing"
       class="accordion"
       class:open={isOpen("faq-smithing")}
       aria-expanded={isOpen("faq-smithing")}
@@ -529,6 +543,7 @@
     {/if}
 
     <button
+      id="faq-igt"
       class="accordion"
       class:open={isOpen("faq-igt")}
       aria-expanded={isOpen("faq-igt")}
@@ -548,6 +563,7 @@
     {/if}
 
     <button
+      id="faq-solo-vs-race"
       class="accordion"
       class:open={isOpen("faq-solo-vs-race")}
       aria-expanded={isOpen("faq-solo-vs-race")}
@@ -576,6 +592,7 @@
     <h3>Troubleshooting</h3>
 
     <button
+      id="faq-antivirus"
       class="accordion"
       class:open={isOpen("faq-antivirus")}
       aria-expanded={isOpen("faq-antivirus")}
@@ -597,6 +614,7 @@
     {/if}
 
     <button
+      id="faq-stale"
       class="accordion"
       class:open={isOpen("faq-stale")}
       aria-expanded={isOpen("faq-stale")}
@@ -615,6 +633,7 @@
     {/if}
 
     <button
+      id="faq-overlay"
       class="accordion"
       class:open={isOpen("faq-overlay")}
       aria-expanded={isOpen("faq-overlay")}
@@ -634,6 +653,51 @@
     {/if}
 
     <button
+      id="faq-game-update"
+      class="accordion"
+      class:open={isOpen("faq-game-update")}
+      aria-expanded={isOpen("faq-game-update")}
+      onclick={() => toggleDetail("faq-game-update")}
+    >
+      <span>Elden Ring got updated and SpeedFog stopped working</span>
+      <span class="chevron"></span>
+    </button>
+    {#if isOpen("faq-game-update")}
+      <div class="panel">
+        <p>
+          Game patches usually break mods, including the randomizers SpeedFog is
+          built on, until they are updated. To keep playing on the version the
+          mods support, stop Steam from updating Elden Ring on its own:
+        </p>
+        <ol>
+          <li>Open Steam, go to <strong>Library</strong></li>
+          <li>
+            Right-click <strong>ELDEN RING</strong>, choose
+            <strong>Properties</strong>
+          </li>
+          <li>Open the <strong>Updates</strong> tab</li>
+          <li>
+            Under <strong>Automatic Updates</strong>, select "Only update this
+            game when I launch it"
+          </li>
+          <li>
+            Under <strong>Background Downloads</strong>, select "Never allow
+            background downloads"
+          </li>
+        </ol>
+        <p>
+          Follow the
+          <a
+            href="https://discord.gg/Qmw67J3mR9"
+            target="_blank"
+            rel="noopener noreferrer">Discord</a
+          > for status updates once the mods catch up with the patch.
+        </p>
+      </div>
+    {/if}
+
+    <button
+      id="faq-disconnect"
       class="accordion"
       class:open={isOpen("faq-disconnect")}
       aria-expanded={isOpen("faq-disconnect")}
@@ -652,6 +716,7 @@
     {/if}
 
     <button
+      id="faq-crash-save"
       class="accordion"
       class:open={isOpen("faq-crash-save")}
       aria-expanded={isOpen("faq-crash-save")}
@@ -685,6 +750,7 @@
     {/if}
 
     <button
+      id="faq-abandon"
       class="accordion"
       class:open={isOpen("faq-abandon")}
       aria-expanded={isOpen("faq-abandon")}
