@@ -9,7 +9,7 @@ estimated_duration = "~30min"
 description = "Fast-paced race with minimal exploration"
 
 [budget]
-tolerance = 3
+tolerance = 2
 
 [requirements]
 legacy_dungeons = 1

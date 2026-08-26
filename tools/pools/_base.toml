@@ -25,7 +25,7 @@ chapel_grace = true
 sentry_torch_shop = false
 
 [budget]
-tolerance = 5
+tolerance = 4
 
 [structure]
 max_parallel_paths = 3
