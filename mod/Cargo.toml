@@ -42,7 +42,7 @@ crossbeam-channel = "0.5"
 
 [target.'cfg(windows)'.dependencies]
 # --- libeldenring from your fork ---
-libeldenring = { git = "https://github.com/rbignon/eldenring-practice-tool", rev = "66b6cdfb5d6391a6d9bab19fd17fd004f40670cd" }
+libeldenring = { git = "https://github.com/rbignon/eldenring-practice-tool", rev = "4724994c6bf04aadb7aa14846a52c02f35a02738" }
 
 # --- hudhook for ImGui overlay (includes imgui as transitive dependency) ---
 hudhook = { version = "0.9.1", features = ["dx12", "inject"], default-features = false }

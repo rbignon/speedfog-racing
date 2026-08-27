@@ -605,7 +605,7 @@ checksum = "bcc35a38544a891a5f7c865aca548a982ccb3b8650a5b06d0fd33a10283c56fc"
 [[package]]
 name = "libeldenring"
 version = "0.1.0"
-source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=66b6cdfb5d6391a6d9bab19fd17fd004f40670cd#66b6cdfb5d6391a6d9bab19fd17fd004f40670cd"
+source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=4724994c6bf04aadb7aa14846a52c02f35a02738#4724994c6bf04aadb7aa14846a52c02f35a02738"
 dependencies = [
  "log",
  "macro-param",
@@ -680,7 +680,7 @@ dependencies = [
 [[package]]
 name = "macro-param"
 version = "0.1.0"
-source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=66b6cdfb5d6391a6d9bab19fd17fd004f40670cd#66b6cdfb5d6391a6d9bab19fd17fd004f40670cd"
+source = "git+https://github.com/rbignon/eldenring-practice-tool?rev=4724994c6bf04aadb7aa14846a52c02f35a02738#4724994c6bf04aadb7aa14846a52c02f35a02738"
 dependencies = [
  "heck",
  "proc-macro2",
