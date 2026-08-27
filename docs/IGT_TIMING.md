@@ -26,7 +26,7 @@ Failure policy is warn-and-continue: if the pattern scan or the hook install fai
 
 `GameState` (`eldenring/game_state.rs`) exposes two CSMenuManImp-derived signals, both ported from SoulSplitter:
 
-- **Screen state** (`is_screen_in_game`): reads `CSMenuManImp + <offset>` as an `i32` and compares it against `SCREEN_STATE_IN_GAME = 0` (SoulSplitter's `ScreenState`: `0` = InGame, `1` = Loading, `256` = MainMenu). The offset is version-mapped in `screen_state_offset`: `0x730` for the exe 2.2+ / app 1.12+ build group (`V2_02_0` through `V2_06_2`), `None` for pre-DLC builds and any other version not in that list (the platform does not race on unmapped builds; an unmapped offset only degrades the signals below, it never blocks racing).
+- **Screen state** (`is_screen_in_game`): reads `CSMenuManImp + <offset>` as an `i32` and compares it against `SCREEN_STATE_IN_GAME = 0` (SoulSplitter's `ScreenState`: `0` = InGame, `1` = Loading, `256` = MainMenu). The offset is version-mapped in `screen_state_offset`: `0x730` for the exe 2.2+ / app 1.12+ build group (`V2_02_0` through `V2_07_0`), `None` for pre-DLC builds and any other version not in that list (the platform does not race on unmapped builds; an unmapped offset only degrades the signals below, it never blocks racing).
 - **Blackscreen fade** (`is_blackscreen_active`): first requires `is_screen_in_game() == Some(true)` (fading only makes sense while already in-game), then reads the fade flag word at `CSMenuManImp + 0x18` (`MENUMAN_BLACKSCREEN_FLAGS_OFFSET`) and checks `bit0 == 1 && bit8 == 0 && bit16 == 1`, SoulSplitter's `IsBlackscreenActive` condition. Returns `Some(false)` when simply not fading (or not in game), `None` when the screen-state signal itself is unavailable.
 
 ### RaceMachine Gate

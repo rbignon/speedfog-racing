@@ -35,7 +35,7 @@ use crate::profile_span;
 fn screen_state_offset(version: Version) -> Option<usize> {
     use Version::*;
     match version {
-        V2_02_0 | V2_02_3 | V2_03_0 | V2_04_0 | V2_05_0 | V2_06_0 | V2_06_1 | V2_06_2 => {
+        V2_02_0 | V2_02_3 | V2_03_0 | V2_04_0 | V2_05_0 | V2_06_0 | V2_06_1 | V2_06_2 | V2_07_0 => {
             Some(0x730)
         }
         _ => None,
@@ -95,10 +95,13 @@ impl GameState {
         // CSMenuManImp chains for the blackscreen freeze and zone reveal
         // (SoulSplitter's IsBlackscreenActive / ScreenState).
         let cs_menu_man_imp = pointers.base_addresses.cs_menu_man_imp;
-        let screen_state_ptr = match screen_state_offset(get_version()) {
+        let version = get_version();
+        let screen_state_ptr = match screen_state_offset(version) {
             Some(offset) => Some(PointerChain::<i32>::new(&[cs_menu_man_imp, offset])),
             None => {
+                let (major, minor, patch): (u32, u32, u32) = version.into();
                 warn!(
+                    exe_version = format!("{major}.{minor}.{patch}"),
                     "[IGT] No screen-state offset mapped for this game build; \
                      blackscreen freeze and direct reveal signal disabled"
                 );
