@@ -38,9 +38,9 @@ Reads use `libeldenring::memedit::PointerChain::<i32>::new(&[game_data_man, 0x8,
 
 ### Runtime weapon ID encoding
 
-`EquipParamWeapon` rows are pre-spaced on multiples of 1000. The low three digits of a runtime id encode two distinct things: the affinity in the hundreds digit (0 Standard, 1 Heavy, 2 Keen, 3 Quality, 4 Fire, 5 Flame Art, 6 Lightning, 7 Sacred, 8 Magic, 9 Cold, A Poison, B Blood, C Occult), and the upgrade level in the tens and units (0..25). A Cold Rotten Greataxe +25 reads as `23150925` = `23150000` (base row) + `9 * 100` (Cold affinity) + `25` (upgrade level).
+`EquipParamWeapon` base rows end with four zeros. The low four digits of a runtime id encode two distinct things: the affinity index times 100 (0 Standard, 1 Heavy, 2 Keen, 3 Quality, 4 Fire, 5 Flame Art, 6 Lightning, 7 Sacred, 8 Magic, 9 Cold, 10 Poison, 11 Blood, 12 Occult, so 0..1200), and the upgrade level (0..25). A Cold Rotten Greataxe +25 reads as `23150925` = `23150000` (base row) + `9 * 100` (Cold affinity) + `25` (upgrade level); an Occult Dagger +5 reads as `1001205` = `1000000` + `12 * 100` + `5`.
 
-Catalogue resolution strips the low three digits to recover the base row. The runtime id including affinity and upgrade is preserved both on the wire and in storage, so two combos differing only by affinity remain distinct in the per-zone counter.
+Catalogue resolution strips the low four digits (`id % 10000`) to recover the base row. Stripping only three (`% 1000`) was a bug until 2026-08-28: Poison, Blood and Occult weapons resolved to a non-existent row and were silently dropped. The runtime id including affinity and upgrade is preserved both on the wire and in storage, so two combos differing only by affinity remain distinct in the per-zone counter.
 
 Three sentinel values map to `None` during filtering:
 
@@ -97,7 +97,7 @@ Entries that pre-date the feature, or zones the player stayed in without ever wi
 
 ### Aggregation by base weapon id
 
-Aggregation across zones and across participants merges combos by their base row id: each id is stripped via `% 1000` (affinity and upgrade-level digits) when computing the aggregation key. Storage stays raw, so a future feature that wants to expose affinity or upgrade can read it from `zone_history.weapons` directly.
+Aggregation across zones and across participants merges combos by their base row id: each id is stripped via `% 10000` (affinity and upgrade-level digits) when computing the aggregation key. Storage stays raw, so a future feature that wants to expose affinity or upgrade can read it from `zone_history.weapons` directly.
 
 ### Canonicalisation
 
@@ -144,7 +144,7 @@ Ammo `wep_type` values (81 Arrow, 83 Greatarrow, 85 Bolt, 86 BallistaBolt) are a
 
 `filter_equipped(raw_id)` in `services/weapons.py`:
 
-1. Strips the low three digits (affinity and upgrade) via `base_id = raw_id - (raw_id % 1000)`.
+1. Strips the low four digits (affinity and upgrade) via `base_id = raw_id - (raw_id % 10000)`.
 2. Looks up `base_id` in the catalogue.
 3. Returns the raw id (affinity and upgrade preserved) if found and `wep_type` is tracked, otherwise `None`. Also returns `None` for `None`, `0`, negative values.
 

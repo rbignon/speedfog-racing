@@ -39,6 +39,7 @@ EXCLUDED_WEP_TYPES = WEP_TYPE_AMMO | {WEP_TYPE_UNARMED}
 
 # Affinity (affinity index * 100, Standard 0 up to Occult 1200) and upgrade
 # level (0..25) are folded into the row ID; the base row ends with four zeros.
+# Same rule as BASE_ROW_MODULUS in server/speedfog_racing/services/weapons.py.
 BASE_ROW_MODULUS = 10_000
 
 _PARAM_LINE = re.compile(r"^\s+(\d+)\s.*\bwepType=(\d+)")

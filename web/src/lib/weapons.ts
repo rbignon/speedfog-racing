@@ -4,8 +4,13 @@ export interface TopCombo extends WeaponCombo {
   percent: number;
 }
 
-function normalizeId(id: number): number {
-  return id - (id % 1000);
+// Runtime weapon ID = base row + affinity index * 100 (Standard 0 up to
+// Occult 1200) + upgrade level (0..25); the base row ends with four zeros.
+// Mirror of BASE_ROW_MODULUS in server/speedfog_racing/services/weapons.py.
+export const BASE_ROW_MODULUS = 10_000;
+
+export function normalizeId(id: number): number {
+  return id - (id % BASE_ROW_MODULUS);
 }
 
 function sumCombos(combos: WeaponCombo[]): WeaponCombo[] {

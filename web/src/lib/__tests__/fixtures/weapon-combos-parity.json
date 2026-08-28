@@ -12,7 +12,10 @@
     {
       "node_id": "fog_a",
       "igt_ms": 100000,
-      "weapons": [{ "ids": [2000700], "ticks": 3 }]
+      "weapons": [
+        { "ids": [2000700], "ticks": 3 },
+        { "ids": [2001205], "ticks": 1 }
+      ]
     },
     {
       "node_id": "fog_b",
@@ -26,7 +29,7 @@
     }
   ],
   "expected": [
-    { "ids": [2000000], "ticks": 8 },
+    { "ids": [2000000], "ticks": 9 },
     { "ids": [3070000, 2000000], "ticks": 6 }
   ]
 }

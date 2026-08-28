@@ -262,6 +262,7 @@ async def test_weapon_stats_merges_affinity_variants_of_same_base(test_client, a
                     "weapons": [
                         {"ids": [23150025], "ticks": 51},
                         {"ids": [23150925], "ticks": 200},
+                        {"ids": [23151225], "ticks": 7},  # Occult, affinity 12 * 100
                     ],
                 }
             ],
@@ -275,7 +276,7 @@ async def test_weapon_stats_merges_affinity_variants_of_same_base(test_client, a
     combos = response.json()["combos"]
     by_ids = {tuple(c["ids"]): c for c in combos}
     assert (23150000,) in by_ids
-    assert by_ids[(23150000,)]["total_ticks"] == 251
+    assert by_ids[(23150000,)]["total_ticks"] == 258
 
 
 @pytest.mark.asyncio

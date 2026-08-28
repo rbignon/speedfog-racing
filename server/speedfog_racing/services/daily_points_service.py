@@ -31,6 +31,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.services.daily_seed_loop import daily_date_for
+from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
 # Points awarded to a 1st place, and thus the most a single daily can yield.
 # The whole per-rank ladder scales off this; lower ranks earn proportionally less.
@@ -139,13 +140,13 @@ def _aggregate_weapon_combos(
     """Mirror of web/src/lib/weapons.ts:aggregateAllCombos.
 
     Concatenate all `weapons` arrays across the input histories, normalize each
-    id (id - id % 1000), sum ticks per normalized combo, return sorted desc.
+    id (id - id % 10000), sum ticks per normalized combo, return sorted desc.
     """
     totals: dict[tuple[int, ...], int] = {}
     for history in zone_histories:
         for entry in history:
             for combo in entry.get("weapons", []) or []:
-                ids = tuple(int(i) - (int(i) % 1000) for i in combo["ids"])
+                ids = tuple(int(i) - (int(i) % BASE_ROW_MODULUS) for i in combo["ids"])
                 totals[ids] = totals.get(ids, 0) + int(combo["ticks"])
     return [
         {"ids": list(ids), "ticks": ticks}

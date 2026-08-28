@@ -1,6 +1,7 @@
 """Unit tests for the equipped-weapons filter."""
 
 from speedfog_racing.services.weapons import (
+    BASE_ROW_MODULUS,
     EXCLUDED_WEP_TYPES,
     WEAPONS,
     bump_combo,
@@ -17,6 +18,12 @@ def test_catalogue_loaded() -> None:
     assert longsword is not None
     assert longsword.name == "Longsword"
     assert longsword.wep_type == 3
+
+
+def test_catalogue_keys_are_base_rows() -> None:
+    # filter_equipped strips raw_id % BASE_ROW_MODULUS, so every catalogue key
+    # must be a multiple of it or that weapon could never be resolved.
+    assert all(base_id % BASE_ROW_MODULUS == 0 for base_id in WEAPONS)
 
 
 def test_filter_keeps_known_weapon_at_zero_upgrade() -> None:
@@ -112,8 +119,16 @@ def test_bump_combo_returns_unchanged_when_both_none() -> None:
 
 def test_filter_preserves_affinity_and_upgrade_for_known_weapon() -> None:
     # 23150925 = Rotten Greataxe (base 23150000) + Cold affinity (9 * 100) + +25.
-    # Must resolve via modulo 1000 to the base row and be kept (wep_type=41).
+    # Must resolve via modulo 10000 to the base row and be kept (wep_type=41).
     assert filter_equipped(23150925) == 23150925
+
+
+def test_filter_keeps_affinities_above_cold() -> None:
+    # Poison, Blood and Occult are affinity indexes 10..12, so they occupy the
+    # thousands digit: 1001205 = Dagger (1000000) + Occult (12 * 100) + 5.
+    assert filter_equipped(1001000) == 1001000  # Poison Dagger
+    assert filter_equipped(1001125) == 1001125  # Blood Dagger +25
+    assert filter_equipped(1001205) == 1001205  # Occult Dagger +5
 
 
 def test_filter_keeps_affinity_only_no_upgrade() -> None:

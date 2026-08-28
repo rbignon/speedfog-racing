@@ -2,11 +2,13 @@
  * Frontend cache of the static weapon catalogue served by ``GET /api/weapons``.
  *
  * Loaded lazily on first access. The base name is resolved by stripping the
- * low three digits of the runtime id (affinity in the hundreds, upgrade level
- * in the tens and units). Unknown ids fall back to ``Weapon #<base>`` so a
+ * low four digits of the runtime id (affinity index times 100, up to Occult
+ * 1200, plus the upgrade level). Unknown ids fall back to ``Weapon #<base>`` so a
  * future DLC the server has not yet been refreshed for still renders something
  * useful.
  */
+
+import { normalizeId } from "$lib/weapons";
 
 interface CatalogueEntry {
   name: string;
@@ -32,7 +34,7 @@ export async function loadCatalogue(): Promise<void> {
 }
 
 export function getWeaponName(rawId: number): string {
-  const base = rawId - (rawId % 1000);
+  const base = normalizeId(rawId);
   const entry = cache?.[String(base)];
   return entry ? entry.name : `Weapon #${base}`;
 }

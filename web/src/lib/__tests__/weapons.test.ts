@@ -3,6 +3,7 @@ import parityFixture from "./fixtures/weapon-combos-parity.json";
 import type { ZoneHistoryEntry, WeaponCombo } from "$lib/zone-history";
 import {
   aggregateAllCombos,
+  normalizeId,
   aggregateZoneCombos,
   formatCombo,
   topCombos,
@@ -61,10 +62,19 @@ describe("aggregateAllCombos", () => {
     const history: ZoneHistoryEntry[] = [
       ENTRY("a", [{ ids: [23150025], ticks: 51 }]), // Standard Rotten Greataxe +25
       ENTRY("b", [{ ids: [23150925], ticks: 200 }]), // Cold Rotten Greataxe +25
+      ENTRY("c", [{ ids: [23151225], ticks: 7 }]), // Occult Rotten Greataxe +25
     ];
     expect(aggregateAllCombos(history)).toEqual([
-      { ids: [23150000], ticks: 251 },
+      { ids: [23150000], ticks: 258 },
     ]);
+  });
+
+  it("strips Poison, Blood and Occult affinities (thousands digit)", () => {
+    // Affinity index * 100 reaches 1200, so the base row is the id minus
+    // its low four digits, not three.
+    expect(normalizeId(1001205)).toBe(1000000); // Occult Dagger +5
+    expect(normalizeId(1001000)).toBe(1000000); // Poison Dagger
+    expect(normalizeId(2000025)).toBe(2000000); // Longsword +25
   });
 });
 

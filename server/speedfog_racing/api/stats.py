@@ -41,6 +41,7 @@ from speedfog_racing.schemas import (
     ZoneStatsResponse,
     ZoneTimeEntry,
 )
+from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
 logger = logging.getLogger(__name__)
 
@@ -924,7 +925,7 @@ async def get_weapon_stats(
                     ticks = combo.get("ticks", 0)
                     if not isinstance(ids, list) or not isinstance(ticks, int) or ticks <= 0:
                         continue
-                    base_ids = tuple(i - (i % 1000) for i in ids)
+                    base_ids = tuple(i - (i % BASE_ROW_MODULUS) for i in ids)
                     totals[base_ids] = totals.get(base_ids, 0) + ticks
                     races.setdefault(base_ids, set()).add(p.race_id)
                     players.setdefault(base_ids, set()).add(p.user_id)

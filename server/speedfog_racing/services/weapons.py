@@ -33,6 +33,12 @@ EXCLUDED_WEP_TYPES: frozenset[int] = frozenset(
 )
 
 
+# Runtime weapon ID = base row + affinity index * 100 (0..12) + upgrade level
+# (0..25); the base row ends with four zeros. Same rule as BASE_ROW_MODULUS in
+# tools/generate_weapons.py and normalizeId in web/src/lib/weapons.ts.
+BASE_ROW_MODULUS = 10_000
+
+
 @dataclass(frozen=True, slots=True)
 class WeaponInfo:
     name: str
@@ -55,13 +61,13 @@ def filter_equipped(raw_id: int | None) -> int | None:
     """Return the raw runtime weapon ID if it is a tracked melee/ranged weapon,
     ``None`` otherwise (empty hand, unknown ID, or excluded type).
 
-    Strips the low three digits (affinity in the hundreds, upgrade level in
-    the tens and units) before lookup, but returns the raw ID with the
-    affinity and upgrade preserved.
+    Strips the low four digits (affinity index times 100, Standard 0 up to
+    Occult 1200, plus the upgrade level 0..25) before lookup, but returns the
+    raw ID with the affinity and upgrade preserved.
     """
     if raw_id is None or raw_id <= 0:
         return None
-    base_id = raw_id - (raw_id % 1000)
+    base_id = raw_id - (raw_id % BASE_ROW_MODULUS)
     info = WEAPONS.get(base_id)
     if info is None or info.wep_type in EXCLUDED_WEP_TYPES:
         return None
