@@ -8,9 +8,9 @@ from speedfog_racing.services.weapons import (
 )
 
 
-def test_csv_loaded() -> None:
-    """The CSV is reachable from the package and parses to a non-trivial mapping."""
-    # If this assert ever needs updating because we refreshed weapons.csv, that is
+def test_catalogue_loaded() -> None:
+    """weapons.json is reachable from the package and parses to a non-trivial mapping."""
+    # If this assert ever needs updating because we refreshed weapons.json, that is
     # fine: the point is to catch an empty / broken load, not pin the exact count.
     assert len(WEAPONS) > 400
     longsword = WEAPONS.get(2000000)
@@ -35,8 +35,8 @@ def test_filter_rejects_staff() -> None:
 
 def test_filter_rejects_shield_and_torch() -> None:
     # Verify the filter rejects representative entries for each excluded category
-    # actually present in the CSV. We resolve IDs at test time so the test does not
-    # break if the CSV snapshot's first row of a given type changes.
+    # actually present in the JSON. We resolve IDs at test time so the test does not
+    # break if the catalogue's first row of a given type changes.
     seen_types: set[int] = set()
     for raw_id, info in WEAPONS.items():
         if info.wep_type in EXCLUDED_WEP_TYPES and info.wep_type not in seen_types:
@@ -50,7 +50,7 @@ def test_filter_unknown_id_returns_none() -> None:
 
 
 def test_filter_unarmed_returns_none() -> None:
-    # 110000 = Unarmed per libeldenring param_names.json. Not in weapons.csv.
+    # 110000 = Unarmed per libeldenring param_names.json. Not in weapons.json.
     assert filter_equipped(110000) is None
 
 

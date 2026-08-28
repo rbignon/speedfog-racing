@@ -6,7 +6,9 @@ each status_update. The server strips the affinity and upgrade level, looks the 
 ID up in ``weapons.json``, and drops weapons whose ``wep_type`` is in
 ``EXCLUDED_WEP_TYPES`` (staves, seals, shields, torches).
 
-Source for the catalogue and WepType numeric values: TarnishedTool.
+The catalogue is generated from the game data by ``tools/generate_weapons.py``;
+the ``wep_type`` values are ``EquipParamWeapon.wepType`` (TarnishedTool's WepType
+enum uses the same numbering).
 """
 
 import json

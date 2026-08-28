@@ -255,6 +255,10 @@
     "name": "Serpent Flail",
     "wep_type": 24
   },
+  "13510000": {
+    "name": "Golden Order Flail",
+    "wep_type": 24
+  },
   "14000000": {
     "name": "Battle Axe",
     "wep_type": 17
@@ -1163,6 +1167,10 @@
     "name": "Golden Lion Shield",
     "wep_type": 67
   },
+  "31540000": {
+    "name": "Silver Grooved Shield",
+    "wep_type": 67
+  },
   "3160000": {
     "name": "Sword of Milos",
     "wep_type": 5
@@ -1439,6 +1447,10 @@
     "name": "Greatsword of Solitude",
     "wep_type": 5
   },
+  "3560000": {
+    "name": "Leontiel's Greatsword",
+    "wep_type": 5
+  },
   "4000000": {
     "name": "Greatsword",
     "wep_type": 7
@@ -1707,6 +1719,10 @@
     "name": "Carian Thrusting Shield",
     "wep_type": 90
   },
+  "62520000": {
+    "name": "Ritual Thrusting Shield",
+    "wep_type": 90
+  },
   "63500000": {
     "name": "Smithscript Dagger",
     "wep_type": 91
@@ -1721,6 +1737,10 @@
   },
   "64520000": {
     "name": "Curseblade's Cirque",
+    "wep_type": 92
+  },
+  "64530000": {
+    "name": "Reverse-Bladed Sword",
     "wep_type": 92
   },
   "6500000": {
@@ -1739,6 +1759,10 @@
     "name": "Rakshasa's Great Katana",
     "wep_type": 94
   },
+  "66530000": {
+    "name": "Reed Great Katana",
+    "wep_type": 94
+  },
   "67500000": {
     "name": "Milady",
     "wep_type": 93
@@ -1749,6 +1773,10 @@
   },
   "67520000": {
     "name": "Rellana's Twin Blades",
+    "wep_type": 93
+  },
+  "67530000": {
+    "name": "Idus Sword",
     "wep_type": 93
   },
   "68500000": {
@@ -1877,6 +1905,10 @@
   },
   "8520000": {
     "name": "Horned Warrior's Greatsword",
+    "wep_type": 11
+  },
+  "8530000": {
+    "name": "Hefty Scimitar",
     "wep_type": 11
   },
   "9000000": {
