@@ -925,7 +925,13 @@ async def get_weapon_stats(
                     ticks = combo.get("ticks", 0)
                     if not isinstance(ids, list) or not isinstance(ticks, int) or ticks <= 0:
                         continue
-                    base_ids = tuple(i - (i % BASE_ROW_MODULUS) for i in ids)
+                    # Same id coercion as daily_points_service._aggregate_weapon_combos
+                    # (ticks keep the stricter int check above); a malformed id skips
+                    # the combo instead of failing the request.
+                    try:
+                        base_ids = tuple(int(i) - (int(i) % BASE_ROW_MODULUS) for i in ids)
+                    except (TypeError, ValueError, OverflowError):
+                        continue
                     totals[base_ids] = totals.get(base_ids, 0) + ticks
                     races.setdefault(base_ids, set()).add(p.race_id)
                     players.setdefault(base_ids, set()).add(p.user_id)

@@ -155,6 +155,39 @@ async def test_weapon_stats_aggregates_ticks_across_participants(test_client, as
 
 
 @pytest.mark.asyncio
+async def test_weapon_stats_coerces_ids_and_skips_malformed_combos(test_client, async_session):
+    """Numeric strings count like ints (daily_points_service parity); junk is skipped."""
+    now = datetime.now(UTC)
+    await _seed_finished_race(
+        async_session,
+        pool_name="standard",
+        started_at=now,
+        histories=[
+            [
+                {
+                    "node_id": "z1",
+                    "igt_ms": 0,
+                    "weapons": [
+                        {"ids": [2000025], "ticks": 4},
+                        {"ids": ["2000125"], "ticks": 3},
+                        {"ids": ["junk"], "ticks": 9},
+                        {"ids": [None], "ticks": 9},
+                        {"ids": [float("inf")], "ticks": 9},  # OverflowError in int()
+                    ],
+                }
+            ],
+        ],
+    )
+
+    async with test_client as client:
+        response = await client.get("/api/stats/weapons")
+
+    assert response.status_code == 200
+    combos = response.json()["combos"]
+    assert {tuple(c["ids"]): c["total_ticks"] for c in combos} == {(2000000,): 7}
+
+
+@pytest.mark.asyncio
 async def test_weapon_stats_distinguishes_swapped_dual_combos(test_client, async_session):
     """``[X, Y]`` and ``[Y, X]`` show up as two separate combos."""
     now = datetime.now(UTC)
