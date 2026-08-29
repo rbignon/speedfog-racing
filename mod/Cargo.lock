@@ -1198,7 +1198,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "speedfog-racing-mod"
-version = "1.24.0"
+version = "1.25.0"
 dependencies = [
  "chrono",
  "crossbeam-channel",

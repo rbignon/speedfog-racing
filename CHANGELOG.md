@@ -2,6 +2,36 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.25.0] - 2026-08-29
+
+### Elden Ring 1.17
+
+- **SpeedFog now runs on Elden Ring 1.17** (the Tarnished Pack update)
+- Until thefifthmatt's randomizer is updated for 1.17, two limitations apply:
+  - The two new starting classes, **Idus Knight** and **Heavy Knight**, are **not randomized**. You are allowed to use them in the meantime to get familiar with them
+  - For Tarnished Pack owners, the **invasion in Radahn's arena is still present**. It will be removed in a future update
+- To keep playing on an older game version while Steam updates the main install, the launcher can now target a **frozen copy of the game**: copy the `ELDEN RING\Game` folder before the update, then set the `SPEEDFOG_GAME_PATH` environment variable or write `game_path=<path>` in `%APPDATA%\SpeedFog\config.ini`. The setting applies to every seed
+
+### Seeds
+
+- **Fairer zone selection**: zones with no other zone of the same duration (**Messmer**, **Caelid Abandoned Cave**, ...) were systematically under-picked by the generator. They now show up at their fair share
+- **Balanced routes**: the fastest and slowest paths from start to final boss can no longer drift more than 2 minutes apart on Sprint and 4 minutes on the other modes
+- Zone durations recalibrated from race data
+- **Boss Rush** and **Expedition** final tier lowered to 21 (from 23 and 25)
+- The **Castle Ensis barred gate** and the **two one-way doors** of the Subterranean Shunning-Grounds sewer corridor now open at startup
+- The **Academy Glintstone Key** and the **Rusty Key** are no longer given at start, and the Twin Maiden Husks no longer sell the **Sentry's Torch**
+- Fix: the **Fog Rift Catacombs** spawn restriction to the main entrance was silently ignored. It now applies
+
+### Races
+
+- The **race rules now sit above the map**, and a **Deathless** race gets its own callout in the download modal and on the daily page
+- When clicking a zone on the map, the **Visited by** list now highlights your own row and shows each racer's gap to the fastest clear of that zone
+
+### Website
+
+- **Race chats are now kept forever** (they used to be purged after 7 days), and opening a race loads its last 100 messages instead of 50
+- Fix: **Poison, Blood and Occult weapons were missing** from the weapon tracking
+
 ## [1.24.0] - 2026-08-12
 
 ### Timer
