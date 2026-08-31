@@ -2320,6 +2320,22 @@ async def test_training_pack_ticket_rejects_non_owner(
 
 
 @pytest.mark.asyncio
+async def test_training_pack_ticket_gone_when_zip_missing(
+    test_client, training_user, active_training_session, training_zip_path
+):
+    """Minting a ticket after the seed zip was cleaned up returns 410."""
+    session_id = active_training_session.id
+    training_zip_path.unlink()
+    async with test_client as client:
+        resp = await client.get(
+            f"/api/training/{session_id}/pack-ticket",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert resp.status_code == 410
+        assert "no longer available" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_training_pack_rejects_bad_ticket(test_client, active_training_session):
     """A malformed ?t= ticket is rejected with 403."""
     session_id = active_training_session.id

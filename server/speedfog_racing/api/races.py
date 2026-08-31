@@ -1907,6 +1907,13 @@ async def create_seed_pack_ticket(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Race has no seed assigned",
         )
+    if not Path(race.seed.folder_path).is_file():
+        logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This seed pack is no longer available."
+            " Seed files are removed after a race ends.",
+        )
     ticket = sign_download_ticket("race", user.id, race_id, datetime.now(UTC))
     return DownloadTicketResponse(ticket=ticket)
 

@@ -252,12 +252,22 @@ async def create_pack_ticket(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DownloadTicketResponse:
-    """Mint a short-lived signed ticket for a native training-pack download."""
+    """Mint a short-lived signed ticket for a native training-pack download.
+
+    Runs the same gating as the download endpoint so failures surface in the
+    web UI instead of a broken browser download.
+    """
     session = await _get_session_or_404(db, session_id, user.id)
     if session.status != TrainingSessionStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only download pack for active sessions",
+        )
+    if not Path(session.seed.folder_path).is_file():
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="This seed pack is no longer available."
+            " Seed files are periodically removed after use.",
         )
     ticket = sign_download_ticket("training", user.id, session_id, datetime.now(UTC))
     return DownloadTicketResponse(ticket=ticket)

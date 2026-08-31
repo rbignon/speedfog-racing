@@ -149,6 +149,8 @@ When a participant downloads their seed pack (`GET /races/{id}/my-seed-pack`), t
 
 The web client first mints a short-lived signed ticket (`/seed-pack-ticket` for races, `/pack-ticket` for training), then lets the browser download the zip natively via a `?t=` query param instead of buffering the whole response in JS. This gives native download progress, ETA, and resume.
 
+The ticket endpoints run the same gating as the download endpoints, including checking that the seed zip still exists on disk (410 Gone when it was cleaned up), so failures surface in the web UI via the XHR instead of a broken native download. The download endpoints keep the same checks as a backstop.
+
 ### Steps
 
 1. **Copy base zip** to a temp file (`tempfile.mkstemp(suffix=".zip")`).

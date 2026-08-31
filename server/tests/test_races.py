@@ -1018,6 +1018,38 @@ async def test_seed_pack_ticket_forbidden_for_non_participant(
 
 
 @pytest.mark.asyncio
+async def test_seed_pack_ticket_gone_when_zip_missing(
+    test_client, organizer, player, seed_with_zip, seed_zip_context
+):
+    """Minting a ticket after the seed zip was cleaned up returns 410."""
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        seed_zip_context.unlink()
+
+        resp = await client.get(
+            f"/api/races/{race_id}/seed-pack-ticket",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert resp.status_code == 410
+        assert "no longer available" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_my_seed_pack_rejects_bad_ticket(test_client, organizer, player, seed_with_zip):
     """A malformed ?t= ticket is rejected with 403."""
     async with test_client as client:
