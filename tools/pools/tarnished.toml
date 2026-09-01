@@ -1,0 +1,18 @@
+extends = ["standard"]
+
+[display]
+name = "Tarnished"
+sort_order = 85
+estimated_duration = "~1h"
+description = "Tarnished race, with Tarnished weapons and Torrent skins!"
+rules = """
+You must own the Tarnished Pack
+All starting classes offer weapons and armor from the Tarnished Pack
+"""
+
+
+[tarnished]
+enabled = true
+starting_loadout = true
+unlock_torrent_skins = true
+default_torrent_skin = "random"
