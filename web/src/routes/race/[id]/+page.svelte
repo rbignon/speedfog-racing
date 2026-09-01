@@ -1124,24 +1124,26 @@
         </div>
       </header>
 
-      {#if modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
+      {#if editingRules || modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
-          <div class="race-rules-head">
-            <h3>Race Rules</h3>
-            {#if isOrganizer && canEditRules && !editingRules}
-              <button class="btn-edit" onclick={startEditRules}>
-                {customRuleLines.length > 0 ? "Edit" : "Add"}
-              </button>
-            {/if}
-          </div>
           {#if modeRuleLines.length > 0}
-            <div class="mode-rules-callout">
-              <span class="mode-rules-label">Mode Rules</span>
-              <ul class="race-rules-list">
-                {#each modeRuleLines as line}
-                  <li>{line}</li>
-                {/each}
-              </ul>
+            <div class="race-rules-head">
+              <h3>Mode Rules</h3>
+            </div>
+            <ul class="race-rules-list">
+              {#each modeRuleLines as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+          {/if}
+          {#if editingRules || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
+            <div class="race-rules-head">
+              <h3>Race Rules</h3>
+              {#if isOrganizer && canEditRules && !editingRules}
+                <button class="btn-edit" onclick={startEditRules}>
+                  {customRuleLines.length > 0 ? "Edit" : "Add"}
+                </button>
+              {/if}
             </div>
           {/if}
           {#if editingRules}
@@ -2277,25 +2279,8 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
   }
-  /* Gold left-accent callout: pool-imposed rules, distinct from the
-     organizer-editable list below. */
-  .mode-rules-callout {
-    margin-top: 0.5rem;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-left: 3px solid var(--color-gold);
-    border-radius: var(--radius-sm);
-    padding: 0.5rem 0.75rem;
-  }
-  .mode-rules-label {
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-weight: 500;
-  }
-  .mode-rules-callout .race-rules-list {
-    margin-top: 0.25rem;
+  .race-rules-list + .race-rules-head {
+    margin-top: 0.75rem;
   }
   .race-rules-input {
     width: 100%;
