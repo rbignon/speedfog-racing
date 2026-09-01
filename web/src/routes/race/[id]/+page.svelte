@@ -202,6 +202,12 @@
       .map((l) => l.trim())
       .filter((l) => l.length > 0),
   );
+  let modeRuleLines = $derived(
+    (initialRace.pool_config?.rules ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0),
+  );
   let canEditRules = $derived(
     raceStatus === "setup" || raceStatus === "running",
   );
@@ -1118,7 +1124,7 @@
         </div>
       </header>
 
-      {#if displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
+      {#if modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
           <div class="race-rules-head">
             <h3>Race Rules</h3>
@@ -1128,6 +1134,16 @@
               </button>
             {/if}
           </div>
+          {#if modeRuleLines.length > 0}
+            <div class="mode-rules-callout">
+              <span class="mode-rules-label">Mode Rules</span>
+              <ul class="race-rules-list">
+                {#each modeRuleLines as line}
+                  <li>{line}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
           {#if editingRules}
             <textarea
               class="race-rules-input"
@@ -2260,6 +2276,26 @@
     padding-left: 1.25rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+  }
+  /* Gold left-accent callout: pool-imposed rules, distinct from the
+     organizer-editable list below. */
+  .mode-rules-callout {
+    margin-top: 0.5rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-left: 3px solid var(--color-gold);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 0.75rem;
+  }
+  .mode-rules-label {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+  .mode-rules-callout .race-rules-list {
+    margin-top: 0.25rem;
   }
   .race-rules-input {
     width: 100%;
