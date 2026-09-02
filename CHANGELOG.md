@@ -2,6 +2,28 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.26.0] - 2026-09-02
+
+### Tarnished Mode
+
+- New **Tarnished** mode (you must own it to play)
+  - Every starting class carries Tarnished Pack gear
+  - The three Spectral Steed Regalia are unlocked from the start, and Torrent begins the run with a randomized skin
+  - The Tarnished Pack weapons and invaders join the randomization pools
+
+### Elden Ring 1.17
+
+- thefifthmatt's **Item Randomizer is now on v0.12**, with full 1.17 support. The two limitations announced in 1.25.0 are lifted:
+  - The **Idus Knight** and **Heavy Knight** starting equipment is **now randomized** like every other class
+  - For Tarnished Pack owners, the **invasions in Radahn's arena is gone**
+- the mod is no longer compatible with version 1.16
+
+### Seeds
+
+- **Shadow Realm Blessings no longer included in boss drops**
+- **Shaded Castle** now uses only its main entrance as a spawn point
+- **Summer is over**: the Sunbathing Outdoors mode retires, and boss names and banners drop their seasonal skins
+
 ## [1.25.0] - 2026-08-29
 
 ### Elden Ring 1.17
