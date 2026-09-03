@@ -9,10 +9,10 @@ generate_pool.py        speedfog-scan-seeds      Player download
 (batch, offline)        (CLI or admin API)       (on-demand)
       │                       │                        │
       ▼                       ▼                        ▼
-  speedfog CLI           Read seed_*.zip          Copy base zip
-      │                  Extract graph.json       Inject config TOML
-      ▼                  Create Seed records      Serve FileResponse
-  Post-process                                    Delete temp file
+  speedfog CLI           Read seed_*.zip          Stream base zip
+      │                  Extract graph.json       Drop graph.json
+      ▼                  Create Seed records      Inject config TOML
+  Post-process                                    Rewrite central dir
   (DLL, config, zip)
       │
       ▼
@@ -153,9 +153,11 @@ The ticket endpoints run the same gating as the download endpoints, including ch
 
 ### Steps
 
-1. **Copy base zip** to a temp file (`tempfile.mkstemp(suffix=".zip")`).
+`stream_seed_pack_with_config(seed_zip_path, config_content)` never copies the pool zip: it parses the central directory once, then streams the original local records in 64 KB chunks and appends a rewritten central directory.
 
-2. **Detect top-level directory**: `_get_top_dir()` finds the common top-level directory inside the zip (e.g., `speedfog_a1b2c3/`).
+1. **Parse the central directory**: locate the EOCD record (ZIP64 is rejected), read the entries, and detect the common top-level directory (e.g., `speedfog_a1b2c3/`).
+
+2. **Drop `graph.json`**: the seed's own DAG file (root-level or directly under the top dir, the same rule the pool scan uses to ingest it) is excluded from the download. Its local record is skipped in the byte stream, its central directory entry is removed, and the local header offsets of the entries stored after it are shifted back. The mod reads nothing from it (`event_ids`, `finish_event`, `spawn_items`, `phantom_skins` all arrive in `auth_ok`, see [PROTOCOL.md](PROTOCOL.md)) and it is a full-route spoiler in plain text; the pool zip on disk keeps it as the ingestion contract for `scan_pool()`.
 
 3. **Generate TOML config**: `generate_player_config(participant, race)` produces:
 
@@ -182,13 +184,13 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    toggle_ui = "f9"
    ```
 
-4. **Inject config**: writes `speedfog_racing.toml` into `<top_dir>/lib/speedfog_racing.toml` within the zip.
+4. **Inject config**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, followed by the rewritten central directory and a new EOCD.
 
-5. **Serve response**: FastAPI `FileResponse` streams the temp file. A `BackgroundTask` deletes the temp file after the response completes.
+5. **Serve response**: FastAPI `StreamingResponse` with the exact `Content-Length` computed up front (original size, minus the dropped `graph.json` record, plus the config entry). No temp file is written.
 
 ### Training Mode Variant
 
-`generate_seed_pack_on_demand_training(session)` is similar but:
+`GET /api/training/{id}/pack` streams through the same function with `generate_training_config(session)`, which:
 
 - Sets `training = true` in the `[server]` section.
 - Uses the training session's `mod_token` and `id` (as `race_id`).
@@ -275,10 +277,12 @@ tools/
 
 ## Zip Internal Structure
 
+Layout of the pool zip on disk. The pack a player downloads is identical except for two entries: `graph.json` is dropped and `lib/speedfog_racing.toml` is added (see section 3).
+
 ```
 seed_a1b2c3d4e5f6.zip
 └── speedfog_a1b2c3d4e5f6/
-    ├── graph.json               # DAG definition (nodes, edges, event_map, ...)
+    ├── graph.json               # DAG definition (nodes, edges, event_map, ...); pool zip only, never shipped to players
     ├── regulation.bin           # Game data overrides
     ├── modengine2/
     │   ├── config_speedfog.toml   # ModEngine 2 config (includes racing DLL in external_dlls)

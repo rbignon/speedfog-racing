@@ -11,6 +11,7 @@ import struct
 import time
 import zlib
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
 from speedfog_racing.config import settings
@@ -42,6 +43,11 @@ def sanitize_filename(name: str) -> str:
 _EOCD_SIG = b"PK\x05\x06"
 _CD_SIG = b"PK\x01\x02"
 _LOCAL_SIG = b"PK\x03\x04"
+_DATA_DESCRIPTOR_SIG = b"PK\x07\x08"
+
+_CD_FIXED_LEN = 46  # central directory entry header, before name/extra/comment
+_LOCAL_FIXED_LEN = 30  # local file header, before name/extra/data
+_FLAG_DATA_DESCRIPTOR = 0x08  # general purpose bit 3: sizes/CRC trail the data
 
 
 def _find_eocd(f: io.BufferedReader) -> tuple[int, int, int, int]:
@@ -77,7 +83,36 @@ def _find_eocd(f: io.BufferedReader) -> tuple[int, int, int, int]:
     return search_start + idx, cd_offset, cd_size, num_entries
 
 
-def _top_dir_from_cd(cd_bytes: bytes) -> str | None:
+@dataclass(frozen=True)
+class _CdEntry:
+    """One parsed central directory entry (positions are relative to the CD bytes)."""
+
+    start: int
+    end: int
+    name: str
+    flags: int
+    compressed_size: int
+    local_header_offset: int
+
+
+def _iter_cd_entries(cd_bytes: bytes) -> Iterator[_CdEntry]:
+    """Walk the central directory, stopping at the first non-entry record."""
+    offset = 0
+    while offset < len(cd_bytes):
+        if cd_bytes[offset : offset + 4] != _CD_SIG:
+            break
+        flags = struct.unpack_from("<H", cd_bytes, offset + 8)[0]
+        compressed_size = struct.unpack_from("<I", cd_bytes, offset + 20)[0]
+        fname_len, extra_len, comment_len = struct.unpack_from("<HHH", cd_bytes, offset + 28)
+        local_header_offset = struct.unpack_from("<I", cd_bytes, offset + 42)[0]
+        name_start = offset + _CD_FIXED_LEN
+        fname = cd_bytes[name_start : name_start + fname_len].decode("utf-8", errors="replace")
+        end = name_start + fname_len + extra_len + comment_len
+        yield _CdEntry(offset, end, fname, flags, compressed_size, local_header_offset)
+        offset = end
+
+
+def _top_dir_from_cd(entries: list[_CdEntry]) -> str | None:
     """Extract common top-level directory from central directory entries.
 
     Returns the shared top-level directory only if *every* entry lives
@@ -85,26 +120,64 @@ def _top_dir_from_cd(cd_bytes: bytes) -> str | None:
     at the root level or entries belong to different top-level dirs.
     """
     top_dirs: set[str] = set()
-    offset = 0
-    while offset < len(cd_bytes):
-        if cd_bytes[offset : offset + 4] != _CD_SIG:
-            break
-        fname_len = struct.unpack_from("<H", cd_bytes, offset + 28)[0]
-        extra_len = struct.unpack_from("<H", cd_bytes, offset + 30)[0]
-        comment_len = struct.unpack_from("<H", cd_bytes, offset + 32)[0]
-
-        fname = cd_bytes[offset + 46 : offset + 46 + fname_len].decode("utf-8", errors="replace")
-        if "/" in fname:
-            top_dirs.add(fname.split("/")[0])
-        else:
+    for entry in entries:
+        if "/" not in entry.name:
             # A file at the root → no common top-level directory
             return None
-
-        offset += 46 + fname_len + extra_len + comment_len
+        top_dirs.add(entry.name.split("/")[0])
 
     if len(top_dirs) == 1:
         return top_dirs.pop()
     return None
+
+
+def _is_seed_graph_entry(name: str) -> bool:
+    """Match the seed's own ``graph.json``: at the root or directly under the top dir.
+
+    Same rule as the pool scan (``seed_service._read_graph_from_zip``): what the
+    server ingests from the pool zip is exactly what players never receive. The
+    DAG is a full-route spoiler and the mod needs nothing from it (everything it
+    uses arrives in ``auth_ok``).
+    """
+    parts = name.split("/")
+    return parts[-1] == "graph.json" and len(parts) <= 2
+
+
+def _local_entry_span(f: io.BufferedReader, entry: _CdEntry) -> int:
+    """Byte length of an entry's local record: header, name, extra, data, descriptor."""
+    f.seek(entry.local_header_offset)
+    header = f.read(_LOCAL_FIXED_LEN)
+    if len(header) < _LOCAL_FIXED_LEN or header[:4] != _LOCAL_SIG:
+        raise ValueError(f"Corrupt local file header for {entry.name!r}")
+    fname_len, extra_len = struct.unpack_from("<HH", header, 26)
+    span: int = _LOCAL_FIXED_LEN + fname_len + extra_len + entry.compressed_size
+    if entry.flags & _FLAG_DATA_DESCRIPTOR:
+        # 12 bytes (crc, compressed size, uncompressed size), 16 with the
+        # optional signature most writers (including Python's zipfile) emit.
+        f.seek(entry.local_header_offset + span)
+        span += 16 if f.read(4) == _DATA_DESCRIPTOR_SIG else 12
+    return span
+
+
+def _drop_entry_from_cd(
+    cd_bytes: bytes, entries: list[_CdEntry], dropped: _CdEntry, span: int
+) -> bytes:
+    """Rebuild the central directory without ``dropped``.
+
+    Entries whose local record sat after the dropped one move back by ``span``
+    bytes in the streamed output, so their ``local_header_offset`` is rewritten.
+    Any trailing non-entry bytes are kept verbatim.
+    """
+    out = bytearray()
+    for entry in entries:
+        if entry is dropped:
+            continue
+        chunk = bytearray(cd_bytes[entry.start : entry.end])
+        if entry.local_header_offset > dropped.local_header_offset:
+            struct.pack_into("<I", chunk, 42, entry.local_header_offset - span)
+        out += chunk
+    out += cd_bytes[entries[-1].end :]
+    return bytes(out)
 
 
 def _prepare_entry(filename: str, data: bytes) -> tuple[bytes, int, int]:
@@ -203,15 +276,29 @@ def _make_eocd(num_entries: int, cd_size: int, cd_offset: int) -> bytes:
 # =============================================================================
 
 
+def _stream_range(f: io.BufferedReader, start: int, end: int) -> Iterator[bytes]:
+    """Yield ``f[start:end]`` in ``CHUNK_SIZE`` pieces."""
+    f.seek(start)
+    remaining = end - start
+    while remaining > 0:
+        chunk = f.read(min(CHUNK_SIZE, remaining))
+        if not chunk:
+            break
+        remaining -= len(chunk)
+        yield chunk
+
+
 def stream_seed_pack_with_config(
     seed_zip_path: Path,
     config_content: str,
 ) -> tuple[Iterator[bytes], int]:
     """Stream a seed zip with an injected per-participant config.
 
-    Reads the original zip structure, appends the config as
-    ``{top_dir}/lib/speedfog_racing.toml``, and streams the result
-    in 64 KB chunks.  No temp files, no full-file copy.
+    Reads the original zip structure, drops the seed's ``graph.json`` (see
+    :func:`_is_seed_graph_entry`), appends the config as
+    ``{top_dir}/lib/speedfog_racing.toml``, and streams the result in 64 KB
+    chunks.  No temp files, no full-file copy: the surviving local records
+    are streamed verbatim, only the central directory is rewritten.
 
     Args:
         seed_zip_path: Path to the original seed zip.
@@ -230,41 +317,59 @@ def stream_seed_pack_with_config(
         _eocd_offset, cd_offset, cd_size, num_entries = _find_eocd(f)
         f.seek(cd_offset)
         cd_bytes = f.read(cd_size)
+        entries = list(_iter_cd_entries(cd_bytes))
 
-    top_dir = _top_dir_from_cd(cd_bytes)
+        graphs = [e for e in entries if _is_seed_graph_entry(e.name)]
+        if len(graphs) > 1:
+            # Generator output never produces this; make a leak visible if it ever does.
+            logger.warning(
+                "%s has %d graph.json candidates, only %r is dropped",
+                seed_zip_path.name,
+                len(graphs),
+                graphs[0].name,
+            )
+        graph = graphs[0] if graphs else None
+        # Local bytes to skip: [skip_start, skip_end). Empty when there is no graph.
+        skip_start = skip_end = cd_offset
+        if graph is not None:
+            skip_start = graph.local_header_offset
+            skip_end = skip_start + _local_entry_span(f, graph)
+            if skip_end > cd_offset:
+                raise ValueError(f"Local record of {graph.name!r} overruns the central directory")
+            cd_bytes = _drop_entry_from_cd(cd_bytes, entries, graph, skip_end - skip_start)
+            num_entries -= 1
+
+    top_dir = _top_dir_from_cd(entries)
     config_name = f"{top_dir}/lib/speedfog_racing.toml" if top_dir else "lib/speedfog_racing.toml"
+
+    # Offset where the surviving local records end in the streamed output.
+    local_end = cd_offset - (skip_end - skip_start)
 
     config_data = config_content.encode("utf-8")
     fname_bytes, crc, data_size = _prepare_entry(config_name, config_data)
     dos_time, dos_date = _dos_datetime()
     local_entry = _make_local_file_header(fname_bytes, config_data, crc, dos_time, dos_date)
     new_cd_entry = _make_cd_entry(
-        fname_bytes, data_size, crc, dos_time, dos_date, local_header_offset=cd_offset
+        fname_bytes, data_size, crc, dos_time, dos_date, local_header_offset=local_end
     )
     new_eocd = _make_eocd(
         num_entries=num_entries + 1,
-        cd_size=cd_size + len(new_cd_entry),
-        cd_offset=cd_offset + len(local_entry),
+        cd_size=len(cd_bytes) + len(new_cd_entry),
+        cd_offset=local_end + len(local_entry),
     )
 
-    total_size = cd_offset + len(local_entry) + cd_size + len(new_cd_entry) + len(new_eocd)
+    total_size = local_end + len(local_entry) + len(cd_bytes) + len(new_cd_entry) + len(new_eocd)
 
     # --- Phase 2: streaming generator (64 KB RAM) -------------------------
     def _generate() -> Iterator[bytes]:
         with open(seed_zip_path, "rb") as f:
-            remaining = cd_offset
-            while remaining > 0:
-                chunk_size = min(CHUNK_SIZE, remaining)
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                remaining -= len(chunk)
-                yield chunk
+            yield from _stream_range(f, 0, skip_start)
+            yield from _stream_range(f, skip_end, cd_offset)
 
         # New local file entry (sits right before the new central directory)
         yield local_entry
 
-        # Original central directory entries (offsets unchanged)
+        # Surviving central directory entries (offsets already rewritten)
         yield cd_bytes
 
         # New central directory entry

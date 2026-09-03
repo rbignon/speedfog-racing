@@ -3,6 +3,7 @@
 import io
 import json
 import os
+import struct
 import tempfile
 import uuid
 import zipfile
@@ -12,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from speedfog_racing.services.seed_pack_service import (
+    _iter_cd_entries,
     generate_player_config,
     stream_seed_pack_with_config,
 )
@@ -186,7 +188,6 @@ def test_stream_contains_original_files(seed_zip):
         names = zf.namelist()
         assert "speedfog_abc123/lib/speedfog_racing.dll" in names
         assert "speedfog_abc123/ModEngine/config_eldenring.toml" in names
-        assert "speedfog_abc123/graph.json" in names
         assert "speedfog_abc123/launch_speedfog.bat" in names
 
 
@@ -205,8 +206,7 @@ def test_stream_original_file_contents_intact(seed_zip):
     data, _ = _collect_stream(seed_zip, "[server]\n")
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"mock dll"
-        graph = json.loads(zf.read("speedfog_abc123/graph.json"))
-        assert graph == {"total_layers": 10, "nodes": []}
+        assert zf.read("speedfog_abc123/launch_speedfog.bat") == b"@echo off\necho Launch"
 
 
 def test_stream_does_not_modify_original(seed_zip):
@@ -239,7 +239,7 @@ def test_stream_invalid_zip_raises():
 
 
 def test_stream_zip_without_top_dir():
-    """Config should be at lib/speedfog_racing.toml when zip has no top dir."""
+    """Flat zips get the config at lib/ and lose their root-level graph.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "flat.zip"
         with zipfile.ZipFile(zip_path, "w") as zf:
@@ -248,7 +248,10 @@ def test_stream_zip_without_top_dir():
 
         data, _ = _collect_stream(zip_path, "[server]\n")
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
             assert "lib/speedfog_racing.toml" in zf.namelist()
+            assert "graph.json" not in zf.namelist()
+            assert zf.read("lib/mod.dll") == b"dll"
 
 
 def test_stream_larger_config(seed_zip):
@@ -278,3 +281,158 @@ def test_stream_with_deflated_entries():
             assert zf.testzip() is None
             assert zf.read("top/lib/mod.dll") == b"x" * 10000
             assert "top/lib/speedfog_racing.toml" in zf.namelist()
+
+
+# =============================================================================
+# graph.json stripping
+# =============================================================================
+
+
+def test_stream_strips_graph_json(seed_zip):
+    """The DAG definition must not ship to players: it is a full-route spoiler."""
+    data, content_length = _collect_stream(seed_zip, "[server]\n")
+    assert len(data) == content_length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert "speedfog_abc123/graph.json" not in zf.namelist()
+
+
+def test_stream_strips_graph_json_between_other_entries():
+    """Entries stored after graph.json must keep working once its bytes are dropped."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "middle.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("top/a.txt", "a" * 3000)
+            zf.writestr("top/graph.json", json.dumps({"nodes": list(range(500))}))
+            zf.writestr("top/z.txt", "z" * 3000)
+
+        data, content_length = _collect_stream(zip_path, "[server]\n")
+        assert len(data) == content_length
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert zf.namelist() == ["top/a.txt", "top/z.txt", "top/lib/speedfog_racing.toml"]
+            assert zf.read("top/a.txt") == b"a" * 3000
+            assert zf.read("top/z.txt") == b"z" * 3000
+
+
+def test_stream_without_graph_json_keeps_everything():
+    """A zip that never had a graph.json streams through untouched."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "nograph.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("top/lib/mod.dll", "dll")
+            zf.writestr("top/launch.bat", "bat")
+
+        data, content_length = _collect_stream(zip_path, "[server]\n")
+        assert len(data) == content_length
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert zf.namelist() == [
+                "top/lib/mod.dll",
+                "top/launch.bat",
+                "top/lib/speedfog_racing.toml",
+            ]
+
+
+def test_stream_keeps_deeper_graph_json():
+    """Only the seed's own graph.json (root or top_dir level) is stripped, same rule as the scan."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "deep.zip"
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("top/lib/mod.dll", "dll")
+            zf.writestr("top/docs/graph.json", "{}")
+
+        data, _ = _collect_stream(zip_path, "[server]\n")
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert "top/docs/graph.json" in zf.namelist()
+
+
+class _UnseekableWriter(io.RawIOBase):
+    """Write-only wrapper that refuses to seek, forcing zipfile to emit data descriptors."""
+
+    def __init__(self, target: io.BufferedIOBase) -> None:
+        self._target = target
+
+    def writable(self) -> bool:
+        return True
+
+    def write(self, b) -> int:  # type: ignore[override]
+        return self._target.write(b)
+
+    def seekable(self) -> bool:
+        return False
+
+    def seek(self, *args) -> int:
+        raise OSError("unseekable")
+
+    def tell(self) -> int:
+        return self._target.tell()
+
+
+def test_stream_strips_graph_json_with_data_descriptor():
+    """Entries written with a trailing data descriptor (flag bit 3) span extra bytes."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "descriptor.zip"
+        with open(zip_path, "wb") as raw:
+            with zipfile.ZipFile(
+                _UnseekableWriter(raw), "w", compression=zipfile.ZIP_DEFLATED
+            ) as zf:
+                zf.writestr("top/graph.json", json.dumps({"nodes": list(range(500))}))
+                zf.writestr("top/lib/mod.dll", "x" * 5000)
+
+        with zipfile.ZipFile(zip_path) as src:
+            assert src.getinfo("top/graph.json").flag_bits & 0x08, (
+                "fixture must use data descriptors"
+            )
+
+        data, content_length = _collect_stream(zip_path, "[server]\n")
+        assert len(data) == content_length
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert "top/graph.json" not in zf.namelist()
+            assert zf.read("top/lib/mod.dll") == b"x" * 5000
+
+
+def _reverse_central_directory(zip_path: Path) -> None:
+    """Rewrite a comment-free zip so its central directory lists entries in reverse.
+
+    The ZIP spec does not require the central directory to follow local record
+    order; stdlib writers always do, so this is the only way to exercise the
+    divergence.
+    """
+    data = bytearray(zip_path.read_bytes())
+    eocd = len(data) - 22
+    assert data[eocd : eocd + 4] == b"PK\x05\x06"
+    cd_size, cd_offset = struct.unpack_from("<II", data, eocd + 12)
+    cd = bytes(data[cd_offset : cd_offset + cd_size])
+    entries = list(_iter_cd_entries(cd))
+    reordered = b"".join(cd[e.start : e.end] for e in reversed(entries))
+    assert len(reordered) == cd_size
+    data[cd_offset : cd_offset + cd_size] = reordered
+    zip_path.write_bytes(bytes(data))
+
+
+def test_stream_shifts_by_local_offset_not_central_directory_order():
+    """Offsets are rewritten for records stored after graph.json, whatever the CD order."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        zip_path = Path(tmpdir) / "reversed.zip"
+        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("top/a.txt", "a" * 3000)
+            zf.writestr("top/graph.json", json.dumps({"nodes": list(range(500))}))
+            zf.writestr("top/z.txt", "z" * 3000)
+        _reverse_central_directory(zip_path)
+        with zipfile.ZipFile(zip_path) as src:
+            assert src.namelist() == ["top/z.txt", "top/graph.json", "top/a.txt"]
+
+        data, content_length = _collect_stream(zip_path, "[server]\n")
+        assert len(data) == content_length
+
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            assert zf.testzip() is None
+            assert "top/graph.json" not in zf.namelist()
+            assert zf.read("top/a.txt") == b"a" * 3000
+            assert zf.read("top/z.txt") == b"z" * 3000

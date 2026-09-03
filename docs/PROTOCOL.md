@@ -1106,18 +1106,19 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 
 Included in `auth_ok` (mod) and `race_state` (spectator):
 
-| Field                | Type      | Mod | Spectator | Description                                                  |
-| -------------------- | --------- | --- | --------- | ------------------------------------------------------------ |
-| `seed_id`            | `string?` | yes | yes       | Seed UUID                                                    |
-| `total_layers`       | `int`     | yes | yes       | Number of layers in the DAG                                  |
-| `graph_json`         | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)          |
-| `total_nodes`        | `int?`    | no  | yes       | Total number of nodes in the DAG                             |
-| `total_paths`        | `int?`    | no  | yes       | Total number of paths in the DAG                             |
-| `event_ids`          | `int[]`   | yes | no        | Event flag IDs to monitor                                    |
-| `finish_event`       | `int?`    | yes | no        | Final boss kill flag ID                                      |
-| `spawn_items`        | `list`    | yes | no        | Items for runtime spawning                                   |
-| `items_spawned_flag` | `int?`    | yes | no        | Event flag ID for runtime item spawn prevention              |
-| `death_flags`        | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}` |
+| Field                | Type      | Mod | Spectator | Description                                                                                         |
+| -------------------- | --------- | --- | --------- | --------------------------------------------------------------------------------------------------- |
+| `seed_id`            | `string?` | yes | yes       | Seed UUID                                                                                           |
+| `total_layers`       | `int`     | yes | yes       | Number of layers in the DAG                                                                         |
+| `graph_json`         | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)                                                 |
+| `total_nodes`        | `int?`    | no  | yes       | Total number of nodes in the DAG                                                                    |
+| `total_paths`        | `int?`    | no  | yes       | Total number of paths in the DAG                                                                    |
+| `event_ids`          | `int[]`   | yes | no        | Event flag IDs to monitor                                                                           |
+| `finish_event`       | `int?`    | yes | no        | Final boss kill flag ID                                                                             |
+| `spawn_items`        | `list`    | yes | no        | Items for runtime spawning                                                                          |
+| `items_spawned_flag` | `int?`    | yes | no        | Event flag ID for runtime item spawn prevention                                                     |
+| `death_flags`        | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}`                                        |
+| `phantom_skins`      | `object`  | yes | no        | Per-seed skin catalog `{name: {speffects: int[]}}`, resolves `auth_ok.phantom_skin` to SpEffect ids |
 
 ### Leaderboard Sorting
 
