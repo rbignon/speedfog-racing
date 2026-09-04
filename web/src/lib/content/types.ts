@@ -31,7 +31,7 @@ export interface ContentItem {
   /** Stable kebab-case identifier, used for seen-recently tracking. */
   id: string;
   kind: ContentKind;
-  /** Only for kind "tip". */
+  /** Required for kinds "tip" and "game_change": drives the ticker's newcomer/experienced targeting (the Game Changes page ignores it). Absent on skips. */
   level?: TipLevel;
   /** Only for kind "game_change". */
   category?: GameChangeCategory;

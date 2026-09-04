@@ -9,7 +9,7 @@ export const EXPERIENCED_RUNS = 3;
 export interface TickerContext {
   poolName?: string | null;
   seenIds: ReadonlySet<string>;
-  /** Advanced tips edge out beginner ones instead of the reverse. */
+  /** Beginner items leave the rotation: the player already knows them. */
   experienced?: boolean;
 }
 
@@ -19,9 +19,9 @@ type PlayedCounts = Pick<
 >;
 
 /**
- * Whether the player has enough runs behind them to be served advanced tips
- * first. The counts ride on `/auth/me`; a user object cached before they
- * existed reads as a newcomer until the next refresh.
+ * Whether the player has enough runs behind them for beginner items to leave
+ * the ticker rotation. The counts ride on `/auth/me`; a user object cached
+ * before they existed reads as a newcomer until the next refresh.
  */
 export function isExperiencedPlayer(
   user: Partial<PlayedCounts> | null,
@@ -39,10 +39,12 @@ export function isExperiencedPlayer(
  * items are never eligible (they belong to the zone codex, not the
  * pre-race/training rotation, and naming a zone before the race would hint
  * that it is in the seed), pool-specific items are dropped unless the pool
- * matches (and then float to the top), recently seen items sink, and tips of
- * the player's level (beginner by default, advanced once experienced) edge
- * out the others. Within a score tier the order is random, so two players
- * (or two visits) do not scroll the same sequence.
+ * matches (and then float to the top), and recently seen items sink. Level
+ * targets the rotation at the player: a newcomer gets beginner items first
+ * and advanced ones after, an experienced player never gets beginner items
+ * at all (the rotation loops over advanced ones instead of repeating what
+ * they already know). Within a score tier the order is random, so two
+ * players (or two visits) do not scroll the same sequence.
  */
 export function orderTickerItems(
   items: ContentItem[],
@@ -56,15 +58,16 @@ export function orderTickerItems(
     (item) =>
       item.kind !== "skip" &&
       item.zoneId === undefined &&
+      !(ctx.experienced && item.level === "beginner") &&
       (!item.pools || (!!ctx.poolName && item.pools.includes(ctx.poolName))),
   );
 
-  const preferredLevel = ctx.experienced ? "advanced" : "beginner";
   const score = (item: ContentItem): number => {
     let s = 0;
     if (item.pools) s += 5;
     if (ctx.seenIds.has(item.id)) s -= 3;
-    if (item.kind === "tip" && item.level === preferredLevel) s += 1;
+    // Basics first for a newcomer; an experienced player has none left here.
+    if (item.level === "beginner") s += 1;
     return s;
   };
 

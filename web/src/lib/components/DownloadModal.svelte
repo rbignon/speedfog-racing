@@ -65,7 +65,7 @@
       <h3>Rules</h3>
       <ul>
         <li>Glitchless</li>
-        <li>Quit-outs are allowed</li>
+        <li>Quit-outs are allowed (2-second penalty each)</li>
         <li>Using other mods is not allowed</li>
         <li>Skips are allowed</li>
       </ul>

@@ -73,14 +73,35 @@ describe("orderTickerItems", () => {
     expect(ordered.map((i) => i.id)).toEqual(["beg", "adv"]);
   });
 
-  it("ranks advanced tips before beginner ones for an experienced player", () => {
-    const items = [item("beg"), item("adv", { level: "advanced" })];
+  it("drops beginner tips and game changes entirely for an experienced player", () => {
+    const items = [
+      item("beg"),
+      item("beg-change", { kind: "game_change", category: "start" }),
+      item("adv", { level: "advanced" }),
+      item("adv-change", {
+        kind: "game_change",
+        category: "qol",
+        level: "advanced",
+      }),
+    ];
     const ordered = orderTickerItems(items, {
       poolName: null,
       seenIds: new Set(),
       experienced: true,
     });
-    expect(ordered.map((i) => i.id)).toEqual(["adv", "beg"]);
+    expect(ordered.map((i) => i.id).sort()).toEqual(["adv", "adv-change"]);
+  });
+
+  it("ranks a beginner game change above an advanced tip for a newcomer", () => {
+    const items = [
+      item("adv", { level: "advanced" }),
+      item("beg-change", { kind: "game_change", category: "start" }),
+    ];
+    const ordered = orderTickerItems(items, {
+      poolName: null,
+      seenIds: new Set(),
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["beg-change", "adv"]);
   });
 
   it("lets an unseen advanced tip beat a seen beginner one for a newcomer too", () => {
@@ -93,16 +114,27 @@ describe("orderTickerItems", () => {
   });
 
   it("never rotates zone-scoped tips (they belong to the zone sheet)", () => {
-    const items = [
-      item("a"),
-      item("zoned", { level: "advanced", zoneId: "deeproot_boss" }),
-    ];
+    const items = [item("a"), item("zoned", { zoneId: "deeproot_boss" })];
     const ordered = orderTickerItems(items, {
       poolName: null,
       seenIds: new Set(),
-      experienced: true,
     });
     expect(ordered.map((i) => i.id)).toEqual(["a"]);
+  });
+
+  it("drops a pool-tagged beginner item for an experienced player even in that pool", () => {
+    // Mode-specific basics are still basics: an experienced player gets the
+    // mode rules from the race card, not from the ticker.
+    const items = [
+      item("pooled-basic", { pools: ["hardcore"] }),
+      item("adv", { level: "advanced" }),
+    ];
+    const ordered = orderTickerItems(items, {
+      poolName: "hardcore",
+      seenIds: new Set(),
+      experienced: true,
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["adv"]);
   });
 
   it("shuffles equal-score items with the provided rng", () => {

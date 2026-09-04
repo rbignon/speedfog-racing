@@ -33,12 +33,12 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("gives every tip a level and no game_change a level", () => {
+  it("gives every tip and game change a level, and no skip a level", () => {
     for (const item of CONTENT_ITEMS) {
-      if (item.kind === "tip") {
-        expect(["beginner", "advanced"], item.id).toContain(item.level);
-      } else {
+      if (item.kind === "skip") {
         expect(item.level, item.id).toBeUndefined();
+      } else {
+        expect(["beginner", "advanced"], item.id).toContain(item.level);
       }
     }
   });

@@ -37,14 +37,6 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "In most modes a **care package** of random spells, talismans, tears and armor sits in your inventory at the start, next to your **pre-upgraded class weapon**. Look through it at the first grace: a **rebirth** there (Larval Tears are given) can turn a great find into your build.",
   },
   {
-    id: "godrick-great-rune",
-    kind: "tip",
-    level: "beginner",
-    title: "Godrick's Great Rune",
-    short:
-      "**Godrick's Great Rune** raises every stat, and it hides a base-game quirk: while it is active, **every zone reload restores some HP and FP**. Fog gates reload the zone, so activate it with a Rune Arc and enjoy the top-up all run long.",
-  },
-  {
     id: "radahn-grace",
     kind: "tip",
     level: "beginner",
@@ -61,28 +53,12 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "The in-game overlay lists **every exit** of your current zone, with its destination once discovered. Check it before committing to a route.",
   },
   {
-    id: "quit-outs",
-    kind: "tip",
-    level: "beginner",
-    title: "Quit-outs are allowed",
-    short:
-      "**Quitting to the main menu** is legal. Use it to escape a bad fall or to reset a dangerous pull, but each quit-out adds a **2-second penalty** to your in-game time.",
-  },
-  {
     id: "spend-runes-early",
     kind: "tip",
     level: "beginner",
     title: "Spend runes early",
     short:
       "Levels are cheap at the start. **Spend your runes right after a boss** instead of carrying them into the next zone.",
-  },
-  {
-    id: "bell",
-    kind: "tip",
-    level: "beginner",
-    title: "Bell of Return",
-    short:
-      "The fog randomizer puts a **Bell of Return** in your inventory. It exists to bring you back to the **start of the route**, but it warps you to the Chapel of Anticipation **without losing your runes**, so it also works as an escape from a bad spot.",
   },
   {
     id: "same-depth-zones",
@@ -101,35 +77,17 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "Keep the **metro map** open on a second screen during your run: it reveals your route and follows your progress **in real time**.",
   },
   {
-    id: "save-recovery",
-    kind: "tip",
-    level: "beginner",
-    title: "Crashed save recovery",
-    short:
-      "If the game crashes and then **refuses to reload your save**, run **recovery.bat** from your seed pack folder: pressing Enter twice restores the **most recent backup**.",
-  },
-
-  // ---------- Advanced tips ----------
-  {
     id: "tier-rescale",
     kind: "tip",
-    level: "advanced",
+    level: "beginner",
     title: "Tier vs normal tier",
     short:
       "When the overlay shows '**tier X, normally Y**', the zone was rescaled: a large gap means enemies hit much harder or softer than that zone usually does.",
   },
   {
-    id: "gap-splits",
-    kind: "tip",
-    level: "advanced",
-    title: "Gaps are split-based",
-    short:
-      "The leaderboard gap compares you to the leader **at the same point of the route**, not in real time. A shrinking gap means you are actually gaining.",
-  },
-  {
     id: "hardcore-economy",
     kind: "tip",
-    level: "advanced",
+    level: "beginner",
     pools: [
       "hardcore",
       "training_hardcore",
@@ -140,6 +98,56 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Hardcore economy",
     short:
       "In Hardcore your weapons start at **+0**. Buy smithing stones at the **Roundtable shop** and upgrade **one weapon**: every weapon you pick up afterwards is **auto-upgraded to match** your highest level.",
+  },
+  {
+    id: "scadutree-fragments",
+    kind: "tip",
+    level: "beginner",
+    title: "Scadutree fragments do nothing",
+    short:
+      "The **Scadutree Blessing** and **Revered Spirit Ash** buffs are neutralized in SpeedFog. Do not detour for fragments in DLC zones: they will not make you stronger.",
+  },
+
+  // ---------- Advanced tips ----------
+  {
+    id: "godrick-great-rune",
+    kind: "tip",
+    level: "advanced",
+    title: "Godrick's Great Rune",
+    short:
+      "**Godrick's Great Rune** raises every stat, and it hides a base-game quirk: while it is active, **every zone reload restores some HP and FP**. Fog gates reload the zone, so activate it with a Rune Arc and enjoy the top-up all run long.",
+  },
+  {
+    id: "quit-outs",
+    kind: "tip",
+    level: "advanced",
+    title: "Quit-outs are allowed",
+    short:
+      "**Quitting to the main menu** is legal. Use it to escape a bad fall or to reset a dangerous pull, but each quit-out adds a **2-second penalty** to your in-game time.",
+  },
+  {
+    id: "bell",
+    kind: "tip",
+    level: "advanced",
+    title: "Bell of Return",
+    short:
+      "The **Bell of Return** in your inventory warps you to the Chapel of Anticipation **without losing your runes**, so it doubles as an escape from a bad spot.",
+  },
+  {
+    id: "save-recovery",
+    kind: "tip",
+    level: "advanced",
+    title: "Crashed save recovery",
+    short:
+      "If the game crashes and then **refuses to reload your save**, run **recovery.bat** from your seed pack folder: pressing Enter twice restores the **most recent backup**.",
+  },
+  {
+    id: "gap-splits",
+    kind: "tip",
+    level: "advanced",
+    title: "Gaps are split-based",
+    short:
+      "The leaderboard gap compares you to the leader **at the same point of the route**, not in real time. A shrinking gap means you are actually gaining.",
   },
   {
     id: "boss-rush-forward",
@@ -154,14 +162,6 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Backtrack by going forward",
     short:
       "In Boss Rush, when you need to backtrack, prefer **moving forward through entry fog gates**: chaining arenas is usually faster.",
-  },
-  {
-    id: "scadutree-fragments",
-    kind: "tip",
-    level: "advanced",
-    title: "Scadutree fragments do nothing",
-    short:
-      "The **Scadutree Blessing** and **Revered Spirit Ash** buffs are neutralized in SpeedFog. Do not detour for fragments in DLC zones: they will not make you stronger.",
   },
   {
     id: "zone-sheet-skips",
@@ -186,6 +186,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "chapel-grace",
     kind: "game_change",
     category: "start",
+    level: "beginner",
     title: "Starting grace",
     short:
       "You start at the **Chapel of Anticipation** with a Site of Grace added right there, already active.",
@@ -195,6 +196,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "roundtable-start",
     kind: "game_change",
     category: "start",
+    level: "beginner",
     title: "Roundtable Hold from the start",
     short:
       "The **Roundtable Hold** is unlocked from the start, and **Kale** has moved there.",
@@ -204,6 +206,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "great-runes-restored",
     kind: "game_change",
     category: "start",
+    level: "beginner",
     title: "All Great Runes restored",
     short:
       "You start with **every Great Rune restored**. Activate one with a **Rune Arc** to get its buff immediately.",
@@ -212,6 +215,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "care-package",
     kind: "game_change",
     category: "start",
+    level: "beginner",
     title: "Care package",
     short:
       "In most modes, every seed starts with a randomized **care package** of spells, talismans, tears and armor (weapons too in some modes), **identical for every racer**, and your class weapon comes **pre-upgraded**.",
@@ -220,6 +224,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "starting-keys",
     kind: "game_change",
     category: "start",
+    level: "beginner",
     title: "Softlock keys granted",
     short:
       "**Key items** that would cause softlocks are granted at start: whetblades, the Academy Glintstone Key, the Spirit Calling Bell, talisman pouches, the lantern and more.",
@@ -228,6 +233,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "merchants-relocated",
     kind: "game_change",
     category: "start",
+    level: "advanced",
     title: "Merchants relocated",
     short:
       "**Open-world merchants** are relocated inside zones. Keep an eye out, they can carry useful gear.",
@@ -238,6 +244,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "one-way-fogs",
     kind: "game_change",
     category: "traversal",
+    level: "beginner",
     title: "One-way fog gates",
     short:
       "Fog gates only go **forward** and are rewired by the seed. To revisit a zone, **fast travel** to one of its graces.",
@@ -246,6 +253,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "opened-gates",
     kind: "game_change",
     category: "traversal",
+    level: "advanced",
     title: "Pre-opened gates",
     short:
       "Barred gates that would block the route are **already open**, including the **Leyndell sewer grates**, a **Stormveil gate**, the **Belurat main gate** and the **Castle Ensis gate**.",
@@ -254,6 +262,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "boss-return-portal",
     kind: "game_change",
     category: "traversal",
+    level: "beginner",
     title: "Return portals in arenas",
     short:
       "Boss arenas on the route have a **return portal**, and are exits to the next zone.",
@@ -262,6 +271,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "fog-bloodstains",
     kind: "game_change",
     category: "traversal",
+    level: "advanced",
     title: "Bloodstains at fog gates",
     short:
       "**Bloodstains** can appear on the ground in front of a fog gate: the more racers died in the zone beyond, the **more blood** you will see.",
@@ -272,6 +282,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "torrent-arenas",
     kind: "game_change",
     category: "combat",
+    level: "advanced",
     title: "Torrent in boss arenas",
     short:
       "**Torrent** can be summoned in arenas where the base game forbids him: **Fia's Champions**, **Astel**, **Ancestor Spirit** and **Regal Ancestor Spirit**.",
@@ -280,6 +291,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "boss-arena-lock",
     kind: "game_change",
     category: "combat",
+    level: "beginner",
     title: "Arenas lock behind you",
     short:
       "Entering a boss arena **locks its exits**. Once inside, the only way forward is through the boss.",
@@ -288,6 +300,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "tier-scaling",
     kind: "game_change",
     category: "combat",
+    level: "beginner",
     title: "Depth-based scaling",
     short:
       "Enemies scale with the zone's **tier** (its depth in the route), not with their vanilla location.",
@@ -298,6 +311,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "roundtable-shop",
     kind: "game_change",
     category: "economy",
+    level: "beginner",
     title: "Roundtable smithing shop",
     short:
       "The **Twin Maiden Husks** sell **smithing stones**, and in some modes the **Sentry's Torch**.",
@@ -306,6 +320,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "no-stat-requirements",
     kind: "game_change",
     category: "economy",
+    level: "beginner",
     title: "No stat requirements",
     short:
       "**Stat requirements on weapons are removed**: wield anything you find. Weapons found in the world are **auto-upgraded** to match your progression.",
@@ -314,6 +329,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "all-recipes",
     kind: "game_change",
     category: "economy",
+    level: "advanced",
     title: "All recipes unlocked",
     short:
       "**Every crafting recipe** is unlocked from the start, and crafting materials are randomized into the world.",
@@ -324,6 +340,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "rebirth-any-grace",
     kind: "game_change",
     category: "qol",
+    level: "beginner",
     title: "Rebirth anywhere",
     short:
       "**Rebirth** (respec) is available at **any Site of Grace** for a Larval Tear, not just at Rennala.",
@@ -332,6 +349,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "fast-graces",
     kind: "game_change",
     category: "qol",
+    level: "advanced",
     title: "Faster graces",
     short:
       "Sitting at and discovering graces is **much faster** than in the base game.",
@@ -340,6 +358,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "no-menu-delay",
     kind: "game_change",
     category: "qol",
+    level: "advanced",
     title: "No menu input delay",
     short: "The **input delay** when opening menus is removed.",
   },

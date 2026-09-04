@@ -11,8 +11,9 @@
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
 
+  // General page: mode-specific tips stay in the race and solo tickers.
   const beginnerTips = CONTENT_ITEMS.filter(
-    (i) => i.kind === "tip" && i.level === "beginner",
+    (i) => i.kind === "tip" && i.level === "beginner" && !i.pools,
   );
 
   let openDetails = $state<Set<string>>(new Set());
@@ -297,7 +298,8 @@
         <ul>
           <li><strong>Glitchless</strong>: no glitch exploits allowed</li>
           <li>
-            <strong>Quit-outs allowed</strong>
+            <strong>Quit-outs allowed</strong>: each one adds a 2-second penalty
+            to your in-game time
           </li>
           <li>
             <strong>No LiveSplit</strong>: IGT is tracked automatically by the
