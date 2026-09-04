@@ -4,7 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
-from sqlalchemy import String, case, cast, func, or_, select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -55,7 +55,10 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services.i18n import get_available_locales
 from speedfog_racing.services.stats_service import MIN_RACES_FOR_TRAITS
-from speedfog_racing.services.user_stats_service import compute_weekly_series
+from speedfog_racing.services.user_stats_service import (
+    compute_weekly_series,
+    count_played_runs,
+)
 
 router = APIRouter()
 
@@ -438,66 +441,7 @@ async def get_user_profile(
 
     user_id = user.id
 
-    # Race count: terminal participations on regular races where the user
-    # actually played (FINISHED or ABANDONED with igt > 0). Daily Seed
-    # races (Race.daily_date IS NOT NULL) are split out so the "Races"
-    # count reflects organized racing activity only.
-    race_played_filter = or_(
-        Participant.status == ParticipantStatus.FINISHED,
-        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
-    )
-    race_count_q = await db.execute(
-        select(func.count())
-        .select_from(Participant)
-        .join(Race, Race.id == Participant.race_id)
-        .where(
-            Participant.user_id == user_id,
-            race_played_filter,
-            Race.daily_date.is_(None),
-        )
-    )
-    race_count = race_count_q.scalar_one()
-
-    # Daily count mirrors the streak's qualification predicate
-    # (``qualifies_for_streak``: ``len(zone_history) >= 2``) so the profile
-    # can never display ``best_streak`` greater than ``daily_count``. A
-    # daily counts iff the user contributed to their streak on it.
-    #
-    # The LIKE guard on the cast text is required because PostgreSQL's
-    # ``json_array_length`` errors on non-array values (legacy or stray
-    # JSON scalars in the column), whereas SQLite returns 0. CASE
-    # short-circuits the length call in both dialects when the value
-    # doesn't start with ``[``. NULL and SQL NULL both fall to the
-    # ``else_`` branch via the NULL-comparison rules.
-    daily_count_q = await db.execute(
-        select(func.count())
-        .select_from(Participant)
-        .join(Race, Race.id == Participant.race_id)
-        .where(
-            Participant.user_id == user_id,
-            case(
-                (
-                    cast(Participant.zone_history, String).like("[%"),
-                    func.json_array_length(Participant.zone_history),
-                ),
-                else_=0,
-            )
-            >= 2,
-            Race.daily_date.is_not(None),
-        )
-    )
-    daily_count = daily_count_q.scalar_one()
-
-    # Training count (exclude cancelled, player never started)
-    training_count_q = await db.execute(
-        select(func.count())
-        .select_from(TrainingSession)
-        .where(
-            TrainingSession.user_id == user_id,
-            TrainingSession.status != TrainingSessionStatus.CANCELLED,
-        )
-    )
-    training_count = training_count_q.scalar_one()
+    played = await count_played_runs(db, user_id)
 
     # Organized count
     organized_count_q = await db.execute(
@@ -513,9 +457,9 @@ async def get_user_profile(
 
     weekly = await compute_weekly_series(db, user)
     stats = UserStatsResponse(
-        race_count=race_count,
-        daily_count=daily_count,
-        training_count=training_count,
+        race_count=played.race_count,
+        daily_count=played.daily_count,
+        training_count=played.training_count,
         organized_count=organized_count,
         casted_count=casted_count,
         weekly=weekly,

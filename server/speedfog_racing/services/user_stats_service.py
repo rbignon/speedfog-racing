@@ -1,10 +1,12 @@
-"""Compute the per-category weekly series powering UserStatsCards."""
+"""Per-user activity aggregates: played-run counts and the weekly series powering UserStatsCards."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -19,6 +21,66 @@ from speedfog_racing.schemas import UserStatsWeekly
 from speedfog_racing.services.daily_streak_service import qualifies_for_streak_sql
 
 MAX_WEEKS = 52
+
+
+@dataclass(frozen=True)
+class PlayedRunCounts:
+    """How many runs a user actually played, per category.
+
+    Shared by the public profile and ``/auth/me`` so every surface agrees on
+    what counts as "played".
+    """
+
+    race_count: int
+    daily_count: int
+    training_count: int
+
+
+async def count_played_runs(db: AsyncSession, user_id: UUID) -> PlayedRunCounts:
+    """Count the runs ``user_id`` actually played.
+
+    Races: terminal participations on regular races where the user played
+    (FINISHED, or ABANDONED with igt > 0). Daily Seed races
+    (``Race.daily_date IS NOT NULL``) are counted separately, and only when
+    the participation qualifies for the streak (``qualifies_for_streak_sql``),
+    so a profile can never display ``best_streak`` above ``daily_count``.
+    Training sessions count unless cancelled (the player never started).
+    """
+    played = or_(
+        Participant.status == ParticipantStatus.FINISHED,
+        (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+    )
+    race_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(Participant)
+            .join(Race, Race.id == Participant.race_id)
+            .where(Participant.user_id == user_id, played, Race.daily_date.is_(None))
+        )
+    ).scalar_one()
+    daily_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(Participant)
+            .join(Race, Race.id == Participant.race_id)
+            .where(
+                Participant.user_id == user_id,
+                qualifies_for_streak_sql(),
+                Race.daily_date.is_not(None),
+            )
+        )
+    ).scalar_one()
+    training_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(TrainingSession)
+            .where(
+                TrainingSession.user_id == user_id,
+                TrainingSession.status != TrainingSessionStatus.CANCELLED,
+            )
+        )
+    ).scalar_one()
+    return PlayedRunCounts(race_count, daily_count, training_count)
 
 
 def _iso_week_floor(dt: datetime) -> datetime:

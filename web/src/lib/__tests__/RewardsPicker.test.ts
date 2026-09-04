@@ -59,6 +59,9 @@ const baseUser: AuthUser = {
   locale: "en",
   overlay_settings: null,
   feedback_prompted_at: null,
+  race_count: 0,
+  daily_count: 0,
+  training_count: 0,
 };
 
 const baseInventory: MyInventoryDto = {

@@ -25,6 +25,7 @@ from speedfog_racing.database import get_db
 from speedfog_racing.models import User
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.services.i18n import get_available_locales
+from speedfog_racing.services.user_stats_service import count_played_runs
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +106,11 @@ class UserPublicResponse(BaseModel):
     locale: str | None = None
     overlay_settings: dict[str, float] | None = None
     feedback_prompted_at: datetime | None = None
-
-    model_config = {"from_attributes": True}
+    # Played-run counts, same predicates as the public profile: they let the
+    # web tell a seasoned player from a newcomer without a second request.
+    race_count: int
+    daily_count: int
+    training_count: int
 
 
 class UserResponse(BaseModel):
@@ -267,7 +271,7 @@ async def get_me(
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
     timezone: Annotated[str | None, Query(max_length=50)] = None,
-) -> User:
+) -> UserPublicResponse:
     """Get current authenticated user info. Optionally updates timezone."""
     if timezone is not None:
         from zoneinfo import ZoneInfo
@@ -279,7 +283,20 @@ async def get_me(
         else:
             user.timezone = timezone
             await db.commit()
-    return user
+    played = await count_played_runs(db, user.id)
+    return UserPublicResponse(
+        id=user.id,
+        twitch_username=user.twitch_username,
+        twitch_display_name=user.twitch_display_name,
+        twitch_avatar_url=user.twitch_avatar_url,
+        role=user.role.value if hasattr(user.role, "value") else str(user.role),
+        locale=user.locale,
+        overlay_settings=user.overlay_settings,
+        feedback_prompted_at=user.feedback_prompted_at,
+        race_count=played.race_count,
+        daily_count=played.daily_count,
+        training_count=played.training_count,
+    )
 
 
 @router.post("/logout")

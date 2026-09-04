@@ -285,3 +285,136 @@ async def test_existing_user_keeps_explicit_locale(async_db: AsyncSession) -> No
     user = await get_or_create_user(async_db, _FAKE_TWITCH_USER, browser_locale="fr")
     await async_db.commit()
     assert user.locale == "en"
+
+
+# =============================================================================
+# /auth/me played-run counts
+# =============================================================================
+
+
+@pytest.fixture
+async def played_client():
+    """httpx client over an in-memory async engine, for DB-backed endpoints."""
+    from httpx import ASGITransport, AsyncClient
+
+    from speedfog_racing.database import get_db
+    from speedfog_racing.main import app
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    session_maker = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def override_get_db():
+        async with session_maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client, session_maker
+    finally:
+        app.dependency_overrides.clear()
+        await engine.dispose()
+
+
+async def test_me_reports_played_run_counts(played_client) -> None:
+    """/auth/me carries the same played-run counts as the public profile, so
+    the web can tell a seasoned player from a newcomer without a second
+    request. A finished race counts, an abandon with no IGT does not, a
+    daily counts on its own, a cancelled solo session does not."""
+    from datetime import date
+
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        Seed,
+        SeedStatus,
+        TrainingSession,
+        TrainingSessionStatus,
+        User,
+        UserRole,
+    )
+
+    client, session_maker = played_client
+    async with session_maker() as db:
+        user = User(
+            twitch_id="me_counts",
+            twitch_username="me_counts",
+            twitch_display_name="MeCounts",
+            api_token="me_counts_token",
+            role=UserRole.USER,
+        )
+        db.add(user)
+        await db.flush()
+        seed = Seed(
+            seed_number="me_counts_seed",
+            pool_name="standard",
+            graph_json={"nodes": [], "edges": [], "layers": []},
+            total_layers=1,
+            folder_path="/fake/seed/path",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        finished = Race(
+            name="Finished", organizer_id=user.id, seed_id=seed.id, status=RaceStatus.FINISHED
+        )
+        never_started = Race(
+            name="Never started",
+            organizer_id=user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+        )
+        daily = Race(
+            name="Daily",
+            organizer_id=user.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            daily_date=date(2026, 9, 1),
+        )
+        db.add_all([finished, never_started, daily])
+        await db.flush()
+        db.add_all(
+            [
+                Participant(
+                    race_id=finished.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=120_000,
+                ),
+                Participant(
+                    race_id=never_started.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.ABANDONED,
+                    igt_ms=0,
+                ),
+                Participant(
+                    race_id=daily.id,
+                    user_id=user.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=90_000,
+                    zone_history=[{"zone": "a"}, {"zone": "b"}],
+                ),
+                TrainingSession(
+                    user_id=user.id, seed_id=seed.id, status=TrainingSessionStatus.FINISHED
+                ),
+                TrainingSession(
+                    user_id=user.id, seed_id=seed.id, status=TrainingSessionStatus.CANCELLED
+                ),
+            ]
+        )
+        await db.commit()
+
+    response = await client.get("/api/auth/me", headers={"Authorization": "Bearer me_counts_token"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["race_count"] == 1
+    assert data["daily_count"] == 1
+    assert data["training_count"] == 1

@@ -29,6 +29,14 @@ export interface AuthUser extends User {
   locale: string | null;
   overlay_settings: { font_size?: number } | null;
   feedback_prompted_at: string | null;
+  /**
+   * Played-run counts (same predicates as the public profile). A user
+   * object cached by an older build lacks them until the next refresh, so
+   * consumers must treat them as possibly undefined.
+   */
+  race_count: number;
+  daily_count: number;
+  training_count: number;
 }
 
 export type RaceStatus = "setup" | "running" | "finished";

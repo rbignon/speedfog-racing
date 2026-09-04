@@ -8,6 +8,13 @@ describe("content catalog invariants", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("has unique titles across tips and game changes (they are the visible heading)", () => {
+    const titles = CONTENT_ITEMS.filter((i) => i.kind !== "skip").map(
+      (i) => i.title,
+    );
+    expect(new Set(titles).size).toBe(titles.length);
+  });
+
   it("has non-empty title on every item, and non-empty short except for skips", () => {
     for (const item of CONTENT_ITEMS) {
       expect(item.title.trim().length, item.id).toBeGreaterThan(0);

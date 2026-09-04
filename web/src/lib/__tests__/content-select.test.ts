@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ContentItem } from "$lib/content/types";
 import {
+  EXPERIENCED_RUNS,
+  isExperiencedPlayer,
   loadSeenTipIds,
   markTipSeen,
   orderTickerItems,
@@ -71,6 +73,38 @@ describe("orderTickerItems", () => {
     expect(ordered.map((i) => i.id)).toEqual(["beg", "adv"]);
   });
 
+  it("ranks advanced tips before beginner ones for an experienced player", () => {
+    const items = [item("beg"), item("adv", { level: "advanced" })];
+    const ordered = orderTickerItems(items, {
+      poolName: null,
+      seenIds: new Set(),
+      experienced: true,
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["adv", "beg"]);
+  });
+
+  it("lets an unseen advanced tip beat a seen beginner one for a newcomer too", () => {
+    const items = [item("beg"), item("adv", { level: "advanced" })];
+    const ordered = orderTickerItems(items, {
+      poolName: null,
+      seenIds: new Set(["beg"]),
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["adv", "beg"]);
+  });
+
+  it("never rotates zone-scoped tips (they belong to the zone sheet)", () => {
+    const items = [
+      item("a"),
+      item("zoned", { level: "advanced", zoneId: "deeproot_boss" }),
+    ];
+    const ordered = orderTickerItems(items, {
+      poolName: null,
+      seenIds: new Set(),
+      experienced: true,
+    });
+    expect(ordered.map((i) => i.id)).toEqual(["a"]);
+  });
+
   it("shuffles equal-score items with the provided rng", () => {
     const items = [item("a"), item("b"), item("c")];
     const ctx = { poolName: null, seenIds: new Set<string>() };
@@ -134,6 +168,34 @@ describe("orderTickerItems", () => {
       const ordered = orderTickerItems(items, ctx, rng);
       expect(ordered[0].id).toBe("pooled");
     }
+  });
+});
+
+describe("isExperiencedPlayer", () => {
+  it("treats a logged-out or brand-new player as a newcomer", () => {
+    expect(isExperiencedPlayer(null)).toBe(false);
+    expect(
+      isExperiencedPlayer({ race_count: 0, daily_count: 0, training_count: 0 }),
+    ).toBe(false);
+  });
+
+  it("adds races, dailies and solos together before comparing to the threshold", () => {
+    const spread = {
+      race_count: 1,
+      daily_count: 1,
+      training_count: EXPERIENCED_RUNS - 2,
+    };
+    expect(
+      isExperiencedPlayer({
+        ...spread,
+        training_count: spread.training_count - 1,
+      }),
+    ).toBe(false);
+    expect(isExperiencedPlayer(spread)).toBe(true);
+  });
+
+  it("tolerates a cached user object from before the counts existed", () => {
+    expect(isExperiencedPlayer({})).toBe(false);
   });
 });
 

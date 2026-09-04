@@ -2,21 +2,23 @@ import type { ContentItem } from "./types";
 
 export const CONTENT_ITEMS: ContentItem[] = [
   // ---------- Beginner tips ----------
+  // The first four also feed the solo download modal's "Starter Tips", so
+  // keep the fundamentals at the top.
   {
     id: "vigor-first",
     kind: "tip",
     level: "beginner",
-    title: "Level Vigor first",
+    title: "Level up before you leave",
     short:
-      "Put your first levels into **Vigor**. Enemy damage scales with route depth, and surviving a hit beats dealing one.",
+      "You spawn with **runes in your purse**: spend them all at the starting grace, **mostly into Vigor**. Enemy damage scales with route depth, and surviving a hit beats dealing one.",
   },
   {
-    id: "godrick-great-rune",
+    id: "touch-every-grace",
     kind: "tip",
     level: "beginner",
-    title: "Godrick's Great Rune",
+    title: "Touch every grace",
     short:
-      "**Godrick's Great Rune** raises every stat. Activate it with a Rune Arc, and you also **recover some HP and FP** every time you change zone.",
+      "**Touch every Site of Grace** you pass, even without sitting: discovering it is quick, and it becomes a **fast-travel point** for backtracking.",
   },
   {
     id: "backtrack-freely",
@@ -24,7 +26,23 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Backtrack without guilt",
     short:
-      "Fog gates are one-way, but you can always **fast travel back** to any grace. Revisiting an earlier zone to take another exit is often the fastest route.",
+      "Fog gates are one-way, but you can always **fast travel back** to any grace you have found. Revisiting an earlier zone to take another exit is often the fastest route.",
+  },
+  {
+    id: "check-care-package",
+    kind: "tip",
+    level: "beginner",
+    title: "Check your care package",
+    short:
+      "In most modes a **care package** of random spells, talismans, tears and armor sits in your inventory at the start, next to your **pre-upgraded class weapon**. Look through it at the first grace: a **rebirth** there (Larval Tears are given) can turn a great find into your build.",
+  },
+  {
+    id: "godrick-great-rune",
+    kind: "tip",
+    level: "beginner",
+    title: "Godrick's Great Rune",
+    short:
+      "**Godrick's Great Rune** raises every stat, and it hides a base-game quirk: while it is active, **every zone reload restores some HP and FP**. Fog gates reload the zone, so activate it with a Rune Arc and enjoy the top-up all run long.",
   },
   {
     id: "radahn-grace",
@@ -62,9 +80,9 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "bell",
     kind: "tip",
     level: "beginner",
-    title: "Using the bell",
+    title: "Bell of Return",
     short:
-      "You start the game with a bell. You can use it to go back **without losing your runes**.",
+      "The fog randomizer puts a **Bell of Return** in your inventory. It exists to bring you back to the **start of the route**, but it warps you to the Chapel of Anticipation **without losing your runes**, so it also works as an escape from a bad spot.",
   },
   {
     id: "same-depth-zones",
@@ -72,7 +90,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Same depth, same effort",
     short:
-      "At any given **depth** of the route, parallel zones are of the **same type** and take a **similar time** to clear.",
+      "Parallel zones at the same **depth** of the route are of the **same type** and take a **similar time** to clear. Pick a branch for what you play best, not because it looks shorter.",
   },
   {
     id: "metro-map-second-screen",
@@ -88,7 +106,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Crashed save recovery",
     short:
-      "If the game crashes and then **refuses to reload your save**, run **recovery.bat** from your seed pack folder and pick an earlier backup.",
+      "If the game crashes and then **refuses to reload your save**, run **recovery.bat** from your seed pack folder: pressing Enter twice restores the **most recent backup**.",
   },
 
   // ---------- Advanced tips ----------
@@ -117,10 +135,11 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "training_hardcore",
       "hardcore_boss_rush",
       "training_hardcore_boss_rush",
+      "hardcore_boss_shuffle",
     ],
     title: "Hardcore economy",
     short:
-      "In Hardcore, weapons are **not upgraded for you**. Buy smithing stones at the Roundtable shop and commit to **one weapon** early.",
+      "In Hardcore your weapons start at **+0**. Buy smithing stones at the **Roundtable shop** and upgrade **one weapon**: every weapon you pick up afterwards is **auto-upgraded to match** your highest level.",
   },
   {
     id: "boss-rush-forward",
@@ -137,12 +156,12 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "In Boss Rush, when you need to backtrack, prefer **moving forward through entry fog gates**: chaining arenas is usually faster.",
   },
   {
-    id: "unlockable-rewards",
+    id: "scadutree-fragments",
     kind: "tip",
     level: "advanced",
-    title: "Badges and phantom skins",
+    title: "Scadutree fragments do nothing",
     short:
-      "Racing can unlock **badges** and **phantom skins**. Check the **Settings** page for the phantom skins you are still missing, and how to earn them.",
+      "The **Scadutree Blessing** and **Revered Spirit Ash** buffs are neutralized in SpeedFog. Do not detour for fragments in DLC zones: they will not make you stronger.",
   },
   {
     id: "zone-sheet-skips",
@@ -150,7 +169,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Learn skips from the map",
     short:
-      "Click any zone on the **metro map** to open its sheet and learn the **skips** available there, with videos.",
+      "Click any **dungeon you have discovered** on the **metro map** to open its sheet and learn the **skips** available there, with videos.",
   },
   {
     id: "fia-champions-fortissax",
@@ -195,7 +214,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "start",
     title: "Care package",
     short:
-      "In most modes, every seed starts with a randomized **care package**: pre-upgraded weapons, armor, talismans, spells and tears, **identical for every racer**.",
+      "In most modes, every seed starts with a randomized **care package** of spells, talismans, tears and armor (weapons too in some modes), **identical for every racer**, and your class weapon comes **pre-upgraded**.",
   },
   {
     id: "starting-keys",
@@ -229,7 +248,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     category: "traversal",
     title: "Pre-opened gates",
     short:
-      "Barred gates that would block the route are **already open**, including the **Leyndell sewer grates** and a **Stormveil gate**.",
+      "Barred gates that would block the route are **already open**, including the **Leyndell sewer grates**, a **Stormveil gate**, the **Belurat main gate** and the **Castle Ensis gate**.",
   },
   {
     id: "boss-return-portal",

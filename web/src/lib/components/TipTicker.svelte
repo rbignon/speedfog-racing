@@ -3,11 +3,13 @@
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import {
+    isExperiencedPlayer,
     loadSeenTipIds,
     markTipSeen,
     orderTickerItems,
   } from "$lib/content/select";
   import type { ContentItem } from "$lib/content/types";
+  import { auth } from "$lib/stores/auth.svelte";
 
   interface Props {
     poolName?: string | null;
@@ -21,6 +23,7 @@
   let items = $state<ContentItem[]>([]);
   let index = $state(0);
   let paused = $state(false);
+  let timer: ReturnType<typeof setInterval> | undefined;
 
   const current = $derived(items[index]);
 
@@ -32,17 +35,35 @@
     }
   }
 
+  function show(next: number) {
+    index = next;
+    markTipSeen(storage(), items[index].id);
+  }
+
+  function schedule() {
+    clearInterval(timer);
+    timer = setInterval(() => {
+      if (paused || items.length < 2) return;
+      show((index + 1) % items.length);
+    }, ROTATE_MS);
+  }
+
+  function step(delta: number) {
+    if (items.length < 2) return;
+    show((index + delta + items.length) % items.length);
+    // Restart the period so a tip picked by hand stays up as long as an
+    // automatic one would.
+    schedule();
+  }
+
   onMount(() => {
     items = orderTickerItems(CONTENT_ITEMS, {
       poolName,
       seenIds: loadSeenTipIds(storage()),
+      experienced: isExperiencedPlayer(auth.user),
     });
     if (items.length > 0) markTipSeen(storage(), items[0].id);
-    const timer = setInterval(() => {
-      if (paused || items.length < 2) return;
-      index = (index + 1) % items.length;
-      markTipSeen(storage(), items[index].id);
-    }, ROTATE_MS);
+    schedule();
     return () => clearInterval(timer);
   });
 </script>
@@ -58,7 +79,29 @@
       <span class="ticker-label">
         {variant === "panel" ? "While you wait" : "Tip"}
       </span>
-      <span class="ticker-count">{index + 1}/{items.length}</span>
+      <span class="ticker-nav">
+        <span class="ticker-count">{index + 1}/{items.length}</span>
+        <button
+          type="button"
+          class="nav-btn"
+          data-tip-nav="prev"
+          aria-label="Previous tip"
+          disabled={items.length < 2}
+          onclick={() => step(-1)}
+        >
+          <span aria-hidden="true">&larr;</span>
+        </button>
+        <button
+          type="button"
+          class="nav-btn"
+          data-tip-nav="next"
+          aria-label="Next tip"
+          disabled={items.length < 2}
+          onclick={() => step(1)}
+        >
+          <span aria-hidden="true">&rarr;</span>
+        </button>
+      </span>
     </div>
     <div class="tip-content">
       <span class="tip-title">{current.title}</span>
@@ -89,9 +132,15 @@
   .ticker-head {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
     border-bottom: 1px solid var(--color-border);
     padding-bottom: 0.4rem;
+  }
+
+  .ticker-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
   }
 
   .ticker-label {
@@ -105,6 +154,38 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     color: var(--color-text-disabled, #6b7280);
+    margin-right: 0.2rem;
+  }
+
+  .nav-btn {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    transition:
+      color var(--transition),
+      border-color var(--transition);
+  }
+
+  .nav-btn:hover:not(:disabled) {
+    color: var(--color-purple);
+    border-color: var(--color-purple);
+  }
+
+  .nav-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   .tip-title {
