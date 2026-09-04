@@ -6,6 +6,7 @@
   import { trainingStore } from "$lib/stores/training.svelte";
   import {
     fetchTrainingSession,
+    fetchTrainingSessions,
     abandonTrainingSession,
     downloadTrainingPack,
     fetchTrainingGhosts,
@@ -50,6 +51,8 @@
   let showFeedback = $state(false);
   let showDownloadModal = $state(false);
   let ghosts = $state<Ghost[]>([]);
+  // null = unknown (not owner, session still active, or lookup pending/failed).
+  let hasActiveSession = $state<boolean | null>(null);
   let dagView = $state<"map" | "replay">("map");
   let zoneSheetTarget = $state<{
     nodeId: string;
@@ -113,6 +116,28 @@
   let graphJson = $derived(
     trainingStore.seed?.graph_json ?? session?.graph_json ?? null,
   );
+
+  // Once the owner's session is over, check whether they can start a new one:
+  // the server allows a single active session per user. The cleanup flips
+  // `cancelled` so an out-of-order response from a previous run (e.g. after
+  // navigating between sessions) can never overwrite the current answer.
+  $effect(() => {
+    if (!isOwner || status === "active") {
+      hasActiveSession = null;
+      return;
+    }
+    let cancelled = false;
+    fetchTrainingSessions("active")
+      .then((active) => {
+        if (cancelled) return;
+        hasActiveSession = active.length > 0;
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  });
 
   // Build a WsParticipant-compatible object for DAG components.
   // Prefer live WS data; fall back to static session data (abandoned/finished without WS).
@@ -349,15 +374,14 @@
           >
             {downloading ? "Preparing..." : "Download Pack"}
           </button>
-        {/if}
-
-        {#if status === "active"}
           <button
             class="btn btn-danger"
             onclick={() => (showAbandonConfirm = true)}
           >
             Abandon
           </button>
+        {:else if hasActiveSession === false}
+          <a href="/training" class="btn btn-primary">New Run</a>
         {/if}
       </div>
     {/if}
