@@ -2,6 +2,19 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.27.0] - 2026-09-08
+
+### Elden Ring 1.17.1
+
+- **SpeedFog now runs on Elden Ring 1.17.1**
+
+### Seeds
+
+- **The intro cutscene is gone** (courtesy to @psiphicode)
+- The **Belurat main gate**, next to the first grace, now opens at startup
+- Fix: **most boss helpers ignored enemy scaling**. The adds spawned alongside a randomized boss (Rennala's students, Commander O'Neil's soldiers, ...) were scaled to another arena's tier, or not at all. They now scale with their arena like the boss itself
+- Fix: when the enemy randomizer places a **regular enemy in a boss arena**, its healthbar showed the arena's vanilla boss name. It now shows the enemy's own name
+
 ## [1.26.0] - 2026-09-02
 
 ### Tarnished Mode
