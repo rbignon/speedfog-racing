@@ -35,9 +35,8 @@ use crate::profile_span;
 fn screen_state_offset(version: Version) -> Option<usize> {
     use Version::*;
     match version {
-        V2_02_0 | V2_02_3 | V2_03_0 | V2_04_0 | V2_05_0 | V2_06_0 | V2_06_1 | V2_06_2 | V2_07_0 => {
-            Some(0x730)
-        }
+        V2_02_0 | V2_02_3 | V2_03_0 | V2_04_0 | V2_05_0 | V2_06_0 | V2_06_1 | V2_06_2 | V2_07_0
+        | V2_07_1 => Some(0x730),
         _ => None,
     }
 }
