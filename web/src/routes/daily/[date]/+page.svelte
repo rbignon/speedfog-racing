@@ -257,6 +257,12 @@
         myParticipantStatus === "registered"),
   );
   let graphJson = $derived(raceStore.seed?.graph_json ?? null);
+  let modeRuleLines = $derived(
+    (initialRace.pool_config?.rules ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0),
+  );
   let totalLayers = $derived(
     raceStore.seed?.total_layers ?? initialRace.seed_total_layers ?? 0,
   );
@@ -651,16 +657,29 @@
         />
       {/if}
 
-      {#if initialRace.deathless}
-        <!-- Read-only mirror of the race page's rules card; dailies carry no
-             custom rules, so deathless is the only line it can show. -->
+      {#if modeRuleLines.length > 0 || initialRace.deathless}
+        <!-- Read-only mirror of the race page's rules card: the pool's Mode
+             Rules first, then Race Rules. Dailies carry no custom rules, so
+             deathless is the only Race Rules line it can show. -->
         <div class="race-rules-card">
-          <div class="race-rules-head">
-            <h3>Race Rules</h3>
-          </div>
-          <ul class="race-rules-list">
-            <li>Deathless: dying once eliminates you from the race</li>
-          </ul>
+          {#if modeRuleLines.length > 0}
+            <div class="race-rules-head">
+              <h3>Mode Rules</h3>
+            </div>
+            <ul class="race-rules-list">
+              {#each modeRuleLines as line}
+                <li>{line}</li>
+              {/each}
+            </ul>
+          {/if}
+          {#if initialRace.deathless}
+            <div class="race-rules-head">
+              <h3>Race Rules</h3>
+            </div>
+            <ul class="race-rules-list">
+              <li>Deathless: dying once eliminates you from the race</li>
+            </ul>
+          {/if}
         </div>
       {/if}
 
@@ -1145,7 +1164,8 @@
     color: var(--color-text-disabled);
   }
 
-  /* Same card as the race page's "Race Rules", without the edit affordances */
+  /* Same card as the race page's rules card (Mode Rules + Race Rules),
+     without the edit affordances */
   .race-rules-card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
@@ -1172,6 +1192,10 @@
     padding-left: 1.25rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+  }
+
+  .race-rules-list + .race-rules-head {
+    margin-top: 0.75rem;
   }
 
   .dag-wrapper {
