@@ -185,6 +185,8 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
         )
         assert ok.status_code == 200
         assert ok.json()["exclude_from_stats"] is True
+        assert ok.json()["event_id"] == event_id
+        assert ok.json()["event_slot"] == "qualifier:standard:1"
 
         taken = await client.post(
             f"/api/admin/races/{other.id}/event",
@@ -197,6 +199,8 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
             f"/api/admin/races/{std.id}/event", json={"event_id": None}, headers=ADMIN
         )
         assert detached.status_code == 200
+        assert detached.json()["event_id"] is None
+        assert detached.json()["event_slot"] is None
     async with async_session() as db:
         row = (await db.execute(select(Race).where(Race.id == std.id))).scalar_one()
         assert row.event_id is None and row.event_slot is None

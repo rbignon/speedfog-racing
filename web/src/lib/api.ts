@@ -173,7 +173,38 @@ export interface AddParticipantResponse {
 }
 
 export interface ApiError {
-  detail: string;
+  detail: string | unknown[];
+}
+
+/**
+ * Format an API error's `detail` field for display. FastAPI handler-raised
+ * HTTPExceptions send a plain string, but Pydantic validation failures come
+ * back as a list of `{loc, msg, type}` objects; render those as
+ * "<field path>: <message>" pairs instead of leaking "[object Object]".
+ */
+export function formatApiErrorDetail(detail: unknown): string {
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const items = detail
+      .map((item) => {
+        if (item && typeof item === "object" && "msg" in item) {
+          const rec = item as { loc?: unknown; msg?: unknown };
+          const msg = typeof rec.msg === "string" ? rec.msg : String(rec.msg);
+          const loc = Array.isArray(rec.loc)
+            ? rec.loc.filter((part) => part !== "body").join(".")
+            : "";
+          return loc ? `${loc}: ${msg}` : msg;
+        }
+        return null;
+      })
+      .filter((item): item is string => item !== null);
+    if (items.length > 0) {
+      return items.join("; ");
+    }
+  }
+  return "Unknown error";
 }
 
 // =============================================================================
@@ -242,7 +273,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
   return response.json();
 }
@@ -794,7 +825,7 @@ export async function removeParticipant(
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 
@@ -821,7 +852,7 @@ export async function leaveRace(raceId: string): Promise<void> {
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 
@@ -937,7 +968,7 @@ export async function deleteRace(raceId: string): Promise<void> {
     const error = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 
@@ -1000,7 +1031,7 @@ export async function deleteInvite(
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 
@@ -1044,7 +1075,7 @@ export async function removeCaster(
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 
@@ -2248,7 +2279,7 @@ export async function markFeedbackPrompted(): Promise<void> {
     const error: ApiError = await response
       .json()
       .catch(() => ({ detail: "Unknown error" }));
-    throw new Error(error.detail);
+    throw new Error(formatApiErrorDetail(error.detail));
   }
 }
 

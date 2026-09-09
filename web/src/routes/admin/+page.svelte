@@ -301,6 +301,9 @@
       await loadEvents();
     } catch (e) {
       error = e instanceof Error ? e.message : "Attach failed";
+      // The <select> already shows the uncommitted choice; reload so it
+      // snaps back to whatever the server actually has on failure.
+      await loadInflightRaces();
     }
   }
 
