@@ -1,7 +1,7 @@
 """Admin API routes for seed and system management."""
 
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
@@ -23,6 +23,7 @@ from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Caster,
     DailySeedSchedule,
+    Event,
     Feedback,
     FeedbackSource,
     Participant,
@@ -43,13 +44,18 @@ from speedfog_racing.rewards.service import (
 from speedfog_racing.schemas import (
     ActivityItem,
     ActivityTimelineResponse,
+    AdminEventResponse,
     AdminFeedbackItem,
     AdminFeedbackListResponse,
+    AttachRaceToEventRequest,
     DailyParticipantActivity,
+    EventConfig,
+    EventUpsertRequest,
     RaceCasterActivity,
     RaceListResponse,
     RaceOrganizerActivity,
     RaceParticipantActivity,
+    RaceResponse,
     TrainingActivity,
 )
 from speedfog_racing.services import (
@@ -61,6 +67,12 @@ from speedfog_racing.services import (
     set_pool_enabled,
 )
 from speedfog_racing.services.analytics_service import compute_analytics
+from speedfog_racing.services.event_service import (
+    compute_phase,
+    event_window,
+    parse_slot,
+    validate_slot,
+)
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
@@ -1072,3 +1084,183 @@ async def admin_revoke_phantom_skin(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     await db.commit()
     return Response(status_code=204)
+
+
+# =============================================================================
+# Events
+# =============================================================================
+
+
+def _admin_event_response(event: Event) -> AdminEventResponse:
+    config = EventConfig.model_validate(event.config)
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
+    phase = compute_phase(
+        now=datetime.now(UTC),
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        first_stage_at=config.stages[0].date if config.stages else None,
+        last_stage_complete=False,
+        override=config.phase_override,
+    )
+    attached = {r.event_slot: r.id for r in event.races if r.event_slot is not None}
+    return AdminEventResponse(
+        id=event.id,
+        slug=event.slug,
+        name=event.name,
+        partner_name=event.partner_name,
+        partner_url=event.partner_url,
+        partner_logo_url=event.partner_logo_url,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        newcomer_threshold=event.newcomer_threshold,
+        config=event.config,
+        created_at=event.created_at,
+        phase=phase,
+        attached=attached,
+    )
+
+
+async def _load_admin_event(db: AsyncSession, event_id: uuid.UUID) -> Event | None:
+    stmt = select(Event).where(Event.id == event_id).options(selectinload(Event.races))
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+@router.get("/events", response_model=list[AdminEventResponse])
+async def admin_list_events(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> list[AdminEventResponse]:
+    stmt = select(Event).options(selectinload(Event.races)).order_by(Event.starts_at.desc())
+    events = (await db.execute(stmt)).scalars().all()
+    return [_admin_event_response(e) for e in events]
+
+
+@router.post("/events", response_model=AdminEventResponse)
+async def admin_upsert_event(
+    request: EventUpsertRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminEventResponse:
+    """Create the event named by ``slug`` or update it in place."""
+    pools = set((await db.execute(select(Pool.name))).scalars().all())
+    unknown = [m.key for m in request.config.modes if m.key not in pools]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"config.modes keys must be pool names, unknown: {unknown}",
+        )
+    stmt = select(Event).where(Event.slug == request.slug).options(selectinload(Event.races))
+    event = (await db.execute(stmt)).scalar_one_or_none()
+    if event is None:
+        event = Event(slug=request.slug)
+        db.add(event)
+    event.name = request.name
+    event.partner_name = request.partner_name
+    event.partner_url = request.partner_url
+    event.partner_logo_url = request.partner_logo_url
+    event.starts_at = request.starts_at
+    event.qualifier_ends_at = request.qualifier_ends_at
+    event.ends_at = request.ends_at
+    event.newcomer_threshold = request.newcomer_threshold
+    event.config = request.config.model_dump(mode="json", by_alias=True)
+    await db.commit()
+    reloaded = await _load_admin_event(db, event.id)
+    assert reloaded is not None
+    return _admin_event_response(reloaded)
+
+
+@router.post("/races/{race_id}/event", response_model=RaceResponse)
+async def admin_attach_race_to_event(
+    race_id: uuid.UUID,
+    request: AttachRaceToEventRequest,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> RaceResponse:
+    """Attach a race to an event slot, or detach it when ``event_id`` is null."""
+    stmt = (
+        select(Race)
+        .where(Race.id == race_id)
+        .options(
+            selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.casters).selectinload(Caster.user),
+            selectinload(Race.organizer),
+            selectinload(Race.seed),
+        )
+    )
+    race = (await db.execute(stmt)).scalar_one_or_none()
+    if race is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Race not found")
+    if race.daily_date is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A daily seed cannot join an event",
+        )
+
+    if request.event_id is None:
+        race.event_id = None
+        race.event_slot = None
+        await db.commit()
+        return race_response(race)
+
+    if request.slot is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="slot is required"
+        )
+    event = await _load_admin_event(db, request.event_id)
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    config = EventConfig.model_validate(event.config)
+    try:
+        slot = parse_slot(request.slot)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)
+        ) from exc
+    problem = validate_slot(slot, config)
+    if problem is not None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=problem)
+
+    if slot.kind == "qualifier":
+        if race.seed is None or race.seed.pool_name != slot.key:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"race pool must be {slot.key!r} for slot {request.slot}",
+            )
+        if race.late_join_window_minutes != race.race_duration_minutes:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="qualifier races need late_join_window_minutes == race_duration_minutes",
+            )
+    else:
+        stage = config.stage(slot.key)
+        if stage is None:
+            size = 4
+        elif stage.kind == "semi":
+            size = len(stage.seeds or [])
+        elif stage.kind == "newcomers":
+            size = stage.size or 4
+        else:
+            size = (stage.advance or 2) * len(stage.from_ or [])
+        if race.max_participants is not None and race.max_participants < size:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"max_participants must allow the stage's field of {size}",
+            )
+
+    occupied = next(
+        (r for r in event.races if r.event_slot == request.slot and r.id != race.id), None
+    )
+    if occupied is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"slot {request.slot} is taken by {occupied.name}",
+        )
+
+    race.event_id = event.id
+    race.event_slot = request.slot
+    if slot.kind == "qualifier":
+        race.exclude_from_stats = True
+    await db.commit()
+    return race_response(race)
