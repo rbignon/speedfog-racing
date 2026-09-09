@@ -2,12 +2,20 @@
   import { onMount } from "svelte";
   import { auth } from "$lib/stores/auth.svelte";
   import { fetchEvent, getTwitchLoginUrl, type EventDetail } from "$lib/api";
-  import { blockOrder, formatEventDate, shouldPoll } from "$lib/events";
+  import {
+    blockOrder,
+    formatEventDate,
+    racesSectionTitle,
+    shouldPoll,
+  } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
+  import RaceCard from "$lib/components/RaceCard.svelte";
   import EventTimeline from "$lib/components/events/EventTimeline.svelte";
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
   import EventLadder from "$lib/components/events/EventLadder.svelte";
   import EventQualified from "$lib/components/events/EventQualified.svelte";
+  import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
+  import EventBracket from "$lib/components/events/EventBracket.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -283,6 +291,72 @@
           />
         </div>
       </section>
+    {:else if block === "live"}
+      {#if detail.live_race}
+        {@const stage =
+          detail.stages.find((s) =>
+            s.races.some((r) => r.race.id === detail.live_race?.id),
+          ) ?? null}
+        {@const index =
+          stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
+          null}
+        <EventLiveStrip race={detail.live_race} {stage} raceIndex={index} />
+      {:else if detail.next_stage}
+        <div class="upnext">
+          <span class="signal signal-setup">Up next</span>
+          <span class="upnext-title"
+            >{detail.next_stage.label} &middot; {fmt(
+              detail.next_stage.date,
+            )}</span
+          >
+        </div>
+      {/if}
+    {:else if block === "bracket_ladder"}
+      <section class="two-col wide-left">
+        <div class="stack">
+          <div>
+            <SectionTitle>Bracket</SectionTitle>
+            <EventBracket stages={detail.stages} formatDate={fmt} />
+          </div>
+          <div class="panel">
+            <div class="panel-head">
+              <SectionTitle>Qualifier ladder</SectionTitle>
+              <span class="signal signal-finished">Final</span>
+            </div>
+            <EventLadder
+              ladder={detail.ladder}
+              modes={detail.modes}
+              viewerId={auth.user?.id ?? null}
+              note={`Closed ${fmt(detail.qualifier_ends_at)} · ${detail.ladder.entered} entered, ${detail.ladder.ranked_count} ranked`}
+            />
+          </div>
+        </div>
+        <div class="stack">
+          {#if detail.phase === "playoffs"}
+            {@const current =
+              detail.stages.find((s) => s.key === detail.current_stage_key) ??
+              null}
+            <div>
+              <SectionTitle>{racesSectionTitle(detail, fmt)}</SectionTitle>
+              {#if current && current.races.length > 0}
+                <div class="stage-races">
+                  {#each current.races as entry (entry.slot)}<RaceCard
+                      race={entry.race}
+                    />{/each}
+                </div>
+              {:else}
+                <p class="note">Races are announced on the day.</p>
+              {/if}
+            </div>
+          {/if}
+          <div id="rules" class="rules-card">
+            <h3>Rules</h3>
+            <ul>
+              {#each detail.rules as rule (rule)}<li>{rule}</li>{/each}
+            </ul>
+          </div>
+        </div>
+      </section>
     {:else if block === "rules"}
       <section id="rules" class="rules-card">
         <h3>Rules</h3>
@@ -527,12 +601,43 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
   }
+  .upnext {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1.1rem;
+  }
+  .upnext-title {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .two-col.wide-left {
+    grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    min-width: 0;
+  }
+  .stage-races {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
   @media (max-width: 900px) {
     .fmt,
     .steps,
     .cards,
     .two-col,
-    .two-col.reversed {
+    .two-col.reversed,
+    .two-col.wide-left {
       grid-template-columns: 1fr;
     }
     .two-col.reversed > .panel {
