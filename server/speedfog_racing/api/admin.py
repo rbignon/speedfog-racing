@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.api.helpers import (
     compute_race_stats,
     format_pool_display_name,
+    not_event_qualifier,
     race_date,
     race_response,
     user_response,
@@ -788,6 +789,7 @@ async def list_inflight_races(
         .where(
             Race.status.in_([RaceStatus.SETUP, RaceStatus.RUNNING]),
             Race.daily_date.is_(None),
+            not_event_qualifier(),
         )
         # Running first, then setup (the only two statuses the filter admits);
         # within a status, soonest scheduled first (nulls last), newest created

@@ -7,7 +7,7 @@ from enum import Enum
 from typing import TypeVar
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -63,6 +63,11 @@ def late_join_window_open(race: Race, now: datetime) -> bool:
     if closes is None:
         return False
     return closes > now
+
+
+def not_event_qualifier() -> ColumnElement[bool]:
+    """Listing filter: event qualifier seeds live on their event page only."""
+    return or_(Race.event_slot.is_(None), Race.event_slot.notlike("qualifier:%"))
 
 
 def race_date(race: Race) -> datetime:

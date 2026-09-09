@@ -346,3 +346,55 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
         assert data["next_stage"] is None
     else:
         assert data["next_stage"]["key"] == expected_next
+
+
+@pytest.mark.asyncio
+async def test_qualifier_races_are_hidden_from_listings(test_client, world, async_session):
+    """Even a public qualifier seed stays off the feeds; a public stage race is listed."""
+    recent = datetime.now(UTC) - timedelta(hours=1)
+    async with async_session() as db:
+        await _user(db, "cara")
+        orga = await _user(db, "orga2", UserRole.ORGANIZER)
+        other = await _event(db, "cup")
+        stage = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "pub1"),
+            world["event"],
+            "semi_a:1",
+            is_public=True,
+            started_at=recent,
+            scheduled_at=recent,
+        )
+        qualifier = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "pub2"),
+            other,
+            "qualifier:standard:1",
+            is_public=True,
+            started_at=recent,
+            scheduled_at=recent,
+        )
+        await db.commit()
+    headers = {"Authorization": "Bearer tok-cara"}
+    async with test_client as client:
+        listed = (await client.get("/api/races?status=running", headers=headers)).json()
+        joinable = (await client.get("/api/races/joinable", headers=headers)).json()
+    listed_ids = {r["id"] for r in listed["races"]}
+    joinable_ids = {r["id"] for r in joinable["races"]}
+    assert str(stage.id) in listed_ids and str(stage.id) in joinable_ids
+    assert str(qualifier.id) not in listed_ids and str(qualifier.id) not in joinable_ids
+    assert str(world["std1"].id) not in listed_ids
+
+
+@pytest.mark.asyncio
+async def test_qualifier_races_are_hidden_from_admin_inflight(test_client, world, async_session):
+    async with async_session() as db:
+        await _user(db, "root", UserRole.ADMIN)
+        await db.commit()
+    headers = {"Authorization": "Bearer tok-root"}
+    async with test_client as client:
+        response = await client.get("/api/admin/races", headers=headers)
+    assert response.status_code == 200
+    assert str(world["std1"].id) not in {r["id"] for r in response.json()["races"]}

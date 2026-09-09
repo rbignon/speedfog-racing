@@ -17,6 +17,7 @@ from starlette.responses import StreamingResponse
 from speedfog_racing.api.helpers import (
     caster_response,
     late_join_window_open,
+    not_event_qualifier,
     parse_enum_csv,
     participant_response,
     race_response,
@@ -410,6 +411,7 @@ async def list_joinable_races(
             Race.is_public.is_(True),
             # Daily Seeds have their own discovery surface at /daily.
             Race.daily_date.is_(None),
+            not_event_qualifier(),
             Race.scheduled_at.is_not(None),
             Race.organizer_id != user.id,
             Race.id.notin_(my_participant_races),
@@ -448,7 +450,7 @@ async def list_races(
         selectinload(Race.casters).selectinload(Caster.user),
     )
     # Daily Seeds are listed under /api/daily; keep them out of the regular feed.
-    query = query.where(Race.daily_date.is_(None))
+    query = query.where(Race.daily_date.is_(None), not_event_qualifier())
 
     # Public races visible to all; private races visible to their participants,
     # organizers, and casters only
