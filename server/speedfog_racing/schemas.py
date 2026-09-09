@@ -992,6 +992,12 @@ class EventConfig(BaseModel):
         if len(set(stage_keys)) != len(stage_keys):
             raise ValueError("stage keys must be unique")
         semi_keys = {s.key for s in self.stages if s.kind == "semi"}
+        semi_seeds = [seed for s in self.stages if s.kind == "semi" for seed in (s.seeds or [])]
+        duplicated_seeds = sorted({seed for seed in semi_seeds if semi_seeds.count(seed) > 1})
+        if duplicated_seeds:
+            raise ValueError(
+                f"seeds must be distinct across semi stages, duplicated: {duplicated_seeds}"
+            )
         for stage in self.stages:
             if stage.kind == "final":
                 unknown = [k for k in (stage.from_ or []) if k not in semi_keys]

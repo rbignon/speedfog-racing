@@ -136,6 +136,21 @@ def test_score_race_ignores_unqualified_runs():
     assert score_race(_race([p])) == {}
 
 
+def test_score_race_ties_share_rank_and_skip_the_next_rank():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 1_000_000),
+            _participant(b, ParticipantStatus.FINISHED, 1_000_000),
+            _participant(c, ParticipantStatus.FINISHED, 2_000_000),
+        ]
+    )
+    scores = score_race(race)
+    assert scores[a].rank == 1 and scores[b].rank == 1
+    assert scores[a].points == scores[b].points
+    assert scores[c].rank == 3
+
+
 # --- ladder -----------------------------------------------------------------
 
 
@@ -193,21 +208,82 @@ def test_ladder_breaks_total_ties_on_counted_igt():
     assert ladder[0].rank == 1 and ladder[1].rank == 2
 
 
-def test_ladder_provisional_follows_counted_seed_only():
+def test_ladder_provisional_false_when_the_faster_counted_seed_is_finished():
     a = uuid4()
-    std_open = _race([_participant(a, ParticipantStatus.FINISHED, 10)], status=RaceStatus.RUNNING)
-    std_done = _race([_participant(a, ParticipantStatus.FINISHED, 10)])
-    boss = _race([_participant(a, ParticipantStatus.FINISHED, 10)])
+    # Single-participant races always score MAX_DAILY_POINTS, so the two seeds tie on
+    # points and the count falls to igt_ms: the finished, faster seed is counted, the
+    # running, slower seed is not.
+    fast_finished = _race([_participant(a, ParticipantStatus.FINISHED, 10)])
+    slow_running = _race(
+        [_participant(a, ParticipantStatus.FINISHED, 50)], status=RaceStatus.RUNNING
+    )
     ladder = compute_ladder(
         MODES,
         [
-            (parse_slot("qualifier:standard:1"), std_open),
-            (parse_slot("qualifier:standard:2"), std_done),
-            (parse_slot("qualifier:boss_rush:1"), boss),
+            (parse_slot("qualifier:standard:1"), fast_finished),
+            (parse_slot("qualifier:standard:2"), slow_running),
         ],
     )
-    # Equal points: the counted seed is the faster one (same igt) which is std_open, first seen.
-    assert ladder[0].provisional is True
+    entry = ladder[0]
+    assert entry.counted_slots["standard"] == "qualifier:standard:1"
+    assert entry.provisional is False
+
+
+def test_ladder_provisional_true_when_the_faster_counted_seed_is_running():
+    a = uuid4()
+    fast_running = _race(
+        [_participant(a, ParticipantStatus.FINISHED, 10)], status=RaceStatus.RUNNING
+    )
+    slow_finished = _race([_participant(a, ParticipantStatus.FINISHED, 50)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), fast_running),
+            (parse_slot("qualifier:standard:2"), slow_finished),
+        ],
+    )
+    entry = ladder[0]
+    assert entry.counted_slots["standard"] == "qualifier:standard:1"
+    assert entry.provisional is True
+
+
+def test_ladder_ties_share_rank_and_skip_the_next_rank():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    # a and b end up with identical (total, igt_total); c is strictly slower on both
+    # seeds so its total ties but its igt_total is worse.
+    ladder = compute_ladder(
+        MODES,
+        [
+            (
+                parse_slot("qualifier:standard:1"),
+                _race([_participant(a, ParticipantStatus.FINISHED, 100)]),
+            ),
+            (
+                parse_slot("qualifier:boss_rush:1"),
+                _race([_participant(a, ParticipantStatus.FINISHED, 200)]),
+            ),
+            (
+                parse_slot("qualifier:standard:2"),
+                _race([_participant(b, ParticipantStatus.FINISHED, 100)]),
+            ),
+            (
+                parse_slot("qualifier:boss_rush:2"),
+                _race([_participant(b, ParticipantStatus.FINISHED, 200)]),
+            ),
+            (
+                parse_slot("qualifier:standard:3"),
+                _race([_participant(c, ParticipantStatus.FINISHED, 150)]),
+            ),
+            (
+                parse_slot("qualifier:boss_rush:3"),
+                _race([_participant(c, ParticipantStatus.FINISHED, 250)]),
+            ),
+        ],
+    )
+    by_user = {e.user_id: e for e in ladder}
+    assert by_user[a].total == by_user[b].total == 200
+    assert by_user[a].rank == 1 and by_user[b].rank == 1
+    assert by_user[c].rank == 3
 
 
 # --- newcomers --------------------------------------------------------------

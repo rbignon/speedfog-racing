@@ -235,7 +235,11 @@ def compute_qualified(
     for stage in config.stages:
         if stage.kind != "newcomers":
             continue
-        size = stage.size or 4
+        if stage.size is None:
+            # The schema requires a newcomers stage to declare size; this is
+            # unreachable for a validated EventConfig, kept as a type-narrowing guard.
+            continue
+        size = stage.size
         picks = [e for e in ranked[last_seed:] if newcomers.get(e.user_id, False)][:size]
         slots = [QualifiedSlot(seed=e.rank, user_id=e.user_id, note=None) for e in picks]
         while len(slots) < size:

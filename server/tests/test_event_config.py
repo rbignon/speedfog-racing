@@ -77,6 +77,13 @@ def test_semi_requires_distinct_seeds():
         EventConfig.model_validate(_config(stages=stages))
 
 
+def test_semi_seeds_must_be_distinct_across_semi_stages():
+    stages = _config()["stages"]
+    stages[1]["seeds"] = [1, 3]  # seed 1 already used by semi_a
+    with pytest.raises(ValidationError, match="distinct across"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
 def test_final_must_reference_semi_stages():
     stages = _config()["stages"]
     stages[3]["from"] = ["semi_a", "newcomers"]
