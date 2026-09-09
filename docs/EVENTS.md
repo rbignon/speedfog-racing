@@ -89,10 +89,11 @@ evenings sum the points of their races (100 / 75 / 50 / 25 with four runners).
 
 Each qualifier race in `qualifier_races` carries `my_result` for the
 signed-in viewer: `not_played` (never joined), `joined` (registered or ready,
-the pack still to run), `playing`, or `done` (with `rank`, `igt_ms`, `points`
-and `provisional` once a score exists); `null` for anonymous viewers.
-`closes_at` is the race's `started_at + race_duration_minutes`, the same
-instant as the race's own `race_ends_at`.
+the pack still to run), `playing`, or `done` (always with `igt_ms`; also
+`rank`, `points` and `provisional` once the run has a score, i.e. at least
+two zone entries); `null` for anonymous viewers. `closes_at` is the race's
+`started_at + race_duration_minutes`, the same instant as the race's own
+`race_ends_at`.
 
 ## Running an event (admin)
 
@@ -135,6 +136,10 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
   to the same slot at once (caught by the unique constraint on
   `(event_id, event_slot)`).
 
+`exclude_from_stats` is read only by the community-wide trait-score recompute
+(`stats_service.recalculate_all_stats`); it has no effect on the event's own
+ladder, on the race listings, or on the event page.
+
 ## The event page
 
 `/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds only while a
@@ -147,3 +152,10 @@ All dates and times render in the viewer's browser timezone.
 - `GET /api/admin/events`, `POST /api/admin/events` (upsert by slug),
   `POST /api/admin/races/{race_id}/event` (`{event_id, slot}` or
   `{event_id: null}`).
+
+## See also
+
+- [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race and
+  participant state machines that event races reuse as-is.
+- [DAILY_SEED.md](DAILY_SEED.md) for `exclude_from_stats`, the other
+  race-level flag events reuse.
