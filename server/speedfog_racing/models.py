@@ -213,6 +213,34 @@ class Seed(Base):
     reported_by: Mapped["User | None"] = relationship(foreign_keys=[reported_by_id])
 
 
+class Event(Base):
+    """A co-branded tournament: dates plus a validated JSON config.
+
+    The config (modes, seeds per mode, stages, rules) is validated by
+    ``schemas.EventConfig``; the model stores it as-is. Races attach through
+    ``Race.event_id`` and ``Race.event_slot``.
+    """
+
+    __tablename__ = "events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    partner_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    partner_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    partner_logo_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    qualifier_ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    newcomer_threshold: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=5, server_default="5"
+    )
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    races: Mapped[list["Race"]] = relationship(back_populates="event")
+
+
 class Race(Base):
     """A race event with participants."""
 
@@ -234,6 +262,9 @@ class Race(Base):
             sqlite_where=text("daily_date IS NOT NULL"),
         ),
         Index("ix_races_daily_date", "daily_date"),
+        # One race per event slot; NULL slots never collide.
+        UniqueConstraint("event_id", "event_slot", name="uq_races_event_slot"),
+        Index("ix_races_event_id", "event_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -283,6 +314,12 @@ class Race(Base):
     exclude_from_stats: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # Tournament attachment: NULL on ordinary races. The slot names the
+    # role inside the event, "qualifier:<mode>:<n>" or "<stage>:<n>".
+    event_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("events.id"), nullable=True
+    )
+    event_slot: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
@@ -296,6 +333,7 @@ class Race(Base):
     invites: Mapped[list["Invite"]] = relationship(
         back_populates="race", cascade="all, delete-orphan"
     )
+    event: Mapped["Event | None"] = relationship(back_populates="races")
 
 
 class Participant(Base):
