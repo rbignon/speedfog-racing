@@ -1,25 +1,18 @@
-import type {
-  EventDetail,
-  EventFact,
-  EventPhase,
-  EventQualifierRace,
-  EventStage,
-} from "$lib/api";
+import type { EventDetail, EventFact, EventPhase, EventStage } from "$lib/api";
 
 export type EventBlock =
   | "format"
   | "take_part"
   | "seeds"
   | "ladder_qualified"
-  | "qualified_ladder"
   | "live"
-  | "bracket_ladder"
-  | "rules";
+  | "bracket_ladder";
 
 /**
- * Which blocks the page shows, top to bottom, for a phase. The take-part and
- * bracket blocks each carry the rules card in their right column, so the
- * standalone rules block only appears in the cut phase, which shows neither.
+ * Which blocks the page shows, top to bottom, for a phase. The take-part
+ * block carries the qualifier rules, the bracket block the playoff rules and
+ * the next (or current) evening's races; from the cut on the bracket replaces
+ * the qualified column, the ladder staying under it.
  */
 export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
@@ -27,11 +20,10 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
     case "qualifier":
       return ["format", "take_part", "seeds", "ladder_qualified"];
     case "cut":
-      return ["qualified_ladder", "rules"];
-    case "playoffs":
-      return ["live", "bracket_ladder"];
     case "finished":
       return ["bracket_ladder"];
+    case "playoffs":
+      return ["live", "bracket_ladder"];
   }
 }
 
@@ -79,16 +71,16 @@ export function eventFacts(
 }
 
 /**
- * One entry per seed slot of a mode, in slot order: the attached race, or
- * null for a slot that has none (before the qualifier opens, or a voided seed).
+ * One entry per slot, in slot order: the attached item (a qualifier seed, a
+ * stage race), or null for a slot nothing is attached to yet.
  */
-export function seedSlots(
-  races: EventQualifierRace[],
-  seedsPerMode: number,
-): (EventQualifierRace | null)[] {
+export function fillSlots<T extends { index: number }>(
+  items: T[],
+  count: number,
+): (T | null)[] {
   return Array.from(
-    { length: seedsPerMode },
-    (_, i) => races.find((r) => r.index === i + 1) ?? null,
+    { length: count },
+    (_, i) => items.find((it) => it.index === i + 1) ?? null,
   );
 }
 
@@ -104,21 +96,46 @@ export function liveStage(detail: LiveStageInput): EventStage | null {
   );
 }
 
-type TitleInput = Pick<EventDetail, "live_race" | "next_stage" | "stages">;
+type ShownStageInput = Pick<
+  EventDetail,
+  "current_stage_key" | "next_stage" | "stages"
+>;
 
-/** "Live now · Semi B" while a stage race runs, "Up next · Semi A · <date>" otherwise. */
+/**
+ * The evening whose races the bracket block lists: today's stage during the
+ * playoffs, else the next one, else the last one once everything ran.
+ */
+export function shownStage(detail: ShownStageInput): EventStage | null {
+  const key =
+    detail.current_stage_key ??
+    detail.next_stage?.key ??
+    detail.stages.at(-1)?.key;
+  return detail.stages.find((s) => s.key === key) ?? null;
+}
+
+type TitleInput = Pick<EventDetail, "live_race"> & ShownStageInput;
+
+/**
+ * The races section title, always about the stage whose races it lists:
+ * "Live now · Semi B" while one of its races runs, "Up next · Semi A · <date>"
+ * while its evening is still ahead, its bare label otherwise (between two of
+ * its races, or once the last evening ran).
+ */
 export function racesSectionTitle(
   detail: TitleInput,
   formatDate: (iso: string) => string,
+  now: Date,
 ): string {
-  if (detail.live_race) {
-    const stage = liveStage(detail);
-    return stage ? `Live now · ${stage.label}` : "Live now";
+  const stage = shownStage(detail);
+  if (!stage) return "Races";
+  const liveHere =
+    detail.live_race !== null &&
+    stage.races.some((r) => r.race.id === detail.live_race?.id);
+  if (liveHere) return `Live now · ${stage.label}`;
+  if (new Date(stage.date).getTime() > now.getTime()) {
+    return `Up next · ${stage.label} · ${formatDate(stage.date)}`;
   }
-  if (detail.next_stage) {
-    return `Up next · ${detail.next_stage.label} · ${formatDate(detail.next_stage.date)}`;
-  }
-  return "Races";
+  return stage.label;
 }
 
 /** Time left before a seed closes, in the coarsest useful unit. */

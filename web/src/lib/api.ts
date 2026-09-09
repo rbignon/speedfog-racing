@@ -540,6 +540,7 @@ export interface EventDetail {
   modes: EventMode[];
   seeds_per_mode: number;
   rules: string[];
+  playoff_rules: string[];
   facts: EventFact[] | null;
   timeline: EventTimelineStop[];
   qualifier_races: EventQualifierRace[];

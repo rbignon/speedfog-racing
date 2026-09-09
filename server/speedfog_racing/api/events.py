@@ -196,6 +196,7 @@ async def get_event(
         modes=config.modes,
         seeds_per_mode=config.seeds_per_mode,
         rules=config.rules,
+        playoff_rules=config.playoff_rules,
         facts=config.facts,
         timeline=[
             EventTimelineStopResponse(key=s.key, label=s.label, date=s.date, kind=s.kind)

@@ -997,6 +997,7 @@ class EventConfig(BaseModel):
     seeds_per_mode: int = Field(default=2, ge=1, le=4)
     stages: list[EventStage] = []
     rules: list[str] = []
+    playoff_rules: list[str] = []
     facts: list[EventFact] | None = Field(default=None, max_length=8)
     phase_override: str | None = None
     announced_at: datetime | None = None
@@ -1024,7 +1025,7 @@ class EventConfig(BaseModel):
         dates = [s.date for s in self.stages]
         if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
             raise ValueError("stage dates must be ascending")
-        if any(len(r) > 300 for r in self.rules):
+        if any(len(r) > 300 for r in self.rules + self.playoff_rules):
             raise ValueError("each rule is at most 300 characters")
         if self.phase_override is not None and self.phase_override not in EVENT_PHASES:
             raise ValueError(f"phase_override must be one of {EVENT_PHASES}")
@@ -1158,6 +1159,7 @@ class EventDetailResponse(BaseModel):
     modes: list[EventMode]
     seeds_per_mode: int
     rules: list[str]
+    playoff_rules: list[str]
     facts: list[EventFact] | None
     timeline: list[EventTimelineStopResponse]
     qualifier_races: list[EventQualifierRaceResponse]

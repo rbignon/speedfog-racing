@@ -9,8 +9,9 @@
     formatEventDay,
     liveStage,
     pollIntervalMs,
+    fillSlots,
     racesSectionTitle,
-    seedSlots,
+    shownStage,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
@@ -20,6 +21,7 @@
   import EventQualified from "$lib/components/events/EventQualified.svelte";
   import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
   import EventBracket from "$lib/components/events/EventBracket.svelte";
+  import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -40,7 +42,7 @@
   let seedsByMode = $derived(
     detail.modes.map((mode) => ({
       mode,
-      slots: seedSlots(
+      slots: fillSlots(
         detail.qualifier_races.filter((r) => r.mode === mode.key),
         detail.seeds_per_mode,
       ),
@@ -54,6 +56,7 @@
     detail.stages.find((s) => s.kind === "newcomers"),
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
+  let shown = $derived(shownStage(detail));
   let phaseSignal = $derived.by(() => {
     switch (detail.phase) {
       case "upcoming":
@@ -297,8 +300,8 @@
           </div>
         {/each}
       </section>
-    {:else if block === "ladder_qualified" || block === "qualified_ladder"}
-      <section class="two-col" class:reversed={block === "qualified_ladder"}>
+    {:else if block === "ladder_qualified"}
+      <section class="two-col">
         <div class="ladder-col">
           <SectionTitle>Ladder</SectionTitle>
           <p class="meta-row">
@@ -345,8 +348,8 @@
         </div>
       {/if}
     {:else if block === "bracket_ladder"}
-      <section class="two-col wide-left">
-        <div class="stack">
+      <section class="bracket-block">
+        <div class="two-col wide-left">
           <div>
             <SectionTitle>Bracket</SectionTitle>
             <EventBracket
@@ -355,56 +358,63 @@
               formatDay={fmtDay}
             />
           </div>
+          <div class="stack">
+            {#if shown}
+              <div>
+                <SectionTitle
+                  >{racesSectionTitle(detail, fmt, now)}</SectionTitle
+                >
+                <div class="stage-races">
+                  {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
+                    {#if entry}
+                      <RaceCard race={entry.race} />
+                    {:else}
+                      <EventRacePlaceholder
+                        name={[shown.label, `Race ${i + 1}`, shown.modes[i]]
+                          .filter(Boolean)
+                          .join(" · ")}
+                        note="Announced on the day"
+                        partner={detail.partner_name}
+                      />
+                    {/if}
+                  {/each}
+                </div>
+              </div>
+            {/if}
+            {#if detail.playoff_rules.length > 0}
+              <div class="rules-card">
+                <h3>Playoff rules</h3>
+                <ul>
+                  {#each detail.playoff_rules as rule, i (i)}<li>
+                      {rule}
+                    </li>{/each}
+                </ul>
+              </div>
+            {/if}
+          </div>
+        </div>
+        <div class="ladder-col">
+          <SectionTitle>Qualifier ladder</SectionTitle>
+          <p class="meta-row">
+            <span
+              class="signal {detail.ladder.provisional
+                ? 'signal-active'
+                : 'signal-finished'}"
+              >{detail.ladder.provisional ? "Provisional" : "Final"}</span
+            >
+            <span class="meta-right"
+              >Closed {fmt(detail.qualifier_ends_at)} &middot; {detail.ladder
+                .entered} entered &middot; {detail.ladder.ranked_count} ranked</span
+            >
+          </p>
           <div class="panel">
-            <div class="panel-head">
-              <SectionTitle>Qualifier ladder</SectionTitle>
-              <span
-                class="signal {detail.ladder.provisional
-                  ? 'signal-active'
-                  : 'signal-finished'}"
-                >{detail.ladder.provisional ? "Provisional" : "Final"}</span
-              >
-            </div>
             <EventLadder
               ladder={detail.ladder}
               modes={detail.modes}
               viewerId={auth.user?.id ?? null}
-              note={`Closed ${fmt(detail.qualifier_ends_at)} · ${detail.ladder.entered} entered, ${detail.ladder.ranked_count} ranked`}
             />
           </div>
         </div>
-        <div class="stack">
-          {#if detail.phase === "playoffs"}
-            {@const current =
-              detail.stages.find((s) => s.key === detail.current_stage_key) ??
-              null}
-            <div>
-              <SectionTitle>{racesSectionTitle(detail, fmt)}</SectionTitle>
-              {#if current && current.races.length > 0}
-                <div class="stage-races">
-                  {#each current.races as entry (entry.slot)}<RaceCard
-                      race={entry.race}
-                    />{/each}
-                </div>
-              {:else}
-                <p class="note">Races are announced on the day.</p>
-              {/if}
-            </div>
-          {/if}
-          <div id="rules" class="rules-card">
-            <h3>Rules</h3>
-            <ul>
-              {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
-            </ul>
-          </div>
-        </div>
-      </section>
-    {:else if block === "rules"}
-      <section id="rules" class="rules-card">
-        <h3>Rules</h3>
-        <ul>
-          {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
-        </ul>
       </section>
     {/if}
   {/each}
@@ -617,12 +627,6 @@
     gap: 24px;
     align-items: start;
   }
-  .two-col.reversed {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  }
-  .two-col.reversed > .ladder-col {
-    order: 2;
-  }
   .ladder-col {
     min-width: 0;
   }
@@ -632,17 +636,22 @@
     align-items: center;
     gap: 0.5rem;
   }
+  .meta-right {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+  }
+  .bracket-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+  }
   .panel {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 1rem 1.1rem;
-  }
-  .panel-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 1rem;
   }
   .side-cards {
     display: flex;
@@ -704,12 +713,8 @@
     .take-part,
     .cards,
     .two-col,
-    .two-col.reversed,
     .two-col.wide-left {
       grid-template-columns: 1fr;
-    }
-    .two-col.reversed > .ladder-col {
-      order: 0;
     }
   }
 </style>

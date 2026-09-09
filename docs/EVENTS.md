@@ -15,15 +15,16 @@ request by `services/event_service.py`.
 
 ### Config
 
-| field            | meaning                                                                |
-| ---------------- | ---------------------------------------------------------------------- |
-| `modes`          | `[{key, label}]`, keys are pool names, one ladder column each          |
-| `seeds_per_mode` | seeds per mode in the qualifier (default 2)                            |
-| `stages`         | ordered playoff stages, see below                                      |
-| `rules`          | strings shown in the rules card (max 300 characters each)              |
-| `facts`          | optional `[{title, lines}]` tiles for the format block (see below)     |
-| `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`) |
-| `announced_at`   | first timeline stop; defaults to `starts_at` minus 7 days              |
+| field            | meaning                                                                 |
+| ---------------- | ----------------------------------------------------------------------- |
+| `modes`          | `[{key, label}]`, keys are pool names, one ladder column each           |
+| `seeds_per_mode` | seeds per mode in the qualifier (default 2)                             |
+| `stages`         | ordered playoff stages, see below                                       |
+| `rules`          | qualifier rules, shown next to the Take part steps (max 300 chars each) |
+| `playoff_rules`  | playoff rules, shown next to the bracket from the cut on (same cap)     |
+| `facts`          | optional `[{title, lines}]` tiles for the format block (see below)      |
+| `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)  |
+| `announced_at`   | first timeline stop; defaults to `starts_at` minus 7 days               |
 
 A stage: `key`, `label`, `kind` (`semi`, `newcomers`, `final`), `date`,
 `races` (per evening), `modes` (display labels shown under the bracket, not
@@ -145,8 +146,9 @@ viewers. `closes_at` is the race's
 4. Before each playoff evening: create the stage's public races (four slots, a
    duration cap), add the qualified runners and the casters, attach to
    `<stage>:<n>`. Name them as the page shows them, "Semi B · Race 1 ·
-   Standard": the race cards under the bracket display the race name. Start
-   each race as its organizer on the evening.
+   Standard": the race cards beside the bracket display the race name, and a
+   slot with no race yet shows a placeholder named the same way. Start each
+   race as its organizer on the evening.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.

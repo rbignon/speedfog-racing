@@ -217,7 +217,12 @@
         "Rank points per seed: 100 to first, proportional down the field, unfinished runs ranked by depth reached.",
         "Best of your two seeds per mode, three modes summed. A score in every mode to be ranked.",
         "Bosses drop no weapons outside UWYG modes.",
-        "Playoff runners stream live on Twitch with VOD.",
+      ],
+      playoff_rules: [
+        "Four runners, three races per evening, same seed for everyone.",
+        "100 / 75 / 50 / 25 points per race, summed over the evening; ties on total in-game time.",
+        "The top 2 of each semi go to the Open final.",
+        "Runners stream live on Twitch with VOD; thirty minutes without progress ends a run.",
       ],
       facts: [
         { title: "Qualifier", lines: ["6 seeds", "3 modes"] },

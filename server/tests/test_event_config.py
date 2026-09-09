@@ -103,6 +103,11 @@ def test_phase_override_must_be_a_phase():
         EventConfig.model_validate(_config(phase_override="halftime"))
 
 
+def test_playoff_rules_share_the_rule_length_cap():
+    with pytest.raises(ValidationError, match="300"):
+        EventConfig.model_validate(_config(playoff_rules=["x" * 301]))
+
+
 def test_facts_reject_blank_or_overlong_text():
     with pytest.raises(ValidationError, match="blank"):
         EventConfig.model_validate(_config(facts=[{"title": " ", "lines": ["4 Sundays"]}]))

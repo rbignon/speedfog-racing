@@ -46,7 +46,6 @@ describe("EventLadder filters", () => {
       ladder: ladderWith([]),
       modes,
       viewerId: null,
-      note: "",
     });
     expect(getByText("No runs yet.")).toBeTruthy();
   });
@@ -56,7 +55,6 @@ describe("EventLadder filters", () => {
       ladder: ladderWith([entry()]),
       modes,
       viewerId: null,
-      note: "",
     });
     const input = getByPlaceholderText("Find a runner");
     await fireEvent.input(input, { target: { value: "nobody-matches" } });
@@ -85,7 +83,6 @@ describe("EventLadder filters", () => {
       ]),
       modes,
       viewerId: null,
-      note: "",
     });
     const input = getByPlaceholderText("Find a runner");
     await fireEvent.input(input, { target: { value: "BOB" } });
@@ -117,7 +114,6 @@ describe("EventLadder filters", () => {
       ]),
       modes,
       viewerId: null,
-      note: "",
     });
     await fireEvent.click(getByText("Newcomers"));
     expect(queryByText("Rookie")).toBeTruthy();
@@ -148,7 +144,6 @@ describe("EventLadder filters", () => {
       ]),
       modes,
       viewerId: null,
-      note: "",
     });
     await fireEvent.click(getByText("Ranked only"));
     expect(queryByText("Ranked")).toBeTruthy();
@@ -171,7 +166,6 @@ describe("EventLadder rows", () => {
       ]),
       modes,
       viewerId: "me",
-      note: "",
     });
     expect(container.querySelector(".row.me")).not.toBeNull();
   });
@@ -187,7 +181,6 @@ describe("EventLadder rows", () => {
       ]),
       modes,
       viewerId: null,
-      note: "",
     });
     expect(getByText("1/2")).toBeTruthy();
   });

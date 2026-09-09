@@ -6,12 +6,10 @@
     ladder,
     modes,
     viewerId,
-    note,
   }: {
     ladder: EventLadder;
     modes: EventMode[];
     viewerId: string | null;
-    note?: string;
   } = $props();
 
   let search = $state("");
@@ -55,7 +53,6 @@
       >
     </div>
   </div>
-  {#if note}<p class="note">{note}</p>{/if}
   <div class="grid" style="--modes: {modes.length}">
     <div class="head">
       <span></span><span>Runner</span>
@@ -158,7 +155,6 @@
     border-color: var(--color-gold);
     color: var(--color-gold);
   }
-  .note,
   .empty {
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);

@@ -2,21 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   blockOrder,
   eventFacts,
+  fillSlots,
   formatEventDate,
   formatEventDay,
   liveStage,
   ordinal,
   pollIntervalMs,
   racesSectionTitle,
-  seedSlots,
   timeRemaining,
 } from "$lib/events";
-import type {
-  EventDetail,
-  EventPhase,
-  EventQualifierRace,
-  Race,
-} from "$lib/api";
+import type { EventDetail, EventPhase, EventStage, Race } from "$lib/api";
 
 const phases: EventPhase[] = [
   "upcoming",
@@ -27,11 +22,11 @@ const phases: EventPhase[] = [
 ];
 
 describe("blockOrder", () => {
-  it("renders the rules exactly once per phase (standalone, or inside the take-part or bracket block)", () => {
+  it("shows exactly one rules carrier per phase (the take-part or the bracket block)", () => {
     for (const phase of phases) {
       const blocks = blockOrder(phase);
       const carriers = blocks.filter(
-        (b) => b === "rules" || b === "take_part" || b === "bracket_ladder",
+        (b) => b === "take_part" || b === "bracket_ladder",
       );
       expect(carriers.length, phase).toBe(1);
       expect(new Set(blocks).size, phase).toBe(blocks.length);
@@ -45,11 +40,12 @@ describe("blockOrder", () => {
     expect(blockOrder("playoffs")).not.toContain("seeds");
   });
 
-  it("leads the playoffs with the live block and hides the bracket before them", () => {
+  it("leads the playoffs with the live block and shows the bracket from the cut on", () => {
     expect(blockOrder("playoffs")[0]).toBe("live");
-    expect(blockOrder("playoffs")).toContain("bracket_ladder");
     expect(blockOrder("qualifier")).not.toContain("bracket_ladder");
-    expect(blockOrder("finished")).toContain("bracket_ladder");
+    for (const phase of ["cut", "playoffs", "finished"] as const) {
+      expect(blockOrder(phase), phase).toContain("bracket_ladder");
+    }
   });
 });
 
@@ -106,18 +102,15 @@ describe("eventFacts", () => {
   });
 });
 
-describe("seedSlots", () => {
-  const seed2 = {
-    slot: "qualifier:standard:2",
-    index: 2,
-  } as EventQualifierRace;
+describe("fillSlots", () => {
+  const second = { slot: "qualifier:standard:2", index: 2 };
 
-  it("keeps slot order when a lower seed is missing", () => {
-    expect(seedSlots([seed2], 2)).toEqual([null, seed2]);
+  it("keeps slot order when a lower slot is empty", () => {
+    expect(fillSlots([second], 2)).toEqual([null, second]);
   });
 
   it("yields one null per slot when nothing is attached", () => {
-    expect(seedSlots([], 3)).toEqual([null, null, null]);
+    expect(fillSlots([], 3)).toEqual([null, null, null]);
   });
 });
 
@@ -147,36 +140,64 @@ describe("liveStage", () => {
 
 describe("racesSectionTitle", () => {
   const fmt = (iso: string) => `D(${iso})`;
-  it("names the live stage while a race runs", () => {
+  const semiA = {
+    key: "semi_a",
+    label: "Semi A",
+    date: "2026-10-04T19:00:00Z",
+    races: [] as EventStage["races"],
+  };
+  const semiB = {
+    key: "semi_b",
+    label: "Semi B",
+    date: "2026-10-11T19:00:00Z",
+    races: [] as EventStage["races"],
+  };
+  const nextB = { key: "semi_b", label: "Semi B", date: semiB.date };
+  const evening = new Date("2026-10-04T20:15:00Z");
+
+  it("names the evening's stage as live while one of its races runs", () => {
     const race = { id: "r2" } as Race;
     const detail = detailWith({
       live_race: race,
+      current_stage_key: "semi_a",
+      next_stage: nextB,
       stages: [
-        {
-          key: "semi_b",
-          label: "Semi B",
-          races: [{ slot: "semi_b:2", index: 2, race }],
-        },
+        { ...semiA, races: [{ slot: "semi_a:2", index: 2, race }] },
+        semiB,
       ] as EventDetail["stages"],
     });
-    expect(racesSectionTitle(detail, fmt)).toBe("Live now · Semi B");
+    expect(racesSectionTitle(detail, fmt, evening)).toBe("Live now · Semi A");
   });
 
-  it("points at the next stage otherwise", () => {
+  it("keeps naming the evening's stage between two of its races, not the next Sunday", () => {
     const detail = detailWith({
-      next_stage: {
-        key: "semi_a",
-        label: "Semi A",
-        date: "2026-10-04T19:00:00Z",
-      },
+      current_stage_key: "semi_a",
+      next_stage: nextB,
+      stages: [semiA, semiB] as EventDetail["stages"],
     });
-    expect(racesSectionTitle(detail, fmt)).toBe(
-      "Up next · Semi A · D(2026-10-04T19:00:00Z)",
-    );
+    expect(racesSectionTitle(detail, fmt, evening)).toBe("Semi A");
   });
 
-  it("falls back to a plain title after the last stage", () => {
-    expect(racesSectionTitle(detailWith({}), fmt)).toBe("Races");
+  it("points at the next stage while its evening is ahead", () => {
+    const detail = detailWith({
+      next_stage: { key: "semi_a", label: "Semi A", date: semiA.date },
+      stages: [semiA, semiB] as EventDetail["stages"],
+    });
+    expect(
+      racesSectionTitle(detail, fmt, new Date("2026-10-01T15:00:00Z")),
+    ).toBe("Up next · Semi A · D(2026-10-04T19:00:00Z)");
+  });
+
+  it("names the last stage once everything ran, and falls back without stages", () => {
+    const after = new Date("2026-10-26T00:00:00Z");
+    expect(
+      racesSectionTitle(
+        detailWith({ stages: [semiA, semiB] as EventDetail["stages"] }),
+        fmt,
+        after,
+      ),
+    ).toBe("Semi B");
+    expect(racesSectionTitle(detailWith({}), fmt, after)).toBe("Races");
   });
 });
 
