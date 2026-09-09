@@ -4,11 +4,13 @@
   import { fetchEvent, getTwitchLoginUrl, type EventDetail } from "$lib/api";
   import {
     blockOrder,
+    eventFacts,
     formatEventDate,
     formatEventDay,
     liveStage,
     pollIntervalMs,
     racesSectionTitle,
+    seedSlots,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
@@ -34,11 +36,18 @@
   const fmtDay = (iso: string) => formatEventDay(iso);
 
   let blocks = $derived(blockOrder(detail.phase));
+  let facts = $derived(eventFacts(detail, fmtDay));
   let seedsByMode = $derived(
     detail.modes.map((mode) => ({
       mode,
-      seeds: detail.qualifier_races.filter((r) => r.mode === mode.key),
+      slots: seedSlots(
+        detail.qualifier_races.filter((r) => r.mode === mode.key),
+        detail.seeds_per_mode,
+      ),
     })),
+  );
+  let seedsOpenAt = $derived(
+    detail.phase === "upcoming" ? detail.starts_at : null,
   );
   let semis = $derived(detail.stages.filter((s) => s.kind === "semi"));
   let newcomersStage = $derived(
@@ -124,7 +133,6 @@
       {/if}
       <span class="signal {phaseSignal.cls}">{phaseSignal.text}</span>
       <div class="band-actions">
-        <a href="#rules" class="btn btn-outline">Rules</a>
         {#if detail.partner_url}
           <a
             href={detail.partner_url}
@@ -174,68 +182,69 @@
             </p>
           </div>
           <div class="facts">
-            <div>
-              <span class="k">Qualifier</span><span class="v"
-                >{detail.seeds_per_mode * detail.modes.length} seeds · {detail
-                  .modes.length} modes</span
-              >
-            </div>
-            <div>
-              <span class="k">Modes</span><span class="v"
-                >{detail.modes.map((m) => m.label).join(" · ")}</span
-              >
-            </div>
-            <div>
-              <span class="k">Playoffs</span><span class="v"
-                >{detail.stages.length} Sundays · {detail.stages[0]
-                  ?.races_expected ?? 3} races each</span
-              >
-            </div>
-            {#if newcomersStage}
+            {#each facts as fact, i (i)}
               <div>
-                <span class="k">Newcomers</span><span class="v"
-                  >Own final · {fmt(newcomersStage.date)}</span
+                <span class="k">{fact.title}</span>
+                <span class="v"
+                  >{#each fact.lines as line, i (i)}<span>{line}</span
+                    >{/each}</span
                 >
               </div>
-            {/if}
+            {/each}
           </div>
         </div>
       </section>
     {:else if block === "take_part"}
       <section>
         <SectionTitle>Take part</SectionTitle>
-        <div class="steps">
-          <div class="step">
-            <span class="n">01</span>
-            <h3>Sign in with Twitch</h3>
-            <p>
-              Spectating needs no account. Playing does: one click, nothing else
-              to fill in.
-            </p>
-            {#if !auth.isLoggedIn}
-              <a
-                href={getTwitchLoginUrl()}
-                class="btn btn-twitch"
-                data-sveltekit-reload>Sign in with Twitch</a
-              >
-            {/if}
+        <div class="take-part">
+          <div class="steps">
+            <div class="step">
+              <span class="n">01</span>
+              <div class="step-body">
+                <h3>Sign in with Twitch</h3>
+                <p>
+                  Spectating needs no account. Playing does: one click, nothing
+                  else to fill in.
+                </p>
+                {#if !auth.isLoggedIn}
+                  <a
+                    href={getTwitchLoginUrl()}
+                    class="btn btn-twitch"
+                    data-sveltekit-reload>Sign in with Twitch</a
+                  >
+                {/if}
+              </div>
+            </div>
+            <div class="step">
+              <span class="n">02</span>
+              <div class="step-body">
+                <h3>Pick a seed, download the pack</h3>
+                <p>
+                  {detail.phase === "upcoming"
+                    ? `Seeds open ${fmt(detail.starts_at)}.`
+                    : "Any of the seeds below."} The pack holds everything, game files
+                  and overlay. Nothing to install by hand.
+                </p>
+              </div>
+            </div>
+            <div class="step">
+              <span class="n">03</span>
+              <div class="step-body">
+                <h3>Run it in one sitting</h3>
+                <p>
+                  At least one seed of each mode before {fmt(
+                    detail.qualifier_ends_at,
+                  )}. Thirty minutes without progress ends a run.
+                </p>
+              </div>
+            </div>
           </div>
-          <div class="step">
-            <span class="n">02</span>
-            <h3>Pick a seed, download the pack</h3>
-            <p>
-              Any of the seeds below. The pack holds everything, game files and
-              overlay. Nothing to install by hand.
-            </p>
-          </div>
-          <div class="step">
-            <span class="n">03</span>
-            <h3>Run it in one sitting</h3>
-            <p>
-              At least one seed of each mode before {fmt(
-                detail.qualifier_ends_at,
-              )}. Thirty minutes without progress ends a run.
-            </p>
+          <div id="rules" class="rules-card">
+            <h3>Rules</h3>
+            <ul>
+              {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
+            </ul>
           </div>
         </div>
       </section>
@@ -250,39 +259,39 @@
           <div class="mode-group">
             <h3>{group.mode.label}</h3>
             <div class="cards">
-              {#each group.seeds as entry (entry.slot)}
+              {#each group.slots as entry, i (i)}
                 <EventSeedCard
                   {entry}
+                  index={i + 1}
                   modeLabel={group.mode.label}
                   partner={detail.partner_name}
                   {now}
+                  opensAt={seedsOpenAt}
                 />
               {/each}
-              {#if group.seeds.length === 0}<p class="note">
-                  Seeds appear here when the qualifier opens.
-                </p>{/if}
             </div>
           </div>
         {/each}
       </section>
     {:else if block === "ladder_qualified" || block === "qualified_ladder"}
       <section class="two-col" class:reversed={block === "qualified_ladder"}>
-        <div class="panel">
-          <div class="panel-head">
-            <SectionTitle>Ladder</SectionTitle>
+        <div class="ladder-col">
+          <SectionTitle>Ladder</SectionTitle>
+          <p class="meta-row">
             <span
               class="signal {detail.ladder.provisional
                 ? 'signal-active'
                 : 'signal-finished'}"
               >{detail.ladder.provisional ? "Provisional" : "Final"}</span
             >
+          </p>
+          <div class="panel">
+            <EventLadder
+              ladder={detail.ladder}
+              modes={detail.modes}
+              viewerId={auth.user?.id ?? null}
+            />
           </div>
-          <EventLadder
-            ladder={detail.ladder}
-            modes={detail.modes}
-            viewerId={auth.user?.id ?? null}
-            note={`Best seed per mode, ${detail.modes.length} modes summed · a score in every mode to be ranked · ${detail.ladder.entered} entered, ${detail.ladder.ranked_count} ranked`}
-          />
         </div>
         <div>
           <SectionTitle>Qualified</SectionTitle>
@@ -513,16 +522,25 @@
     color: var(--color-text-secondary);
   }
   .facts .v {
+    display: flex;
+    flex-direction: column;
     font-family: var(--font-display);
     font-size: 1.15rem;
     font-weight: 600;
     letter-spacing: 0.03em;
+    line-height: 1.25;
     text-transform: uppercase;
     margin-top: 1px;
   }
-  .steps {
+  .take-part {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .steps {
+    display: flex;
+    flex-direction: column;
     gap: 14px;
   }
   .step {
@@ -530,6 +548,11 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     padding: 1rem 1.1rem;
+    display: grid;
+    grid-template-columns: 2.4rem minmax(0, 1fr);
+    align-items: start;
+  }
+  .step-body {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -539,6 +562,7 @@
     font-size: 0.7rem;
     letter-spacing: 0.09em;
     color: var(--color-gold);
+    padding-top: 0.35rem;
   }
   .step h3 {
     margin: 0;
@@ -582,8 +606,17 @@
   .two-col.reversed {
     grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   }
-  .two-col.reversed > .panel {
+  .two-col.reversed > .ladder-col {
     order: 2;
+  }
+  .ladder-col {
+    min-width: 0;
+  }
+  .meta-row {
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   .panel {
     background: var(--color-surface);
@@ -646,14 +679,14 @@
   }
   @media (max-width: 900px) {
     .fmt,
-    .steps,
+    .take-part,
     .cards,
     .two-col,
     .two-col.reversed,
     .two-col.wide-left {
       grid-template-columns: 1fr;
     }
-    .two-col.reversed > .panel {
+    .two-col.reversed > .ladder-col {
       order: 0;
     }
   }

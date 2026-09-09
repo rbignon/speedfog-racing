@@ -33,7 +33,7 @@
         rank: e.seed,
         user: e.user,
         newcomer: e.newcomer,
-        label: e.note ?? "open",
+        label: e.note ?? undefined,
       }));
       const filled = group.entries.filter((e) => e.user).length;
       return {
@@ -58,9 +58,7 @@
         : 'signal-finished'}"
       >{qualified.provisional ? "Provisional" : "Final"}</span
     >
-    {qualified.provisional
-      ? `as the ladder stands; final at the cut, ${formatDate(cutAt)}`
-      : "decided at the cut"}
+    <span class="cut">Cut on {formatDate(cutAt)}</span>
   </p>
   {#each boxes as box (box.key)}
     <EventStageBox
@@ -88,5 +86,8 @@
     gap: 0.5rem;
     align-items: center;
     flex-wrap: wrap;
+  }
+  .cut {
+    margin-left: auto;
   }
 </style>

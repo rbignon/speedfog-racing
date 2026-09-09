@@ -52,7 +52,7 @@
           {#if row.user}
             <UserLink user={row.user} showBadge />
           {:else}
-            <span class="tbd">{row.label ?? "open"}</span>
+            <span class="tbd">{row.label ?? "TBD"}</span>
           {/if}
           {#if row.newcomer}<span class="newtag">new</span>{/if}
         </span>

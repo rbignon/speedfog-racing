@@ -219,6 +219,12 @@
         "Bosses drop no weapons outside UWYG modes.",
         "Playoff runners stream live on Twitch with VOD.",
       ],
+      facts: [
+        { title: "Qualifier", lines: ["6 seeds", "3 modes"] },
+        { title: "Modes", lines: ["Standard", "UWYG Major Rush", "Boss Rush"] },
+        { title: "Playoffs", lines: ["4 Sundays", "3 races each"] },
+        { title: "Newcomers", lines: ["Own final", "Sun 18 Oct"] },
+      ],
       phase_override: null,
       announced_at: "2026-09-16T18:00:00Z",
     },

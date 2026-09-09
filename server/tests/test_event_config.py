@@ -103,6 +103,19 @@ def test_phase_override_must_be_a_phase():
         EventConfig.model_validate(_config(phase_override="halftime"))
 
 
+def test_facts_reject_blank_or_overlong_text():
+    with pytest.raises(ValidationError, match="blank"):
+        EventConfig.model_validate(_config(facts=[{"title": " ", "lines": ["4 Sundays"]}]))
+    with pytest.raises(ValidationError, match="fact line"):
+        EventConfig.model_validate(
+            _config(facts=[{"title": "Playoffs", "lines": ["4 Sundays", " "]}])
+        )
+    with pytest.raises(ValidationError, match="fact line"):
+        EventConfig.model_validate(_config(facts=[{"title": "Modes", "lines": ["x" * 61]}]))
+    with pytest.raises(ValidationError, match="lines"):
+        EventConfig.model_validate(_config(facts=[{"title": "Modes", "lines": []}]))
+
+
 def test_announced_at_must_be_timezone_aware():
     with pytest.raises(ValidationError, match="announced_at"):
         EventConfig.model_validate(_config(announced_at="2026-10-01T10:00:00"))

@@ -1,4 +1,10 @@
-import type { EventDetail, EventPhase, EventStage } from "$lib/api";
+import type {
+  EventDetail,
+  EventFact,
+  EventPhase,
+  EventQualifierRace,
+  EventStage,
+} from "$lib/api";
 
 export type EventBlock =
   | "format"
@@ -11,15 +17,15 @@ export type EventBlock =
   | "rules";
 
 /**
- * Which blocks the page shows, top to bottom, for a phase. The bracket block
- * carries the current stage's races and the rules in its right column, so the
- * standalone rules block only appears in phases without a bracket.
+ * Which blocks the page shows, top to bottom, for a phase. The take-part and
+ * bracket blocks each carry the rules card in their right column, so the
+ * standalone rules block only appears in the cut phase, which shows neither.
  */
 export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
     case "upcoming":
     case "qualifier":
-      return ["format", "take_part", "seeds", "ladder_qualified", "rules"];
+      return ["format", "take_part", "seeds", "ladder_qualified"];
     case "cut":
       return ["qualified_ladder", "rules"];
     case "playoffs":
@@ -27,6 +33,63 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
     case "finished":
       return ["bracket_ladder"];
   }
+}
+
+type FactsInput = Pick<
+  EventDetail,
+  "facts" | "modes" | "seeds_per_mode" | "stages"
+>;
+
+/**
+ * The format block's tiles: the config's own facts when it sets any, else
+ * four derived from the event's shape (seed and mode counts, the mode labels,
+ * stage and race counts, the newcomers' final day).
+ */
+export function eventFacts(
+  detail: FactsInput,
+  formatDay: (iso: string) => string,
+): EventFact[] {
+  if (detail.facts && detail.facts.length > 0) return detail.facts;
+  const races = detail.stages[0]?.races_expected;
+  const newcomers = detail.stages.find((s) => s.kind === "newcomers");
+  const facts: EventFact[] = [
+    {
+      title: "Qualifier",
+      lines: [
+        `${detail.seeds_per_mode * detail.modes.length} seeds`,
+        `${detail.modes.length} modes`,
+      ],
+    },
+    { title: "Modes", lines: detail.modes.map((m) => m.label) },
+    {
+      title: "Playoffs",
+      lines: [
+        `${detail.stages.length} stages`,
+        ...(races ? [`${races} races each`] : []),
+      ],
+    },
+  ];
+  if (newcomers) {
+    facts.push({
+      title: "Newcomers",
+      lines: ["Own final", formatDay(newcomers.date)],
+    });
+  }
+  return facts;
+}
+
+/**
+ * One entry per seed slot of a mode, in slot order: the attached race, or
+ * null for a slot that has none (before the qualifier opens, or a voided seed).
+ */
+export function seedSlots(
+  races: EventQualifierRace[],
+  seedsPerMode: number,
+): (EventQualifierRace | null)[] {
+  return Array.from(
+    { length: seedsPerMode },
+    (_, i) => races.find((r) => r.index === i + 1) ?? null,
+  );
 }
 
 type LiveStageInput = Pick<EventDetail, "live_race" | "stages">;

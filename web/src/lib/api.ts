@@ -419,6 +419,12 @@ export interface EventMode {
   label: string;
 }
 
+/** One tile of the event page's format block: a title over one line per entry. */
+export interface EventFact {
+  title: string;
+  lines: string[];
+}
+
 export interface EventTimelineStop {
   key: string;
   label: string;
@@ -534,6 +540,7 @@ export interface EventDetail {
   modes: EventMode[];
   seeds_per_mode: number;
   rules: string[];
+  facts: EventFact[] | null;
   timeline: EventTimelineStop[];
   qualifier_races: EventQualifierRace[];
   ladder: EventLadder;

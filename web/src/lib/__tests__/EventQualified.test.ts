@@ -17,7 +17,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     modes: ["standard"],
     races: [],
     results: [],
-    field: new Array(8).fill(null).map(() => ({ user: null, label: "open" })),
+    field: new Array(8).fill(null).map(() => ({ user: null, label: "TBD" })),
     ...overrides,
   };
 }

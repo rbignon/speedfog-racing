@@ -341,7 +341,7 @@ def test_qualified_leaves_slots_open_when_ladder_is_short():
     u = [uuid4() for _ in range(2)]
     groups = compute_qualified(_ladder_of(*u), _config(), {})
     assert [s.user_id for s in groups["semi_a"]] == [u[0], None]
-    assert groups["semi_a"][1].note == "open"
+    assert groups["semi_a"][1].note == "TBD"
     assert [s.user_id for s in groups["newcomers"]] == [None, None]
 
 

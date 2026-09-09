@@ -21,6 +21,7 @@ request by `services/event_service.py`.
 | `seeds_per_mode` | seeds per mode in the qualifier (default 2)                            |
 | `stages`         | ordered playoff stages, see below                                      |
 | `rules`          | strings shown in the rules card (max 300 characters each)              |
+| `facts`          | optional `[{title, lines}]` tiles for the format block (see below)     |
 | `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`) |
 | `announced_at`   | first timeline stop; defaults to `starts_at` minus 7 days              |
 
@@ -48,6 +49,17 @@ Two invariants worth keeping in mind when editing this schema:
   ladder positions after the largest seed used by any semi, so a gap in the
   seed numbering silently excludes those positions from both the semis and
   the newcomers' group.
+
+### Facts
+
+The format block shows a grid of small tiles, one title over one to four
+lines each. Without `facts` the page derives four of them from the config
+(seed and mode counts, the mode labels, stage and race counts, the newcomers'
+final day). Setting `facts` (up to 8 tiles, titles up to 40 characters,
+lines up to 60) replaces that grid with free text, so an event can say
+"4 Sundays" or name a seasonal pool; an empty list behaves like an unset
+field. Fact lines are plain text: a date typed there is not converted to the
+viewer's timezone, so keep dates to the day.
 
 ### Timeline
 

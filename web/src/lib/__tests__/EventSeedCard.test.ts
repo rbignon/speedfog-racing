@@ -63,6 +63,7 @@ describe("EventSeedCard state signal", () => {
   it("shows Open with a Play strip for an unplayed, open, joinable seed", () => {
     const { getByText, container } = render(EventSeedCard, {
       entry: entryWith(),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -84,6 +85,7 @@ describe("EventSeedCard state signal", () => {
           provisional: false,
         },
       ),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -105,6 +107,7 @@ describe("EventSeedCard state signal", () => {
           provisional: false,
         },
       ),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -126,6 +129,7 @@ describe("EventSeedCard state signal", () => {
           provisional: true,
         },
       ),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -151,6 +155,7 @@ describe("EventSeedCard state signal", () => {
           provisional: true,
         },
       ),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -179,6 +184,7 @@ describe("EventSeedCard state signal", () => {
           provisional: false,
         },
       ),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -189,6 +195,7 @@ describe("EventSeedCard state signal", () => {
   it("shows Closed with no Play strip once the window has passed, even if unplayed", () => {
     const { getByText, container } = render(EventSeedCard, {
       entry: entryWith({}, null, "2026-09-01T00:00:00Z"),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -200,6 +207,7 @@ describe("EventSeedCard state signal", () => {
   it("hides the Play strip when the race itself refuses joins", () => {
     const { container } = render(EventSeedCard, {
       entry: entryWith({ can_join: false }),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
@@ -222,10 +230,27 @@ describe("EventSeedCard state signal", () => {
         participant_count: 8,
         participant_previews: previews,
       }),
+      index: 1,
       modeLabel: "Standard",
       partner: null,
       now,
     });
     expect(getByText("+3")).toBeTruthy();
+  });
+});
+
+describe("EventSeedCard placeholder", () => {
+  it("renders an unlinked placeholder with the opening date when there is no race", () => {
+    const { container, getByText } = render(EventSeedCard, {
+      entry: null,
+      index: 2,
+      modeLabel: "Standard",
+      partner: null,
+      now,
+      opensAt: "2026-09-23T17:00:00Z",
+    });
+    expect(container.querySelector("a")).toBeNull();
+    expect(getByText("Standard · Seed 2")).toBeTruthy();
+    expect(getByText(/^Opens /)).toBeTruthy();
   });
 });

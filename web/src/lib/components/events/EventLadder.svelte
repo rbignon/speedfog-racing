@@ -11,7 +11,7 @@
     ladder: EventLadder;
     modes: EventMode[];
     viewerId: string | null;
-    note: string;
+    note?: string;
   } = $props();
 
   let search = $state("");
@@ -55,21 +55,21 @@
       >
     </div>
   </div>
-  <p class="note">{note}</p>
-  {#if rows.length === 0}
-    <p class="empty">
-      {ladder.entries.length === 0
-        ? "No runs yet."
-        : "No runner matches your filters."}
-    </p>
-  {:else}
-    <div class="grid" style="--modes: {modes.length}">
-      <div class="head">
-        <span></span><span>Runner</span>
-        {#each modes as mode (mode.key)}<span class="num">{mode.label}</span
-          >{/each}
-        <span class="num">Total</span>
-      </div>
+  {#if note}<p class="note">{note}</p>{/if}
+  <div class="grid" style="--modes: {modes.length}">
+    <div class="head">
+      <span></span><span>Runner</span>
+      {#each modes as mode (mode.key)}<span class="num">{mode.label}</span
+        >{/each}
+      <span class="num">Total</span>
+    </div>
+    {#if rows.length === 0}
+      <p class="empty">
+        {ladder.entries.length === 0
+          ? "No runs yet."
+          : "No runner matches your filters."}
+      </p>
+    {:else}
       {#each rows as entry (entry.user.id)}
         <div
           class="row"
@@ -102,8 +102,8 @@
           {/if}
         </div>
       {/each}
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -162,6 +162,9 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
     margin: 0 0 0.6rem;
+  }
+  .empty {
+    margin: 0.85rem 0 0.2rem;
   }
   .grid {
     display: flex;

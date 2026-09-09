@@ -947,6 +947,21 @@ class EventMode(BaseModel):
     label: str = Field(min_length=1, max_length=50)
 
 
+class EventFact(BaseModel):
+    """One tile of the format block: a small caps title over one line per entry."""
+
+    title: str = Field(min_length=1, max_length=40)
+    lines: list[str] = Field(min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def _check_text(self) -> "EventFact":
+        if not self.title.strip():
+            raise ValueError("title must not be blank")
+        if any(not line.strip() or len(line) > 60 for line in self.lines):
+            raise ValueError("each fact line is 1 to 60 characters")
+        return self
+
+
 class EventStage(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -982,6 +997,7 @@ class EventConfig(BaseModel):
     seeds_per_mode: int = Field(default=2, ge=1, le=4)
     stages: list[EventStage] = []
     rules: list[str] = []
+    facts: list[EventFact] | None = Field(default=None, max_length=8)
     phase_override: str | None = None
     announced_at: datetime | None = None
 
@@ -1142,6 +1158,7 @@ class EventDetailResponse(BaseModel):
     modes: list[EventMode]
     seeds_per_mode: int
     rules: list[str]
+    facts: list[EventFact] | None
     timeline: list[EventTimelineStopResponse]
     qualifier_races: list[EventQualifierRaceResponse]
     ladder: EventLadderResponse

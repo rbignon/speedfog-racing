@@ -211,6 +211,10 @@ def newcomer_flags(
 # --- qualified groups -------------------------------------------------------
 
 
+# Display label of a slot nobody holds yet, next to "Seed 4" and "Top 2 of Semi B".
+UNDECIDED = "TBD"
+
+
 @dataclass(frozen=True)
 class QualifiedSlot:
     seed: int | None
@@ -235,7 +239,7 @@ def compute_qualified(
                 QualifiedSlot(
                     seed=seed,
                     user_id=entry.user_id if entry else None,
-                    note=None if entry else "open",
+                    note=None if entry else UNDECIDED,
                 )
             )
             last_seed = max(last_seed, seed)
@@ -251,7 +255,7 @@ def compute_qualified(
         picks = [e for e in ranked[last_seed:] if newcomers.get(e.user_id, False)][:size]
         slots = [QualifiedSlot(seed=e.rank, user_id=e.user_id, note=None) for e in picks]
         while len(slots) < size:
-            slots.append(QualifiedSlot(seed=None, user_id=None, note="open"))
+            slots.append(QualifiedSlot(seed=None, user_id=None, note=UNDECIDED))
         groups[stage.key] = slots
     return groups
 

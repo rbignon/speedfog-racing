@@ -38,6 +38,7 @@ from speedfog_racing.schemas import (
     UserResponse,
 )
 from speedfog_racing.services.event_service import (
+    UNDECIDED,
     Slot,
     build_timeline,
     compute_ladder,
@@ -175,7 +176,7 @@ async def get_event(
         return [
             EventFieldSlotResponse(
                 user=user_of(slot.user_id),
-                label=f"Seed {slot.seed}" if slot.seed is not None else "open",
+                label=f"Seed {slot.seed}" if slot.seed is not None else UNDECIDED,
             )
             for slot in qualified.get(stage_key, [])
         ]
@@ -195,6 +196,7 @@ async def get_event(
         modes=config.modes,
         seeds_per_mode=config.seeds_per_mode,
         rules=config.rules,
+        facts=config.facts,
         timeline=[
             EventTimelineStopResponse(key=s.key, label=s.label, date=s.date, kind=s.kind)
             for s in build_timeline(event, config)

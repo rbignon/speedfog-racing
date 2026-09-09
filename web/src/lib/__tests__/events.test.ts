@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
   blockOrder,
+  eventFacts,
   formatEventDate,
   formatEventDay,
   liveStage,
   ordinal,
   pollIntervalMs,
   racesSectionTitle,
+  seedSlots,
   timeRemaining,
 } from "$lib/events";
-import type { EventDetail, EventPhase, Race } from "$lib/api";
+import type {
+  EventDetail,
+  EventPhase,
+  EventQualifierRace,
+  Race,
+} from "$lib/api";
 
 const phases: EventPhase[] = [
   "upcoming",
@@ -20,13 +27,13 @@ const phases: EventPhase[] = [
 ];
 
 describe("blockOrder", () => {
-  it("renders the rules exactly once per phase (standalone, or inside the bracket block)", () => {
+  it("renders the rules exactly once per phase (standalone, or inside the take-part or bracket block)", () => {
     for (const phase of phases) {
       const blocks = blockOrder(phase);
-      expect(
-        blocks.includes("rules") !== blocks.includes("bracket_ladder"),
-        phase,
-      ).toBe(true);
+      const carriers = blocks.filter(
+        (b) => b === "rules" || b === "take_part" || b === "bracket_ladder",
+      );
+      expect(carriers.length, phase).toBe(1);
       expect(new Set(blocks).size, phase).toBe(blocks.length);
     }
   });
@@ -55,6 +62,64 @@ function detailWith(partial: Partial<EventDetail>): EventDetail {
     ...partial,
   } as EventDetail;
 }
+
+describe("eventFacts", () => {
+  const stages = [
+    { kind: "semi", races_expected: 3, date: "2026-10-04T19:00:00Z" },
+    { kind: "newcomers", races_expected: 3, date: "2026-10-18T19:00:00Z" },
+  ] as EventDetail["stages"];
+  const base = {
+    facts: null,
+    modes: [
+      { key: "standard", label: "Standard" },
+      { key: "boss_rush", label: "Boss Rush" },
+    ],
+    seeds_per_mode: 2,
+    stages,
+  };
+
+  it("uses the config's facts as they are when it sets any", () => {
+    const facts = [{ title: "Playoffs", lines: ["4 Sundays", "3 races each"] }];
+    expect(eventFacts({ ...base, facts }, () => "x")).toBe(facts);
+    expect(eventFacts({ ...base, facts: [] }, () => "x")[0].title).toBe(
+      "Qualifier",
+    );
+  });
+
+  it("derives the tiles from the event's shape, the newcomers' one only with that stage", () => {
+    const tiles = eventFacts(base, () => "Sun 18 Oct");
+    expect(tiles.map((t) => t.title)).toEqual([
+      "Qualifier",
+      "Modes",
+      "Playoffs",
+      "Newcomers",
+    ]);
+    expect(tiles[0].lines).toEqual(["4 seeds", "2 modes"]);
+    expect(tiles[1].lines).toEqual(["Standard", "Boss Rush"]);
+    expect(tiles[2].lines).toEqual(["2 stages", "3 races each"]);
+    expect(tiles[3].lines).toEqual(["Own final", "Sun 18 Oct"]);
+    expect(
+      eventFacts({ ...base, stages: [stages[0]] }, () => "x").map(
+        (t) => t.title,
+      ),
+    ).not.toContain("Newcomers");
+  });
+});
+
+describe("seedSlots", () => {
+  const seed2 = {
+    slot: "qualifier:standard:2",
+    index: 2,
+  } as EventQualifierRace;
+
+  it("keeps slot order when a lower seed is missing", () => {
+    expect(seedSlots([seed2], 2)).toEqual([null, seed2]);
+  });
+
+  it("yields one null per slot when nothing is attached", () => {
+    expect(seedSlots([], 3)).toEqual([null, null, null]);
+  });
+});
 
 describe("liveStage", () => {
   it("finds the stage that owns the live race", () => {
