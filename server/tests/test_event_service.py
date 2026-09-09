@@ -12,8 +12,15 @@ from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.schemas import EventConfig
 from speedfog_racing.services.event_service import (
     Slot,
+    StageEntry,
+    StageResult,
+    build_timeline,
     compute_ladder,
+    compute_phase,
     compute_qualified,
+    compute_stage_results,
+    current_stage_key,
+    final_field,
     newcomer_flags,
     parse_slot,
     score_race,
@@ -340,16 +347,6 @@ def test_qualified_leaves_slots_open_when_ladder_is_short():
 
 # --- stage results and final field -----------------------------------------
 
-from speedfog_racing.services.event_service import (  # noqa: E402
-    StageEntry,
-    StageResult,
-    build_timeline,
-    compute_phase,
-    compute_stage_results,
-    current_stage_key,
-    final_field,
-)
-
 
 def test_stage_results_sum_points_and_advance_only_when_complete():
     cfg = _config()
@@ -365,7 +362,10 @@ def test_stage_results_sum_points_and_advance_only_when_complete():
     partial = compute_stage_results(stage, [race1, race2], advance=2)
     assert partial.complete is False
     assert all(not e.advances for e in partial.entries)
-    # a: 100 + 25, d: 25 + 100, b: 75 + 50, c: 50 + 75 -> ties on points, igt decides.
+    # a: 100 + 25, d: 25 + 100, b: 75 + 50, c: 50 + 75 -> four-way points tie in this
+    # partial (two-race) state; race3 below breaks it by points alone (225/200/175/150,
+    # all distinct), so this test does not exercise the igt tie-break at completion. See
+    # test_stage_results_breaks_points_tie_by_igt_total for that.
     race3 = _race(
         [_participant(u, ParticipantStatus.FINISHED, 100 * (i + 1)) for i, u in enumerate(order)]
     )
@@ -374,6 +374,33 @@ def test_stage_results_sum_points_and_advance_only_when_complete():
     assert [e.user_id for e in full.entries][:2] == [a, b]
     assert [e.advances for e in full.entries] == [True, True, False, False]
     assert full.entries[0].points == 225
+
+
+def test_stage_results_breaks_points_tie_by_igt_total():
+    cfg = _config()
+    stage = cfg.stage("newcomers")  # races=2, kind is irrelevant to compute_stage_results
+    x, y = uuid4(), uuid4()
+    # race1: x wins (100pts, igt 100), y loses (50pts, igt 150).
+    race1 = _race(
+        [
+            _participant(x, ParticipantStatus.FINISHED, 100),
+            _participant(y, ParticipantStatus.FINISHED, 150),
+        ]
+    )
+    # race2: y wins (100pts, igt 50), x loses (50pts, igt 300).
+    race2 = _race(
+        [
+            _participant(y, ParticipantStatus.FINISHED, 50),
+            _participant(x, ParticipantStatus.FINISHED, 300),
+        ]
+    )
+    # Totals: x = 150pts / 400ms igt, y = 150pts / 200ms igt -> tied on points,
+    # y's lower summed igt must sort it first and, with advance=1, only y advances.
+    result = compute_stage_results(stage, [race1, race2], advance=1)
+    assert result.complete is True
+    assert [e.points for e in result.entries] == [150, 150]
+    assert [e.user_id for e in result.entries] == [y, x]
+    assert [e.advances for e in result.entries] == [True, False]
 
 
 def test_final_field_labels_undecided_semis():
@@ -388,6 +415,24 @@ def test_final_field_labels_undecided_semis():
     slots = final_field(final, {"semi_a": done}, labels)
     assert [(s.user_id, s.label) for s in slots[:2]] == [(a, "Semi A"), (b, "Semi A")]
     assert [(s.user_id, s.label) for s in slots[2:]] == [(None, "Top 2 of Semi B")] * 2
+
+
+def test_final_field_pads_short_decided_stages_to_the_advance_count():
+    cfg = _config()
+    final = cfg.final_stage()
+    a, b = uuid4(), uuid4()
+    # Each source stage is complete but produced only one advancing entry (advance=2):
+    # the field must still be padded to the full advance count with a placeholder.
+    short_a = StageResult(complete=True, entries=[StageEntry(a, 300, 0, True)])
+    short_b = StageResult(complete=True, entries=[StageEntry(b, 250, 0, True)])
+    labels = {"semi_a": "Semi A", "semi_b": "Semi B"}
+    slots = final_field(final, {"semi_a": short_a, "semi_b": short_b}, labels)
+    assert [(s.user_id, s.label) for s in slots] == [
+        (a, "Semi A"),
+        (None, "Top 2 of Semi A"),
+        (b, "Semi B"),
+        (None, "Top 2 of Semi B"),
+    ]
 
 
 # --- phase ------------------------------------------------------------------

@@ -296,17 +296,24 @@ class FieldSlot:
 def final_field(
     final: EventStage, results: dict[str, StageResult], labels: dict[str, str]
 ) -> list[FieldSlot]:
-    """The final's field: advancing runners of each source stage, or a placeholder."""
-    count = final.advance or 2
+    """The final's field: the union of advancing runners from ``from``, or a placeholder."""
+    assert final.advance is not None, "a final stage always declares advance"
+    count = final.advance
     slots: list[FieldSlot] = []
     for key in final.from_ or []:
         result = results.get(key)
+        placeholder = f"Top {count} of {labels[key]}"
         if result is not None and result.complete:
-            slots.extend(
-                FieldSlot(user_id=e.user_id, label=labels[key]) for e in result.entries[:count]
+            decided = [
+                FieldSlot(user_id=e.user_id, label=labels[key])
+                for e in result.entries
+                if e.advances
+            ]
+            decided.extend(
+                FieldSlot(user_id=None, label=placeholder) for _ in range(count - len(decided))
             )
+            slots.extend(decided)
         else:
-            placeholder = f"Top {count} of {labels[key]}"
             slots.extend(FieldSlot(user_id=None, label=placeholder) for _ in range(count))
     return slots
 
@@ -338,7 +345,11 @@ def compute_phase(
 
 
 def current_stage_key(config: EventConfig, now: datetime) -> str | None:
-    """The stage dated today (UTC), else the next one, else the last one."""
+    """The stage dated today (UTC), else the next one, else the last one.
+
+    ``now`` must be timezone-aware; a naive datetime makes ``astimezone`` assume the
+    local zone (silently wrong) and the ``s.date > now`` comparison raise.
+    """
     if not config.stages:
         return None
     today = now.astimezone(UTC).date()
@@ -368,7 +379,8 @@ def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
         TimelineStop(key="cut", label="Cut", date=event.qualifier_ends_at, kind="cut"),
     ]
     stops.extend(
-        TimelineStop(key=s.key, label=s.label, date=s.date, kind=s.kind) for s in config.stages
+        TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind)
+        for s in config.stages
     )
     return stops
 
