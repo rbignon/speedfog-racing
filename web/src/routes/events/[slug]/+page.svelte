@@ -370,7 +370,7 @@
                       <RaceCard race={entry.race} />
                     {:else}
                       <EventRacePlaceholder
-                        name={[shown.label, `Race ${i + 1}`, shown.modes[i]]
+                        name={[`Race ${i + 1}`, shown.modes[i]]
                           .filter(Boolean)
                           .join(" · ")}
                         note="Announced on the day"
