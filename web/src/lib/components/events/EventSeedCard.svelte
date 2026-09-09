@@ -41,8 +41,16 @@
   let overflow = $derived(
     Math.max(0, (race?.participant_count ?? 0) - previews.length),
   );
+  // A scored DNF validated the seed (it holds a rank and points), so it rides
+  // the done colour like a finished run; a DNF that never scored (fewer than
+  // two zone entries) stays neutral, like an unplayed seed.
+  let scored = $derived(done && mine?.points != null);
   let routeClass = $derived(
-    finished ? "route-done" : closed ? "route-finished" : "route-running",
+    finished || scored
+      ? "route-done"
+      : closed
+        ? "route-finished"
+        : "route-running",
   );
 </script>
 
@@ -76,7 +84,7 @@
     </div>
   </div>
 {:else}
-  <a href="/race/{race.id}" class="seed-card" class:done={finished}>
+  <a href="/race/{race.id}" class="seed-card {routeClass}">
     <div class="route {routeClass}" aria-hidden="true">
       <span class="line"></span>
       <span class="m-start"></span>
@@ -129,7 +137,7 @@
           <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
         </div>
         {#if done && mine}
-          <div class="result" class:dnf>
+          <div class="result" class:unscored={!finished && !scored}>
             Your run: {dnf
               ? "DNF"
               : mine.rank
@@ -153,7 +161,8 @@
 <style>
   .seed-card {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-top-color: transparent;
@@ -169,12 +178,11 @@
     left: -10px;
     right: -10px;
   }
+  /* Hover takes the route line's own hue (the root carries the route state
+   * class), as race cards do. */
   a.seed-card:hover {
-    border-color: var(--color-purple);
+    border-color: var(--route-color, var(--color-purple));
     border-top-color: transparent;
-  }
-  .seed-card.done {
-    border-color: rgba(74, 174, 140, 0.45);
   }
   .seed-card.placeholder .name,
   .seed-card.placeholder .remaining {
@@ -185,6 +193,7 @@
   }
   .inner {
     display: flex;
+    flex: 1;
     min-width: 0;
   }
   .content {
@@ -267,7 +276,7 @@
     color: var(--color-success);
     margin-top: 0.3rem;
   }
-  .result.dnf {
+  .result.unscored {
     color: var(--color-text-secondary);
   }
   .play-strip {

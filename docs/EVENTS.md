@@ -118,8 +118,10 @@ signed-in viewer: `not_played` (never joined), `joined` (registered or ready,
 the pack still to run), `playing`, or `done` (always with `igt_ms`; also
 `rank`, `points` and `provisional` once the run has a score, i.e. at least
 two zone entries). `finished` is present on every `my_result` and is false
-for an abandoned run, which the page labels DNF. `null` for anonymous
-viewers. `closes_at` is the race's
+for an abandoned run, which the page labels DNF. On the seed card a scored
+DNF takes the finished colour (verdigris route line and result line), since
+the run holds a rank and points; a DNF without a score stays neutral. `null`
+for anonymous viewers. `closes_at` is the race's
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
 

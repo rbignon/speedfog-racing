@@ -136,7 +136,7 @@ describe("EventSeedCard state signal", () => {
     });
     expect(getByText("Done")).toBeTruthy();
     expect(container.querySelector(".play-strip")).toBeNull();
-    expect(container.querySelector(".seed-card.done")).not.toBeNull();
+    expect(container.querySelector(".seed-card.route-done")).not.toBeNull();
     const result = container.querySelector(".result");
     expect(result?.textContent).toContain("2nd");
     expect(result?.textContent).toContain("87 pts provisional");
@@ -163,8 +163,9 @@ describe("EventSeedCard state signal", () => {
     expect(getByText("DNF")).toBeTruthy();
     expect(queryByText("Done")).toBeNull();
     expect(container.querySelector(".play-strip")).toBeNull();
-    expect(container.querySelector(".seed-card.done")).toBeNull();
-    expect(container.querySelector(".result.dnf")).not.toBeNull();
+    // A scored DNF validated the seed: it rides the done colour, not the open one.
+    expect(container.querySelector(".seed-card.route-done")).not.toBeNull();
+    expect(container.querySelector(".result.unscored")).toBeNull();
     const result = container.querySelector(".result")?.textContent ?? "";
     expect(result).toContain("DNF");
     expect(result).toContain("14th");
@@ -190,6 +191,9 @@ describe("EventSeedCard state signal", () => {
       now,
     });
     expect(container.querySelector(".result")?.textContent).toContain("DNF");
+    // No score, so nothing validated: neutral route and a muted result line.
+    expect(container.querySelector(".seed-card.route-done")).toBeNull();
+    expect(container.querySelector(".result.unscored")).not.toBeNull();
   });
 
   it("shows Closed with no Play strip once the window has passed, even if unplayed", () => {

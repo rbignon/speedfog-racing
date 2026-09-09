@@ -210,7 +210,12 @@
                   <a
                     href={getTwitchLoginUrl()}
                     class="btn btn-twitch"
-                    data-sveltekit-reload>Sign in with Twitch</a
+                    data-sveltekit-reload
+                    onclick={() =>
+                      sessionStorage.setItem(
+                        "redirect_after_login",
+                        window.location.pathname,
+                      )}>Sign in with Twitch</a
                   >
                 {/if}
               </div>

@@ -92,8 +92,10 @@
             >
           {/each}
           {#if entry.total === null}
-            <span class="cell miss"
-              >{entry.modes_scored} / {modes.length} modes</span
+            <span
+              class="cell miss"
+              title="{entry.modes_scored} of {modes.length} modes scored"
+              >{entry.modes_scored}/{modes.length}</span
             >
           {:else}
             <span class="cell total" class:prov={entry.provisional}

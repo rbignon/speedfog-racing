@@ -189,6 +189,6 @@ describe("EventLadder rows", () => {
       viewerId: null,
       note: "",
     });
-    expect(getByText("1 / 2 modes")).toBeTruthy();
+    expect(getByText("1/2")).toBeTruthy();
   });
 });
