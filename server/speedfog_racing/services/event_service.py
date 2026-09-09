@@ -151,6 +151,9 @@ def compute_ladder(modes: list[str], qualifier_races: list[tuple[Slot, Race]]) -
         for user_id, score in score_race(race).items():
             per_mode = best.setdefault(user_id, {})
             current = per_mode.get(slot.key)
+            # A still-PLAYING participant's partial igt_ms can win this comparison and
+            # become the counted seed until the run ends; score.provisional flags that
+            # case and the entry self-corrects once the race finishes.
             candidate = (score.points, score.igt_ms, score.provisional, str(slot))
             if (
                 current is None

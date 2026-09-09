@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from speedfog_racing.schemas import EventConfig
+from speedfog_racing.schemas import EventConfig, EventUpsertRequest
 
 
 def _config(**overrides):
@@ -106,6 +106,48 @@ def test_phase_override_must_be_a_phase():
 def test_announced_at_must_be_timezone_aware():
     with pytest.raises(ValidationError, match="announced_at"):
         EventConfig.model_validate(_config(announced_at="2026-10-01T10:00:00"))
+
+
+def test_stage_date_must_be_timezone_aware():
+    stages = _config()["stages"]
+    stages[0]["date"] = "2026-10-04T19:00:00"
+    with pytest.raises(ValidationError, match="date must be timezone-aware"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_final_without_advance_rejected():
+    stages = _config()["stages"]
+    del stages[3]["advance"]
+    with pytest.raises(ValidationError, match="a final stage needs from and advance"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_newcomers_without_size_rejected():
+    stages = _config()["stages"]
+    del stages[2]["size"]
+    with pytest.raises(ValidationError, match="a newcomers stage needs size"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_event_upsert_rejects_naive_dates():
+    """A naive starts_at/ends_at must be rejected up front: compared against an aware
+    stage date it would raise TypeError (a 500), and stored as-is it would silently
+    shift on the TIMESTAMPTZ column."""
+    base_doc = {
+        "slug": "season-one",
+        "name": "Season One",
+        "starts_at": "2026-09-23T08:00:00+00:00",
+        "qualifier_ends_at": "2026-09-30T08:00:00+00:00",
+        "ends_at": "2026-10-26T00:00:00+00:00",
+        "config": _config(),
+    }
+    naive_starts = dict(base_doc, starts_at="2026-09-23T08:00:00")
+    with pytest.raises(ValidationError, match="starts_at"):
+        EventUpsertRequest.model_validate(naive_starts)
+
+    naive_ends = dict(base_doc, ends_at="2026-10-26T00:00:00")
+    with pytest.raises(ValidationError, match="ends_at"):
+        EventUpsertRequest.model_validate(naive_ends)
 
 
 def test_from_alias_round_trips_through_json_dump():

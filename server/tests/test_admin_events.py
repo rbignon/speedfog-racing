@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -44,6 +45,7 @@ DOC = {
             },
         ],
         "rules": [],
+        "phase_override": "cut",
     },
 }
 
@@ -105,11 +107,27 @@ async def test_upsert_requires_admin(test_client, users):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "method, path, body",
+    [
+        ("GET", "/api/admin/events", None),
+        ("POST", f"/api/admin/races/{uuid.uuid4()}/event", {"event_id": None}),
+    ],
+)
+async def test_events_admin_endpoints_require_admin(test_client, users, method, path, body):
+    async with test_client as client:
+        response = await client.request(
+            method, path, json=body, headers={"Authorization": "Bearer tok-orga"}
+        )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_upsert_creates_then_updates(test_client, users):
     async with test_client as client:
         created = await client.post("/api/admin/events", json=DOC, headers=ADMIN)
         assert created.status_code == 200, created.text
-        assert created.json()["phase"] in ("upcoming", "qualifier", "cut", "playoffs", "finished")
+        assert created.json()["phase"] == "cut"
         renamed = dict(DOC, name="Fog Cup")
         updated = await client.post("/api/admin/events", json=renamed, headers=ADMIN)
         assert updated.json()["name"] == "Fog Cup"
@@ -151,6 +169,43 @@ async def _race(db, orga, pool: str, number: str, **kw) -> Race:
     db.add(race)
     await db.flush()
     return race
+
+
+@pytest.mark.asyncio
+async def test_upsert_refuses_config_that_orphans_an_attached_slot(
+    test_client, users, async_session
+):
+    _, orga = users
+    async with async_session() as db:
+        std = await _race(db, orga, "standard", "s7")
+        await db.commit()
+    async with test_client as client:
+        created = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()
+        event_id = created["id"]
+        attached = await client.post(
+            f"/api/admin/races/{std.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+        assert attached.status_code == 200, attached.text
+
+        dropped_mode = dict(
+            DOC,
+            config=dict(DOC["config"], modes=[{"key": "boss_rush", "label": "Boss Rush"}]),
+        )
+        rejected = await client.post("/api/admin/events", json=dropped_mode, headers=ADMIN)
+        assert rejected.status_code == 422
+        assert "qualifier:standard:1" in rejected.text
+
+        listed = await client.get("/api/admin/events", headers=ADMIN)
+        assert listed.json()[0]["config"] == created["config"]
+
+        relabeled = dict(
+            DOC,
+            config=dict(DOC["config"], modes=[{"key": "standard", "label": "Standard Mode"}]),
+        )
+        compatible = await client.post("/api/admin/events", json=relabeled, headers=ADMIN)
+        assert compatible.status_code == 200, compatible.text
 
 
 @pytest.mark.asyncio

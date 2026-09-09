@@ -33,7 +33,21 @@ last.
 
 Validation also rejects: seed numbers reused across `semi` stages (not just
 within one stage), a `phase_override` outside the five phases, and a naive
-(timezone-less) `announced_at` or stage `date`.
+(timezone-less) `announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
+and `ends_at` on the upsert request are rejected the same way when naive.
+
+Two invariants worth keeping in mind when editing this schema:
+
+- Any future tightening of `EventConfig` validation must ship together with a
+  backfill of already-stored configs: the public event page validates the
+  stored document on every request, so a document that was valid when saved
+  but fails the new rules would break the page for every viewer until it is
+  fixed or backfilled.
+- A semi stage's `seeds` must cover ladder positions contiguously from 1
+  (across all semi stages combined). The newcomers' group draws from the
+  ladder positions after the largest seed used by any semi, so a gap in the
+  seed numbering silently excludes those positions from both the semis and
+  the newcomers' group.
 
 ### Timeline
 
@@ -56,7 +70,7 @@ The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
 advancing runners (the final's `advance`) then fill the final automatically.
 
-The admin events list computes `phase` without loading the event's races, so
+The admin events list computes `phase` without grouping the races by stage, so
 it always treats the last stage as not yet complete. This only matters
 between the last stage finishing and `ends_at`: in that window the admin list
 still shows `playoffs`, while the public event page (which loads the stage
@@ -100,7 +114,11 @@ two zone entries); `null` for anonymous viewers. `closes_at` is the race's
 1. `/admin`, Events tab: create the event from the template, adjust dates,
    modes and stages, save. Mode keys must be pool names. A rejected save
    shows the server's validation errors next to the JSON editor, each
-   prefixed with its field path.
+   prefixed with its field path. A save is also rejected when the new config
+   would orphan a race already attached to a slot it no longer has room for
+   (a removed or renamed mode or stage, or a lowered `seeds_per_mode`): the
+   error names the orphaned slots, and nothing is stored until the races are
+   detached from the Races tab.
 2. Before the qualifier: create the qualifier races with the normal form,
    private, registration by link, late join equal to the duration (10080
    minutes for a week), then attach each to `qualifier:<mode>:<n>` from the

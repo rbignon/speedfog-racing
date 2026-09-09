@@ -1101,9 +1101,10 @@ def _admin_event_response(event: Event) -> AdminEventResponse:
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
         first_stage_at=config.stages[0].date if config.stages else None,
-        # The admin list does not load stage races (unlike the public event page),
-        # so it cannot tell whether the last stage is complete; treat it as not
-        # complete, which only affects the "playoffs" vs "finished" phase split.
+        # The admin list does not group the attached races by stage (unlike the
+        # public event page), so it cannot tell whether the last stage is
+        # complete; treat it as not complete, which only affects the
+        # "playoffs" vs "finished" phase split.
         last_stage_complete=False,
         override=config.phase_override,
     )
@@ -1157,7 +1158,25 @@ async def admin_upsert_event(
         )
     stmt = select(Event).where(Event.slug == request.slug).options(selectinload(Event.races))
     event = (await db.execute(stmt)).scalar_one_or_none()
-    if event is None:
+    if event is not None:
+        # ``race.event_slot`` is only ever written by ``admin_attach_race_to_event``
+        # below, which already ran it through ``parse_slot``/``validate_slot`` before
+        # persisting, so it is always well-formed here; ``parse_slot`` is not
+        # expected to raise.
+        orphaned = sorted(
+            race.event_slot
+            for race in event.races
+            if race.event_slot is not None
+            and validate_slot(parse_slot(race.event_slot), request.config) is not None
+        )
+        if orphaned:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=(
+                    f"config change would orphan attached races: {orphaned}; detach them first"
+                ),
+            )
+    else:
         event = Event(slug=request.slug)
         db.add(event)
     event.name = request.name
@@ -1279,10 +1298,10 @@ async def admin_attach_race_to_event(
         race.exclude_from_stats = True
     try:
         await db.commit()
-    except IntegrityError:
+    except IntegrityError as exc:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"slot {request.slot} is taken",
-        )
+        ) from exc
     return race_response(race)

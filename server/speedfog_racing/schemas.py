@@ -1163,6 +1163,9 @@ class EventUpsertRequest(BaseModel):
 
     @model_validator(mode="after")
     def _check_dates(self) -> "EventUpsertRequest":
+        for field_name in ("starts_at", "qualifier_ends_at", "ends_at"):
+            if getattr(self, field_name).tzinfo is None:
+                raise ValueError(f"{field_name} must be timezone-aware")
         if not self.starts_at < self.qualifier_ends_at:
             raise ValueError("starts_at must be before qualifier_ends_at")
         if self.config.stages:
