@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.api.helpers import race_response
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, User
+from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    User,
+    compute_late_join_deadlines,
+)
 from speedfog_racing.schemas import (
     EventConfig,
     EventDetailResponse,
@@ -39,6 +46,7 @@ from speedfog_racing.services.event_service import (
     compute_stage_results,
     count_finished_before,
     current_stage_key,
+    event_window,
     final_field,
     load_event,
     newcomer_flags,
@@ -74,15 +82,6 @@ def _my_result(race: Race, user: User | None) -> EventMyResultResponse | None:
     )
 
 
-def _closes_at(race: Race) -> datetime | None:
-    if race.started_at is None or race.race_duration_minutes is None:
-        return None
-    started = race.started_at
-    if started.tzinfo is None:
-        started = started.replace(tzinfo=UTC)
-    return started + timedelta(minutes=race.race_duration_minutes)
-
-
 @router.get("/{slug}", response_model=EventDetailResponse)
 async def get_event(
     slug: str,
@@ -92,15 +91,7 @@ async def get_event(
     event = await load_event(db, slug)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    # SQLite drops the UTC offset on round-trip; re-attach it so date comparisons
-    # below (against datetime.now(UTC) and the config's timezone-aware stage dates)
-    # do not raise on naive-vs-aware.
-    if event.starts_at.tzinfo is None:
-        event.starts_at = event.starts_at.replace(tzinfo=UTC)
-    if event.qualifier_ends_at.tzinfo is None:
-        event.qualifier_ends_at = event.qualifier_ends_at.replace(tzinfo=UTC)
-    if event.ends_at.tzinfo is None:
-        event.ends_at = event.ends_at.replace(tzinfo=UTC)
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
     config = EventConfig.model_validate(event.config)
     now = datetime.now(UTC)
 
@@ -127,7 +118,7 @@ async def get_event(
 
     users: dict[UUID, User] = {p.user_id: p.user for race in event.races for p in race.participants}
     ladder = compute_ladder(mode_keys, qualifier)
-    finished_before = await count_finished_before(db, set(users), event.starts_at)
+    finished_before = await count_finished_before(db, set(users), starts_at)
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     qualified = compute_qualified(ladder, config, newcomers)
 
@@ -145,16 +136,25 @@ async def get_event(
     last = config.stages[-1] if config.stages else None
     phase = compute_phase(
         now=now,
-        starts_at=event.starts_at,
-        qualifier_ends_at=event.qualifier_ends_at,
-        ends_at=event.ends_at,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
         first_stage_at=config.stages[0].date if config.stages else None,
         last_stage_complete=results[last.key].complete if last is not None else False,
         override=config.phase_override,
     )
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
+    # Config stage order, then by index within a stage: a race attached under a
+    # slot key no longer in the config never becomes the live race, and ties
+    # between two RUNNING stage races resolve deterministically.
     live = next(
-        (r for s, r in attached if s.kind == "stage" and r.status == RaceStatus.RUNNING), None
+        (
+            r
+            for stage in config.stages
+            for _, r in stage_races[stage.key]
+            if r.status == RaceStatus.RUNNING
+        ),
+        None,
     )
     upcoming = next((s for s in config.stages if s.date > now), None)
 
@@ -184,9 +184,9 @@ async def get_event(
         partner_name=event.partner_name,
         partner_url=event.partner_url,
         partner_logo_url=event.partner_logo_url,
-        starts_at=event.starts_at,
-        qualifier_ends_at=event.qualifier_ends_at,
-        ends_at=event.ends_at,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
         newcomer_threshold=event.newcomer_threshold,
         phase=phase,
         ladder_final=ladder_final,
@@ -203,7 +203,7 @@ async def get_event(
                 mode=slot.key,
                 index=slot.index,
                 race=race_response(race, user),
-                closes_at=_closes_at(race),
+                closes_at=compute_late_join_deadlines(race)[1],
                 my_result=_my_result(race, user),
             )
             for slot, race in qualifier

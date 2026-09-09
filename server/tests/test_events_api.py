@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -62,7 +63,21 @@ CONFIG = {
         },
     ],
     "rules": ["One sitting per run."],
+    "phase_override": "qualifier",
 }
+
+
+def _expected_next_stage_key() -> str | None:
+    """The key of the first configured stage dated after the real wall clock.
+
+    Mirrors the endpoint's own selection so the assertion stays correct
+    whenever this suite runs, rather than pinning it to today's date.
+    """
+    now = datetime.now(UTC)
+    for stage in CONFIG["stages"]:
+        if datetime.fromisoformat(stage["date"]) > now:
+            return stage["key"]
+    return None
 
 
 @pytest.fixture
@@ -221,7 +236,8 @@ async def test_detail_ladder_is_provisional_during_qualifier(test_client, world)
         response = await client.get("/api/events/season-one")
     assert response.status_code == 200
     data = response.json()
-    assert data["phase"] in ("upcoming", "qualifier", "cut", "playoffs", "finished")  # wall clock
+    assert data["phase"] == "qualifier"
+    assert data["current_stage_key"] is None
     assert data["ladder_final"] is False
     assert data["ladder"]["provisional"] is True
     entries = {e["user"]["twitch_username"]: e for e in data["ladder"]["entries"]}
@@ -273,3 +289,60 @@ async def test_my_result_for_signed_in_viewer(test_client, world):
     assert by_slot["qualifier:standard:2"]["status"] == "not_played"
     assert by_slot["qualifier:boss_rush:1"]["status"] == "playing"
     assert by_slot["qualifier:boss_rush:2"]["status"] == "joined"
+
+
+@pytest.mark.asyncio
+async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race(
+    test_client, async_session
+):
+    """All qualifiers finished (final ladder), a bogus slot, and a live semi race."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        event = await _event(db)
+        s1 = await _seed(db, "standard", "s1")
+        s2 = await _seed(db, "standard", "s2")
+        b1 = await _seed(db, "boss_rush", "b1")
+        b2 = await _seed(db, "boss_rush", "b2")
+        stray_seed = await _seed(db, "standard", "stray")
+        semi_seed = await _seed(db, "standard", "semi1")
+
+        std1 = await _race(db, orga, s1, event, "qualifier:standard:1", status=RaceStatus.FINISHED)
+        std2 = await _race(db, orga, s2, event, "qualifier:standard:2", status=RaceStatus.FINISHED)
+        boss1 = await _race(
+            db, orga, b1, event, "qualifier:boss_rush:1", status=RaceStatus.FINISHED
+        )
+        await _race(db, orga, b2, event, "qualifier:boss_rush:2", status=RaceStatus.FINISHED)
+        await _entry(db, std1, ana, ParticipantStatus.FINISHED, 2_000_000)
+        await _entry(db, std1, bob, ParticipantStatus.FINISHED, 1_500_000)
+        await _entry(db, std2, ana, ParticipantStatus.FINISHED, 1_000_000)
+        await _entry(db, boss1, ana, ParticipantStatus.FINISHED, 3_000_000)
+        await _entry(db, boss1, bob, ParticipantStatus.FINISHED, 2_500_000)
+
+        # A race attached under a slot key the config no longer recognizes: must be
+        # dropped entirely, not surfaced as a live race or counted anywhere.
+        bogus = await _race(db, orga, stray_seed, event, "nonsense", status=RaceStatus.RUNNING)
+        semi_race = await _race(
+            db, orga, semi_seed, event, "semi_a:1", status=RaceStatus.RUNNING, is_public=True
+        )
+        await db.commit()
+        bogus_id, semi_race_id = str(bogus.id), str(semi_race.id)
+
+    async with test_client as client:
+        response = await client.get("/api/events/season-one")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["ladder_final"] is True
+    assert data["ladder"]["provisional"] is False
+    assert data["qualified"]["provisional"] is False
+    assert bogus_id not in json.dumps(data)
+    assert data["live_race"] is not None
+    assert data["live_race"]["id"] == semi_race_id
+
+    expected_next = _expected_next_stage_key()
+    if expected_next is None:
+        assert data["next_stage"] is None
+    else:
+        assert data["next_stage"]["key"] == expected_next

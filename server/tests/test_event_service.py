@@ -502,3 +502,18 @@ def test_timeline_uses_announced_at_when_present():
     assert stops[0].date == T0 - timedelta(days=7)
     cfg.announced_at = datetime(2026, 9, 16, 18, tzinfo=UTC)
     assert build_timeline(event, cfg)[0].date == cfg.announced_at
+
+
+def test_build_timeline_normalizes_naive_dates_without_mutating_event():
+    """A SQLite round-trip drops the UTC offset; the fix must not write it back."""
+    cfg = _config()
+    naive_event = SimpleNamespace(
+        starts_at=T0.replace(tzinfo=None),
+        qualifier_ends_at=CUT.replace(tzinfo=None),
+        ends_at=END.replace(tzinfo=None),
+    )
+    stops = build_timeline(naive_event, cfg)
+    assert all(s.date.tzinfo is not None for s in stops)
+    assert naive_event.starts_at.tzinfo is None
+    assert naive_event.qualifier_ends_at.tzinfo is None
+    assert naive_event.ends_at.tzinfo is None

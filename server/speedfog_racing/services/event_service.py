@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Caster, Event, Participant, ParticipantStatus, Race, RaceStatus
-from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage
+from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage, as_aware_utc
 from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
     compute_daily_points,
@@ -360,6 +360,26 @@ def current_stage_key(config: EventConfig, now: datetime) -> str | None:
     return upcoming[0].key if upcoming else config.stages[-1].key
 
 
+# --- event window -----------------------------------------------------------
+
+
+def event_window(event: Event) -> tuple[datetime, datetime, datetime]:
+    """Aware ``(starts_at, qualifier_ends_at, ends_at)``, without touching ``event``.
+
+    SQLite drops the UTC offset on ``DateTime(timezone=True)`` round-trips, so a row
+    loaded from a SQLite session comes back naive; reassigning the ORM attributes to
+    fix that would dirty the session, and a later autoflush would turn a read-only
+    request into a write. Callers get the normalized values as locals instead.
+    """
+    starts_at = as_aware_utc(event.starts_at)
+    qualifier_ends_at = as_aware_utc(event.qualifier_ends_at)
+    ends_at = as_aware_utc(event.ends_at)
+    assert starts_at is not None
+    assert qualifier_ends_at is not None
+    assert ends_at is not None
+    return starts_at, qualifier_ends_at, ends_at
+
+
 # --- timeline ---------------------------------------------------------------
 
 
@@ -372,11 +392,12 @@ class TimelineStop:
 
 
 def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
-    announced = config.announced_at or (event.starts_at - timedelta(days=7))
+    starts_at, qualifier_ends_at, _ends_at = event_window(event)
+    announced = config.announced_at or (starts_at - timedelta(days=7))
     stops = [
         TimelineStop(key="announce", label="Announce", date=announced, kind="announce"),
-        TimelineStop(key="open", label="Seeds open", date=event.starts_at, kind="open"),
-        TimelineStop(key="cut", label="Cut", date=event.qualifier_ends_at, kind="cut"),
+        TimelineStop(key="open", label="Seeds open", date=starts_at, kind="open"),
+        TimelineStop(key="cut", label="Cut", date=qualifier_ends_at, kind="cut"),
     ]
     stops.extend(
         TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind)
