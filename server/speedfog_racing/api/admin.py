@@ -7,6 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import case, func, literal, select, union_all
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1100,6 +1101,9 @@ def _admin_event_response(event: Event) -> AdminEventResponse:
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
         first_stage_at=config.stages[0].date if config.stages else None,
+        # The admin list does not load stage races (unlike the public event page),
+        # so it cannot tell whether the last stage is complete; treat it as not
+        # complete, which only affects the "playoffs" vs "finished" phase split.
         last_stage_complete=False,
         override=config.phase_override,
     )
@@ -1228,21 +1232,32 @@ async def admin_attach_race_to_event(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"race pool must be {slot.key!r} for slot {request.slot}",
             )
-        if race.late_join_window_minutes != race.race_duration_minutes:
+        if (
+            race.late_join_window_minutes is None
+            or race.race_duration_minutes is None
+            or race.late_join_window_minutes != race.race_duration_minutes
+        ):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="qualifier races need late_join_window_minutes == race_duration_minutes",
+                detail=(
+                    "qualifier races need late_join_window_minutes and "
+                    "race_duration_minutes both set and equal"
+                ),
             )
     else:
         stage = config.stage(slot.key)
-        if stage is None:
-            size = 4
-        elif stage.kind == "semi":
-            size = len(stage.seeds or [])
+        assert stage is not None, "validate_slot already rejected unknown stages"
+        if stage.kind == "semi":
+            assert stage.seeds is not None, "schema requires seeds for a semi stage"
+            size = len(stage.seeds)
         elif stage.kind == "newcomers":
-            size = stage.size or 4
+            assert stage.size is not None, "schema requires size for a newcomers stage"
+            size = stage.size
         else:
-            size = (stage.advance or 2) * len(stage.from_ or [])
+            assert stage.advance is not None and stage.from_ is not None, (
+                "schema requires from and advance for a final stage"
+            )
+            size = stage.advance * len(stage.from_)
         if race.max_participants is not None and race.max_participants < size:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -1262,5 +1277,12 @@ async def admin_attach_race_to_event(
     race.event_slot = request.slot
     if slot.kind == "qualifier":
         race.exclude_from_stats = True
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"slot {request.slot} is taken",
+        )
     return race_response(race)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -138,14 +138,14 @@ async def _race(db, orga, pool: str, number: str, **kw) -> Race:
     )
     db.add(seed)
     await db.flush()
+    kw.setdefault("late_join_window_minutes", 10080)
+    kw.setdefault("race_duration_minutes", 10080)
     race = Race(
         name=number,
         organizer_id=orga.id,
         seed_id=seed.id,
         is_public=False,
         open_registration=True,
-        late_join_window_minutes=10080,
-        race_duration_minutes=10080,
         **kw,
     )
     db.add(race)
@@ -216,3 +216,85 @@ async def test_attach_stage_slot_requires_room_for_the_field(test_client, users,
             headers=ADMIN,
         )
     assert response.status_code == 422 and "max_participants" in response.text
+
+
+@pytest.mark.asyncio
+async def test_attach_rejects_daily_seed(test_client, users, async_session):
+    _, orga = users
+    async with async_session() as db:
+        daily = await _race(db, orga, "standard", "d1", daily_date=date(2026, 9, 1))
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        response = await client.post(
+            f"/api/admin/races/{daily.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+    assert response.status_code == 422 and "daily" in response.text
+
+
+@pytest.mark.asyncio
+async def test_attach_qualifier_rejects_mismatched_window(test_client, users, async_session):
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(
+            db,
+            orga,
+            "standard",
+            "s4",
+            late_join_window_minutes=60,
+            race_duration_minutes=10080,
+        )
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        response = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+    assert response.status_code == 422 and "late_join" in response.text
+
+
+@pytest.mark.asyncio
+async def test_attach_qualifier_rejects_unset_window(test_client, users, async_session):
+    """Both durations NULL must not vacuously satisfy the equality check."""
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(
+            db,
+            orga,
+            "standard",
+            "s5",
+            late_join_window_minutes=None,
+            race_duration_minutes=None,
+        )
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        response = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+    assert response.status_code == 422 and "late_join" in response.text
+
+
+@pytest.mark.asyncio
+async def test_attach_stage_slot_succeeds_without_excluding_from_stats(
+    test_client, users, async_session
+):
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(db, orga, "standard", "s6", max_participants=2)
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        response = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "semi_a:1"},
+            headers=ADMIN,
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["exclude_from_stats"] is False
