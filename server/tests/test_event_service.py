@@ -1,0 +1,261 @@
+"""Pure scoring and phase logic of tournament events."""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from uuid import UUID, uuid4
+
+import pytest
+
+from speedfog_racing.models import ParticipantStatus, RaceStatus
+from speedfog_racing.schemas import EventConfig
+from speedfog_racing.services.event_service import (
+    Slot,
+    compute_ladder,
+    compute_qualified,
+    newcomer_flags,
+    parse_slot,
+    score_race,
+    validate_slot,
+)
+
+MODES = ["standard", "boss_rush"]
+
+
+def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
+    return EventConfig.model_validate(
+        {
+            "modes": [{"key": m, "label": m} for m in MODES],
+            "seeds_per_mode": 2,
+            "stages": [
+                {
+                    "key": "semi_a",
+                    "label": "Semi A",
+                    "kind": "semi",
+                    "date": "2026-10-04T19:00:00Z",
+                    "races": 3,
+                    "seeds": list(seeds_a),
+                },
+                {
+                    "key": "semi_b",
+                    "label": "Semi B",
+                    "kind": "semi",
+                    "date": "2026-10-11T19:00:00Z",
+                    "races": 3,
+                    "seeds": list(seeds_b),
+                },
+                {
+                    "key": "newcomers",
+                    "label": "Newcomers",
+                    "kind": "newcomers",
+                    "date": "2026-10-18T19:00:00Z",
+                    "races": 2,
+                    "size": newcomers_size,
+                },
+                {
+                    "key": "final",
+                    "label": "Final",
+                    "kind": "final",
+                    "date": "2026-10-25T19:00:00Z",
+                    "races": 3,
+                    "from": ["semi_a", "semi_b"],
+                    "advance": 2,
+                },
+            ],
+        }
+    )
+
+
+def _participant(user_id: UUID, status: ParticipantStatus, igt_ms: int, layer: int = 5):
+    # Two zone entries make the run "qualified" for scoring, as on dailies.
+    return SimpleNamespace(
+        id=uuid4(),
+        user_id=user_id,
+        status=status,
+        igt_ms=igt_ms,
+        current_layer=layer,
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+
+def _race(participants, status=RaceStatus.FINISHED):
+    return SimpleNamespace(status=status, participants=list(participants))
+
+
+# --- slots ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, kind, key, index",
+    [("qualifier:standard:2", "qualifier", "standard", 2), ("semi_a:3", "stage", "semi_a", 3)],
+)
+def test_parse_slot(raw, kind, key, index):
+    assert parse_slot(raw) == Slot(kind=kind, key=key, index=index)
+
+
+@pytest.mark.parametrize("raw", ["qualifier:standard", "semi_a:0", "semi_a:x", "a:b:c:d", ""])
+def test_parse_slot_rejects_malformed(raw):
+    with pytest.raises(ValueError):
+        parse_slot(raw)
+
+
+def test_validate_slot_against_config():
+    cfg = _config()
+    assert validate_slot(parse_slot("qualifier:standard:2"), cfg) is None
+    assert "seeds_per_mode" in (validate_slot(parse_slot("qualifier:standard:3"), cfg) or "")
+    assert "unknown mode" in (validate_slot(parse_slot("qualifier:sprint:1"), cfg) or "")
+    assert validate_slot(parse_slot("semi_a:3"), cfg) is None
+    assert "races" in (validate_slot(parse_slot("semi_a:4"), cfg) or "")
+    assert "unknown stage" in (validate_slot(parse_slot("quarter:1"), cfg) or "")
+
+
+# --- race scores ------------------------------------------------------------
+
+
+def test_score_race_ranks_finishers_then_dnf_and_marks_provisional():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 3_000_000),
+            _participant(b, ParticipantStatus.FINISHED, 2_000_000),
+            _participant(c, ParticipantStatus.ABANDONED, 500_000, layer=3),
+        ],
+        status=RaceStatus.RUNNING,
+    )
+    scores = score_race(race)
+    assert scores[b].rank == 1 and scores[b].points == 100
+    assert scores[a].rank == 2 and scores[c].rank == 3
+    assert scores[c].points >= 1
+    assert all(s.provisional for s in scores.values())
+
+
+def test_score_race_ignores_unqualified_runs():
+    a = uuid4()
+    p = _participant(a, ParticipantStatus.FINISHED, 1_000_000)
+    p.zone_history = [{"node_id": "a"}]
+    assert score_race(_race([p])) == {}
+
+
+# --- ladder -----------------------------------------------------------------
+
+
+def test_ladder_takes_best_seed_per_mode_and_requires_every_mode():
+    a, b = uuid4(), uuid4()
+    std1 = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 60),
+            _participant(b, ParticipantStatus.FINISHED, 50),
+        ]
+    )
+    std2 = _race([_participant(a, ParticipantStatus.FINISHED, 40)])
+    boss1 = _race([_participant(a, ParticipantStatus.FINISHED, 70)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std1),
+            (parse_slot("qualifier:standard:2"), std2),
+            (parse_slot("qualifier:boss_rush:1"), boss1),
+        ],
+    )
+    by_user = {e.user_id: e for e in ladder}
+    # a: 50 pts (2nd of 2) on std1, 100 on std2 -> best 100; 100 on boss1 -> total 200
+    assert by_user[a].mode_points == {"standard": 100, "boss_rush": 100}
+    assert by_user[a].counted_slots["standard"] == "qualifier:standard:2"
+    assert by_user[a].total == 200 and by_user[a].rank == 1
+    # b never played boss_rush: unranked, listed after ranked entries
+    assert by_user[b].total is None and by_user[b].rank is None
+    assert by_user[b].modes_scored == 1 and by_user[b].partial == 100
+    assert ladder[0].user_id == a and ladder[-1].user_id == b
+
+
+def test_ladder_breaks_total_ties_on_counted_igt():
+    a, b = uuid4(), uuid4()
+    # Same points everywhere (a shared 1st on the standard seed, a solo 1st each on
+    # a boss seed): only the summed IGT of the counted seeds separates them.
+    std = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 100),
+            _participant(b, ParticipantStatus.FINISHED, 100),
+        ]
+    )
+    boss1 = _race([_participant(a, ParticipantStatus.FINISHED, 300)])
+    boss2 = _race([_participant(b, ParticipantStatus.FINISHED, 200)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std),
+            (parse_slot("qualifier:boss_rush:1"), boss1),
+            (parse_slot("qualifier:boss_rush:2"), boss2),
+        ],
+    )
+    assert [e.total for e in ladder] == [200, 200]
+    assert [e.user_id for e in ladder] == [b, a]
+    assert ladder[0].rank == 1 and ladder[1].rank == 2
+
+
+def test_ladder_provisional_follows_counted_seed_only():
+    a = uuid4()
+    std_open = _race([_participant(a, ParticipantStatus.FINISHED, 10)], status=RaceStatus.RUNNING)
+    std_done = _race([_participant(a, ParticipantStatus.FINISHED, 10)])
+    boss = _race([_participant(a, ParticipantStatus.FINISHED, 10)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std_open),
+            (parse_slot("qualifier:standard:2"), std_done),
+            (parse_slot("qualifier:boss_rush:1"), boss),
+        ],
+    )
+    # Equal points: the counted seed is the faster one (same igt) which is std_open, first seen.
+    assert ladder[0].provisional is True
+
+
+# --- newcomers --------------------------------------------------------------
+
+
+def test_newcomer_flags_use_strict_threshold():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    flags = newcomer_flags({a: 4, b: 5}, threshold=5, user_ids=[a, b, c])
+    assert flags == {a: True, b: False, c: True}
+
+
+# --- qualified groups -------------------------------------------------------
+
+
+def _ladder_of(*users):
+    """Ranked ladder entries in order, one per user."""
+    from speedfog_racing.services.event_service import LadderEntry
+
+    return [
+        LadderEntry(
+            user_id=u,
+            mode_points={},
+            counted_slots={},
+            modes_scored=2,
+            total=100 - i,
+            partial=100 - i,
+            igt_total=0,
+            provisional=False,
+            rank=i + 1,
+        )
+        for i, u in enumerate(users)
+    ]
+
+
+def test_qualified_uses_ladder_positions_and_keeps_newcomers_outside_top_seeds():
+    u = [uuid4() for _ in range(6)]
+    ladder = _ladder_of(*u)
+    newcomers = {u[1]: True, u[4]: True, u[5]: True}
+    groups = compute_qualified(ladder, _config(), newcomers)
+    assert [s.user_id for s in groups["semi_a"]] == [u[0], u[3]]
+    assert [s.user_id for s in groups["semi_b"]] == [u[1], u[2]]
+    # u[1] is a newcomer but seeded in semi_b: not in the newcomers' group.
+    assert [s.user_id for s in groups["newcomers"]] == [u[4], u[5]]
+
+
+def test_qualified_leaves_slots_open_when_ladder_is_short():
+    u = [uuid4() for _ in range(2)]
+    groups = compute_qualified(_ladder_of(*u), _config(), {})
+    assert [s.user_id for s in groups["semi_a"]] == [u[0], None]
+    assert groups["semi_a"][1].note == "open"
+    assert [s.user_id for s in groups["newcomers"]] == [None, None]

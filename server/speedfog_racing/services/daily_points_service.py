@@ -55,7 +55,7 @@ class QualifiedParticipant:
     current_layer: int
 
 
-def _rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
+def rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
     """Sort key for intra-daily ranking.
 
     FINISHED first (sorted by igt_ms ascending), then ABANDONED (sorted by
@@ -85,18 +85,18 @@ def compute_daily_points(
     n = len(participants)
     if n == 0:
         return {}
-    ordered = sorted(participants, key=_rank_key)
+    ordered = sorted(participants, key=rank_key)
     points: dict[UUID, int] = {}
     i = 0
     while i < n:
         rank = i + 1
-        sig = _rank_key(ordered[i])
+        sig = rank_key(ordered[i])
         value = round(MAX_DAILY_POINTS * (n - rank + 1) / n)
         if rank != 1:
             value = min(value, MAX_DAILY_POINTS - 1)  # only the 1st place reaches MAX
         value = max(1, value)  # every qualified runner scores at least 1
         j = i
-        while j < n and _rank_key(ordered[j]) == sig:
+        while j < n and rank_key(ordered[j]) == sig:
             points[ordered[j].participant_id] = value
             j += 1
         i = j
