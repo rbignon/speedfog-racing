@@ -931,3 +931,86 @@ class WeaponComboStat(BaseModel):
 
 class WeaponStatsResponse(BaseModel):
     combos: list[WeaponComboStat]
+
+
+# =============================================================================
+# Events
+# =============================================================================
+
+EVENT_PHASES: tuple[str, ...] = ("upcoming", "qualifier", "cut", "playoffs", "finished")
+
+
+class EventMode(BaseModel):
+    key: str = Field(min_length=1, max_length=50)
+    label: str = Field(min_length=1, max_length=50)
+
+
+class EventStage(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    key: str = Field(min_length=1, max_length=30)
+    label: str = Field(min_length=1, max_length=60)
+    kind: Literal["semi", "newcomers", "final"]
+    date: datetime
+    races: int = Field(ge=1, le=5)
+    seeds: list[int] | None = None
+    from_: list[str] | None = Field(default=None, alias="from")
+    advance: int | None = Field(default=None, ge=1, le=3)
+    size: int | None = Field(default=None, ge=2, le=8)
+    modes: list[str] = []
+
+    @model_validator(mode="after")
+    def _check_kind_fields(self) -> "EventStage":
+        if self.date.tzinfo is None:
+            raise ValueError("date must be timezone-aware")
+        if self.kind == "semi":
+            if not self.seeds or any(s < 1 for s in self.seeds):
+                raise ValueError("a semi stage needs positive seeds")
+            if len(set(self.seeds)) != len(self.seeds):
+                raise ValueError("seeds must be distinct")
+        if self.kind == "final" and (not self.from_ or self.advance is None):
+            raise ValueError("a final stage needs from and advance")
+        if self.kind == "newcomers" and self.size is None:
+            raise ValueError("a newcomers stage needs size")
+        return self
+
+
+class EventConfig(BaseModel):
+    modes: list[EventMode] = Field(min_length=1, max_length=6)
+    seeds_per_mode: int = Field(default=2, ge=1, le=4)
+    stages: list[EventStage] = []
+    rules: list[str] = []
+    phase_override: str | None = None
+    announced_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _check_structure(self) -> "EventConfig":
+        keys = [m.key for m in self.modes]
+        if len(set(keys)) != len(keys):
+            raise ValueError("mode keys must be unique")
+        stage_keys = [s.key for s in self.stages]
+        if len(set(stage_keys)) != len(stage_keys):
+            raise ValueError("stage keys must be unique")
+        semi_keys = {s.key for s in self.stages if s.kind == "semi"}
+        for stage in self.stages:
+            if stage.kind == "final":
+                unknown = [k for k in (stage.from_ or []) if k not in semi_keys]
+                if unknown:
+                    raise ValueError(f"from must name semi stages, got {unknown}")
+        dates = [s.date for s in self.stages]
+        if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
+            raise ValueError("stage dates must be ascending")
+        if any(len(r) > 300 for r in self.rules):
+            raise ValueError("each rule is at most 300 characters")
+        if self.phase_override is not None and self.phase_override not in EVENT_PHASES:
+            raise ValueError(f"phase_override must be one of {EVENT_PHASES}")
+        return self
+
+    def mode_keys(self) -> list[str]:
+        return [m.key for m in self.modes]
+
+    def stage(self, key: str) -> EventStage | None:
+        return next((s for s in self.stages if s.key == key), None)
+
+    def final_stage(self) -> EventStage | None:
+        return next((s for s in self.stages if s.kind == "final"), None)
