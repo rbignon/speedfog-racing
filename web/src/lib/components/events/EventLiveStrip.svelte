@@ -29,6 +29,15 @@
         }).format(new Date(race.started_at))
       : null,
   );
+  // "2h" on a whole hour, "1h30" otherwise: rounding to the nearest hour
+  // (as before) turned a 90-minute cap into the misleading "cap 2h".
+  function formatCapHours(minutes: number): string {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins === 0
+      ? `${hours}h`
+      : `${hours}h${mins.toString().padStart(2, "0")}`;
+  }
   // Built from arrays of non-empty parts (rather than inline {#if}
   // fragments) so the " · " separator only ever sits between two real
   // parts: no dangling leading dot, no missing space when Svelte collapses
@@ -47,7 +56,7 @@
       runners || null,
       startedAt ? `started ${startedAt}` : null,
       race.race_duration_minutes
-        ? `cap ${Math.round(race.race_duration_minutes / 60)}h`
+        ? `cap ${formatCapHours(race.race_duration_minutes)}`
         : null,
     ].filter((part): part is string => Boolean(part)),
   );

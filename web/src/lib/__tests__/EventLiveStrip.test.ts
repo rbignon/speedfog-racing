@@ -155,12 +155,23 @@ describe("EventLiveStrip title and sub line", () => {
     expect(sub).toContain("started");
   });
 
-  it("rounds the race duration cap to the nearest hour", () => {
-    const { container } = render(EventLiveStrip, {
+  it("renders whole hours without minutes, otherwise hours and minutes", () => {
+    const wholeHours = render(EventLiveStrip, {
+      race: raceWith({ race_duration_minutes: 120 }),
+      stage: null,
+      raceIndex: null,
+    });
+    expect(wholeHours.container.querySelector(".sub")?.textContent).toContain(
+      "cap 2h",
+    );
+
+    const withMinutes = render(EventLiveStrip, {
       race: raceWith({ race_duration_minutes: 90 }),
       stage: null,
       raceIndex: null,
     });
-    expect(container.querySelector(".sub")?.textContent).toContain("cap 2h");
+    expect(withMinutes.container.querySelector(".sub")?.textContent).toContain(
+      "cap 1h30",
+    );
   });
 });

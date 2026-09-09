@@ -93,8 +93,10 @@ export function formatEventDay(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function shouldPoll(detail: Pick<EventDetail, "live_race">): boolean {
-  return detail.live_race !== null;
+export function shouldPoll(
+  detail: Pick<EventDetail, "live_race" | "phase">,
+): boolean {
+  return detail.phase === "playoffs" && detail.live_race !== null;
 }
 
 export function ordinal(n: number): string {

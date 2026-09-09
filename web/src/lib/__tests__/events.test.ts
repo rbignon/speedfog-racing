@@ -138,11 +138,22 @@ describe("formatEventDay", () => {
 });
 
 describe("shouldPoll and ordinal", () => {
-  it("polls only while a stage race is live", () => {
-    expect(shouldPoll(detailWith({ live_race: { id: "x" } as Race }))).toBe(
-      true,
-    );
-    expect(shouldPoll(detailWith({}))).toBe(false);
+  it("polls while a stage race is live during the playoffs", () => {
+    expect(
+      shouldPoll(
+        detailWith({ phase: "playoffs", live_race: { id: "x" } as Race }),
+      ),
+    ).toBe(true);
+  });
+  it("does not poll without a live race, even during the playoffs", () => {
+    expect(shouldPoll(detailWith({ phase: "playoffs" }))).toBe(false);
+  });
+  it("does not poll a stage race left running after the event finished", () => {
+    expect(
+      shouldPoll(
+        detailWith({ phase: "finished", live_race: { id: "x" } as Race }),
+      ),
+    ).toBe(false);
   });
   it("formats English ordinals", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(ordinal)).toEqual([
