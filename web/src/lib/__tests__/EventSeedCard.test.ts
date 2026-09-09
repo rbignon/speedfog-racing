@@ -191,8 +191,8 @@ describe("EventSeedCard state signal", () => {
       now,
     });
     expect(container.querySelector(".result")?.textContent).toContain("DNF");
-    // No score, so nothing validated: neutral route and a muted result line.
-    expect(container.querySelector(".seed-card.route-done")).toBeNull();
+    // No score, so nothing validated: the spent grey line and a muted result.
+    expect(container.querySelector(".seed-card.route-spent")).not.toBeNull();
     expect(container.querySelector(".result.unscored")).not.toBeNull();
   });
 

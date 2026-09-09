@@ -442,8 +442,9 @@ th {
  * .route over their real border, which stays transparent under it; markers
  * straddle the edge). The states read from the viewer's seat, like the
  * daily week line: grey = not started or not mine, brass = my run,
- * verdigris = I finished, ember = running without me, steel = closed.
- * Dashes are reserved for a race still in setup. Hollow markers punch
+ * verdigris = I finished, ember = running without me, steel = closed,
+ * solid grey on a card of mine = spent (nothing ridden, nothing left to
+ * ride). Dashes are reserved for a race still in setup. Hollow markers punch
  * through with --route-hole (defaults to surface). The timetable's
  * continuous week line is its own wl-* implementation in DailyWeekGrid. */
 .route {
@@ -498,6 +499,12 @@ th {
 
 .route-setup .line {
   border-top-style: dashed;
+}
+
+/* Nothing ridden and nothing left to ride: the base grey line, solid, and a
+ * grey hover. A seed the viewer abandoned before scoring and cannot replay. */
+.route-spent {
+  --route-color: var(--color-text-disabled);
 }
 
 /* Race running without the viewer aboard */

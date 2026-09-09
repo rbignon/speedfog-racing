@@ -43,14 +43,16 @@
   );
   // A scored DNF validated the seed (it holds a rank and points), so it rides
   // the done colour like a finished run; a DNF that never scored (fewer than
-  // two zone entries) stays neutral, like an unplayed seed.
+  // two zone entries) is spent: nothing ridden, nothing left to ride.
   let scored = $derived(done && mine?.points != null);
   let routeClass = $derived(
     finished || scored
       ? "route-done"
-      : closed
-        ? "route-finished"
-        : "route-running",
+      : done
+        ? "route-spent"
+        : closed
+          ? "route-finished"
+          : "route-running",
   );
 </script>
 
