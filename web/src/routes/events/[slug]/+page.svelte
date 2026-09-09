@@ -106,10 +106,6 @@
 <div class="band">
   <div class="band-inner">
     <div class="band-left">
-      <span class="kicker"
-        >SpeedFog{detail.partner_name ? ` × ${detail.partner_name}` : ""} &middot;
-        {detail.name}</span
-      >
       <h1>
         SpeedFog
         {#if detail.partner_name}<span class="cross">&times;</span>
@@ -175,11 +171,14 @@
                 .join(", ")}{finalStage
                 ? `, then the ${finalStage.label} on ${fmt(finalStage.date)}`
                 : ""}.
-              {#if newcomersStage}<strong>The best newcomers</strong> (fewer
-                than {detail.newcomer_threshold}
-                finished SpeedFog races before {fmt(detail.starts_at)}) get
-                their own final on {fmt(newcomersStage.date)}.{/if}
             </p>
+            {#if newcomersStage}
+              <p>
+                <strong>The best newcomers</strong> (fewer than {detail.newcomer_threshold}
+                finished SpeedFog races before {fmt(detail.starts_at)}) get
+                their own final on {fmt(newcomersStage.date)}.
+              </p>
+            {/if}
           </div>
           <div class="facts">
             {#each facts as fact, i (i)}
@@ -240,21 +239,41 @@
               </div>
             </div>
           </div>
-          <div id="rules" class="rules-card">
-            <h3>Rules</h3>
-            <ul>
-              {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
-            </ul>
+          <div class="side-cards">
+            <div id="rules" class="rules-card">
+              <h3>Rules</h3>
+              <ul>
+                {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
+              </ul>
+            </div>
+            <div class="rules-card tips-card">
+              <h3>Tips</h3>
+              <ul>
+                <li>
+                  Warm up on the <a href="/daily">Daily Seed</a>: one shared
+                  seed a day, scored like a qualifier seed.
+                </li>
+                <li>
+                  Run a <a href="/training">solo seed</a> of each mode before your
+                  qualifier seeds; solos never count toward the ladder.
+                </li>
+                <li>
+                  Skips and route knowledge are on the
+                  <a href="/zones">Zones</a> page.
+                </li>
+                <li>
+                  Read the <a href="/game-changes">Game changes</a> once: bosses,
+                  items and the route differ from vanilla.
+                </li>
+              </ul>
+            </div>
           </div>
         </div>
       </section>
     {:else if block === "seeds"}
       <section>
         <SectionTitle>Qualifier seeds</SectionTitle>
-        <p class="note">
-          Open until {fmt(detail.qualifier_ends_at)} &middot; {detail.seeds_per_mode}
-          seeds per mode &middot; the better of your seeds counts
-        </p>
+        <p class="note">The better of your seeds counts.</p>
         {#each seedsByMode as group (group.mode.key)}
           <div class="mode-group">
             <h3>{group.mode.label}</h3>
@@ -404,16 +423,6 @@
   .band-left {
     flex: 1 1 640px;
     min-width: 0;
-  }
-  .kicker {
-    display: block;
-    font-family: var(--font-mono);
-    color: var(--color-text-secondary);
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
-    margin-bottom: 0.25rem;
   }
   h1 {
     margin: 0;
@@ -582,10 +591,10 @@
   }
   .mode-group h3 {
     margin: 0 0 0.6rem;
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    font-weight: 500;
-    letter-spacing: 0.09em;
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
   }
@@ -630,12 +639,20 @@
     justify-content: space-between;
     gap: 1rem;
   }
+  .side-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
   .rules-card {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-left: 3px solid var(--color-gold);
     border-radius: var(--radius-sm);
     padding: 0.75rem 1rem;
+  }
+  .tips-card {
+    border-left-color: var(--color-info);
   }
   .rules-card h3 {
     margin: 0;
