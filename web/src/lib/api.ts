@@ -372,6 +372,160 @@ export interface DailyWeekResponse {
   winners: WinnerSummary[] | null;
 }
 
+// --- Events ---------------------------------------------------------------
+
+export type EventPhase =
+  | "upcoming"
+  | "qualifier"
+  | "cut"
+  | "playoffs"
+  | "finished";
+
+export interface EventMode {
+  key: string;
+  label: string;
+}
+
+export interface EventTimelineStop {
+  key: string;
+  label: string;
+  date: string;
+  kind: "announce" | "open" | "cut" | "semi" | "newcomers" | "final";
+}
+
+export interface EventMyResult {
+  status: "not_played" | "joined" | "playing" | "done";
+  rank: number | null;
+  igt_ms: number | null;
+  points: number | null;
+  provisional: boolean;
+}
+
+export interface EventQualifierRace {
+  slot: string;
+  mode: string;
+  index: number;
+  race: Race;
+  closes_at: string | null;
+  my_result: EventMyResult | null;
+}
+
+export interface EventLadderEntry {
+  rank: number | null;
+  user: User;
+  newcomer: boolean;
+  mode_points: Record<string, number | null>;
+  total: number | null;
+  modes_scored: number;
+  igt_total: number;
+  provisional: boolean;
+}
+
+export interface EventLadder {
+  provisional: boolean;
+  entered: number;
+  ranked_count: number;
+  entries: EventLadderEntry[];
+}
+
+export interface EventQualifiedSlot {
+  seed: number | null;
+  user: User | null;
+  newcomer: boolean;
+  note: string | null;
+}
+
+export interface EventQualifiedGroup {
+  stage_key: string;
+  label: string;
+  entries: EventQualifiedSlot[];
+}
+
+export interface EventQualified {
+  provisional: boolean;
+  groups: EventQualifiedGroup[];
+}
+
+export interface EventStageRace {
+  slot: string;
+  index: number;
+  race: Race;
+}
+
+export interface EventStageEntry {
+  user: User;
+  newcomer: boolean;
+  points: number;
+  igt_total: number;
+  advances: boolean;
+}
+
+export interface EventFieldSlot {
+  user: User | null;
+  label: string;
+}
+
+export interface EventStage {
+  key: string;
+  label: string;
+  kind: "semi" | "newcomers" | "final";
+  date: string;
+  races_expected: number;
+  complete: boolean;
+  modes: string[];
+  races: EventStageRace[];
+  results: EventStageEntry[];
+  field: EventFieldSlot[];
+}
+
+export interface EventNextStage {
+  key: string;
+  label: string;
+  date: string;
+}
+
+export interface EventDetail {
+  slug: string;
+  name: string;
+  partner_name: string | null;
+  partner_url: string | null;
+  partner_logo_url: string | null;
+  starts_at: string;
+  qualifier_ends_at: string;
+  ends_at: string;
+  newcomer_threshold: number;
+  phase: EventPhase;
+  ladder_final: boolean;
+  modes: EventMode[];
+  seeds_per_mode: number;
+  rules: string[];
+  timeline: EventTimelineStop[];
+  qualifier_races: EventQualifierRace[];
+  ladder: EventLadder;
+  qualified: EventQualified;
+  stages: EventStage[];
+  current_stage_key: string | null;
+  live_race: Race | null;
+  next_stage: EventNextStage | null;
+}
+
+export interface AdminEvent {
+  id: string;
+  slug: string;
+  name: string;
+  partner_name: string | null;
+  partner_url: string | null;
+  partner_logo_url: string | null;
+  starts_at: string;
+  qualifier_ends_at: string;
+  ends_at: string;
+  newcomer_threshold: number;
+  config: Record<string, unknown>;
+  created_at: string;
+  phase: EventPhase;
+  attached: Record<string, string>;
+}
+
 /**
  * Fetch the seven-cell weekly grid (Monday through Sunday in ISO order)
  * for the home page and dashboard.
@@ -2122,4 +2276,53 @@ export async function adminListFeedback(params: {
     headers: getAuthHeaders(),
   });
   return handleResponse<AdminFeedbackList>(response);
+}
+
+// --- Events ---------------------------------------------------------------
+
+/** Everything the event page needs, in one request. */
+export async function fetchEvent(
+  slug: string,
+  customFetch: typeof fetch = fetch,
+): Promise<EventDetail> {
+  const response = await customFetch(
+    `${API_BASE}/events/${encodeURIComponent(slug)}`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+  return handleResponse<EventDetail>(response);
+}
+
+export async function fetchAdminEvents(): Promise<AdminEvent[]> {
+  const response = await fetch(`${API_BASE}/admin/events`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<AdminEvent[]>(response);
+}
+
+/** Create or update an event; the document is the full event including its config. */
+export async function upsertAdminEvent(
+  doc: Record<string, unknown>,
+): Promise<AdminEvent> {
+  const response = await fetch(`${API_BASE}/admin/events`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(doc),
+  });
+  return handleResponse<AdminEvent>(response);
+}
+
+/** Attach a race to an event slot, or detach it with a null event id. */
+export async function attachRaceToEvent(
+  raceId: string,
+  eventId: string | null,
+  slot: string | null,
+): Promise<Race> {
+  const response = await fetch(`${API_BASE}/admin/races/${raceId}/event`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ event_id: eventId, slot }),
+  });
+  return handleResponse<Race>(response);
 }
