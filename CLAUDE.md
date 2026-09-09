@@ -82,7 +82,7 @@ Game event flags map to map zones. The frontend renders a DAG (directed acyclic 
 
 ### Frontend routing
 
-SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (race page), `/overlay/race/[id]/leaderboard` and `/overlay/race/[id]/dag` (OBS overlays), `/stats` (leaderboards), `/training/[id]` (solo sessions), `/admin` (admin panel). API client in `lib/api.ts`, WebSocket client in `lib/websocket.ts`.
+SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (race page), `/overlay/race/[id]/leaderboard` and `/overlay/race/[id]/dag` (OBS overlays), `/stats` (leaderboards), `/training/[id]` (solo sessions), `/events/[slug]` (tournament event page), `/admin` (admin panel). API client in `lib/api.ts`, WebSocket client in `lib/websocket.ts`.
 
 ### Mod architecture
 
