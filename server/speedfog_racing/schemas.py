@@ -1004,6 +1004,8 @@ class EventConfig(BaseModel):
             raise ValueError("each rule is at most 300 characters")
         if self.phase_override is not None and self.phase_override not in EVENT_PHASES:
             raise ValueError(f"phase_override must be one of {EVENT_PHASES}")
+        if self.announced_at is not None and self.announced_at.tzinfo is None:
+            raise ValueError("announced_at must be timezone-aware")
         return self
 
     def mode_keys(self) -> list[str]:

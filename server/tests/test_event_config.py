@@ -94,3 +94,20 @@ def test_stage_dates_must_ascend():
 def test_phase_override_must_be_a_phase():
     with pytest.raises(ValidationError, match="phase_override"):
         EventConfig.model_validate(_config(phase_override="halftime"))
+
+
+def test_announced_at_must_be_timezone_aware():
+    with pytest.raises(ValidationError, match="announced_at"):
+        EventConfig.model_validate(_config(announced_at="2026-10-01T10:00:00"))
+
+
+def test_from_alias_round_trips_through_json_dump():
+    cfg = EventConfig.model_validate(_config())
+    dumped = cfg.model_dump(mode="json", by_alias=True)
+    final_stage_dump = next(s for s in dumped["stages"] if s["key"] == "final")
+    assert final_stage_dump["from"] == ["semi_a", "semi_b"]
+    assert "from_" not in final_stage_dump
+
+    restored = EventConfig.model_validate(dumped)
+    assert restored.stage("final") is not None
+    assert restored.stage("final").from_ == cfg.stage("final").from_
