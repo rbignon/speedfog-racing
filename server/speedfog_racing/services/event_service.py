@@ -9,12 +9,17 @@ the event dates and of the attached races. Nothing is stored.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
-from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
-from speedfog_racing.schemas import EventConfig
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from speedfog_racing.models import Caster, Event, Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage
 from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
     compute_daily_points,
@@ -246,3 +251,162 @@ def compute_qualified(
             slots.append(QualifiedSlot(seed=None, user_id=None, note="open"))
         groups[stage.key] = slots
     return groups
+
+
+# --- stages -----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class StageEntry:
+    user_id: UUID
+    points: int
+    igt_total: int
+    advances: bool
+
+
+@dataclass(frozen=True)
+class StageResult:
+    complete: bool
+    entries: list[StageEntry] = field(default_factory=list)
+
+
+def compute_stage_results(stage: EventStage, races: list[Race], advance: int) -> StageResult:
+    """Sum the daily-formula points of a stage's races; ``advance`` best qualify once complete."""
+    complete = len(races) == stage.races and all(r.status == RaceStatus.FINISHED for r in races)
+    totals: dict[UUID, list[int]] = {}
+    for race in races:
+        for user_id, score in score_race(race).items():
+            bucket = totals.setdefault(user_id, [0, 0])
+            bucket[0] += score.points
+            bucket[1] += score.igt_ms
+    ordered = sorted(totals.items(), key=lambda item: (-item[1][0], item[1][1]))
+    entries = [
+        StageEntry(user_id=user_id, points=t[0], igt_total=t[1], advances=complete and i < advance)
+        for i, (user_id, t) in enumerate(ordered)
+    ]
+    return StageResult(complete=complete, entries=entries)
+
+
+@dataclass(frozen=True)
+class FieldSlot:
+    user_id: UUID | None
+    label: str
+
+
+def final_field(
+    final: EventStage, results: dict[str, StageResult], labels: dict[str, str]
+) -> list[FieldSlot]:
+    """The final's field: advancing runners of each source stage, or a placeholder."""
+    count = final.advance or 2
+    slots: list[FieldSlot] = []
+    for key in final.from_ or []:
+        result = results.get(key)
+        if result is not None and result.complete:
+            slots.extend(
+                FieldSlot(user_id=e.user_id, label=labels[key]) for e in result.entries[:count]
+            )
+        else:
+            placeholder = f"Top {count} of {labels[key]}"
+            slots.extend(FieldSlot(user_id=None, label=placeholder) for _ in range(count))
+    return slots
+
+
+# --- phase ------------------------------------------------------------------
+
+
+def compute_phase(
+    *,
+    now: datetime,
+    starts_at: datetime,
+    qualifier_ends_at: datetime,
+    ends_at: datetime,
+    first_stage_at: datetime | None,
+    last_stage_complete: bool,
+    override: str | None,
+) -> Phase:
+    if override in EVENT_PHASES:
+        return override  # type: ignore[return-value]
+    if now < starts_at:
+        return "upcoming"
+    if now < qualifier_ends_at:
+        return "qualifier"
+    if now >= ends_at or last_stage_complete:
+        return "finished"
+    if first_stage_at is not None and now < first_stage_at:
+        return "cut"
+    return "playoffs"
+
+
+def current_stage_key(config: EventConfig, now: datetime) -> str | None:
+    """The stage dated today (UTC), else the next one, else the last one."""
+    if not config.stages:
+        return None
+    today = now.astimezone(UTC).date()
+    for stage in config.stages:
+        if stage.date.astimezone(UTC).date() == today:
+            return stage.key
+    upcoming = [s for s in config.stages if s.date > now]
+    return upcoming[0].key if upcoming else config.stages[-1].key
+
+
+# --- timeline ---------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class TimelineStop:
+    key: str
+    label: str
+    date: datetime
+    kind: Literal["announce", "open", "cut", "semi", "newcomers", "final"]
+
+
+def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
+    announced = config.announced_at or (event.starts_at - timedelta(days=7))
+    stops = [
+        TimelineStop(key="announce", label="Announce", date=announced, kind="announce"),
+        TimelineStop(key="open", label="Seeds open", date=event.starts_at, kind="open"),
+        TimelineStop(key="cut", label="Cut", date=event.qualifier_ends_at, kind="cut"),
+    ]
+    stops.extend(
+        TimelineStop(key=s.key, label=s.label, date=s.date, kind=s.kind) for s in config.stages
+    )
+    return stops
+
+
+# --- loaders ----------------------------------------------------------------
+
+
+async def load_event(db: AsyncSession, slug: str) -> Event | None:
+    """The event and every attached race with what ``race_response`` needs."""
+    stmt = (
+        select(Event)
+        .where(Event.slug == slug)
+        .options(
+            selectinload(Event.races)
+            .selectinload(Race.participants)
+            .selectinload(Participant.user),
+            selectinload(Event.races).selectinload(Race.casters).selectinload(Caster.user),
+            selectinload(Event.races).selectinload(Race.organizer),
+            selectinload(Event.races).selectinload(Race.seed),
+        )
+    )
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def count_finished_before(
+    db: AsyncSession, user_ids: set[UUID], before: datetime
+) -> dict[UUID, int]:
+    """Finished race participations per user in races started before ``before``."""
+    if not user_ids:
+        return {}
+    stmt = (
+        select(Participant.user_id, func.count())
+        .join(Race, Race.id == Participant.race_id)
+        .where(
+            Participant.user_id.in_(user_ids),
+            Participant.status == ParticipantStatus.FINISHED,
+            Race.started_at < before,
+        )
+        .group_by(Participant.user_id)
+    )
+    return {user_id: count for user_id, count in (await db.execute(stmt)).all()}

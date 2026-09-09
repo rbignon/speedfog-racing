@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -335,3 +336,124 @@ def test_qualified_leaves_slots_open_when_ladder_is_short():
     assert [s.user_id for s in groups["semi_a"]] == [u[0], None]
     assert groups["semi_a"][1].note == "open"
     assert [s.user_id for s in groups["newcomers"]] == [None, None]
+
+
+# --- stage results and final field -----------------------------------------
+
+from speedfog_racing.services.event_service import (  # noqa: E402
+    StageEntry,
+    StageResult,
+    build_timeline,
+    compute_phase,
+    compute_stage_results,
+    current_stage_key,
+    final_field,
+)
+
+
+def test_stage_results_sum_points_and_advance_only_when_complete():
+    cfg = _config()
+    stage = cfg.stage("semi_a")
+    a, b, c, d = (uuid4() for _ in range(4))
+    order = [a, b, c, d]
+    race1 = _race(
+        [_participant(u, ParticipantStatus.FINISHED, 100 * (i + 1)) for i, u in enumerate(order)]
+    )
+    race2 = _race(
+        [_participant(u, ParticipantStatus.FINISHED, 100 * (4 - i)) for i, u in enumerate(order)]
+    )
+    partial = compute_stage_results(stage, [race1, race2], advance=2)
+    assert partial.complete is False
+    assert all(not e.advances for e in partial.entries)
+    # a: 100 + 25, d: 25 + 100, b: 75 + 50, c: 50 + 75 -> ties on points, igt decides.
+    race3 = _race(
+        [_participant(u, ParticipantStatus.FINISHED, 100 * (i + 1)) for i, u in enumerate(order)]
+    )
+    full = compute_stage_results(stage, [race1, race2, race3], advance=2)
+    assert full.complete is True
+    assert [e.user_id for e in full.entries][:2] == [a, b]
+    assert [e.advances for e in full.entries] == [True, True, False, False]
+    assert full.entries[0].points == 225
+
+
+def test_final_field_labels_undecided_semis():
+    cfg = _config()
+    final = cfg.final_stage()
+    a, b = uuid4(), uuid4()
+    done = StageResult(
+        complete=True,
+        entries=[StageEntry(a, 300, 0, True), StageEntry(b, 200, 0, True)],
+    )
+    labels = {"semi_a": "Semi A", "semi_b": "Semi B"}
+    slots = final_field(final, {"semi_a": done}, labels)
+    assert [(s.user_id, s.label) for s in slots[:2]] == [(a, "Semi A"), (b, "Semi A")]
+    assert [(s.user_id, s.label) for s in slots[2:]] == [(None, "Top 2 of Semi B")] * 2
+
+
+# --- phase ------------------------------------------------------------------
+
+T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
+CUT = datetime(2026, 9, 30, 8, tzinfo=UTC)
+FIRST = datetime(2026, 10, 4, 19, tzinfo=UTC)
+END = datetime(2026, 10, 26, 0, tzinfo=UTC)
+
+
+def _phase(now, **kw):
+    args = dict(
+        starts_at=T0,
+        qualifier_ends_at=CUT,
+        ends_at=END,
+        first_stage_at=FIRST,
+        last_stage_complete=False,
+        override=None,
+    )
+    args.update(kw)
+    return compute_phase(now=now, **args)
+
+
+@pytest.mark.parametrize(
+    "now, expected",
+    [
+        (T0 - timedelta(days=1), "upcoming"),
+        (T0, "qualifier"),
+        (CUT - timedelta(seconds=1), "qualifier"),
+        (CUT, "cut"),
+        (FIRST, "playoffs"),
+        (END - timedelta(seconds=1), "playoffs"),
+        (END, "finished"),
+    ],
+)
+def test_phase_boundaries(now, expected):
+    assert _phase(now) == expected
+
+
+def test_phase_override_and_completed_last_stage():
+    assert _phase(T0, override="playoffs") == "playoffs"
+    assert _phase(FIRST + timedelta(days=1), last_stage_complete=True) == "finished"
+    assert _phase(T0, first_stage_at=None) == "qualifier"
+    assert _phase(CUT, first_stage_at=None) == "playoffs"
+
+
+def test_current_stage_is_today_else_next_else_last():
+    cfg = _config()
+    assert current_stage_key(cfg, datetime(2026, 10, 11, 9, tzinfo=UTC)) == "semi_b"
+    assert current_stage_key(cfg, datetime(2026, 10, 12, 9, tzinfo=UTC)) == "newcomers"
+    assert current_stage_key(cfg, datetime(2026, 11, 1, 9, tzinfo=UTC)) == "final"
+
+
+def test_timeline_uses_announced_at_when_present():
+    cfg = _config()
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    stops = build_timeline(event, cfg)
+    assert [s.kind for s in stops] == [
+        "announce",
+        "open",
+        "cut",
+        "semi",
+        "semi",
+        "newcomers",
+        "final",
+    ]
+    assert stops[0].date == T0 - timedelta(days=7)
+    cfg.announced_at = datetime(2026, 9, 16, 18, tzinfo=UTC)
+    assert build_timeline(event, cfg)[0].date == cfg.announced_at
