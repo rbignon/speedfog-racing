@@ -70,11 +70,13 @@ def _my_result(race: Race, user: User | None) -> EventMyResultResponse | None:
         return EventMyResultResponse(status="joined")
     if mine.status == ParticipantStatus.PLAYING:
         return EventMyResultResponse(status="playing")
+    finished = mine.status == ParticipantStatus.FINISHED
     score = score_race(race).get(user.id)
     if score is None:
-        return EventMyResultResponse(status="done", igt_ms=mine.igt_ms)
+        return EventMyResultResponse(status="done", finished=finished, igt_ms=mine.igt_ms)
     return EventMyResultResponse(
         status="done",
+        finished=finished,
         rank=score.rank,
         igt_ms=score.igt_ms,
         points=score.points,

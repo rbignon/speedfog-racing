@@ -105,7 +105,9 @@ Each qualifier race in `qualifier_races` carries `my_result` for the
 signed-in viewer: `not_played` (never joined), `joined` (registered or ready,
 the pack still to run), `playing`, or `done` (always with `igt_ms`; also
 `rank`, `points` and `provisional` once the run has a score, i.e. at least
-two zone entries); `null` for anonymous viewers. `closes_at` is the race's
+two zone entries). `finished` is present on every `my_result` and is false
+for an abandoned run, which the page labels DNF. `null` for anonymous
+viewers. `closes_at` is the race's
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
 
@@ -160,8 +162,10 @@ ladder, on the race listings, or on the event page.
 
 ## The event page
 
-`/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds only while a
-stage race is RUNNING; during the qualifier it only refreshes on page reload.
+`/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds while a
+stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
+within 12 hours of now) so an open page sees the evening's race go live;
+during the qualifier it only refreshes on page reload.
 All dates and times render in the viewer's browser timezone.
 
 ## API

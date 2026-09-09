@@ -1035,6 +1035,9 @@ class EventTimelineStopResponse(BaseModel):
 
 class EventMyResultResponse(BaseModel):
     status: Literal["not_played", "joined", "playing", "done"]
+    # ``done`` covers a finished run and an abandoned one; the page shows DNF
+    # for the latter, which still holds a rank and points below the finishers.
+    finished: bool = False
     rank: int | None = None
     igt_ms: int | None = None
     points: int | None = None

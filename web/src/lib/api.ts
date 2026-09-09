@@ -428,6 +428,8 @@ export interface EventTimelineStop {
 
 export interface EventMyResult {
   status: "not_played" | "joined" | "playing" | "done";
+  /** False for an abandoned run: still scored below the finishers, shown as DNF. */
+  finished: boolean;
   rank: number | null;
   igt_ms: number | null;
   points: number | null;

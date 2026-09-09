@@ -93,10 +93,28 @@ export function formatEventDay(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function shouldPoll(
-  detail: Pick<EventDetail, "live_race" | "phase">,
-): boolean {
-  return detail.phase === "playoffs" && detail.live_race !== null;
+const LIVE_POLL_MS = 60_000;
+const STAGE_DAY_POLL_MS = 300_000;
+const STAGE_DAY_WINDOW_MS = 12 * 3_600_000;
+
+/**
+ * How often the page refreshes its data, or null for never: every minute while
+ * a stage race is live, every five minutes around a stage's date so an open
+ * page sees the evening's race go live, nothing otherwise (the qualifier
+ * ladder moves on reload).
+ */
+export function pollIntervalMs(
+  detail: Pick<EventDetail, "live_race" | "phase" | "stages">,
+  now: Date,
+): number | null {
+  if (detail.phase !== "playoffs") return null;
+  if (detail.live_race !== null) return LIVE_POLL_MS;
+  const near = detail.stages.some(
+    (s) =>
+      Math.abs(new Date(s.date).getTime() - now.getTime()) <=
+      STAGE_DAY_WINDOW_MS,
+  );
+  return near ? STAGE_DAY_POLL_MS : null;
 }
 
 export function ordinal(n: number): string {

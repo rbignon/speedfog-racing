@@ -18,6 +18,8 @@
   let race = $derived(entry.race);
   let mine = $derived(entry.my_result);
   let done = $derived(mine?.status === "done");
+  let finished = $derived(done && mine?.finished === true);
+  let dnf = $derived(done && !finished);
   let playing = $derived(mine?.status === "playing");
   let joined = $derived(mine?.status === "joined");
   let remaining = $derived(timeRemaining(entry.closes_at, now));
@@ -30,11 +32,11 @@
     Math.max(0, race.participant_count - previews.length),
   );
   let routeClass = $derived(
-    done ? "route-done" : closed ? "route-finished" : "route-running",
+    finished ? "route-done" : closed ? "route-finished" : "route-running",
   );
 </script>
 
-<a href="/race/{race.id}" class="seed-card" class:done>
+<a href="/race/{race.id}" class="seed-card" class:done={finished}>
   <div class="route {routeClass}" aria-hidden="true">
     <span class="line"></span>
     <span class="m-start"></span>
@@ -45,8 +47,10 @@
     <div class="content">
       <div class="head">
         <span class="name">{modeLabel} &middot; Seed {entry.index}</span>
-        {#if done}
+        {#if finished}
           <span class="signal signal-open">Done</span>
+        {:else if dnf}
+          <span class="signal signal-abandoned">DNF</span>
         {:else if playing}
           <span class="signal signal-playing">Playing</span>
         {:else if joined}
@@ -85,8 +89,9 @@
         <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
       </div>
       {#if done && mine}
-        <div class="result">
-          Your run: {mine.rank ? ordinal(mine.rank) : "DNF"}
+        <div class="result" class:dnf>
+          Your run: {dnf ? "DNF" : mine.rank ? ordinal(mine.rank) : "Finished"}
+          {#if dnf && mine.rank}&middot; {ordinal(mine.rank)}{/if}
           {#if mine.igt_ms !== null}&middot; {formatTime(mine.igt_ms)}{/if}
           {#if mine.points !== null}&middot; {mine.points} pts{mine.provisional
               ? " provisional"
@@ -209,6 +214,9 @@
     font-size: var(--font-size-xs);
     color: var(--color-success);
     margin-top: 0.3rem;
+  }
+  .result.dnf {
+    color: var(--color-text-secondary);
   }
   .play-strip {
     width: 64px;

@@ -7,8 +7,8 @@
     formatEventDate,
     formatEventDay,
     liveStage,
+    pollIntervalMs,
     racesSectionTitle,
-    shouldPoll,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
@@ -72,13 +72,13 @@
   onMount(() => {
     const clock = setInterval(() => (now = new Date()), 60_000);
     let poll: ReturnType<typeof setInterval> | null = null;
+    let pollMs: number | null = null;
     const arm = () => {
-      if (shouldPoll(detail) && poll === null)
-        poll = setInterval(refresh, 60_000);
-      if (!shouldPoll(detail) && poll !== null) {
-        clearInterval(poll);
-        poll = null;
-      }
+      const ms = pollIntervalMs(detail, new Date());
+      if (ms === pollMs) return;
+      if (poll !== null) clearInterval(poll);
+      poll = ms === null ? null : setInterval(refresh, ms);
+      pollMs = ms;
     };
     arm();
     const watcher = setInterval(arm, 60_000);

@@ -5,8 +5,8 @@ import {
   formatEventDay,
   liveStage,
   ordinal,
+  pollIntervalMs,
   racesSectionTitle,
-  shouldPoll,
   timeRemaining,
 } from "$lib/events";
 import type { EventDetail, EventPhase, Race } from "$lib/api";
@@ -137,23 +137,56 @@ describe("formatEventDay", () => {
   });
 });
 
-describe("shouldPoll and ordinal", () => {
-  it("polls while a stage race is live during the playoffs", () => {
+describe("pollIntervalMs and ordinal", () => {
+  const stageAt = (iso: string) =>
+    [
+      { key: "semi_a", label: "Semi A", date: iso, races: [] },
+    ] as unknown as EventDetail["stages"];
+  const sunday = new Date("2026-10-04T19:00:00Z");
+
+  it("polls every minute while a stage race is live during the playoffs", () => {
     expect(
-      shouldPoll(
+      pollIntervalMs(
         detailWith({ phase: "playoffs", live_race: { id: "x" } as Race }),
+        sunday,
       ),
-    ).toBe(true);
+    ).toBe(60_000);
   });
-  it("does not poll without a live race, even during the playoffs", () => {
-    expect(shouldPoll(detailWith({ phase: "playoffs" }))).toBe(false);
+  it("polls every five minutes around a stage's date so the page sees it go live", () => {
+    const detail = detailWith({
+      phase: "playoffs",
+      stages: stageAt("2026-10-04T19:00:00Z"),
+    });
+    expect(pollIntervalMs(detail, new Date("2026-10-04T09:30:00Z"))).toBe(
+      300_000,
+    );
+    expect(pollIntervalMs(detail, new Date("2026-10-05T06:00:00Z"))).toBe(
+      300_000,
+    );
   });
-  it("does not poll a stage race left running after the event finished", () => {
+  it("does not poll between stage days", () => {
+    const detail = detailWith({
+      phase: "playoffs",
+      stages: stageAt("2026-10-04T19:00:00Z"),
+    });
+    expect(pollIntervalMs(detail, new Date("2026-10-06T19:00:00Z"))).toBeNull();
+  });
+  it("never polls outside the playoffs, even with a live race or a stage today", () => {
     expect(
-      shouldPoll(
+      pollIntervalMs(
         detailWith({ phase: "finished", live_race: { id: "x" } as Race }),
+        sunday,
       ),
-    ).toBe(false);
+    ).toBeNull();
+    expect(
+      pollIntervalMs(
+        detailWith({
+          phase: "qualifier",
+          stages: stageAt("2026-10-04T19:00:00Z"),
+        }),
+        sunday,
+      ),
+    ).toBeNull();
   });
   it("formats English ordinals", () => {
     expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 101].map(ordinal)).toEqual([

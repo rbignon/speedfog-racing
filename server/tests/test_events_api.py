@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
@@ -281,6 +282,7 @@ async def test_my_result_for_signed_in_viewer(test_client, world):
     by_slot = {r["slot"]: r["my_result"] for r in data["qualifier_races"]}
     assert by_slot["qualifier:standard:1"] == {
         "status": "done",
+        "finished": True,
         "rank": 1,
         "igt_ms": 1_500_000,
         "points": 100,
@@ -289,6 +291,32 @@ async def test_my_result_for_signed_in_viewer(test_client, world):
     assert by_slot["qualifier:standard:2"]["status"] == "not_played"
     assert by_slot["qualifier:boss_rush:1"]["status"] == "playing"
     assert by_slot["qualifier:boss_rush:2"]["status"] == "joined"
+
+
+@pytest.mark.asyncio
+async def test_my_result_marks_an_abandoned_run_as_unfinished_but_scored(
+    test_client, world, async_session
+):
+    """An abandon is ``done`` with ``finished`` false: it keeps a rank and points
+    below the finishers (the page labels it DNF) rather than reading as a finish."""
+    async with async_session() as db:
+        std2 = (
+            await db.execute(select(Race).where(Race.event_slot == "qualifier:standard:2"))
+        ).scalar_one()
+        await _entry(db, std2, world["bob"], ParticipantStatus.ABANDONED, 900_000, layer=3)
+        await db.commit()
+    async with test_client as client:
+        response = await client.get(
+            "/api/events/season-one", headers={"Authorization": "Bearer tok-bob"}
+        )
+    mine = {r["slot"]: r["my_result"] for r in response.json()["qualifier_races"]}[
+        "qualifier:standard:2"
+    ]
+    assert mine["status"] == "done"
+    assert mine["finished"] is False
+    # ana finished this seed; bob's abandon ranks after her, still scoring.
+    assert mine["rank"] == 2
+    assert mine["points"] == 50  # two scored runs: 100 to ana, half to the abandon
 
 
 @pytest.mark.asyncio
@@ -389,7 +417,9 @@ async def test_qualifier_races_are_hidden_from_listings(test_client, world, asyn
 
 
 @pytest.mark.asyncio
-async def test_qualifier_races_are_hidden_from_admin_inflight(test_client, world, async_session):
+async def test_qualifier_races_stay_in_admin_inflight(test_client, world, async_session):
+    """The admin list is the only surface with the slot control: an attached
+    seed must remain reachable there so a broken one can be detached."""
     async with async_session() as db:
         await _user(db, "root", UserRole.ADMIN)
         await db.commit()
@@ -397,4 +427,4 @@ async def test_qualifier_races_are_hidden_from_admin_inflight(test_client, world
     async with test_client as client:
         response = await client.get("/api/admin/races", headers=headers)
     assert response.status_code == 200
-    assert str(world["std1"].id) not in {r["id"] for r in response.json()["races"]}
+    assert str(world["std1"].id) in {r["id"] for r in response.json()["races"]}

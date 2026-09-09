@@ -14,7 +14,6 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.api.helpers import (
     compute_race_stats,
     format_pool_display_name,
-    not_event_qualifier,
     race_date,
     race_response,
     user_response,
@@ -789,7 +788,8 @@ async def list_inflight_races(
     Requires admin role. Unlike the public ``/api/races`` feed, this applies no
     visibility filter, so an admin sees private races they are not part of.
     Daily Seed races are excluded; they have their own surfaces under /daily and
-    the admin daily schedule.
+    the admin daily schedule. Event qualifier seeds stay listed: this list is
+    where they are attached to and detached from their event slot.
     """
     query = (
         select(Race)
@@ -802,7 +802,6 @@ async def list_inflight_races(
         .where(
             Race.status.in_([RaceStatus.SETUP, RaceStatus.RUNNING]),
             Race.daily_date.is_(None),
-            not_event_qualifier(),
         )
         # Running first, then setup (the only two statuses the filter admits);
         # within a status, soonest scheduled first (nulls last), newest created

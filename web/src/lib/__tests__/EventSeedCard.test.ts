@@ -77,6 +77,7 @@ describe("EventSeedCard state signal", () => {
         {},
         {
           status: "joined",
+          finished: false,
           rank: null,
           igt_ms: null,
           points: null,
@@ -97,6 +98,7 @@ describe("EventSeedCard state signal", () => {
         {},
         {
           status: "playing",
+          finished: false,
           rank: null,
           igt_ms: null,
           points: null,
@@ -117,6 +119,7 @@ describe("EventSeedCard state signal", () => {
         {},
         {
           status: "done",
+          finished: true,
           rank: 2,
           igt_ms: 754_000,
           points: 87,
@@ -129,20 +132,50 @@ describe("EventSeedCard state signal", () => {
     });
     expect(getByText("Done")).toBeTruthy();
     expect(container.querySelector(".play-strip")).toBeNull();
+    expect(container.querySelector(".seed-card.done")).not.toBeNull();
     const result = container.querySelector(".result");
     expect(result?.textContent).toContain("2nd");
     expect(result?.textContent).toContain("87 pts provisional");
   });
 
-  it("shows DNF when a finished run has no rank", () => {
+  it("shows DNF, not Done, for an abandoned run that still holds a rank", () => {
+    const { getByText, queryByText, container } = render(EventSeedCard, {
+      entry: entryWith(
+        {},
+        {
+          status: "done",
+          finished: false,
+          rank: 14,
+          igt_ms: 1_930_000,
+          points: 40,
+          provisional: true,
+        },
+      ),
+      modeLabel: "Standard",
+      partner: null,
+      now,
+    });
+    expect(getByText("DNF")).toBeTruthy();
+    expect(queryByText("Done")).toBeNull();
+    expect(container.querySelector(".play-strip")).toBeNull();
+    expect(container.querySelector(".seed-card.done")).toBeNull();
+    expect(container.querySelector(".result.dnf")).not.toBeNull();
+    const result = container.querySelector(".result")?.textContent ?? "";
+    expect(result).toContain("DNF");
+    expect(result).toContain("14th");
+    expect(result).toContain("40 pts provisional");
+  });
+
+  it("shows DNF for an abandoned run without a rank", () => {
     const { container } = render(EventSeedCard, {
       entry: entryWith(
         {},
         {
           status: "done",
+          finished: false,
           rank: null,
           igt_ms: null,
-          points: 0,
+          points: null,
           provisional: false,
         },
       ),
