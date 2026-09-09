@@ -19,6 +19,9 @@
     adminListFeedback,
     fetchAdminDailySchedule,
     updateAdminDailySchedule,
+    attachRaceToEvent,
+    fetchAdminEvents,
+    upsertAdminEvent,
     type AdminUser,
     type AdminPool,
     type Race,
@@ -29,6 +32,7 @@
     type FeedbackSource,
     type AdminDailyScheduleEntry,
     type AdminDailySchedulePoolOption,
+    type AdminEvent,
   } from "$lib/api";
   import { statusLabel } from "$lib/format";
   import { formatPoolName } from "$lib/utils/format";
@@ -44,7 +48,8 @@
     | "users"
     | "feedback"
     | "seeds"
-    | "daily";
+    | "daily"
+    | "events";
   let activeTab: Tab = $state("stats");
 
   let users: AdminUser[] = $state([]);
@@ -144,6 +149,160 @@
   let dailyAvailablePools: AdminDailySchedulePoolOption[] = $state([]);
   let dailyLoading = $state(false);
   let dailyLoaded = $state(false);
+
+  let adminEvents: AdminEvent[] = $state([]);
+  let eventsLoaded = $state(false);
+  let eventDoc = $state("");
+  let eventSaveError = $state<string | null>(null);
+  let eventSaveOk = $state(false);
+
+  const EVENT_TEMPLATE = {
+    slug: "season-one",
+    name: "Season One",
+    partner_name: "Ignite",
+    partner_url: null,
+    partner_logo_url: null,
+    starts_at: "2026-09-23T08:00:00Z",
+    qualifier_ends_at: "2026-09-30T08:00:00Z",
+    ends_at: "2026-10-26T00:00:00Z",
+    newcomer_threshold: 5,
+    config: {
+      modes: [
+        { key: "standard", label: "Standard" },
+        { key: "uwyg_major", label: "UWYG Major Rush" },
+        { key: "boss_rush", label: "Boss Rush" },
+      ],
+      seeds_per_mode: 2,
+      stages: [
+        {
+          key: "semi_a",
+          label: "Semi A",
+          kind: "semi",
+          date: "2026-10-04T19:00:00Z",
+          races: 3,
+          seeds: [1, 4, 5, 8],
+          modes: ["Standard", "Boss Rush", "UWYG Major Rush"],
+        },
+        {
+          key: "semi_b",
+          label: "Semi B",
+          kind: "semi",
+          date: "2026-10-11T19:00:00Z",
+          races: 3,
+          seeds: [2, 3, 6, 7],
+          modes: ["Standard", "Boss Rush", "UWYG Major Rush"],
+        },
+        {
+          key: "newcomers",
+          label: "Newcomers' final",
+          kind: "newcomers",
+          date: "2026-10-18T19:00:00Z",
+          races: 3,
+          size: 4,
+          modes: ["Standard", "Sprint", "Boss Rush"],
+        },
+        {
+          key: "final",
+          label: "Open final",
+          kind: "final",
+          date: "2026-10-25T19:00:00Z",
+          races: 3,
+          from: ["semi_a", "semi_b"],
+          advance: 2,
+          modes: ["Hardcore", "UWYG Boss Rush", "Halloween"],
+        },
+      ],
+      rules: [
+        "Same seed for everyone; one sitting per run.",
+        "Rank points per seed: 100 to first, proportional down the field, unfinished runs ranked by depth reached.",
+        "Best of your two seeds per mode, three modes summed. A score in every mode to be ranked.",
+        "Bosses drop no weapons outside UWYG modes.",
+        "Playoff runners stream live on Twitch with VOD.",
+      ],
+      phase_override: null,
+      announced_at: "2026-09-16T18:00:00Z",
+    },
+  };
+
+  async function loadEvents() {
+    try {
+      adminEvents = await fetchAdminEvents();
+      eventsLoaded = true;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to load events";
+    }
+  }
+
+  function editEvent(ev: AdminEvent | null) {
+    const doc = ev
+      ? {
+          slug: ev.slug,
+          name: ev.name,
+          partner_name: ev.partner_name,
+          partner_url: ev.partner_url,
+          partner_logo_url: ev.partner_logo_url,
+          starts_at: ev.starts_at,
+          qualifier_ends_at: ev.qualifier_ends_at,
+          ends_at: ev.ends_at,
+          newcomer_threshold: ev.newcomer_threshold,
+          config: ev.config,
+        }
+      : EVENT_TEMPLATE;
+    eventDoc = JSON.stringify(doc, null, 2);
+    eventSaveError = null;
+    eventSaveOk = false;
+  }
+
+  async function saveEvent() {
+    eventSaveError = null;
+    eventSaveOk = false;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(eventDoc);
+    } catch {
+      eventSaveError = "The document is not valid JSON.";
+      return;
+    }
+    try {
+      await upsertAdminEvent(parsed);
+      eventSaveOk = true;
+      await loadEvents();
+    } catch (e) {
+      eventSaveError = e instanceof Error ? e.message : "Save failed";
+    }
+  }
+
+  function slotsOf(ev: AdminEvent): string[] {
+    const config = ev.config as {
+      modes?: { key: string }[];
+      seeds_per_mode?: number;
+      stages?: { key: string; races: number }[];
+    };
+    const slots: string[] = [];
+    for (const mode of config.modes ?? []) {
+      for (let i = 1; i <= (config.seeds_per_mode ?? 2); i++)
+        slots.push(`qualifier:${mode.key}:${i}`);
+    }
+    for (const stage of config.stages ?? []) {
+      for (let i = 1; i <= stage.races; i++) slots.push(`${stage.key}:${i}`);
+    }
+    return slots;
+  }
+
+  async function setRaceSlot(raceId: string, value: string) {
+    try {
+      if (value === "") {
+        await attachRaceToEvent(raceId, null, null);
+      } else {
+        const [eventId, slot] = value.split("|", 2);
+        await attachRaceToEvent(raceId, eventId, slot);
+      }
+      await loadInflightRaces();
+      await loadEvents();
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Attach failed";
+    }
+  }
 
   $effect(() => {
     if (auth.initialized && !authChecked) {
@@ -264,6 +423,7 @@
     }
     // Refetch on every open so the monitoring view stays current.
     if (tab === "races") {
+      if (!eventsLoaded) loadEvents();
       loadInflightRaces();
     }
     if (tab === "feedback" && !feedbackLoaded) {
@@ -271,6 +431,9 @@
     }
     if (tab === "daily" && !dailyLoaded) {
       loadDailySchedule();
+    }
+    if (tab === "events" && !eventsLoaded) {
+      loadEvents();
     }
   }
 
@@ -837,6 +1000,13 @@
     >
       Daily
     </button>
+    <button
+      class="tab"
+      class:active={activeTab === "events"}
+      onclick={() => switchTab("events")}
+    >
+      Events
+    </button>
   </div>
 
   {#if error}
@@ -1130,6 +1300,80 @@
         they take effect next week.
       </p>
     {/if}
+  {:else if activeTab === "events"}
+    <div class="events-admin">
+      <div class="events-list">
+        <div class="events-head">
+          <h2>Events</h2>
+          <button class="btn btn-outline" onclick={() => editEvent(null)}
+            >New from template</button
+          >
+        </div>
+        {#if adminEvents.length === 0}
+          <p class="empty">No events yet.</p>
+        {:else}
+          <table>
+            <thead>
+              <tr>
+                <th>Slug</th>
+                <th>Name</th>
+                <th>Phase</th>
+                <th>Attached</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each adminEvents as ev (ev.id)}
+                <tr>
+                  <td
+                    ><a href="/events/{ev.slug}" class="username-link"
+                      >{ev.slug}</a
+                    ></td
+                  >
+                  <td>{ev.name}</td>
+                  <td
+                    ><span
+                      class="signal signal-{ev.phase === 'finished'
+                        ? 'finished'
+                        : ev.phase === 'upcoming'
+                          ? 'setup'
+                          : 'running'}">{ev.phase}</span
+                    ></td
+                  >
+                  <td class="num-cell"
+                    >{Object.keys(ev.attached).length} / {slotsOf(ev)
+                      .length}</td
+                  >
+                  <td
+                    ><button
+                      class="btn btn-outline"
+                      onclick={() => editEvent(ev)}>Edit</button
+                    ></td
+                  >
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+      {#if eventDoc}
+        <div class="events-editor">
+          <label for="event-doc">Event document (JSON)</label>
+          <textarea
+            id="event-doc"
+            bind:value={eventDoc}
+            rows="28"
+            spellcheck="false"
+          ></textarea>
+          <div class="events-actions">
+            <button class="btn btn-primary" onclick={saveEvent}>Save</button>
+            {#if eventSaveOk}<span class="signal signal-open">Saved</span>{/if}
+            {#if eventSaveError}<span class="error-text">{eventSaveError}</span
+              >{/if}
+          </div>
+        </div>
+      {/if}
+    </div>
   {:else if activeTab === "stats"}
     {#if analyticsLoading}
       <p class="loading">Loading analytics...</p>
@@ -1574,6 +1818,7 @@
               <th>Visibility</th>
               <th class="num-col">Players</th>
               <th>When</th>
+              <th>Event slot</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -1621,6 +1866,37 @@
                   {formatFullDate(
                     race.started_at ?? race.scheduled_at ?? race.created_at,
                   )}
+                </td>
+                <td>
+                  <select
+                    class="slot-select"
+                    value={race.event_id && race.event_slot
+                      ? `${race.event_id}|${race.event_slot}`
+                      : ""}
+                    onchange={(e) =>
+                      setRaceSlot(
+                        race.id,
+                        (e.currentTarget as HTMLSelectElement).value,
+                      )}
+                  >
+                    <option value="">none</option>
+                    {#each adminEvents as ev (ev.id)}
+                      <optgroup label={ev.slug}>
+                        {#each slotsOf(ev) as slot (slot)}
+                          <option
+                            value="{ev.id}|{slot}"
+                            disabled={ev.attached[slot] !== undefined &&
+                              ev.attached[slot] !== race.id}
+                          >
+                            {slot}{ev.attached[slot] !== undefined &&
+                            ev.attached[slot] !== race.id
+                              ? " (taken)"
+                              : ""}
+                          </option>
+                        {/each}
+                      </optgroup>
+                    {/each}
+                  </select>
                 </td>
                 <td>
                   <div class="actions-cell">
@@ -2652,5 +2928,53 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     max-width: 28rem;
+  }
+
+  .events-admin {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  .events-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.8rem;
+  }
+
+  .events-editor textarea {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.6rem;
+  }
+
+  .events-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    margin-top: 0.6rem;
+  }
+
+  .error-text {
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
+  }
+
+  .slot-select {
+    max-width: 220px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.25rem 0.4rem;
   }
 </style>

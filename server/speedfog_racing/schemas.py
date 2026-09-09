@@ -410,6 +410,8 @@ class RaceResponse(BaseModel):
     my_current_layer: int | None = None
     my_igt_ms: int | None = None
     my_death_count: int | None = None
+    event_id: UUID | None = None
+    event_slot: str | None = None
 
 
 class PoolConfig(BaseModel):

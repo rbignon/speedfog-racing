@@ -73,6 +73,8 @@ export interface Race {
   my_death_count?: number | null;
   can_join: boolean;
   my_role: string | null;
+  event_id: string | null;
+  event_slot: string | null;
 }
 
 export interface RaceListResponse {

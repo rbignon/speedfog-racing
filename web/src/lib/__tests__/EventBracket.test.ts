@@ -36,6 +36,8 @@ function raceWith(overrides: Partial<Race> = {}): Race {
     casters: [],
     can_join: false,
     my_role: null,
+    event_id: null,
+    event_slot: null,
     ...overrides,
   };
 }

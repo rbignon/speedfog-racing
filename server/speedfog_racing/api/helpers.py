@@ -226,6 +226,8 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         my_current_layer=my_participant.current_layer if my_participant else None,
         my_igt_ms=my_participant.igt_ms if my_participant else None,
         my_death_count=my_participant.death_count if my_participant else None,
+        event_id=race.event_id,
+        event_slot=race.event_slot,
     )
 
 
