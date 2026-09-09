@@ -5,6 +5,8 @@
   import {
     blockOrder,
     formatEventDate,
+    formatEventDay,
+    liveStage,
     racesSectionTitle,
     shouldPoll,
   } from "$lib/events";
@@ -29,6 +31,7 @@
   let now = $state(new Date());
 
   const fmt = (iso: string) => formatEventDate(iso);
+  const fmtDay = (iso: string) => formatEventDay(iso);
 
   let blocks = $derived(blockOrder(detail.phase));
   let seedsByMode = $derived(
@@ -93,7 +96,7 @@
 
 <div class="band">
   <div class="band-inner">
-    <div>
+    <div class="band-left">
       <span class="kicker"
         >SpeedFog{detail.partner_name ? ` × ${detail.partner_name}` : ""} &middot;
         {detail.name}</span
@@ -184,8 +187,8 @@
             </div>
             <div>
               <span class="k">Playoffs</span><span class="v"
-                >{detail.stages.filter((s) => s.kind !== "newcomers").length} Sundays
-                · {detail.stages[0]?.races_expected ?? 3} races each</span
+                >{detail.stages.length} Sundays · {detail.stages[0]
+                  ?.races_expected ?? 3} races each</span
               >
             </div>
             {#if newcomersStage}
@@ -293,10 +296,7 @@
       </section>
     {:else if block === "live"}
       {#if detail.live_race}
-        {@const stage =
-          detail.stages.find((s) =>
-            s.races.some((r) => r.race.id === detail.live_race?.id),
-          ) ?? null}
+        {@const stage = liveStage(detail)}
         {@const index =
           stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
           null}
@@ -316,12 +316,21 @@
         <div class="stack">
           <div>
             <SectionTitle>Bracket</SectionTitle>
-            <EventBracket stages={detail.stages} formatDate={fmt} />
+            <EventBracket
+              stages={detail.stages}
+              formatDate={fmt}
+              formatDay={fmtDay}
+            />
           </div>
           <div class="panel">
             <div class="panel-head">
               <SectionTitle>Qualifier ladder</SectionTitle>
-              <span class="signal signal-finished">Final</span>
+              <span
+                class="signal {detail.ladder.provisional
+                  ? 'signal-active'
+                  : 'signal-finished'}"
+                >{detail.ladder.provisional ? "Provisional" : "Final"}</span
+              >
             </div>
             <EventLadder
               ladder={detail.ladder}
@@ -352,7 +361,7 @@
           <div id="rules" class="rules-card">
             <h3>Rules</h3>
             <ul>
-              {#each detail.rules as rule (rule)}<li>{rule}</li>{/each}
+              {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
             </ul>
           </div>
         </div>
@@ -382,6 +391,10 @@
     align-items: flex-start;
     gap: 2rem;
     flex-wrap: wrap;
+  }
+  .band-left {
+    flex: 1 1 640px;
+    min-width: 0;
   }
   .kicker {
     display: block;

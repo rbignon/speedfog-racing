@@ -70,9 +70,8 @@
     border-top-color: transparent;
     border-radius: var(--radius-lg);
     padding: 0.7rem 0.9rem 0.75rem;
-    height: 168px;
+    min-height: 168px;
     box-sizing: border-box;
-    overflow: hidden;
   }
   .box > :global(.route) {
     position: absolute;

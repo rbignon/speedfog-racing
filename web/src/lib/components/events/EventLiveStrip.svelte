@@ -29,21 +29,35 @@
         }).format(new Date(race.started_at))
       : null,
   );
+  // Built from arrays of non-empty parts (rather than inline {#if}
+  // fragments) so the " · " separator only ever sits between two real
+  // parts: no dangling leading dot, no missing space when Svelte collapses
+  // the whitespace around an {#if} block.
+  let titleParts = $derived(
+    [
+      stage?.label ?? "Playoff",
+      raceIndex !== null && stage
+        ? `Race ${raceIndex} of ${stage.races_expected}`
+        : null,
+      race.pool_name ? formatPoolName(race.pool_name) : null,
+    ].filter((part): part is string => Boolean(part)),
+  );
+  let subParts = $derived(
+    [
+      runners || null,
+      startedAt ? `started ${startedAt}` : null,
+      race.race_duration_minutes
+        ? `cap ${Math.round(race.race_duration_minutes / 60)}h`
+        : null,
+    ].filter((part): part is string => Boolean(part)),
+  );
 </script>
 
 <div class="strip">
   <div>
     <span class="signal signal-running">Live now</span>
-    <div class="title">
-      {stage?.label ?? "Playoff"}{#if raceIndex !== null && stage}
-        &middot; Race {raceIndex} of {stage.races_expected}{/if}
-      {#if race.pool_name}&middot; {formatPoolName(race.pool_name)}{/if}
-    </div>
-    <div class="sub">
-      {runners}{#if startedAt}
-        &middot; started {startedAt}{/if}{#if race.race_duration_minutes}
-        &middot; cap {Math.round(race.race_duration_minutes / 60)}h{/if}
-    </div>
+    <div class="title">{titleParts.join(" · ")}</div>
+    <div class="sub">{subParts.join(" · ")}</div>
     {#if race.casters.length > 0}
       <div class="casters">
         <svg

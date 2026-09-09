@@ -6,7 +6,12 @@
   let {
     stages,
     formatDate,
-  }: { stages: EventStage[]; formatDate: (iso: string) => string } = $props();
+    formatDay,
+  }: {
+    stages: EventStage[];
+    formatDate: (iso: string) => string;
+    formatDay: (iso: string) => string;
+  } = $props();
 
   let semis = $derived(stages.filter((s) => s.kind === "semi"));
   let final = $derived(stages.find((s) => s.kind === "final") ?? null);
@@ -34,7 +39,7 @@
       : played > 0
         ? `race ${Math.min(played + 1, stage.races_expected)} of ${stage.races_expected}`
         : `${stage.races_expected} races`;
-    return `${formatDate(stage.date)} · ${progress}`;
+    return `${formatDay(stage.date)} · ${progress}`;
   }
   function rowsOf(stage: EventStage): StageRow[] {
     if (stage.results.length > 0) {
@@ -47,13 +52,21 @@
         rightClass: e.advances ? "adv" : i === 0 ? "lead" : "pts",
       }));
     }
-    return stage.field.map((slot, i) => ({
-      key: `${stage.key}-${i}`,
-      rank: slot.user ? slot.label.replace("Seed ", "") : null,
-      user: slot.user,
-      label: slot.label,
-      right: "",
-    }));
+    // A decided slot's label is "Seed N" for a qualifier seed, or the
+    // source stage's label (e.g. "Semi A") when it comes from an earlier
+    // playoff stage; only the seed form has a rank number to show, so the
+    // stage-provenance form goes in the right cell instead.
+    return stage.field.map((slot, i) => {
+      const isSeed = slot.label.startsWith("Seed ");
+      return {
+        key: `${stage.key}-${i}`,
+        rank: slot.user && isSeed ? slot.label.replace("Seed ", "") : null,
+        user: slot.user,
+        label: slot.label,
+        right: slot.user && !isSeed ? slot.label : "",
+        rightClass: "pts",
+      };
+    });
   }
   function winnerOf(stage: EventStage | null) {
     return stage && stage.complete ? (stage.results[0]?.user ?? null) : null;
@@ -67,7 +80,7 @@
 </script>
 
 <div class="brk">
-  <div class="col semis">
+  <div class="col">
     {#each semis as stage (stage.key)}
       <EventStageBox
         title={stage.label}
@@ -79,7 +92,11 @@
     {/each}
   </div>
   <div class="conn" aria-hidden="true">
-    <svg width="24" height="350" viewBox="0 0 24 350"
+    <svg
+      width="24"
+      height="100%"
+      viewBox="0 0 24 350"
+      preserveAspectRatio="none"
       ><path
         d="M0 84 H12 V266 H0 M12 175 H24"
         fill="none"
@@ -100,7 +117,11 @@
     {/if}
   </div>
   <div class="conn one" aria-hidden="true">
-    <svg width="24" height="168" viewBox="0 0 24 168"
+    <svg
+      width="24"
+      height="100%"
+      viewBox="0 0 24 168"
+      preserveAspectRatio="none"
       ><path
         d="M0 84 H24"
         fill="none"
@@ -138,7 +159,11 @@
       />
     </div>
     <div class="conn one row2" aria-hidden="true">
-      <svg width="24" height="168" viewBox="0 0 24 168"
+      <svg
+        width="24"
+        height="100%"
+        viewBox="0 0 24 168"
+        preserveAspectRatio="none"
         ><path
           d="M0 84 H24"
           fill="none"
@@ -171,10 +196,10 @@
         0,
         0.7fr
       );
-    grid-template-rows: auto auto;
+    grid-template-rows: auto;
     column-gap: 0;
     row-gap: 14px;
-    align-items: start;
+    align-items: stretch;
   }
   .col {
     display: flex;
@@ -182,33 +207,29 @@
     gap: 14px;
     min-width: 0;
   }
+  /* The semis column is always the bracket's first child; splitting it
+   * into two equal grid rows (rather than a flex column) is what makes
+   * both semi boxes stretch to match each other's height. */
+  .brk > .col:first-child {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    row-gap: 14px;
+  }
   .col.centre {
     justify-content: center;
-    height: 350px;
   }
   .row2 {
     grid-row: 2;
-  }
-  .col.row2 {
-    height: auto;
-  }
-  .col.centre.row2 {
-    height: 168px;
   }
   .col.indent {
     grid-column: 3;
     margin-left: 22px;
   }
   .conn {
-    height: 350px;
     display: flex;
     align-items: center;
   }
-  .conn.one {
-    height: 350px;
-  }
   .conn.one.row2 {
-    height: 168px;
     grid-column: 4;
   }
   .col-5 {
@@ -290,10 +311,6 @@
     }
     .conn {
       display: none;
-    }
-    .col.centre,
-    .col.centre.row2 {
-      height: auto;
     }
     .col.indent {
       margin-left: 0;

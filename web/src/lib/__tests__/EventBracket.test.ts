@@ -60,6 +60,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
 }
 
 const fmt = (iso: string) => `D(${iso})`;
+const fmtDay = (iso: string) => `Day(${iso})`;
 
 describe("EventBracket stage state and progress", () => {
   it("signals Live for a stage with a running race, Upcoming otherwise", () => {
@@ -78,15 +79,28 @@ describe("EventBracket stage state and progress", () => {
         stage({ key: "semi_b", label: "Semi B" }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(container.querySelector(".signal-running")).not.toBeNull();
     expect(container.querySelector(".signal-setup")).not.toBeNull();
   });
 
-  it("signals Finished for a complete stage regardless of its races", () => {
+  it("signals Finished for a complete stage even while one of its races is still running", () => {
     const { container } = render(EventBracket, {
-      stages: [stage({ complete: true })],
+      stages: [
+        stage({
+          complete: true,
+          races: [
+            {
+              slot: "semi_a:1",
+              index: 1,
+              race: raceWith({ status: "running" }),
+            },
+          ],
+        }),
+      ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(container.querySelector(".signal-finished")).not.toBeNull();
     expect(container.querySelector(".signal-running")).toBeNull();
@@ -96,6 +110,7 @@ describe("EventBracket stage state and progress", () => {
     const notStarted = render(EventBracket, {
       stages: [stage({ races_expected: 3 })],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(notStarted.getByText(/3 races/)).toBeTruthy();
     notStarted.unmount();
@@ -115,8 +130,40 @@ describe("EventBracket stage state and progress", () => {
         }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(midStage.getByText(/race 2 of 3/)).toBeTruthy();
+  });
+
+  it("clamps the next-race number at races_expected once every expected race has been played", () => {
+    const { getByText } = render(EventBracket, {
+      stages: [
+        stage({
+          races_expected: 3,
+          complete: false,
+          races: [
+            {
+              slot: "semi_a:1",
+              index: 1,
+              race: raceWith({ status: "finished" }),
+            },
+            {
+              slot: "semi_a:2",
+              index: 2,
+              race: raceWith({ status: "finished" }),
+            },
+            {
+              slot: "semi_a:3",
+              index: 3,
+              race: raceWith({ status: "finished" }),
+            },
+          ],
+        }),
+      ],
+      formatDate: fmt,
+      formatDay: fmtDay,
+    });
+    expect(getByText(/race 3 of 3/)).toBeTruthy();
   });
 });
 
@@ -154,18 +201,51 @@ describe("EventBracket rows", () => {
         }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(getByText("adv 100")).toBeTruthy();
     expect(getByText("80")).toBeTruthy();
     expect(queryByText("Seed 1")).toBeNull();
   });
 
-  it("falls back to the open field slots when a stage has no results yet", () => {
-    const { getAllByText } = render(EventBracket, {
-      stages: [stage()],
+  it("falls back to the open field slots when a stage has no results yet, with no rank on an open slot", () => {
+    const s = stage();
+    const { container } = render(EventBracket, {
+      stages: [s],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
-    expect(getAllByText("Seed 1").length).toBeGreaterThan(0);
+    const rows = container.querySelectorAll(".box li");
+    expect(rows.length).toBe(s.field.length);
+    rows.forEach((row) => {
+      expect(row.querySelector(".rank")?.textContent).toBe("");
+    });
+  });
+
+  it("shows a decided non-seed slot's source stage in the right cell, not as a rank", () => {
+    const { container } = render(EventBracket, {
+      stages: [
+        stage({
+          field: [
+            {
+              user: {
+                id: "u1",
+                twitch_username: "a",
+                twitch_display_name: "A",
+                twitch_avatar_url: null,
+              },
+              label: "Semi A",
+            },
+            { user: null, label: "Seed 2" },
+          ],
+        }),
+      ],
+      formatDate: fmt,
+      formatDay: fmtDay,
+    });
+    const firstRow = container.querySelector(".box li");
+    expect(firstRow?.querySelector(".rank")?.textContent).toBe("");
+    expect(firstRow?.querySelector(".right")?.textContent).toBe("Semi A");
   });
 });
 
@@ -195,6 +275,7 @@ describe("EventBracket champion box", () => {
         }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     const champBox = container.querySelector(".champ.decided");
     expect(champBox).not.toBeNull();
@@ -213,6 +294,7 @@ describe("EventBracket champion box", () => {
         }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(container.querySelector(".champ.decided")).toBeNull();
     expect(getByText(/Decided D\(2026-10-25T20:00:00Z\)/)).toBeTruthy();
@@ -227,6 +309,7 @@ describe("EventBracket modes line", () => {
         stage({ key: "semi_b", label: "Semi B", modes: [] }),
       ],
       formatDate: fmt,
+      formatDay: fmtDay,
     });
     expect(getByText("Semi A: Standard, Hard")).toBeTruthy();
     expect(queryByText(/Semi B:/)).toBeNull();

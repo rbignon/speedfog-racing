@@ -1,7 +1,7 @@
 import { render } from "@testing-library/svelte";
 import { describe, expect, it } from "vitest";
 import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
-import type { Race } from "$lib/api";
+import type { EventStage, Race } from "$lib/api";
 
 function raceWith(overrides: Partial<Race> = {}): Race {
   return {
@@ -40,10 +40,24 @@ function raceWith(overrides: Partial<Race> = {}): Race {
   };
 }
 
-function watchLink(container: HTMLElement): HTMLAnchorElement | undefined {
-  return [...container.querySelectorAll("a")].find(
-    (a) => a.textContent === "Watch on Twitch",
-  ) as HTMLAnchorElement | undefined;
+function stageWith(overrides: Partial<EventStage> = {}): EventStage {
+  return {
+    key: "semi_a",
+    label: "Semi A",
+    kind: "semi",
+    date: "2026-10-04T20:00:00Z",
+    races_expected: 3,
+    complete: false,
+    modes: [],
+    races: [],
+    results: [],
+    field: [],
+    ...overrides,
+  };
+}
+
+function watchLink(container: HTMLElement): HTMLAnchorElement | null {
+  return container.querySelector<HTMLAnchorElement>("a.btn-twitch");
 }
 
 describe("EventLiveStrip watch link", () => {
@@ -112,6 +126,39 @@ describe("EventLiveStrip watch link", () => {
       stage: null,
       raceIndex: null,
     });
-    expect(watchLink(container)).toBeUndefined();
+    expect(watchLink(container)).toBeNull();
+  });
+});
+
+describe("EventLiveStrip title and sub line", () => {
+  it("joins the title from the stage, race index and pool name with a consistent separator", () => {
+    const { container } = render(EventLiveStrip, {
+      race: raceWith({ pool_name: "sprint" }),
+      stage: stageWith({ label: "Semi A", races_expected: 3 }),
+      raceIndex: 2,
+    });
+    expect(container.querySelector(".title")?.textContent).toBe(
+      "Semi A · Race 2 of 3 · Sprint",
+    );
+  });
+
+  it("drops the stray leading dot when there are no runner previews to lead the sub line", () => {
+    const { container } = render(EventLiveStrip, {
+      race: raceWith({ participant_previews: [] }),
+      stage: null,
+      raceIndex: null,
+    });
+    const sub = container.querySelector(".sub")?.textContent ?? "";
+    expect(sub.startsWith("·")).toBe(false);
+    expect(sub).toContain("started");
+  });
+
+  it("rounds the race duration cap to the nearest hour", () => {
+    const { container } = render(EventLiveStrip, {
+      race: raceWith({ race_duration_minutes: 90 }),
+      stage: null,
+      raceIndex: null,
+    });
+    expect(container.querySelector(".sub")?.textContent).toContain("cap 2h");
   });
 });

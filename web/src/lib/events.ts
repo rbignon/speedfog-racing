@@ -1,4 +1,4 @@
-import type { EventDetail, EventPhase } from "$lib/api";
+import type { EventDetail, EventPhase, EventStage } from "$lib/api";
 
 export type EventBlock =
   | "format"
@@ -29,6 +29,18 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
   }
 }
 
+type LiveStageInput = Pick<EventDetail, "live_race" | "stages">;
+
+/** The stage that owns the currently live race, or null when there is none or no stage matches. */
+export function liveStage(detail: LiveStageInput): EventStage | null {
+  if (!detail.live_race) return null;
+  return (
+    detail.stages.find((s) =>
+      s.races.some((r) => r.race.id === detail.live_race?.id),
+    ) ?? null
+  );
+}
+
 type TitleInput = Pick<EventDetail, "live_race" | "next_stage" | "stages">;
 
 /** "Live now · Semi B" while a stage race runs, "Up next · Semi A · <date>" otherwise. */
@@ -37,9 +49,7 @@ export function racesSectionTitle(
   formatDate: (iso: string) => string,
 ): string {
   if (detail.live_race) {
-    const stage = detail.stages.find((s) =>
-      s.races.some((r) => r.race.id === detail.live_race?.id),
-    );
+    const stage = liveStage(detail);
     return stage ? `Live now · ${stage.label}` : "Live now";
   }
   if (detail.next_stage) {
@@ -71,6 +81,15 @@ export function formatEventDate(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+  }).format(new Date(iso));
+}
+
+/** "Sun 4 Oct", no time: the bracket's compact per-stage meta line. */
+export function formatEventDay(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
   }).format(new Date(iso));
 }
 
