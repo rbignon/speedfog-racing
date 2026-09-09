@@ -87,8 +87,8 @@
           </div>
           {#each modes as mode (mode.key)}
             {@const p = entry.mode_points[mode.key]}
-            <span class="cell" class:miss={p === null}
-              >{p === null ? "·" : p}</span
+            <span class="cell" class:miss={p == null}
+              >{p == null ? "·" : p}</span
             >
           {/each}
           {#if entry.total === null}

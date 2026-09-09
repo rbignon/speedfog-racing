@@ -11,7 +11,13 @@
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
-  let detail: EventDetail = $state(data.detail);
+
+  // Writable $derived: starts from the route's loaded data and stays synced
+  // to it (so navigating from one event to another, or an invalidateAll(),
+  // replaces it), while still letting refresh()'s poll below reassign it
+  // in between navigations.
+  let detail: EventDetail = $derived(data.detail);
+
   let now = $state(new Date());
 
   const fmt = (iso: string) => formatEventDate(iso);
@@ -281,7 +287,7 @@
       <section id="rules" class="rules-card">
         <h3>Rules</h3>
         <ul>
-          {#each detail.rules as rule (rule)}<li>{rule}</li>{/each}
+          {#each detail.rules as rule, i (i)}<li>{rule}</li>{/each}
         </ul>
       </section>
     {/if}

@@ -68,14 +68,21 @@ describe("EventQualified group titles", () => {
     expect(getByText("Group B")).toBeTruthy();
   });
 
-  it("labels the newcomers group Newcomers regardless of stage order", () => {
+  it("labels the newcomers group Newcomers regardless of where the newcomers stage sits in the array", () => {
+    const reordered: EventStage[] = [
+      stage({ key: "newcomers", label: "Newcomers Final", kind: "newcomers" }),
+      stage({ key: "semi-a", label: "Semi A", kind: "semi" }),
+      stage({ key: "semi-b", label: "Semi B", kind: "semi" }),
+    ];
     const { getByText } = render(EventQualified, {
       qualified: qualifiedWith(),
-      stages,
+      stages: reordered,
       cutAt: "2026-09-20T00:00:00Z",
       formatDate: fmt,
     });
     expect(getByText("Newcomers")).toBeTruthy();
+    expect(getByText("Group A")).toBeTruthy();
+    expect(getByText("Group B")).toBeTruthy();
   });
 
   it("shows the filled/total count for a group", () => {

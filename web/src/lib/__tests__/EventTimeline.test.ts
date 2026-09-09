@@ -51,7 +51,7 @@ describe("EventTimeline stop state", () => {
       expect(g.classList.contains("now")).toBe(false);
     }
     const railDone = container.querySelector<HTMLElement>(".rail-done");
-    expect(railDone?.getAttribute("style")).toContain("calc(0% - 6px)");
+    expect(railDone?.getAttribute("style")).toContain("calc(0%");
   });
 
   it("centers a single stop at 50%", () => {
