@@ -1022,3 +1022,176 @@ class EventConfig(BaseModel):
 
     def final_stage(self) -> EventStage | None:
         return next((s for s in self.stages if s.kind == "final"), None)
+
+
+class EventTimelineStopResponse(BaseModel):
+    key: str
+    label: str
+    date: datetime
+    kind: str
+
+
+class EventMyResultResponse(BaseModel):
+    status: Literal["not_played", "joined", "playing", "done"]
+    rank: int | None = None
+    igt_ms: int | None = None
+    points: int | None = None
+    provisional: bool = False
+
+
+class EventQualifierRaceResponse(BaseModel):
+    slot: str
+    mode: str
+    index: int
+    race: RaceResponse
+    closes_at: datetime | None
+    my_result: EventMyResultResponse | None
+
+
+class EventLadderEntryResponse(BaseModel):
+    rank: int | None
+    user: UserResponse
+    newcomer: bool
+    mode_points: dict[str, int | None]
+    total: int | None
+    modes_scored: int
+    igt_total: int
+    provisional: bool
+
+
+class EventLadderResponse(BaseModel):
+    provisional: bool
+    entered: int
+    ranked_count: int
+    entries: list[EventLadderEntryResponse]
+
+
+class EventQualifiedSlotResponse(BaseModel):
+    seed: int | None
+    user: UserResponse | None
+    newcomer: bool
+    note: str | None
+
+
+class EventQualifiedGroupResponse(BaseModel):
+    stage_key: str
+    label: str
+    entries: list[EventQualifiedSlotResponse]
+
+
+class EventQualifiedResponse(BaseModel):
+    provisional: bool
+    groups: list[EventQualifiedGroupResponse]
+
+
+class EventStageRaceResponse(BaseModel):
+    slot: str
+    index: int
+    race: RaceResponse
+
+
+class EventStageEntryResponse(BaseModel):
+    user: UserResponse
+    newcomer: bool
+    points: int
+    igt_total: int
+    advances: bool
+
+
+class EventFieldSlotResponse(BaseModel):
+    user: UserResponse | None
+    label: str
+
+
+class EventStageResponse(BaseModel):
+    key: str
+    label: str
+    kind: str
+    date: datetime
+    races_expected: int
+    complete: bool
+    modes: list[str]
+    races: list[EventStageRaceResponse]
+    results: list[EventStageEntryResponse]
+    field: list[EventFieldSlotResponse]
+
+
+class EventNextStageResponse(BaseModel):
+    key: str
+    label: str
+    date: datetime
+
+
+class EventDetailResponse(BaseModel):
+    slug: str
+    name: str
+    partner_name: str | None
+    partner_url: str | None
+    partner_logo_url: str | None
+    starts_at: datetime
+    qualifier_ends_at: datetime
+    ends_at: datetime
+    newcomer_threshold: int
+    phase: str
+    ladder_final: bool
+    modes: list[EventMode]
+    seeds_per_mode: int
+    rules: list[str]
+    timeline: list[EventTimelineStopResponse]
+    qualifier_races: list[EventQualifierRaceResponse]
+    ladder: EventLadderResponse
+    qualified: EventQualifiedResponse
+    stages: list[EventStageResponse]
+    current_stage_key: str | None
+    live_race: RaceResponse | None
+    next_stage: EventNextStageResponse | None
+
+
+class EventUpsertRequest(BaseModel):
+    slug: str = Field(min_length=1, max_length=50, pattern=r"^[a-z0-9-]+$")
+    name: str = Field(min_length=1, max_length=200)
+    partner_name: str | None = Field(default=None, max_length=100)
+    partner_url: str | None = Field(default=None, max_length=500)
+    partner_logo_url: str | None = Field(default=None, max_length=500)
+    starts_at: datetime
+    qualifier_ends_at: datetime
+    ends_at: datetime
+    newcomer_threshold: int = Field(default=5, ge=0, le=100)
+    config: EventConfig
+
+    @model_validator(mode="after")
+    def _check_dates(self) -> "EventUpsertRequest":
+        if not self.starts_at < self.qualifier_ends_at:
+            raise ValueError("starts_at must be before qualifier_ends_at")
+        if self.config.stages:
+            if self.qualifier_ends_at > self.config.stages[0].date:
+                raise ValueError("qualifier_ends_at must not be after the first stage date")
+            if self.config.stages[-1].date >= self.ends_at:
+                raise ValueError("ends_at must be after the last stage date")
+        elif self.qualifier_ends_at >= self.ends_at:
+            raise ValueError("ends_at must be after qualifier_ends_at")
+        return self
+
+
+class AdminEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    slug: str
+    name: str
+    partner_name: str | None
+    partner_url: str | None
+    partner_logo_url: str | None
+    starts_at: datetime
+    qualifier_ends_at: datetime
+    ends_at: datetime
+    newcomer_threshold: int
+    config: dict[str, Any]
+    created_at: datetime
+    phase: str
+    attached: dict[str, UUID]
+
+
+class AttachRaceToEventRequest(BaseModel):
+    event_id: UUID | None = None
+    slot: str | None = Field(default=None, max_length=50)
