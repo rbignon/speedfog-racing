@@ -9,6 +9,7 @@ import {
   ordinal,
   pollIntervalMs,
   racesSectionTitle,
+  stripStagePrefix,
   timeRemaining,
 } from "$lib/events";
 import type { EventDetail, EventPhase, EventStage, Race } from "$lib/api";
@@ -99,6 +100,18 @@ describe("eventFacts", () => {
         (t) => t.title,
       ),
     ).not.toContain("Newcomers");
+  });
+});
+
+describe("stripStagePrefix", () => {
+  it("drops the stage label only when the name starts with it", () => {
+    expect(stripStagePrefix("Semi A · Race 1 · Standard", "Semi A")).toBe(
+      "Race 1 · Standard",
+    );
+    expect(stripStagePrefix("Semi B · Race 1 · Standard", "Semi A")).toBe(
+      "Semi B · Race 1 · Standard",
+    );
+    expect(stripStagePrefix("Semi A", "Semi A")).toBe("Semi A");
   });
 });
 

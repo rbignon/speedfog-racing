@@ -5,12 +5,16 @@
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
 
+  // `title` replaces the displayed race name when the surrounding surface
+  // already carries part of it; the race keeps its full name everywhere else.
   let {
     race,
     variant = "default",
+    title,
   }: {
     race: Race;
     variant?: "default" | "compact";
+    title?: string;
   } = $props();
 
   let isRunning = $derived(race.status === "running");
@@ -100,7 +104,8 @@
           {#if isFrog}
             <img src="/badges/frog.svg" alt="" class="frog-icon" />
           {/if}
-          <span class="race-name" class:frog={isFrog}>{race.name}</span>
+          <span class="race-name" class:frog={isFrog}>{title || race.name}</span
+          >
         </div>
         <div class="race-signals">
           {#if showOpenBadge}
@@ -201,7 +206,7 @@
           {race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
           player{race.participant_count !== 1 ? "s" : ""}
           {#if race.pool_name}
-            &middot; {formatPoolName(race.pool_name)}
+            &middot; {race.pool_display_name || formatPoolName(race.pool_name)}
           {/if}
           {#if race.deathless}
             {#if !race.pool_name}&middot;{/if}

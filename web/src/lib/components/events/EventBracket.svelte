@@ -49,7 +49,15 @@
         user: e.user,
         newcomer: e.newcomer,
         right: e.advances ? `adv ${e.points}` : String(e.points),
-        rightClass: e.advances ? "adv" : i === 0 ? "lead" : "pts",
+        // Points move while the evening runs (running races score
+        // provisionally), so they read brass until the stage is complete.
+        rightClass: e.advances
+          ? "adv"
+          : !stage.complete
+            ? "prov"
+            : i === 0
+              ? "lead"
+              : "pts",
       }));
     }
     // A decided slot's label is "Seed N" for a qualifier seed, or the

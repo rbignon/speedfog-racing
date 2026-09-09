@@ -110,7 +110,9 @@ run, not the number who joined a qualifier race.
 
 Qualified groups map each semi's `seeds` to ladder positions; the newcomers'
 group takes the first ranked newcomers positioned after the last seed. Playoff
-evenings sum the points of their races (100 / 75 / 50 / 25 with four runners).
+evenings sum the points of their races (100 / 75 / 50 / 25 with four runners);
+a running race scores provisionally, so the bracket shows a stage's points in
+brass until the stage is complete.
 
 ## Qualifier races
 
@@ -146,9 +148,10 @@ viewers. `closes_at` is the race's
 4. Before each playoff evening: create the stage's public races (four slots, a
    duration cap), add the qualified runners and the casters, attach to
    `<stage>:<n>`. Name them as the page shows them, "Semi B · Race 1 ·
-   Standard": the race cards beside the bracket display the race name, and a
-   slot with no race yet shows a placeholder named the same way. Start each
-   race as its organizer on the evening.
+   Standard": the race cards beside the bracket display the race name
+   without the stage label the section already carries ("Race 1 ·
+   Standard"), and a slot with no race yet shows a placeholder named the
+   same way. Start each race as its organizer on the evening.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.

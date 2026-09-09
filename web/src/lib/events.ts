@@ -96,6 +96,16 @@ export function liveStage(detail: LiveStageInput): EventStage | null {
   );
 }
 
+/**
+ * A race name without its leading stage label ("Semi A · Race 1 · Standard"
+ * shown under a "Semi A" heading reads "Race 1 · Standard"); unchanged when
+ * the name does not start with the label.
+ */
+export function stripStagePrefix(name: string, stageLabel: string): string {
+  const prefix = `${stageLabel} · `;
+  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+}
+
 type ShownStageInput = Pick<
   EventDetail,
   "current_stage_key" | "next_stage" | "stages"

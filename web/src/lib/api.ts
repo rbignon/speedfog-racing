@@ -47,6 +47,7 @@ export interface Race {
   organizer: User;
   status: RaceStatus;
   pool_name: string | null;
+  pool_display_name?: string | null;
   is_public: boolean;
   open_registration: boolean;
   max_participants: number | null;

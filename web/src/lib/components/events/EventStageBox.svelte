@@ -7,7 +7,7 @@
     label?: string;
     newcomer?: boolean;
     right?: string;
-    rightClass?: "pts" | "lead" | "adv";
+    rightClass?: "pts" | "lead" | "adv" | "prov";
   }
 </script>
 
@@ -153,6 +153,9 @@
   .right.lead {
     color: var(--color-success);
     font-weight: 600;
+  }
+  .right.prov {
+    color: var(--color-gold);
   }
   .right.adv {
     color: var(--color-success);

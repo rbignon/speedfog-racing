@@ -384,6 +384,7 @@ class RaceResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
+    pool_display_name: str | None = None
     is_public: bool
     open_registration: bool = False
     max_participants: int | None = None
@@ -474,6 +475,7 @@ class RaceDetailResponse(BaseModel):
     organizer: UserResponse
     status: RaceStatus
     pool_name: str | None
+    pool_display_name: str | None = None
     is_public: bool
     open_registration: bool = False
     max_participants: int | None = None

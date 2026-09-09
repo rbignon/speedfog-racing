@@ -29,15 +29,6 @@
         }).format(new Date(race.started_at))
       : null,
   );
-  // "2h" on a whole hour, "1h30" otherwise: rounding to the nearest hour
-  // (as before) turned a 90-minute cap into the misleading "cap 2h".
-  function formatCapHours(minutes: number): string {
-    const hours = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-    return mins === 0
-      ? `${hours}h`
-      : `${hours}h${mins.toString().padStart(2, "0")}`;
-  }
   // Built from arrays of non-empty parts (rather than inline {#if}
   // fragments) so the " · " separator only ever sits between two real
   // parts: no dangling leading dot, no missing space when Svelte collapses
@@ -48,17 +39,15 @@
       raceIndex !== null && stage
         ? `Race ${raceIndex} of ${stage.races_expected}`
         : null,
-      race.pool_name ? formatPoolName(race.pool_name) : null,
+      race.pool_name
+        ? race.pool_display_name || formatPoolName(race.pool_name)
+        : null,
     ].filter((part): part is string => Boolean(part)),
   );
   let subParts = $derived(
-    [
-      runners || null,
-      startedAt ? `started ${startedAt}` : null,
-      race.race_duration_minutes
-        ? `cap ${formatCapHours(race.race_duration_minutes)}`
-        : null,
-    ].filter((part): part is string => Boolean(part)),
+    [runners || null, startedAt ? `started ${startedAt}` : null].filter(
+      (part): part is string => Boolean(part),
+    ),
   );
 </script>
 

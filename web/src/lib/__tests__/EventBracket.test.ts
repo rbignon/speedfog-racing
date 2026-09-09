@@ -210,6 +210,38 @@ describe("EventBracket rows", () => {
     expect(queryByText("Seed 1")).toBeNull();
   });
 
+  it("reads points as provisional (brass) until the stage is complete", () => {
+    const results = [
+      {
+        user: {
+          id: "u1",
+          twitch_username: "a",
+          twitch_display_name: "A",
+          twitch_avatar_url: null,
+        },
+        newcomer: false,
+        points: 100,
+        igt_total: 1000,
+        advances: false,
+      },
+    ];
+    const running = render(EventBracket, {
+      stages: [stage({ complete: false, results })],
+      formatDate: fmt,
+      formatDay: fmtDay,
+    });
+    expect(running.container.querySelector(".right.prov")).not.toBeNull();
+    expect(running.container.querySelector(".right.lead")).toBeNull();
+
+    const done = render(EventBracket, {
+      stages: [stage({ complete: true, results })],
+      formatDate: fmt,
+      formatDay: fmtDay,
+    });
+    expect(done.container.querySelector(".right.lead")).not.toBeNull();
+    expect(done.container.querySelector(".right.prov")).toBeNull();
+  });
+
   it("falls back to the open field slots when a stage has no results yet, with no rank on an open slot", () => {
     const s = stage();
     const { container } = render(EventBracket, {

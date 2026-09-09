@@ -12,6 +12,7 @@
     fillSlots,
     racesSectionTitle,
     shownStage,
+    stripStagePrefix,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
@@ -367,7 +368,10 @@
                 <div class="stage-races">
                   {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
                     {#if entry}
-                      <RaceCard race={entry.race} />
+                      <RaceCard
+                        race={entry.race}
+                        title={stripStagePrefix(entry.race.name, shown.label)}
+                      />
                     {:else}
                       <EventRacePlaceholder
                         name={[`Race ${i + 1}`, shown.modes[i]]

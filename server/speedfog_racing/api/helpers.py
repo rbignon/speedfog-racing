@@ -200,6 +200,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         organizer=user_response(race.organizer),
         status=race.status,
         pool_name=race.seed.pool_name if race.seed else None,
+        pool_display_name=format_pool_display_name(race.seed.pool) if race.seed else None,
         is_public=race.is_public,
         open_registration=race.open_registration,
         max_participants=race.max_participants,

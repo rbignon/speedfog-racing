@@ -18,6 +18,7 @@ from speedfog_racing.models import (
     ChatMessage,
     Participant,
     ParticipantStatus,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -173,6 +174,35 @@ async def test_create_race_success(test_client, organizer, seed):
         assert data["status"] == "setup"
         assert data["organizer"]["twitch_username"] == "organizer"
         assert data["pool_name"] == "standard"
+
+
+@pytest.mark.asyncio
+async def test_race_carries_the_pool_configured_display_name(test_client, organizer, async_session):
+    """The response shows the pool's configured name, not a title-cased key."""
+    async with async_session() as db:
+        db.add(Pool(name="uwyg_major", enabled=True, config={"name": "UWYG Major Rush"}))
+        db.add(
+            Seed(
+                seed_number="uwyg1",
+                pool_name="uwyg_major",
+                graph_json={"total_layers": 10, "nodes": []},
+                total_layers=10,
+                folder_path="/test/seed_uwyg1.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        await db.commit()
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Major race", "pool_name": "uwyg_major"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["pool_display_name"] == "UWYG Major Rush"
+        race_id = response.json()["id"]
+        detail = await client.get(f"/api/races/{race_id}")
+        assert detail.json()["pool_display_name"] == "UWYG Major Rush"
 
 
 @pytest.mark.asyncio
