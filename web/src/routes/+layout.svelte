@@ -594,7 +594,15 @@
       font-size: 18px;
     }
 
+    /* The nav is wider than a phone row, so let it wrap rather than overflow.
+     * flex-grow (not the flex shorthand, which would zero the basis and let
+     * the nav share the wordmark's row) makes it fill its own line, so the
+     * rows stay right-aligned at every width. The header is static, so the
+     * extra rows only cost space at the top of the page. */
     nav {
+      flex-wrap: wrap;
+      flex-grow: 1;
+      justify-content: flex-end;
       gap: 0.5rem;
     }
 
