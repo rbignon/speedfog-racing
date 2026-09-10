@@ -127,25 +127,30 @@ export interface Champion {
   kind: "final" | "newcomers";
   label: string;
   user: User;
+  /** Position on the qualifier ladder, null if unranked there. */
+  ladderRank: number | null;
   /**
    * Races of the evening the winner finished first (a race nobody finished
    * counts for no one, even though the ladder still scores its deepest run).
    */
   wins: number;
-  points: number;
-  igtTotal: number;
+  racesExpected: number;
+  /** The weapon carried the longest over the whole event, if any. */
+  weapon: string | null;
 }
+
+type ChampionsInput = Pick<EventDetail, "stages" | "ladder">;
 
 /**
  * The decided winners of the stages that crown one, the final first and
- * the newcomers' final after it, with their evening's figures.
+ * the newcomers' final after it, with where they came from on the ladder,
+ * their evening's record and their signature weapon.
  */
-export function champions(stages: EventStage[]): Champion[] {
+export function champions(detail: ChampionsInput): Champion[] {
   const crown = (kind: Champion["kind"], label: string): Champion[] => {
-    const stage = stages.find((s) => s.kind === kind && s.complete);
+    const stage = detail.stages.find((s) => s.kind === kind && s.complete);
     const user = stage ? stageWinner(stage) : null;
     if (!stage || !user) return [];
-    const entry = stage.results[0];
     const wins = stage.races.filter(
       (r) =>
         r.race.status === "finished" &&
@@ -157,9 +162,12 @@ export function champions(stages: EventStage[]): Champion[] {
         kind,
         label,
         user,
+        ladderRank:
+          detail.ladder.entries.find((e) => e.user.id === user.id)?.rank ??
+          null,
         wins,
-        points: entry.points,
-        igtTotal: entry.igt_total,
+        racesExpected: stage.races_expected,
+        weapon: stage.results[0].signature_weapon?.name ?? null,
       },
     ];
   };

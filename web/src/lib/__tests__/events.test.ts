@@ -155,6 +155,7 @@ describe("champions", () => {
         points: 300,
         igt_total: 5000,
         advances: false,
+        signature_weapon: { id: 8030000, name: "Bloodhound's Fang" },
       },
       {
         user: runnerUp,
@@ -162,27 +163,47 @@ describe("champions", () => {
         points: 200,
         igt_total: 1,
         advances: false,
+        signature_weapon: null,
       },
     ],
     field: [],
     ...overrides,
   });
+  const ladder = {
+    entries: [
+      { rank: 7, user: winner },
+      { rank: null, user: runnerUp },
+    ],
+  } as unknown as EventDetail["ladder"];
 
-  it("crowns the leader of a complete final or newcomers' final only, the final first, with the evening's figures", () => {
-    const crowned = champions([
-      stageOf("semi", true),
-      stageOf("newcomers", true),
-      stageOf("final", true),
-    ]);
+  it("crowns the leader of a complete final or newcomers' final only, the final first, with their story", () => {
+    const crowned = champions({
+      stages: [
+        stageOf("semi", true),
+        stageOf("newcomers", true),
+        stageOf("final", true),
+      ],
+      ladder,
+    });
     expect(crowned.map((c) => c.kind)).toEqual(["final", "newcomers"]);
     expect(crowned.map((c) => c.label)).toEqual(["Champion", "Newcomers"]);
     expect(crowned[0]).toMatchObject({
       user: winner,
+      ladderRank: 7,
       wins: 2,
-      points: 300,
-      igtTotal: 5000,
+      racesExpected: 3,
+      weapon: "Bloodhound's Fang",
     });
-    // A race nobody finished has no first place to count.
+    expect(champions({ stages: [stageOf("final", false)], ladder })).toEqual(
+      [],
+    );
+    // Complete but nobody scored: no winner to crown.
+    expect(
+      champions({ stages: [stageOf("final", true, { results: [] })], ladder }),
+    ).toEqual([]);
+  });
+
+  it("counts no win for a race nobody finished, and no rank or weapon when there is none", () => {
     const nobodyFinished = {
       ...wonBy(3, "u1"),
       race: {
@@ -190,14 +211,23 @@ describe("champions", () => {
         participant_previews: [{ id: "u1", placement: null }],
       },
     } as unknown as EventStage["races"][number];
-    expect(
-      champions([
-        stageOf("final", true, { races: [wonBy(1, "u1"), nobodyFinished] }),
-      ])[0].wins,
-    ).toBe(1);
-    expect(champions([stageOf("final", false)])).toEqual([]);
-    // Complete but nobody scored: no winner to crown.
-    expect(champions([stageOf("final", true, { results: [] })])).toEqual([]);
+    const results = [
+      { ...stageOf("final", true).results[0], signature_weapon: null },
+    ];
+    const crowned = champions({
+      stages: [
+        stageOf("final", true, {
+          races: [wonBy(1, "u1"), nobodyFinished],
+          results,
+        }),
+      ],
+      ladder: { entries: [] } as unknown as EventDetail["ladder"],
+    });
+    expect(crowned[0]).toMatchObject({
+      wins: 1,
+      ladderRank: null,
+      weapon: null,
+    });
   });
 });
 

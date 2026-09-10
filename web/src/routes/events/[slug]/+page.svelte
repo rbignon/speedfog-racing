@@ -11,13 +11,13 @@
     liveStage,
     pollIntervalMs,
     fillSlots,
+    ordinal,
     racesSection,
     shownStage,
     stripStagePrefix,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
-  import { formatTime } from "$lib/highlights";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import EventTimeline from "$lib/components/events/EventTimeline.svelte";
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
@@ -61,7 +61,7 @@
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let shown = $derived(shownStage(detail));
-  let crowned = $derived(champions(detail.stages));
+  let crowned = $derived(champions(detail));
   let phaseSignal = $derived.by(() => {
     switch (detail.phase) {
       case "upcoming":
@@ -372,21 +372,25 @@
                 <UserLink user={champion.user} showBadge />
               </div>
               <div class="plate-stats">
+                {#if champion.ladderRank !== null}
+                  <div>
+                    <span class="n">{ordinal(champion.ladderRank)}</span><span
+                      class="k">qualified</span
+                    >
+                  </div>
+                {/if}
                 <div>
-                  <span class="n">{champion.wins}</span><span class="k"
-                    >{champion.wins === 1 ? "win" : "wins"}</span
-                  >
+                  <span class="n"
+                    >{champion.wins} of {champion.racesExpected}</span
+                  ><span class="k">wins</span>
                 </div>
-                <div>
-                  <span class="n">{champion.points}</span><span class="k"
-                    >points</span
-                  >
-                </div>
-                <div>
-                  <span class="n">{formatTime(champion.igtTotal)}</span><span
-                    class="k">IGT</span
-                  >
-                </div>
+                {#if champion.weapon}
+                  <div class="wide">
+                    <span class="n text">{champion.weapon}</span><span class="k"
+                      >signature weapon</span
+                    >
+                  </div>
+                {/if}
               </div>
             </div>
           {/each}
@@ -776,22 +780,31 @@
   }
   .plate-stats {
     display: flex;
+    flex-wrap: wrap;
+    row-gap: 0.7rem;
     width: 100%;
     margin-top: 0.2rem;
     padding-top: 0.7rem;
     border-top: 1px solid var(--color-border);
   }
   .plate-stats > div {
-    flex: 1;
+    flex: 1 1 40%;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 2px;
   }
+  .plate-stats > .wide {
+    flex-basis: 100%;
+  }
   .plate-stats .n {
     font-family: var(--font-display);
     font-size: 1.15rem;
     font-weight: 600;
+  }
+  .plate-stats .n.text {
+    font-size: 1rem;
+    line-height: 1.2;
   }
   .plate.first .plate-stats .n {
     color: var(--color-purple-hover);

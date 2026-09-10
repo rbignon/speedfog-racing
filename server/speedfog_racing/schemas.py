@@ -1114,12 +1114,19 @@ class EventStageRaceResponse(BaseModel):
     race: RaceResponse
 
 
+class EventWeaponResponse(BaseModel):
+    id: int
+    name: str
+
+
 class EventStageEntryResponse(BaseModel):
     user: UserResponse
     newcomer: bool
     points: int
     igt_total: int
     advances: bool
+    # The weapon the runner carried the longest over every event race they entered.
+    signature_weapon: EventWeaponResponse | None = None
 
 
 class EventFieldSlotResponse(BaseModel):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -35,6 +36,7 @@ from speedfog_racing.schemas import (
     EventStageRaceResponse,
     EventStageResponse,
     EventTimelineStopResponse,
+    EventWeaponResponse,
     UserResponse,
 )
 from speedfog_racing.services.event_service import (
@@ -53,6 +55,7 @@ from speedfog_racing.services.event_service import (
     newcomer_flags,
     parse_slot,
     score_race,
+    signature_weapon,
 )
 
 router = APIRouter()
@@ -120,6 +123,18 @@ async def get_event(
     }
 
     users: dict[UUID, User] = {p.user_id: p.user for race in event.races for p in race.participants}
+    histories: dict[UUID, list[list[dict[str, Any]]]] = {}
+    for _, race in attached:
+        for p in race.participants:
+            histories.setdefault(p.user_id, []).append(p.zone_history or [])
+    weapons: dict[UUID, EventWeaponResponse | None] = {}
+
+    def weapon_of(user_id: UUID) -> EventWeaponResponse | None:
+        if user_id not in weapons:
+            found = signature_weapon(histories.get(user_id, []))
+            weapons[user_id] = EventWeaponResponse(id=found[0], name=found[1]) if found else None
+        return weapons[user_id]
+
     ladder = compute_ladder(mode_keys, qualifier)
     finished_before = await count_finished_before(db, set(users), starts_at)
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
@@ -270,6 +285,7 @@ async def get_event(
                         points=e.points,
                         igt_total=e.igt_total,
                         advances=e.advances,
+                        signature_weapon=weapon_of(e.user_id),
                     )
                     for e in results[stage.key].entries
                 ],

@@ -500,6 +500,8 @@ export interface EventStageEntry {
   points: number;
   igt_total: number;
   advances: boolean;
+  /** The weapon carried the longest over every event race the runner entered. */
+  signature_weapon: { id: number; name: string } | null;
 }
 
 export interface EventFieldSlot {

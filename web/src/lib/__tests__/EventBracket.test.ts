@@ -169,6 +169,7 @@ describe("EventBracket rows", () => {
               points: 100,
               igt_total: 1000,
               advances: true,
+              signature_weapon: null,
             },
             {
               user: {
@@ -181,6 +182,7 @@ describe("EventBracket rows", () => {
               points: 80,
               igt_total: 1200,
               advances: false,
+              signature_weapon: null,
             },
           ],
         }),
@@ -205,6 +207,7 @@ describe("EventBracket rows", () => {
         points: 100,
         igt_total: 1000,
         advances: false,
+        signature_weapon: null,
       },
     ];
     const running = render(EventBracket, {
@@ -282,6 +285,7 @@ describe("EventBracket champion box", () => {
               points: 100,
               igt_total: 1000,
               advances: false,
+              signature_weapon: null,
             },
           ],
         }),

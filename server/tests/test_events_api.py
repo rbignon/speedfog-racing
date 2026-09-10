@@ -184,9 +184,12 @@ async def _entry(
     igt_ms: int,
     layer: int = 4,
     started: bool = True,
+    weapons: list[dict[str, object]] | None = None,
 ):
     # A run scores once it has two zone entries; a registered runner has none yet.
-    history = [{"node_id": "a"}, {"node_id": "b"}] if started else []
+    history: list[dict[str, object]] = [{"node_id": "a"}, {"node_id": "b"}] if started else []
+    if weapons and history:
+        history[0]["weapons"] = weapons
     db.add(
         Participant(
             race_id=race.id,
@@ -342,7 +345,14 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
             db, orga, b1, event, "qualifier:boss_rush:1", status=RaceStatus.FINISHED
         )
         await _race(db, orga, b2, event, "qualifier:boss_rush:2", status=RaceStatus.FINISHED)
-        await _entry(db, std1, ana, ParticipantStatus.FINISHED, 2_000_000)
+        await _entry(
+            db,
+            std1,
+            ana,
+            ParticipantStatus.FINISHED,
+            2_000_000,
+            weapons=[{"ids": [9000010], "ticks": 3}],
+        )
         await _entry(db, std1, bob, ParticipantStatus.FINISHED, 1_500_000)
         await _entry(db, std2, ana, ParticipantStatus.FINISHED, 1_000_000)
         await _entry(db, boss1, ana, ParticipantStatus.FINISHED, 3_000_000)
@@ -354,6 +364,16 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
         semi_race = await _race(
             db, orga, semi_seed, event, "semi_a:1", status=RaceStatus.RUNNING, is_public=True
         )
+        # The bogus race's heavier weapon must not reach ana's signature weapon.
+        await _entry(
+            db,
+            bogus,
+            ana,
+            ParticipantStatus.FINISHED,
+            1_000,
+            weapons=[{"ids": [8030025], "ticks": 99}],
+        )
+        await _entry(db, semi_race, ana, ParticipantStatus.PLAYING, 500_000)
         await db.commit()
         bogus_id, semi_race_id = str(bogus.id), str(semi_race.id)
 
@@ -368,6 +388,10 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
     assert bogus_id not in json.dumps(data)
     assert data["live_race"] is not None
     assert data["live_race"]["id"] == semi_race_id
+    semi = next(s for s in data["stages"] if s["key"] == "semi_a")
+    assert semi["results"][0]["user"]["twitch_username"] == "ana"
+    # The base id of the Uchigatana carried on std1, normalised from its runtime id.
+    assert semi["results"][0]["signature_weapon"]["id"] == 9000000
 
     expected_next = _expected_next_stage_key()
     if expected_next is None:

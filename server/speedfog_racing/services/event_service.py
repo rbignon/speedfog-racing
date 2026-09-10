@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -25,6 +25,7 @@ from speedfog_racing.services.daily_points_service import (
     compute_daily_points,
     rank_key,
 )
+from speedfog_racing.services.weapons import BASE_ROW_MODULUS, WEAPONS
 
 Phase = Literal["upcoming", "qualifier", "cut", "playoffs", "finished"]
 
@@ -323,6 +324,32 @@ def final_field(
         else:
             slots.extend(FieldSlot(user_id=None, label=placeholder) for _ in range(count))
     return slots
+
+
+# --- signature weapon -------------------------------------------------------
+
+
+def signature_weapon(histories: Iterable[list[dict[str, Any]] | None]) -> tuple[int, str] | None:
+    """The weapon carried the longest over the given zone histories: (base id, name).
+
+    Ticks are summed per weapon over every combo entry (a combo lists the hands'
+    weapons, each of which counts); ids outside the catalogue are skipped.
+    ``None`` when no history carries a weapon. Ties go to the lower id.
+    """
+    # Same id normalisation as daily_points_service._aggregate_weapon_combos
+    # and api/stats.py; kept inline like them.
+    ticks: dict[int, int] = {}
+    for history in histories:
+        for entry in history or []:
+            for combo in entry.get("weapons") or []:
+                for raw in combo.get("ids") or []:
+                    base = int(raw) - (int(raw) % BASE_ROW_MODULUS)
+                    if base in WEAPONS:
+                        ticks[base] = ticks.get(base, 0) + int(combo.get("ticks") or 0)
+    if not ticks:
+        return None
+    best = max(ticks.items(), key=lambda kv: (kv[1], -kv[0]))
+    return best[0], WEAPONS[best[0]].name
 
 
 # --- phase ------------------------------------------------------------------

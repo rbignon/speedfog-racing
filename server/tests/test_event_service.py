@@ -24,8 +24,10 @@ from speedfog_racing.services.event_service import (
     newcomer_flags,
     parse_slot,
     score_race,
+    signature_weapon,
     validate_slot,
 )
+from speedfog_racing.services.weapons import WEAPONS
 
 MODES = ["standard", "boss_rush"]
 
@@ -433,6 +435,23 @@ def test_final_field_pads_short_decided_stages_to_the_advance_count():
         (b, "Semi B"),
         (None, "Top 2 of Semi B"),
     ]
+
+
+# --- signature weapon -------------------------------------------------------
+
+
+def test_signature_weapon_sums_ticks_per_weapon_across_histories():
+    fang, uchi = 8030000, 9000000  # catalogue base ids, any affinity or upgrade
+    histories = [
+        [{"weapons": [{"ids": [fang + 25, uchi + 10], "ticks": 5}]}, {}],
+        [{"weapons": [{"ids": [uchi], "ticks": 3}, {"ids": [1], "ticks": 99}]}],
+        None,
+    ]
+    assert signature_weapon(histories) == (uchi, WEAPONS[uchi].name)
+    assert signature_weapon([[{"weapons": []}], []]) is None
+    # A combo without ticks counts nothing; an exact tie goes to the lower id.
+    tied = [[{"weapons": [{"ids": [uchi]}, {"ids": [fang], "ticks": 0}]}]]
+    assert signature_weapon(tied) == (fang, WEAPONS[fang].name)
 
 
 # --- phase ------------------------------------------------------------------
