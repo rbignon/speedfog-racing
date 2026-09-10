@@ -201,6 +201,18 @@ longest over every event race they entered (`signature_weapon` on each stage
 result, from the zone histories). An event that ends at `ends_at` with the
 final incomplete shows no plate.
 
+### Seeing each state locally
+
+`tools/simulate_event.py <stage>` fills a local database with a whole
+simulated season and projects it at the state named by the stage, shifting
+every date so that state is the current one: the announcement, the open
+qualifier, the cut, and the semi A, newcomers' and open finals both live and
+finished. The event must already exist, and its modes and stages must match
+the ones the tool hardcodes. It writes fabricated participations onto real
+user rows and consumes an available seed for each of the eighteen races it
+creates, so it refuses a database that is not on this machine.
+`--viewer <twitch username>` gives that runner a seed of every card state.
+
 ## API
 
 - `GET /api/events/{slug}`: the page's single payload (`EventDetailResponse`).
