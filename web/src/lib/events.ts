@@ -202,7 +202,7 @@ export function formatEventDate(iso: string): string {
   }).format(new Date(iso));
 }
 
-/** "Sun 4 Oct", no time: the bracket's compact per-stage meta line. */
+/** "Sun 4 Oct", no time: the bracket's compact date lines. */
 export function formatEventDay(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",

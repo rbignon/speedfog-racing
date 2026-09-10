@@ -61,7 +61,6 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
   };
 }
 
-const fmt = (iso: string) => `D(${iso})`;
 const fmtDay = (iso: string) => `Day(${iso})`;
 
 describe("EventBracket stage state and progress", () => {
@@ -80,7 +79,6 @@ describe("EventBracket stage state and progress", () => {
         }),
         stage({ key: "semi_b", label: "Semi B" }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(container.querySelector(".signal-running")).not.toBeNull();
@@ -101,7 +99,6 @@ describe("EventBracket stage state and progress", () => {
           ],
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(container.querySelector(".signal-finished")).not.toBeNull();
@@ -111,7 +108,6 @@ describe("EventBracket stage state and progress", () => {
   it("renders one chip per expected race, its mode coloured by the race's state", () => {
     const notStarted = render(EventBracket, {
       stages: [stage({ races_expected: 3, modes: ["Standard", "Boss Rush"] })],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     const chips = notStarted.container.querySelectorAll(".chips .chip");
@@ -143,7 +139,6 @@ describe("EventBracket stage state and progress", () => {
           ],
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     const states = [...midStage.container.querySelectorAll(".chips .chip")].map(
@@ -190,7 +185,6 @@ describe("EventBracket rows", () => {
           ],
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(getByText("adv 100")).toBeTruthy();
@@ -215,7 +209,6 @@ describe("EventBracket rows", () => {
     ];
     const running = render(EventBracket, {
       stages: [stage({ complete: false, results })],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(running.container.querySelector(".right.prov")).not.toBeNull();
@@ -223,7 +216,6 @@ describe("EventBracket rows", () => {
 
     const done = render(EventBracket, {
       stages: [stage({ complete: true, results })],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(done.container.querySelector(".right.lead")).not.toBeNull();
@@ -234,7 +226,6 @@ describe("EventBracket rows", () => {
     const s = stage();
     const { container } = render(EventBracket, {
       stages: [s],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     const rows = container.querySelectorAll(".box li");
@@ -262,7 +253,6 @@ describe("EventBracket rows", () => {
           ],
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     const firstRow = container.querySelector(".box li");
@@ -296,7 +286,6 @@ describe("EventBracket champion box", () => {
           ],
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     const champBox = container.querySelector(".champ.decided");
@@ -315,10 +304,9 @@ describe("EventBracket champion box", () => {
           date: "2026-10-25T20:00:00Z",
         }),
       ],
-      formatDate: fmt,
       formatDay: fmtDay,
     });
     expect(container.querySelector(".champ.decided")).toBeNull();
-    expect(getByText(/Decided D\(2026-10-25T20:00:00Z\)/)).toBeTruthy();
+    expect(getByText(/Decided Day\(2026-10-25T20:00:00Z\)/)).toBeTruthy();
   });
 });

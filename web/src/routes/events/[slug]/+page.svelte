@@ -344,11 +344,7 @@
         <div class="two-col wide-left">
           <div>
             <SectionTitle>Bracket</SectionTitle>
-            <EventBracket
-              stages={detail.stages}
-              formatDate={fmt}
-              formatDay={fmtDay}
-            />
+            <EventBracket stages={detail.stages} formatDay={fmtDay} />
           </div>
           <div class="stack">
             {#if shown}

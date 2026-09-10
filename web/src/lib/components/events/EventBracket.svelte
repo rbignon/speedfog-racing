@@ -9,11 +9,9 @@
 
   let {
     stages,
-    formatDate,
     formatDay,
   }: {
     stages: EventStage[];
-    formatDate: (iso: string) => string;
     formatDay: (iso: string) => string;
   } = $props();
 
@@ -159,7 +157,7 @@
         {#if winner}
           <div class="who"><UserLink user={winner} showBadge showAvatar /></div>
         {:else}
-          <div class="who tbd">Decided {formatDate(final.date)}</div>
+          <div class="who tbd">Decided {formatDay(final.date)}</div>
         {/if}
       </div>
     {/if}
@@ -200,7 +198,7 @@
         {#if winner}
           <div class="who"><UserLink user={winner} showBadge showAvatar /></div>
         {:else}
-          <div class="who tbd">Decided {formatDate(newcomers.date)}</div>
+          <div class="who tbd">Decided {formatDay(newcomers.date)}</div>
         {/if}
       </div>
     </div>
@@ -263,7 +261,9 @@
     border-top-color: transparent;
     border-radius: var(--radius-lg);
     padding: 0.7rem 0.9rem 0.75rem;
-    height: 74px;
+    /* A floor, not a fixed height: a two-line placeholder grows the box
+     * instead of overflowing past the padding. */
+    min-height: 74px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
