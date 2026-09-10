@@ -369,6 +369,7 @@
                       <RaceCard
                         race={entry.race}
                         title={stripStagePrefix(entry.race.name, shown.label)}
+                        showFoot={false}
                       />
                     {:else}
                       <EventRacePlaceholder

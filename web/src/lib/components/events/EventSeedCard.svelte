@@ -139,17 +139,29 @@
           <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
         </div>
         {#if done && mine}
-          <div class="result" class:unscored={!finished && !scored}>
-            Your run: {dnf
-              ? "DNF"
-              : mine.rank
-                ? ordinal(mine.rank)
-                : "Finished"}
-            {#if dnf && mine.rank}&middot; {ordinal(mine.rank)}{/if}
-            {#if mine.igt_ms !== null}&middot; {formatTime(mine.igt_ms)}{/if}
-            {#if mine.points !== null}&middot; {mine.points} pts{mine.provisional
-                ? " provisional"
-                : ""}{/if}
+          <div class="result fact-row" class:unscored={!finished && !scored}>
+            {#if mine.rank}
+              <span class="fact"
+                ><span class="k">Rank</span><span class="v"
+                  >{ordinal(mine.rank)}</span
+                ></span
+              >
+            {/if}
+            {#if mine.igt_ms !== null}
+              <span class="fact"
+                ><span class="k">IGT</span><span class="v"
+                  >{formatTime(mine.igt_ms)}</span
+                ></span
+              >
+            {/if}
+            {#if mine.points !== null}
+              <span class="fact"
+                ><span class="k">Points</span><span
+                  class="v"
+                  class:prov={mine.provisional}>{mine.points}</span
+                ></span
+              >
+            {/if}
           </div>
         {/if}
       </div>
@@ -272,14 +284,22 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
   }
+  /* A block flex row (the global .fact-row is inline-flex): no line-box
+   * strut around the small facts, wrapping as a block. */
   .result {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-success);
-    margin-top: 0.3rem;
+    display: flex;
+    margin-top: 0.45rem;
+    gap: 0.9rem;
   }
-  .result.unscored {
+  .result .v {
+    color: var(--color-success);
+  }
+  .result.unscored .v {
     color: var(--color-text-secondary);
+  }
+  /* Points still move while the seed is open: brass, as on the ladder */
+  .result .v.prov {
+    color: var(--color-gold);
   }
   .play-strip {
     width: 64px;

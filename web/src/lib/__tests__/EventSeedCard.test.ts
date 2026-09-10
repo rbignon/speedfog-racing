@@ -139,11 +139,11 @@ describe("EventSeedCard state signal", () => {
     expect(container.querySelector(".seed-card.route-done")).not.toBeNull();
     const result = container.querySelector(".result");
     expect(result?.textContent).toContain("2nd");
-    expect(result?.textContent).toContain("87 pts provisional");
+    expect(result?.querySelector(".v.prov")?.textContent).toBe("87");
   });
 
   it("shows DNF, not Done, for an abandoned run that still holds a rank", () => {
-    const { getByText, queryByText, container } = render(EventSeedCard, {
+    const { queryByText, container } = render(EventSeedCard, {
       entry: entryWith(
         {},
         {
@@ -160,16 +160,16 @@ describe("EventSeedCard state signal", () => {
       partner: null,
       now,
     });
-    expect(getByText("DNF")).toBeTruthy();
+    expect(container.querySelector(".head .signal")?.textContent).toBe("DNF");
     expect(queryByText("Done")).toBeNull();
     expect(container.querySelector(".play-strip")).toBeNull();
     // A scored DNF validated the seed: it rides the done colour, not the open one.
     expect(container.querySelector(".seed-card.route-done")).not.toBeNull();
     expect(container.querySelector(".result.unscored")).toBeNull();
     const result = container.querySelector(".result")?.textContent ?? "";
-    expect(result).toContain("DNF");
+    expect(result).not.toContain("DNF");
     expect(result).toContain("14th");
-    expect(result).toContain("40 pts provisional");
+    expect(result).toContain("40");
   });
 
   it("shows DNF for an abandoned run without a rank", () => {
@@ -190,7 +190,11 @@ describe("EventSeedCard state signal", () => {
       partner: null,
       now,
     });
-    expect(container.querySelector(".result")?.textContent).toContain("DNF");
+    // The signal says DNF; the muted facts carry only the time.
+    expect(container.querySelector(".head .signal")?.textContent).toBe("DNF");
+    expect(container.querySelector(".result")?.textContent).not.toContain(
+      "Rank",
+    );
     // No score, so nothing validated: the spent grey line and a muted result.
     expect(container.querySelector(".seed-card.route-spent")).not.toBeNull();
     expect(container.querySelector(".result.unscored")).not.toBeNull();
@@ -240,6 +244,32 @@ describe("EventSeedCard state signal", () => {
       now,
     });
     expect(getByText("+3")).toBeTruthy();
+  });
+});
+
+describe("EventSeedCard finished without a score", () => {
+  it("shows the time but no rank when the finished run never scored", () => {
+    const { container } = render(EventSeedCard, {
+      entry: entryWith(
+        {},
+        {
+          status: "done",
+          finished: true,
+          rank: null,
+          igt_ms: 754_000,
+          points: null,
+          provisional: false,
+        },
+      ),
+      index: 1,
+      modeLabel: "Standard",
+      partner: null,
+      now,
+    });
+    const keys = [...container.querySelectorAll(".result .k")].map(
+      (k) => k.textContent,
+    );
+    expect(keys).toEqual(["IGT"]);
   });
 });
 

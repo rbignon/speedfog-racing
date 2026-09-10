@@ -5,16 +5,19 @@
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
 
-  // `title` replaces the displayed race name when the surrounding surface
-  // already carries part of it; the race keeps its full name everywhere else.
+  // `title` replaces the displayed race name and `showFoot={false}` drops the
+  // players / mode / organizer row, for a surrounding surface that already
+  // carries that context; the race keeps its full card everywhere else.
   let {
     race,
     variant = "default",
     title,
+    showFoot = true,
   }: {
     race: Race;
     variant?: "default" | "compact";
     title?: string;
+    showFoot?: boolean;
   } = $props();
 
   let isRunning = $derived(race.status === "running");
@@ -182,7 +185,7 @@
             />
           </svg>
           {#each race.casters as caster, i}
-            {#if i > 0}<span class="caster-sep">&middot;</span>{/if}
+            {#if i > 0}<span class="caster-sep">,</span>{/if}
             <button
               class="caster-name"
               onclick={(e: MouseEvent) => {
@@ -201,41 +204,47 @@
         </div>
       {/if}
 
-      <div class="card-foot">
-        <div class="race-meta">
-          {race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
-          player{race.participant_count !== 1 ? "s" : ""}
-          {#if race.pool_name}
-            &middot; {race.pool_display_name || formatPoolName(race.pool_name)}
-          {/if}
-          {#if race.deathless}
-            {#if !race.pool_name}&middot;{/if}
-            <span class="deathless" title="Dying once eliminates you"
-              >Deathless</span
+      {#if showFoot}
+        <div class="card-foot">
+          <div class="race-meta">
+            <span
+              >{race.participant_count}{#if race.max_participants && race.status == "setup"}/{race.max_participants}{/if}
+              player{race.participant_count !== 1 ? "s" : ""}</span
             >
-          {/if}
+            {#if race.pool_name}
+              <span
+                >{race.pool_display_name ||
+                  formatPoolName(race.pool_name)}</span
+              >
+            {/if}
+            {#if race.deathless}
+              <span class="deathless" title="Dying once eliminates you"
+                >Deathless</span
+              >
+            {/if}
+          </div>
+          <span class="byline">
+            by
+            {#if race.organizer.twitch_avatar_url}
+              <img
+                src={race.organizer.twitch_avatar_url}
+                alt=""
+                class="organizer-avatar"
+              />
+            {/if}
+            <button
+              class="organizer-link"
+              onclick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                goto(`/user/${race.organizer.twitch_username}`);
+              }}
+            >
+              {displayName}
+            </button>
+          </span>
         </div>
-        <span class="byline">
-          by
-          {#if race.organizer.twitch_avatar_url}
-            <img
-              src={race.organizer.twitch_avatar_url}
-              alt=""
-              class="organizer-avatar"
-            />
-          {/if}
-          <button
-            class="organizer-link"
-            onclick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              goto(`/user/${race.organizer.twitch_username}`);
-            }}
-          >
-            {displayName}
-          </button>
-        </span>
-      </div>
+      {/if}
       {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
         <div class="late-join-note">
           Joinable until {new Date(
@@ -351,8 +360,12 @@
     flex-shrink: 0;
   }
 
-  /* Meta: player count + mode, in the foot row */
+  /* Meta: player count, mode and flags as spaced items in the foot row */
   .race-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.75rem;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
@@ -361,8 +374,6 @@
 
   /* Same mono ember micro-label as the daily timetable's deathless tag */
   .race-meta .deathless {
-    display: inline-block;
-    margin-left: 0.3rem;
     font-size: 0.6rem;
     font-weight: 500;
     letter-spacing: 0.09em;
@@ -373,9 +384,10 @@
 
   /* Caster row */
   .caster-row {
+    --caster-gap: 0.35rem;
     display: flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--caster-gap);
     font-size: var(--font-size-xs);
     color: var(--color-twitch, #9146ff);
     margin-top: 0.5rem;
@@ -390,8 +402,10 @@
     height: 12px;
   }
 
+  /* The comma hugs the name before it: pulled back across the row gap */
   .caster-sep {
     color: var(--color-text-disabled);
+    margin-left: calc(-1 * var(--caster-gap));
   }
 
   .caster-name {
