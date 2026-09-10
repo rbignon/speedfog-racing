@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EventStage } from "$lib/api";
-  import { fillSlots, stripStagePrefix } from "$lib/events";
+  import { fillSlots, stageWinner, stripStagePrefix } from "$lib/events";
   import EventStageBox, {
     type StageChip,
     type StageRow,
@@ -89,7 +89,7 @@
     });
   }
   function winnerOf(stage: EventStage | null) {
-    return stage && stage.complete ? (stage.results[0]?.user ?? null) : null;
+    return stage ? stageWinner(stage) : null;
   }
 </script>
 
@@ -279,7 +279,8 @@
   }
   .champ .route .line {
     position: absolute;
-    left: 14px;
+    /* No start ring here: the line runs from the card edge */
+    left: 10px;
     right: 14px;
     top: 6px;
     border-top: 2px dashed var(--color-text-disabled);

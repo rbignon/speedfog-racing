@@ -191,7 +191,11 @@ ladder, on the race listings, or on the event page.
 stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
 within 12 hours of now) so an open page sees the evening's race go live;
 during the qualifier it only refreshes on page reload.
-All dates and times render in the viewer's browser timezone.
+All dates and times render in the viewer's browser timezone. Once the phase
+is `finished`, two plates under the band crown the final's and the
+newcomers' final's winners (the leader of each complete stage), the champion's
+larger; an event that ends at `ends_at` with the final incomplete shows no
+plate.
 
 ## API
 

@@ -1,4 +1,10 @@
-import type { EventDetail, EventFact, EventPhase, EventStage } from "$lib/api";
+import type {
+  EventDetail,
+  EventFact,
+  EventPhase,
+  EventStage,
+  User,
+} from "$lib/api";
 
 export type EventBlock =
   | "format"
@@ -6,6 +12,7 @@ export type EventBlock =
   | "seeds"
   | "ladder_qualified"
   | "live"
+  | "champions"
   | "bracket_ladder";
 
 /**
@@ -20,10 +27,11 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
     case "qualifier":
       return ["format", "take_part", "seeds", "ladder_qualified"];
     case "cut":
-    case "finished":
       return ["bracket_ladder"];
     case "playoffs":
       return ["live", "bracket_ladder"];
+    case "finished":
+      return ["champions", "bracket_ladder"];
   }
 }
 
@@ -108,6 +116,30 @@ export function stripStagePrefix(name: string, stageLabel: string): string {
     if (name.startsWith(prefix)) return name.slice(prefix.length);
   }
   return name;
+}
+
+/** A stage's winner: its leader once the stage is complete, else null. */
+export function stageWinner(stage: EventStage): User | null {
+  return stage.complete ? (stage.results[0]?.user ?? null) : null;
+}
+
+export interface Champion {
+  kind: "final" | "newcomers";
+  label: string;
+  user: User;
+}
+
+/**
+ * The decided winners of the stages that crown one, the final first and
+ * the newcomers' final after it.
+ */
+export function champions(stages: EventStage[]): Champion[] {
+  const crown = (kind: Champion["kind"], label: string): Champion[] => {
+    const stage = stages.find((s) => s.kind === kind && s.complete);
+    const user = stage ? stageWinner(stage) : null;
+    return user ? [{ kind, label, user }] : [];
+  };
+  return [...crown("final", "Champion"), ...crown("newcomers", "Newcomers")];
 }
 
 type ShownStageInput = Pick<

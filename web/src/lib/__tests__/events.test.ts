@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   blockOrder,
+  champions,
   eventFacts,
   fillSlots,
   formatEventDate,
@@ -12,7 +13,7 @@ import {
   stripStagePrefix,
   timeRemaining,
 } from "$lib/events";
-import type { EventDetail, EventPhase, EventStage, Race } from "$lib/api";
+import type { EventDetail, EventPhase, EventStage, Race, User } from "$lib/api";
 
 const phases: EventPhase[] = [
   "upcoming",
@@ -47,6 +48,10 @@ describe("blockOrder", () => {
     for (const phase of ["cut", "playoffs", "finished"] as const) {
       expect(blockOrder(phase), phase).toContain("bracket_ladder");
     }
+  });
+
+  it("opens the finished page with the champions", () => {
+    expect(blockOrder("finished")[0]).toBe("champions");
   });
 });
 
@@ -115,6 +120,57 @@ describe("stripStagePrefix", () => {
     expect(stripStagePrefix("Semi A - Race 1 - Standard", "Semi A")).toBe(
       "Race 1 - Standard",
     );
+  });
+});
+
+describe("champions", () => {
+  const winner = { id: "u1", twitch_username: "ace" } as User;
+  const runnerUp = { id: "u2", twitch_username: "bee" } as User;
+  const stageOf = (
+    kind: EventStage["kind"],
+    complete: boolean,
+    overrides: Partial<EventStage> = {},
+  ): EventStage => ({
+    key: kind,
+    label: kind,
+    kind,
+    date: "2026-10-25T19:00:00Z",
+    races_expected: 3,
+    complete,
+    modes: [],
+    races: [],
+    results: [
+      {
+        user: winner,
+        newcomer: false,
+        points: 300,
+        igt_total: 1,
+        advances: false,
+      },
+      {
+        user: runnerUp,
+        newcomer: false,
+        points: 200,
+        igt_total: 1,
+        advances: false,
+      },
+    ],
+    field: [],
+    ...overrides,
+  });
+
+  it("crowns the leader of a complete final or newcomers' final only, the final first", () => {
+    const crowned = champions([
+      stageOf("semi", true),
+      stageOf("newcomers", true),
+      stageOf("final", true),
+    ]);
+    expect(crowned.map((c) => c.kind)).toEqual(["final", "newcomers"]);
+    expect(crowned.map((c) => c.label)).toEqual(["Champion", "Newcomers"]);
+    expect(crowned[0].user).toBe(winner);
+    expect(champions([stageOf("final", false)])).toEqual([]);
+    // Complete but nobody scored: no winner to crown.
+    expect(champions([stageOf("final", true, { results: [] })])).toEqual([]);
   });
 });
 

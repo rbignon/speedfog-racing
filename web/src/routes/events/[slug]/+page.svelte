@@ -4,6 +4,7 @@
   import { fetchEvent, getTwitchLoginUrl, type EventDetail } from "$lib/api";
   import {
     blockOrder,
+    champions,
     eventFacts,
     formatEventDate,
     formatEventDay,
@@ -15,6 +16,7 @@
     stripStagePrefix,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
+  import UserLink from "$lib/components/UserLink.svelte";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import EventTimeline from "$lib/components/events/EventTimeline.svelte";
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
@@ -58,6 +60,7 @@
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let shown = $derived(shownStage(detail));
+  let crowned = $derived(champions(detail.stages));
   let phaseSignal = $derived.by(() => {
     switch (detail.phase) {
       case "upcoming":
@@ -338,6 +341,41 @@
           stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
           null}
         <EventLiveStrip race={detail.live_race} {stage} raceIndex={index} />
+      {/if}
+    {:else if block === "champions"}
+      {#if crowned.length > 0}
+        <section class="podium">
+          {#each crowned as champion (champion.kind)}
+            {@const first = champion.kind === "final"}
+            <div class="plate" class:first>
+              <div class="route" aria-hidden="true">
+                <span class="line"></span><span class="term"></span>
+              </div>
+              <div class="plate-title">{champion.label}</div>
+              {#if champion.user.twitch_avatar_url}
+                <img
+                  class="plate-avatar"
+                  src={champion.user.twitch_avatar_url}
+                  alt=""
+                />
+              {:else}
+                <span
+                  class="plate-avatar plate-avatar-placeholder"
+                  aria-hidden="true"
+                  >{(
+                    champion.user.twitch_display_name ||
+                    champion.user.twitch_username
+                  )
+                    .charAt(0)
+                    .toUpperCase()}</span
+                >
+              {/if}
+              <div class="plate-name">
+                <UserLink user={champion.user} showBadge />
+              </div>
+            </div>
+          {/each}
+        </section>
       {/if}
     {:else if block === "bracket_ladder"}
       <section class="bracket-block">
@@ -659,6 +697,89 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
   }
+  /* The decided winners: two plates under the band on brass route lines,
+   * the champion's larger, the hierarchy carried by size alone. */
+  .podium {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: 24px;
+    align-items: stretch;
+  }
+  .plate {
+    position: relative;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-top-color: transparent;
+    border-radius: var(--radius-lg);
+    padding: 1.4rem 1.2rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.7rem;
+    text-align: center;
+  }
+  .plate .route {
+    position: absolute;
+    top: -7px;
+    left: -10px;
+    right: -10px;
+    height: 14px;
+    pointer-events: none;
+  }
+  .plate .route .line {
+    position: absolute;
+    left: 10px;
+    right: 14px;
+    top: 6px;
+    border-top: 2px solid var(--color-gold);
+  }
+  .plate .route .term {
+    position: absolute;
+    right: 6px;
+    top: 0;
+    width: 14px;
+    height: 14px;
+    background: var(--color-gold);
+  }
+  .plate-title {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+  .plate.first .plate-title {
+    font-size: 1.4rem;
+  }
+  .plate-avatar {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 2px solid var(--color-gold);
+    object-fit: cover;
+  }
+  .plate.first .plate-avatar {
+    width: 104px;
+    height: 104px;
+  }
+  .plate-avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface-elevated);
+    color: var(--color-text-secondary);
+    font-family: var(--font-display);
+    font-size: 2rem;
+    font-weight: 600;
+  }
+  .plate-name {
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+  }
+  .plate.first .plate-name {
+    font-size: 1.5rem;
+  }
   .bracket-block {
     display: flex;
     flex-direction: column;
@@ -714,7 +835,8 @@
     .take-part,
     .cards,
     .two-col,
-    .two-col.wide-left {
+    .two-col.wide-left,
+    .podium {
       grid-template-columns: 1fr;
     }
   }
