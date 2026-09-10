@@ -54,6 +54,23 @@ describe("EventTimeline stop state", () => {
     expect(railDone?.getAttribute("style")).toContain("calc(0%");
   });
 
+  it("rides the segment after the current stop in proportion to the elapsed time", () => {
+    // Halfway from Open (5 Sept) to Cut (20 Sept): stops sit at 3, 34, 65
+    // and 96 %, so the ridden stretch ends at 49.5 %, 46.5 % past the first.
+    const now = new Date("2026-09-12T12:00:00Z");
+    const { container } = render(EventTimeline, { stops, now });
+    const railDone = container.querySelector<HTMLElement>(".rail-done");
+    expect(railDone?.getAttribute("style")).toContain("calc(46.5% - 6px)");
+  });
+
+  it("runs the rail from the first stop to the last one, not across the band", () => {
+    const now = new Date("2026-09-10T00:00:00Z");
+    const { container } = render(EventTimeline, { stops, now });
+    const rail = container.querySelector<HTMLElement>(".rail");
+    expect(rail?.getAttribute("style")).toContain("left: calc(3% + 6px)");
+    expect(rail?.getAttribute("style")).toContain("right: calc(4% + 6px)");
+  });
+
   it("centers a single stop at 50%", () => {
     const now = new Date("2026-09-10T00:00:00Z");
     const { container } = render(EventTimeline, { stops: [stops[0]], now });

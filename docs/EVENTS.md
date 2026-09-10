@@ -28,8 +28,8 @@ request by `services/event_service.py`.
 
 A stage: `key`, `label`, `kind` (`semi`, `newcomers`, `final`), `date`,
 `races` (per evening), `modes` (display labels, not pool keys: one chip per
-race in the bracket boxes and qualified groups, and the name of a race
-placeholder), plus `seeds` (ladder positions) for a semi, `size` for the
+race in the bracket boxes and qualified groups, linking to the race page once
+a race is attached, and the name of a race placeholder), plus `seeds` (ladder positions) for a semi, `size` for the
 newcomers' final, `from` and `advance` for the final. Stage dates ascend;
 `qualifier_ends_at` is at or before the first stage; `ends_at` is after the
 last.

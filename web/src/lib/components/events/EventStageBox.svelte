@@ -9,10 +9,15 @@
     right?: string;
     rightClass?: "pts" | "lead" | "adv" | "prov";
   }
-  /** One chip per race of the stage: its mode, coloured by the race's state. */
+  /**
+   * One chip per race of the stage: its mode, coloured by the race's state,
+   * linking to the race page once a race is attached (``href``).
+   */
   export interface StageChip {
     text: string;
     state: "done" | "live" | "todo";
+    href?: string;
+    title?: string;
   }
 </script>
 
@@ -51,9 +56,13 @@
   </div>
   {#if chips.length > 0}
     <div class="chips">
-      {#each chips as chip, i (i)}<span class="chip chip-{chip.state}"
-          >{chip.text}</span
-        >{/each}
+      {#each chips as chip, i (i)}{#if chip.href}<a
+            class="chip chip-{chip.state}"
+            href={chip.href}
+            title={chip.title}>{chip.text}</a
+          >{:else}<span class="chip chip-{chip.state}" title={chip.title}
+            >{chip.text}</span
+          >{/if}{/each}
     </div>
   {/if}
   <ol>
@@ -121,14 +130,24 @@
   .chips .chip {
     font-size: 0.6rem;
     padding: 0.1rem 0.4rem;
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    transition:
+      color var(--transition),
+      border-color var(--transition);
   }
-  .chip-done {
+  .chips .chip-done {
     color: var(--color-info);
     border-color: var(--color-info);
   }
-  .chip-live {
+  .chips .chip-live {
     color: var(--color-danger);
     border-color: var(--color-danger);
+  }
+  /* A chip that leads to its race page hovers like the site's links */
+  .chips a.chip:hover {
+    color: var(--color-purple-hover);
+    border-color: var(--color-purple-hover);
   }
   ol {
     list-style: none;

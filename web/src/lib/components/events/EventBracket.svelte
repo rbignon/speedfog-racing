@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EventStage } from "$lib/api";
-  import { fillSlots } from "$lib/events";
+  import { fillSlots, stripStagePrefix } from "$lib/events";
   import EventStageBox, {
     type StageChip,
     type StageRow,
@@ -48,6 +48,10 @@
             : status === "running"
               ? "live"
               : "todo",
+        href: entry ? `/race/${entry.race.id}` : undefined,
+        title: entry
+          ? stripStagePrefix(entry.race.name, stage.label)
+          : undefined,
       };
     });
   }

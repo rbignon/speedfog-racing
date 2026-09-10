@@ -121,6 +121,7 @@ describe("EventBracket stage state and progress", () => {
       "Race 3",
     ]);
     expect(notStarted.container.querySelectorAll(".chip-todo").length).toBe(3);
+    expect(notStarted.container.querySelectorAll(".chips a").length).toBe(0);
     notStarted.unmount();
 
     const midStage = render(EventBracket, {
@@ -149,6 +150,10 @@ describe("EventBracket stage state and progress", () => {
       (c) => c.className.match(/chip-(\w+)/)?.[1],
     );
     expect(states).toEqual(["done", "live", "todo"]);
+    // Attached races link to their page; the empty slot does not.
+    const links = midStage.container.querySelectorAll(".chips a.chip");
+    expect(links.length).toBe(2);
+    expect(links[0].getAttribute("href")).toBe("/race/r1");
   });
 });
 
