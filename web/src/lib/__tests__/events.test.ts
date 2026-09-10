@@ -8,7 +8,7 @@ import {
   liveStage,
   ordinal,
   pollIntervalMs,
-  racesSectionTitle,
+  racesSection,
   stripStagePrefix,
   timeRemaining,
 } from "$lib/events";
@@ -112,6 +112,9 @@ describe("stripStagePrefix", () => {
       "Semi B · Race 1 · Standard",
     );
     expect(stripStagePrefix("Semi A", "Semi A")).toBe("Semi A");
+    expect(stripStagePrefix("Semi A - Race 1 - Standard", "Semi A")).toBe(
+      "Race 1 - Standard",
+    );
   });
 });
 
@@ -151,66 +154,95 @@ describe("liveStage", () => {
   });
 });
 
-describe("racesSectionTitle", () => {
+describe("racesSection", () => {
   const fmt = (iso: string) => `D(${iso})`;
   const semiA = {
     key: "semi_a",
     label: "Semi A",
     date: "2026-10-04T19:00:00Z",
+    races_expected: 3,
+    complete: false,
     races: [] as EventStage["races"],
   };
   const semiB = {
     key: "semi_b",
     label: "Semi B",
     date: "2026-10-11T19:00:00Z",
+    races_expected: 3,
+    complete: false,
     races: [] as EventStage["races"],
   };
   const nextB = { key: "semi_b", label: "Semi B", date: semiB.date };
   const evening = new Date("2026-10-04T20:15:00Z");
+  const raceAt = (index: number, status: string) => ({
+    slot: `semi_a:${index}`,
+    index,
+    race: { id: `r${index}`, status } as Race,
+  });
 
-  it("names the evening's stage as live while one of its races runs", () => {
-    const race = { id: "r2" } as Race;
+  it("is live, with the race index, while one of the evening's races runs", () => {
     const detail = detailWith({
-      live_race: race,
+      live_race: { id: "r2" } as Race,
       current_stage_key: "semi_a",
       next_stage: nextB,
       stages: [
-        { ...semiA, races: [{ slot: "semi_a:2", index: 2, race }] },
+        { ...semiA, races: [raceAt(1, "finished"), raceAt(2, "running")] },
         semiB,
       ] as EventDetail["stages"],
     });
-    expect(racesSectionTitle(detail, fmt, evening)).toBe("Live now · Semi A");
+    expect(racesSection(detail, fmt, evening)).toEqual({
+      signal: { cls: "signal-running", text: "Live now" },
+      meta: "Race 2 of 3",
+    });
   });
 
-  it("keeps naming the evening's stage between two of its races, not the next Sunday", () => {
+  it("stays on the evening's stage between two of its races, not the next Sunday", () => {
     const detail = detailWith({
       current_stage_key: "semi_a",
       next_stage: nextB,
-      stages: [semiA, semiB] as EventDetail["stages"],
+      stages: [
+        { ...semiA, races: [raceAt(1, "finished")] },
+        semiB,
+      ] as EventDetail["stages"],
     });
-    expect(racesSectionTitle(detail, fmt, evening)).toBe("Semi A");
+    const section = racesSection(detail, fmt, evening);
+    expect(section?.signal.text).toBe("In progress");
+    expect(section?.meta).toBe("1 of 3 races played");
   });
 
-  it("points at the next stage while its evening is ahead", () => {
+  it("stays up next past the stage time while none of its races has started", () => {
+    const detail = detailWith({
+      current_stage_key: "semi_a",
+      next_stage: nextB,
+      stages: [
+        { ...semiA, races: [raceAt(1, "setup")] },
+        semiB,
+      ] as EventDetail["stages"],
+    });
+    expect(racesSection(detail, fmt, evening)?.signal.text).toBe("Up next");
+  });
+
+  it("points at the next stage, dated, while its evening is ahead", () => {
     const detail = detailWith({
       next_stage: { key: "semi_a", label: "Semi A", date: semiA.date },
       stages: [semiA, semiB] as EventDetail["stages"],
     });
-    expect(
-      racesSectionTitle(detail, fmt, new Date("2026-10-01T15:00:00Z")),
-    ).toBe("Up next · Semi A · D(2026-10-04T19:00:00Z)");
+    const section = racesSection(detail, fmt, new Date("2026-10-01T15:00:00Z"));
+    expect(section?.signal.text).toBe("Up next");
+    expect(section?.meta).toBe("D(2026-10-04T19:00:00Z)");
   });
 
-  it("names the last stage once everything ran, and falls back without stages", () => {
+  it("marks the last stage finished once everything ran, and yields null without stages", () => {
     const after = new Date("2026-10-26T00:00:00Z");
-    expect(
-      racesSectionTitle(
-        detailWith({ stages: [semiA, semiB] as EventDetail["stages"] }),
-        fmt,
-        after,
-      ),
-    ).toBe("Semi B");
-    expect(racesSectionTitle(detailWith({}), fmt, after)).toBe("Races");
+    const section = racesSection(
+      detailWith({
+        stages: [semiA, { ...semiB, complete: true }] as EventDetail["stages"],
+      }),
+      fmt,
+      after,
+    );
+    expect(section?.signal.text).toBe("Finished");
+    expect(racesSection(detailWith({}), fmt, after)).toBeNull();
   });
 });
 

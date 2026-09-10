@@ -438,6 +438,31 @@ th {
   white-space: nowrap;
 }
 
+/* Inline labelled facts: a mono caps label beside its value; several sit in
+ * a .fact-row with a wide gap, which replaces dot-separated info strings. */
+.fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: nowrap;
+}
+.fact .k {
+  font-size: 0.62rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+.fact .v {
+  color: var(--color-text);
+}
+.fact-row {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
 /* Route lines: the card's top border becomes the line (consumers position
  * .route over their real border, which stays transparent under it; markers
  * straddle the edge). The states read from the viewer's seat, like the

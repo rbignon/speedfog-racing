@@ -29,10 +29,8 @@
         }).format(new Date(race.started_at))
       : null,
   );
-  // Built from arrays of non-empty parts (rather than inline {#if}
-  // fragments) so the " · " separator only ever sits between two real
-  // parts: no dangling leading dot, no missing space when Svelte collapses
-  // the whitespace around an {#if} block.
+  // Built from an array of non-empty parts (rather than inline {#if}
+  // fragments) so the separator only ever sits between two real parts.
   let titleParts = $derived(
     [
       stage?.label ?? "Playoff",
@@ -44,18 +42,16 @@
         : null,
     ].filter((part): part is string => Boolean(part)),
   );
-  let subParts = $derived(
-    [runners || null, startedAt ? `started ${startedAt}` : null].filter(
-      (part): part is string => Boolean(part),
-    ),
-  );
 </script>
 
 <div class="strip">
   <div>
     <span class="signal signal-running">Live now</span>
-    <div class="title">{titleParts.join(" · ")}</div>
-    <div class="sub">{subParts.join(" · ")}</div>
+    <div class="title">{titleParts.join(" - ")}</div>
+    <div class="sub">
+      {#if runners}<span>{runners}</span>{/if}
+      {#if startedAt}<span>Started {startedAt}</span>{/if}
+    </div>
     {#if race.casters.length > 0}
       <div class="casters">
         <svg
@@ -69,15 +65,17 @@
           /></svg
         >
         <span>Cast by</span>
-        {#each race.casters as caster, i (caster.id)}
-          {#if i > 0}<span class="sep">&middot;</span>{/if}
-          <a
-            href="https://twitch.tv/{caster.user.twitch_username}"
-            target="_blank"
-            rel="noopener noreferrer"
-            >{caster.user.twitch_display_name || caster.user.twitch_username}</a
-          >
-        {/each}
+        <span class="names"
+          >{#each race.casters as caster, i (caster.id)}{#if i > 0}<span
+                class="sep">,&nbsp;</span
+              >{/if}<a
+              href="https://twitch.tv/{caster.user.twitch_username}"
+              target="_blank"
+              rel="noopener noreferrer"
+              >{caster.user.twitch_display_name ||
+                caster.user.twitch_username}</a
+            >{/each}</span
+        >
       </div>
     {/if}
   </div>
@@ -117,6 +115,9 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     margin-top: 2px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.1rem;
   }
   .casters {
     display: flex;

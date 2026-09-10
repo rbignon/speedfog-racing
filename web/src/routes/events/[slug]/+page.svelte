@@ -10,7 +10,7 @@
     liveStage,
     pollIntervalMs,
     fillSlots,
-    racesSectionTitle,
+    racesSection,
     shownStage,
     stripStagePrefix,
   } from "$lib/events";
@@ -104,7 +104,7 @@
 </script>
 
 <svelte:head>
-  <title>{detail.name} · SpeedFog Racing</title>
+  <title>{detail.name} - SpeedFog Racing</title>
 </svelte:head>
 
 <div class="band">
@@ -338,15 +338,6 @@
           stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
           null}
         <EventLiveStrip race={detail.live_race} {stage} raceIndex={index} />
-      {:else if detail.next_stage}
-        <div class="upnext">
-          <span class="signal signal-setup">Up next</span>
-          <span class="upnext-title"
-            >{detail.next_stage.label} &middot; {fmt(
-              detail.next_stage.date,
-            )}</span
-          >
-        </div>
       {/if}
     {:else if block === "bracket_ladder"}
       <section class="bracket-block">
@@ -361,10 +352,17 @@
           </div>
           <div class="stack">
             {#if shown}
+              {@const section = racesSection(detail, fmt, now)}
               <div>
-                <SectionTitle
-                  >{racesSectionTitle(detail, fmt, now)}</SectionTitle
-                >
+                <SectionTitle>{shown.label}</SectionTitle>
+                {#if section}
+                  <p class="meta-row">
+                    <span class="signal {section.signal.cls}"
+                      >{section.signal.text}</span
+                    >
+                    <span class="meta-right">{section.meta}</span>
+                  </p>
+                {/if}
                 <div class="stage-races">
                   {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
                     {#if entry}
@@ -376,7 +374,7 @@
                       <EventRacePlaceholder
                         name={[`Race ${i + 1}`, shown.modes[i]]
                           .filter(Boolean)
-                          .join(" · ")}
+                          .join(" - ")}
                         note="Announced on the day"
                         partner={detail.partner_name}
                       />
@@ -406,10 +404,23 @@
                 : 'signal-finished'}"
               >{detail.ladder.provisional ? "Provisional" : "Final"}</span
             >
-            <span class="meta-right"
-              >Closed {fmt(detail.qualifier_ends_at)} &middot; {detail.ladder
-                .entered} entered &middot; {detail.ladder.ranked_count} ranked</span
-            >
+            <span class="fact-row">
+              <span class="fact"
+                ><span class="k">Closed</span><span class="v"
+                  >{fmt(detail.qualifier_ends_at)}</span
+                ></span
+              >
+              <span class="fact"
+                ><span class="k">Entered</span><span class="v"
+                  >{detail.ladder.entered}</span
+                ></span
+              >
+              <span class="fact"
+                ><span class="k">Ranked</span><span class="v"
+                  >{detail.ladder.ranked_count}</span
+                ></span
+              >
+            </span>
           </p>
           <div class="panel">
             <EventLadder
@@ -640,6 +651,9 @@
     align-items: center;
     gap: 0.5rem;
   }
+  .meta-row .fact-row {
+    margin-left: auto;
+  }
   .meta-right {
     margin-left: auto;
     font-family: var(--font-mono);
@@ -681,22 +695,6 @@
     padding-left: 1.25rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
-  }
-  .upnext {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 0.9rem 1.1rem;
-  }
-  .upnext-title {
-    font-family: var(--font-display);
-    font-size: 1.3rem;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
   }
   .two-col.wide-left {
     grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);

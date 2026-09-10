@@ -1,6 +1,10 @@
 <script lang="ts">
   import type { EventStage } from "$lib/api";
-  import EventStageBox, { type StageRow } from "./EventStageBox.svelte";
+  import { fillSlots } from "$lib/events";
+  import EventStageBox, {
+    type StageChip,
+    type StageRow,
+  } from "./EventStageBox.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
 
   let {
@@ -30,16 +34,22 @@
     if (state === "running") return { cls: "signal-running", text: "Live" };
     return { cls: "signal-setup", text: "Upcoming" };
   }
-  function metaOf(stage: EventStage): string {
-    const played = stage.races.filter(
-      (r) => r.race.status === "finished",
-    ).length;
-    const progress = stage.complete
-      ? `${stage.races_expected} races`
-      : played > 0
-        ? `race ${Math.min(played + 1, stage.races_expected)} of ${stage.races_expected}`
-        : `${stage.races_expected} races`;
-    return `${formatDay(stage.date)} · ${progress}`;
+  // One chip per expected race, its mode label (or "Race n" past the modes
+  // list) coloured by the attached race's state, so the chips double as the
+  // evening's progress.
+  function chipsOf(stage: EventStage): StageChip[] {
+    return fillSlots(stage.races, stage.races_expected).map((entry, i) => {
+      const status = entry?.race.status;
+      return {
+        text: stage.modes[i] ?? `Race ${i + 1}`,
+        state:
+          status === "finished"
+            ? "done"
+            : status === "running"
+              ? "live"
+              : "todo",
+      };
+    });
   }
   function rowsOf(stage: EventStage): StageRow[] {
     if (stage.results.length > 0) {
@@ -79,12 +89,6 @@
   function winnerOf(stage: EventStage | null) {
     return stage && stage.complete ? (stage.results[0]?.user ?? null) : null;
   }
-  let modesLine = $derived(
-    stages
-      .filter((s) => s.modes.length > 0)
-      .map((s) => `${s.label}: ${s.modes.join(", ")}`)
-      .join(" · "),
-  );
 </script>
 
 <div class="brk">
@@ -92,10 +96,11 @@
     {#each semis as stage (stage.key)}
       <EventStageBox
         title={stage.label}
-        meta={metaOf(stage)}
+        meta={formatDay(stage.date)}
         state={stateOf(stage)}
         signal={signalOf(stage)}
         rows={rowsOf(stage)}
+        chips={chipsOf(stage)}
       />
     {/each}
   </div>
@@ -117,10 +122,11 @@
     {#if final}
       <EventStageBox
         title={final.label}
-        meta={metaOf(final)}
+        meta={formatDay(final.date)}
         state={stateOf(final)}
         signal={signalOf(final)}
         rows={rowsOf(final)}
+        chips={chipsOf(final)}
       />
     {/if}
   </div>
@@ -160,10 +166,11 @@
     <div class="col indent row2">
       <EventStageBox
         title={newcomers.label}
-        meta={metaOf(newcomers)}
+        meta={formatDay(newcomers.date)}
         state={stateOf(newcomers)}
         signal={signalOf(newcomers)}
         rows={rowsOf(newcomers)}
+        chips={chipsOf(newcomers)}
       />
     </div>
     <div class="conn one row2" aria-hidden="true">
@@ -195,7 +202,6 @@
     </div>
   {/if}
 </div>
-{#if modesLine}<p class="modes">{modesLine}</p>{/if}
 
 <style>
   .brk {
@@ -305,12 +311,6 @@
     font-style: italic;
     font-weight: 400;
     font-size: var(--font-size-sm);
-  }
-  .modes {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-    margin: 0.9rem 0 0;
   }
   @media (max-width: 760px) {
     .brk {

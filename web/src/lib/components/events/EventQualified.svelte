@@ -26,7 +26,7 @@
           ? "Newcomers"
           : `Group ${letters[semiIndex] ?? ""}`;
       const meta = stage
-        ? `${stage.label} · ${formatDate(stage.date)}`
+        ? `${stage.label} on ${formatDate(stage.date)}`
         : group.label;
       const rows: StageRow[] = group.entries.map((e, i) => ({
         key: `${group.stage_key}-${i}`,
@@ -40,6 +40,10 @@
         key: group.stage_key,
         title,
         meta,
+        chips: (stage?.modes ?? []).map((text) => ({
+          text,
+          state: "todo" as const,
+        })),
         rows,
         signal: {
           cls: "signal-setup",
@@ -58,7 +62,10 @@
         : 'signal-finished'}"
       >{qualified.provisional ? "Provisional" : "Final"}</span
     >
-    <span class="cut">Cut on {formatDate(cutAt)}</span>
+    <span class="fact cut"
+      ><span class="k">Cut</span><span class="v">{formatDate(cutAt)}</span
+      ></span
+    >
   </p>
   {#each boxes as box (box.key)}
     <EventStageBox
@@ -67,6 +74,7 @@
       state="setup"
       signal={box.signal}
       rows={box.rows}
+      chips={box.chips}
     />
   {/each}
 </div>

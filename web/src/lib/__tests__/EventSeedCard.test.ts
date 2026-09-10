@@ -254,7 +254,7 @@ describe("EventSeedCard placeholder", () => {
       opensAt: "2026-09-23T17:00:00Z",
     });
     expect(container.querySelector("a")).toBeNull();
-    expect(getByText("Standard · Seed 2")).toBeTruthy();
+    expect(getByText("Standard - Seed 2")).toBeTruthy();
     expect(getByText(/^Opens /)).toBeTruthy();
   });
 });

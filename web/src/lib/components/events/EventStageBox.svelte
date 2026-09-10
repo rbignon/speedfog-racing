@@ -9,6 +9,11 @@
     right?: string;
     rightClass?: "pts" | "lead" | "adv" | "prov";
   }
+  /** One chip per race of the stage: its mode, coloured by the race's state. */
+  export interface StageChip {
+    text: string;
+    state: "done" | "live" | "todo";
+  }
 </script>
 
 <script lang="ts">
@@ -20,12 +25,14 @@
     state,
     signal,
     rows,
+    chips = [],
   }: {
     title: string;
     meta: string;
     state: "setup" | "running" | "finished";
     signal: { cls: string; text: string };
     rows: StageRow[];
+    chips?: StageChip[];
   } = $props();
 </script>
 
@@ -42,6 +49,13 @@
     </div>
     <span class="signal {signal.cls}">{signal.text}</span>
   </div>
+  {#if chips.length > 0}
+    <div class="chips">
+      {#each chips as chip, i (i)}<span class="chip chip-{chip.state}"
+          >{chip.text}</span
+        >{/each}
+    </div>
+  {/if}
   <ol>
     {#each rows as row (row.key)}
       <li>
@@ -97,6 +111,24 @@
     font-size: 0.68rem;
     color: var(--color-text-secondary);
     margin-top: 1px;
+  }
+  .chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 0.45rem 0 0.15rem;
+  }
+  .chips .chip {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.4rem;
+  }
+  .chip-done {
+    color: var(--color-info);
+    border-color: var(--color-info);
+  }
+  .chip-live {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
   }
   ol {
     list-style: none;

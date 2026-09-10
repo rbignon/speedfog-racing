@@ -27,8 +27,9 @@ request by `services/event_service.py`.
 | `announced_at`   | first timeline stop; defaults to `starts_at` minus 7 days               |
 
 A stage: `key`, `label`, `kind` (`semi`, `newcomers`, `final`), `date`,
-`races` (per evening), `modes` (display labels shown under the bracket, not
-pool keys), plus `seeds` (ladder positions) for a semi, `size` for the
+`races` (per evening), `modes` (display labels, not pool keys: one chip per
+race in the bracket boxes and qualified groups, and the name of a race
+placeholder), plus `seeds` (ladder positions) for a semi, `size` for the
 newcomers' final, `from` and `advance` for the final. Stage dates ascend;
 `qualifier_ends_at` is at or before the first stage; `ends_at` is after the
 last.
@@ -147,9 +148,9 @@ viewers. `closes_at` is the race's
 3. During the qualifier: nothing. To void a broken seed, detach it.
 4. Before each playoff evening: create the stage's public races (four slots, a
    duration cap), add the qualified runners and the casters, attach to
-   `<stage>:<n>`. Name them as the page shows them, "Semi B · Race 1 ·
-   Standard": the race cards beside the bracket display the race name
-   without the stage label the section already carries ("Race 1 ·
+   `<stage>:<n>`. Name them "Semi B - Race 1 - Standard", hyphenated like
+   daily races: the race cards beside the bracket display the race name
+   without the stage label the section already carries ("Race 1 -
    Standard"), and a slot with no race yet shows a placeholder named the
    same way. Start each race as its organizer on the evening.
 

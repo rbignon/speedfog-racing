@@ -108,41 +108,26 @@ describe("EventBracket stage state and progress", () => {
     expect(container.querySelector(".signal-running")).toBeNull();
   });
 
-  it("shows the races-expected count before any race is played, and the next race number mid-stage", () => {
+  it("renders one chip per expected race, its mode coloured by the race's state", () => {
     const notStarted = render(EventBracket, {
-      stages: [stage({ races_expected: 3 })],
+      stages: [stage({ races_expected: 3, modes: ["Standard", "Boss Rush"] })],
       formatDate: fmt,
       formatDay: fmtDay,
     });
-    expect(notStarted.getByText(/3 races/)).toBeTruthy();
+    const chips = notStarted.container.querySelectorAll(".chips .chip");
+    expect([...chips].map((c) => c.textContent)).toEqual([
+      "Standard",
+      "Boss Rush",
+      "Race 3",
+    ]);
+    expect(notStarted.container.querySelectorAll(".chip-todo").length).toBe(3);
     notStarted.unmount();
 
     const midStage = render(EventBracket, {
       stages: [
         stage({
           races_expected: 3,
-          races: [
-            {
-              slot: "semi_a:1",
-              index: 1,
-              race: raceWith({ status: "finished" }),
-            },
-            { slot: "semi_a:2", index: 2, race: raceWith({ status: "setup" }) },
-          ],
-        }),
-      ],
-      formatDate: fmt,
-      formatDay: fmtDay,
-    });
-    expect(midStage.getByText(/race 2 of 3/)).toBeTruthy();
-  });
-
-  it("clamps the next-race number at races_expected once every expected race has been played", () => {
-    const { getByText } = render(EventBracket, {
-      stages: [
-        stage({
-          races_expected: 3,
-          complete: false,
+          modes: ["Standard", "Boss Rush", "Sprint"],
           races: [
             {
               slot: "semi_a:1",
@@ -152,12 +137,7 @@ describe("EventBracket stage state and progress", () => {
             {
               slot: "semi_a:2",
               index: 2,
-              race: raceWith({ status: "finished" }),
-            },
-            {
-              slot: "semi_a:3",
-              index: 3,
-              race: raceWith({ status: "finished" }),
+              race: raceWith({ status: "running" }),
             },
           ],
         }),
@@ -165,7 +145,10 @@ describe("EventBracket stage state and progress", () => {
       formatDate: fmt,
       formatDay: fmtDay,
     });
-    expect(getByText(/race 3 of 3/)).toBeTruthy();
+    const states = [...midStage.container.querySelectorAll(".chips .chip")].map(
+      (c) => c.className.match(/chip-(\w+)/)?.[1],
+    );
+    expect(states).toEqual(["done", "live", "todo"]);
   });
 });
 
@@ -332,20 +315,5 @@ describe("EventBracket champion box", () => {
     });
     expect(container.querySelector(".champ.decided")).toBeNull();
     expect(getByText(/Decided D\(2026-10-25T20:00:00Z\)/)).toBeTruthy();
-  });
-});
-
-describe("EventBracket modes line", () => {
-  it("lists only the stages that carry modes, skipping empty ones", () => {
-    const { getByText, queryByText } = render(EventBracket, {
-      stages: [
-        stage({ key: "semi_a", label: "Semi A", modes: ["Standard", "Hard"] }),
-        stage({ key: "semi_b", label: "Semi B", modes: [] }),
-      ],
-      formatDate: fmt,
-      formatDay: fmtDay,
-    });
-    expect(getByText("Semi A: Standard, Hard")).toBeTruthy();
-    expect(queryByText(/Semi B:/)).toBeNull();
   });
 });

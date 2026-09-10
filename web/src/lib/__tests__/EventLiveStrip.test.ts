@@ -140,18 +140,20 @@ describe("EventLiveStrip title and sub line", () => {
       raceIndex: 2,
     });
     expect(container.querySelector(".title")?.textContent).toBe(
-      "Semi A · Race 2 of 3 · Sprint",
+      "Semi A - Race 2 of 3 - Sprint",
     );
   });
 
-  it("drops the stray leading dot when there are no runner previews to lead the sub line", () => {
+  it("shows the start time on its own when there are no runner previews", () => {
     const { container } = render(EventLiveStrip, {
       race: raceWith({ participant_previews: [] }),
       stage: null,
       raceIndex: null,
     });
-    const sub = container.querySelector(".sub")?.textContent ?? "";
-    expect(sub.startsWith("·")).toBe(false);
-    expect(sub).toContain("started");
+    const parts = [...container.querySelectorAll(".sub span")].map(
+      (s) => s.textContent,
+    );
+    expect(parts).toHaveLength(1);
+    expect(parts[0]).toMatch(/^Started /);
   });
 });

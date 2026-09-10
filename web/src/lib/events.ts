@@ -97,13 +97,17 @@ export function liveStage(detail: LiveStageInput): EventStage | null {
 }
 
 /**
- * A race name without its leading stage label ("Semi A · Race 1 · Standard"
- * shown under a "Semi A" heading reads "Race 1 · Standard"); unchanged when
- * the name does not start with the label.
+ * A race name without its leading stage label ("Semi A - Race 1 - Standard"
+ * shown under a "Semi A" heading reads "Race 1 - Standard"); unchanged when
+ * the name does not start with the label. Both the hyphen and the older
+ * middle-dot separator are recognised.
  */
 export function stripStagePrefix(name: string, stageLabel: string): string {
-  const prefix = `${stageLabel} · `;
-  return name.startsWith(prefix) ? name.slice(prefix.length) : name;
+  for (const sep of [" - ", " · "]) {
+    const prefix = `${stageLabel}${sep}`;
+    if (name.startsWith(prefix)) return name.slice(prefix.length);
+  }
+  return name;
 }
 
 type ShownStageInput = Pick<
@@ -123,29 +127,53 @@ export function shownStage(detail: ShownStageInput): EventStage | null {
   return detail.stages.find((s) => s.key === key) ?? null;
 }
 
-type TitleInput = Pick<EventDetail, "live_race"> & ShownStageInput;
+type SectionInput = Pick<EventDetail, "live_race"> & ShownStageInput;
+
+export interface RacesSection {
+  signal: { cls: string; text: string };
+  meta: string;
+}
 
 /**
- * The races section title, always about the stage whose races it lists:
- * "Live now · Semi B" while one of its races runs, "Up next · Semi A · <date>"
- * while its evening is still ahead, its bare label otherwise (between two of
- * its races, or once the last evening ran).
+ * The meta row under the races section title, about the stage whose races
+ * the section lists: live while one of its races runs ("Race 2 of 3"),
+ * finished once complete, up next (the date) until one of its races has
+ * started, in progress between two of its races.
  */
-export function racesSectionTitle(
-  detail: TitleInput,
+export function racesSection(
+  detail: SectionInput,
   formatDate: (iso: string) => string,
   now: Date,
-): string {
+): RacesSection | null {
   const stage = shownStage(detail);
-  if (!stage) return "Races";
-  const liveHere =
-    detail.live_race !== null &&
-    stage.races.some((r) => r.race.id === detail.live_race?.id);
-  if (liveHere) return `Live now · ${stage.label}`;
-  if (new Date(stage.date).getTime() > now.getTime()) {
-    return `Up next · ${stage.label} · ${formatDate(stage.date)}`;
+  if (!stage) return null;
+  const live = detail.live_race
+    ? stage.races.find((r) => r.race.id === detail.live_race?.id)
+    : undefined;
+  if (live) {
+    return {
+      signal: { cls: "signal-running", text: "Live now" },
+      meta: `Race ${live.index} of ${stage.races_expected}`,
+    };
   }
-  return stage.label;
+  if (stage.complete) {
+    return {
+      signal: { cls: "signal-finished", text: "Finished" },
+      meta: formatDate(stage.date),
+    };
+  }
+  const started = stage.races.some((r) => r.race.status !== "setup");
+  if (!started || new Date(stage.date).getTime() > now.getTime()) {
+    return {
+      signal: { cls: "signal-setup", text: "Up next" },
+      meta: formatDate(stage.date),
+    };
+  }
+  const played = stage.races.filter((r) => r.race.status === "finished").length;
+  return {
+    signal: { cls: "signal-active", text: "In progress" },
+    meta: `${played} of ${stage.races_expected} races played`,
+  };
 }
 
 /** Time left before a seed closes, in the coarsest useful unit. */

@@ -66,7 +66,7 @@
     <div class="inner">
       <div class="content">
         <div class="head">
-          <span class="name">{modeLabel} &middot; Seed {index}</span>
+          <span class="name">{modeLabel} - Seed {index}</span>
           <span class="signal signal-setup"
             >{opensAt ? "Upcoming" : "Unavailable"}</span
           >
@@ -96,7 +96,7 @@
     <div class="inner">
       <div class="content">
         <div class="head">
-          <span class="name">{modeLabel} &middot; Seed {index}</span>
+          <span class="name">{modeLabel} - Seed {index}</span>
           {#if finished}
             <span class="signal signal-open">Done</span>
           {:else if dnf}
