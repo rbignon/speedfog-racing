@@ -593,6 +593,12 @@
   }
 
   @media (max-width: 640px) {
+    /* No room to ellipsise a race name into nothing: let it wrap. */
+    .race-name {
+      white-space: normal;
+      overflow: visible;
+    }
+
     .card-crew.has-winner {
       flex-wrap: wrap;
     }

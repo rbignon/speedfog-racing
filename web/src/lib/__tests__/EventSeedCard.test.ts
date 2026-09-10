@@ -15,7 +15,7 @@ function raceWith(overrides: Partial<Race> = {}): Race {
       twitch_display_name: "Org",
       twitch_avatar_url: null,
     },
-    status: "setup",
+    status: "running",
     pool_name: null,
     is_public: true,
     open_registration: true,
@@ -270,6 +270,25 @@ describe("EventSeedCard finished without a score", () => {
       (k) => k.textContent,
     );
     expect(keys).toEqual(["IGT"]);
+  });
+});
+
+describe("EventSeedCard before the qualifier opens", () => {
+  it("reads as upcoming, with the opening date and no Play strip", () => {
+    const { container, getByText } = render(EventSeedCard, {
+      entry: entryWith({ status: "setup", can_join: true }, null, null),
+      index: 1,
+      modeLabel: "Standard",
+      partner: null,
+      now,
+      opensAt: "2026-09-23T17:00:00Z",
+    });
+    expect(getByText("Upcoming")).toBeTruthy();
+    expect(container.querySelector(".play-strip")).toBeNull();
+    expect(container.querySelector(".seed-card.route-setup")).not.toBeNull();
+    expect(container.querySelector(".remaining")?.textContent).toMatch(
+      /^Opens /,
+    );
   });
 });
 

@@ -77,6 +77,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  @media (max-width: 640px) {
+    .name {
+      white-space: normal;
+      overflow: visible;
+    }
+  }
   .avatar-stack {
     display: flex;
     align-items: center;

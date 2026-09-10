@@ -126,7 +126,12 @@ for an abandoned run, which the page labels DNF. On the seed card a scored
 DNF takes the finished colour (verdigris route line and result facts, the
 points in brass while provisional), since the run holds a rank and points; a DNF without a score shows the spent grey
 line, since the seed can be neither scored nor replayed. `null` for anonymous
-viewers. `closes_at` is the race's
+viewers. A qualifier race still in setup, which is how it sits between the
+announcement and the opening, shows as upcoming on its card with no play
+strip whatever its registration state: the opening date while the event is
+upcoming, "Not open yet" once it has opened and the race has not been
+started.
+`closes_at` is the race's
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
 
@@ -145,7 +150,9 @@ viewers. `closes_at` is the race's
    minutes for a week), then attach each to `qualifier:<mode>:<n>` from the
    Races tab. Attaching sets `exclude_from_stats` and hides the race from the
    public listings.
-3. During the qualifier: nothing. To void a broken seed, detach it.
+3. On the opening day: start each qualifier race as its organizer. Until
+   then their cards read as upcoming, since the packs are not out. During the
+   week that follows: nothing. To void a broken seed, detach it.
 4. Before each playoff evening: create the stage's public races (four slots, a
    duration cap), add the qualified runners and the casters, attach to
    `<stage>:<n>`. Name them "Semi B - Race 1 - Standard", hyphenated like

@@ -32,10 +32,19 @@
   let dnf = $derived(done && !finished);
   let playing = $derived(mine?.status === "playing");
   let joined = $derived(mine?.status === "joined");
+  // A race still in setup has no pack out yet, whether the qualifier has
+  // opened or not, so the card reads like the placeholder rather than like an
+  // open seed even when the race would take a registration.
+  let notStarted = $derived(race?.status === "setup");
   let remaining = $derived(timeRemaining(entry?.closes_at ?? null, now));
   let closed = $derived(remaining === "closed");
   let canPlay = $derived(
-    !done && !playing && !joined && !closed && race?.can_join === true,
+    !done &&
+      !playing &&
+      !joined &&
+      !closed &&
+      !notStarted &&
+      race?.can_join === true,
   );
   let previews = $derived(race?.participant_previews.slice(0, 5) ?? []);
   let overflow = $derived(
@@ -46,13 +55,15 @@
   // two zone entries) is spent: nothing ridden, nothing left to ride.
   let scored = $derived(done && mine?.points != null);
   let routeClass = $derived(
-    finished || scored
-      ? "route-done"
-      : done
-        ? "route-spent"
-        : closed
-          ? "route-finished"
-          : "route-running",
+    notStarted
+      ? "route-setup"
+      : finished || scored
+        ? "route-done"
+        : done
+          ? "route-spent"
+          : closed
+            ? "route-finished"
+            : "route-running",
   );
 </script>
 
@@ -107,6 +118,8 @@
             <span class="signal signal-registered">Joined</span>
           {:else if closed}
             <span class="signal signal-finished">Closed</span>
+          {:else if notStarted}
+            <span class="signal signal-setup">Upcoming</span>
           {:else}
             <span class="signal signal-running">Open</span>
           {/if}
@@ -128,7 +141,13 @@
                 >+{overflow}</span
               >{/if}
           </div>
-          <span class="remaining">{remaining}</span>
+          <span class="remaining"
+            >{notStarted
+              ? opensAt
+                ? `Opens ${formatEventDate(opensAt)}`
+                : "Not open yet"
+              : remaining}</span
+          >
         </div>
         <div class="foot">
           <span class="meta"
@@ -233,8 +252,9 @@
   }
   .crew {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 1rem;
+    gap: 0.35rem 1rem;
     margin-top: 0.75rem;
   }
   .avatar-stack {
@@ -317,5 +337,12 @@
     font-size: var(--font-size-base);
     text-transform: uppercase;
     letter-spacing: 0.1em;
+  }
+  /* No room to ellipsise a name into nothing on a phone: let it wrap. */
+  @media (max-width: 640px) {
+    .name {
+      white-space: normal;
+      overflow: visible;
+    }
   }
 </style>

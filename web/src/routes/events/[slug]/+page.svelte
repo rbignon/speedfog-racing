@@ -704,8 +704,9 @@
   .meta-row {
     margin: 0 0 14px;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.4rem 0.5rem;
   }
   .meta-row .fact-row {
     margin-left: auto;
@@ -865,6 +866,14 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
+  }
+  /* Too narrow to hold both ends apart: the right-hand side joins the signal
+   * on the left, wrapping under it when it does not fit. */
+  @media (max-width: 640px) {
+    .meta-row .fact-row,
+    .meta-row .meta-right {
+      margin-left: 0;
+    }
   }
   @media (max-width: 900px) {
     .fmt,

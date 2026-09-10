@@ -34,6 +34,9 @@
   });
   let firstX = $derived(placed[0]?.x ?? 0);
   let lastX = $derived(placed.at(-1)?.x ?? 0);
+  // Narrow screens cannot fit seven labels side by side, so they drop to the
+  // rail plus this one line: the stop just passed, or the first one ahead.
+  let highlight = $derived(placed[currentIndex] ?? placed[0]);
 </script>
 
 <div class="tl" aria-hidden="true">
@@ -59,6 +62,12 @@
     </div>
   {/each}
 </div>
+{#if highlight}
+  <div class="tl-current" aria-hidden="true">
+    <span class="t" class:dim={!highlight.done}>{highlight.label}</span>
+    <span class="s">{day.format(new Date(highlight.date))}</span>
+  </div>
+{/if}
 
 <style>
   .tl {
@@ -66,6 +75,14 @@
     width: min(640px, 100%);
     height: 78px;
     margin: 0.9rem 0 0;
+  }
+  /* Only rendered under the rail on narrow screens, where the per-stop
+   * labels are hidden. */
+  .tl-current {
+    display: none;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
   }
   /* The rail starts after the departure triangle and stops at the terminal
    * square; both ends are set inline from the stops' positions. */
@@ -162,5 +179,16 @@
     font-size: 0.66rem;
     color: var(--color-text-secondary);
     margin-top: 2px;
+  }
+  @media (max-width: 640px) {
+    .tl {
+      height: 26px;
+    }
+    .tl .lbl {
+      display: none;
+    }
+    .tl-current {
+      display: flex;
+    }
   }
 </style>

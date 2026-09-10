@@ -71,6 +71,24 @@ describe("EventTimeline stop state", () => {
     expect(rail?.getAttribute("style")).toContain("right: calc(4% + 6px)");
   });
 
+  it("names the current stop under the rail, the first one before the event starts", () => {
+    const during = render(EventTimeline, {
+      stops,
+      now: new Date("2026-09-10T00:00:00Z"),
+    });
+    expect(during.container.querySelector(".tl-current .t")?.textContent).toBe(
+      "Open",
+    );
+
+    const before = render(EventTimeline, {
+      stops,
+      now: new Date("2026-08-01T00:00:00Z"),
+    });
+    expect(before.container.querySelector(".tl-current .t")?.textContent).toBe(
+      "Announce",
+    );
+  });
+
   it("centers a single stop at 50%", () => {
     const now = new Date("2026-09-10T00:00:00Z");
     const { container } = render(EventTimeline, { stops: [stops[0]], now });
