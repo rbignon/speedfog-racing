@@ -17,6 +17,7 @@
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
+  import { formatTime } from "$lib/highlights";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import EventTimeline from "$lib/components/events/EventTimeline.svelte";
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
@@ -344,14 +345,11 @@
       {/if}
     {:else if block === "champions"}
       {#if crowned.length > 0}
-        <section class="podium">
+        <section class="podium" aria-label="Winners">
           {#each crowned as champion (champion.kind)}
             {@const first = champion.kind === "final"}
             <div class="plate" class:first>
-              <div class="route" aria-hidden="true">
-                <span class="line"></span><span class="term"></span>
-              </div>
-              <div class="plate-title">{champion.label}</div>
+              <span class="chip plate-chip">{champion.label}</span>
               {#if champion.user.twitch_avatar_url}
                 <img
                   class="plate-avatar"
@@ -372,6 +370,23 @@
               {/if}
               <div class="plate-name">
                 <UserLink user={champion.user} showBadge />
+              </div>
+              <div class="plate-stats">
+                <div>
+                  <span class="n">{champion.wins}</span><span class="k"
+                    >{champion.wins === 1 ? "win" : "wins"}</span
+                  >
+                </div>
+                <div>
+                  <span class="n">{champion.points}</span><span class="k"
+                    >points</span
+                  >
+                </div>
+                <div>
+                  <span class="n">{formatTime(champion.igtTotal)}</span><span
+                    class="k">IGT</span
+                  >
+                </div>
               </div>
             </div>
           {/each}
@@ -697,71 +712,50 @@
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
   }
-  /* The decided winners: two plates under the band on brass route lines,
-   * the champion's larger, the hierarchy carried by size alone. */
+  /* The decided winners: two compact plates centred under the band, the
+   * champion's larger and on the fog accent, with the evening's figures. */
   .podium {
-    display: grid;
-    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 24px;
-    align-items: stretch;
+    padding: 0.4rem 0;
   }
   .plate {
-    position: relative;
+    width: min(232px, 100%);
     background: var(--color-surface);
     border: 1px solid var(--color-border);
-    border-top-color: transparent;
     border-radius: var(--radius-lg);
-    padding: 1.4rem 1.2rem 1.5rem;
+    padding: 1.1rem 1rem 1rem;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 0.7rem;
     text-align: center;
   }
-  .plate .route {
-    position: absolute;
-    top: -7px;
-    left: -10px;
-    right: -10px;
-    height: 14px;
-    pointer-events: none;
+  .plate.first {
+    width: min(280px, 100%);
+    padding: 1.4rem 1.2rem 1.2rem;
+    border-color: var(--color-purple);
+    box-shadow: var(--glow-fog);
   }
-  .plate .route .line {
-    position: absolute;
-    left: 10px;
-    right: 14px;
-    top: 6px;
-    border-top: 2px solid var(--color-gold);
-  }
-  .plate .route .term {
-    position: absolute;
-    right: 6px;
-    top: 0;
-    width: 14px;
-    height: 14px;
-    background: var(--color-gold);
-  }
-  .plate-title {
-    font-family: var(--font-display);
-    font-size: 1.1rem;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-gold);
-  }
-  .plate.first .plate-title {
-    font-size: 1.4rem;
+  .plate.first .plate-chip {
+    color: var(--color-purple-hover);
+    border-color: var(--color-purple);
   }
   .plate-avatar {
-    width: 72px;
-    height: 72px;
+    width: 84px;
+    height: 84px;
     border-radius: 50%;
-    border: 2px solid var(--color-gold);
+    border: 2px solid var(--color-border);
     object-fit: cover;
   }
   .plate.first .plate-avatar {
-    width: 104px;
-    height: 104px;
+    width: 120px;
+    height: 120px;
+    border: 3px solid var(--color-purple);
+    box-shadow: var(--glow-fog);
   }
   .plate-avatar-placeholder {
     display: flex;
@@ -778,7 +772,36 @@
     font-weight: 600;
   }
   .plate.first .plate-name {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
+  }
+  .plate-stats {
+    display: flex;
+    width: 100%;
+    margin-top: 0.2rem;
+    padding-top: 0.7rem;
+    border-top: 1px solid var(--color-border);
+  }
+  .plate-stats > div {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+  .plate-stats .n {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 600;
+  }
+  .plate.first .plate-stats .n {
+    color: var(--color-purple-hover);
+  }
+  .plate-stats .k {
+    font-family: var(--font-mono);
+    font-size: 0.62rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
   }
   .bracket-block {
     display: flex;
@@ -835,8 +858,7 @@
     .take-part,
     .cards,
     .two-col,
-    .two-col.wide-left,
-    .podium {
+    .two-col.wide-left {
       grid-template-columns: 1fr;
     }
   }

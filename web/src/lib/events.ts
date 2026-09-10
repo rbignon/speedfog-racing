@@ -127,17 +127,41 @@ export interface Champion {
   kind: "final" | "newcomers";
   label: string;
   user: User;
+  /**
+   * Races of the evening the winner finished first (a race nobody finished
+   * counts for no one, even though the ladder still scores its deepest run).
+   */
+  wins: number;
+  points: number;
+  igtTotal: number;
 }
 
 /**
  * The decided winners of the stages that crown one, the final first and
- * the newcomers' final after it.
+ * the newcomers' final after it, with their evening's figures.
  */
 export function champions(stages: EventStage[]): Champion[] {
   const crown = (kind: Champion["kind"], label: string): Champion[] => {
     const stage = stages.find((s) => s.kind === kind && s.complete);
     const user = stage ? stageWinner(stage) : null;
-    return user ? [{ kind, label, user }] : [];
+    if (!stage || !user) return [];
+    const entry = stage.results[0];
+    const wins = stage.races.filter(
+      (r) =>
+        r.race.status === "finished" &&
+        r.race.participant_previews.find((p) => p.placement === 1)?.id ===
+          user.id,
+    ).length;
+    return [
+      {
+        kind,
+        label,
+        user,
+        wins,
+        points: entry.points,
+        igtTotal: entry.igt_total,
+      },
+    ];
   };
   return [...crown("final", "Champion"), ...crown("newcomers", "Newcomers")];
 }

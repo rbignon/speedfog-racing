@@ -126,6 +126,15 @@ describe("stripStagePrefix", () => {
 describe("champions", () => {
   const winner = { id: "u1", twitch_username: "ace" } as User;
   const runnerUp = { id: "u2", twitch_username: "bee" } as User;
+  const wonBy = (index: number, id: string) =>
+    ({
+      slot: `final:${index}`,
+      index,
+      race: {
+        status: "finished",
+        participant_previews: [{ id, placement: 1 }],
+      },
+    }) as unknown as EventStage["races"][number];
   const stageOf = (
     kind: EventStage["kind"],
     complete: boolean,
@@ -138,13 +147,13 @@ describe("champions", () => {
     races_expected: 3,
     complete,
     modes: [],
-    races: [],
+    races: [wonBy(1, "u1"), wonBy(2, "u2"), wonBy(3, "u1")],
     results: [
       {
         user: winner,
         newcomer: false,
         points: 300,
-        igt_total: 1,
+        igt_total: 5000,
         advances: false,
       },
       {
@@ -159,7 +168,7 @@ describe("champions", () => {
     ...overrides,
   });
 
-  it("crowns the leader of a complete final or newcomers' final only, the final first", () => {
+  it("crowns the leader of a complete final or newcomers' final only, the final first, with the evening's figures", () => {
     const crowned = champions([
       stageOf("semi", true),
       stageOf("newcomers", true),
@@ -167,7 +176,25 @@ describe("champions", () => {
     ]);
     expect(crowned.map((c) => c.kind)).toEqual(["final", "newcomers"]);
     expect(crowned.map((c) => c.label)).toEqual(["Champion", "Newcomers"]);
-    expect(crowned[0].user).toBe(winner);
+    expect(crowned[0]).toMatchObject({
+      user: winner,
+      wins: 2,
+      points: 300,
+      igtTotal: 5000,
+    });
+    // A race nobody finished has no first place to count.
+    const nobodyFinished = {
+      ...wonBy(3, "u1"),
+      race: {
+        status: "finished",
+        participant_previews: [{ id: "u1", placement: null }],
+      },
+    } as unknown as EventStage["races"][number];
+    expect(
+      champions([
+        stageOf("final", true, { races: [wonBy(1, "u1"), nobodyFinished] }),
+      ])[0].wins,
+    ).toBe(1);
     expect(champions([stageOf("final", false)])).toEqual([]);
     // Complete but nobody scored: no winner to crown.
     expect(champions([stageOf("final", true, { results: [] })])).toEqual([]);

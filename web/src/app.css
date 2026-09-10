@@ -70,6 +70,7 @@
   /* Effects */
   --transition: 0.2s ease;
   --glow-gold: 0 0 12px rgba(200, 164, 78, 0.25);
+  --glow-fog: 0 0 18px rgba(169, 155, 201, 0.3);
 }
 
 /* Scrollbar */
