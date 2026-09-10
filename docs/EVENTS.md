@@ -152,7 +152,8 @@ viewers. `closes_at` is the race's
    daily races: the race cards beside the bracket display the race name
    without the stage label the section already carries ("Race 1 -
    Standard"), and a slot with no race yet shows a placeholder named the
-   same way. Start each race as its organizer on the evening.
+   same way, carrying the stage's expected runners as an avatar stack. Start
+   each race as its organizer on the evening.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.

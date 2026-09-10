@@ -1,13 +1,12 @@
 <script lang="ts">
+  import type { User } from "$lib/api";
+
   /**
    * A stage race slot nothing is attached to yet: the race card's geometry
-   * (route line as the top edge) with the setup dashes, no link.
+   * (route line as the top edge) with the setup dashes, no link, and the
+   * runners expected on the evening as an avatar stack.
    */
-  let {
-    name,
-    note,
-    partner,
-  }: { name: string; note: string; partner: string | null } = $props();
+  let { name, users }: { name: string; users: User[] } = $props();
 </script>
 
 <div class="card">
@@ -20,10 +19,29 @@
     <span class="name">{name}</span>
     <span class="signal signal-setup">Upcoming</span>
   </div>
-  <div class="foot">
-    <span class="meta">{note}</span>
-    <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
-  </div>
+  {#if users.length > 0}
+    <div class="avatar-stack">
+      {#each users as user, i (i)}
+        {#if user.twitch_avatar_url}
+          <img
+            src={user.twitch_avatar_url}
+            alt={user.twitch_display_name || user.twitch_username}
+            title={user.twitch_display_name || user.twitch_username}
+            class="avatar"
+          />
+        {:else}
+          <span
+            class="avatar avatar-placeholder"
+            title={user.twitch_display_name || user.twitch_username}
+          >
+            {(user.twitch_display_name || user.twitch_username)
+              .charAt(0)
+              .toUpperCase()}
+          </span>
+        {/if}
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -59,20 +77,29 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .foot {
+  .avatar-stack {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 1rem;
-    margin-top: 0.6rem;
+    margin-top: 0.75rem;
   }
-  .meta {
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-disabled);
+  .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--color-surface);
+    margin-left: -6px;
+    object-fit: cover;
   }
-  .byline {
-    font-size: var(--font-size-sm);
+  .avatar:first-child {
+    margin-left: 0;
+  }
+  .avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface-elevated);
     color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
   }
 </style>

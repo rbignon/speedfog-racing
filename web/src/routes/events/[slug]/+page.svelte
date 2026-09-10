@@ -376,8 +376,9 @@
                         name={[`Race ${i + 1}`, shown.modes[i]]
                           .filter(Boolean)
                           .join(" - ")}
-                        note="Announced on the day"
-                        partner={detail.partner_name}
+                        users={shown.field
+                          .map((slot) => slot.user)
+                          .filter((user) => user !== null)}
                       />
                     {/if}
                   {/each}
