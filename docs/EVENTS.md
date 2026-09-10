@@ -151,7 +151,10 @@ viewers. `closes_at` is the race's
    `<stage>:<n>`. Name them "Semi B - Race 1 - Standard", hyphenated like
    daily races: the race cards beside the bracket display the race name
    without the stage label the section already carries ("Race 1 -
-   Standard"), and a slot with no race yet shows a placeholder named the
+   Standard"), and drop the players / mode / organizer foot row and the
+   viewer's role mark, since the bracket beside them lists the field and
+   each stage's date and modes (an organizer or caster finds their role on
+   the race page). A slot with no race yet shows a placeholder named the
    same way, carrying the stage's expected runners as an avatar stack. Start
    each race as its organizer on the evening.
 

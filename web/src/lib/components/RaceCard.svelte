@@ -5,19 +5,22 @@
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
 
-  // `title` replaces the displayed race name and `showFoot={false}` drops the
-  // players / mode / organizer row, for a surrounding surface that already
-  // carries that context; the race keeps its full card everywhere else.
+  // `title` replaces the displayed race name, `showFoot={false}` drops the
+  // players / mode / organizer row and `showRole={false}` the viewer's role
+  // mark, for a surrounding surface that already carries that context; the
+  // race keeps its full card everywhere else.
   let {
     race,
     variant = "default",
     title,
     showFoot = true,
+    showRole = true,
   }: {
     race: Race;
     variant?: "default" | "compact";
     title?: string;
     showFoot?: boolean;
+    showRole?: boolean;
   } = $props();
 
   let isRunning = $derived(race.status === "running");
@@ -114,7 +117,7 @@
           {#if showOpenBadge}
             <span class="signal signal-open">Open</span>
           {/if}
-          {#if roleLabel}
+          {#if roleLabel && showRole}
             <span class="signal signal-{race.my_role}">{roleLabel}</span>
           {/if}
           <span class="signal signal-{race.status}"
