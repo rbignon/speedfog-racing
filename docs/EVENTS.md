@@ -198,7 +198,18 @@ ladder, on the race listings, or on the event page.
 stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
 within 12 hours of now) so an open page sees the evening's race go live;
 during the qualifier it only refreshes on page reload.
-All dates and times render in the viewer's browser timezone. Once the phase
+All dates and times render in the viewer's browser timezone.
+
+While the event can still be joined (`upcoming` and `qualifier`), a "What is
+SpeedFog?" section opens the page for visitors who have never played: three
+concepts beside a silent looping montage of a run, and a link to a longer cut
+on YouTube. The media are constants at the top of `EventIntro.svelte` rather
+than event config, since they describe SpeedFog and not the event; while unset,
+the section shows a still from a run and no link. The loop plays muted and
+inline, with a play/pause button for every viewer, and starts paused for a
+viewer who prefers reduced motion.
+
+Once the phase
 is `finished`, two compact plates under the band crown the final's and the
 newcomers' final's winners (the leader of each complete stage), the champion's
 larger, with their story: the position they qualified at on the ladder, the

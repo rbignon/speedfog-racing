@@ -26,6 +26,7 @@
   import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
   import EventBracket from "$lib/components/events/EventBracket.svelte";
   import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
+  import EventIntro from "$lib/components/events/EventIntro.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -152,7 +153,12 @@
 
 <main class="container">
   {#each blocks as block (block)}
-    {#if block === "format"}
+    {#if block === "intro"}
+      <section>
+        <SectionTitle>What is SpeedFog?</SectionTitle>
+        <EventIntro />
+      </section>
+    {:else if block === "format"}
       <section>
         <SectionTitle>The format</SectionTitle>
         <div class="fmt">

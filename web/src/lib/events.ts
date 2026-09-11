@@ -7,6 +7,7 @@ import type {
 } from "$lib/api";
 
 export type EventBlock =
+  | "intro"
   | "format"
   | "take_part"
   | "seeds"
@@ -16,16 +17,18 @@ export type EventBlock =
   | "bracket_ladder";
 
 /**
- * Which blocks the page shows, top to bottom, for a phase. The take-part
- * block carries the qualifier rules, the bracket block the playoff rules and
- * the next (or current) evening's races; from the cut on the bracket replaces
- * the qualified column, the ladder staying under it.
+ * Which blocks the page shows, top to bottom, for a phase. While the event
+ * can still be joined, an introduction to SpeedFog opens the page for
+ * visitors who have never played it. The take-part block carries the
+ * qualifier rules, the bracket block the playoff rules and the next (or
+ * current) evening's races; from the cut on the bracket replaces the
+ * qualified column, the ladder staying under it.
  */
 export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
     case "upcoming":
     case "qualifier":
-      return ["format", "take_part", "seeds", "ladder_qualified"];
+      return ["intro", "format", "take_part", "seeds", "ladder_qualified"];
     case "cut":
       return ["bracket_ladder"];
     case "playoffs":

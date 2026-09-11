@@ -53,6 +53,14 @@ describe("blockOrder", () => {
   it("opens the finished page with the champions", () => {
     expect(blockOrder("finished")[0]).toBe("champions");
   });
+
+  it("introduces SpeedFog first while the event can still be joined, and only then", () => {
+    expect(blockOrder("upcoming")[0]).toBe("intro");
+    expect(blockOrder("qualifier")[0]).toBe("intro");
+    for (const phase of ["cut", "playoffs", "finished"] as const) {
+      expect(blockOrder(phase), phase).not.toContain("intro");
+    }
+  });
 });
 
 function detailWith(partial: Partial<EventDetail>): EventDetail {
