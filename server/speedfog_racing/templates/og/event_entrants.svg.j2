@@ -11,6 +11,9 @@
     <image x="{{ x }}" y="334" width="{{ size }}" height="{{ size }}" clip-path="url(#avatar-clip)" href="{{ p.avatar_b64 }}"/>
     <circle cx="{{ x + size / 2 }}" cy="370" r="{{ size / 2 }}" fill="none" stroke="#0f1923" stroke-width="6"/>
   {% endfor %}
+  {% if not entrants %}
+    <text x="600" y="382" text-anchor="middle" font-family="Public Sans" font-size="30" fill="#96a0ad">No players yet</text>
+  {% endif %}
   {% if overflow_count %}
     {% set x = x0 + entrants|length * step %}
     <circle cx="{{ x + size / 2 }}" cy="370" r="{{ size / 2 }}" fill="#1c2a3f" stroke="#0f1923" stroke-width="6"/>

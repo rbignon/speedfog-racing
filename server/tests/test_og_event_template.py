@@ -117,3 +117,9 @@ def test_the_footer_drops_the_player_count_before_anyone_joins() -> None:
     svg = render_svg("event_upcoming", _ctx(player_count_label=None))
     assert "players" not in svg
     assert "23 September - 25 October 2026" in svg
+
+
+def test_an_entrant_row_with_nobody_in_it_says_so() -> None:
+    """A qualifier that just opened would otherwise show an empty band."""
+    assert "No players yet" in render_svg("event_entrants", _ctx(entrants=[]))
+    assert "No players yet" not in render_svg("event_entrants", _ctx())
