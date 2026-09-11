@@ -1,4 +1,4 @@
-"""Open Graph endpoints: dynamic meta HTML + rasterized PNG per race."""
+"""Open Graph endpoints: dynamic meta HTML + rasterized PNG per race, daily and event."""
 
 from __future__ import annotations
 
@@ -17,15 +17,19 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
-from speedfog_racing.models import Participant, Race
+from speedfog_racing.models import Event, Participant, Race
 from speedfog_racing.services.avatar_cache import AvatarCache
 from speedfog_racing.services.daily_seed_loop import daily_date_for
+from speedfog_racing.services.event_service import count_finished_before, event_window, load_event
 from speedfog_racing.services.og_image import (
     STATUS_LABEL,
+    event_og_description,
     format_daily_date,
     format_pool,
     render_daily_og,
+    render_event_og,
     render_race_og,
+    summarize_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,6 +65,21 @@ _DEFAULT_DESCRIPTION = (
 def _avatar_cache() -> AvatarCache:
     cache_dir = Path(settings.og_cache_dir).expanduser() / "avatars"
     return AvatarCache(cache_dir=cache_dir, default_avatar=_DEFAULT_AVATAR_PATH.read_bytes())
+
+
+@functools.lru_cache(maxsize=1)
+def _logo_cache() -> AvatarCache:
+    """Partner logos, cached like avatars but with no stand-in: a logo that
+    cannot be fetched is simply left out of the card."""
+    cache_dir = Path(settings.og_cache_dir).expanduser() / "logos"
+    return AvatarCache(cache_dir=cache_dir, default_avatar=b"")
+
+
+async def _fetch_logo(url: str | None) -> bytes:
+    """A partner logo is stored as a site URL, absolute or rooted at the site."""
+    if url and url.startswith("/"):
+        url = settings.base_url.rstrip("/") + url
+    return await _logo_cache().get(url)
 
 
 def _render_html(*, title: str, description: str, og_url: str, og_image: str) -> str:
@@ -244,6 +263,82 @@ async def og_race_image(race_id: UUID, db: AsyncSession = Depends(get_db)) -> Re
         png, _ = await render_race_og(race, cache_dir=cache_dir, avatar_lookup=cache.get)
     except Exception:
         logger.exception("og image render failed for %s", race_id)
+        return fallback
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"},
+    )
+
+
+async def _load_event_card(db: AsyncSession, slug: str) -> tuple[Event, dict[UUID, int]] | None:
+    """The event with its races, plus the race counts that flag newcomers."""
+    event = await load_event(db, slug)
+    if event is None:
+        return None
+    starts_at, _, _ = event_window(event)
+    user_ids = {p.user_id for race in event.races for p in race.participants}
+    return event, await count_finished_before(db, user_ids, starts_at)
+
+
+@router.get("/event/{slug}/meta", response_class=HTMLResponse)
+async def og_event_meta(slug: str, db: AsyncSession = Depends(get_db)) -> Response:
+    """HTML stub with event-specific OG tags. Served to crawlers via nginx."""
+    base = settings.base_url.rstrip("/")
+    try:
+        loaded = await _load_event_card(db, slug)
+        summary = (
+            summarize_event(loaded[0], now=dt.datetime.now(dt.UTC), finished_before=loaded[1])
+            if loaded is not None
+            else None
+        )
+    except Exception:
+        logger.exception("og event meta load failed for %s", slug)
+        loaded = summary = None
+    if loaded is None or summary is None:
+        html = _render_html(
+            title=_DEFAULT_TITLE,
+            description=_DEFAULT_DESCRIPTION,
+            og_url=base + "/",
+            og_image=base + "/og-image.png",
+        )
+    else:
+        # The card's lockup is cut down to the width it has; a title is not.
+        event = loaded[0]
+        partner = f"SpeedFog × {event.partner_name}" if event.partner_name else "SpeedFog Racing"
+        html = _render_html(
+            title=f"{event.name} · {partner}",
+            description=event_og_description(summary),
+            og_url=f"{base}/events/{slug}",
+            og_image=f"{base}/api/og/event/{slug}.png",
+        )
+    return HTMLResponse(content=html, headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/event/{slug}.png")
+async def og_event_image(slug: str, db: AsyncSession = Depends(get_db)) -> Response:
+    """Rasterized OG image. Cached on disk per (slug, what the card shows)."""
+    base = settings.base_url.rstrip("/")
+    fallback = RedirectResponse(url=f"{base}/og-image.png", status_code=302)
+    try:
+        loaded = await _load_event_card(db, slug)
+    except Exception:
+        logger.exception("og event image load failed for %s", slug)
+        return fallback
+    if loaded is None:
+        return fallback
+    event, finished_before = loaded
+    try:
+        png = await render_event_og(
+            event,
+            now=dt.datetime.now(dt.UTC),
+            finished_before=finished_before,
+            cache_dir=Path(settings.og_cache_dir).expanduser(),
+            avatar_lookup=_avatar_cache().get,
+            logo_lookup=_fetch_logo,
+        )
+    except Exception:
+        logger.exception("og event image render failed for %s", slug)
         return fallback
     return Response(
         content=png,

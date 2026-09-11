@@ -231,12 +231,48 @@ user rows and consumes an available seed for each of the eighteen races it
 creates, so it refuses a database that is not on this machine.
 `--viewer <twitch username>` gives that runner a seed of every card state.
 
+## Open Graph
+
+Sharing `/events/<slug>` unfurls a card rendered by the server, like race and
+daily pages: nginx routes known crawlers to `GET /api/og/event/{slug}/meta`,
+whose tags point at `GET /api/og/event/{slug}.png`.
+
+The card follows the phase, on the same computation as the page
+(`summarize_event` in `services/og_image.py` reuses `event_service`):
+
+| phase             | body                                                         |
+| ----------------- | ------------------------------------------------------------ |
+| `upcoming`        | the day the qualifier opens                                  |
+| `qualifier`       | every entrant as one row of avatars, then the closing day    |
+| `cut`, `playoffs` | the current stage's line-up by name, then the stage and date |
+| `finished`        | the winner of the final                                      |
+
+The header carries the phase, the co-brand lockup sits under it with the
+partner logo, and the footer holds the entrant count and the event window.
+Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
+line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
+a seed number for a semi, the source stage for the final. A finished event
+whose final never happened falls back to the entrant row.
+
+Stage dates show the day in UTC, no time: an evening slot never lands on a
+different day for a European or American viewer, so the card needs no timezone.
+
+The PNG is cached on disk as `event-<slug>-v<template>-<key>.png`, the key
+hashing what the card shows (phase, stage, line-up, entrants, counts, the
+partner logo URL), so it is
+re-rendered when the event moves and served from disk otherwise. The partner
+logo is fetched once from `partner_logo_url` (rooted at `base_url` when the
+value is site-relative) and cached next to the avatars; a logo that cannot be
+fetched is left out rather than replaced by a placeholder.
+
 ## API
 
 - `GET /api/events/{slug}`: the page's single payload (`EventDetailResponse`).
 - `GET /api/admin/events`, `POST /api/admin/events` (upsert by slug),
   `POST /api/admin/races/{race_id}/event` (`{event_id, slot}` or
   `{event_id: null}`).
+- `GET /api/og/event/{slug}/meta` and `GET /api/og/event/{slug}.png`: the
+  Open Graph stub and card, for crawlers only.
 
 ## See also
 

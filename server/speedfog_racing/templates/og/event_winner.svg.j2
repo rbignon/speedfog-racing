@@ -1,0 +1,7 @@
+{% extends "og/_event_base.svg.j2" %}
+{# The event is over and the final produced a winner. #}
+{% block event_body %}
+  <text x="600" y="282" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="600" letter-spacing="7" fill="#c8a44e">WINNER</text>
+  <image x="536" y="306" width="128" height="128" clip-path="url(#avatar-clip)" href="{{ winner.avatar_b64 }}"/>
+  <text x="600" y="500" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ winner_font_size }}" font-weight="600" letter-spacing="1.5" fill="#e8e6e1">{{ winner.name }}</text>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "og/_event_base.svg.j2" %}
+{# A playoff evening: its line-up by name, then the stage and its date. An
+   undecided slot is a dashed ring labelled with where its runner comes from. #}
+{% block event_body %}
+  {% set size = field_size %}
+  {% set step = size + field_gap %}
+  {% set cells = field|length + (1 if field_overflow_count else 0) %}
+  {% set x0 = 600 - (step * (cells - 1) + size) / 2 %}
+  {% for slot in field %}
+    {% set x = x0 + loop.index0 * step %}
+    {% if slot.avatar_b64 %}
+      <image x="{{ x }}" y="{{ 340 - size / 2 }}" width="{{ size }}" height="{{ size }}" clip-path="url(#avatar-clip)" href="{{ slot.avatar_b64 }}"/>
+    {% else %}
+      <circle cx="{{ x + size / 2 }}" cy="340" r="{{ size / 2 - 2 }}" fill="none" stroke="#1c2a3f" stroke-width="4" stroke-dasharray="10 8"/>
+    {% endif %}
+    <text x="{{ x + size / 2 }}" y="{{ 340 + size / 2 + 34 }}" text-anchor="middle" font-family="Barlow Condensed" font-size="28" font-weight="600" fill="{{ '#e8e6e1' if slot.name else '#96a0ad' }}">{{ slot.name or slot.label }}</text>
+  {% endfor %}
+  {% if field_overflow_count %}
+    {% set x = x0 + field|length * step %}
+    <circle cx="{{ x + size / 2 }}" cy="340" r="{{ size / 2 }}" fill="#1c2a3f"/>
+    <text x="{{ x + size / 2 }}" y="348" text-anchor="middle" font-family="Spline Sans Mono" font-size="22" font-weight="500" fill="#96a0ad">+{{ field_overflow_count }}</text>
+  {% endif %}
+  <text x="600" y="500" text-anchor="middle" font-family="Spline Sans Mono" font-size="{{ caption_font_size }}" font-weight="600" letter-spacing="5"><tspan fill="{{ accent_color }}">{{ stage_label.upper() }}</tspan><tspan dx="{{ caption_gap }}" fill="#e8e6e1">{{ stage_date.upper() }}</tspan></text>
+{% endblock %}

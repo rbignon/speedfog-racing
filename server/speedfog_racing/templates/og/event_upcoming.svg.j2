@@ -1,0 +1,9 @@
+{% extends "og/_event_base.svg.j2" %}
+{# Announced, seeds not open yet: the opening day is the whole message. #}
+{% block route_ride %}
+  <line x1="86" y1="127" x2="1114" y2="127" stroke="{{ accent_color }}" stroke-width="4" stroke-dasharray="20 14"/>
+{% endblock %}
+{% block event_body %}
+  <text x="600" y="330" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="600" letter-spacing="7" fill="{{ accent_color }}">{{ headline_label.upper() }}</text>
+  <text x="600" y="440" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ headline_font_size }}" font-weight="600" letter-spacing="2.4" fill="#e8e6e1">{{ headline.upper() }}</text>
+{% endblock %}

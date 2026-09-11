@@ -1,0 +1,20 @@
+{% extends "og/_event_base.svg.j2" %}
+{# The whole field as one overlapping row, under a single sentence. Used while
+   the qualifier is open, and when a finished event never crowned anyone. #}
+{% block event_body %}
+  {% set size = 72 %}
+  {% set step = 60 %}
+  {% set cells = entrants|length + (1 if overflow_count else 0) %}
+  {% set x0 = 600 - (step * (cells - 1) + size) / 2 %}
+  {% for p in entrants %}
+    {% set x = x0 + loop.index0 * step %}
+    <image x="{{ x }}" y="334" width="{{ size }}" height="{{ size }}" clip-path="url(#avatar-clip)" href="{{ p.avatar_b64 }}"/>
+    <circle cx="{{ x + size / 2 }}" cy="370" r="{{ size / 2 }}" fill="none" stroke="#0f1923" stroke-width="6"/>
+  {% endfor %}
+  {% if overflow_count %}
+    {% set x = x0 + entrants|length * step %}
+    <circle cx="{{ x + size / 2 }}" cy="370" r="{{ size / 2 }}" fill="#1c2a3f" stroke="#0f1923" stroke-width="6"/>
+    <text x="{{ x + size / 2 }}" y="378" text-anchor="middle" font-family="Spline Sans Mono" font-size="22" font-weight="500" fill="#96a0ad">+{{ overflow_count }}</text>
+  {% endif %}
+  <text x="600" y="500" text-anchor="middle" font-family="Spline Sans Mono" font-size="{{ caption_font_size }}" font-weight="600" letter-spacing="5" fill="#e8e6e1">{{ caption.upper() }}</text>
+{% endblock %}

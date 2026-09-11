@@ -1,0 +1,21 @@
+{% extends "og/_base.svg.j2" %}
+{# Furniture shared by every event card: the co-brand lockup with the partner
+   logo on the right, the entrant count and the event window in the footer.
+   Children fill event_body between the lockup and the meta row. #}
+{% block body %}
+  <text x="600" y="222" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ lockup_font_size }}" font-weight="600" letter-spacing="2.2"><tspan fill="#e8e6e1">SPEEDFOG </tspan>{% if partner_name %}<tspan fill="#96a0ad">&#215; </tspan><tspan fill="#e8e6e1">{{ partner_name.upper() }} </tspan>{% endif %}<tspan fill="#c8a44e">{{ event_name.upper() }}</tspan></text>
+  {% if logo_b64 %}
+    <image x="1064" y="164" width="76" height="76" href="{{ logo_b64 }}"/>
+  {% endif %}
+  {% block event_body %}{% endblock %}
+{% endblock %}
+
+{% block meta_left %}
+  {% if player_count_label %}
+    <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">{{ player_count_label }}</text>
+  {% endif %}
+{% endblock %}
+
+{% block meta_right %}
+  <text x="1140" y="570" text-anchor="end" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">{{ window_label }}</text>
+{% endblock %}
