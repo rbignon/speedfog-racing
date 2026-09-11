@@ -6,6 +6,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.models import Pool
 
 
+def format_pool_display_name(pool: Pool | None) -> str:
+    """Format a pool for display using the config's display name.
+
+    Uses the pool's cached config name if present; falls back to title-casing
+    the raw pool name (e.g. ``training_standard`` → ``Training Standard``).
+    """
+    if pool is None:
+        return "Unknown"
+    name = pool.config.get("name") if pool.config else None
+    if name:
+        return str(name)
+    return pool.name.replace("_", " ").title()
+
+
 async def list_pools(db: AsyncSession, *, include_disabled: bool = False) -> list[Pool]:
     """Return all pools, ordered by name.
 

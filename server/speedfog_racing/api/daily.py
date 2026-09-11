@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy.sql.base import ExecutableOption
 
-from speedfog_racing.api.helpers import format_pool_display_name, race_response
+from speedfog_racing.api.helpers import race_response
 from speedfog_racing.api.races import _race_detail_response
 from speedfog_racing.auth import get_current_user_optional
 from speedfog_racing.database import get_db
@@ -51,6 +51,7 @@ from speedfog_racing.services.daily_points_service import (
 )
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.daily_streak_service import qualifies_for_streak
+from speedfog_racing.services.pool_service import format_pool_display_name
 
 router = APIRouter()
 

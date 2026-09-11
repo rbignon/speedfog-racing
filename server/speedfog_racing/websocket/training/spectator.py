@@ -10,11 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.config import settings
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.i18n import translate_graph_json
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.schemas import (
     RaceInfo,

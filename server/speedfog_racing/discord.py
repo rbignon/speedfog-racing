@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.config import settings
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.twitch_live import twitch_live_service
 
 if TYPE_CHECKING:

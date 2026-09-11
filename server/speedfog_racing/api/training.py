@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
-from speedfog_racing.api.helpers import format_pool_display_name, parse_enum_csv, user_response
+from speedfog_racing.api.helpers import parse_enum_csv, user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
@@ -32,6 +32,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services import get_pool
 from speedfog_racing.services.layer_service import get_layer_for_node
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.seed_pack_service import (
     generate_training_config,
     sanitize_filename,

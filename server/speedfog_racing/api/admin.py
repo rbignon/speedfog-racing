@@ -13,7 +13,6 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import (
     compute_race_stats,
-    format_pool_display_name,
     race_date,
     race_response,
     user_response,
@@ -73,6 +72,7 @@ from speedfog_racing.services.event_service import (
     parse_slot,
     validate_slot,
 )
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager

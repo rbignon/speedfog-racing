@@ -15,7 +15,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.discord import notify_daily_seed_created
 from speedfog_racing.models import (
     DailySeedSchedule,
@@ -27,6 +26,7 @@ from speedfog_racing.models import (
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services import assign_seed_to_race, get_pool
 from speedfog_racing.services.hard_close_loop import close_expired_races
+from speedfog_racing.services.pool_service import format_pool_display_name
 
 logger = logging.getLogger(__name__)
 

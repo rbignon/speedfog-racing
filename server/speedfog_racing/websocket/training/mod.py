@@ -12,7 +12,6 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
@@ -20,6 +19,7 @@ from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_tier_for_node,
 )
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.websocket.handler import BaseModHandler, extract_event_ids
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,

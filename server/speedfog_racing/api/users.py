@@ -10,7 +10,6 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import (
     compute_race_stats,
-    format_pool_display_name,
     parse_enum_csv,
     race_date,
     race_response,
@@ -54,6 +53,7 @@ from speedfog_racing.schemas import (
     UserTraitsResponse,
 )
 from speedfog_racing.services.i18n import get_available_locales
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.stats_service import MIN_RACES_FOR_TRAITS
 from speedfog_racing.services.user_stats_service import (
     compute_weekly_series,

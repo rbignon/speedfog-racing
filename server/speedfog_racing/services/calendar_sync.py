@@ -15,7 +15,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import format_pool_display_name
 from speedfog_racing.database import async_session_maker
 from speedfog_racing.discord import (
     create_scheduled_event,
@@ -30,6 +29,7 @@ from speedfog_racing.malenia import (
     update_calendar_event,
 )
 from speedfog_racing.models import Participant, Race
+from speedfog_racing.services.pool_service import format_pool_display_name
 
 # Seed.pool is lazy="joined", so loading the seed brings the pool along.
 _LOAD_OPTS = (

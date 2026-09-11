@@ -16,7 +16,6 @@ from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import (
     caster_response,
-    format_pool_display_name,
     late_join_window_open,
     not_event_qualifier,
     parse_enum_csv,
@@ -85,6 +84,7 @@ from speedfog_racing.services.calendar_sync import (
     update_calendar_events,
 )
 from speedfog_racing.services.daily_points_service import daily_points_for_race
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
