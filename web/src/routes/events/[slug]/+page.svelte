@@ -229,12 +229,25 @@
             <div class="step">
               <span class="n">01</span>
               <div class="step-body">
-                <h3>Sign in with Twitch</h3>
-                <p>
-                  Spectating needs no account. Playing does: one click, nothing
-                  else to fill in.
-                </p>
-                {#if !auth.isLoggedIn}
+                <h3>Sign in</h3>
+                {#if auth.user}
+                  <p class="signed-in">
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                      ><polyline points="20 6 9 17 4 12" /></svg
+                    >
+                    Signed in as
+                    <UserLink user={auth.user} showAvatar />
+                  </p>
+                {:else}
                   <a
                     href={getTwitchLoginUrl()}
                     class="btn btn-twitch"
@@ -699,6 +712,23 @@
   }
   .step .btn {
     align-self: flex-start;
+  }
+  /* The step stands done: the confirmation carries the verdigris, the name
+   * beside it stays a name (its own reward colours included). */
+  .step .signed-in {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-success);
+    /* Narrow enough and the flex row would squeeze the label itself: the
+     * name is the part that gives, ellipsised by UserLink. */
+    white-space: nowrap;
+  }
+  .step .signed-in svg {
+    flex: none;
+  }
+  .step .signed-in :global(.user-link) {
+    color: var(--color-text);
   }
   .mode-group h3 {
     margin: 0 0 0.6rem;

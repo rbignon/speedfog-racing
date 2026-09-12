@@ -220,6 +220,11 @@ so evenings kept at one local time across a daylight saving change still read
 as one time. That change is the ordinary case rather than a corner one: the
 real season's last evening is the Sunday Europe leaves summer time.
 
+The take-part steps start on the viewer's own state: the Twitch button while
+they are signed out, and once they are signed in, a verdigris line with their
+name (and their avatar when they have one) instead, so the step reads as done
+rather than repeating the instruction.
+
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
 concepts beside a silent looping montage of a run, and a link to a longer cut
