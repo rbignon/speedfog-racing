@@ -112,7 +112,7 @@ STAGE_LABELS = {
     "semi_a": "Semi A",
     "semi_b": "Semi B",
     "newcomers": "Newcomers' final",
-    "final": "Open final",
+    "final": "Final",
 }
 POOL_LABELS = {
     "standard": "Standard",

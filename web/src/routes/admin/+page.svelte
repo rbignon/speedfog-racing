@@ -203,7 +203,7 @@
         },
         {
           key: "final",
-          label: "Open final",
+          label: "Final",
           kind: "final",
           date: "2026-10-25T19:00:00Z",
           races: 3,
@@ -221,7 +221,7 @@
       playoff_rules: [
         "Four runners, three races per evening, same seed for everyone.",
         "100 / 75 / 50 / 25 points per race, summed over the evening; ties on total in-game time.",
-        "The top 2 of each semi go to the Open final.",
+        "The top 2 of each semi go to the final.",
         "Runners stream live on Twitch with VOD; thirty minutes without progress ends a run.",
       ],
       facts: [
