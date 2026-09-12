@@ -3491,8 +3491,7 @@ def test_auth_ok_expands_random_phantom_skin(
 ):
     """A racer equipped with "random" gets a real skin, identical on reconnect.
 
-    The mod starts one aura runner per skin name and never stops the previous
-    one, so a second draw during the same race would stack two auras.
+    A draw that moved mid-race would swap the aura the player is wearing.
     """
     import asyncio
 

@@ -2131,6 +2131,8 @@ export interface PhantomSkinDef {
   screenshot_filename: string;
   sort_order: number;
   obtainable?: boolean;
+  /** Stands for a choice (None, Random), not an aura the player owns. */
+  pseudo?: boolean;
 }
 
 export interface RewardsCatalog {

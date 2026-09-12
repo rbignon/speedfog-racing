@@ -36,3 +36,7 @@ class PhantomSkin:
     screenshot_filename: str
     sort_order: int = 0
     obtainable: bool = True
+    # Stands for a choice rather than a cosmetic the player owns: always
+    # selectable, never granted, never an unlock row, and never an identity
+    # a surface can render (no avatar, no aura of its own).
+    pseudo: bool = False

@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
-from speedfog_racing.rewards.catalog import RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_tier_for_node,
@@ -33,7 +32,6 @@ from speedfog_racing.websocket.schemas import (
     RaceStatusChangeMessage,
     SeedInfo,
     ZoneHistoryMessage,
-    draw_phantom_skin,
     extract_phantom_skins,
     extract_spawn_items,
     resolve_phantom_skin_for_auth_ok,
@@ -168,15 +166,13 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         )
         phantom_skins = extract_phantom_skins(seed.graph_json) if seed and seed.graph_json else {}
 
-        phantom_skin = resolve_phantom_skin_for_auth_ok(
-            session.user.equipped_phantom_skin_id if session.user else None
+        phantom_skin = await resolve_phantom_skin_for_auth_ok(
+            db,
+            session.user.equipped_phantom_skin_id if session.user else None,
+            user_id=session.user_id,
+            seed_catalog=phantom_skins,
+            draw_key=str(session.id),
         )
-        if phantom_skin == RANDOM_PHANTOM_SKIN_ID:
-            # Keyed on the session, so every auth_ok of this run draws the same
-            # skin while a new session draws again.
-            phantom_skin = await draw_phantom_skin(
-                db, session.user_id, phantom_skins, str(session.id)
-            )
         message = AuthOkMessage(
             participant_id=str(session.id),
             race=RaceInfo(

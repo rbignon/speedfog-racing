@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -324,6 +326,42 @@ class RewardsService:
         stored = None if skin_id is None or skin_id == DEFAULT_PHANTOM_SKIN_ID else skin_id
         await self.session.execute(
             update(User).where(User.id == user_id).values(equipped_phantom_skin_id=stored)
+        )
+
+    async def draw_random_phantom_skin(
+        self,
+        user_id: uuid.UUID,
+        seed_catalog: Mapping[str, Collection[int]],
+        draw_key: str,
+    ) -> str | None:
+        """Expand the ``random`` choice to one of the user's own skins.
+
+        ``seed_catalog`` maps a skin name to the SpEffect ids the seed the
+        player is running resolves it to; candidates are the unlocked skins it
+        can actually apply. ``draw_key`` identifies the run (a participant or
+        training-session id).
+
+        The pick is derived rather than stored, and it must not move while a
+        mod connection lives: see the "Random phantom skin" section of
+        docs/REWARDS.md for why, and why the winner is the smallest digest
+        rather than an index modulo the candidate count. ``hashlib`` and not
+        the builtin ``hash()``, which is salted per process and would make two
+        workers disagree on the same run.
+        """
+        rows = await self.session.execute(
+            select(PhantomSkinUnlock.skin_id).where(PhantomSkinUnlock.user_id == user_id)
+        )
+        unlocked = set(rows.scalars().all())
+        candidates = [
+            name for name, speffects in seed_catalog.items() if name in unlocked and speffects
+        ]
+        if not candidates:
+            return None
+        return min(
+            candidates,
+            key=lambda name: hashlib.blake2b(
+                f"{user_id}:{draw_key}:{name}".encode(), digest_size=8
+            ).digest(),
         )
 
     async def get_user_inventory(self, user_id: uuid.UUID) -> Inventory:

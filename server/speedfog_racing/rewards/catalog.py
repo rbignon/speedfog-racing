@@ -65,9 +65,6 @@ BADGES: dict[str, Badge] = {
 DEFAULT_TEMPLATE_ID: Final = "default"
 DEFAULT_PHANTOM_SKIN_ID: Final = "none"
 RANDOM_PHANTOM_SKIN_ID: Final = "random"
-# Catalog entries that stand for a choice rather than an owned cosmetic: they
-# are always selectable, never granted, and never carry an unlock row.
-PSEUDO_PHANTOM_SKIN_IDS: Final = frozenset({DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID})
 
 NAME_TEMPLATES: dict[str, NameTemplate] = {
     "default": NameTemplate(
@@ -175,6 +172,7 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
         description="No phantom aura.",
         screenshot_filename="none.jpg",
         sort_order=0,
+        pseudo=True,
     ),
     "random": PhantomSkin(
         id="random",
@@ -182,6 +180,7 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
         description="A random aura among the ones you own, redrawn for every run.",
         screenshot_filename="random.jpg",
         sort_order=5,
+        pseudo=True,
     ),
     "gold-aura": PhantomSkin(
         id="gold-aura",
@@ -236,3 +235,9 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
         sort_order=60,
     ),
 }
+
+# The ids of the pseudo entries above, for the call sites that gate on "is this
+# an owned cosmetic?" without holding the entry itself.
+PSEUDO_PHANTOM_SKIN_IDS: Final = frozenset(
+    skin_id for skin_id, skin in PHANTOM_SKINS.items() if skin.pseudo
+)

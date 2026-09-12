@@ -42,22 +42,25 @@
       inventory.unlocked_phantom_skins.map((s) => s.id),
     );
     unlockedIds.add("none");
-    // "random" is a choice, not a cosmetic: never unlockable, and pointless
-    // below two owned skins (it would always draw the same one). Someone who
-    // already chose it keeps the tile even if a revoke drops them under the bar.
+    // Random draws among the auras you own, so it is pointless below two of
+    // them (it would always land on the same one). Advisory only: the API
+    // accepts the value whatever you own. Someone who already chose it keeps
+    // the tile even if a revoke drops them under the bar.
+    const ownedAuras = inventory.unlocked_phantom_skins.filter(
+      (s) => !s.pseudo,
+    );
     if (
-      inventory.unlocked_phantom_skins.length >= 2 ||
+      ownedAuras.length >= 2 ||
       inventory.equipped_phantom_skin_id === "random"
-    ) {
+    )
       unlockedIds.add("random");
-    }
     const sortAsc = (a: PhantomSkinDef, b: PhantomSkinDef) =>
       a.sort_order - b.sort_order;
     const unlocked = catalog.filter((s) => unlockedIds.has(s.id)).sort(sortAsc);
+    // A pseudo entry is a choice, never something left to unlock.
     const locked = catalog
       .filter(
-        (s) =>
-          !unlockedIds.has(s.id) && s.obtainable !== false && s.id !== "random",
+        (s) => !unlockedIds.has(s.id) && s.obtainable !== false && !s.pseudo,
       )
       .sort(sortAsc);
     return { unlocked, locked };

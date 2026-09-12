@@ -1,12 +1,13 @@
 //! Background runner that re-applies phantom-skin SpEffects on every
 //! game-world load.
 //!
-//! Spawned when `auth_ok` carries a non-null `phantom_skin` and the
-//! per-seed map resolves it to one or more SpEffect IDs; respawned, with the
-//! previous thread stopped, if the name ever changes mid-session. The thread polls the player ChrIns availability through
-//! `WorldChrMan + offset` and reapplies whenever the player transitions from
-//! "not loaded" to "loaded" (covers initial load, save+quit+reload, and
-//! grace warps that round-trip through a loading screen).
+//! Spawned when `auth_ok` carries a non-null `phantom_skin` and the per-seed
+//! map resolves it to one or more SpEffect IDs; respawned, with the previous
+//! thread stopped, if the name ever changes mid-session. The thread polls the
+//! player ChrIns availability through `WorldChrMan + offset` and reapplies
+//! whenever the player transitions from "not loaded" to "loaded" (covers
+//! initial load, save+quit+reload, and grace warps that round-trip through a
+//! loading screen).
 //!
 //! Application is idempotent at the game level (a SpEffect that's already
 //! active is a no-op), so missed transitions are safe; the cost is at most

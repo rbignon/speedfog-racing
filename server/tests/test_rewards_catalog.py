@@ -13,18 +13,20 @@ from speedfog_racing.rewards.catalog import (
     DEFAULT_PHANTOM_SKIN_ID,
     PHANTOM_SKINS,
     PSEUDO_PHANTOM_SKIN_IDS,
+    RANDOM_PHANTOM_SKIN_ID,
 )
 
 
-def test_pseudo_phantom_skin_ids_point_to_real_catalog_entries():
-    """Invariant: the sentinel ids are always present in the catalog.
+def test_pseudo_skins_are_exactly_the_two_choice_entries():
+    """Invariant tying the `pseudo` flags to the ids the code hardcodes.
 
-    Several call sites in services/rewards do `PHANTOM_SKINS[DEFAULT_PHANTOM_SKIN_ID]`
-    or test membership in the pseudo set, so a typo in either constant would
-    only blow up at runtime on the first hit.
+    Call sites do `PHANTOM_SKINS[DEFAULT_PHANTOM_SKIN_ID]` or compare against
+    `RANDOM_PHANTOM_SKIN_ID`, so a typo in either constant would only blow up
+    at runtime on the first hit. The other direction matters too: flagging a
+    real aura `pseudo` would make it un-grantable and hide it from the picker
+    and from profile avatars.
     """
-    assert DEFAULT_PHANTOM_SKIN_ID in PHANTOM_SKINS
-    assert PSEUDO_PHANTOM_SKIN_IDS <= PHANTOM_SKINS.keys()
+    assert PSEUDO_PHANTOM_SKIN_IDS == {DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID}
 
 
 def test_badge_dataclass_is_frozen():

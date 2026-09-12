@@ -48,6 +48,7 @@ async def get_catalog() -> dict:  # type: ignore[type-arg]
                 "screenshot_filename": s.screenshot_filename,
                 "sort_order": s.sort_order,
                 "obtainable": s.obtainable,
+                "pseudo": s.pseudo,
             }
             for s in sorted(PHANTOM_SKINS.values(), key=lambda s: s.sort_order)
         ],
@@ -104,6 +105,7 @@ async def get_my_inventory(
                 "screenshot_filename": s.screenshot_filename,
                 "sort_order": s.sort_order,
                 "obtainable": s.obtainable,
+                "pseudo": s.pseudo,
             }
             for s in unlocked_phantom_skins
         ],

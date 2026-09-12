@@ -53,8 +53,8 @@ Name templates are **always permanent**. Once unlocked, they remain unlocked eve
 
 | id             | name         | unlock                                                                                                                         | obtainable                        |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
-| `none`         | None         | Always unlocked, never revocable.                                                                                              | yes                               |
-| `random`       | Random       | Always available, never granted: draws one of the player's own auras per run (see below).                                      | yes                               |
+| `none`         | None         | Always unlocked, never revocable.                                                                                              | n/a (`pseudo`)                    |
+| `random`       | Random       | Always available, never granted: draws one of the player's own auras per run (see below).                                      | n/a (`pseudo`)                    |
 | `gold-aura`    | Gold Aura    | Granted permanently the first time a player tops the weekly daily-seed points ranking.                                         | yes                               |
 | `silver-aura`  | Silver Aura  | Granted permanently the first time a player wins a public non-daily race with at least 2 racing participants.                  | yes                               |
 | `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player wins a daily seed (ties included).                                                 | yes                               |
@@ -67,7 +67,7 @@ The `obtainable` column drives the picker UI: locked skins flagged `obtainable: 
 
 Phantom skins are **always permanent**: once unlocked, they stay unlocked. The mod overlay receives the equipped skin's id via `auth_ok.phantom_skin` and resolves it to a SpEffect through `graph.json` per the speedfog integration spec. The skin is applied to the local player only; the cosmetic does not propagate to other participants on the web.
 
-`none` and `random` are pseudo skins: they are catalog entries standing for a choice, never granted and never carrying an unlock row (`grant_phantom_skin` no-ops on both). `random` is stored as-is in `equipped_phantom_skin_id` and expanded to a real skin when the mod authenticates, see [Random phantom skin](#random-phantom-skin). The picker only offers it once the player owns at least two real skins, below which it would always draw the same one.
+`none` and `random` carry `pseudo: true`: they are catalog entries standing for a choice rather than a cosmetic the player owns, never granted and never carrying an unlock row (`grant_phantom_skin` no-ops on both). The flag ships in the catalog payload, so every consumer gets the distinction from the data instead of matching ids: the picker never lists a pseudo entry as something left to unlock, and a profile shows the Twitch avatar rather than an aura for one. `random` is stored as-is in `equipped_phantom_skin_id` and expanded to a real skin when the mod authenticates, see [Random phantom skin](#random-phantom-skin). The picker only offers it once the player owns at least two real auras, below which it would always draw the same one; that bar is advisory, the API accepts the value whatever the player owns.
 
 ### Equip rules
 
@@ -179,6 +179,7 @@ server/speedfog_racing/
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
 - `check_daily_streak_eligibility(user_id)`: reads `users.daily_best_streak` and grants the permanent `molten-aura` phantom skin once it is at least `DAILY_STREAK_REWARD_THRESHOLD` (defined in `rewards/catalog.py`). Idempotent.
 - `grant_phantom_skin(user_id, skin_id, granted_by=None, reason=None)`: idempotent. The pseudo skins `none` and `random` are silently skipped (always available). Emits `phantom_skin_unlocked` only on actual creation.
+- `draw_random_phantom_skin(user_id, seed_catalog, draw_key)`: expands the `random` choice to one of the user's unlocked skins that the running seed can actually apply, derived from `draw_key` so a run keeps its skin. See [Random phantom skin](#random-phantom-skin).
 - `set_equipped_phantom_skin(user_id, skin_id: str | None)`: validates ownership (`none` and `random` bypass it; `none` and `None` both clear the column to NULL).
 - `revoke_phantom_skin(user_id, skin_id)`: admin escape hatch. Auto-clears matching equip slot. Does not emit notifications.
 - `get_user_inventory(user_id) -> Inventory`: held badges + unlocked templates + equip state, sorted by `sort_order`.
@@ -239,11 +240,11 @@ Both `name_css` and `background_css` are **web-only** and are not serialized ove
 
 Equip changes during a race are eventually consistent: the next periodic `leaderboard_update` propagates the new template. No immediate rebroadcast.
 
-The `auth_ok` message also carries an optional `phantom_skin: string | null` field. The server emits the equipped skin id (e.g. `"gold-aura"`), or `null` when the user has nothing equipped or the equipped value is the literal `"none"`. The translation `none -> null` happens in the WebSocket payload builder via `resolve_phantom_skin_for_auth_ok` in `websocket/schemas.py`. The mod resolves the name to a SpEffect via `graph.json` per the phantom skins integration spec; the field is unused by the racing platform itself.
+The `auth_ok` message also carries an optional `phantom_skin: string | null` field. The server emits the equipped skin id (e.g. `"gold-aura"`), or `null` when the user has nothing equipped or the equipped value is the literal `"none"`. The whole mapping from stored equip value to wire value, `none -> null`, `random -> a drawn skin`, anything else through, happens in `resolve_phantom_skin_for_auth_ok` (`websocket/schemas.py`), which both `auth_ok` builders call. The mod resolves the name to a SpEffect via `graph.json` per the phantom skins integration spec; the field is unused by the racing platform itself.
 
 #### Random phantom skin
 
-A user can equip the `random` pseudo skin instead of a specific aura. The wire format does not change: the mod still receives one concrete skin id, so no protocol bump and no mod release are involved. The expansion happens in `draw_phantom_skin` (`websocket/schemas.py`), called from both `auth_ok` builders (`websocket/race/mod.py` for races and dailies, `websocket/training/mod.py` for solo sessions):
+A user can equip the `random` pseudo skin instead of a specific aura. The wire format does not change: the mod still receives one concrete skin id, so no protocol bump and no mod release are involved. `resolve_phantom_skin_for_auth_ok` delegates the expansion to `RewardsService.draw_random_phantom_skin`, which owns the unlock table; both `auth_ok` builders (`websocket/race/mod.py` for races and dailies, `websocket/training/mod.py` for solo sessions) call the resolver and nothing else:
 
 - **Candidates** are the skins the user unlocked that this seed's catalog (`graph_json.phantom_skins`) resolves to at least one SpEffect, and that the server catalog still knows. An older seed cannot resolve a name it does not know and an empty `speffects` list applies nothing, so anything outside that set would leave the player with no aura. No candidate at all resolves to `null`.
 - **The pick is derived, not stored**: the winner is the candidate with the smallest `blake2b(f"{user_id}:{draw_key}:{name}")`, where `draw_key` is the participant id (race, daily) or the training-session id (solo). Every `auth_ok` of the same run therefore lands on the same skin, across workers and across restarts, while a new run draws again. `hashlib` and not the builtin `hash()`, which is salted per process.

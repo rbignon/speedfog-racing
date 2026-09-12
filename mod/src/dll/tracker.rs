@@ -767,8 +767,9 @@ impl RaceTracker {
             );
             return;
         }
-        // Reaching here means a different skin name, so stop the previous
-        // runner before replacing the flag it holds. Left alive it keeps
+        // Past the guard, so any previous runner is either stale (its skin is
+        // no longer ours) or already dead. Stop it before replacing the flag
+        // it holds: a stale one left alive keeps
         // re-applying its own SpEffect on every world load, and since the last
         // one applied wins with nothing ordering the two threads, the aura
         // would flip from one loading screen to the next. What is already on

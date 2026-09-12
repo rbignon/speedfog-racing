@@ -1,6 +1,5 @@
 """WebSocket message schemas."""
 
-import hashlib
 import uuid
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
@@ -16,6 +15,8 @@ from pydantic import BaseModel, Field
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import compute_late_join_deadlines
+from speedfog_racing.rewards.catalog import DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID
+from speedfog_racing.rewards.service import RewardsService
 
 # Wire-protocol version, independent from release numbers. Bump rules:
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
@@ -244,70 +245,31 @@ class SeedInfo(BaseModel):
     phantom_skins: dict[str, PhantomSkinDirective] = Field(default_factory=dict)
 
 
-def resolve_phantom_skin_for_auth_ok(equipped: str | None) -> str | None:
-    """None or the literal 'none' resolves to None; anything else passes through.
-
-    The literal 'random' passes through too: expanding it needs the user's
-    unlocks and the seed catalog, so the caller feeds it to
-    ``draw_phantom_skin``.
-    """
-    if equipped is None or equipped == "none":
-        return None
-    return equipped
-
-
-async def draw_phantom_skin(
+async def resolve_phantom_skin_for_auth_ok(
     db: "AsyncSession",
+    equipped: str | None,
+    *,
     user_id: uuid.UUID,
     seed_catalog: Mapping[str, PhantomSkinDirective],
     draw_key: str,
 ) -> str | None:
-    """Pick one of the user's unlocked skins, stable for a given ``draw_key``.
+    """Map a stored equip value to the skin name the mod receives.
 
-    The pick must not move while a mod connection lives: the mod starts one
-    apply runner per skin name, so a name that moved makes the player's aura
-    change colour mid-race. On mods shipped before the runner learned to stop
-    its predecessor, it is worse: two runners then re-apply different
-    SpEffects on every world load, the last one applied wins with nothing
-    ordering the threads, and the colour flips from one loading screen to the
-    next. Those builds keep coming back, one mod version is frozen into every
-    seed zip. Deriving the pick from ``user_id:draw_key`` (the participant
-    or training-session id)
-    pins every auth_ok of a run to the same skin without storing anything,
-    while two runs of the same user land on different skins. ``hashlib`` and
-    not the builtin ``hash()``: the latter is salted per process, so two
-    workers would disagree on the same run.
-
-    The winner is the candidate with the smallest digest (rendezvous hashing)
-    rather than an index modulo the count, because the pool moves under us:
-    rewards are granted mid-run (a daily streak crossing unlocks a skin), and
-    a modulo would reshuffle every player who reconnects afterwards. Here a
-    newcomer only wins its own share, and no other candidate changes place.
-
-    Candidates are the unlocked skins this seed's catalog resolves to at
-    least one SpEffect: anything else would apply no aura at all.
+    ``None`` and the literal ``none`` resolve to ``None``, so the mod applies
+    nothing. The ``random`` choice expands to one of the user's own skins,
+    drawn once per run from ``draw_key`` (the participant or training-session
+    id): the draw must not move while a mod connection lives, see
+    ``RewardsService.draw_random_phantom_skin``. Anything else is a real skin
+    and passes through.
     """
-    from sqlalchemy import select
-
-    from speedfog_racing.models import PhantomSkinUnlock
-    from speedfog_racing.rewards.catalog import PHANTOM_SKINS
-
-    rows = await db.execute(
-        select(PhantomSkinUnlock.skin_id).where(PhantomSkinUnlock.user_id == user_id)
-    )
-    unlocked = set(rows.scalars().all())
-    candidates = [
-        name
-        for name, directive in seed_catalog.items()
-        if name in unlocked and name in PHANTOM_SKINS and directive.speffects
-    ]
-    if not candidates:
+    if equipped is None or equipped == DEFAULT_PHANTOM_SKIN_ID:
         return None
-    return min(
-        candidates,
-        key=lambda name: hashlib.blake2b(
-            f"{user_id}:{draw_key}:{name}".encode(), digest_size=8
-        ).digest(),
+    if equipped != RANDOM_PHANTOM_SKIN_ID:
+        return equipped
+    return await RewardsService(db).draw_random_phantom_skin(
+        user_id,
+        {name: directive.speffects for name, directive in seed_catalog.items()},
+        draw_key,
     )
 
 

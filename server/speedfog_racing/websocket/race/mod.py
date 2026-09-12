@@ -23,7 +23,6 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
-from speedfog_racing.rewards.catalog import RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import (
     apply_close_day_to_user,
@@ -59,7 +58,6 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     SeedInfo,
     build_race_info,
-    draw_phantom_skin,
     extract_phantom_skins,
     extract_spawn_items,
     persist_system_chat,
@@ -320,15 +318,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             for p in sorted_participants
         ]
 
-        phantom_skin = resolve_phantom_skin_for_auth_ok(
-            participant.user.equipped_phantom_skin_id if participant.user else None
+        phantom_skin = await resolve_phantom_skin_for_auth_ok(
+            db,
+            participant.user.equipped_phantom_skin_id if participant.user else None,
+            user_id=participant.user_id,
+            seed_catalog=phantom_skins,
+            draw_key=str(participant.id),
         )
-        if phantom_skin == RANDOM_PHANTOM_SKIN_ID:
-            # Keyed on the participant, so every auth_ok of this race draws the
-            # same skin while a new race draws again.
-            phantom_skin = await draw_phantom_skin(
-                db, participant.user_id, phantom_skins, str(participant.id)
-            )
         message = AuthOkMessage(
             participant_id=str(participant.id),
             race=build_race_info(race, countdown_seconds=settings.countdown_seconds),

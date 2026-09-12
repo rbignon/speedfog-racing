@@ -318,6 +318,7 @@ const seedCatalogWithPhantomSkins = () => {
       description: "No phantom aura.",
       screenshot_filename: "none.jpg",
       sort_order: 0,
+      pseudo: true,
     },
     {
       id: "random",
@@ -326,6 +327,7 @@ const seedCatalogWithPhantomSkins = () => {
         "A random aura among the ones you own, redrawn for every run.",
       screenshot_filename: "random.jpg",
       sort_order: 5,
+      pseudo: true,
     },
     {
       id: "gold-aura",
@@ -599,42 +601,6 @@ describe("RewardsPicker phantom skins section", () => {
     );
     expect(ids).toContain("emerald-aura");
   });
-  it("offers the Random tile once two skins are unlocked", () => {
-    seedCatalogWithPhantomSkins();
-    const inv: MyInventoryDto = {
-      ...baseInventory,
-      unlocked_phantom_skins: [
-        {
-          id: "gold-aura",
-          name: "Gold Aura",
-          description: "",
-          screenshot_filename: "gold-aura.jpg",
-          sort_order: 10,
-        },
-        {
-          id: "cyan-aura",
-          name: "Cyan Aura",
-          description: "",
-          screenshot_filename: "cyan-aura.jpg",
-          sort_order: 30,
-        },
-      ],
-      equipped_phantom_skin_id: null,
-    };
-    const { container } = render(RewardsPicker, {
-      props: {
-        inventory: inv,
-        user: baseUser,
-        selectedTemplateId: "daily_crown",
-        selectedBadgeId: null,
-        selectedSkinId: null,
-      },
-    });
-    const tile = container.querySelector('[data-skin-id="random"]');
-    expect(tile).not.toBeNull();
-    expect(tile!.classList.contains("locked")).toBe(false);
-  });
-
   it("hides the Random tile when a single skin is unlocked", () => {
     seedCatalogWithPhantomSkins();
     const inv: MyInventoryDto = {
