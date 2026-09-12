@@ -1168,7 +1168,9 @@
     min-height: 400px;
   }
 
-  :global(.daily-page .zoomable-container svg) {
+  /* The graph canvas itself, never a bare `svg` descendant: that also
+     stretches the icons of every control drawn next to the graph. */
+  :global(.daily-page .zoomable-svg) {
     min-height: 400px;
   }
 

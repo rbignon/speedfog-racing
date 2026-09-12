@@ -2008,7 +2008,9 @@
     min-height: 400px;
   }
 
-  :global(.race-page .zoomable-container svg) {
+  /* The graph canvas itself, never a bare `svg` descendant: that also
+     stretches the icons of every control drawn next to the graph. */
+  :global(.race-page .zoomable-svg) {
     min-height: 400px;
   }
 
