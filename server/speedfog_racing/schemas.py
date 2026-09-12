@@ -1019,6 +1019,15 @@ class EventConfig(BaseModel):
             raise ValueError(
                 f"seeds must be distinct across semi stages, duplicated: {duplicated_seeds}"
             )
+        # The newcomers' group starts after the largest seed, so a gap would
+        # drop those ladder positions from every playoff group at once; and the
+        # page reads the cut off the semis' own field sizes, which a gap makes
+        # a smaller number than the positions the semis actually reach into.
+        missing = sorted(set(range(1, len(semi_seeds) + 1)) - set(semi_seeds))
+        if missing:
+            raise ValueError(
+                f"seeds must cover the ladder from 1 without a gap, missing: {missing}"
+            )
         for stage in self.stages:
             if stage.kind == "final":
                 unknown = [k for k in (stage.from_ or []) if k not in semi_keys]

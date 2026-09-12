@@ -35,22 +35,20 @@ newcomers' final, `from` and `advance` for the final. Stage dates ascend;
 last.
 
 Validation also rejects: seed numbers reused across `semi` stages (not just
-within one stage), a `phase_override` outside the five phases, and a naive
-(timezone-less) `announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
+within one stage), semi seeds that do not cover the ladder from 1 without a
+gap (the newcomers' group draws from the ladder positions after the largest
+seed used by any semi, so a gap would exclude those positions from every
+playoff group at once), a `phase_override` outside the five phases, and a
+naive (timezone-less) `announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
 and `ends_at` on the upsert request are rejected the same way when naive.
 
-Two invariants worth keeping in mind when editing this schema:
-
-- Any future tightening of `EventConfig` validation must ship together with a
-  backfill of already-stored configs: the public event page validates the
-  stored document on every request, so a document that was valid when saved
-  but fails the new rules would break the page for every viewer until it is
-  fixed or backfilled.
-- A semi stage's `seeds` must cover ladder positions contiguously from 1
-  (across all semi stages combined). The newcomers' group draws from the
-  ladder positions after the largest seed used by any semi, so a gap in the
-  seed numbering silently excludes those positions from both the semis and
-  the newcomers' group.
+One invariant worth keeping in mind when editing this schema: any future
+tightening of `EventConfig` validation must ship together with a backfill of
+already-stored configs. The public event page validates the stored document
+on every request, so a document that was valid when saved but fails the new
+rules would break the page for every viewer until it is fixed or backfilled,
+and the admin Events tab, which is where it would be fixed, computes its
+phase from the same validation.
 
 ### Facts
 

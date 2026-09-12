@@ -32,7 +32,7 @@ DOC = {
                 "kind": "semi",
                 "date": "2026-10-04T19:00:00Z",
                 "races": 3,
-                "seeds": [1, 4],
+                "seeds": [1, 2],
             },
             {
                 "key": "final",

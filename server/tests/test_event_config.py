@@ -84,6 +84,19 @@ def test_semi_seeds_must_be_distinct_across_semi_stages():
         EventConfig.model_validate(_config(stages=stages))
 
 
+def test_semi_seeds_must_cover_the_ladder_from_one():
+    """A gap drops those ladder positions from the semis and from the newcomers'
+    group alike, which starts after the largest seed any semi uses."""
+    stages = _config()["stages"]
+    stages[1]["seeds"] = [2, 5]  # 1, 2, 4, 5 across the semis: 3 goes nowhere
+    with pytest.raises(ValidationError, match="without a gap"):
+        EventConfig.model_validate(_config(stages=stages))
+    stages[0]["seeds"] = [2, 4]
+    stages[1]["seeds"] = [3, 5]  # nobody holds seed 1
+    with pytest.raises(ValidationError, match="without a gap"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
 def test_final_must_reference_semi_stages():
     stages = _config()["stages"]
     stages[3]["from"] = ["semi_a", "newcomers"]
