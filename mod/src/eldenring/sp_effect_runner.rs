@@ -1,9 +1,9 @@
 //! Background runner that re-applies phantom-skin SpEffects on every
 //! game-world load.
 //!
-//! Spawned once per session when `auth_ok` carries a non-null
-//! `phantom_skin` and the per-seed map resolves it to one or more SpEffect
-//! IDs. The thread polls the player ChrIns availability through
+//! Spawned when `auth_ok` carries a non-null `phantom_skin` and the
+//! per-seed map resolves it to one or more SpEffect IDs; respawned, with the
+//! previous thread stopped, if the name ever changes mid-session. The thread polls the player ChrIns availability through
 //! `WorldChrMan + offset` and reapplies whenever the player transitions from
 //! "not loaded" to "loaded" (covers initial load, save+quit+reload, and
 //! grace warps that round-trip through a loading screen).
@@ -27,9 +27,9 @@ use crate::eldenring::sp_effect_apply::apply_speffect;
 const POLL_INTERVAL_MS: u64 = 500;
 
 /// Spawn the loop. Returns the join handle. The thread runs until `stop` is
-/// flipped to true, after which it exits at the next poll tick. Currently no
-/// caller stops it (the thread dies with the process), but the flag is in
-/// place for future mid-session skin changes.
+/// flipped to true, after which it exits at the next poll tick. The only
+/// caller that flips it is `start_phantom_skin`, when a different skin name
+/// arrives mid-session; otherwise the thread dies with the process.
 pub fn spawn(
     skin_name: String,
     speffect_ids: Vec<i32>,

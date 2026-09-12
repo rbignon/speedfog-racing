@@ -115,9 +115,11 @@ auth_ok arrives
   └── name found, speffects non-empty → spawn runner
 ```
 
-The `Arc<AtomicBool>` stop flag is in place for future mid-session skin changes, but currently no caller flips it: the thread dies with the process. Reconnects with the same equipped skin are cheap (the `already_running` check skips respawning the thread).
+Reconnects with the same equipped skin are cheap: the `already_running` check skips respawning the thread, so the common case keeps a single runner alive for the whole session.
 
-That guard is the only thing keeping one runner per process. When a name actually changes mid-session (the player re-equips on `/settings` and the socket reconnects), `start_phantom_skin` replaces `phantom_skin_stop` with a fresh `Arc` instead of storing `true` on the old one, so the previous thread survives and keeps applying its own SpEffect. Both threads then fire on the same "not loaded → loaded" edge, the last SpEffect applied wins in-game, and nothing orders two threads polling at 500 ms: the aura flips between the two skins from one loading screen to the next. Storing `true` before the replace would not remove the effect already applied, but the stale runner would stop re-applying and the next world load would settle on the new skin.
+When the name actually changes mid-session (the player re-equips on `/settings`, or a `random` draw moves because their unlock set changed), `start_phantom_skin` stores `true` on the `Arc<AtomicBool>` the previous runner holds before replacing it with a fresh one. Without that store the old thread would survive and keep applying its own SpEffect: both threads would fire on the same "not loaded → loaded" edge, and since the last SpEffect applied wins in-game with nothing ordering two threads polling at 500 ms, the aura would flip between the two skins from one loading screen to the next.
+
+Stopping the old runner does not remove the SpEffect already applied to the character. It does not need to: the new runner reads the player as loaded on its first tick, which is a rising edge for a fresh thread, so it applies the new skin within a poll interval and wins; from there nothing re-applies the old one.
 
 ## Logging
 

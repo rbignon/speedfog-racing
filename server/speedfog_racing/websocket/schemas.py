@@ -265,11 +265,13 @@ async def draw_phantom_skin(
     """Pick one of the user's unlocked skins, stable for a given ``draw_key``.
 
     The pick must not move while a mod connection lives: the mod starts one
-    apply runner per skin name and never stops the previous one, so drawing
-    again on reconnect leaves two runners applying a different SpEffect on
-    every world load. The last one applied wins in-game, and nothing orders
-    the two threads, so the player's aura flips from one loading screen to
-    the next. Deriving the pick from ``user_id:draw_key`` (the participant
+    apply runner per skin name, so a name that moved makes the player's aura
+    change colour mid-race. On mods shipped before the runner learned to stop
+    its predecessor, it is worse: two runners then re-apply different
+    SpEffects on every world load, the last one applied wins with nothing
+    ordering the threads, and the colour flips from one loading screen to the
+    next. Those builds keep coming back, one mod version is frozen into every
+    seed zip. Deriving the pick from ``user_id:draw_key`` (the participant
     or training-session id)
     pins every auth_ok of a run to the same skin without storing anything,
     while two runs of the same user land on different skins. ``hashlib`` and

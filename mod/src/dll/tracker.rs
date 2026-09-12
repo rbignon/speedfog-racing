@@ -257,8 +257,8 @@ pub struct RaceTracker {
     // Phantom skin runner thread handle (one per session).
     phantom_skin_thread: Option<JoinHandle<()>>,
 
-    // Phantom skin runner stop flag (currently always false; reserved for
-    // future mid-session skin changes).
+    // Phantom skin runner stop flag, flipped when a different skin name
+    // arrives so the previous runner stops re-applying its own SpEffect.
     phantom_skin_stop: Arc<AtomicBool>,
 
     // Cached equipped phantom skin name to avoid respawning the runner on
@@ -767,6 +767,14 @@ impl RaceTracker {
             );
             return;
         }
+        // Reaching here means a different skin name, so stop the previous
+        // runner before replacing the flag it holds. Left alive it keeps
+        // re-applying its own SpEffect on every world load, and since the last
+        // one applied wins with nothing ordering the two threads, the aura
+        // would flip from one loading screen to the next. What is already on
+        // the character stays there, but the new runner applies its own on its
+        // first tick and nothing re-applies the old one afterwards.
+        self.phantom_skin_stop.store(true, Ordering::Relaxed);
         self.phantom_skin_stop = Arc::new(AtomicBool::new(false));
         self.phantom_skin_name = Some(name.clone());
         self.phantom_skin_thread = Some(crate::eldenring::sp_effect_runner::spawn(
