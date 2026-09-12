@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { auth } from "$lib/stores/auth.svelte";
+  import { getTwitchLoginUrl } from "$lib/api";
+
   // A run montage: a silent loop beside the text and, once published, a
   // longer cut with sound on YouTube. While one is null the section goes
   // without it: the still stands in for the loop, and no link shows. The
@@ -77,9 +80,20 @@
         </dd>
       </div>
     </dl>
-    <a href="/about" class="more-link"
-      >How it works <span aria-hidden="true">&rarr;</span></a
-    >
+    <!-- Signed out only: a reader who already has an account knows both what
+         SpeedFog is and where to play it. Storing no redirect leaves the
+         callback on its default, the dashboard, where a new account is walked
+         through its first run. -->
+    {#if !auth.user}
+      <div class="cta">
+        <a
+          href={getTwitchLoginUrl()}
+          class="btn btn-twitch"
+          data-sveltekit-reload>Sign in to try a seed</a
+        >
+        <a href="/about" class="btn btn-secondary">How it works</a>
+      </div>
+    {/if}
   </div>
   <figure class="media">
     <div class="frame">
@@ -177,6 +191,12 @@
     margin: 0.15rem 0 0;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+  }
+  .cta {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
   }
   .more-link {
     color: var(--color-text-secondary);

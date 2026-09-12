@@ -14,6 +14,7 @@
     ordinal,
     practiceHint,
     racesSection,
+    soloPoolPath,
     shownStage,
     stageTimes,
     stripStagePrefix,
@@ -29,6 +30,7 @@
   import EventBracket from "$lib/components/events/EventBracket.svelte";
   import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
   import EventIntro from "$lib/components/events/EventIntro.svelte";
+  import EventPractice from "$lib/components/events/EventPractice.svelte";
   import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
@@ -68,11 +70,8 @@
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let eveningTimes = $derived(stageTimes(detail.stages));
-  // Solo pools are the race pools prefixed, and the link degrades to the solo
-  // page's own default when a mode has no solo counterpart yet.
-  const soloLink = (modeKey: string) => `/training?pool=training_${modeKey}`;
-  // Only for a signed-in runner, and only once the seeds are out: before that,
-  // step 02 carries the same nudge, and the solo page needs an account anyway.
+  // Only for a signed-in runner, and only once the seeds are out: it reads
+  // what they did with theirs, which is nothing to say before they exist.
   let seedHint = $derived(
     auth.user && detail.phase === "qualifier" ? practiceHint(detail) : null,
   );
@@ -282,17 +281,6 @@
                     : "Any of the seeds below."} The pack holds everything, game files
                   and overlay. Nothing to install by hand.
                 </p>
-                {#if detail.phase === "upcoming" && auth.user}
-                  <p>
-                    Until then, learn the modes solo: {#each detail.modes as mode, i (mode.key)}{i ===
-                      0
-                        ? ""
-                        : i === detail.modes.length - 1
-                          ? " or "
-                          : ", "}<a href={soloLink(mode.key)}>{mode.label}</a
-                      >{/each}. A solo seed never counts toward the ladder.
-                  </p>
-                {/if}
               </div>
             </div>
             <div class="step">
@@ -334,6 +322,15 @@
           </div>
         </div>
       </section>
+    {:else if block === "practice"}
+      <section>
+        <SectionTitle>Practice first</SectionTitle>
+        <p class="note">
+          A solo seed never counts toward the ladder, and neither does the
+          <a href="/daily">Daily Seed</a>: one shared seed a day.
+        </p>
+        <EventPractice modes={detail.modes} />
+      </section>
     {:else if block === "seeds"}
       <section>
         <SectionTitle>Qualifier seeds</SectionTitle>
@@ -345,8 +342,8 @@
                 ? ""
                 : i === seedHint.modes.length - 1
                   ? " or "
-                  : ", "}<a href={soloLink(mode.key)}>{mode.label}</a>{/each} yet:
-            a solo seed never counts toward the ladder.
+                  : ", "}<a href={soloPoolPath(mode.key)}>{mode.label}</a
+              >{/each} yet: a solo seed never counts toward the ladder.
           {:else if seedHint?.kind === "done"}
             Every seed played. The <a href="/daily">Daily Seed</a> keeps you sharp
             until the cut.
@@ -359,7 +356,7 @@
               {#if auth.user}
                 <a
                   class="more-link"
-                  href={soloLink(group.mode.key)}
+                  href={soloPoolPath(group.mode.key)}
                   aria-label="Practice {group.mode.label} solo"
                   >Practice this mode <span aria-hidden="true">&rarr;</span></a
                 >

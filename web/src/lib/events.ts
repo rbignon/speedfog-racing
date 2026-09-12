@@ -11,6 +11,7 @@ export type EventBlock =
   | "intro"
   | "format"
   | "take_part"
+  | "practice"
   | "seeds"
   | "ladder_qualified"
   | "live"
@@ -29,7 +30,14 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
     case "upcoming":
     case "qualifier":
-      return ["intro", "format", "take_part", "seeds", "ladder_qualified"];
+      return [
+        "intro",
+        "format",
+        "take_part",
+        "practice",
+        "seeds",
+        "ladder_qualified",
+      ];
     case "cut":
       return ["bracket_ladder"];
     case "playoffs":
@@ -282,6 +290,16 @@ export function formatEventDay(iso: string): string {
     day: "numeric",
     month: "short",
   }).format(new Date(iso));
+}
+
+/**
+ * The solo page, on the mode a race pool trains for. Solo pools are the race
+ * pools prefixed, and the page keeps its own default when the pool named does
+ * not exist or has no seed left, so a mode without a solo counterpart still
+ * lands somewhere useful.
+ */
+export function soloPoolPath(modeKey: string): string {
+  return `/training?pool=training_${modeKey}`;
 }
 
 export interface PracticeHint {

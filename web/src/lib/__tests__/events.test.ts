@@ -63,6 +63,18 @@ describe("blockOrder", () => {
       expect(blockOrder(phase), phase).not.toContain("intro");
     }
   });
+
+  it("offers practice right before the seeds it prepares for", () => {
+    for (const phase of ["upcoming", "qualifier"] as const) {
+      const blocks = blockOrder(phase);
+      expect(blocks.indexOf("practice"), phase).toBe(
+        blocks.indexOf("seeds") - 1,
+      );
+    }
+    for (const phase of ["cut", "playoffs", "finished"] as const) {
+      expect(blockOrder(phase), phase).not.toContain("practice");
+    }
+  });
 });
 
 function detailWith(partial: Partial<EventDetail>): EventDetail {

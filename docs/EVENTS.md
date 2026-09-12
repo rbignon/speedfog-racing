@@ -232,14 +232,23 @@ they are signed out, and once they are signed in, a verdigris line with their
 name (and their avatar when they have one) instead, so the step reads as done
 rather than repeating the instruction.
 
-Practice is pushed where it is cheap to act on, never as a block of its own:
-each mode group in the qualifier seeds links to that mode's solo pool
-(`training_<mode key>`, and the solo page falls back to its own default when
-no such pool exists), step 02 says the same before the seeds are out, and
-during the qualifier the note above the seeds names the modes the viewer has
-never opened, or sends them to the daily once every seed is spent
-(`practiceHint`). All of it reads `my_result`, so it costs no extra request,
-and it shows only to a signed-in viewer, since the solo page needs an account.
+Practice is pushed repeatedly, because the qualifier does not forgive a first
+contact with the game: a "Practice first" block before the seeds, one
+clickable card per mode; a link on each mode group in the seeds themselves,
+where a runner is about to spend one; and, during the qualifier, a line in the
+note above the seeds naming the modes the viewer has never opened, or sending
+them to the daily once every seed is spent (`practiceHint`, read from
+`my_result`, so it costs no extra request). Every link goes through
+`soloPoolPath`, which points at `training_<mode key>`; the solo page keeps its
+own default when that pool does not exist or has no seed left, so a mode with
+no solo counterpart degrades quietly.
+
+None of that shows to a signed-out visitor, for whom the solo page is a closed
+door: the practice block names the modes without offering them, and the
+introduction closes on a Twitch button instead, which stores no redirect so
+the callback lands on the dashboard and its onboarding. A signed-in reader
+gets neither that button nor the "How it works" beside it, having answered
+both questions by being there.
 
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
