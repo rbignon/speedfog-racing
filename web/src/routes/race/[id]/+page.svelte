@@ -12,6 +12,7 @@
   import ParticipantSearch from "$lib/components/ParticipantSearch.svelte";
   import CasterList from "$lib/components/CasterList.svelte";
   import WatchLive from "$lib/components/WatchLive.svelte";
+  import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
@@ -57,7 +58,8 @@
   let showInviteSearch = $state(false);
   let joining = $state(false);
   let leaving = $state(false);
-  let joinLeaveError = $state<string | null>(null);
+  let joinError = $state<string | null>(null);
+  let leaveError = $state<string | null>(null);
   let showAbandonConfirm = $state(false);
   let abandoning = $state(false);
   let abandonError = $state<string | null>(null);
@@ -698,6 +700,34 @@
   let canLeave = $derived(
     raceStatus === "setup" && !!myParticipant && !isOrganizer,
   );
+
+  // The join CTA also greets logged-out visitors, who cannot satisfy canJoin /
+  // canRejoin: same window, minus the terms that only a logged-in viewer can
+  // fail (already a participant, caster, organizer). Clicking it routes them
+  // through Twitch login and back to this page. Waiting on auth.loading keeps
+  // a stored session that is still being validated from flashing the CTA at
+  // someone who turns out to be a participant.
+  let canJoinAfterLogin = $derived(
+    !auth.isLoggedIn &&
+      !auth.loading &&
+      liveOpenRegistration &&
+      !raceFull &&
+      (raceStatus === "setup" ||
+        (raceStatus === "running" && registrationOpenWindow)),
+  );
+
+  // forceFullDag is the console escape hatch: when it asks for the map, the
+  // CTA steps out of the slot.
+  let showJoinCta = $derived(
+    (canJoin || canRejoin || canJoinAfterLogin) && !forceFullDag,
+  );
+
+  // "Join race" reads wrong once the race is under way: a late joiner starts
+  // immediately.
+  let joinCtaLabel = $derived(
+    raceStatus === "setup" ? "Join race" : "Join now",
+  );
+
   let myLiveStatus = $derived(myWsParticipant?.status ?? myParticipant?.status);
   let canAbandon = $derived(
     raceStatus === "running" &&
@@ -708,15 +738,20 @@
   );
 
   async function handleJoin() {
+    if (!auth.isLoggedIn) {
+      sessionStorage.setItem("redirect_after_login", window.location.pathname);
+      goto(getTwitchLoginUrl());
+      return;
+    }
     joining = true;
-    joinLeaveError = null;
+    joinError = null;
     try {
       await joinRace(initialRace.id);
       initialRace = await fetchRace(initialRace.id);
       raceStore.reconnect();
       joinableStore.invalidate();
     } catch (e) {
-      joinLeaveError = e instanceof Error ? e.message : "Failed to join";
+      joinError = e instanceof Error ? e.message : "Failed to join";
     } finally {
       joining = false;
     }
@@ -724,14 +759,14 @@
 
   async function handleLeave() {
     leaving = true;
-    joinLeaveError = null;
+    leaveError = null;
     try {
       await leaveRace(initialRace.id);
       initialRace = await fetchRace(initialRace.id);
       raceStore.reconnect();
       joinableStore.invalidate();
     } catch (e) {
-      joinLeaveError = e instanceof Error ? e.message : "Failed to leave";
+      leaveError = e instanceof Error ? e.message : "Failed to leave";
     } finally {
       leaving = false;
     }
@@ -961,12 +996,10 @@
         </div>
       {/if}
 
-      {#if canJoin || canRejoin}
-        <button class="join-btn" onclick={handleJoin} disabled={joining}>
-          {joining ? "Joining..." : "Join Race"}
-        </button>
-      {:else if raceFull && !myParticipant && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow && !isCasterOrOrganizer))}
-        <button class="join-btn disabled" disabled> Race Full </button>
+      <!-- Joining happens through the CTA in the map slot; the sidebar only
+           reports the state that rules it out. -->
+      {#if raceFull && !myParticipant && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow && !isCasterOrOrganizer))}
+        <button class="race-full-btn" disabled> Race Full </button>
       {/if}
 
       {#if canLeave}
@@ -993,27 +1026,13 @@
       {/if}
 
       {#if liveRegistrationClosesAt && liveOpenRegistration && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
-        <p class="login-hint">
+        <p class="join-window-hint">
           Joinable until {formatLocalTime(liveRegistrationClosesAt)}
         </p>
       {/if}
 
-      {#if !auth.isLoggedIn && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
-        <p class="login-hint">
-          <a
-            href={getTwitchLoginUrl()}
-            data-sveltekit-reload
-            onclick={() =>
-              sessionStorage.setItem(
-                "redirect_after_login",
-                window.location.pathname,
-              )}>Log in</a
-          > to join this race
-        </p>
-      {/if}
-
-      {#if joinLeaveError}
-        <p class="join-leave-error">{joinLeaveError}</p>
+      {#if leaveError}
+        <p class="leave-error">{leaveError}</p>
       {/if}
 
       {#if canAbandon}
@@ -1216,7 +1235,14 @@
           </div>
         {/if}
 
-        {#if dagHidden}
+        {#if showJoinCta}
+          <JoinRaceCta
+            label={joinCtaLabel}
+            busy={joining}
+            error={joinError}
+            onclick={handleJoin}
+          />
+        {:else if dagHidden}
           <div class="dag-placeholder">
             <p class="dag-note">{dagHiddenReason}</p>
           </div>
@@ -1703,33 +1729,17 @@
     color: var(--color-purple);
   }
 
-  .join-btn {
+  .race-full-btn {
     margin-top: 0.75rem;
     width: 100%;
     padding: 0.75rem;
-    border: 2px dashed var(--color-success, #10b981);
+    border: 2px dashed var(--color-border);
     border-radius: var(--radius-sm);
     background: none;
-    color: var(--color-success, #10b981);
+    color: var(--color-text-disabled);
     font-family: var(--font-family);
     font-size: var(--font-size-base);
     font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition);
-  }
-
-  .join-btn:hover:not(:disabled) {
-    background: rgba(16, 185, 129, 0.1);
-  }
-
-  .join-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .join-btn.disabled {
-    border-color: var(--color-border);
-    color: var(--color-text-disabled);
     cursor: not-allowed;
     opacity: 0.6;
   }
@@ -1758,18 +1768,14 @@
     cursor: not-allowed;
   }
 
-  .login-hint {
+  .join-window-hint {
     margin: 0.75rem 0 0;
     color: var(--color-text-disabled);
     font-size: var(--font-size-sm);
     text-align: center;
   }
 
-  .login-hint a {
-    color: var(--color-purple);
-  }
-
-  .join-leave-error {
+  .leave-error {
     margin: 0.5rem 0 0;
     color: var(--color-danger, #ef4444);
     font-size: var(--font-size-sm);

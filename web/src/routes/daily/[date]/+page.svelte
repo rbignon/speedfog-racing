@@ -33,6 +33,7 @@
   import { MetroDagFull, MetroDagProgressive } from "$lib/dag";
   import { parseDagGraph } from "$lib/dag/types";
   import { RaceReplay } from "$lib/replay";
+  import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import Leaderboard from "$lib/components/Leaderboard.svelte";
   import WeekLeaderboard from "$lib/components/WeekLeaderboard.svelte";
   import SpectatorCount from "$lib/components/SpectatorCount.svelte";
@@ -700,54 +701,12 @@
 
       <div class="dag-wrapper">
         {#if !myParticipant && !dailyEnded}
-          <div class="dag-placeholder play-now-cta">
-            <svg
-              class="play-now-ghost"
-              viewBox="0 0 880 400"
-              preserveAspectRatio="xMidYMid slice"
-              aria-hidden="true"
-            >
-              <g
-                fill="none"
-                stroke-width="7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M70 200 H810" style="stroke: var(--color-purple)" />
-                <path
-                  d="M250 200 L330 100 H560"
-                  style="stroke: var(--color-gold)"
-                />
-                <path
-                  d="M600 200 L680 310 H814"
-                  style="stroke: var(--color-success)"
-                />
-              </g>
-              <g fill="#cdd6e4">
-                <circle cx="70" cy="200" r="10" />
-                <circle cx="250" cy="200" r="10" />
-                <circle cx="430" cy="200" r="10" />
-                <circle cx="600" cy="200" r="10" />
-                <circle cx="780" cy="200" r="10" />
-                <circle cx="560" cy="100" r="10" />
-                <circle cx="814" cy="310" r="10" />
-              </g>
-            </svg>
-            <div class="play-now-glow" aria-hidden="true"></div>
-            <div class="play-now-stack">
-              <button
-                class="btn btn-primary btn-lg"
-                onclick={handlePlayNow}
-                disabled={joining}
-              >
-                {joining ? "Joining..." : "Play now"}
-              </button>
-              <span class="play-now-help">Your race map appears here</span>
-              {#if joinError}
-                <span class="play-now-error">{joinError}</span>
-              {/if}
-            </div>
-          </div>
+          <JoinRaceCta
+            label="Play now"
+            busy={joining}
+            error={joinError}
+            onclick={handlePlayNow}
+          />
         {:else if graphJson && raceStatus === "finished"}
           {#if dagView === "map"}
             <MetroDagFull
@@ -1228,54 +1187,6 @@
     font-size: 0.85rem;
     font-style: italic;
     margin: 0;
-  }
-
-  /* The Play now CTA reuses .dag-placeholder's box (the future DAG slot) but
-	   layers a faint stylized "ghost DAG" silhouette and a gold glow behind a
-	   real centered button, so the empty slot teases where the race map will
-	   appear instead of reading as a dead block. */
-  .play-now-cta {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--color-border);
-  }
-
-  .play-now-ghost {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0.16;
-  }
-
-  .play-now-glow {
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(
-      circle at 50% 50%,
-      rgba(200, 164, 78, 0.12),
-      transparent 50%
-    );
-  }
-
-  .play-now-stack {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.875rem;
-    text-align: center;
-  }
-
-  .play-now-help {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
-  .play-now-error {
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    color: var(--color-danger);
   }
 
   @media (max-width: 768px) {
