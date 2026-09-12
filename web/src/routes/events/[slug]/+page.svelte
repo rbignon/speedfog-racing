@@ -337,7 +337,6 @@
                   {entry}
                   index={i + 1}
                   modeLabel={group.mode.label}
-                  partner={detail.partner_name}
                   {now}
                   opensAt={seedsOpenAt}
                 />

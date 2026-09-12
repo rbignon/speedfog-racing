@@ -65,7 +65,6 @@ describe("EventSeedCard state signal", () => {
       entry: entryWith(),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("Open")).toBeTruthy();
@@ -87,7 +86,6 @@ describe("EventSeedCard state signal", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("Joined")).toBeTruthy();
@@ -109,7 +107,6 @@ describe("EventSeedCard state signal", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("Playing")).toBeTruthy();
@@ -131,7 +128,6 @@ describe("EventSeedCard state signal", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("Done")).toBeTruthy();
@@ -157,7 +153,6 @@ describe("EventSeedCard state signal", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(container.querySelector(".head .signal")?.textContent).toBe("DNF");
@@ -187,7 +182,6 @@ describe("EventSeedCard state signal", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     // The signal says DNF; the muted facts carry only the time.
@@ -205,7 +199,6 @@ describe("EventSeedCard state signal", () => {
       entry: entryWith({}, null, "2026-09-01T00:00:00Z"),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("Closed")).toBeTruthy();
@@ -217,7 +210,6 @@ describe("EventSeedCard state signal", () => {
       entry: entryWith({ can_join: false }),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(container.querySelector(".play-strip")).toBeNull();
@@ -240,7 +232,6 @@ describe("EventSeedCard state signal", () => {
       }),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     expect(getByText("+3")).toBeTruthy();
@@ -263,7 +254,6 @@ describe("EventSeedCard finished without a score", () => {
       ),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
     });
     const keys = [...container.querySelectorAll(".result .k")].map(
@@ -279,7 +269,6 @@ describe("EventSeedCard before the qualifier opens", () => {
       entry: entryWith({ status: "setup", can_join: true }, null, null),
       index: 1,
       modeLabel: "Standard",
-      partner: null,
       now,
       opensAt: "2026-09-23T17:00:00Z",
     });
@@ -298,7 +287,6 @@ describe("EventSeedCard placeholder", () => {
       entry: null,
       index: 2,
       modeLabel: "Standard",
-      partner: null,
       now,
       opensAt: "2026-09-23T17:00:00Z",
     });

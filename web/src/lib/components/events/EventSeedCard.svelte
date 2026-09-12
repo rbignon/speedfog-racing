@@ -13,14 +13,12 @@
     entry,
     index,
     modeLabel,
-    partner,
     now,
     opensAt = null,
   }: {
     entry: EventQualifierRace | null;
     index: number;
     modeLabel: string;
-    partner: string | null;
     now: Date;
     opensAt?: string | null;
   } = $props();
@@ -93,7 +91,6 @@
           <span class="meta"
             >{opensAt ? "Pack released at the opening" : "Seed withdrawn"}</span
           >
-          <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
         </div>
       </div>
     </div>
@@ -157,7 +154,6 @@
               ? ""
               : "s"}</span
           >
-          <span class="byline">SpeedFog{partner ? ` × ${partner}` : ""}</span>
         </div>
         {#if done && mine}
           <div class="result fact-row" class:unscored={!finished && !scored}>
@@ -299,10 +295,6 @@
   }
   .meta {
     font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-    color: var(--color-text-secondary);
-  }
-  .byline {
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
   }
