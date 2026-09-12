@@ -84,7 +84,9 @@
         </div>
         <div class="crew">
           <span class="remaining"
-            >{opensAt ? `Opens ${formatEventDate(opensAt)}` : "No seed"}</span
+            >{opensAt
+              ? `Opens ${formatEventDate(opensAt, true)}`
+              : "No seed"}</span
           >
         </div>
         <div class="foot">
@@ -144,7 +146,7 @@
           <span class="remaining"
             >{notStarted
               ? opensAt
-                ? `Opens ${formatEventDate(opensAt)}`
+                ? `Opens ${formatEventDate(opensAt, true)}`
                 : "Not open yet"
               : remaining}</span
           >

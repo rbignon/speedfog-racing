@@ -257,8 +257,12 @@ export function timeRemaining(closesAt: string | null, now: Date): string {
   return `${mins} min left`;
 }
 
-/** "Sun 4 Oct, 21:00" in the browser's timezone, as every other page renders times. */
-export function formatEventDate(iso: string): string {
+/**
+ * "Sun 4 Oct, 21:00" in the browser's timezone, as every other page renders
+ * times, and "Sun 4 Oct, 21:00 CEST" with the zone, which names the timezone
+ * the whole page is already speaking in.
+ */
+export function formatEventDate(iso: string, withZone = false): string {
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",
     day: "numeric",
@@ -266,6 +270,7 @@ export function formatEventDate(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZoneName: withZone ? "short" : undefined,
   }).format(new Date(iso));
 }
 
@@ -276,6 +281,47 @@ export function formatEventDay(iso: string): string {
     day: "numeric",
     month: "short",
   }).format(new Date(iso));
+}
+
+export interface StageTimes {
+  /** The local time the evenings start at ("21:00"). */
+  time: string;
+  /** The single evening that starts at another time, when there is one. */
+  exception: { label: string; time: string } | null;
+}
+
+/**
+ * The local time the evenings start at, with the one evening that falls
+ * elsewhere when exactly one does, or null when they are more scattered than
+ * that (or when there is a single evening, which the announcement's plural
+ * would misname). A daylight saving change inside the playoffs is enough to
+ * single one evening out, so the exception is the common case, not a corner
+ * one: the real season's last evening is the Sunday Europe leaves summer
+ * time. Only the wall clock decides, never the zone's name: evenings at the
+ * same local time either side of that change still share it.
+ */
+export function stageTimes(
+  stages: Pick<EventStage, "label" | "date">[],
+): StageTimes | null {
+  if (stages.length < 2) return null;
+  const format = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  const times = stages.map((stage) => format.format(new Date(stage.date)));
+  const counts = new Map<string, number>();
+  for (const time of times) counts.set(time, (counts.get(time) ?? 0) + 1);
+  if (counts.size === 1) return { time: times[0], exception: null };
+  // One evening stands out only against a majority of at least two others:
+  // two evenings at two times have no rule to state an exception to.
+  const [common, odd] = [...counts].sort((a, b) => b[1] - a[1]);
+  if (counts.size !== 2 || common[1] < 2 || odd[1] !== 1) return null;
+  const stage = stages[times.indexOf(odd[0])];
+  return {
+    time: common[0],
+    exception: { label: stage.label, time: odd[0] },
+  };
 }
 
 const LIVE_POLL_MS = 60_000;

@@ -198,7 +198,27 @@ ladder, on the race listings, or on the event page.
 stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
 within 12 hours of now) so an open page sees the evening's race go live;
 during the qualifier it only refreshes on page reload.
-All dates and times render in the viewer's browser timezone.
+All dates and times render in the viewer's browser timezone, and the instants
+still ahead of the viewer name that timezone too ("Wed 30 Sept, 21:00 CEST"):
+the take-part steps, the seed cards' opening, the qualified groups with the
+`Cut` tile beside them (that block only shows before the cut), and the stage
+whose races the bracket block lists. What the viewer can no longer act on
+keeps the plain form: the ladder's `Closed` fact, the same deadline read
+after it passed, and the phase signal.
+
+The format block keeps its dates to the day, in brass, and closes the playoff
+paragraph with the time the evenings start at ("Playoff evenings start at
+21:00 in your timezone"). `stageTimes` reads that from the stage dates: one
+time when they share it, plus the single evening that falls elsewhere when
+exactly one does ("the Final at 20:00"), and nothing when no single evening
+stands out against a majority: three or more times, an even split, two
+evenings that merely differ, or a lone stage. A season scheduled so that two
+evenings fall either side of a daylight saving change, out of four, loses the
+line for the viewers that change applies to, and for them only. Only the wall
+clock counts, never the zone's name,
+so evenings kept at one local time across a daylight saving change still read
+as one time. That change is the ordinary case rather than a corner one: the
+real season's last evening is the Sunday Europe leaves summer time.
 
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three

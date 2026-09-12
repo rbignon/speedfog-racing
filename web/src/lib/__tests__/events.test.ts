@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   blockOrder,
   champions,
@@ -10,6 +10,7 @@ import {
   ordinal,
   pollIntervalMs,
   racesSection,
+  stageTimes,
   stripStagePrefix,
   timeRemaining,
 } from "$lib/events";
@@ -386,6 +387,95 @@ describe("formatEventDay", () => {
     const day = formatEventDay(iso);
     expect(day).not.toMatch(/\d{1,2}:\d{2}/);
     expect(formatEventDate(iso).startsWith(day)).toBe(true);
+  });
+});
+
+describe("formatEventDate with the zone, and stageTimes", () => {
+  const stagesAt = (...isos: string[]) =>
+    isos.map((date, i) => ({ label: `Stage ${i + 1}`, date }));
+  // The real season: four Sunday evenings, the last one the day Europe leaves
+  // summer time, read from Paris.
+  const season = (last: string) =>
+    [
+      ["Semi A", "2026-10-04T19:00:00Z"],
+      ["Semi B", "2026-10-11T19:00:00Z"],
+      ["Newcomers' final", "2026-10-18T19:00:00Z"],
+      ["Final", last],
+    ].map(([label, date]) => ({ label, date }));
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("appends the zone to the plain format, leaving the rest of it alone", () => {
+    const iso = "2026-10-04T20:00:00Z";
+    const zoned = formatEventDate(iso, true);
+    expect(zoned.startsWith(formatEventDate(iso))).toBe(true);
+    expect(zoned.length).toBeGreaterThan(formatEventDate(iso).length);
+  });
+
+  it("names the one evening a daylight saving change moves", () => {
+    vi.stubEnv("TZ", "Europe/Paris");
+    expect(stageTimes(season("2026-10-25T19:00:00Z"))).toEqual({
+      time: "21:00",
+      exception: { label: "Final", time: "20:00" },
+    });
+  });
+
+  it("names the odd evening wherever it sits in the season", () => {
+    vi.stubEnv("TZ", "Europe/Paris");
+    expect(
+      stageTimes(
+        stagesAt(
+          "2026-10-04T19:00:00Z",
+          "2026-10-11T18:00:00Z",
+          "2026-10-18T19:00:00Z",
+          "2026-10-25T20:00:00Z",
+        ),
+      ),
+    ).toEqual({
+      time: "21:00",
+      exception: { label: "Stage 2", time: "20:00" },
+    });
+  });
+
+  it("keeps the evenings together when only the zone's name changed", () => {
+    // Stored an hour later so the last evening still starts at 21:00 in
+    // Paris: same wall clock, CEST then CET, and one announcement covers all.
+    vi.stubEnv("TZ", "Europe/Paris");
+    expect(stageTimes(season("2026-10-25T20:00:00Z"))).toEqual({
+      time: "21:00",
+      exception: null,
+    });
+  });
+
+  it("says nothing when no single evening stands out", () => {
+    vi.stubEnv("TZ", "Europe/Paris");
+    // Three times over four evenings (21:00, 21:00, 19:00, then 20:00 once
+    // the change lands), then an even split, then two evenings that merely
+    // differ: none of them leaves a majority with one evening beside it.
+    expect(
+      stageTimes(
+        stagesAt(
+          "2026-10-04T19:00:00Z",
+          "2026-10-11T19:00:00Z",
+          "2026-10-18T17:00:00Z",
+          "2026-10-25T19:00:00Z",
+        ),
+      ),
+    ).toBeNull();
+    expect(
+      stageTimes(
+        stagesAt(
+          "2026-10-04T19:00:00Z",
+          "2026-10-11T19:00:00Z",
+          "2026-10-18T18:00:00Z",
+          "2026-10-25T19:00:00Z",
+        ),
+      ),
+    ).toBeNull();
+    expect(
+      stageTimes(stagesAt("2026-10-04T19:00:00Z", "2026-10-11T18:00:00Z")),
+    ).toBeNull();
+    expect(stageTimes(stagesAt("2026-10-04T19:00:00Z"))).toBeNull();
   });
 });
 

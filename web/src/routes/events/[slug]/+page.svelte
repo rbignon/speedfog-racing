@@ -14,6 +14,7 @@
     ordinal,
     racesSection,
     shownStage,
+    stageTimes,
     stripStagePrefix,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
@@ -40,6 +41,9 @@
   let now = $state(new Date());
 
   const fmt = (iso: string) => formatEventDate(iso);
+  // Carries the timezone, for the instants still ahead of the viewer. What
+  // they can no longer act on keeps the plain form.
+  const fmtZone = (iso: string) => formatEventDate(iso, true);
   const fmtDay = (iso: string) => formatEventDay(iso);
 
   let blocks = $derived(blockOrder(detail.phase));
@@ -61,6 +65,7 @@
     detail.stages.find((s) => s.kind === "newcomers"),
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
+  let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(detail));
   let crowned = $derived(champions(detail));
   let phaseSignal = $derived.by(() => {
@@ -168,7 +173,8 @@
                 >{detail.seeds_per_mode * detail.modes.length} seeds, {detail
                   .modes.length} modes, one window.</strong
               >
-              From {fmt(detail.starts_at)} to {fmt(detail.qualifier_ends_at)}, {detail.seeds_per_mode}
+              From <span class="date">{fmtDay(detail.starts_at)}</span> to
+              <span class="date">{fmtDay(detail.qualifier_ends_at)}</span>, {detail.seeds_per_mode}
               seeds are open in each of
               {detail.modes.map((m) => m.label).join(", ")}. Play at least one
               seed per mode, whenever you want; the better of your seeds counts.
@@ -180,17 +186,25 @@
                 >The top {semis.reduce((n, s) => n + s.field.length, 0)} on the ladder
                 go to the playoffs</strong
               >:
-              {semis
-                .map((s) => `${s.label} on ${fmt(s.date)}`)
-                .join(", ")}{finalStage
-                ? `, then the ${finalStage.label} on ${fmt(finalStage.date)}`
-                : ""}.
+              {#each semis as stage, i (stage.key)}{i > 0
+                  ? ", "
+                  : ""}{stage.label}
+                on
+                <span class="date">{fmtDay(stage.date)}</span
+                >{/each}{#if finalStage}, then the {finalStage.label} on
+                <span class="date">{fmtDay(finalStage.date)}</span>{/if}.
+              {#if eveningTimes}Playoff evenings start at {eveningTimes.time} in your
+                timezone{#if eveningTimes.exception}, the {eveningTimes
+                    .exception.label} at {eveningTimes.exception
+                    .time}{/if}.{/if}
             </p>
             {#if newcomersStage}
               <p>
                 <strong>The best newcomers</strong> (fewer than {detail.newcomer_threshold}
-                finished SpeedFog races before {fmt(detail.starts_at)}) get
-                their own final on {fmt(newcomersStage.date)}.
+                finished SpeedFog races before
+                <span class="date">{fmtDay(detail.starts_at)}</span>) get their
+                own final on
+                <span class="date">{fmtDay(newcomersStage.date)}</span>.
               </p>
             {/if}
           </div>
@@ -240,7 +254,7 @@
                 <h3>Pick a seed, download the pack</h3>
                 <p>
                   {detail.phase === "upcoming"
-                    ? `Seeds open ${fmt(detail.starts_at)}.`
+                    ? `Seeds open ${fmtZone(detail.starts_at)}.`
                     : "Any of the seeds below."} The pack holds everything, game files
                   and overlay. Nothing to install by hand.
                 </p>
@@ -251,7 +265,7 @@
               <div class="step-body">
                 <h3>Run it in one sitting</h3>
                 <p>
-                  At least one seed of each mode before {fmt(
+                  At least one seed of each mode before {fmtZone(
                     detail.qualifier_ends_at,
                   )}. Thirty minutes without progress ends a run.
                 </p>
@@ -337,7 +351,7 @@
             qualified={detail.qualified}
             stages={detail.stages}
             cutAt={detail.qualifier_ends_at}
-            formatDate={fmt}
+            formatDate={fmtZone}
           />
         </div>
       </section>
@@ -411,7 +425,7 @@
           </div>
           <div class="stack">
             {#if shown}
-              {@const section = racesSection(detail, fmt, now)}
+              {@const section = racesSection(detail, fmtZone, now)}
               <div>
                 <SectionTitle>{shown.label}</SectionTitle>
                 {#if section}
@@ -595,6 +609,11 @@
   }
   .prose strong {
     color: var(--color-text);
+  }
+  /* Dates carry the brass the timeline and the step numbers already use, so
+   * they surface out of the paragraph without a second bold. */
+  .prose .date {
+    color: var(--color-gold);
   }
   .fmt {
     display: grid;
