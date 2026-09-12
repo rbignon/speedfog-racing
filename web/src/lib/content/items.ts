@@ -45,6 +45,14 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "After defeating **Radahn**, activate the **grace in his arena** before leaving, or you will not be able to progress to the next zone.",
   },
   {
+    id: "marika-stakes",
+    kind: "tip",
+    level: "beginner",
+    title: "Stake of Marika in every arena",
+    short:
+      "Every boss arena has its own **Stake of Marika**. When you die to the boss, the respawn screen offers it next to your last grace: take it and you are **back in the arena**, ready to retry the boss with **no path to redo**.",
+  },
+  {
     id: "overlay-exits",
     kind: "tip",
     level: "beginner",
@@ -286,6 +294,15 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Torrent in boss arenas",
     short:
       "**Torrent** can be summoned in arenas where the base game forbids him: **Fia's Champions**, **Astel**, **Ancestor Spirit** and **Regal Ancestor Spirit**.",
+  },
+  {
+    id: "untouchables-damageable",
+    kind: "game_change",
+    category: "combat",
+    level: "advanced",
+    title: "Untouchables can be hit",
+    short:
+      "**Aging Untouchables**, the lantern-bearing figures the base game keeps **immune until you parry** them, are **damageable from the first hit** in SpeedFog. No parry needed to bring one down.",
   },
   {
     id: "boss-arena-lock",

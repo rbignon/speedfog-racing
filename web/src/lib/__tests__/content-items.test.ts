@@ -43,6 +43,16 @@ describe("content catalog invariants", () => {
     }
   });
 
+  it("keeps the first four beginner tips pool-agnostic (they feed the solo download modal's Starter Tips)", () => {
+    const starters = CONTENT_ITEMS.filter(
+      (i) => i.kind === "tip" && i.level === "beginner",
+    ).slice(0, 4);
+    expect(starters.length).toBe(4);
+    for (const item of starters) {
+      expect(item.pools, item.id).toBeUndefined();
+    }
+  });
+
   it("uses snake_case pool keys in pools tags", () => {
     for (const item of CONTENT_ITEMS) {
       for (const pool of item.pools ?? []) {
