@@ -1,7 +1,6 @@
 import type {
   EventDetail,
   EventFact,
-  EventMode,
   EventPhase,
   EventStage,
   User,
@@ -298,50 +297,30 @@ export function formatEventDay(iso: string): string {
  * not exist or has no seed left, so a mode without a solo counterpart still
  * lands somewhere useful.
  */
-export function soloPoolPath(modeKey: string): string {
-  return `/training?pool=training_${modeKey}`;
+export function soloPoolName(modeKey: string): string {
+  return `training_${modeKey}`;
 }
 
-export interface PracticeHint {
-  kind: "gap" | "done";
-  /** The modes never opened, for a gap; empty once every seed is spent. */
-  modes: EventMode[];
+/** The solo page itself, opened on that pool. */
+export function soloPoolPath(modeKey: string): string {
+  return `/training?pool=${soloPoolName(modeKey)}`;
 }
 
 /**
- * What to tell a signed-in runner about practising, read from the seeds they
- * have touched: the modes they have never opened, or, once every seed is
- * spent, nothing left to run here. Null while they are mid-qualifier with a
- * seed still to play, and for a viewer with no results at all (signed out, or
- * an event whose seeds are not attached yet), which is the page's quiet case.
+ * What a practice card says about its solo pool: how many seeds it holds, or
+ * how many of them this viewer has already run. Falls back to naming the
+ * thing while the counts are in flight, or for a mode with no solo pool.
  */
-export function practiceHint(
-  detail: Pick<EventDetail, "modes" | "qualifier_races" | "seeds_per_mode">,
-): PracticeHint | null {
-  const mine = detail.qualifier_races.filter((r) => r.my_result !== null);
-  if (mine.length === 0) return null;
-  const started = detail.modes
-    .map((mode) => ({ mode, races: mine.filter((r) => r.mode === mode.key) }))
-    .filter((m) => m.races.length > 0);
-  // Registered on a seed and never started counts as never run: that is the
-  // runner the hint is for, not the one mid-run.
-  const gap = started
-    .filter((m) =>
-      m.races.every(
-        (r) =>
-          r.my_result?.status === "not_played" ||
-          r.my_result?.status === "joined",
-      ),
-    )
-    .map((m) => m.mode);
-  if (gap.length > 0) return { kind: "gap", modes: gap };
-  // Every seed of the event, not merely every seed out: an organiser attaches
-  // them one at a time, and nothing is spent about a seed card still empty.
-  const everySeed = detail.modes.length * detail.seeds_per_mode;
-  const allRun =
-    mine.length === everySeed &&
-    mine.every((r) => r.my_result?.status === "done");
-  return allRun ? { kind: "done", modes: [] } : null;
+export function soloSeedLabel(
+  pool: { available: number; played_by_user: number | null } | undefined,
+): string {
+  // An empty pool hands out nothing, and the solo page ignores a link to one,
+  // so it reads like a mode with no solo counterpart rather than like a count.
+  if (!pool || pool.available === 0) return "Solo seeds";
+  const seeds = `seed${pool.available === 1 ? "" : "s"}`;
+  return pool.played_by_user
+    ? `${pool.played_by_user}/${pool.available} ${seeds} played`
+    : `${pool.available} ${seeds} available`;
 }
 
 export interface StageTimes {

@@ -1,33 +1,54 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { auth } from "$lib/stores/auth.svelte";
-  import type { EventMode } from "$lib/api";
-  import { soloPoolPath } from "$lib/events";
+  import {
+    fetchTrainingPools,
+    getTwitchLoginUrl,
+    type EventMode,
+    type PoolStats,
+  } from "$lib/api";
+  import { soloPoolName, soloPoolPath, soloSeedLabel } from "$lib/events";
 
   let { modes }: { modes: EventMode[] } = $props();
+
+  let signedIn = $derived(auth.isLoggedIn);
+
+  // Seed counts come from the public pools endpoint, which answers a
+  // signed-out viewer too (without their played count). A failure leaves the
+  // cards saying what they are, which is the part that matters.
+  let pools: PoolStats = $state({});
+
+  onMount(async () => {
+    try {
+      pools = await fetchTrainingPools();
+    } catch {
+      /* the cards stand without their counts */
+    }
+  });
+
+  // Signed out the card leads to Twitch, and comes back to the solo page on
+  // the mode it named rather than to this one: the click keeps its intent.
+  function rememberMode(key: string) {
+    sessionStorage.setItem("redirect_after_login", soloPoolPath(key));
+  }
 </script>
 
-{#if auth.user}
-  <div class="cards">
-    {#each modes as mode (mode.key)}
-      <a
-        class="practice-card"
-        href={soloPoolPath(mode.key)}
-        aria-label="Practice {mode.label} solo"
-      >
-        <span class="name">{mode.label}</span>
-        <span class="meta">Solo seeds</span>
-      </a>
-    {/each}
-  </div>
-{:else}
-  <!-- Signed out, every card would lead to the same Twitch page: three names
-       for one action. The modes are named instead, and the sign-in stays
-       where it already is, a step above. -->
-  <p class="modes">
-    {#each modes as mode (mode.key)}<span class="chip">{mode.label}</span
-      >{/each}<span class="meta">Sign in to run one</span>
-  </p>
-{/if}
+<div class="cards">
+  {#each modes as mode (mode.key)}
+    <a
+      class="practice-card"
+      href={signedIn ? soloPoolPath(mode.key) : getTwitchLoginUrl()}
+      data-sveltekit-reload={signedIn ? undefined : true}
+      onclick={signedIn ? undefined : () => rememberMode(mode.key)}
+      aria-label={signedIn
+        ? `Practice ${mode.label} solo`
+        : `Sign in to practice ${mode.label} solo`}
+    >
+      <span class="name">{mode.label}</span>
+      <span class="meta">{soloSeedLabel(pools[soloPoolName(mode.key)])}</span>
+    </a>
+  {/each}
+</div>
 
 <style>
   .cards {
@@ -56,13 +77,6 @@
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-  }
-  .modes {
-    margin: 0;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
   }
   .meta {
     font-family: var(--font-mono);

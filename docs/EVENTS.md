@@ -232,23 +232,22 @@ they are signed out, and once they are signed in, a verdigris line with their
 name (and their avatar when they have one) instead, so the step reads as done
 rather than repeating the instruction.
 
-Practice is pushed repeatedly, because the qualifier does not forgive a first
-contact with the game: a "Practice first" block before the seeds, one
-clickable card per mode; a link on each mode group in the seeds themselves,
-where a runner is about to spend one; and, during the qualifier, a line in the
-note above the seeds naming the modes the viewer has never opened, or sending
-them to the daily once every seed is spent (`practiceHint`, read from
-`my_result`, so it costs no extra request). Every link goes through
-`soloPoolPath`, which points at `training_<mode key>`; the solo page keeps its
-own default when that pool does not exist or has no seed left, so a mode with
-no solo counterpart degrades quietly.
+Practice has a block of its own before the seeds, because the qualifier does
+not forgive a first contact with the game: one card per mode, linking through
+`soloPoolPath` to `training_<mode key>`. The solo page keeps its own default
+when that pool does not exist or has no seed left, so a mode with no solo
+counterpart degrades quietly. Each card carries that pool's count, from the
+public pools endpoint the block fetches itself: the seeds it holds, or how
+many of them this viewer has run (`soloSeedLabel`, which names the thing
+while the counts are in flight). The seeds block itself says nothing about
+practice: with a block above it, a link on every mode group was weight, not
+help.
 
-None of that shows to a signed-out visitor, for whom the solo page is a closed
-door: the practice block names the modes without offering them, and the
-introduction closes on a Twitch button instead, which stores no redirect so
-the callback lands on the dashboard and its onboarding. A signed-in reader
-gets neither that button nor the "How it works" beside it, having answered
-both questions by being there.
+Signed out, the cards lead to Twitch and come back to the solo page on the
+mode they named, so the click keeps its intent; the introduction closes on a
+Twitch button and a "How it works" beside it, and that one stores no redirect,
+so the callback lands on the dashboard and its onboarding. A signed-in reader
+gets neither, having answered both questions by being there.
 
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
@@ -317,7 +316,10 @@ fetched is left out rather than replaced by a placeholder.
 
 ## API
 
-- `GET /api/events/{slug}`: the page's single payload (`EventDetailResponse`).
+- `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`).
+- `GET /api/pools?type=training`: the practice cards' seed counts, the page's
+  only other call. Public, with `played_by_user` filled in for a signed-in
+  viewer.
 - `GET /api/admin/events`, `POST /api/admin/events` (upsert by slug),
   `POST /api/admin/races/{race_id}/event` (`{event_id, slot}` or
   `{event_id: null}`).

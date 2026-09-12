@@ -9,8 +9,8 @@ import {
   liveStage,
   ordinal,
   pollIntervalMs,
-  practiceHint,
   racesSection,
+  soloSeedLabel,
   stageTimes,
   stripStagePrefix,
   timeRemaining,
@@ -403,77 +403,29 @@ describe("formatEventDay", () => {
   });
 });
 
-describe("practiceHint", () => {
-  const modes = [
-    { key: "standard", label: "Standard" },
-    { key: "boss_rush", label: "Boss Rush" },
-  ];
-  const race = (mode: string, status: string | null) =>
-    ({
-      mode,
-      my_result: status === null ? null : { status },
-    }) as EventDetail["qualifier_races"][number];
-  const hintFor = (...races: EventDetail["qualifier_races"]) =>
-    practiceHint({ modes, qualifier_races: races, seeds_per_mode: 1 });
-
-  it("names the modes the runner has never opened, registration included", () => {
-    expect(
-      hintFor(race("standard", "done"), race("boss_rush", "not_played")),
-    ).toEqual({
-      kind: "gap",
-      modes: [modes[1]],
-    });
-    // Registered on the seed and never started is still a mode never run.
-    expect(
-      hintFor(race("standard", "done"), race("boss_rush", "joined")),
-    ).toEqual({
-      kind: "gap",
-      modes: [modes[1]],
-    });
+describe("soloSeedLabel", () => {
+  it("counts the pool's seeds, and how many of them the viewer ran", () => {
+    expect(soloSeedLabel({ available: 8, played_by_user: null })).toBe(
+      "8 seeds available",
+    );
+    expect(soloSeedLabel({ available: 1, played_by_user: 0 })).toBe(
+      "1 seed available",
+    );
+    expect(soloSeedLabel({ available: 8, played_by_user: 3 })).toBe(
+      "3/8 seeds played",
+    );
+    expect(soloSeedLabel({ available: 1, played_by_user: 1 })).toBe(
+      "1/1 seed played",
+    );
   });
 
-  it("waits for every seed of the event, not merely every seed attached", () => {
-    // Both modes out and run, but the event holds two seeds per mode, so the
-    // second card of each mode is still an empty placeholder.
-    expect(
-      practiceHint({
-        modes,
-        qualifier_races: [race("standard", "done"), race("boss_rush", "done")],
-        seeds_per_mode: 2,
-      }),
-    ).toBeNull();
-  });
-
-  it("sends a runner who spent every seed to the daily", () => {
-    expect(
-      hintFor(race("standard", "done"), race("boss_rush", "done")),
-    ).toEqual({
-      kind: "done",
-      modes: [],
-    });
-  });
-
-  it("stays quiet mid-qualifier and for a viewer who is not signed in", () => {
-    // A seed left in a mode already opened is not a gap, and not done either.
-    expect(
-      practiceHint({
-        modes,
-        qualifier_races: [
-          race("standard", "done"),
-          race("standard", "not_played"),
-          race("boss_rush", "playing"),
-        ],
-        seeds_per_mode: 2,
-      }),
-    ).toBeNull();
-    expect(hintFor(race("standard", null), race("boss_rush", null))).toBeNull();
-    expect(hintFor()).toBeNull();
-  });
-
-  it("says nothing about a mode whose seeds are not out yet", () => {
-    // Before every seed is attached, "every seed played" would be a lie, and
-    // a mode with no seed is not a mode the runner skipped.
-    expect(hintFor(race("standard", "done"))).toBeNull();
+  it("names the mode rather than counting when there is nothing to count", () => {
+    // No pool of that name, the counts have not landed yet, or a pool that
+    // hands out nothing, which the solo page would ignore a link to.
+    expect(soloSeedLabel(undefined)).toBe("Solo seeds");
+    expect(soloSeedLabel({ available: 0, played_by_user: null })).toBe(
+      "Solo seeds",
+    );
   });
 });
 

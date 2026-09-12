@@ -12,9 +12,7 @@
     pollIntervalMs,
     fillSlots,
     ordinal,
-    practiceHint,
     racesSection,
-    soloPoolPath,
     shownStage,
     stageTimes,
     stripStagePrefix,
@@ -70,11 +68,6 @@
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let eveningTimes = $derived(stageTimes(detail.stages));
-  // Only for a signed-in runner, and only once the seeds are out: it reads
-  // what they did with theirs, which is nothing to say before they exist.
-  let seedHint = $derived(
-    auth.user && detail.phase === "qualifier" ? practiceHint(detail) : null,
-  );
   let shown = $derived(shownStage(detail));
   let crowned = $derived(champions(detail));
   let phaseSignal = $derived.by(() => {
@@ -334,34 +327,10 @@
     {:else if block === "seeds"}
       <section>
         <SectionTitle>Qualifier seeds</SectionTitle>
-        <p class="note">
-          The better of your seeds counts.
-          {#if seedHint?.kind === "gap"}
-            You have not run {#each seedHint.modes as mode, i (mode.key)}{i ===
-              0
-                ? ""
-                : i === seedHint.modes.length - 1
-                  ? " or "
-                  : ", "}<a href={soloPoolPath(mode.key)}>{mode.label}</a
-              >{/each} yet: a solo seed never counts toward the ladder.
-          {:else if seedHint?.kind === "done"}
-            Every seed played. The <a href="/daily">Daily Seed</a> keeps you sharp
-            until the cut.
-          {/if}
-        </p>
+        <p class="note">The better of your seeds counts.</p>
         {#each seedsByMode as group (group.mode.key)}
           <div class="mode-group">
-            <div class="mode-head">
-              <h3>{group.mode.label}</h3>
-              {#if auth.user}
-                <a
-                  class="more-link"
-                  href={soloPoolPath(group.mode.key)}
-                  aria-label="Practice {group.mode.label} solo"
-                  >Practice this mode <span aria-hidden="true">&rarr;</span></a
-                >
-              {/if}
-            </div>
+            <h3>{group.mode.label}</h3>
             <div class="cards">
               {#each group.slots as entry, i (i)}
                 <EventSeedCard
@@ -769,25 +738,8 @@
   .step .signed-in :global(.user-link) {
     color: var(--color-text);
   }
-  .mode-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin: 0 0 0.6rem;
-  }
-  .more-link {
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    font-size: var(--font-size-sm);
-    white-space: nowrap;
-    transition: color 0.15s ease;
-  }
-  .more-link:hover {
-    color: var(--color-purple);
-  }
   .mode-group h3 {
-    margin: 0;
+    margin: 0 0 0.6rem;
     font-family: var(--font-display);
     font-size: 1rem;
     font-weight: 600;
