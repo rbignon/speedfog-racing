@@ -61,6 +61,7 @@
     detail.phase === "upcoming" ? detail.starts_at : null,
   );
   let semis = $derived(detail.stages.filter((s) => s.kind === "semi"));
+  let semiPlaces = $derived(semis.reduce((n, s) => n + s.field.length, 0));
   let newcomersStage = $derived(
     detail.stages.find((s) => s.kind === "newcomers"),
   );
@@ -183,8 +184,7 @@
             </p>
             <p>
               <strong
-                >The top {semis.reduce((n, s) => n + s.field.length, 0)} on the ladder
-                go to the playoffs</strong
+                >The top {semiPlaces} on the ladder go to the playoffs</strong
               >:
               {#each semis as stage, i (stage.key)}{i > 0
                   ? ", "
@@ -200,11 +200,13 @@
             </p>
             {#if newcomersStage}
               <p>
-                <strong>The best newcomers</strong> (fewer than {detail.newcomer_threshold}
-                finished SpeedFog races before
-                <span class="date">{fmtDay(detail.starts_at)}</span>) get their
-                own final on
-                <span class="date">{fmtDay(newcomersStage.date)}</span>.
+                <strong>Newcomers get a final of their own</strong>
+                on <span class="date">{fmtDay(newcomersStage.date)}</span>. You
+                are a newcomer if you had finished fewer than {detail.newcomer_threshold}
+                SpeedFog races or daily seeds when the qualifier opened on
+                <span class="date">{fmtDay(detail.starts_at)}</span>; the {newcomersStage
+                  .field.length} best newcomers outside the top {semiPlaces} make
+                up its field.
               </p>
             {/if}
           </div>

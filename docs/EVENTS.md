@@ -98,6 +98,9 @@ then time, floor of 1, over runs with at least two zone entries. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
 ranked; ties on the summed in-game time of the counted seeds. Newcomers have
 fewer than `newcomer_threshold` finished races started before `starts_at`.
+Daily seeds are races, so they count towards that; solo sessions are not, so
+they do not. The format block names daily seeds explicitly, since "races"
+alone reads as organised races to a player who mostly runs the daily.
 
 A semi stage's `seeds` index into the sorted ladder position by position
 (seed 1 is the top entry, seed 2 the next, and so on), not by each entry's own
