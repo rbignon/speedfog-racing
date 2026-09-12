@@ -54,6 +54,7 @@ Name templates are **always permanent**. Once unlocked, they remain unlocked eve
 | id             | name         | unlock                                                                                                                         | obtainable                        |
 | -------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------------- |
 | `none`         | None         | Always unlocked, never revocable.                                                                                              | yes                               |
+| `random`       | Random       | Always available, never granted: draws one of the player's own auras per run (see below).                                      | yes                               |
 | `gold-aura`    | Gold Aura    | Granted permanently the first time a player tops the weekly daily-seed points ranking.                                         | yes                               |
 | `silver-aura`  | Silver Aura  | Granted permanently the first time a player wins a public non-daily race with at least 2 racing participants.                  | yes                               |
 | `cyan-aura`    | Cyan Aura    | Granted permanently the first time a player wins a daily seed (ties included).                                                 | yes                               |
@@ -66,11 +67,13 @@ The `obtainable` column drives the picker UI: locked skins flagged `obtainable: 
 
 Phantom skins are **always permanent**: once unlocked, they stay unlocked. The mod overlay receives the equipped skin's id via `auth_ok.phantom_skin` and resolves it to a SpEffect through `graph.json` per the speedfog integration spec. The skin is applied to the local player only; the cosmetic does not propagate to other participants on the web.
 
+`none` and `random` are pseudo skins: they are catalog entries standing for a choice, never granted and never carrying an unlock row (`grant_phantom_skin` no-ops on both). `random` is stored as-is in `equipped_phantom_skin_id` and expanded to a real skin when the mod authenticates, see [Random phantom skin](#random-phantom-skin). The picker only offers it once the player owns at least two real skins, below which it would always draw the same one.
+
 ### Equip rules
 
 - A player has at most **one badge equipped**. Slot can be empty.
 - A player has exactly **one name template active**. Defaults to `default` (solid white) if nothing is set, or if the equipped one is revoked.
-- A player has at most **one phantom skin equipped**. Slot can be empty (resolves to `none` and the mod applies no SpEffect).
+- A player has at most **one phantom skin equipped**. Slot can be empty (resolves to `none` and the mod applies no SpEffect), or hold `random` to let the server draw one per run.
 - When a transient badge is revoked from a player who had it equipped, the equip slot is auto-cleared. The corresponding souvenir name template (`daily_crown` / `dawnrunner`) stays unlocked.
 
 ### Notifications
@@ -87,11 +90,11 @@ Four tables, plus three scalar columns on `users`.
 
 ### `users` (added columns)
 
-| column                      | type              | notes                                                                            |
-| --------------------------- | ----------------- | -------------------------------------------------------------------------------- |
-| `equipped_badge_id`         | `String(50) NULL` | Logical key into the `BADGES` catalog                                            |
-| `equipped_name_template_id` | `String(50) NULL` | Logical key into `NAME_TEMPLATES`. `NULL` resolves to `"default"`.               |
-| `equipped_phantom_skin_id`  | `String(50) NULL` | Logical key into `PHANTOM_SKINS`. `NULL` resolves to `"none"` for the picker UI. |
+| column                      | type              | notes                                                                                                            |
+| --------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `equipped_badge_id`         | `String(50) NULL` | Logical key into the `BADGES` catalog                                                                            |
+| `equipped_name_template_id` | `String(50) NULL` | Logical key into `NAME_TEMPLATES`. `NULL` resolves to `"default"`.                                               |
+| `equipped_phantom_skin_id`  | `String(50) NULL` | Logical key into `PHANTOM_SKINS`. `NULL` resolves to `"none"` for the picker UI; `"random"` is expanded per run. |
 
 ### `badge_grants`
 
@@ -175,8 +178,8 @@ server/speedfog_racing/
 - `set_equipped_badge(user_id, badge_id: str | None)`: validates ownership, updates `users.equipped_badge_id`. Raises `NotOwnedError` if the user does not currently hold the badge.
 - `set_equipped_name_template(user_id, template_id: str | None)`: validates ownership (`default` is always allowed), updates `users.equipped_name_template_id`.
 - `check_daily_streak_eligibility(user_id)`: reads `users.daily_best_streak` and grants the permanent `molten-aura` phantom skin once it is at least `DAILY_STREAK_REWARD_THRESHOLD` (defined in `rewards/catalog.py`). Idempotent.
-- `grant_phantom_skin(user_id, skin_id, granted_by=None, reason=None)`: idempotent. `none` is silently skipped (always unlocked). Emits `phantom_skin_unlocked` only on actual creation.
-- `set_equipped_phantom_skin(user_id, skin_id: str | None)`: validates ownership (`none` and `None` both clear the column to NULL).
+- `grant_phantom_skin(user_id, skin_id, granted_by=None, reason=None)`: idempotent. The pseudo skins `none` and `random` are silently skipped (always available). Emits `phantom_skin_unlocked` only on actual creation.
+- `set_equipped_phantom_skin(user_id, skin_id: str | None)`: validates ownership (`none` and `random` bypass it; `none` and `None` both clear the column to NULL).
 - `revoke_phantom_skin(user_id, skin_id)`: admin escape hatch. Auto-clears matching equip slot. Does not emit notifications.
 - `get_user_inventory(user_id) -> Inventory`: held badges + unlocked templates + equip state, sorted by `sort_order`.
 - `get_pending_notifications(user_id)`, `dismiss_notifications(user_id)`: banner read/clear.
@@ -238,6 +241,17 @@ Equip changes during a race are eventually consistent: the next periodic `leader
 
 The `auth_ok` message also carries an optional `phantom_skin: string | null` field. The server emits the equipped skin id (e.g. `"gold-aura"`), or `null` when the user has nothing equipped or the equipped value is the literal `"none"`. The translation `none -> null` happens in the WebSocket payload builder via `resolve_phantom_skin_for_auth_ok` in `websocket/schemas.py`. The mod resolves the name to a SpEffect via `graph.json` per the phantom skins integration spec; the field is unused by the racing platform itself.
 
+#### Random phantom skin
+
+A user can equip the `random` pseudo skin instead of a specific aura. The wire format does not change: the mod still receives one concrete skin id, so no protocol bump and no mod release are involved. The expansion happens in `draw_phantom_skin` (`websocket/schemas.py`), called from both `auth_ok` builders (`websocket/race/mod.py` for races and dailies, `websocket/training/mod.py` for solo sessions):
+
+- **Candidates** are the skins the user unlocked that this seed's catalog (`graph_json.phantom_skins`) resolves to at least one SpEffect, and that the server catalog still knows. An older seed cannot resolve a name it does not know and an empty `speffects` list applies nothing, so anything outside that set would leave the player with no aura. No candidate at all resolves to `null`.
+- **The pick is derived, not stored**: the winner is the candidate with the smallest `blake2b(f"{user_id}:{draw_key}:{name}")`, where `draw_key` is the participant id (race, daily) or the training-session id (solo). Every `auth_ok` of the same run therefore lands on the same skin, across workers and across restarts, while a new run draws again. `hashlib` and not the builtin `hash()`, which is salted per process.
+- **Rendezvous hashing, not an index modulo the candidate count**, because the pool moves mid-run: crossing a daily-streak threshold unlocks `molten-aura` while the race is running, and an index would then reshuffle every player who reconnects afterwards. With the digest minimum, a new candidate only wins its own share and no other candidate changes place; a revoke only matters when it takes the winner.
+- **Stability is a correctness requirement, not a nicety**: the mod starts one apply runner per skin name and never stops the previous one (see [PHANTOM_SKINS.md](PHANTOM_SKINS.md#lifecycle)), so a second draw on a mid-race reconnect leaves two runners re-applying different SpEffects, and the player's aura flips between them from one loading screen to the next.
+
+`random` is public identity data like any other equipped value, so it reaches the profile endpoint and the weekly-leaderboard rows. Surfaces that render an equipped skin treat it as "no fixed identity": the profile falls back to the Twitch avatar.
+
 ### Mod rendering
 
 In `mod/src/dll/ui.rs`, the `NameTemplate` is parsed once on receipt and cached per `ParticipantId` in a `HashMap` (hex strings → packed colors). Per-frame the renderer:
@@ -282,7 +296,7 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 - **Active Badge**: list of held badges (icon + name + tooltip with `granted_at` and `reason`), an "Equip" button per row, an indicator on the active one, a "Clear" action.
 - **Active Name Template**: list of unlocked templates with previews (rendered with the actual `color`/`gradient`/`background_css`), "Activate" button per row, indicator on the active one. `default` is always present.
-- **Active Phantom Skin**: grid of cards (one per catalog entry, sorted unlocked-then-locked, ascending sort order within each group). Each card shows a 4:5 portrait screenshot of the skin in-game; locked cards are dimmed with the unlock condition shown as caption. The `none` card is always unlocked and selected by default.
+- **Active Phantom Skin**: grid of cards (one per catalog entry, sorted unlocked-then-locked, ascending sort order within each group). Each card shows a 4:5 portrait screenshot of the skin in-game; locked cards are dimmed with the unlock condition shown as caption. The `none` card is always unlocked and selected by default. The `random` card joins the unlocked group once the player owns at least two real skins, and never appears in the locked group.
 
 ### Dashboard banner
 
@@ -298,7 +312,7 @@ Readability is owned by the catalog: each template is hand-tuned to contrast ade
 
 `/user/[id]` exposes a "Rewards" section: a gallery of currently held badges and a gallery of unlocked name templates. Revoked transient badges are not surfaced (rows kept in DB for audit only).
 
-When the user has a phantom skin equipped (other than `none`), the profile avatar slot is replaced by the skin's screenshot at `/phantom_skins/<id>.jpg`; the Twitch avatar remains accessible via the existing Twitch link button in the name row. When no skin is equipped (or `none`), the Twitch avatar shows as before.
+When the user has a real phantom skin equipped, the profile avatar slot is replaced by the skin's portrait at `/phantom_skins/<id>-avatar.jpg`; the Twitch avatar remains accessible via the existing Twitch link button in the name row. When no skin is equipped (`none`, or `random`, which stands for no fixed aura), the Twitch avatar shows as before.
 
 ### Catalog cache
 

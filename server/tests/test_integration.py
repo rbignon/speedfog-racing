@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 from starlette.testclient import TestClient
@@ -22,6 +22,7 @@ from speedfog_racing.models import (
     Invite,
     Participant,
     ParticipantStatus,
+    PhantomSkinUnlock,
     Race,
     Seed,
     SeedStatus,
@@ -3483,6 +3484,52 @@ def test_items_spawned_flag_default_none_in_auth_ok(integration_client, race_wit
         auth = mod.auth(drain=False)
         assert auth["type"] == "auth_ok"
         assert auth["seed"]["items_spawned_flag"] is None
+
+
+def test_auth_ok_expands_random_phantom_skin(
+    integration_client, race_with_participants, integration_db
+):
+    """A racer equipped with "random" gets a real skin, identical on reconnect.
+
+    The mod starts one aura runner per skin name and never stops the previous
+    one, so a second draw during the same race would stack two auras.
+    """
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+    user_id = players[0]["user"].id
+
+    async def equip_random():
+        async with integration_db() as db:
+            await db.execute(
+                update(User).where(User.id == user_id).values(equipped_phantom_skin_id="random")
+            )
+            db.add(PhantomSkinUnlock(user_id=user_id, skin_id="gold-aura"))
+            db.add(PhantomSkinUnlock(user_id=user_id, skin_id="cyan-aura"))
+            result = await db.execute(select(Race).where(Race.id == uuid.UUID(race_id)))
+            race = result.scalar_one()
+            result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
+            seed = result.scalar_one()
+            graph = dict(seed.graph_json)
+            graph["phantom_skins"] = {
+                "gold-aura": {"speffects": [1450700]},
+                "cyan-aura": {"speffects": [1450701]},
+            }
+            seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(equip_random())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        auth = ModTestClient(ws, players[0]["mod_token"]).auth(drain=False)
+        assert auth["type"] == "auth_ok"
+        drawn = auth["phantom_skin"]
+    assert drawn in {"gold-aura", "cyan-aura"}
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        reconnect = ModTestClient(ws, players[0]["mod_token"]).auth(drain=False)
+        assert reconnect["phantom_skin"] == drawn
 
 
 def test_spectator_receives_zone_history_snapshots(integration_client, race_with_participants):

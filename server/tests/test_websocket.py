@@ -7,8 +7,15 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from speedfog_racing.models import ParticipantStatus, RaceStatus
+from speedfog_racing.database import Base
+from speedfog_racing.models import (
+    ParticipantStatus,
+    PhantomSkinUnlock,
+    RaceStatus,
+    User,
+)
 from speedfog_racing.websocket.handler import parse_zone_query_input
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
@@ -27,6 +34,7 @@ from speedfog_racing.websocket.schemas import (
     ExitInfo,
     LeaderboardUpdateMessage,
     ParticipantInfo,
+    PhantomSkinDirective,
     PingMessage,
     PongMessage,
     RaceInfo,
@@ -34,6 +42,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStatusChangeMessage,
     SeedInfo,
     ZoneUpdateMessage,
+    draw_phantom_skin,
 )
 
 # --- Mock Models ---
@@ -1868,3 +1877,144 @@ class TestPhantomSkinResolution:
         )
         data = json.loads(seed.model_dump_json())
         assert data["phantom_skins"]["gold-aura"]["speffects"] == [1450700]
+
+
+def _seed_catalog(*names: str) -> dict[str, PhantomSkinDirective]:
+    """A seed's phantom_skins map, every named skin resolving to one SpEffect."""
+    return {name: PhantomSkinDirective(speffects=[1450700]) for name in names}
+
+
+# A freshly generated seed carries every real skin in its catalog; an older
+# seed carries only the skins that existed when it was generated.
+ALL_SEED_SKINS = _seed_catalog(
+    "gold-aura",
+    "cyan-aura",
+    "crimson-aura",
+    "molten-aura",
+    "silver-aura",
+    "emerald-aura",
+    "violet-aura",
+)
+
+
+@pytest.fixture
+async def async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+async def async_session(async_engine):
+    return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _user_with_skins(async_session, seq: int, skin_ids: list[str]) -> User:
+    """Create a user with a fixed id, so draws stay reproducible run to run."""
+    async with async_session() as db:
+        user = User(
+            id=uuid.uuid5(uuid.NAMESPACE_DNS, f"phantom-draw-{seq}"),
+            twitch_id=f"tid-draw-{seq}",
+            twitch_username=f"draw{seq}",
+        )
+        db.add(user)
+        await db.flush()
+        for skin_id in skin_ids:
+            db.add(PhantomSkinUnlock(user_id=user.id, skin_id=skin_id))
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+class TestPhantomSkinRandomDraw:
+    """Test draw_phantom_skin, the server-side pick for the "random" pseudo skin."""
+
+    async def test_draw_is_stable_for_the_same_draw_key(self, async_session):
+        """A re-draw on reconnect would leave two auras applied in-game."""
+        user = await _user_with_skins(async_session, 1, sorted(ALL_SEED_SKINS))
+        async with async_session() as db:
+            first = await draw_phantom_skin(db, user.id, ALL_SEED_SKINS, "run-1")
+            second = await draw_phantom_skin(db, user.id, ALL_SEED_SKINS, "run-1")
+        assert first is not None
+        assert first == second
+
+    async def test_draw_only_returns_unlocked_skins(self, async_session):
+        user = await _user_with_skins(async_session, 2, ["cyan-aura"])
+        async with async_session() as db:
+            for run in range(20):
+                drawn = await draw_phantom_skin(db, user.id, ALL_SEED_SKINS, f"run-{run}")
+                assert drawn == "cyan-aura"
+
+    async def test_draw_ignores_skins_missing_from_the_seed_catalog(self, async_session):
+        """An older seed cannot resolve an unknown name, so never pick one."""
+        user = await _user_with_skins(async_session, 3, ["gold-aura", "cyan-aura"])
+        async with async_session() as db:
+            for run in range(20):
+                catalog = _seed_catalog("cyan-aura")
+                drawn = await draw_phantom_skin(db, user.id, catalog, f"run-{run}")
+                assert drawn == "cyan-aura"
+
+    async def test_draw_returns_none_without_any_candidate(self, async_session):
+        user = await _user_with_skins(async_session, 4, [])
+        async with async_session() as db:
+            assert await draw_phantom_skin(db, user.id, ALL_SEED_SKINS, "run-1") is None
+
+    async def test_draw_varies_across_draw_keys(self, async_session):
+        """Two runs must not be locked onto the same skin."""
+        user = await _user_with_skins(async_session, 5, ["gold-aura", "cyan-aura"])
+        async with async_session() as db:
+            drawn = {
+                await draw_phantom_skin(db, user.id, ALL_SEED_SKINS, f"run-{run}")
+                for run in range(20)
+            }
+        assert drawn == {"gold-aura", "cyan-aura"}
+
+    async def test_a_mid_run_unlock_never_swaps_the_pick_between_older_skins(self, async_session):
+        """Rewards are granted mid-run, and a reconnect re-draws from scratch.
+
+        A pick that shifted because an unrelated skin joined the pool would
+        stack a second aura on a player who just earned something.
+        """
+        users = [
+            await _user_with_skins(async_session, 30 + i, ["gold-aura", "cyan-aura"])
+            for i in range(12)
+        ]
+        async with async_session() as db:
+            before = {
+                u.id: await draw_phantom_skin(db, u.id, ALL_SEED_SKINS, "same-run") for u in users
+            }
+            for u in users:
+                db.add(PhantomSkinUnlock(user_id=u.id, skin_id="molten-aura"))
+            await db.commit()
+            after = {
+                u.id: await draw_phantom_skin(db, u.id, ALL_SEED_SKINS, "same-run") for u in users
+            }
+        for user_id, previous in before.items():
+            assert after[user_id] in {previous, "molten-aura"}
+
+    async def test_draw_skips_catalog_entries_without_speffects(self, async_session):
+        """A catalog entry with no SpEffect applies nothing, so it is no candidate."""
+        user = await _user_with_skins(async_session, 6, ["gold-aura", "cyan-aura"])
+        catalog = _seed_catalog("cyan-aura")
+        catalog["gold-aura"] = PhantomSkinDirective(speffects=[])
+        async with async_session() as db:
+            for run in range(20):
+                assert await draw_phantom_skin(db, user.id, catalog, f"run-{run}") == "cyan-aura"
+
+    async def test_draw_skips_unlocks_missing_from_the_server_catalog(self, async_session):
+        """A retired skin is hidden everywhere else, so it must not be drawn either."""
+        user = await _user_with_skins(async_session, 7, ["cyan-aura", "ghost-aura"])
+        catalog = _seed_catalog("cyan-aura", "ghost-aura")
+        async with async_session() as db:
+            for run in range(20):
+                assert await draw_phantom_skin(db, user.id, catalog, f"run-{run}") == "cyan-aura"
+
+    async def test_draw_varies_between_users_on_the_same_run(self, async_session):
+        """Racers in one race must not all be pushed onto the same aura."""
+        skins = ["gold-aura", "cyan-aura", "crimson-aura", "molten-aura"]
+        users = [await _user_with_skins(async_session, 10 + i, skins) for i in range(12)]
+        async with async_session() as db:
+            drawn = {await draw_phantom_skin(db, u.id, ALL_SEED_SKINS, "same-run") for u in users}
+        assert len(drawn) > 1

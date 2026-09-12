@@ -856,6 +856,30 @@ async def test_set_equipped_phantom_skin_string_none_clears_to_null(async_sessio
         assert fresh.equipped_phantom_skin_id is None
 
 
+async def test_set_equipped_phantom_skin_random_needs_no_unlock(async_session):
+    """ "random" is a pseudo skin: always equippable, stored as-is (not NULL)."""
+    user = await _make_user(async_session, "skineq_gwen")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_phantom_skin(user.id, "random")
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id == "random"
+
+
+async def test_grant_phantom_skin_random_is_a_no_op(async_session):
+    """ "random" is never owned: granting it must not create an unlock row."""
+    user = await _make_user(async_session, "skingr_hugo")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        assert await svc.grant_phantom_skin(user.id, "random") is None
+        await db.commit()
+    async with async_session() as db:
+        unlocks = (await db.execute(select(PhantomSkinUnlock))).scalars().all()
+        assert unlocks == []
+
+
 async def test_set_equipped_phantom_skin_unknown_raises(async_session):
     user = await _make_user(async_session, "skineq_erin")
     async with async_session() as db:
@@ -873,6 +897,22 @@ async def test_set_equipped_phantom_skin_admin_bypass(async_session):
     async with async_session() as db:
         fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
         assert fresh.equipped_phantom_skin_id == "gold-aura"
+
+
+async def test_revoke_phantom_skin_random_keeps_the_equip_slot(async_session):
+    """There is nothing to revoke on a pseudo skin: don't un-equip the choice."""
+    user = await _make_user(async_session, "skinrv_ivan")
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.set_equipped_phantom_skin(user.id, "random")
+        await db.commit()
+    async with async_session() as db:
+        svc = RewardsService(db)
+        await svc.revoke_phantom_skin(user.id, "random")
+        await db.commit()
+    async with async_session() as db:
+        fresh = (await db.execute(select(User).where(User.id == user.id))).scalar_one()
+        assert fresh.equipped_phantom_skin_id == "random"
 
 
 async def test_revoke_phantom_skin_clears_equip_and_unlock(async_session):

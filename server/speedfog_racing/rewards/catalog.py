@@ -64,6 +64,10 @@ BADGES: dict[str, Badge] = {
 
 DEFAULT_TEMPLATE_ID: Final = "default"
 DEFAULT_PHANTOM_SKIN_ID: Final = "none"
+RANDOM_PHANTOM_SKIN_ID: Final = "random"
+# Catalog entries that stand for a choice rather than an owned cosmetic: they
+# are always selectable, never granted, and never carry an unlock row.
+PSEUDO_PHANTOM_SKIN_IDS: Final = frozenset({DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID})
 
 NAME_TEMPLATES: dict[str, NameTemplate] = {
     "default": NameTemplate(
@@ -171,6 +175,13 @@ PHANTOM_SKINS: dict[str, PhantomSkin] = {
         description="No phantom aura.",
         screenshot_filename="none.jpg",
         sort_order=0,
+    ),
+    "random": PhantomSkin(
+        id="random",
+        name="Random",
+        description="A random aura among the ones you own, redrawn for every run.",
+        screenshot_filename="random.jpg",
+        sort_order=5,
     ),
     "gold-aura": PhantomSkin(
         id="gold-aura",

@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
+from speedfog_racing.rewards.catalog import RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import (
     apply_close_day_to_user,
@@ -58,6 +59,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStartMessage,
     SeedInfo,
     build_race_info,
+    draw_phantom_skin,
     extract_phantom_skins,
     extract_spawn_items,
     persist_system_chat,
@@ -268,7 +270,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             self._cached_graph_json = _get_graph_json(participant)
 
             # Send auth_ok
-            await self._send_auth_ok(participant)
+            await self._send_auth_ok(db, participant)
 
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
@@ -292,7 +294,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._auth_participant = participant
         return True
 
-    async def _send_auth_ok(self, participant: Participant) -> None:
+    async def _send_auth_ok(self, db: AsyncSession, participant: Participant) -> None:
         """Send successful auth response with race state."""
         race = participant.race
         seed = race.seed
@@ -321,6 +323,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         phantom_skin = resolve_phantom_skin_for_auth_ok(
             participant.user.equipped_phantom_skin_id if participant.user else None
         )
+        if phantom_skin == RANDOM_PHANTOM_SKIN_ID:
+            # Keyed on the participant, so every auth_ok of this race draws the
+            # same skin while a new race draws again.
+            phantom_skin = await draw_phantom_skin(
+                db, participant.user_id, phantom_skins, str(participant.id)
+            )
         message = AuthOkMessage(
             participant_id=str(participant.id),
             race=build_race_info(race, countdown_seconds=settings.countdown_seconds),

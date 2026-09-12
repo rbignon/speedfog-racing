@@ -8,16 +8,23 @@ single values (uniqueness, derivation rules, structural constraints).
 
 import dataclasses
 
-from speedfog_racing.rewards.catalog import BADGES, DEFAULT_PHANTOM_SKIN_ID, PHANTOM_SKINS
+from speedfog_racing.rewards.catalog import (
+    BADGES,
+    DEFAULT_PHANTOM_SKIN_ID,
+    PHANTOM_SKINS,
+    PSEUDO_PHANTOM_SKIN_IDS,
+)
 
 
-def test_default_phantom_skin_id_points_to_a_real_skin():
-    """Invariant: the sentinel id is always present in the catalog.
+def test_pseudo_phantom_skin_ids_point_to_real_catalog_entries():
+    """Invariant: the sentinel ids are always present in the catalog.
 
     Several call sites in services/rewards do `PHANTOM_SKINS[DEFAULT_PHANTOM_SKIN_ID]`
-    so a typo in the constant would only blow up at runtime on the first hit.
+    or test membership in the pseudo set, so a typo in either constant would
+    only blow up at runtime on the first hit.
     """
     assert DEFAULT_PHANTOM_SKIN_ID in PHANTOM_SKINS
+    assert PSEUDO_PHANTOM_SKIN_IDS <= PHANTOM_SKINS.keys()
 
 
 def test_badge_dataclass_is_frozen():

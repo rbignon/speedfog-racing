@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -20,6 +20,7 @@ import speedfog_racing.main as main_module
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    PhantomSkinUnlock,
     Seed,
     SeedStatus,
     TrainingSession,
@@ -882,6 +883,43 @@ def test_training_auth_ok_forwards_quit_out_penalty(
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         assert auth_ok["race"]["quit_out_penalty_ms"] == 5000
+
+
+def test_training_auth_ok_expands_random_phantom_skin(
+    training_ws_client, training_session_data, training_seed, async_session
+):
+    """A solo runner equipped with "random" gets a real skin, same on reconnect."""
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+    user_id = uuid.UUID(training_session_data["user_id"])
+
+    async def equip_random():
+        async with async_session() as db:
+            await db.execute(
+                update(User).where(User.id == user_id).values(equipped_phantom_skin_id="random")
+            )
+            db.add(PhantomSkinUnlock(user_id=user_id, skin_id="gold-aura"))
+            db.add(PhantomSkinUnlock(user_id=user_id, skin_id="cyan-aura"))
+            seed = await db.get(Seed, training_seed.id)
+            graph = dict(seed.graph_json)
+            graph["phantom_skins"] = {
+                "gold-aura": {"speffects": [1450700]},
+                "cyan-aura": {"speffects": [1450701]},
+            }
+            seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(equip_random())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        auth_ok = ws.receive_json()
+        drawn = auth_ok["phantom_skin"]
+    assert drawn in {"gold-aura", "cyan-aura"}
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        assert ws.receive_json()["phantom_skin"] == drawn
 
 
 def test_training_mod_version_stored_on_connection(training_ws_client, training_session_data):

@@ -320,6 +320,14 @@ const seedCatalogWithPhantomSkins = () => {
       sort_order: 0,
     },
     {
+      id: "random",
+      name: "Random",
+      description:
+        "A random aura among the ones you own, redrawn for every run.",
+      screenshot_filename: "random.jpg",
+      sort_order: 5,
+    },
+    {
       id: "gold-aura",
       name: "Gold Aura",
       description:
@@ -404,10 +412,12 @@ describe("RewardsPicker phantom skins section", () => {
     });
     const tiles = container.querySelectorAll(".skin-tile");
     const ids = Array.from(tiles).map((t) => t.getAttribute("data-skin-id"));
-    // Unlocked first (none, silver, crimson, sort asc), then locked (gold, cyan, violet, sort asc).
-    // emerald-aura is obtainable=false and not unlocked, so it is hidden from the locked group.
+    // Unlocked first (none, random, silver, crimson, sort asc), then locked
+    // (gold, cyan, violet, sort asc). emerald-aura is obtainable=false and not
+    // unlocked, so it is hidden from the locked group.
     expect(ids).toEqual([
       "none",
+      "random",
       "silver-aura",
       "crimson-aura",
       "gold-aura",
@@ -588,5 +598,95 @@ describe("RewardsPicker phantom skins section", () => {
       t.getAttribute("data-skin-id"),
     );
     expect(ids).toContain("emerald-aura");
+  });
+  it("offers the Random tile once two skins are unlocked", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "gold-aura",
+          name: "Gold Aura",
+          description: "",
+          screenshot_filename: "gold-aura.jpg",
+          sort_order: 10,
+        },
+        {
+          id: "cyan-aura",
+          name: "Cyan Aura",
+          description: "",
+          screenshot_filename: "cyan-aura.jpg",
+          sort_order: 30,
+        },
+      ],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "daily_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    const tile = container.querySelector('[data-skin-id="random"]');
+    expect(tile).not.toBeNull();
+    expect(tile!.classList.contains("locked")).toBe(false);
+  });
+
+  it("hides the Random tile when a single skin is unlocked", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "gold-aura",
+          name: "Gold Aura",
+          description: "",
+          screenshot_filename: "gold-aura.jpg",
+          sort_order: 10,
+        },
+      ],
+      equipped_phantom_skin_id: null,
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "daily_crown",
+        selectedBadgeId: null,
+        selectedSkinId: null,
+      },
+    });
+    expect(container.querySelector('[data-skin-id="random"]')).toBeNull();
+  });
+  it("still shows the Random tile when it is the equipped value", () => {
+    seedCatalogWithPhantomSkins();
+    const inv: MyInventoryDto = {
+      ...baseInventory,
+      unlocked_phantom_skins: [
+        {
+          id: "gold-aura",
+          name: "Gold Aura",
+          description: "",
+          screenshot_filename: "gold-aura.jpg",
+          sort_order: 10,
+        },
+      ],
+      equipped_phantom_skin_id: "random",
+    };
+    const { container } = render(RewardsPicker, {
+      props: {
+        inventory: inv,
+        user: baseUser,
+        selectedTemplateId: "daily_crown",
+        selectedBadgeId: null,
+        selectedSkinId: "random",
+      },
+    });
+    const tile = container.querySelector('[data-skin-id="random"]');
+    expect(tile).not.toBeNull();
+    expect(tile!.textContent).toContain("Active");
   });
 });

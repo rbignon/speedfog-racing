@@ -41,6 +41,8 @@ Two pieces arrive in `auth_ok` (see `core/protocol.rs`):
 
 The split is intentional: the user's chosen skin is per-session, the catalog is per-seed. An older seed without the skin in its catalog disables the feature for that race (logged warn, no error). New keys (e.g. `fxr_ids`) added later default to empty so old mods stay forward-compatible.
 
+`phantom_skin` always names one concrete skin. A user who picked the `random` option in `/settings` has it expanded server-side at auth time, into a skin drawn among the ones they own that this seed's catalog also carries (see [REWARDS.md](REWARDS.md#random-phantom-skin)). The mod needs no knowledge of it: the draw is derived from the participant or training-session id, so every `auth_ok` of a run resolves to the same name and the runner's skip-if-already-running guard below keeps holding on reconnect. The one case that can still move it is the player unlocking or losing a skin mid-run and then reconnecting; the draw is built to make that unlikely rather than impossible.
+
 ## Function Resolution: AOB Pattern Scan
 
 Elden Ring does not expose the apply wrapper as a stable export, and `libeldenring`'s pointer table doesn't include it. The mod locates it by scanning the executable section of `eldenring.exe` for a 19-byte pattern matching a unique instruction sequence inside the wrapper body; the entry point is the match address minus `0x1D`.
@@ -114,6 +116,8 @@ auth_ok arrives
 ```
 
 The `Arc<AtomicBool>` stop flag is in place for future mid-session skin changes, but currently no caller flips it: the thread dies with the process. Reconnects with the same equipped skin are cheap (the `already_running` check skips respawning the thread).
+
+That guard is the only thing keeping one runner per process. When a name actually changes mid-session (the player re-equips on `/settings` and the socket reconnects), `start_phantom_skin` replaces `phantom_skin_stop` with a fresh `Arc` instead of storing `true` on the old one, so the previous thread survives and keeps applying its own SpEffect. Both threads then fire on the same "not loaded → loaded" edge, the last SpEffect applied wins in-game, and nothing orders two threads polling at 500 ms: the aura flips between the two skins from one loading screen to the next. Storing `true` before the replace would not remove the effect already applied, but the stale runner would stop re-applying and the next world load would settle on the new skin.
 
 ## Logging
 

@@ -28,6 +28,7 @@ from speedfog_racing.rewards.catalog import (
     DEFAULT_TEMPLATE_ID,
     NAME_TEMPLATES,
     PHANTOM_SKINS,
+    PSEUDO_PHANTOM_SKIN_IDS,
     VETERAN_RACE_THRESHOLD,
 )
 from speedfog_racing.rewards.models_data import Badge, NameTemplate, PhantomSkin
@@ -157,7 +158,7 @@ class RewardsService:
         skin = PHANTOM_SKINS.get(skin_id)
         if skin is None:
             raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
-        if skin_id == DEFAULT_PHANTOM_SKIN_ID:
+        if skin_id in PSEUDO_PHANTOM_SKIN_IDS:
             return None
 
         existing = await self.session.execute(
@@ -305,7 +306,7 @@ class RewardsService:
         *,
         enforce_ownership: bool = True,
     ) -> None:
-        if skin_id is not None and skin_id != DEFAULT_PHANTOM_SKIN_ID:
+        if skin_id is not None and skin_id not in PSEUDO_PHANTOM_SKIN_IDS:
             if skin_id not in PHANTOM_SKINS:
                 raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
             if enforce_ownership:
@@ -318,7 +319,8 @@ class RewardsService:
                 if owned.scalar_one_or_none() is None:
                     raise NotOwnedError(f"User has not unlocked skin {skin_id!r}")
 
-        # "none" or None both clear the column to NULL.
+        # "none" or None both clear the column to NULL; "random" is stored as-is
+        # and expanded to an actual skin when the mod authenticates.
         stored = None if skin_id is None or skin_id == DEFAULT_PHANTOM_SKIN_ID else skin_id
         await self.session.execute(
             update(User).where(User.id == user_id).values(equipped_phantom_skin_id=stored)
@@ -554,7 +556,7 @@ class RewardsService:
     async def revoke_phantom_skin(self, user_id: uuid.UUID, skin_id: str) -> None:
         if skin_id not in PHANTOM_SKINS:
             raise UnknownRewardError(f"Unknown skin_id={skin_id!r}")
-        if skin_id == DEFAULT_PHANTOM_SKIN_ID:
+        if skin_id in PSEUDO_PHANTOM_SKIN_IDS:
             return
         await self.session.execute(
             delete(PhantomSkinUnlock).where(

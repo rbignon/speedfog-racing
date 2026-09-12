@@ -29,8 +29,12 @@
   let phantomSkin = $derived(
     rewards.lookupPhantomSkin(profile?.equipped_phantom_skin_id),
   );
+  // "random" draws a different aura per run, so it stands for no fixed
+  // identity: the Twitch avatar stays.
   let useSkinAsAvatar = $derived(
-    phantomSkin !== null && phantomSkin.id !== "none",
+    phantomSkin !== null &&
+      phantomSkin.id !== "none" &&
+      phantomSkin.id !== "random",
   );
 
   let nameStyle = $derived.by(() => {

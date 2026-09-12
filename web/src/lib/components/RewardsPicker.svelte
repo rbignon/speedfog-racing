@@ -42,11 +42,23 @@
       inventory.unlocked_phantom_skins.map((s) => s.id),
     );
     unlockedIds.add("none");
+    // "random" is a choice, not a cosmetic: never unlockable, and pointless
+    // below two owned skins (it would always draw the same one). Someone who
+    // already chose it keeps the tile even if a revoke drops them under the bar.
+    if (
+      inventory.unlocked_phantom_skins.length >= 2 ||
+      inventory.equipped_phantom_skin_id === "random"
+    ) {
+      unlockedIds.add("random");
+    }
     const sortAsc = (a: PhantomSkinDef, b: PhantomSkinDef) =>
       a.sort_order - b.sort_order;
     const unlocked = catalog.filter((s) => unlockedIds.has(s.id)).sort(sortAsc);
     const locked = catalog
-      .filter((s) => !unlockedIds.has(s.id) && s.obtainable !== false)
+      .filter(
+        (s) =>
+          !unlockedIds.has(s.id) && s.obtainable !== false && s.id !== "random",
+      )
       .sort(sortAsc);
     return { unlocked, locked };
   });

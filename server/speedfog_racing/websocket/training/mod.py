@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+from speedfog_racing.rewards.catalog import RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_tier_for_node,
@@ -32,6 +33,7 @@ from speedfog_racing.websocket.schemas import (
     RaceStatusChangeMessage,
     SeedInfo,
     ZoneHistoryMessage,
+    draw_phantom_skin,
     extract_phantom_skins,
     extract_spawn_items,
     resolve_phantom_skin_for_auth_ok,
@@ -116,7 +118,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             self._cached_graph_json = seed.graph_json if seed else None
 
             # Send auth_ok
-            await self._send_auth_ok_msg(session)
+            await self._send_auth_ok_msg(db, session)
 
             # Send race_start immediately (training starts right away)
             await self.websocket.send_text(RaceStartMessage().model_dump_json())
@@ -150,7 +152,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         self._auth_session = session
         return True
 
-    async def _send_auth_ok_msg(self, session: TrainingSession) -> None:
+    async def _send_auth_ok_msg(self, db: AsyncSession, session: TrainingSession) -> None:
         """Send auth_ok with training session info."""
         seed = session.seed
 
@@ -169,6 +171,12 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         phantom_skin = resolve_phantom_skin_for_auth_ok(
             session.user.equipped_phantom_skin_id if session.user else None
         )
+        if phantom_skin == RANDOM_PHANTOM_SKIN_ID:
+            # Keyed on the session, so every auth_ok of this run draws the same
+            # skin while a new session draws again.
+            phantom_skin = await draw_phantom_skin(
+                db, session.user_id, phantom_skins, str(session.id)
+            )
         message = AuthOkMessage(
             participant_id=str(session.id),
             race=RaceInfo(
