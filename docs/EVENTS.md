@@ -46,9 +46,12 @@ One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of
 already-stored configs. The public event page validates the stored document
 on every request, so a document that was valid when saved but fails the new
-rules would break the page for every viewer until it is fixed or backfilled,
-and the admin Events tab, which is where it would be fixed, computes its
-phase from the same validation.
+rules reads as "Event not found" for every viewer until it is fixed. The
+repair path stays open: the admin Events tab lists such an event anyway, with
+the validation errors under its name (`config_error`) and a phase computed
+from the dates alone, and its editor loads the stored document as it is.
+Attaching a race to a slot needs the parsed config, so it refuses with a 422
+naming the same errors.
 
 ### Facts
 
@@ -185,6 +188,9 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
   field size: the number of `seeds` for a semi, `size` for a newcomers stage,
   `advance` times the number of `from` stages for a final.
 - A Daily Seed race is refused.
+- An event whose stored config no longer parses is refused (422, naming the
+  validation errors): the slot cannot be checked without it. Detaching still
+  works, since it never reads the config.
 - An occupied slot is a 409, including the race between two admins attaching
   to the same slot at once (caught by the unique constraint on
   `(event_id, event_slot)`).

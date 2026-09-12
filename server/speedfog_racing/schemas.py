@@ -1234,6 +1234,9 @@ class AdminEventResponse(BaseModel):
     config: dict[str, Any]
     created_at: datetime
     phase: str
+    # Set when the stored config no longer validates, so the tab that repairs
+    # the document can say what is wrong with it.
+    config_error: str | None = None
     attached: dict[str, UUID]
 
 

@@ -1344,7 +1344,11 @@
                       >{ev.slug}</a
                     ></td
                   >
-                  <td>{ev.name}</td>
+                  <td
+                    >{ev.name}{#if ev.config_error}<span class="config-error"
+                        >Invalid config: {ev.config_error}</span
+                      >{/if}</td
+                  >
                   <td
                     ><span
                       class="signal signal-{ev.phase === 'finished'
@@ -2184,6 +2188,16 @@
   .num-cell {
     text-align: center;
     font-family: var(--font-mono);
+  }
+
+  /* Why the stored document no longer validates, under the name it belongs to:
+   * this table is the only way back to a document the schema turned down. */
+  .config-error {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--color-danger);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
   }
 
   /* Dates run through the mono face, like everywhere else */

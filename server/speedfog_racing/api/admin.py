@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import case, func, literal, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1091,21 +1091,46 @@ async def admin_revoke_phantom_skin(
 # =============================================================================
 
 
+def _config_error(exc: ValidationError, limit: int = 8) -> str:
+    """A stored document's validation errors on one line, for the operator.
+
+    A thoroughly broken document can raise dozens at once, and this line rides
+    in every list row: the first few are the ones acted on, the rest are
+    counted.
+    """
+    parts = [
+        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+        if error["loc"]
+        else error["msg"]
+        for error in exc.errors()
+    ]
+    extra = len(parts) - limit
+    return "; ".join(parts[:limit]) + (f" (+{extra} more)" if extra > 0 else "")
+
+
 def _admin_event_response(event: Event) -> AdminEventResponse:
-    config = EventConfig.model_validate(event.config)
+    config: EventConfig | None = None
+    config_error: str | None = None
+    try:
+        config = EventConfig.model_validate(event.config)
+    except ValidationError as exc:
+        # A document the schema no longer accepts (a validation rule tightened
+        # under it) must not take this list down with it: the list is how the
+        # document is reached and repaired.
+        config_error = _config_error(exc)
     starts_at, qualifier_ends_at, ends_at = event_window(event)
     phase = compute_phase(
         now=datetime.now(UTC),
         starts_at=starts_at,
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
-        first_stage_at=config.stages[0].date if config.stages else None,
+        first_stage_at=config.stages[0].date if config and config.stages else None,
         # The admin list does not group the attached races by stage (unlike the
         # public event page), so it cannot tell whether the last stage is
         # complete; treat it as not complete, which only affects the
         # "playoffs" vs "finished" phase split.
         last_stage_complete=False,
-        override=config.phase_override,
+        override=config.phase_override if config else None,
     )
     attached = {r.event_slot: r.id for r in event.races if r.event_slot is not None}
     return AdminEventResponse(
@@ -1122,6 +1147,7 @@ def _admin_event_response(event: Event) -> AdminEventResponse:
         config=event.config,
         created_at=event.created_at,
         phase=phase,
+        config_error=config_error,
         attached=attached,
     )
 
@@ -1233,7 +1259,13 @@ async def admin_attach_race_to_event(
     event = await _load_admin_event(db, request.event_id)
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    config = EventConfig.model_validate(event.config)
+    try:
+        config = EventConfig.model_validate(event.config)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"the event's stored config is invalid: {_config_error(exc)}",
+        ) from exc
     try:
         slot = parse_slot(request.slot)
     except ValueError as exc:

@@ -569,6 +569,8 @@ export interface AdminEvent {
   config: Record<string, unknown>;
   created_at: string;
   phase: EventPhase;
+  /** Why the stored document fails validation, null while it passes. */
+  config_error: string | null;
   attached: Record<string, string>;
 }
 

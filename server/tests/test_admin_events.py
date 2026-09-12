@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import Pool, Race, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import Event, Pool, Race, Seed, SeedStatus, User, UserRole
 
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 DOC = {
@@ -169,6 +169,45 @@ async def _race(db, orga, pool: str, number: str, **kw) -> Race:
     db.add(race)
     await db.flush()
     return race
+
+
+@pytest.mark.asyncio
+async def test_admin_list_survives_a_stored_config_the_schema_rejects(
+    test_client, users, async_session
+):
+    """Tightening the config schema can leave a stored document invalid, and the
+    Events tab is where it gets repaired, so the list must still load."""
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(db, orga, "standard", "s9", max_participants=2)
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        async with async_session() as db:
+            event = await db.get(Event, uuid.UUID(event_id))
+            stages = [dict(s) for s in event.config["stages"]]
+            stages[0] = dict(stages[0], seeds=[1, 3])  # seed 2 is nobody's
+            event.config = dict(event.config, stages=stages)
+            await db.commit()
+
+        listed = await client.get("/api/admin/events", headers=ADMIN)
+        assert listed.status_code == 200, listed.text
+        row = listed.json()[0]
+        # The document carries phase_override "cut", which no longer applies
+        # now that it does not parse: the phase falls back to the dates.
+        assert row["phase"] != "cut"
+        assert "gap" in row["config_error"]
+        assert row["config"]["stages"][0]["seeds"] == [1, 3]
+
+        # Attaching needs the parsed config, so it refuses, but as a 422 naming
+        # the document rather than a 500.
+        attached = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "semi_a:1"},
+            headers=ADMIN,
+        )
+    assert attached.status_code == 422, attached.text
+    assert "gap" in attached.json()["detail"]
 
 
 @pytest.mark.asyncio
