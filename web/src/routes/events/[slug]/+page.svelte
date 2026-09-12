@@ -12,6 +12,7 @@
     pollIntervalMs,
     fillSlots,
     ordinal,
+    practiceHint,
     racesSection,
     shownStage,
     stageTimes,
@@ -67,6 +68,14 @@
   );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let eveningTimes = $derived(stageTimes(detail.stages));
+  // Solo pools are the race pools prefixed, and the link degrades to the solo
+  // page's own default when a mode has no solo counterpart yet.
+  const soloLink = (modeKey: string) => `/training?pool=training_${modeKey}`;
+  // Only for a signed-in runner, and only once the seeds are out: before that,
+  // step 02 carries the same nudge, and the solo page needs an account anyway.
+  let seedHint = $derived(
+    auth.user && detail.phase === "qualifier" ? practiceHint(detail) : null,
+  );
   let shown = $derived(shownStage(detail));
   let crowned = $derived(champions(detail));
   let phaseSignal = $derived.by(() => {
@@ -273,6 +282,17 @@
                     : "Any of the seeds below."} The pack holds everything, game files
                   and overlay. Nothing to install by hand.
                 </p>
+                {#if detail.phase === "upcoming" && auth.user}
+                  <p>
+                    Until then, learn the modes solo: {#each detail.modes as mode, i (mode.key)}{i ===
+                      0
+                        ? ""
+                        : i === detail.modes.length - 1
+                          ? " or "
+                          : ", "}<a href={soloLink(mode.key)}>{mode.label}</a
+                      >{/each}. A solo seed never counts toward the ladder.
+                  </p>
+                {/if}
               </div>
             </div>
             <div class="step">
@@ -302,10 +322,6 @@
                   seed a day, scored like a qualifier seed.
                 </li>
                 <li>
-                  Run a <a href="/training">solo seed</a> of each mode before your
-                  qualifier seeds; solos never count toward the ladder.
-                </li>
-                <li>
                   Skips and route knowledge are on the
                   <a href="/zones">Zones</a> page.
                 </li>
@@ -321,10 +337,34 @@
     {:else if block === "seeds"}
       <section>
         <SectionTitle>Qualifier seeds</SectionTitle>
-        <p class="note">The better of your seeds counts.</p>
+        <p class="note">
+          The better of your seeds counts.
+          {#if seedHint?.kind === "gap"}
+            You have not run {#each seedHint.modes as mode, i (mode.key)}{i ===
+              0
+                ? ""
+                : i === seedHint.modes.length - 1
+                  ? " or "
+                  : ", "}<a href={soloLink(mode.key)}>{mode.label}</a>{/each} yet:
+            a solo seed never counts toward the ladder.
+          {:else if seedHint?.kind === "done"}
+            Every seed played. The <a href="/daily">Daily Seed</a> keeps you sharp
+            until the cut.
+          {/if}
+        </p>
         {#each seedsByMode as group (group.mode.key)}
           <div class="mode-group">
-            <h3>{group.mode.label}</h3>
+            <div class="mode-head">
+              <h3>{group.mode.label}</h3>
+              {#if auth.user}
+                <a
+                  class="more-link"
+                  href={soloLink(group.mode.key)}
+                  aria-label="Practice {group.mode.label} solo"
+                  >Practice this mode <span aria-hidden="true">&rarr;</span></a
+                >
+              {/if}
+            </div>
             <div class="cards">
               {#each group.slots as entry, i (i)}
                 <EventSeedCard
@@ -732,8 +772,25 @@
   .step .signed-in :global(.user-link) {
     color: var(--color-text);
   }
-  .mode-group h3 {
+  .mode-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin: 0 0 0.6rem;
+  }
+  .more-link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+    transition: color 0.15s ease;
+  }
+  .more-link:hover {
+    color: var(--color-purple);
+  }
+  .mode-group h3 {
+    margin: 0;
     font-family: var(--font-display);
     font-size: 1rem;
     font-weight: 600;

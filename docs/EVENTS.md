@@ -232,6 +232,15 @@ they are signed out, and once they are signed in, a verdigris line with their
 name (and their avatar when they have one) instead, so the step reads as done
 rather than repeating the instruction.
 
+Practice is pushed where it is cheap to act on, never as a block of its own:
+each mode group in the qualifier seeds links to that mode's solo pool
+(`training_<mode key>`, and the solo page falls back to its own default when
+no such pool exists), step 02 says the same before the seeds are out, and
+during the qualifier the note above the seeds names the modes the viewer has
+never opened, or sends them to the daily once every seed is spent
+(`practiceHint`). All of it reads `my_result`, so it costs no extra request,
+and it shows only to a signed-in viewer, since the solo page needs an account.
+
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
 concepts beside a silent looping montage of a run, and a link to a longer cut

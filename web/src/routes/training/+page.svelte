@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import { auth } from "$lib/stores/auth.svelte";
   import {
     fetchTrainingPools,
@@ -16,6 +17,10 @@
   import { timeAgo } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
+
+  // Read once, at mount: it seeds the selection, and a tab the visitor clicks
+  // afterwards must not be undone by the link that brought them here.
+  const askedPool = page.url.searchParams.get("pool");
 
   let pools: PoolStats = $state({});
   let sessions: TrainingSession[] = $state([]);
@@ -73,6 +78,14 @@
       ]);
       pools = poolData;
       sessions = sessionData;
+      // A ?pool= link (the event page points at the mode it is about) wins,
+      // as long as it names a pool with a seed left to hand out: anything else
+      // falls through to the default below, which is what the page would have
+      // chosen on its own.
+      if (askedPool && (pools[askedPool]?.available ?? 0) > 0) {
+        selectedPool = askedPool;
+        return;
+      }
       // Default to Sprint for new players, otherwise first available pool
       if (sprintPool && sessions.length === 0) {
         selectedPool = sprintPool;
