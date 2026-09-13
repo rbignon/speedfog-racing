@@ -44,39 +44,47 @@
 </script>
 
 <div class="intro">
+  <p class="lead">
+    <strong>Elden Ring as a race, in about an hour.</strong>
+    SpeedFog builds on thefifthmatt's
+    <a
+      href="https://www.nexusmods.com/eldenring/mods/3295"
+      target="_blank"
+      rel="noopener noreferrer">Fog Gate Randomizer</a
+    >: every fog gate leads to a random zone, chained into a route that ends on
+    a final boss drawn from the game's majors.
+  </p>
   <div class="text">
-    <p class="lead">
-      <strong>Elden Ring as a race, in about an hour.</strong>
-      SpeedFog builds on thefifthmatt's
-      <a
-        href="https://www.nexusmods.com/eldenring/mods/3295"
-        target="_blank"
-        rel="noopener noreferrer">Fog Gate Randomizer</a
-      >: every fog gate leads to a random zone, chained into a route that ends
-      on a final boss drawn from the game's majors.
-    </p>
     <dl class="concepts">
       <div>
         <dt>Pick your fog</dt>
         <dd>
-          In most modes the route splits and merges. At each fork you choose a
-          gate without knowing what lies behind it, and gates only go one way.
+          In most modes the route <strong>splits and merges</strong>: at each
+          fork you choose a gate without knowing what lies behind it. Parallel
+          branches are <strong>equally deep and equally hard</strong>, with the
+          same number of bosses, so no fork hides a lucky route. Gates only go
+          one way, but <strong>fast travel back</strong> to any grace you touched
+          reopens the others.
         </dd>
       </div>
       <div>
-        <dt>Balanced paths</dt>
+        <dt>Care package</dt>
         <dd>
-          Parallel branches are equally deep, equally hard, with the same number
-          of bosses. Only the zones differ, so no route is a lucky one:
-          knowledge and execution decide.
+          Every seed starts you with golden seeds, sacred tears and your
+          <strong>Great Runes restored</strong>, and most modes add a care
+          package of random spells, catalysts, talismans and armor, with your
+          class weapon at <strong>maximum upgrade</strong>.
+          <strong>Stat requirements are gone</strong>, so all of it is usable
+          straight away.
         </dd>
       </div>
       <div>
-        <dt>No grind</dt>
+        <dt>Risk is cheap</dt>
         <dd>
-          Items and enemies are shuffled, stat requirements are gone, and the
-          weapons you find are upgraded to match your progress. Enemies get
-          tougher the deeper you go.
+          Enemies <strong>get tougher the deeper you go</strong>, but a death
+          costs <strong>nothing but the walk back</strong>: you respawn at the
+          last grace and carry on, and the clock is in-game time, so a risk is
+          usually worth taking.
         </dd>
       </div>
     </dl>
@@ -152,7 +160,7 @@
 <style>
   .intro {
     display: grid;
-    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     gap: 24px;
     align-items: start;
   }
@@ -164,6 +172,7 @@
     gap: 1rem;
   }
   .lead {
+    grid-column: 1 / -1;
     margin: 0;
     color: var(--color-text-secondary);
   }
@@ -191,6 +200,9 @@
     margin: 0.15rem 0 0;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+  }
+  .concepts dd strong {
+    color: var(--color-text);
   }
   .cta {
     display: flex;
