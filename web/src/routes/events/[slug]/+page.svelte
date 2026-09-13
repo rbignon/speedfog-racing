@@ -178,10 +178,10 @@
               From <span class="date">{fmtDay(detail.starts_at)}</span> to
               <span class="date">{fmtDay(detail.qualifier_ends_at)}</span>, {detail.seeds_per_mode}
               seeds are open in each of
-              {detail.modes.map((m) => m.label).join(", ")}. Play at least one
-              seed per mode, whenever you want; the better of your seeds counts.
-              Each seed scores like a daily: rank points, 100 to first, down the
-              field.
+              {detail.modes.map((m) => m.label).join(", ")}.
+              <strong>Play at least one seed per mode</strong>, whenever you
+              want: the better of your seeds counts. Each seed scores like a
+              daily: rank points, 100 to first, down the field.
             </p>
             <p>
               <strong
@@ -205,7 +205,7 @@
                 on <span class="date">{fmtDay(newcomersStage.date)}</span>. You
                 are a newcomer if you had finished fewer than {detail.newcomer_threshold}
                 SpeedFog races or daily seeds when the qualifier opened on
-                <span class="date">{fmtDay(detail.starts_at)}</span>; the {newcomersStage
+                <span class="date">{fmtDay(detail.starts_at)}</span>: the {newcomersStage
                   .field.length} best newcomers outside the top {semiPlaces} make
                 up its field.
               </p>

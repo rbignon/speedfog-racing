@@ -9,7 +9,7 @@
   // frame once the loop lands.
   const LOOP_SRC = null as string | null;
   const FULL_RUN_URL = null as string | null;
-  const STILL_SRC = "/screenshots/fog-gate.webp";
+  const STILL_SRC = "/screenshots/ingame.png";
 
   let video: HTMLVideoElement | undefined = $state();
   let reducedMotion = $state(false);
@@ -59,32 +59,28 @@
       <div>
         <dt>Pick your fog</dt>
         <dd>
-          In most modes the route <strong>splits and merges</strong>: at each
-          fork you choose a gate without knowing what lies behind it. Parallel
-          branches are <strong>equally deep and equally hard</strong>, with the
-          same number of bosses, so no fork hides a lucky route. Gates only go
-          one way, but <strong>fast travel back</strong> to any grace you touched
-          reopens the others.
+          The route <strong>splits and merges</strong>: at each fork you choose
+          a gate without knowing what lies behind it.<br />Parallel branches are
+          <strong>equally deep and equally hard</strong>, with the same number
+          of bosses.
         </dd>
       </div>
       <div>
         <dt>Care package</dt>
         <dd>
-          Every seed starts you with golden seeds, sacred tears and your
-          <strong>Great Runes restored</strong>, and most modes add a care
-          package of random spells, catalysts, talismans and armor, with your
-          class weapon at <strong>maximum upgrade</strong>.
-          <strong>Stat requirements are gone</strong>, so all of it is usable
-          straight away.
+          Every seed starts you with golden seeds, sacred tears, your
+          <strong>Great Runes restored</strong>, and a care package of random
+          spells, catalysts, talismans and armor, with your class weapon at
+          <strong>maximum upgrade</strong>. Stat requirements are gone, so all
+          of it is usable straight away.
         </dd>
       </div>
       <div>
-        <dt>Risk is cheap</dt>
+        <dt>Dying doesn't matter, time does</dt>
         <dd>
           Enemies <strong>get tougher the deeper you go</strong>, but a death
-          costs <strong>nothing but the time it takes to get back</strong>: you
-          respawn at the last grace and carry on, and the clock is in-game time,
-          so a risk is usually worth taking.
+          costs <strong>nothing but the time it takes to get back</strong>, so a
+          risk is usually worth taking.
         </dd>
       </div>
     </dl>
@@ -133,12 +129,14 @@
           </svg>
         </button>
       {:else}
-        <img
-          src={STILL_SRC}
-          alt="A runner walking up to a fog gate"
-          width="720"
-          height="405"
-        />
+        <a href={STILL_SRC} target="_blank">
+          <img
+            src={STILL_SRC}
+            alt="A runner walking up to a fog gate"
+            width="720"
+            height="405"
+          />
+        </a>
       {/if}
     </div>
     {#if FULL_RUN_URL}
