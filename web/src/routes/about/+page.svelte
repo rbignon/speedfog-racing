@@ -78,8 +78,9 @@
       <div class="feature-card">
         <strong>Care Package</strong>
         <p>
-          Every run starts with a randomized build: weapons, armor, spells, and
-          talismans. Same seed, same build, fair from the first fog gate.
+          In most modes, your run opens with a randomized care package: spells,
+          catalysts, talismans and armor, next to your class weapon at maximum
+          upgrade. Same seed, same package, fair from the first fog gate.
         </p>
       </div>
       <div class="feature-card">

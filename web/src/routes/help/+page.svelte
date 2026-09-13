@@ -228,9 +228,10 @@
     <h3>Starting Equipment</h3>
     <p>
       Every player on the same seed gets <strong>the same starting build</strong
-      >: randomized weapons, armor, spells, talismans, key items, runes, and
-      smithing stones. The exact care package depends on the
-      <a href="#game-modes">game mode</a>.
+      >: runes, key items, golden seeds and sacred tears. In most
+      <a href="#game-modes">game modes</a> it also holds a randomized care
+      package of spells, catalysts, talismans and armor, identical for every
+      racer, with your own class weapon at <strong>maximum upgrade</strong>.
     </p>
 
     <h3>Route Map</h3>
@@ -262,8 +263,8 @@
       <strong>scales with zone depth</strong>. Item and enemy locations are
       <strong>randomized</strong>, and stat requirements are removed, so you can
       use
-      <strong>any weapon regardless of stats</strong>. Weapons found in the
-      world are automatically upgraded to match your progression.
+      <strong>any weapon regardless of stats</strong>. Weapons you find come
+      upgraded to your highest level.
     </p>
 
     <h3>Bosses</h3>
@@ -279,8 +280,8 @@
       All paths converge toward a single <strong>final boss</strong>, a random
       major boss (Radagon, Malenia, Mohg, Radahn...) that changes with every
       seed. Defeat it to finish. Your time is recorded via
-      <strong>in-game timer (IGT)</strong>, which pauses during loading screens,
-      death animations, and menus.
+      <strong>in-game timer (IGT)</strong>, which the mod holds still during
+      loading screens and blackscreen fades.
     </p>
 
     <!-- Accordion: Race rules -->
@@ -538,8 +539,8 @@
       <div class="panel">
         <p>
           All smithing stones are available at the Roundtable Hold shop in
-          unlimited stock from the start. Weapons found in the world are
-          automatically upgraded to match your progression.
+          unlimited stock from the start. Weapons you find come upgraded to your
+          highest level.
         </p>
       </div>
     {/if}
@@ -558,8 +559,11 @@
       <div class="panel">
         <p>
           IGT (In-Game Time) is Elden Ring's internal timer. It ticks while you
-          play, and pauses during loading screens, death animations, and menus.
-          Deaths increment a counter but don't add to your time.
+          play, menus included, and the mod holds it still during loading
+          screens and blackscreen fades. Deaths increment a counter, and they
+          cost time: the animation and the walk back both run on the clock.
+          Quitting to the main menu stops the timer, which is why each quit-out
+          adds 2 seconds.
         </p>
       </div>
     {/if}

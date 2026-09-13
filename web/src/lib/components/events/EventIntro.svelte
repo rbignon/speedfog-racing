@@ -82,9 +82,9 @@
         <dt>Risk is cheap</dt>
         <dd>
           Enemies <strong>get tougher the deeper you go</strong>, but a death
-          costs <strong>nothing but the walk back</strong>: you respawn at the
-          last grace and carry on, and the clock is in-game time, so a risk is
-          usually worth taking.
+          costs <strong>nothing but the time it takes to get back</strong>: you
+          respawn at the last grace and carry on, and the clock is in-game time,
+          so a risk is usually worth taking.
         </dd>
       </div>
     </dl>

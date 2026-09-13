@@ -235,7 +235,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Softlock keys granted",
     short:
-      "**Key items** that would cause softlocks are granted at start: whetblades, the Academy Glintstone Key, the Spirit Calling Bell, talisman pouches, the lantern and more.",
+      "**Key items** that would cause softlocks are granted at start: whetblades, the Spirit Calling Bell, talisman pouches, the lantern and more.",
   },
   {
     id: "merchants-relocated",
@@ -340,7 +340,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "No stat requirements",
     short:
-      "**Stat requirements on weapons are removed**: wield anything you find. Weapons found in the world are **auto-upgraded** to match your progression.",
+      "**Stat requirements on weapons are removed**: wield anything you pick up. Weapons come **upgraded to your highest level**.",
   },
   {
     id: "all-recipes",

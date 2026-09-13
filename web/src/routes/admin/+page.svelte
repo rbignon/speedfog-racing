@@ -213,7 +213,7 @@
         },
       ],
       rules: [
-        "Same seed for everyone; one sitting per run.",
+        "Runs are timed on in-game time; quit-outs are allowed and add 2 seconds each.",
         "Rank points per seed: 100 to first, proportional down the field, unfinished runs ranked by depth reached.",
         "Best of your two seeds per mode, three modes summed. A score in every mode to be ranked.",
         "Bosses drop no weapons outside UWYG modes.",
