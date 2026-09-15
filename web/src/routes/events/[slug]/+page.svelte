@@ -171,17 +171,14 @@
         <div class="fmt">
           <div class="prose">
             <p>
-              <strong
-                >{detail.seeds_per_mode * detail.modes.length} seeds, {detail
-                  .modes.length} modes, one window.</strong
-              >
               From <span class="date">{fmtDay(detail.starts_at)}</span> to
-              <span class="date">{fmtDay(detail.qualifier_ends_at)}</span>, {detail.seeds_per_mode}
-              seeds are open in each of
-              {detail.modes.map((m) => m.label).join(", ")}.
+              <span class="date">{fmtDay(detail.qualifier_ends_at)}</span>,
+              <strong
+                >{detail.seeds_per_mode} seeds are open in each mode</strong
+              >
+              ({detail.modes.map((m) => m.label).join(", ")}).
               <strong>Play at least one seed per mode</strong>, whenever you
-              want: the better of your seeds counts. Each seed scores like a
-              daily: rank points, 100 to first, down the field.
+              want: the better of your seeds counts.
             </p>
             <p>
               <strong

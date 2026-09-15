@@ -5,9 +5,9 @@
   // The trailer: a muted loop beside the text, cut before its date card, that
   // opens the full cut with sound on YouTube. The still is the loop's poster
   // and its first frame, so playback starts on the image already shown.
-  const LOOP_SRC = "/events/trailer.mp4";
+  const LOOP_SRC = "/events/season-one-trailer.mp4";
   const TRAILER_URL = "https://youtu.be/V8ONFNyNgdA";
-  const STILL_SRC = "/events/trailer-poster.webp";
+  const STILL_SRC = "/events/season-one-trailer-poster.webp";
 
   let video: HTMLVideoElement | undefined = $state();
   let reducedMotion = $state(false);
