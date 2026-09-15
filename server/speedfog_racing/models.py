@@ -240,7 +240,10 @@ class Event(Base):
 
     races: Mapped[list["Race"]] = relationship(back_populates="event")
     signups: Mapped[list["EventSignup"]] = relationship(
-        back_populates="event", order_by="EventSignup.created_at"
+        back_populates="event",
+        order_by="EventSignup.created_at",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 

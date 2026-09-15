@@ -277,7 +277,9 @@ async def _load_event_card(db: AsyncSession, slug: str) -> tuple[Event, dict[UUI
     if event is None:
         return None
     starts_at, _, _ = event_window(event)
-    user_ids = {p.user_id for race in event.races for p in race.participants}
+    user_ids = {p.user_id for race in event.races for p in race.participants} | {
+        s.user_id for s in event.signups
+    }
     return event, await count_finished_before(db, user_ids, starts_at)
 
 

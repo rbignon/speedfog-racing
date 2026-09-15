@@ -79,7 +79,8 @@ runner can say they are in: `POST /api/events/{slug}/signup` adds the row
 (idempotent), `DELETE` removes it, both 204, 400 in any later phase. It is a
 signal, not a gate: running a qualifier seed enters a runner anyway, and
 withdrawing after a run changes nothing visible, since the runs keep them on
-the ladder. `my_signup` on the detail tells the viewer's own state.
+the ladder. `my_signup` on the detail tells the viewer's own state. It keeps
+reporting the stored row after the cut, when the ladder no longer lists it.
 
 ## Phases
 
@@ -253,7 +254,9 @@ puts the viewer on the ladder before they run, and once they are in, a check
 line `You're in` with a quiet `Withdraw` beside it; the page reloads the
 event right after either, so the ladder row appears or goes without a page
 reload. An empty ladder reads `Nobody in yet.` while the event is upcoming
-and `No runs yet.` from the qualifier on.
+and `No runs yet.` from the qualifier on. A call that fails shows its reason
+under the control and reloads the event, so a viewer whose session expired
+or who clicked after the cut sees the step correct itself.
 
 Practice has a block of its own before the seeds, because the qualifier does
 not forgive a first contact with the game: one card per mode, linking through

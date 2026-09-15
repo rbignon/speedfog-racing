@@ -53,6 +53,7 @@
     detail.phase === "upcoming" || detail.phase === "qualifier",
   );
   let signupBusy = $state(false);
+  let signupError = $state<string | null>(null);
 
   const fmt = (iso: string) => formatEventDate(iso);
   // Carries the timezone, for the instants still ahead of the viewer. What
@@ -109,12 +110,17 @@
 
   async function setSignup(join: boolean) {
     signupBusy = true;
+    signupError = null;
     try {
       if (join) await signUpForEvent(detail.slug);
       else await withdrawFromEvent(detail.slug);
       await refresh();
-    } catch {
-      /* the step stays as it was; the next click retries */
+    } catch (e) {
+      signupError = e instanceof Error ? e.message : "Something went wrong";
+      // A stale phase or a lost session is the usual cause: refresh so the
+      // step corrects itself (the button disappears with joinable, the
+      // sign-in line with auth.user).
+      await refresh();
     } finally {
       signupBusy = false;
     }
@@ -304,6 +310,9 @@
                         onclick={() => setSignup(true)}>Count me in</button
                       >
                       <p>Puts you on the ladder before you run.</p>
+                    {/if}
+                    {#if signupError}
+                      <p class="signup-error">{signupError}</p>
                     {/if}
                   {/if}
                 {:else}
@@ -816,6 +825,9 @@
   .step .btn:disabled {
     opacity: 0.6;
     cursor: default;
+  }
+  .step .signup-error {
+    color: var(--color-danger, #ef4444);
   }
   .mode-group h3 {
     margin: 0 0 0.6rem;

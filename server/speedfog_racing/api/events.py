@@ -238,6 +238,8 @@ async def get_event(
         ],
         ladder=EventLadderResponse(
             provisional=not ladder_final,
+            # A run-derived entry always has a counted mode, so modes_scored
+            # splits runs from signups.
             entered=sum(1 for e in ladder if e.modes_scored > 0),
             ranked_count=sum(1 for e in ladder if e.rank is not None),
             signed_up=sum(1 for e in ladder if e.modes_scored == 0),
