@@ -93,6 +93,10 @@ def _entry(user: SimpleNamespace, igt_ms: int, *, started: bool = True) -> Simpl
     )
 
 
+def _signup(user: SimpleNamespace) -> SimpleNamespace:
+    return SimpleNamespace(user=user, user_id=user.id)
+
+
 def _race(slot: str, participants: list[SimpleNamespace], *, finished: bool = True):
     return SimpleNamespace(
         id=uuid.uuid4(),
@@ -116,6 +120,7 @@ def _event(races: list[SimpleNamespace], **overrides: object) -> SimpleNamespace
         "newcomer_threshold": 5,
         "config": CONFIG,
         "races": races,
+        "signups": [],
     }
     fields.update(overrides)
     return SimpleNamespace(**fields)
@@ -188,6 +193,40 @@ def test_a_runner_who_never_scored_still_counts_as_a_player() -> None:
     summary = summarize_event(_event([race]), now=STARTS + dt.timedelta(days=2), finished_before={})
     assert summary.player_count_label == "2 players"
     assert [u.twitch_username for u in summary.entrants] == ["ana", "bob"]
+
+
+def test_an_upcoming_event_shows_its_entrants_from_ten_players_on() -> None:
+    before_opening = STARTS - dt.timedelta(days=3)
+    bare = summarize_event(_event([]), now=before_opening, finished_before={})
+    event = _event([], signups=[_signup(_user(f"runner{i:02d}")) for i in range(9)])
+    below = summarize_event(event, now=before_opening, finished_before={})
+    assert below.kind == "event_upcoming"
+    assert below.entrants == []
+    assert below.player_count_label is None
+    assert below.cache_key == bare.cache_key
+    event.signups.append(_signup(_user("runner09")))
+    at = summarize_event(event, now=before_opening, finished_before={})
+    assert at.kind == "event_upcoming"
+    assert at.headline == "Wednesday 23 September"
+    assert len(at.entrants) == 10
+    assert at.player_count_label == "10 players"
+    assert at.cache_key != bare.cache_key
+
+
+def test_signups_join_the_qualifier_row_after_the_scored_runners() -> None:
+    event, users = _qualifier_world(["ana", "bob"])
+    event.signups = [_signup(_user("zed")), _signup(users["ana"]), _signup(_user("cleo"))]
+    summary = summarize_event(event, now=STARTS + dt.timedelta(days=2), finished_before={})
+    assert [u.twitch_username for u in summary.entrants] == ["ana", "bob", "zed", "cleo"]
+    assert summary.player_count_label == "4 players"
+
+
+def test_signups_leave_the_card_at_the_cut() -> None:
+    event, _ = _qualifier_world(["ana", "bob", "cleo", "dan"])
+    event.signups = [_signup(_user("zed"))]
+    summary = summarize_event(event, now=CUT + dt.timedelta(hours=1), finished_before={})
+    assert "zed" not in [u.twitch_username for u in summary.entrants]
+    assert summary.player_count_label == "4 players"
 
 
 def test_the_cut_shows_the_first_stage_still_to_come() -> None:

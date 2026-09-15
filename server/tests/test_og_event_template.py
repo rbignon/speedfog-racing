@@ -74,12 +74,26 @@ def test_the_lockup_names_the_partner_and_the_event() -> None:
 def test_an_event_without_a_partner_drops_the_cross() -> None:
     svg = render_svg("event_entrants", _ctx(partner_name=None, logo_b64=None))
     assert "&#215;" not in svg
-    assert not _images(render_svg("event_upcoming", _ctx(partner_name=None, logo_b64=None)))
+    assert not _images(
+        render_svg("event_upcoming", _ctx(partner_name=None, logo_b64=None, entrants=[]))
+    )
 
 
 def test_the_lockup_draws_the_logo_when_there_is_one() -> None:
-    svg = render_svg("event_upcoming", _ctx())
+    svg = render_svg("event_upcoming", _ctx(entrants=[]))
     assert len(_images(svg)) == 1
+
+
+def test_the_upcoming_card_draws_the_entrants_row_only_when_handed_one() -> None:
+    bare = render_svg("event_upcoming", _ctx(entrants=[], overflow_count=0))
+    assert len(_images(bare)) == 1  # the partner logo alone
+    assert "WEDNESDAY 23 SEPTEMBER" in bare
+    crowded = render_svg(
+        "event_upcoming", _ctx(entrants=[{"avatar_b64": _AVATAR}] * 12, overflow_count=3)
+    )
+    assert len(_images(crowded)) == 13
+    assert "+3" in crowded
+    assert "WEDNESDAY 23 SEPTEMBER" in crowded
 
 
 def test_entrants_render_one_avatar_each() -> None:

@@ -3,7 +3,28 @@
 {% block route_ride %}
   <line x1="86" y1="127" x2="1114" y2="127" stroke="{{ accent_color }}" stroke-width="4" stroke-dasharray="20 14"/>
 {% endblock %}
+{# Announced, seeds not open yet: the opening day is the whole message. When
+   the summary hands over entrants (enough runners in), their row sits under it. #}
 {% block event_body %}
-  <text x="600" y="330" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="600" letter-spacing="7" fill="{{ accent_color }}">{{ headline_label.upper() }}</text>
-  <text x="600" y="440" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ headline_font_size }}" font-weight="600" letter-spacing="2.4" fill="#e8e6e1">{{ headline.upper() }}</text>
+  {% if entrants %}
+    <text x="600" y="296" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="600" letter-spacing="7" fill="{{ accent_color }}">{{ headline_label.upper() }}</text>
+    <text x="600" y="392" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ headline_font_size }}" font-weight="600" letter-spacing="2.4" fill="#e8e6e1">{{ headline.upper() }}</text>
+    {% set size = 56 %}
+    {% set step = 46 %}
+    {% set cells = entrants|length + (1 if overflow_count else 0) %}
+    {% set x0 = 600 - (step * (cells - 1) + size) / 2 %}
+    {% for p in entrants %}
+      {% set x = x0 + loop.index0 * step %}
+      <image x="{{ x }}" y="432" width="{{ size }}" height="{{ size }}" clip-path="url(#avatar-clip)" href="{{ p.avatar_b64 }}"/>
+      <circle cx="{{ x + size / 2 }}" cy="460" r="{{ size / 2 }}" fill="none" stroke="#0f1923" stroke-width="5"/>
+    {% endfor %}
+    {% if overflow_count %}
+      {% set x = x0 + entrants|length * step %}
+      <circle cx="{{ x + size / 2 }}" cy="460" r="{{ size / 2 }}" fill="#1c2a3f" stroke="#0f1923" stroke-width="5"/>
+      <text x="{{ x + size / 2 }}" y="467" text-anchor="middle" font-family="Spline Sans Mono" font-size="19" font-weight="500" fill="#96a0ad">+{{ overflow_count }}</text>
+    {% endif %}
+  {% else %}
+    <text x="600" y="330" text-anchor="middle" font-family="Spline Sans Mono" font-size="30" font-weight="600" letter-spacing="7" fill="{{ accent_color }}">{{ headline_label.upper() }}</text>
+    <text x="600" y="440" text-anchor="middle" font-family="Barlow Condensed" font-size="{{ headline_font_size }}" font-weight="600" letter-spacing="2.4" fill="#e8e6e1">{{ headline.upper() }}</text>
+  {% endif %}
 {% endblock %}

@@ -22,6 +22,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from speedfog_racing.models import Event, ParticipantStatus, Race, RaceStatus, User
 from speedfog_racing.schemas import EVENT_PHASES, EventConfig
 from speedfog_racing.services.event_service import (
+    JOINABLE_PHASES,
     UNDECIDED,
     Slot,
     compute_ladder,
@@ -59,7 +60,7 @@ _TEMPLATE_BY_KIND = {
 
 # Folded into cache filenames so a visual redesign of the templates, or a change
 # in how they are rasterized, stops serving stale PNGs. Bump on every refresh.
-_TEMPLATE_VERSION = 4
+_TEMPLATE_VERSION = 5
 
 _FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
 
@@ -346,6 +347,9 @@ assert EVENT_ACCENT_COLOR.keys() == EVENT_STATUS_LABEL.keys() == set(EVENT_PHASE
 )
 
 _MAX_ENTRANTS = 14
+# An upcoming card shows who is in only from this many players: below it, the
+# opening day is the whole message rather than how few have committed yet.
+_MIN_UPCOMING_ENTRANTS = 10
 _MAX_FIELD_SEATS = 8
 _MAX_EVENT_NAME = 40
 _MAX_PARTNER_NAME = 20
@@ -485,9 +489,6 @@ def summarize_event(
     )
     users = {p.user_id: p.user for race in event.races for p in race.participants}
 
-    ladder = compute_ladder(mode_keys, qualifier)
-    newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-    qualified = compute_qualified(ladder, config, newcomers)
     final = config.final_stage()
     advance = (final.advance or 0) if final is not None else 0
     results = {
@@ -510,6 +511,15 @@ def summarize_event(
         override=config.phase_override,
     )
 
+    if phase in JOINABLE_PHASES:
+        signed_up = [s.user_id for s in event.signups]
+        users.update({s.user_id: s.user for s in event.signups})
+    else:
+        signed_up = []
+    ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
+    newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
+    qualified = compute_qualified(ladder, config, newcomers)
+
     # The ladder already runs best first, then the runners it could not rank;
     # everyone else joined a race without ever scoring and closes the row.
     ranked_ids = {entry.user_id for entry in ladder}
@@ -520,6 +530,9 @@ def summarize_event(
     )
     entrants = ordered[:_MAX_ENTRANTS]
     overflow_count = max(0, len(ordered) - _MAX_ENTRANTS)
+    player_count = len(users)
+    if phase == "upcoming" and player_count < _MIN_UPCOMING_ENTRANTS:
+        entrants, overflow_count, player_count = [], 0, 0
 
     winner = None
     if phase == "finished" and final is not None:
@@ -578,7 +591,7 @@ def summarize_event(
     caption_chars = len(caption or "") + len(stage_label or "") + len(stage_date or "")
     field_size, field_gap = _field_geometry(len(field) + (1 if field_overflow_count else 0))
     window_label = _event_window_label(starts_at, ends_at)
-    player_count_label = _entrant_count_label(len(users))
+    player_count_label = _entrant_count_label(player_count)
 
     cache_key = hashlib.sha256(
         "|".join(
