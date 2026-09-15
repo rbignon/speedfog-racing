@@ -2,14 +2,12 @@
   import { auth } from "$lib/stores/auth.svelte";
   import { getTwitchLoginUrl } from "$lib/api";
 
-  // A run montage: a silent loop beside the text and, once published, a
-  // longer cut with sound on YouTube. While one is null the section goes
-  // without it: the still stands in for the loop, and no link shows. The
-  // still is also the loop's poster, so it should become the montage's first
-  // frame once the loop lands.
-  const LOOP_SRC = null as string | null;
-  const FULL_RUN_URL = null as string | null;
-  const STILL_SRC = "/screenshots/ingame.png";
+  // The trailer: a muted loop beside the text, cut before its date card, that
+  // opens the full cut with sound on YouTube. The still is the loop's poster
+  // and its first frame, so playback starts on the image already shown.
+  const LOOP_SRC = "/events/trailer.mp4";
+  const TRAILER_URL = "https://youtu.be/V8ONFNyNgdA";
+  const STILL_SRC = "/events/trailer-poster.webp";
 
   let video: HTMLVideoElement | undefined = $state();
   let reducedMotion = $state(false);
@@ -101,7 +99,15 @@
   </div>
   <figure class="media">
     <div class="frame">
-      {#if LOOP_SRC}
+      <!-- The play/pause button is a sibling, not a child, of the link:
+             interactive content cannot nest in an anchor. -->
+      <a
+        class="watch"
+        href={TRAILER_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Watch the trailer with sound on YouTube (opens in new tab)"
+      >
         <video
           bind:this={video}
           src={LOOP_SRC}
@@ -110,48 +116,29 @@
           loop
           playsinline
           preload={reducedMotion ? "none" : "auto"}
-          aria-label="A SpeedFog run, cut and sped up"
+          aria-hidden="true"
           onplay={() => (paused = false)}
           onpause={() => (paused = true)}
         ></video>
-        <button
-          type="button"
-          class="play-toggle"
-          aria-label={paused ? "Play the video" : "Pause the video"}
-          onclick={toggle}
+        <span class="chip hint" aria-hidden="true"
+          >Watch with sound &nearr;</span
         >
-          <svg viewBox="0 0 16 16" aria-hidden="true">
-            {#if paused}
-              <path d="M5 3l8 5-8 5z" />
-            {:else}
-              <path d="M4 3h3v10H4zM9 3h3v10H9z" />
-            {/if}
-          </svg>
-        </button>
-      {:else}
-        <a href={STILL_SRC} target="_blank">
-          <img
-            src={STILL_SRC}
-            alt="A runner walking up to a fog gate"
-            width="720"
-            height="405"
-          />
-        </a>
-      {/if}
+      </a>
+      <button
+        type="button"
+        class="play-toggle"
+        aria-label={paused ? "Play the video" : "Pause the video"}
+        onclick={toggle}
+      >
+        <svg viewBox="0 0 16 16" aria-hidden="true">
+          {#if paused}
+            <path d="M5 3l8 5-8 5z" />
+          {:else}
+            <path d="M4 3h3v10H4zM9 3h3v10H9z" />
+          {/if}
+        </svg>
+      </button>
     </div>
-    {#if FULL_RUN_URL}
-      <figcaption>
-        <a
-          href={FULL_RUN_URL}
-          class="more-link"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Watch a full run on YouTube (opens in new tab)"
-          >Watch a full run on YouTube <span aria-hidden="true">&nearr;</span
-          ></a
-        >
-      </figcaption>
-    {/if}
   </figure>
 </div>
 
@@ -208,21 +195,8 @@
     flex-wrap: wrap;
     gap: 0.5rem;
   }
-  .more-link {
-    color: var(--color-text-secondary);
-    text-decoration: none;
-    font-size: var(--font-size-sm);
-    transition: color 0.15s ease;
-  }
-  .more-link:hover {
-    color: var(--color-purple);
-  }
   .media {
     margin: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.5rem;
   }
   .frame {
     position: relative;
@@ -233,12 +207,36 @@
     overflow: hidden;
     background: var(--color-bg);
   }
-  .frame video,
-  .frame img {
+  .frame video {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
+  }
+  .watch {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+  }
+  /* Inset, since the frame clips anything drawn outside it. */
+  .watch:focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: -2px;
+  }
+  .hint {
+    position: absolute;
+    left: 0.6rem;
+    bottom: 0.6rem;
+    background: var(--color-surface);
+    opacity: 0.85;
+    transition:
+      opacity 0.15s ease,
+      color 0.15s ease;
+  }
+  .watch:hover .hint,
+  .watch:focus-visible .hint {
+    opacity: 1;
+    color: var(--color-gold);
   }
   .play-toggle {
     position: absolute;

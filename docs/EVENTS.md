@@ -251,12 +251,17 @@ gets neither, having answered both questions by being there.
 
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
-concepts beside a silent looping montage of a run, and a link to a longer cut
-on YouTube. The media are constants at the top of `EventIntro.svelte` rather
-than event config, since they describe SpeedFog and not the event; while unset,
-the section shows a still from a run and no link. The loop plays muted and
-inline, with a play/pause button for every viewer, and starts paused for a
-viewer who prefers reduced motion.
+concepts beside the trailer looping muted, its frame a link to the trailer
+with sound on YouTube, with a chip in the corner saying so. The media are
+constants at the top of `EventIntro.svelte` rather than event config. The loop
+plays muted and inline, with a play/pause button for every viewer, and starts
+paused for a viewer who prefers reduced motion.
+
+The loop is the trailer re-encoded for the web with `ffmpeg` (854x480, 30 fps,
+H.264 CRF 27 in `yuv420p`, no audio, `faststart` so the index leads the file
+and playback starts before it lands, faded out before the date card), a few
+megabytes instead of the hundreds of the source. The source stays out of
+`web/static/`, which ships whole into every build and every deploy archive.
 
 Once the phase
 is `finished`, two compact plates under the band crown the final's and the
