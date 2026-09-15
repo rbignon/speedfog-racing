@@ -7,12 +7,16 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api.helpers import race_response
-from speedfog_racing.auth import get_current_user_optional
+from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
+    Event,
+    EventSignup,
     Participant,
     ParticipantStatus,
     Race,
@@ -40,6 +44,7 @@ from speedfog_racing.schemas import (
     UserResponse,
 )
 from speedfog_racing.services.event_service import (
+    JOINABLE_PHASES,
     UNDECIDED,
     Slot,
     build_timeline,
@@ -123,6 +128,7 @@ async def get_event(
     }
 
     users: dict[UUID, User] = {p.user_id: p.user for race in event.races for p in race.participants}
+    users.update({s.user_id: s.user for s in event.signups})
     histories: dict[UUID, list[list[dict[str, Any]]]] = {}
     for _, race in attached:
         for p in race.participants:
@@ -134,11 +140,6 @@ async def get_event(
             found = signature_weapon(histories.get(user_id, []))
             weapons[user_id] = EventWeaponResponse(id=found[0], name=found[1]) if found else None
         return weapons[user_id]
-
-    ladder = compute_ladder(mode_keys, qualifier)
-    finished_before = await count_finished_before(db, set(users), starts_at)
-    newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-    qualified = compute_qualified(ladder, config, newcomers)
 
     final = config.final_stage()
     advance = (final.advance or 0) if final is not None else 0
@@ -161,6 +162,12 @@ async def get_event(
         last_stage_complete=results[last.key].complete if last is not None else False,
         override=config.phase_override,
     )
+
+    signed_up = [s.user_id for s in event.signups] if phase in JOINABLE_PHASES else []
+    ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
+    finished_before = await count_finished_before(db, set(users), starts_at)
+    newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
+    qualified = compute_qualified(ladder, config, newcomers)
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties
@@ -208,6 +215,7 @@ async def get_event(
         newcomer_threshold=event.newcomer_threshold,
         phase=phase,
         ladder_final=ladder_final,
+        my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
         modes=config.modes,
         seeds_per_mode=config.seeds_per_mode,
         rules=config.rules,
@@ -230,8 +238,9 @@ async def get_event(
         ],
         ladder=EventLadderResponse(
             provisional=not ladder_final,
-            entered=len(ladder),
+            entered=sum(1 for e in ladder if e.modes_scored > 0),
             ranked_count=sum(1 for e in ladder if e.rank is not None),
+            signed_up=sum(1 for e in ladder if e.modes_scored == 0),
             entries=[
                 EventLadderEntryResponse(
                     rank=e.rank,
@@ -301,3 +310,59 @@ async def get_event(
             else None
         ),
     )
+
+
+async def _joinable_event(db: AsyncSession, slug: str) -> Event:
+    """The event behind ``slug``, or 404; 400 once it can no longer be joined."""
+    event = (await db.execute(select(Event).where(Event.slug == slug))).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
+    config = EventConfig.model_validate(event.config)
+    # Whether the last stage is complete only tells playoffs from finished,
+    # neither of which can be joined, so the stage races are not loaded here.
+    phase = compute_phase(
+        now=datetime.now(UTC),
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        first_stage_at=config.stages[0].date if config.stages else None,
+        last_stage_complete=False,
+        override=config.phase_override,
+    )
+    if phase not in JOINABLE_PHASES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The event can no longer be joined",
+        )
+    return event
+
+
+@router.post("/{slug}/signup", status_code=status.HTTP_204_NO_CONTENT)
+async def sign_up(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Say you are in: the ladder lists you before you run. Idempotent."""
+    event = await _joinable_event(db, slug)
+    db.add(EventSignup(event_id=event.id, user_id=user.id))
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Already in, including two clicks racing each other.
+        await db.rollback()
+
+
+@router.delete("/{slug}/signup", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw(
+    slug: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Take your word back. A runner who scored stays on the ladder through their runs."""
+    event = await _joinable_event(db, slug)
+    await db.execute(
+        delete(EventSignup).where(EventSignup.event_id == event.id, EventSignup.user_id == user.id)
+    )
+    await db.commit()

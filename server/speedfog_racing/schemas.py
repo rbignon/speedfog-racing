@@ -1094,8 +1094,11 @@ class EventLadderEntryResponse(BaseModel):
 
 class EventLadderResponse(BaseModel):
     provisional: bool
+    # Runners with at least one scoring run.
     entered: int
     ranked_count: int
+    # Signed-up runners listed without a run; zero once the event can no longer be joined.
+    signed_up: int
     entries: list[EventLadderEntryResponse]
 
 
@@ -1174,6 +1177,7 @@ class EventDetailResponse(BaseModel):
     newcomer_threshold: int
     phase: str
     ladder_final: bool
+    my_signup: bool
     modes: list[EventMode]
     seeds_per_mode: int
     rules: list[str]

@@ -13,6 +13,7 @@ from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     Event,
+    EventSignup,
     Participant,
     ParticipantStatus,
     Race,
@@ -452,3 +453,91 @@ async def test_qualifier_races_stay_in_admin_inflight(test_client, world, async_
         response = await client.get("/api/admin/races", headers=headers)
     assert response.status_code == 200
     assert str(world["std1"].id) in {r["id"] for r in response.json()["races"]}
+
+
+@pytest.mark.asyncio
+async def test_signing_up_lists_the_runner_last_without_a_score(test_client, world, async_session):
+    async with async_session() as db:
+        await _user(db, "cleo")
+        await db.commit()
+    headers = {"Authorization": "Bearer tok-cleo"}
+    async with test_client as client:
+        first = await client.post("/api/events/season-one/signup", headers=headers)
+        assert first.status_code == 204
+        # Twice is still once.
+        second = await client.post("/api/events/season-one/signup", headers=headers)
+        assert second.status_code == 204
+        detail = (await client.get("/api/events/season-one", headers=headers)).json()
+    assert detail["my_signup"] is True
+    ladder = detail["ladder"]
+    assert ladder["entered"] == 2
+    assert ladder["signed_up"] == 1
+    names = [e["user"]["twitch_username"] for e in ladder["entries"]]
+    assert len(names) == 3 and names[-1] == "cleo"
+    last = ladder["entries"][-1]
+    assert last["rank"] is None
+    assert last["total"] is None
+    assert last["modes_scored"] == 0
+    assert last["mode_points"] == {"standard": None, "boss_rush": None}
+    assert last["newcomer"] is True
+
+
+@pytest.mark.asyncio
+async def test_withdrawing_removes_the_row_and_nothing_else(test_client, world, async_session):
+    async with async_session() as db:
+        cleo = await _user(db, "cleo")
+        db.add(EventSignup(event_id=world["event"].id, user_id=cleo.id))
+        db.add(EventSignup(event_id=world["event"].id, user_id=world["ana"].id))
+        await db.commit()
+    cleo_h = {"Authorization": "Bearer tok-cleo"}
+    ana_h = {"Authorization": "Bearer tok-ana"}
+    async with test_client as client:
+        first = await client.delete("/api/events/season-one/signup", headers=cleo_h)
+        assert first.status_code == 204
+        # Nothing left to remove is not an error.
+        second = await client.delete("/api/events/season-one/signup", headers=cleo_h)
+        assert second.status_code == 204
+        third = await client.delete("/api/events/season-one/signup", headers=ana_h)
+        assert third.status_code == 204
+        detail = (await client.get("/api/events/season-one", headers=ana_h)).json()
+    names = [e["user"]["twitch_username"] for e in detail["ladder"]["entries"]]
+    assert "cleo" not in names
+    assert "ana" in names  # her runs keep her on the ladder
+    assert detail["my_signup"] is False
+    assert detail["ladder"]["signed_up"] == 0
+
+
+@pytest.mark.asyncio
+async def test_signing_up_needs_a_signed_in_runner(test_client, world):
+    async with test_client as client:
+        assert (await client.post("/api/events/season-one/signup")).status_code == 401
+        assert (await client.delete("/api/events/season-one/signup")).status_code == 401
+        response = await client.post(
+            "/api/events/no-such-event/signup", headers={"Authorization": "Bearer tok-ana"}
+        )
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_signups_close_with_the_qualifier(test_client, world, async_session):
+    async with async_session() as db:
+        cleo = await _user(db, "cleo")
+        event = await db.get(Event, world["event"].id)
+        assert event is not None
+        db.add(EventSignup(event_id=event.id, user_id=cleo.id))
+        event.config = {**CONFIG, "phase_override": "cut"}
+        await db.commit()
+    cleo_h = {"Authorization": "Bearer tok-cleo"}
+    async with test_client as client:
+        post = await client.post(
+            "/api/events/season-one/signup", headers={"Authorization": "Bearer tok-bob"}
+        )
+        assert post.status_code == 400
+        withdraw = await client.delete("/api/events/season-one/signup", headers=cleo_h)
+        assert withdraw.status_code == 400
+        detail = (await client.get("/api/events/season-one", headers=cleo_h)).json()
+    assert detail["phase"] == "cut"
+    assert "cleo" not in [e["user"]["twitch_username"] for e in detail["ladder"]["entries"]]
+    assert detail["ladder"]["signed_up"] == 0
+    # The row itself stays; it just no longer lists anyone.
+    assert detail["my_signup"] is True
