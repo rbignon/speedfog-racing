@@ -11,6 +11,7 @@ import pytest
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.schemas import EventConfig
 from speedfog_racing.services.event_service import (
+    UNDECIDED,
     Slot,
     StageEntry,
     StageResult,
@@ -294,6 +295,54 @@ def test_ladder_ties_share_rank_and_skip_the_next_rank():
     assert by_user[a].total == by_user[b].total == 200
     assert by_user[a].rank == 1 and by_user[b].rank == 1
     assert by_user[c].rank == 3
+
+
+def test_signups_close_the_ladder_in_signup_order():
+    a, b, c, d = uuid4(), uuid4(), uuid4(), uuid4()
+    standard = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 1_000_000),
+            _participant(b, ParticipantStatus.FINISHED, 1_200_000),
+        ]
+    )
+    boss = _race([_participant(a, ParticipantStatus.FINISHED, 900_000)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), standard),
+            (parse_slot("qualifier:boss_rush:1"), boss),
+        ],
+        signed_up=[d, a, c],
+    )
+    # a signed up too, but scored: listed once, through the run, still ranked.
+    assert [e.user_id for e in ladder] == [a, b, d, c]
+    assert ladder[0].rank == 1
+    tail = ladder[2:]
+    assert all(e.rank is None and e.total is None and e.modes_scored == 0 for e in tail)
+    assert all(e.mode_points == {"standard": None, "boss_rush": None} for e in tail)
+    assert all(e.partial == 0 and e.igt_total == 0 and not e.provisional for e in tail)
+    assert all(e.counted_slots == {} for e in tail)
+
+
+def test_signup_rows_take_no_seed():
+    a, c = uuid4(), uuid4()
+    standard = _race([_participant(a, ParticipantStatus.FINISHED, 1_000_000)])
+    boss = _race([_participant(a, ParticipantStatus.FINISHED, 900_000)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), standard),
+            (parse_slot("qualifier:boss_rush:1"), boss),
+        ],
+        signed_up=[c],
+    )
+    groups = compute_qualified(ladder, _config(), {a: False, c: True})
+    # Semi A takes seeds 1 and 4: the one ranked runner, then nobody.
+    assert groups["semi_a"][0].user_id == a
+    assert groups["semi_a"][1].user_id is None
+    assert groups["semi_a"][1].note == UNDECIDED
+    # A signed-up newcomer without a run does not reach the newcomers' group either.
+    assert all(slot.user_id is None for slot in groups["newcomers"])
 
 
 # --- newcomers --------------------------------------------------------------

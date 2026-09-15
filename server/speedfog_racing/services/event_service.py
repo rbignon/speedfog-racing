@@ -18,7 +18,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.models import Caster, Event, Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import (
+    Caster,
+    Event,
+    EventSignup,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+)
 from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage, as_aware_utc
 from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
@@ -28,6 +36,10 @@ from speedfog_racing.services.daily_points_service import (
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS, WEAPONS
 
 Phase = Literal["upcoming", "qualifier", "cut", "playoffs", "finished"]
+
+# While the phase is one of these the event can still be joined: signups are
+# taken, and the ladder lists the signed-up runners who have not run yet.
+JOINABLE_PHASES: frozenset[Phase] = frozenset({"upcoming", "qualifier"})
 
 
 # --- slots ------------------------------------------------------------------
@@ -142,8 +154,17 @@ class LadderEntry:
     rank: int | None = None
 
 
-def compute_ladder(modes: list[str], qualifier_races: list[tuple[Slot, Race]]) -> list[LadderEntry]:
-    """Best seed per mode, summed over modes; ranked entries first, then unranked."""
+def compute_ladder(
+    modes: list[str],
+    qualifier_races: list[tuple[Slot, Race]],
+    signed_up: Iterable[UUID] = (),
+) -> list[LadderEntry]:
+    """Best seed per mode, summed over modes; ranked entries first, then unranked.
+
+    ``signed_up`` are the runners who said they are in, in signup order: the
+    ones without a scoring run close the list, without rank, score or counted
+    mode. A signed-up runner who scored is already listed through their run.
+    """
     # user -> mode -> (points, igt_ms, provisional, slot)
     best: dict[UUID, dict[str, tuple[int, int, bool, str]]] = {}
     for slot, race in qualifier_races:
@@ -196,7 +217,25 @@ def compute_ladder(modes: list[str], qualifier_races: list[tuple[Slot, Race]]) -
     unranked = sorted(
         (e for e in entries if e.total is None), key=lambda e: (-e.modes_scored, -e.partial)
     )
-    return ranked_entries + unranked
+    listed = {e.user_id for e in entries}
+    signups: list[LadderEntry] = []
+    for user_id in signed_up:
+        if user_id in listed:
+            continue
+        listed.add(user_id)
+        signups.append(
+            LadderEntry(
+                user_id=user_id,
+                mode_points={m: None for m in modes},
+                counted_slots={},
+                modes_scored=0,
+                total=None,
+                partial=0,
+                igt_total=0,
+                provisional=False,
+            )
+        )
+    return ranked_entries + unranked + signups
 
 
 # --- newcomers --------------------------------------------------------------
@@ -455,6 +494,7 @@ async def load_event(db: AsyncSession, slug: str) -> Event | None:
             selectinload(Event.races).selectinload(Race.casters).selectinload(Caster.user),
             selectinload(Event.races).selectinload(Race.organizer),
             selectinload(Event.races).selectinload(Race.seed),
+            selectinload(Event.signups).selectinload(EventSignup.user),
         )
     )
     return (await db.execute(stmt)).scalar_one_or_none()
