@@ -239,6 +239,34 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     races: Mapped[list["Race"]] = relationship(back_populates="event")
+    signups: Mapped[list["EventSignup"]] = relationship(
+        back_populates="event", order_by="EventSignup.created_at"
+    )
+
+
+class EventSignup(Base):
+    """A runner's word that they are in for an event, given before any run.
+
+    A signal, not a gate: running a qualifier seed enters a runner anyway.
+    While the event can still be joined, the ladder lists a signed-up runner
+    with no scoring run after everyone else, in signup order.
+    """
+
+    __tablename__ = "event_signups"
+    __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_signups_event_user"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    event: Mapped["Event"] = relationship(back_populates="signups")
+    user: Mapped["User"] = relationship()
 
 
 class Race(Base):

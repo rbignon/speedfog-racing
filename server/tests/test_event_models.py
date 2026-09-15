@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import Event, Race, User, UserRole
+from speedfog_racing.models import Event, EventSignup, Race, User, UserRole
 
 
 @pytest.fixture
@@ -65,3 +65,15 @@ async def test_unslotted_races_do_not_collide(session_factory):
         await db.commit()
         await db.refresh(event, attribute_names=["races"])
         assert len(event.races) == 2
+
+
+async def test_a_runner_signs_up_for_an_event_once(session_factory):
+    async with session_factory() as db:
+        user = User(twitch_id="u1", twitch_username="ana", role=UserRole.USER)
+        event = _event()
+        db.add_all([user, event])
+        await db.flush()
+        db.add(EventSignup(event_id=event.id, user_id=user.id))
+        db.add(EventSignup(event_id=event.id, user_id=user.id))
+        with pytest.raises(IntegrityError):
+            await db.commit()
