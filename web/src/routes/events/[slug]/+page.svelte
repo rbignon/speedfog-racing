@@ -1,7 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { auth } from "$lib/stores/auth.svelte";
-  import { fetchEvent, getTwitchLoginUrl, type EventDetail } from "$lib/api";
+  import {
+    fetchEvent,
+    getTwitchLoginUrl,
+    signUpForEvent,
+    withdrawFromEvent,
+    type EventDetail,
+  } from "$lib/api";
   import {
     blockOrder,
     champions,
@@ -40,6 +46,13 @@
   let detail: EventDetail = $derived(data.detail);
 
   let now = $state(new Date());
+
+  // The event takes signups while upcoming or in its qualifier; the row a
+  // signup adds to the ladder leaves with the cut, and so does the button.
+  let joinable = $derived(
+    detail.phase === "upcoming" || detail.phase === "qualifier",
+  );
+  let signupBusy = $state(false);
 
   const fmt = (iso: string) => formatEventDate(iso);
   // Carries the timezone, for the instants still ahead of the viewer. What
@@ -92,6 +105,19 @@
       /* keep the last good state; the next tick retries */
     }
     now = new Date();
+  }
+
+  async function setSignup(join: boolean) {
+    signupBusy = true;
+    try {
+      if (join) await signUpForEvent(detail.slug);
+      else await withdrawFromEvent(detail.slug);
+      await refresh();
+    } catch {
+      /* the step stays as it was; the next click retries */
+    } finally {
+      signupBusy = false;
+    }
   }
 
   onMount(() => {
@@ -247,6 +273,39 @@
                     Signed in as
                     <UserLink user={auth.user} showAvatar />
                   </p>
+                  {#if joinable}
+                    {#if detail.my_signup}
+                      <p class="signed-in">
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          stroke-width="3"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          aria-hidden="true"
+                          ><polyline points="20 6 9 17 4 12" /></svg
+                        >
+                        You're in
+                        <button
+                          type="button"
+                          class="withdraw"
+                          disabled={signupBusy}
+                          onclick={() => setSignup(false)}>Withdraw</button
+                        >
+                      </p>
+                    {:else}
+                      <button
+                        type="button"
+                        class="btn btn-outline"
+                        disabled={signupBusy}
+                        onclick={() => setSignup(true)}>Count me in</button
+                      >
+                      <p>Puts you on the ladder before you run.</p>
+                    {/if}
+                  {/if}
                 {:else}
                   <a
                     href={getTwitchLoginUrl()}
@@ -359,6 +418,9 @@
               ladder={detail.ladder}
               modes={detail.modes}
               viewerId={auth.user?.id ?? null}
+              emptyLabel={detail.phase === "upcoming"
+                ? "Nobody in yet."
+                : "No runs yet."}
             />
           </div>
         </div>
@@ -733,6 +795,27 @@
   }
   .step .signed-in :global(.user-link) {
     color: var(--color-text);
+  }
+  /* Taking the word back is a quiet action beside the confirmation, not a
+   * second button competing with it. */
+  .step .withdraw {
+    background: none;
+    border: none;
+    padding: 0;
+    margin-left: 0.35rem;
+    font-family: var(--font-family);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: color var(--transition);
+  }
+  .step .withdraw:hover {
+    color: var(--color-text);
+  }
+  .step .withdraw:disabled,
+  .step .btn:disabled {
+    opacity: 0.6;
+    cursor: default;
   }
   .mode-group h3 {
     margin: 0 0 0.6rem;

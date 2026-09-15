@@ -6,10 +6,13 @@
     ladder,
     modes,
     viewerId,
+    emptyLabel = "No runs yet.",
   }: {
     ladder: EventLadder;
     modes: EventMode[];
     viewerId: string | null;
+    /** What an empty ladder says; the page words it by phase. */
+    emptyLabel?: string;
   } = $props();
 
   let search = $state("");
@@ -63,7 +66,7 @@
     {#if rows.length === 0}
       <p class="empty">
         {ladder.entries.length === 0
-          ? "No runs yet."
+          ? emptyLabel
           : "No runner matches your filters."}
       </p>
     {:else}

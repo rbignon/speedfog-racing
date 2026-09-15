@@ -36,6 +36,7 @@ function ladderWith(entries: EventLadderEntry[]): EventLadderData {
     provisional: false,
     entered: entries.length,
     ranked_count: entries.length,
+    signed_up: 0,
     entries,
   };
 }

@@ -467,6 +467,8 @@ export interface EventLadder {
   provisional: boolean;
   entered: number;
   ranked_count: number;
+  /** Signed-up runners listed without a run; zero once the event can no longer be joined. */
+  signed_up: number;
   entries: EventLadderEntry[];
 }
 
@@ -540,6 +542,7 @@ export interface EventDetail {
   newcomer_threshold: number;
   phase: EventPhase;
   ladder_final: boolean;
+  my_signup: boolean;
   modes: EventMode[];
   seeds_per_mode: number;
   rules: string[];
@@ -2342,6 +2345,34 @@ export async function fetchEvent(
     },
   );
   return handleResponse<EventDetail>(response);
+}
+
+/** Say you are in for an event: the ladder lists you before you run. */
+export async function signUpForEvent(slug: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/events/${encodeURIComponent(slug)}/signup`,
+    { method: "POST", headers: getAuthHeaders() },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(formatApiErrorDetail(error.detail));
+  }
+}
+
+/** Take your word back; a runner who scored stays on the ladder through their runs. */
+export async function withdrawFromEvent(slug: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/events/${encodeURIComponent(slug)}/signup`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(formatApiErrorDetail(error.detail));
+  }
 }
 
 export async function fetchAdminEvents(): Promise<AdminEvent[]> {
