@@ -9,9 +9,10 @@ first instance is SpeedFog x Ignite Season One (qualifier 23 to 30 September
 
 `events` holds the dates and a JSON `config`; races attach through
 `races.event_id` and `races.event_slot` (`qualifier:<mode>:<n>` or
-`<stage>:<n>`, unique per event). Nothing else is stored: the ladder, the
-qualified groups, the playoff results and the phase are computed on each
-request by `services/event_service.py`.
+`<stage>:<n>`, unique per event). `event_signups` holds who said they are in
+(one row per event and user, kept in signup order). Nothing else is stored:
+the ladder, the qualified groups, the playoff results and the phase are
+computed on each request by `services/event_service.py`.
 
 ### Config
 
@@ -71,6 +72,15 @@ viewer's timezone, so keep dates to the day.
 `stage:<stage key>` per configured stage, in stage order. `announce` uses
 `announced_at` when the config sets it, otherwise `starts_at` minus 7 days.
 
+### Signups
+
+While the event can still be joined (`upcoming` and `qualifier`), a signed-in
+runner can say they are in: `POST /api/events/{slug}/signup` adds the row
+(idempotent), `DELETE` removes it, both 204, 400 in any later phase. It is a
+signal, not a gate: running a qualifier seed enters a runner anyway, and
+withdrawing after a run changes nothing visible, since the runs keep them on
+the ladder. `my_signup` on the detail tells the viewer's own state.
+
 ## Phases
 
 | phase       | when                                                 |
@@ -112,6 +122,12 @@ holds a rank-1 runner). A runner with no scoring qualifier run (fewer than two
 zone entries on every attached seed) never enters the ladder at all: the
 ladder's `entered` count is the number of runners with at least one scoring
 run, not the number who joined a qualifier race.
+
+While the event can still be joined, the ladder closes with the signed-up
+runners who have no scoring run, in signup order, without rank, score or
+counted mode (`signed_up` counts them, `entered` does not); from the cut on
+they leave it. Seeding reads only ranked entries, so a signup never resolves
+a seed or a newcomers' slot.
 
 Qualified groups map each semi's `seeds` to ladder positions; the newcomers'
 group takes the first ranked newcomers positioned after the last seed. Playoff
@@ -232,6 +248,13 @@ they are signed out, and once they are signed in, a verdigris line with their
 name (and their avatar when they have one) instead, so the step reads as done
 rather than repeating the instruction.
 
+Under that line, while the event can still be joined, a `Count me in` button
+puts the viewer on the ladder before they run, and once they are in, a check
+line `You're in` with a quiet `Withdraw` beside it; the page reloads the
+event right after either, so the ladder row appears or goes without a page
+reload. An empty ladder reads `Nobody in yet.` while the event is upcoming
+and `No runs yet.` from the qualifier on.
+
 Practice has a block of its own before the seeds, because the qualifier does
 not forgive a first contact with the game: one card per mode, linking through
 `soloPoolPath` to `training_<mode key>`. The solo page keeps its own default
@@ -284,6 +307,8 @@ the ones the tool hardcodes. It writes fabricated participations onto real
 user rows and consumes an available seed for each of the eighteen races it
 creates, so it refuses a database that is not on this machine.
 `--viewer <twitch username>` gives that runner a seed of every card state.
+The states before the cut also sign up the viewer and a dozen runners, so the
+ladder's signup rows and the upcoming card's avatar row show.
 
 ## Open Graph
 
@@ -294,12 +319,12 @@ whose tags point at `GET /api/og/event/{slug}.png`.
 The card follows the phase, on the same computation as the page
 (`summarize_event` in `services/og_image.py` reuses `event_service`):
 
-| phase             | body                                                         |
-| ----------------- | ------------------------------------------------------------ |
-| `upcoming`        | the day the qualifier opens                                  |
-| `qualifier`       | every entrant as one row of avatars, then the closing day    |
-| `cut`, `playoffs` | the current stage's line-up by name, then the stage and date |
-| `finished`        | the winner of the final                                      |
+| phase             | body                                                                            |
+| ----------------- | ------------------------------------------------------------------------------- |
+| `upcoming`        | the day the qualifier opens; from ten players in, their row of avatars under it |
+| `qualifier`       | every entrant as one row of avatars, then the closing day                       |
+| `cut`, `playoffs` | the current stage's line-up by name, then the stage and date                    |
+| `finished`        | the winner of the final                                                         |
 
 The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
@@ -307,6 +332,13 @@ Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
 a seed number for a semi, the source stage for the final. A finished event
 whose final never happened falls back to the entrant row.
+
+Signups count as entrants while the event can still be joined: after the
+scored runners on the qualifier card, in signup order, and on the upcoming
+card once ten players are in (`_MIN_UPCOMING_ENTRANTS`). Below that the
+upcoming card carries neither the row nor the footer's player count, so a
+young event advertises its opening day rather than how few have committed,
+and its cache key does not move with the signups.
 
 Stage dates show the day in UTC, no time: an evening slot never lands on a
 different day for a European or American viewer, so the card needs no timezone.
@@ -322,6 +354,8 @@ fetched is left out rather than replaced by a placeholder.
 ## API
 
 - `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`).
+- `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
+  the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's
   only other call. Public, with `played_by_user` filled in for a signed-in
   viewer.

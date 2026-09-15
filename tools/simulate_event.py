@@ -59,6 +59,7 @@ from speedfog_racing.database import async_session_maker  # noqa: E402
 from speedfog_racing.models import (  # noqa: E402
     Caster,
     Event,
+    EventSignup,
     Participant,
     ParticipantStatus,
     Race,
@@ -745,6 +746,7 @@ async def simulate(stage: str, slug: str, viewer_name: str | None, force: bool) 
         ids = [r.id for r in managed]
         await db.execute(delete(Participant).where(Participant.race_id.in_(ids)))
         await db.execute(delete(Caster).where(Caster.race_id.in_(ids)))
+        await db.execute(delete(EventSignup).where(EventSignup.event_id == event.id))
         # Any other race holding one of the event's slots would collide with the
         # unique constraint on (event_id, event_slot) once we claim it.
         await db.execute(
@@ -797,6 +799,20 @@ async def simulate(stage: str, slug: str, viewer_name: str | None, force: bool) 
                 race.seeds_released_at = T(STARTS)
                 race.finished_at = T(CUT) if vnow >= CUT else None
                 add_participants(race, qual_runs[slot], slot)
+
+        # Signups: the viewer and the first dozen runners said they are in,
+        # spaced an hour apart from the announcement. Whoever already ran shows
+        # through their runs; the rest close the ladder, and the share card
+        # crosses its threshold. Signups stop mattering at the cut.
+        if vnow < CUT:
+            for i, runner in enumerate(runners[:13]):
+                db.add(
+                    EventSignup(
+                        event_id=event.id,
+                        user_id=runner.user.id,
+                        created_at=T(ANNOUNCE) + timedelta(hours=i),
+                    )
+                )
 
         # Stage races: created (and public) a couple of days before the evening.
         for key, (date, _pools) in STAGES.items():
