@@ -11,6 +11,7 @@
   } from "$lib/api";
   import { joinableStore } from "$lib/stores/joinable.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
   import NavUserSearch from "$lib/components/NavUserSearch.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import AnnouncementBanner from "$lib/components/AnnouncementBanner.svelte";
@@ -35,6 +36,7 @@
     page.url.pathname.startsWith("/races") ||
       page.url.pathname.startsWith("/race/"),
   );
+  let eventActive = $derived(page.url.pathname.startsWith("/events/"));
 
   let userMenuOpen = $state(false);
   let userMenuEl: HTMLDivElement | undefined = $state();
@@ -67,6 +69,12 @@
     if (!isOverlay) appUpdate.start();
   });
 
+  // The event summary carries the viewer's own signup, so it follows the login.
+  $effect(() => {
+    void auth.isLoggedIn;
+    featuredEvent.refresh();
+  });
+
   $effect(() => {
     // Re-run when the joinable-races cache is invalidated
     void joinableStore.refreshKey;
@@ -93,6 +101,24 @@
 </script>
 
 <svelte:window onclick={handleWindowClick} onkeydown={handleKeydown} />
+
+<!-- The event on the bill, for every viewer; a red dot while a playoff race runs. -->
+{#snippet eventLink()}
+  {#if featuredEvent.current}
+    <a
+      href="/events/{featuredEvent.current.slug}"
+      class="nav-link"
+      class:active={eventActive}
+      aria-current={eventActive ? "page" : undefined}
+    >
+      Event
+      {#if featuredEvent.current.live}
+        <span class="nav-dot nav-dot-live" aria-label="A playoff race is live"
+        ></span>
+      {/if}
+    </a>
+  {/if}
+{/snippet}
 
 {#if isOverlay}
   {@render children()}
@@ -152,6 +178,7 @@
                 aria-current={adminActive ? "page" : undefined}>Admin</a
               >
             {/if}
+            {@render eventLink()}
             <a
               href="/training"
               class="nav-link"
@@ -235,6 +262,7 @@
               {/if}
             </div>
           {:else}
+            {@render eventLink()}
             <a
               href={getTwitchLoginUrl()}
               class="btn btn-twitch"
@@ -444,6 +472,10 @@
     height: 7px;
     border-radius: 50%;
     background: var(--color-success);
+  }
+
+  .nav-dot-live {
+    background: var(--color-danger);
   }
 
   .user-menu {

@@ -326,6 +326,49 @@ creates, so it refuses a database that is not on this machine.
 The states before the cut also sign up the viewer and a dozen runners, so the
 ladder's signup rows and the upcoming card's avatar row show.
 
+## Home page and navbar
+
+An event is on the bill from its announcement (the timeline's `announce`
+stop) until `FEATURED_TAIL` (seven days) after `ends_at`, whatever the phase.
+While it is, `GET /api/events` lists it as a summary that the home page, the
+dashboard and the navbar read through the `featuredEvent` store, which
+features the first entry: the layout refreshes it whenever the signed-in
+state changes, the two pages on mount. When two events overlap, a finished
+season (kept for its champion) yields the head of the list to one still to
+come, so a season announced right after the last final is what the band
+shows; otherwise the earliest season leads.
+
+The summary is what the detail computes without the ladder: the phase, the
+`players` count under the Open Graph card's rule (everyone who joined an
+event race, plus the signups while the event can still be joined, and zero
+while an upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next
+stage, the live playoff race with the slot it fills (`live`), the champion
+once the final is complete, and `my_signup`. An event whose stored config no
+longer validates is left out rather than breaking the home page.
+
+`EventBand` sits between the hero and the Daily Seed on the home page and
+above the Daily Seed on the dashboard: the event page's lockup, a phase
+signal, one line of state and the buttons, which `eventBand` in
+`lib/events.ts` decides from the phase:
+
+| phase       | line                                        | buttons                                                                      |
+| ----------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
+| `upcoming`  | the opening, the count once it shows        | `Take part`, to the event page                                               |
+| `qualifier` | the closing, runners in                     | `Take part`, to the event page                                               |
+| `cut`       | the first evening                           | `Event page`                                                                 |
+| `playoffs`  | live: stage and race index; else next stage | live: `Watch on Twitch` or `Race page`, then `Event page`; else `Event page` |
+| `finished`  | `Champion`, then the champion's link        | `Event page`                                                                 |
+
+Signing up stays on the event page: a viewer already in reads `You're in`
+next to the `Event page` button. The watch link follows the live strip's
+rule (a live caster's own stream, else the first caster's channel). The
+instants on the line are ahead of the viewer, so they carry the timezone
+like the event page's.
+
+The navbar shows an `Event` link to every viewer while an event is on the
+bill, before Solo when signed in and before the login button otherwise,
+underlined on event pages and carrying a red dot while a playoff race runs.
+
 ## Open Graph
 
 Sharing `/events/<slug>` unfurls a card rendered by the server, like race and
@@ -369,6 +412,8 @@ fetched is left out rather than replaced by a placeholder.
 
 ## API
 
+- `GET /api/events`: the events on the bill (`EventSummaryResponse`, see Home
+  page and navbar).
 - `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`).
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).

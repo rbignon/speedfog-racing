@@ -4,6 +4,7 @@ import {
   blockOrder,
   champions,
   encodeSignupIntent,
+  eventBand,
   eventFacts,
   fillSlots,
   formatEventDate,
@@ -18,7 +19,14 @@ import {
   stripStagePrefix,
   timeRemaining,
 } from "$lib/events";
-import type { EventDetail, EventPhase, EventStage, Race, User } from "$lib/api";
+import type {
+  EventDetail,
+  EventPhase,
+  EventStage,
+  EventSummary,
+  Race,
+  User,
+} from "$lib/api";
 
 const phases: EventPhase[] = [
   "upcoming",
@@ -623,5 +631,182 @@ describe("signupIntentStands", () => {
     ]) {
       expect(signupIntentStands(raw, "season-one", now)).toBe(false);
     }
+  });
+});
+
+describe("eventBand", () => {
+  const fmt = (iso: string) => `@${iso}`;
+  const eventPage = { href: "/events/season-one", label: "Event page" };
+  function summaryWith(partial: Partial<EventSummary>): EventSummary {
+    return {
+      slug: "season-one",
+      starts_at: "2026-09-23T08:00:00Z",
+      qualifier_ends_at: "2026-09-30T08:00:00Z",
+      phase: "upcoming",
+      my_signup: false,
+      players: 0,
+      next_stage: null,
+      live: null,
+      champion: null,
+      ...partial,
+    } as EventSummary;
+  }
+
+  it("advertises the opening while upcoming, with the count only once there is one", () => {
+    const young = eventBand(summaryWith({}), fmt);
+    expect(young.signal.text).toBe("Upcoming");
+    expect(young.line).toBe("Qualifier opens @2026-09-23T08:00:00Z");
+    expect(young.actions).toEqual([
+      { href: "/events/season-one", label: "Take part", kind: "primary" },
+    ]);
+    expect(eventBand(summaryWith({ players: 14 }), fmt).line).toBe(
+      "Qualifier opens @2026-09-23T08:00:00Z · 14 in",
+    );
+  });
+
+  it("names the deadline and counts the runners during the qualifier", () => {
+    const open = eventBand(
+      summaryWith({ phase: "qualifier", players: 41 }),
+      fmt,
+    );
+    expect(open.signal.text).toBe("Qualifier open");
+    expect(open.line).toBe("Closes @2026-09-30T08:00:00Z · 41 runners in");
+    expect(open.actions[0].label).toBe("Take part");
+    expect(
+      eventBand(summaryWith({ phase: "qualifier", players: 1 }), fmt).line,
+    ).toBe("Closes @2026-09-30T08:00:00Z · 1 runner in");
+    // Opening morning: the deadline is the whole message, not "0 runners in".
+    expect(
+      eventBand(summaryWith({ phase: "qualifier", players: 0 }), fmt).line,
+    ).toBe("Closes @2026-09-30T08:00:00Z");
+  });
+
+  it("reports the viewer as in only while the event can still be joined", () => {
+    for (const phase of ["upcoming", "qualifier"] as const) {
+      expect(
+        eventBand(summaryWith({ phase, my_signup: true }), fmt).signedUp,
+        phase,
+      ).toBe(true);
+    }
+    for (const phase of ["cut", "playoffs", "finished"] as const) {
+      expect(
+        eventBand(summaryWith({ phase, my_signup: true }), fmt).signedUp,
+        phase,
+      ).toBe(false);
+    }
+    expect(eventBand(summaryWith({ phase: "qualifier" }), fmt).signedUp).toBe(
+      false,
+    );
+  });
+
+  it("sends a signed-up viewer to the event page instead of asking again", () => {
+    const state = eventBand(
+      summaryWith({ phase: "qualifier", my_signup: true, players: 3 }),
+      fmt,
+    );
+    expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
+  });
+
+  it("names the first evening after the cut", () => {
+    const state = eventBand(
+      summaryWith({
+        phase: "cut",
+        next_stage: {
+          key: "semi_a",
+          label: "Semi A",
+          date: "2026-10-04T19:00:00Z",
+        },
+      }),
+      fmt,
+    );
+    expect(state.signal.text).toBe("Qualifier closed");
+    expect(state.line).toBe("Semi A on @2026-10-04T19:00:00Z");
+    expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
+  });
+
+  it("points at the live race, on Twitch when a caster streams it", () => {
+    const casters = [
+      { is_live: false, stream_url: null, user: { twitch_username: "quiet" } },
+      {
+        is_live: true,
+        stream_url: "https://twitch.tv/live-one",
+        user: { twitch_username: "live-one" },
+      },
+    ] as Race["casters"];
+    const live = {
+      race: { id: "r7", casters } as Race,
+      stage_label: "Semi A",
+      index: 2,
+      races_expected: 3,
+    };
+    const state = eventBand(summaryWith({ phase: "playoffs", live }), fmt);
+    expect(state.signal.text).toBe("Live now");
+    expect(state.line).toBe("Semi A · Race 2 of 3");
+    expect(state.actions).toEqual([
+      {
+        href: "https://twitch.tv/live-one",
+        label: "Watch on Twitch",
+        kind: "twitch",
+      },
+      { ...eventPage, kind: "outline" },
+    ]);
+    // Nobody live: the first caster's channel, the usual guess.
+    const idleCasters = eventBand(
+      summaryWith({
+        phase: "playoffs",
+        live: { ...live, race: { id: "r7", casters: [casters[0]] } as Race },
+      }),
+      fmt,
+    );
+    expect(idleCasters.actions[0].href).toBe("https://twitch.tv/quiet");
+  });
+
+  it("falls back to the race page when nobody casts the live race", () => {
+    const state = eventBand(
+      summaryWith({
+        phase: "playoffs",
+        live: {
+          race: { id: "r7", casters: [] } as unknown as Race,
+          stage_label: "Semi A",
+          index: 1,
+          races_expected: 3,
+        },
+      }),
+      fmt,
+    );
+    expect(state.actions).toEqual([
+      { href: "/race/r7", label: "Race page", kind: "primary" },
+      { ...eventPage, kind: "outline" },
+    ]);
+  });
+
+  it("announces the next evening between playoff races", () => {
+    const state = eventBand(
+      summaryWith({
+        phase: "playoffs",
+        next_stage: {
+          key: "final",
+          label: "Final",
+          date: "2026-10-25T19:00:00Z",
+        },
+      }),
+      fmt,
+    );
+    expect(state.signal.text).toBe("Playoffs");
+    expect(state.line).toBe("Next: Final · @2026-10-25T19:00:00Z");
+    expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
+    expect(eventBand(summaryWith({ phase: "playoffs" }), fmt).line).toBeNull();
+  });
+
+  it("closes on the champion, and on nothing when the final never happened", () => {
+    const champion = { twitch_username: "ana" } as User;
+    const crowned = eventBand(
+      summaryWith({ phase: "finished", champion }),
+      fmt,
+    );
+    expect(crowned.signal.text).toBe("Finished");
+    expect(crowned.line).toBe("Champion");
+    expect(crowned.actions).toEqual([{ ...eventPage, kind: "primary" }]);
+    expect(eventBand(summaryWith({ phase: "finished" }), fmt).line).toBeNull();
   });
 });

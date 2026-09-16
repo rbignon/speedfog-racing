@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,6 +27,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    Seed,
 )
 from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage, as_aware_utc
 from speedfog_racing.services.daily_points_service import (
@@ -40,6 +42,14 @@ Phase = Literal["upcoming", "qualifier", "cut", "playoffs", "finished"]
 # While the phase is one of these the event can still be joined: signups are
 # taken, and the ladder lists the signed-up runners who have not run yet.
 JOINABLE_PHASES: frozenset[Phase] = frozenset({"upcoming", "qualifier"})
+
+# An upcoming event shows who is in only from this many players: below it, the
+# opening day is the whole message rather than how few have committed yet.
+MIN_UPCOMING_PLAYERS = 10
+
+# An event stays on the bill (home page band, navbar link) this long after its
+# end, crowning its champion.
+FEATURED_TAIL = timedelta(days=7)
 
 
 # --- slots ------------------------------------------------------------------
@@ -492,22 +502,48 @@ def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
 # --- loaders ----------------------------------------------------------------
 
 
+# The seed graphs stay behind: nothing an event endpoint renders reads them,
+# and the listing is loaded by every home page visitor.
+_EVENT_LOAD_OPTIONS = (
+    selectinload(Event.races).selectinload(Race.participants).selectinload(Participant.user),
+    selectinload(Event.races).selectinload(Race.casters).selectinload(Caster.user),
+    selectinload(Event.races).selectinload(Race.organizer),
+    selectinload(Event.races).selectinload(Race.seed).defer(Seed.graph_json),
+    selectinload(Event.signups).selectinload(EventSignup.user),
+)
+
+
 async def load_event(db: AsyncSession, slug: str) -> Event | None:
     """The event and every attached race with what ``race_response`` needs."""
+    stmt = select(Event).where(Event.slug == slug).options(*_EVENT_LOAD_OPTIONS)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
+async def load_featured_events(db: AsyncSession, now: datetime) -> list[Event]:
+    """The events on the bill at ``now``, earliest season first, loaded like ``load_event``.
+
+    On the bill means from the announcement (the timeline's first stop) until
+    ``FEATURED_TAIL`` after the end. An event whose stored config no longer
+    validates is left out: the home page must not break on a document the
+    admin tab is repairing. The listing endpoint reorders by phase, which
+    needs the attached races.
+    """
     stmt = (
         select(Event)
-        .where(Event.slug == slug)
-        .options(
-            selectinload(Event.races)
-            .selectinload(Race.participants)
-            .selectinload(Participant.user),
-            selectinload(Event.races).selectinload(Race.casters).selectinload(Caster.user),
-            selectinload(Event.races).selectinload(Race.organizer),
-            selectinload(Event.races).selectinload(Race.seed),
-            selectinload(Event.signups).selectinload(EventSignup.user),
-        )
+        .where(Event.ends_at > now - FEATURED_TAIL)
+        .order_by(Event.starts_at)
+        .options(*_EVENT_LOAD_OPTIONS)
     )
-    return (await db.execute(stmt)).scalar_one_or_none()
+    events = (await db.execute(stmt)).scalars().all()
+    featured: list[Event] = []
+    for event in events:
+        try:
+            config = EventConfig.model_validate(event.config)
+        except ValidationError:
+            continue
+        if announce_date(event, config) <= now:
+            featured.append(event)
+    return featured
 
 
 async def count_finished_before(

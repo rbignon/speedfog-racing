@@ -23,6 +23,7 @@ from speedfog_racing.models import Event, ParticipantStatus, Race, RaceStatus, U
 from speedfog_racing.schemas import EVENT_PHASES, EventConfig
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
+    MIN_UPCOMING_PLAYERS,
     UNDECIDED,
     Slot,
     compute_ladder,
@@ -347,9 +348,6 @@ assert EVENT_ACCENT_COLOR.keys() == EVENT_STATUS_LABEL.keys() == set(EVENT_PHASE
 )
 
 _MAX_ENTRANTS = 14
-# An upcoming card shows who is in only from this many players: below it, the
-# opening day is the whole message rather than how few have committed yet.
-_MIN_UPCOMING_ENTRANTS = 10
 _MAX_FIELD_SEATS = 8
 _MAX_EVENT_NAME = 40
 _MAX_PARTNER_NAME = 20
@@ -531,7 +529,7 @@ def summarize_event(
     entrants = ordered[:_MAX_ENTRANTS]
     overflow_count = max(0, len(ordered) - _MAX_ENTRANTS)
     player_count = len(users)
-    if phase == "upcoming" and player_count < _MIN_UPCOMING_ENTRANTS:
+    if phase == "upcoming" and player_count < MIN_UPCOMING_PLAYERS:
         entrants, overflow_count, player_count = [], 0, 0
 
     winner = None

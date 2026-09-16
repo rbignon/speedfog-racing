@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.services.event_service import load_featured_events
 
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 CONFIG = {
@@ -68,6 +69,39 @@ CONFIG = {
     "announced_at": "2026-09-16T18:00:00Z",
     "phase_override": "qualifier",
 }
+
+
+def _season(base: datetime) -> tuple[datetime, datetime, datetime, dict[str, object]]:
+    """A season opening at ``base``: announced a week before, one qualifier week,
+    four Sunday-like stages from day 11 to day 32, over on day 34. No phase
+    override, so the phase follows the wall clock."""
+
+    def iso(moment: datetime) -> str:
+        return moment.isoformat().replace("+00:00", "Z")
+
+    stages = [
+        {**stage, "date": iso(base + timedelta(days=11 + 7 * i))}
+        for i, stage in enumerate(CONFIG["stages"])
+    ]
+    config = {
+        **CONFIG,
+        "stages": stages,
+        "announced_at": iso(base - timedelta(days=7)),
+        "phase_override": None,
+    }
+    return base, base + timedelta(days=7), base + timedelta(days=34), config
+
+
+async def _season_event(db: AsyncSession, slug: str, base: datetime) -> Event:
+    starts_at, qualifier_ends_at, ends_at, config = _season(base)
+    return await _event(
+        db,
+        slug,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        config=config,
+    )
 
 
 def _expected_next_stage_key() -> str | None:
@@ -131,16 +165,24 @@ async def _seed(db: AsyncSession, pool: str, number: str) -> Seed:
     return seed
 
 
-async def _event(db: AsyncSession, slug: str = "season-one") -> Event:
+async def _event(
+    db: AsyncSession,
+    slug: str = "season-one",
+    *,
+    starts_at: datetime = T0,
+    qualifier_ends_at: datetime | None = None,
+    ends_at: datetime = datetime(2026, 10, 26, tzinfo=UTC),
+    config: dict[str, object] = CONFIG,
+) -> Event:
     event = Event(
         slug=slug,
         name="Season One",
         partner_name="Ignite",
-        starts_at=T0,
-        qualifier_ends_at=T0 + timedelta(days=7),
-        ends_at=datetime(2026, 10, 26, tzinfo=UTC),
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at or starts_at + timedelta(days=7),
+        ends_at=ends_at,
         newcomer_threshold=5,
-        config=CONFIG,
+        config=config,
     )
     db.add(event)
     await db.flush()
@@ -576,3 +618,199 @@ async def test_newcomer_cut_is_the_announcement(test_client, world, async_sessio
     entries = {e["user"]["twitch_username"]: e for e in data["ladder"]["entries"]}
     assert entries["dan"]["newcomer"] is True
     assert entries["eve"]["newcomer"] is False
+
+
+# --- listing ----------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_listing_runs_from_the_announcement_to_a_week_after_the_end(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        # Announced yesterday, opens in six days: on the bill.
+        await _season_event(db, "soon", now + timedelta(days=6))
+        # Announced tomorrow: not yet.
+        await _season_event(db, "later", now + timedelta(days=8))
+        # Over four days ago: still on the bill for a week.
+        await _season_event(db, "just-over", now - timedelta(days=38))
+        # Over eleven days ago: gone.
+        await _season_event(db, "long-over", now - timedelta(days=45))
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/events")
+    assert response.status_code == 200
+    data = response.json()
+    # A finished season yields the bill to one still to come.
+    assert [e["slug"] for e in data] == ["soon", "just-over"]
+    by_slug = {e["slug"]: e for e in data}
+    assert by_slug["soon"]["phase"] == "upcoming"
+    assert by_slug["just-over"]["phase"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_listing_summary_during_the_qualifier(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        cid = await _user(db, "cid")
+        event = await _season_event(db, "season-one", now - timedelta(days=1))
+        s1 = await _seed(db, "standard", "s1")
+        std1 = await _race(db, orga, s1, event, "qualifier:standard:1")
+        await _entry(db, std1, ana, ParticipantStatus.FINISHED, 2_000_000)
+        await _entry(db, std1, bob, ParticipantStatus.PLAYING, 400_000, layer=2)
+        db.add(EventSignup(event_id=event.id, user_id=cid.id))
+        await db.commit()
+
+    async with test_client as client:
+        anonymous = (await client.get("/api/events")).json()
+        as_cid = (
+            await client.get("/api/events", headers={"Authorization": "Bearer tok-cid"})
+        ).json()
+
+    (summary,) = anonymous
+    assert summary["slug"] == "season-one"
+    assert summary["name"] == "Season One"
+    assert summary["partner_name"] == "Ignite"
+    assert summary["phase"] == "qualifier"
+    # Two runners on the seed plus one signup.
+    assert summary["players"] == 3
+    assert summary["my_signup"] is False
+    assert summary["next_stage"]["key"] == "semi_a"
+    assert summary["live"] is None
+    assert summary["champion"] is None
+    assert as_cid[0]["my_signup"] is True
+
+
+@pytest.mark.asyncio
+async def test_listing_hides_a_young_upcoming_count(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        event = await _season_event(db, "season-one", now + timedelta(days=3))
+        for i in range(9):
+            runner = await _user(db, f"r{i}")
+            db.add(EventSignup(event_id=event.id, user_id=runner.id))
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+        assert summary["phase"] == "upcoming"
+        # Nine players in: the opening day is the whole message, not the count.
+        assert summary["players"] == 0
+
+        async with async_session() as db:
+            tenth = await _user(db, "r9")
+            db.add(EventSignup(event_id=event.id, user_id=tenth.id))
+            await db.commit()
+
+        (summary,) = (await client.get("/api/events")).json()
+        assert summary["players"] == 10
+
+
+@pytest.mark.asyncio
+async def test_listing_carries_the_live_playoff_race_and_its_stage(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        # Semi A was dated yesterday: playoffs, its second race running now.
+        event = await _season_event(db, "season-one", now - timedelta(days=12))
+        seed = await _seed(db, "standard", "semi2")
+        race = await _race(
+            db, orga, seed, event, "semi_a:2", status=RaceStatus.RUNNING, is_public=True
+        )
+        await _entry(db, race, ana, ParticipantStatus.PLAYING, 500_000)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    assert summary["phase"] == "playoffs"
+    assert summary["live"]["race"]["id"] == race_id
+    assert summary["live"]["stage_label"] == "Semi A"
+    assert summary["live"]["index"] == 2
+    assert summary["live"]["races_expected"] == 3
+    assert summary["next_stage"]["key"] == "semi_b"
+
+
+@pytest.mark.asyncio
+async def test_listing_crowns_the_champion_once_the_final_is_complete(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        # The final was dated a day ago; the season ends tomorrow.
+        event = await _season_event(db, "season-one", now - timedelta(days=33))
+        for i in (1, 2):
+            seed = await _seed(db, "standard", f"final{i}")
+            race = await _race(
+                db, orga, seed, event, f"final:{i}", status=RaceStatus.FINISHED, is_public=True
+            )
+            await _entry(db, race, ana, ParticipantStatus.FINISHED, 1_000_000)
+            await _entry(db, race, bob, ParticipantStatus.FINISHED, 1_500_000)
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+        # Two of three final races: the stage is not complete, nobody is crowned.
+        assert summary["phase"] == "playoffs"
+        assert summary["champion"] is None
+
+        async with async_session() as db:
+            seed = await _seed(db, "standard", "final3")
+            race = await _race(
+                db, orga, seed, event, "final:3", status=RaceStatus.FINISHED, is_public=True
+            )
+            await _entry(db, race, bob, ParticipantStatus.FINISHED, 1_000_000)
+            await _entry(db, race, ana, ParticipantStatus.FINISHED, 1_500_000)
+            await db.commit()
+
+        (summary,) = (await client.get("/api/events")).json()
+        # The complete final ends the season early; ana took two races out of three.
+        assert summary["phase"] == "finished"
+        assert summary["champion"]["twitch_username"] == "ana"
+
+
+@pytest.mark.asyncio
+async def test_listing_skips_an_event_whose_config_no_longer_validates(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        await _season_event(db, "sound", now + timedelta(days=3))
+        starts_at, qualifier_ends_at, ends_at, _config = _season(now + timedelta(days=3))
+        await _event(
+            db,
+            "broken",
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={"modes": [], "stages": [{"key": "x"}]},
+        )
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/events")
+    assert response.status_code == 200
+    assert [e["slug"] for e in response.json()] == ["sound"]
+
+
+@pytest.mark.asyncio
+async def test_featured_loader_leaves_the_seed_graphs_behind(async_session):
+    """Every visitor loads the listing: the races' seed graphs must stay in the database."""
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _season_event(db, "season-one", now - timedelta(days=1))
+        seed = await _seed(db, "standard", "s1")
+        await _race(db, orga, seed, event, "qualifier:standard:1")
+        await db.commit()
+
+    async with async_session() as db:
+        (event,) = await load_featured_events(db, now)
+        (race,) = event.races
+        assert race.seed.pool_name == "standard"
+        assert "graph_json" not in race.seed.__dict__

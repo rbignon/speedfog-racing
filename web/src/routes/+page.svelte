@@ -16,6 +16,8 @@
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import RewardsBanner from "$lib/components/RewardsBanner.svelte";
+  import EventBand from "$lib/components/events/EventBand.svelte";
+  import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
 
   let races: Race[] = $state([]);
@@ -56,6 +58,8 @@
     fetchDailyWeek()
       .then((week) => (dailyWeek = week))
       .catch(() => (dailyWeek = null));
+
+    featuredEvent.refresh();
   });
 
   // When the active "today" cell's window closes, refetch so the grid
@@ -155,6 +159,10 @@
     </a>
   </div>
 </div>
+
+{#if featuredEvent.current}
+  <EventBand event={featuredEvent.current} />
+{/if}
 
 <main class="public-section">
   <RewardsBanner />

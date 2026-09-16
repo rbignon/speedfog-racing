@@ -1198,6 +1198,38 @@ class EventDetailResponse(BaseModel):
     next_stage: EventNextStageResponse | None
 
 
+class EventLiveRaceResponse(BaseModel):
+    """A playoff race running right now, with the slot it fills in its stage."""
+
+    race: RaceResponse
+    stage_label: str
+    index: int
+    races_expected: int
+
+
+class EventSummaryResponse(BaseModel):
+    """An event on the bill, as the home page and the navbar show it.
+
+    What the detail computes without the ladder: the phase, the player count
+    under the Open Graph card's rule, the next stage, the live playoff race and
+    the champion once the final is complete.
+    """
+
+    slug: str
+    name: str
+    partner_name: str | None
+    partner_logo_url: str | None
+    starts_at: datetime
+    qualifier_ends_at: datetime
+    ends_at: datetime
+    phase: str
+    my_signup: bool
+    players: int
+    next_stage: EventNextStageResponse | None
+    live: EventLiveRaceResponse | None
+    champion: UserResponse | None
+
+
 class EventUpsertRequest(BaseModel):
     slug: str = Field(min_length=1, max_length=50, pattern=r"^[a-z0-9-]+$")
     name: str = Field(min_length=1, max_length=200)

@@ -3,6 +3,7 @@ import type {
   EventFact,
   EventPhase,
   EventStage,
+  EventSummary,
   User,
 } from "$lib/api";
 
@@ -437,4 +438,118 @@ export function signupIntentStands(
     now - at >= 0 &&
     now - at < SIGNUP_INTENT_TTL_MS
   );
+}
+
+export interface EventBandAction {
+  href: string;
+  label: string;
+  kind: "primary" | "twitch" | "outline";
+}
+
+export interface EventBandState {
+  signal: { cls: string; text: string };
+  /** The state line, without the champion: the band renders that as a user link after it. */
+  line: string | null;
+  actions: EventBandAction[];
+  /** The viewer said they are in, and the event can still be joined. */
+  signedUp: boolean;
+}
+
+/**
+ * What the home page band says about an event on the bill: a phase signal,
+ * one line of state and the buttons. ``fmt`` formats an instant the viewer
+ * can still act on. While the event can be joined the primary button leads
+ * to the event page's signup step, or plainly to the page once the viewer
+ * is in; while a playoff race runs it leads to the stream (a live caster's
+ * own, else the first caster's channel) or to the race page, the event page
+ * beside it.
+ */
+export function eventBand(
+  event: EventSummary,
+  fmt: (iso: string) => string,
+): EventBandState {
+  const page = `/events/${event.slug}`;
+  const pageAction = (kind: EventBandAction["kind"]): EventBandAction => ({
+    href: page,
+    label: "Event page",
+    kind,
+  });
+  const joinAction: EventBandAction[] = [
+    event.my_signup
+      ? pageAction("primary")
+      : { href: page, label: "Take part", kind: "primary" },
+  ];
+  // A count of zero says nothing worth a word: the date is the whole message.
+  const players = event.players > 0 ? event.players : null;
+  const notSignedUp = { signedUp: false };
+  switch (event.phase) {
+    case "upcoming":
+      return {
+        signal: { cls: "signal-setup", text: "Upcoming" },
+        line:
+          `Qualifier opens ${fmt(event.starts_at)}` +
+          (players ? ` · ${players} in` : ""),
+        actions: joinAction,
+        signedUp: event.my_signup,
+      };
+    case "qualifier":
+      return {
+        signal: { cls: "signal-running", text: "Qualifier open" },
+        line:
+          `Closes ${fmt(event.qualifier_ends_at)}` +
+          (players ? ` · ${players} runner${players === 1 ? "" : "s"} in` : ""),
+        actions: joinAction,
+        signedUp: event.my_signup,
+      };
+    case "cut":
+      return {
+        signal: { cls: "signal-active", text: "Qualifier closed" },
+        line: event.next_stage
+          ? `${event.next_stage.label} on ${fmt(event.next_stage.date)}`
+          : null,
+        actions: [pageAction("primary")],
+        ...notSignedUp,
+      };
+    case "playoffs": {
+      const live = event.live;
+      if (live) {
+        const casters = live.race.casters;
+        const watchUrl =
+          casters.find((c) => c.is_live)?.stream_url ??
+          (casters[0]
+            ? `https://twitch.tv/${casters[0].user.twitch_username}`
+            : null);
+        return {
+          signal: { cls: "signal-running", text: "Live now" },
+          line: `${live.stage_label} · Race ${live.index} of ${live.races_expected}`,
+          actions: [
+            watchUrl
+              ? { href: watchUrl, label: "Watch on Twitch", kind: "twitch" }
+              : {
+                  href: `/race/${live.race.id}`,
+                  label: "Race page",
+                  kind: "primary",
+                },
+            pageAction("outline"),
+          ],
+          ...notSignedUp,
+        };
+      }
+      return {
+        signal: { cls: "signal-running", text: "Playoffs" },
+        line: event.next_stage
+          ? `Next: ${event.next_stage.label} · ${fmt(event.next_stage.date)}`
+          : null,
+        actions: [pageAction("primary")],
+        ...notSignedUp,
+      };
+    }
+    case "finished":
+      return {
+        signal: { cls: "signal-finished", text: "Finished" },
+        line: event.champion ? "Champion" : null,
+        actions: [pageAction("primary")],
+        ...notSignedUp,
+      };
+  }
 }

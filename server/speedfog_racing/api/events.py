@@ -30,6 +30,7 @@ from speedfog_racing.schemas import (
     EventFieldSlotResponse,
     EventLadderEntryResponse,
     EventLadderResponse,
+    EventLiveRaceResponse,
     EventMyResultResponse,
     EventNextStageResponse,
     EventQualifiedGroupResponse,
@@ -39,12 +40,14 @@ from speedfog_racing.schemas import (
     EventStageEntryResponse,
     EventStageRaceResponse,
     EventStageResponse,
+    EventSummaryResponse,
     EventTimelineStopResponse,
     EventWeaponResponse,
     UserResponse,
 )
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
+    MIN_UPCOMING_PLAYERS,
     UNDECIDED,
     Slot,
     announce_date,
@@ -58,6 +61,7 @@ from speedfog_racing.services.event_service import (
     event_window,
     final_field,
     load_event,
+    load_featured_events,
     newcomer_flags,
     parse_slot,
     score_race,
@@ -92,6 +96,123 @@ def _my_result(race: Race, user: User | None) -> EventMyResultResponse | None:
         points=score.points,
         provisional=score.provisional,
     )
+
+
+@router.get("", response_model=list[EventSummaryResponse])
+async def list_events(
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> list[EventSummaryResponse]:
+    """The events on the bill: what the home page band and the navbar show.
+
+    A finished season (kept for its champion) yields the head of the list to
+    one still to come, so a season announced right after the last final is
+    what the band shows; otherwise the earliest season leads.
+    """
+    now = datetime.now(UTC)
+    summaries: list[EventSummaryResponse] = []
+    for event in await load_featured_events(db, now):
+        starts_at, qualifier_ends_at, ends_at = event_window(event)
+        config = EventConfig.model_validate(event.config)
+
+        attached: list[tuple[Slot, Race]] = []
+        for race in event.races:
+            if race.event_slot is None:
+                continue
+            try:
+                attached.append((parse_slot(race.event_slot), race))
+            except ValueError:
+                continue
+        stage_races = {
+            stage.key: sorted(
+                ((s, r) for s, r in attached if s.kind == "stage" and s.key == stage.key),
+                key=lambda item: item[0].index,
+            )
+            for stage in config.stages
+        }
+        final = config.final_stage()
+        advance = (final.advance or 0) if final is not None else 0
+        results = {
+            stage.key: compute_stage_results(
+                stage,
+                [r for _, r in stage_races[stage.key]],
+                advance if stage.kind == "semi" else 0,
+            )
+            for stage in config.stages
+        }
+        last = config.stages[-1] if config.stages else None
+        phase = compute_phase(
+            now=now,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            first_stage_at=config.stages[0].date if config.stages else None,
+            last_stage_complete=results[last.key].complete if last is not None else False,
+            override=config.phase_override,
+        )
+
+        # The Open Graph card's count: everyone who joined an event race, plus
+        # the signups while the event can still be joined, and nothing while
+        # an upcoming event has too few of them to advertise.
+        users: dict[UUID, User] = {
+            p.user_id: p.user for race in event.races for p in race.participants
+        }
+        if phase in JOINABLE_PHASES:
+            users.update({s.user_id: s.user for s in event.signups})
+        players = len(users)
+        if phase == "upcoming" and players < MIN_UPCOMING_PLAYERS:
+            players = 0
+
+        live = None
+        running = next(
+            (
+                (stage, slot, r)
+                for stage in config.stages
+                for slot, r in stage_races[stage.key]
+                if r.status == RaceStatus.RUNNING
+            ),
+            None,
+        )
+        if running is not None:
+            stage, slot, race = running
+            live = EventLiveRaceResponse(
+                race=race_response(race, user),
+                stage_label=stage.label,
+                index=slot.index,
+                races_expected=stage.races,
+            )
+        upcoming = next((s for s in config.stages if s.date > now), None)
+        champion = None
+        if phase == "finished" and final is not None and results[final.key].complete:
+            leader = next(iter(results[final.key].entries), None)
+            if leader is not None and leader.user_id in users:
+                champion = UserResponse.model_validate(users[leader.user_id])
+
+        summaries.append(
+            EventSummaryResponse(
+                slug=event.slug,
+                name=event.name,
+                partner_name=event.partner_name,
+                partner_logo_url=event.partner_logo_url,
+                starts_at=starts_at,
+                qualifier_ends_at=qualifier_ends_at,
+                ends_at=ends_at,
+                phase=phase,
+                my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
+                players=players,
+                next_stage=(
+                    EventNextStageResponse(
+                        key=upcoming.key, label=upcoming.label, date=upcoming.date
+                    )
+                    if upcoming is not None
+                    else None
+                ),
+                live=live,
+                champion=champion,
+            )
+        )
+    summaries.sort(key=lambda s: (s.phase == "finished", s.starts_at))
+    return summaries
 
 
 @router.get("/{slug}", response_model=EventDetailResponse)

@@ -558,6 +558,35 @@ export interface EventDetail {
   next_stage: EventNextStage | null;
 }
 
+/** A playoff race running right now, with the slot it fills in its stage. */
+export interface EventLiveRace {
+  race: Race;
+  stage_label: string;
+  index: number;
+  races_expected: number;
+}
+
+/**
+ * An event on the bill, as the home page band and the navbar show it: what
+ * the detail computes without the ladder.
+ */
+export interface EventSummary {
+  slug: string;
+  name: string;
+  partner_name: string | null;
+  partner_logo_url: string | null;
+  starts_at: string;
+  qualifier_ends_at: string;
+  ends_at: string;
+  phase: EventPhase;
+  my_signup: boolean;
+  /** Runners plus signups; zero while an upcoming event has too few to advertise. */
+  players: number;
+  next_stage: EventNextStage | null;
+  live: EventLiveRace | null;
+  champion: User | null;
+}
+
 export interface AdminEvent {
   id: string;
   slug: string;
@@ -2332,6 +2361,17 @@ export async function adminListFeedback(params: {
 }
 
 // --- Events ---------------------------------------------------------------
+
+/**
+ * The events on the bill, from the announcement to a week after the end:
+ * the seasons still to come or running first, then the finished ones.
+ */
+export async function fetchEvents(): Promise<EventSummary[]> {
+  const response = await fetch(`${API_BASE}/events`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<EventSummary[]>(response);
+}
 
 /** Everything the event page needs, in one request. */
 export async function fetchEvent(

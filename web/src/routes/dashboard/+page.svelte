@@ -22,6 +22,8 @@
   import ActivityList from "$lib/components/ActivityList.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
+  import EventBand from "$lib/components/events/EventBand.svelte";
+  import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
 
   let profile: UserProfile | null = $state(null);
   let activity = $state<ActivityTimeline | null>(null);
@@ -83,6 +85,7 @@
     const username = auth.user.twitch_username;
     loading = true;
     error = null;
+    featuredEvent.refresh();
     Promise.all([
       fetchUserProfile(username),
       fetchUserActivity(username, 0, 20),
@@ -340,6 +343,12 @@
       />
     {/if}
 
+    {#if featuredEvent.current}
+      <div class="event-band">
+        <EventBand event={featuredEvent.current} />
+      </div>
+    {/if}
+
     {#if dailyWeek}
       <SectionTitle>Daily Seed</SectionTitle>
       <DailyWeekGrid week={dailyWeek} variant="dashboard" />
@@ -401,6 +410,10 @@
     margin: 0 auto;
     padding: 2rem;
     box-sizing: border-box;
+  }
+
+  .event-band {
+    margin-bottom: 2rem;
   }
 
   /* Loading / Error */
