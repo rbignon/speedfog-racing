@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  SIGNUP_INTENT_TTL_MS,
   blockOrder,
   champions,
+  encodeSignupIntent,
   eventFacts,
   fillSlots,
   formatEventDate,
@@ -10,6 +12,7 @@ import {
   ordinal,
   pollIntervalMs,
   racesSection,
+  signupIntentStands,
   soloSeedLabel,
   stageTimes,
   stripStagePrefix,
@@ -583,5 +586,42 @@ describe("pollIntervalMs and ordinal", () => {
       "23rd",
       "101st",
     ]);
+  });
+});
+
+describe("signupIntentStands", () => {
+  const now = 1_700_000_000_000;
+
+  it("stands for the same event on a prompt return", () => {
+    const raw = encodeSignupIntent("season-one", now - 5_000);
+    expect(signupIntentStands(raw, "season-one", now)).toBe(true);
+  });
+
+  it("never stands for another event", () => {
+    const raw = encodeSignupIntent("season-one", now - 5_000);
+    expect(signupIntentStands(raw, "season-two", now)).toBe(false);
+  });
+
+  it("expires at the window's edge, and stands just inside it", () => {
+    const edge = encodeSignupIntent("season-one", now - SIGNUP_INTENT_TTL_MS);
+    expect(signupIntentStands(edge, "season-one", now)).toBe(false);
+    const inside = encodeSignupIntent(
+      "season-one",
+      now - SIGNUP_INTENT_TTL_MS + 1,
+    );
+    expect(signupIntentStands(inside, "season-one", now)).toBe(true);
+  });
+
+  it("ignores what it did not write", () => {
+    for (const raw of [
+      null,
+      "season-one",
+      "{",
+      '{"slug":"season-one"}',
+      '{"slug":"season-one","at":"soon"}',
+      "42",
+    ]) {
+      expect(signupIntentStands(raw, "season-one", now)).toBe(false);
+    }
   });
 });

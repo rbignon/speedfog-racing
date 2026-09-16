@@ -83,15 +83,16 @@
       </div>
     </dl>
     <!-- Signed out only: a reader who already has an account knows both what
-         SpeedFog is and where to play it. Storing no redirect leaves the
-         callback on its default, the dashboard, where a new account is walked
-         through its first run. -->
+         SpeedFog is and where to play it. The primary is the home page's own
+         call, and goes through Twitch the same way: storing no redirect
+         leaves the callback on its default, the dashboard, where a new
+         account is walked through its first run. -->
     {#if !auth.user}
       <div class="cta">
         <a
           href={getTwitchLoginUrl()}
-          class="btn btn-twitch"
-          data-sveltekit-reload>Sign in to try a seed</a
+          class="btn btn-primary"
+          data-sveltekit-reload>Try a seed</a
         >
         <a href="/about" class="btn btn-secondary">How it works</a>
       </div>

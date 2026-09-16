@@ -11,6 +11,7 @@
   import {
     blockOrder,
     champions,
+    encodeSignupIntent,
     eventFacts,
     formatEventDate,
     formatEventDay,
@@ -20,6 +21,7 @@
     ordinal,
     racesSection,
     shownStage,
+    signupIntentStands,
     stageTimes,
     stripStagePrefix,
   } from "$lib/events";
@@ -54,6 +56,10 @@
   );
   let signupBusy = $state(false);
   let signupError = $state<string | null>(null);
+  // A signed-out click on the signup button goes through Twitch first; the
+  // intent parked under this key is honoured on the way back (see
+  // signupIntentStands for what makes it stand).
+  const SIGNUP_INTENT_KEY = "event_signup_intent";
 
   const fmt = (iso: string) => formatEventDate(iso);
   // Carries the timezone, for the instants still ahead of the viewer. What
@@ -127,6 +133,21 @@
   }
 
   onMount(() => {
+    // Whatever brought the viewer back, the parked intent is spent now; it
+    // only signs up when the viewer came back signed in, promptly, to this
+    // event, and is not in yet.
+    const intent = sessionStorage.getItem(SIGNUP_INTENT_KEY);
+    if (intent !== null) {
+      sessionStorage.removeItem(SIGNUP_INTENT_KEY);
+      if (
+        signupIntentStands(intent, detail.slug, Date.now()) &&
+        auth.user &&
+        joinable &&
+        !detail.my_signup
+      ) {
+        void setSignup(true);
+      }
+    }
     const clock = setInterval(() => (now = new Date()), 60_000);
     let poll: ReturnType<typeof setInterval> | null = null;
     let pollMs: number | null = null;
@@ -261,7 +282,7 @@
             <div class="step">
               <span class="n">01</span>
               <div class="step-body">
-                <h3>Sign in</h3>
+                <h3>Sign up for the event</h3>
                 {#if auth.user}
                   <p class="signed-in">
                     <svg
@@ -305,9 +326,9 @@
                     {:else}
                       <button
                         type="button"
-                        class="btn btn-outline"
+                        class="btn btn-primary"
                         disabled={signupBusy}
-                        onclick={() => setSignup(true)}>Count me in</button
+                        onclick={() => setSignup(true)}>I'm in</button
                       >
                       <p>Puts you on the ladder before you run.</p>
                     {/if}
@@ -318,14 +339,20 @@
                 {:else}
                   <a
                     href={getTwitchLoginUrl()}
-                    class="btn btn-twitch"
+                    class="btn btn-primary"
                     data-sveltekit-reload
-                    onclick={() =>
+                    onclick={() => {
                       sessionStorage.setItem(
                         "redirect_after_login",
                         window.location.pathname,
-                      )}>Sign in with Twitch</a
+                      );
+                      sessionStorage.setItem(
+                        SIGNUP_INTENT_KEY,
+                        encodeSignupIntent(detail.slug, Date.now()),
+                      );
+                    }}>I'm in</a
                   >
+                  <p>Signs you in with Twitch first.</p>
                 {/if}
               </div>
             </div>

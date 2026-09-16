@@ -402,3 +402,39 @@ export function ordinal(n: number): string {
       return `${n}th`;
   }
 }
+
+/**
+ * A signed-out click on an event's signup button goes through Twitch first;
+ * the intent it parks in sessionStorage carries the event and the time, so it
+ * is honoured only on a prompt return. A return the page never mounts for (a
+ * browser back served from the cache) leaves it behind, and the time bound is
+ * what keeps that leftover from signing anyone up on a later visit.
+ */
+export const SIGNUP_INTENT_TTL_MS = 10 * 60_000;
+
+export function encodeSignupIntent(slug: string, now: number): string {
+  return JSON.stringify({ slug, at: now });
+}
+
+/** Whether a parked intent (the raw stored value) still stands for `slug` at `now`. */
+export function signupIntentStands(
+  raw: string | null,
+  slug: string,
+  now: number,
+): boolean {
+  if (raw === null) return false;
+  let parked: unknown;
+  try {
+    parked = JSON.parse(raw);
+  } catch {
+    return false;
+  }
+  if (typeof parked !== "object" || parked === null) return false;
+  const { slug: parkedSlug, at } = parked as { slug?: unknown; at?: unknown };
+  return (
+    parkedSlug === slug &&
+    typeof at === "number" &&
+    now - at >= 0 &&
+    now - at < SIGNUP_INTENT_TTL_MS
+  );
+}

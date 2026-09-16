@@ -244,16 +244,20 @@ so evenings kept at one local time across a daylight saving change still read
 as one time. That change is the ordinary case rather than a corner one: the
 real season's last evening is the Sunday Europe leaves summer time.
 
-The take-part steps start on the viewer's own state: the Twitch button while
-they are signed out, and once they are signed in, a verdigris line with their
-name (and their avatar when they have one) instead, so the step reads as done
-rather than repeating the instruction.
+The take-part steps start on the viewer's own state. Step 01, "Sign up for the event", is
+one primary button, `I'm in`, whatever that state: signed out, it parks the
+return to the page and a signup intent (the event and the time, good for ten
+minutes) in `sessionStorage`, goes through Twitch, and the page honours the
+intent once the callback has landed the viewer back signed in. A browser back
+from an abandoned login spends the intent; one served from the browser's
+cache, which never mounts the page, leaves an intent that expires instead of
+signing anyone up on a later visit. Signed in, it calls the signup directly,
+under a verdigris line with the viewer's name (and their avatar when they
+have one), so the account they engage with is in view.
 
-Under that line, while the event can still be joined, a `Count me in` button
-puts the viewer on the ladder before they run, and once they are in, a check
-line `You're in` with a quiet `Withdraw` beside it; the page reloads the
-event right after either, so the ladder row appears or goes without a page
-reload. An empty ladder reads `Nobody in yet.` while the event is upcoming
+Once they are in, the button gives way to a check line `You're in` with a
+quiet `Withdraw` beside it; the page reloads the event right after either
+call, so the ladder row appears or goes without a page reload. An empty ladder reads `Nobody in yet.` while the event is upcoming
 and `No runs yet.` from the qualifier on. A call that fails shows its reason
 under the control and reloads the event, so a viewer whose session expired
 or who clicked after the cut sees the step correct itself.
@@ -271,9 +275,10 @@ help.
 
 Signed out, the cards lead to Twitch and come back to the solo page on the
 mode they named, so the click keeps its intent; the introduction closes on a
-Twitch button and a "How it works" beside it, and that one stores no redirect,
-so the callback lands on the dashboard and its onboarding. A signed-in reader
-gets neither, having answered both questions by being there.
+primary `Try a seed` button, the home page's own call, and a "How it works"
+beside it; the button stores no redirect, so the callback lands on the
+dashboard and its onboarding. A signed-in reader gets neither, having
+answered both questions by being there.
 
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
