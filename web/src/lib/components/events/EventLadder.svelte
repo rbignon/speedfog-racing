@@ -83,7 +83,7 @@
           >
           <div class="name-line">
             <UserLink user={entry.user} showBadge showAvatar />
-            {#if entry.newcomer}<span class="newtag">new</span>{/if}
+            {#if entry.newcomer}<span class="newtag">newcomer</span>{/if}
           </div>
           {#each modes as mode (mode.key)}
             {@const p = entry.mode_points[mode.key]}
