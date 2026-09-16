@@ -620,8 +620,8 @@ class TestConnectionManager:
         mod_ws.send_text.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_broadcast_leaderboard_non_daily_uses_single_payload(self):
-        """Non-daily races: every connection (mods + spectators) receives the same payload."""
+    async def test_broadcast_leaderboard_regular_uses_single_payload(self):
+        """Regular races: every connection (mods + spectators) receives the same payload."""
         from speedfog_racing.websocket.race.manager import ModConnection
 
         mgr = ConnectionManager()
@@ -748,10 +748,8 @@ class TestConnectionManager:
         assert runner_info["gap_ms"] == 30000
 
     @pytest.mark.asyncio
-    async def test_broadcast_leaderboard_daily_projects_for_playing_mod(self):
-        """Daily race: a playing mod sees a projected payload, spectator sees real state."""
-        from datetime import date as _date
-
+    async def test_broadcast_leaderboard_projects_ghosts_for_playing_mod(self):
+        """Async race: a playing mod sees a projected payload, spectator sees real state."""
         from speedfog_racing.websocket.race.manager import ModConnection
 
         mgr = ConnectionManager()
@@ -804,7 +802,7 @@ class TestConnectionManager:
             race_id,
             [viewer, ghost],
             graph_json=graph,
-            daily_date=_date(2026, 5, 6),
+            project_ghosts=True,
         )
 
         spec_payload = json.loads(spec_ws.send_text.call_args[0][0])
@@ -823,10 +821,8 @@ class TestConnectionManager:
         assert mod_ghost["current_layer"] == 1
 
     @pytest.mark.asyncio
-    async def test_broadcast_leaderboard_daily_non_playing_mod_gets_real_payload(self):
-        """Daily race: a non-playing mod (e.g. registered) receives the real payload."""
-        from datetime import date as _date
-
+    async def test_broadcast_leaderboard_projects_ghosts_non_playing_mod_gets_real_payload(self):
+        """Async race: a non-playing mod (e.g. registered) receives the real payload."""
         from speedfog_racing.websocket.race.manager import ModConnection
 
         mgr = ConnectionManager()
@@ -863,7 +859,7 @@ class TestConnectionManager:
             race_id,
             [watcher, ghost],
             graph_json=graph,
-            daily_date=_date(2026, 5, 6),
+            project_ghosts=True,
         )
 
         mod_payload = mod_ws.send_text.call_args[0][0]

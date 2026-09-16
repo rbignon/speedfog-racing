@@ -380,17 +380,17 @@ class ConnectionManager:
         participants: list[Participant],
         *,
         graph_json: dict[str, Any] | None = None,
-        daily_date: date | None = None,
+        project_ghosts: bool = False,
     ) -> None:
         """Broadcast leaderboard update to all connections in a room.
 
-        For non-daily races (``daily_date is None``) every connection
-        receives the same real-state payload. For daily races, web
-        spectators still receive the real payload, but each connected
-        mod receives a payload tailored to its viewer state: the real
-        payload when the viewer is not currently playing, otherwise a
-        projected payload built from each ghost's state at the viewer's
-        IGT (see ``projection.project_participant_at``).
+        Without ``project_ghosts`` every connection receives the same
+        real-state payload. With it (``Race.projects_ghosts``: dailies and
+        event qualifiers), web spectators still receive the real payload,
+        but each connected mod receives a payload tailored to its viewer
+        state: the real payload when the viewer is not currently playing,
+        otherwise a projected payload built from each ghost's state at the
+        viewer's IGT (see ``projection.project_participant_at``).
         """
         room = self.get_room(race_id)
         if not room:
@@ -401,11 +401,11 @@ class ConnectionManager:
             participants, connected_ids=connected_ids, graph_json=graph_json
         )
 
-        if daily_date is None:
+        if not project_ghosts:
             await room.broadcast_to_all(real_payload)
             return
 
-        # Daily race: spectators see real state; each mod gets its own view.
+        # Async race: spectators see real state; each mod gets its own view.
         by_id = {p.id: p for p in participants}
 
         async def _send_to_mod(participant_id: uuid.UUID) -> None:
@@ -434,7 +434,7 @@ class ConnectionManager:
         participants: list[Participant],
         graph_json: dict[str, Any] | None,
     ) -> None:
-        """Unicast a projected leaderboard to a single mod (daily races).
+        """Unicast a projected leaderboard to a single mod (async races).
 
         No-op when the viewer is not connected or not currently playing.
         """
@@ -528,7 +528,7 @@ class ConnectionManager:
         participant: Participant,
         *,
         graph_json: dict[str, Any] | None = None,
-        daily_date: date | None = None,
+        project_ghosts: bool = False,
     ) -> None:
         """Broadcast a single player update.
 
@@ -536,13 +536,14 @@ class ConnectionManager:
         sorted participants list (for leader context). Clients receive gap data
         via leaderboard_update messages instead; mods recompute gaps client-side.
 
-        On daily races, routed to spectators only: mods overwrite the matching
-        row from any player_update, which would desync the projected leaderboard.
+        On async races (``project_ghosts``), routed to spectators only: mods
+        overwrite the matching row from any player_update, which would desync
+        the projected leaderboard.
         """
         room = self.get_room(race_id)
         if not room:
             return
-        if daily_date is not None and not room.spectators:
+        if project_ghosts and not room.spectators:
             return
 
         connected_ids = set(room.mods.keys())
@@ -559,7 +560,7 @@ class ConnectionManager:
             )
         )
         payload = message.model_dump_json()
-        if daily_date is not None:
+        if project_ghosts:
             await room.broadcast_to_spectators(payload)
         else:
             await room.broadcast_to_all(payload)
@@ -919,7 +920,7 @@ def _build_projected_payload_for_viewer(
     connected_ids: set[uuid.UUID],
     graph_json: dict[str, Any] | None,
 ) -> str:
-    """Build the payload a single playing daily-mod should receive.
+    """Build the payload a single playing mod on an async race should receive.
 
     The viewer keeps its real state (already PLAYING by caller contract);
     every other participant is projected to the viewer's IGT so finished

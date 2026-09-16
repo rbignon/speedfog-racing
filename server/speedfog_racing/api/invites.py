@@ -144,7 +144,7 @@ async def accept_invite(
         invite.race_id,
         race.participants,
         graph_json=graph_json,
-        daily_date=race.daily_date,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(invite.race_id, race)
 

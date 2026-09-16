@@ -1,6 +1,7 @@
 """Per-viewer projection of a participant's state at a given IGT.
 
-Used by daily-race leaderboard broadcasts to render finished and
+Used by leaderboard broadcasts on async races (Daily Seeds and event
+qualifier seeds, see ``Race.projects_ghosts``) to render finished and
 concurrent ghosts as if they were racing in parallel with the viewer.
 See the "In-mod replay leaderboard" section of ``docs/DAILY_SEED.md``.
 """

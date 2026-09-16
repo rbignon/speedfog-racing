@@ -366,6 +366,22 @@ class Race(Base):
     )
     event: Mapped["Event | None"] = relationship(back_populates="races")
 
+    @property
+    def is_event_qualifier(self) -> bool:
+        """Python twin of ``api.helpers.not_event_qualifier`` (negated)."""
+        return self.event_slot is not None and self.event_slot.startswith("qualifier:")
+
+    @property
+    def projects_ghosts(self) -> bool:
+        """Whether mods replay this race against asynchronous ghosts.
+
+        Daily Seeds and event qualifier seeds are run at each player's own
+        time over a long window, so a mod's leaderboard is projected to the
+        viewer's IGT instead of showing the real state. See the "In-mod
+        replay leaderboard" section of ``docs/DAILY_SEED.md``.
+        """
+        return self.daily_date is not None or self.is_event_qualifier
+
 
 class Participant(Base):
     """A user participating in a race."""

@@ -1,4 +1,5 @@
-"""Integration tests for the per-mod projected leaderboard on daily races.
+"""Integration tests for the per-mod projected leaderboard on asynchronous
+races: Daily Seeds and event qualifier seeds.
 
 See the "In-mod replay leaderboard" section of docs/DAILY_SEED.md.
 
@@ -10,8 +11,12 @@ cases). The unit-level coverage on the projector lives in
 This file fills the gaps those tests cannot reach: it exercises the full
 ``/ws/mod/{race_id}`` and ``/ws/race/{race_id}`` flow with a real FastAPI
 ``TestClient`` + a real (sqlite via aiosqlite) DB, and it specifically
-covers the 1Hz heartbeat path through ``_maybe_unicast_daily_projection``
-that the unit tests cannot trigger.
+covers the 1Hz heartbeat path through ``_maybe_unicast_projection`` that
+the unit tests cannot trigger.
+
+The projection tests run once per asynchronous race kind (``ASYNC_KINDS``);
+the regular-race control test pins that neither marker leaks into ordinary
+races.
 """
 
 from __future__ import annotations
@@ -22,7 +27,7 @@ import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from sqlalchemy import select
@@ -109,6 +114,10 @@ def daily_client(daily_db: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Race seeding helpers
 # ---------------------------------------------------------------------------
+RaceKind = Literal["daily", "qualifier", "regular"]
+# The two race kinds that replay against asynchronous ghosts.
+ASYNC_KINDS: tuple[RaceKind, ...] = ("daily", "qualifier")
+
 # Graph used across all three tests: a tiny linear DAG with three layers so
 # the projector has something to interpolate over.
 _GRAPH_JSON: dict[str, Any] = {
@@ -129,13 +138,14 @@ _GRAPH_JSON: dict[str, Any] = {
 async def _seed_race_with_finished_ghost(
     session_maker: async_sessionmaker[AsyncSession],
     *,
-    daily: bool,
+    kind: RaceKind,
 ) -> tuple[uuid.UUID, str, str]:
     """Insert a RUNNING race with a finished ghost A and a registered viewer B.
 
-    Returns ``(race_id, a_mod_token, b_mod_token)``. ``daily=True`` sets a
-    ``daily_date`` so the projection codepath fires; ``daily=False`` keeps
-    ``daily_date=None`` for Test C.
+    Returns ``(race_id, a_mod_token, b_mod_token)``. ``kind`` picks the
+    async marker: ``"daily"`` sets a ``daily_date``, ``"qualifier"`` attaches
+    the race to an event qualifier slot, ``"regular"`` sets neither so the
+    projection codepath must stay off (Test C).
     """
     started = datetime.now(UTC) - timedelta(hours=2)
     today = started.date()
@@ -184,8 +194,9 @@ async def _seed_race_with_finished_ghost(
             status=RaceStatus.RUNNING,
             is_public=True,
             open_registration=True,
-            daily_date=today if daily else None,
-            exclude_from_stats=daily,
+            daily_date=today if kind == "daily" else None,
+            event_slot="qualifier:standard:1" if kind == "qualifier" else None,
+            exclude_from_stats=kind != "regular",
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,
@@ -275,13 +286,14 @@ def _participant_by_username(payload: dict[str, Any], username: str) -> dict[str
 
 
 # ---------------------------------------------------------------------------
-# Test A: end-to-end daily replay
+# Test A: end-to-end async replay
 # ---------------------------------------------------------------------------
-def test_daily_mod_sees_projected_ghost_spectator_sees_real_finish(
-    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
+@pytest.mark.parametrize("kind", ASYNC_KINDS)
+def test_mod_sees_projected_ghost_spectator_sees_real_finish(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
 ) -> None:
-    """Daily race: mod (B, playing) sees A projected at B's IGT; spectator sees A finished."""
-    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, daily=True))
+    """Async race: mod (B, playing) sees A projected at B's IGT; spectator sees A finished."""
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
 
     with daily_client.websocket_connect(f"/ws/race/{race_id}") as spec_ws:
         # Skip auth: an unauthenticated spectator still receives leaderboard_update.
@@ -298,7 +310,7 @@ def test_daily_mod_sees_projected_ghost_spectator_sees_real_finish(
             mod.send_status_update(igt_ms=0, death_count=0)
             mod.receive_until_type("leaderboard_update")
 
-            # Heartbeat at IGT 60s. Triggers _maybe_unicast_daily_projection.
+            # Heartbeat at IGT 60s. Triggers _maybe_unicast_projection.
             mod.send_status_update(igt_ms=60_000, death_count=0)
 
             mod_lb = _latest_leaderboard_within(lambda: mod.receive(timeout=2))
@@ -323,11 +335,12 @@ def test_daily_mod_sees_projected_ghost_spectator_sees_real_finish(
 # ---------------------------------------------------------------------------
 # Test B: 1Hz heartbeat unicasts a fresh projection
 # ---------------------------------------------------------------------------
-def test_daily_heartbeat_unicasts_fresh_projection_to_mod(
-    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
+@pytest.mark.parametrize("kind", ASYNC_KINDS)
+def test_heartbeat_unicasts_fresh_projection_to_mod(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
 ) -> None:
     """A heartbeat that does not change other state still re-sends the projection."""
-    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, daily=True))
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
 
     with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
         mod = ModTestClient(mod_ws, b_token)
@@ -344,13 +357,13 @@ def test_daily_heartbeat_unicasts_fresh_projection_to_mod(
 
         # Pure heartbeat: B's IGT advances to 60s. No other participant
         # changed. The non-active path runs broadcast_player_update +
-        # _maybe_unicast_daily_projection; only the latter sends a
+        # _maybe_unicast_projection; only the latter sends a
         # leaderboard_update, and only to this mod.
         mod.send_status_update(igt_ms=60_000, death_count=0)
 
         heartbeat_lb = _latest_leaderboard_within(lambda: mod.receive(timeout=2))
         assert heartbeat_lb is not None, (
-            "heartbeat did not unicast a leaderboard_update to the playing daily mod"
+            f"heartbeat did not unicast a leaderboard_update to the playing {kind} mod"
         )
         # Confirm this is a fresh projection (not the cached boot payload):
         # at viewer_igt=60_000 A is still at start (fog_a is at 100s) but B
@@ -363,22 +376,25 @@ def test_daily_heartbeat_unicasts_fresh_projection_to_mod(
 
 
 # ---------------------------------------------------------------------------
-# Test C: non-daily heartbeat does NOT unicast
+# Test C: regular-race heartbeat does NOT unicast
 # ---------------------------------------------------------------------------
-def test_non_daily_heartbeat_does_not_unicast_leaderboard(
+def test_regular_heartbeat_does_not_unicast_leaderboard(
     daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
 ) -> None:
-    """Non-daily race: a pure heartbeat sends only player_update, no leaderboard_update."""
-    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, daily=False))
+    """Regular race: a pure heartbeat sends only player_update, no leaderboard_update."""
+    race_id, _a_token, b_token = asyncio.run(
+        _seed_race_with_finished_ghost(daily_db, kind="regular")
+    )
 
-    # Sanity: confirm the seed really wrote daily_date=None. Otherwise this
-    # test would silently pass for the wrong reason.
-    async def _check_daily_none() -> None:
+    # Sanity: confirm the seed really wrote neither async marker. Otherwise
+    # this test would silently pass for the wrong reason.
+    async def _check_regular() -> None:
         async with daily_db() as db:
             race = (await db.execute(select(Race).where(Race.id == race_id))).scalar_one()
             assert race.daily_date is None
+            assert race.event_slot is None
 
-    asyncio.run(_check_daily_none())
+    asyncio.run(_check_regular())
 
     with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
         mod = ModTestClient(mod_ws, b_token)
@@ -388,20 +404,20 @@ def test_non_daily_heartbeat_does_not_unicast_leaderboard(
         mod.send_status_update(igt_ms=0, death_count=0)
         mod.receive_until_type("leaderboard_update")  # became_active broadcast
 
-        # Pure heartbeat. Daily-only gate in _maybe_unicast_daily_projection
+        # Pure heartbeat. The async-race gate in _maybe_unicast_projection
         # plus the perf hoist must keep this from emitting leaderboard_update.
         mod.send_status_update(igt_ms=60_000, death_count=0)
 
         saw_player_update = False
-        # Drain everything pending. If daily-projection were leaking on
-        # non-daily races, a leaderboard_update would arrive here.
+        # Drain everything pending. If the projection were leaking on
+        # regular races, a leaderboard_update would arrive here.
         for _ in range(10):
             try:
                 msg = mod.receive(timeout=2)
             except TimeoutError:
                 break
             assert msg.get("type") != "leaderboard_update", (
-                f"non-daily heartbeat unexpectedly sent leaderboard_update: {msg}"
+                f"regular heartbeat unexpectedly sent leaderboard_update: {msg}"
             )
             if msg.get("type") == "player_update":
                 saw_player_update = True
@@ -412,18 +428,19 @@ def test_non_daily_heartbeat_does_not_unicast_leaderboard(
         assert saw_player_update, "expected at least one player_update from the heartbeat"
 
 
-def test_daily_heartbeat_routes_player_update_to_spectators_only(
-    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession]
+@pytest.mark.parametrize("kind", ASYNC_KINDS)
+def test_heartbeat_routes_player_update_to_spectators_only(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
 ) -> None:
-    """Daily races must not echo real player_update to mods.
+    """Async races must not echo real player_update to mods.
 
     Mods consume player_update by overwriting the matching participant row in
-    their local state (see mod/src/dll/tracker.rs). On a daily race the mod
+    their local state (see mod/src/dll/tracker.rs). On an async race the mod
     holds a projected leaderboard; receiving the real player_update would
     desync that single row until the next leaderboard tick. Spectators must
     still get the real payload (web UI is spoilers-OK).
     """
-    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, daily=True))
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
 
     with daily_client.websocket_connect(f"/ws/race/{race_id}") as spec_ws:
         spec_ws.send_json({"type": "no_auth"})
@@ -446,7 +463,7 @@ def test_daily_heartbeat_routes_player_update_to_spectators_only(
                 except TimeoutError:
                     break
                 assert msg.get("type") != "player_update", (
-                    f"daily heartbeat leaked player_update to mod: {msg}"
+                    f"{kind} heartbeat leaked player_update to mod: {msg}"
                 )
 
         bravo_update: dict[str, Any] | None = None

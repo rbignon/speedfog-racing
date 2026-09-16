@@ -320,9 +320,11 @@ The notification is best-effort: any HTTP error is logged but does not fail the 
 
 Daily Seeds are async: a player joining at hour 18 of the 24h window would otherwise see a leaderboard already populated with finishers, killing the sense of competition. To preserve immersion in the in-game overlay, the server projects each mod's `leaderboard_update` to its viewer's current IGT, so finishers and concurrent runners appear at the position they had when their own IGT matched the viewer's.
 
-Scope is **mod-only**: web spectators (`/daily/[date]`, OBS overlays) keep seeing the real state, since the daily is already explicitly spoilers-OK on the web side. The wire format is unchanged; see [PROTOCOL.md](PROTOCOL.md#leaderboard_update).
+The mechanism applies to every race whose `Race.projects_ghosts` property holds: Daily Seeds (`daily_date` set) and event qualifier seeds (`event_slot` of the form `qualifier:<mode>:<n>`, see [EVENTS.md](EVENTS.md#qualifier-races)), which run over their whole qualifier window with the same anytime-start shape. Nothing else in this document extends to qualifiers: streaks, weekly points, freezes, the reroll path and the `/daily` surfaces stay daily-only.
 
-`player_update` is routed to spectators only on daily races: the mod overwrites the matching participant row from any `player_update`, which would desync that single row from the rest of the projection until the next leaderboard tick. Updates that need to reach mods (a ghost progressing in real time) are picked up from the next projected `leaderboard_update`.
+Scope is **mod-only**: web spectators (`/daily/[date]`, `/race/[id]`, OBS overlays) keep seeing the real state, since the daily page and the event ladder are already explicitly spoilers-OK on the web side. The wire format is unchanged; see [PROTOCOL.md](PROTOCOL.md#leaderboard_update).
+
+`player_update` is routed to spectators only on these races: the mod overwrites the matching participant row from any `player_update`, which would desync that single row from the rest of the projection until the next leaderboard tick. Updates that need to reach mods (a ghost progressing in real time) are picked up from the next projected `leaderboard_update`.
 
 ### Projection rules
 
@@ -363,6 +365,7 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 ### Edge cases
 
 - **Daily ends at T+24h.** The race transitions to `finished` and any remaining mods are evicted by the lifecycle. No special teardown for the projection.
+- **Qualifier attached or detached mid-race.** `projects_ghosts` is read at each broadcast, so attaching a running race to a qualifier slot turns the projection on at the next update and detaching turns it off, with no state to reset on either side.
 - **Reroll during a running daily.** The reroll path resets every participant's `zone_history`, so the projected ghost set becomes empty until participants restart, exactly mirroring the real-race semantics.
 - **Concurrent live runners.** A ghost still racing in real time has a partial `zone_history`; the projection clamps to its last available state until it advances further. Their progression naturally propagates via the trigger above.
 

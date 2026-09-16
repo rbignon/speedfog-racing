@@ -30,7 +30,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 2. **Force-finish**: `POST /races/{id}/finish` (organizer). Same optimistic lock mechanism.
 3. **Inactivity monitor**: when the last active participant is auto-abandoned (30 min stale IGT, or 30 min no-show on races without `race_duration_minutes`), the monitor calls `check_race_auto_finish()`. Daily-seed races (`Race.daily_date IS NOT NULL`) are skipped: the asynchronous 24h window makes inactivity-based abandonment misleading.
 
-   Event qualifier seeds (`races.event_slot` starting with `qualifier:`) are ordinary week-long races for the lifecycle: the inactivity monitor and the hard-close loop apply to them as to any race. They are only kept out of the public listings (`api/helpers.not_event_qualifier`) and live on their event page; the admin in-flight list keeps them so they can be detached. See `EVENTS.md`.
+   Event qualifier seeds (`races.event_slot` starting with `qualifier:`) are ordinary week-long races for the lifecycle: the inactivity monitor and the hard-close loop apply to them as to any race. They are kept out of the public listings (`api/helpers.not_event_qualifier`) and live on their event page; the admin in-flight list keeps them so they can be detached. See `EVENTS.md`. Like dailies, they replay against asynchronous ghosts in the in-game overlay (`Race.projects_ghosts`, see the "In-mod replay leaderboard" section of `DAILY_SEED.md`).
 
 4. **Hard-close loop** (`hard_close_loop`, polls every 10s):
    - For races with `race_duration_minutes` set, force-finishes any race past `started_at + race_duration_minutes` (`close_expired_races`); non-terminal participants are swept to `ABANDONED` via `finalize_race`.

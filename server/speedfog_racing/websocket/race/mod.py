@@ -145,8 +145,8 @@ async def _load_race_with_participants(db: AsyncSession, race_id: uuid.UUID) -> 
     Cheaper than _load_participant: skips the disconnecting participant's
     own eager tree, the seed, and the casters. The caller must supply
     graph_json from an earlier load (it does not change during a race).
-    The race row is returned so callers can read ``daily_date`` to drive
-    per-mod projected payloads.
+    The race row is returned so callers can read ``projects_ghosts`` to
+    drive per-mod projected payloads.
     """
     result = await db.execute(
         select(Race)
@@ -367,7 +367,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     self._race_id,
                     participant.race.participants,
                     graph_json=self._cached_graph_json,
-                    daily_date=participant.race.daily_date,
+                    project_ghosts=participant.race.projects_ghosts,
                 )
         except Exception:
             logger.warning("Failed to broadcast connect: race=%s", self._race_id)
@@ -383,7 +383,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                         self._race_id,
                         list(race.participants),
                         graph_json=self._cached_graph_json,
-                        daily_date=race.daily_date,
+                        project_ghosts=race.projects_ghosts,
                     )
         except Exception:
             logger.warning("Failed to broadcast disconnect: race=%s", self._race_id)
@@ -549,9 +549,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     entity.race_id,
                     entity,
                     graph_json=self._cached_graph_json,
-                    daily_date=entity.race.daily_date,
+                    project_ghosts=entity.race.projects_ghosts,
                 ),
-                self._maybe_unicast_daily_projection(entity),
+                self._maybe_unicast_projection(entity),
             )
             return
         else:
@@ -567,14 +567,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     entity.race_id,
                     entity.race.participants,
                     graph_json=_get_graph_json(entity),
-                    daily_date=entity.race.daily_date,
+                    project_ghosts=entity.race.projects_ghosts,
                 )
             else:
                 await manager.broadcast_player_update(
                     entity.race_id,
                     entity,
                     graph_json=_get_graph_json(entity),
-                    daily_date=entity.race.daily_date,
+                    project_ghosts=entity.race.projects_ghosts,
                 )
 
         if history_changed:
@@ -593,8 +593,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             if room:
                 await room.broadcast_to_mods(DeathCountsMessage(counts=counts).model_dump_json())
 
-    async def _maybe_unicast_daily_projection(self, entity: Participant) -> None:
-        """For daily races, unicast a fresh projected leaderboard to this mod.
+    async def _maybe_unicast_projection(self, entity: Participant) -> None:
+        """For async races, unicast a fresh projected leaderboard to this mod.
 
         Only runs on the non-active status_update path: the viewer's IGT
         advanced but no other state changed, so we recompute their
@@ -603,7 +603,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         assert self._participant_id is not None
         if entity.status != ParticipantStatus.PLAYING:
             return
-        if entity.race.daily_date is None:
+        if not entity.race.projects_ghosts:
             return
 
         async with self.session_maker() as db:
@@ -633,14 +633,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.participants,
                 graph_json=seed_graph,
-                daily_date=entity.race.daily_date,
+                project_ghosts=entity.race.projects_ghosts,
             )
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
                 entity,
                 graph_json=seed_graph,
-                daily_date=entity.race.daily_date,
+                project_ghosts=entity.race.projects_ghosts,
             )
 
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
@@ -689,14 +689,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id,
                 entity.race.participants,
                 graph_json=_get_graph_json(entity),
-                daily_date=entity.race.daily_date,
+                project_ghosts=entity.race.projects_ghosts,
             )
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
                 entity,
                 graph_json=_get_graph_json(entity),
-                daily_date=entity.race.daily_date,
+                project_ghosts=entity.race.projects_ghosts,
             )
 
         if prev_zone_history_len is not None:
@@ -729,7 +729,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             participant.race_id,
             participant.race.participants,
             graph_json=_get_graph_json(participant),
-            daily_date=participant.race.daily_date,
+            project_ghosts=participant.race.projects_ghosts,
         )
 
     async def _handle_finished_message(self, msg: dict[str, Any]) -> None:
@@ -817,7 +817,7 @@ async def handle_deathless_death(
         participant.race_id,
         participant.race.participants,
         graph_json=_get_graph_json(participant),
-        daily_date=participant.race.daily_date,
+        project_ghosts=participant.race.projects_ghosts,
     )
     if not race_transitioned:
         # Parity with POST /races/{id}/abandon: push race_state so spectators
@@ -942,7 +942,7 @@ async def handle_finished(
         participant.race_id,
         participant.race.participants,
         graph_json=_get_graph_json(participant),
-        daily_date=participant.race.daily_date,
+        project_ghosts=participant.race.projects_ghosts,
     )
 
     # Unlock the PUBLIC channel for the finished participant before

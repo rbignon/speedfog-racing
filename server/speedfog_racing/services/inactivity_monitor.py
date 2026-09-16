@@ -189,7 +189,7 @@ async def inactivity_monitor_loop(
                             race_id,
                             race.participants,
                             graph_json=graph_json,
-                            daily_date=race.daily_date,
+                            project_ghosts=race.projects_ghosts,
                         )
                         await broadcast_race_state_update(race_id, race)
                         if race.status == RaceStatus.FINISHED:

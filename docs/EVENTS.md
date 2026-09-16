@@ -164,6 +164,13 @@ started.
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
 
+In game, a qualifier seed replays like a Daily Seed: once the runner is
+playing, the overlay's leaderboard is projected to their own IGT, so the
+other runners appear where they stood at that time instead of as a settled
+field of finishers. The web race page and the ladder keep the real state.
+See the "In-mod replay leaderboard" section of
+[DAILY_SEED.md](DAILY_SEED.md#in-mod-replay-leaderboard).
+
 ## Running an event (admin)
 
 1. `/admin`, Events tab: create the event from the template, adjust dates,

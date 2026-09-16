@@ -424,7 +424,7 @@ Broadcast to all mods and spectators when any player's state changes (ready, new
 
 `zone_history` is always `null` in `leaderboard_update` broadcasts (and in `player_update`). Clients bootstrap the full history from `race_state` on the spectator endpoint, then apply `zone_history` snapshots to track new visits and death attribution. Mods don't consume `zone_history`, so they never need a fresh copy. See [zone_history updates](#zone_history-updates).
 
-**Daily races (per-mod projection).** Daily races (those with `daily_date != null`) replay against asynchronous ghosts, so a finished or concurrent runner must appear as if racing in parallel with the local viewer. For these races, web spectators still receive the real-state payload, but each connected mod whose participant is currently `playing` receives a payload tailored to its own IGT: every other participant's `status`, `current_zone`, `current_layer`, `igt_ms`, `death_count` and `zone_history` are projected to the viewer's IGT. The wire format is identical to a regular `leaderboard_update`; the mod does not know it is consuming a projection. Non-playing mods (ready, registered, finished, abandoned) receive the same real payload as spectators, so projection is suspended outside the viewer's `playing` window. See `server/speedfog_racing/websocket/race/projection.py`.
+**Async races (per-mod projection).** Daily Seeds (`daily_date != null`) and event qualifier seeds (`event_slot` of the form `qualifier:<mode>:<n>`), together `Race.projects_ghosts`, replay against asynchronous ghosts, so a finished or concurrent runner must appear as if racing in parallel with the local viewer. For these races, web spectators still receive the real-state payload, but each connected mod whose participant is currently `playing` receives a payload tailored to its own IGT: every other participant's `status`, `current_zone`, `current_layer`, `igt_ms`, `death_count` and `zone_history` are projected to the viewer's IGT. The wire format is identical to a regular `leaderboard_update`; the mod does not know it is consuming a projection. Non-playing mods (ready, registered, finished, abandoned) receive the same real payload as spectators, so projection is suspended outside the viewer's `playing` window. See `server/speedfog_racing/websocket/race/projection.py`.
 
 #### `race_status_change`
 
@@ -551,7 +551,7 @@ The mod uses these counts with `death_flags` from `SeedInfo` to set EMEVD event 
 
 Single player update, broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
 
-**Daily races (mods skipped).** On daily races (`daily_date != null`), `player_update` is routed to spectators only. Mods consume `player_update` by overwriting the matching row in their local participant list, which would desync that single row from the projected leaderboard until the next `leaderboard_update` tick (~1s). Mods receive their per-viewer projection through `leaderboard_update` instead.
+**Async races (mods skipped).** On async races (`Race.projects_ghosts`: Daily Seeds and event qualifier seeds), `player_update` is routed to spectators only. Mods consume `player_update` by overwriting the matching row in their local participant list, which would desync that single row from the projected leaderboard until the next `leaderboard_update` tick (~1s). Mods receive their per-viewer projection through `leaderboard_update` instead.
 
 #### `daily_streak_update`
 

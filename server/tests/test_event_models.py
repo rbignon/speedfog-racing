@@ -5,9 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.api.helpers import not_event_qualifier
 from speedfog_racing.database import Base
 from speedfog_racing.models import Event, EventSignup, Race, User, UserRole
 
@@ -77,3 +79,32 @@ async def test_a_runner_signs_up_for_an_event_once(session_factory):
         db.add(EventSignup(event_id=event.id, user_id=user.id))
         with pytest.raises(IntegrityError):
             await db.commit()
+
+
+async def test_qualifier_listing_filter_mirrors_the_model_predicate(session_factory):
+    """``not_event_qualifier()`` (SQL) and ``Race.is_event_qualifier`` (Python)
+    state one rule twice; the listing filter must keep exactly the races the
+    property rejects, whatever slot shapes exist."""
+    async with session_factory() as db:
+        user = User(twitch_id="u1", twitch_username="orga", role=UserRole.ORGANIZER)
+        event = _event()
+        db.add_all([user, event])
+        await db.flush()
+        races = [
+            Race(name="plain", organizer_id=user.id),
+            Race(name="stage", organizer_id=user.id, event_id=event.id, event_slot="semi:1"),
+            Race(
+                name="qualifier",
+                organizer_id=user.id,
+                event_id=event.id,
+                event_slot="qualifier:standard:1",
+            ),
+        ]
+        db.add_all(races)
+        await db.commit()
+
+        listed = set((await db.execute(select(Race.id).where(not_event_qualifier()))).scalars())
+
+    assert listed == {r.id for r in races if not r.is_event_qualifier}
+    # Guard against both definitions drifting to "everything" or "nothing".
+    assert 0 < len(listed) < len(races)

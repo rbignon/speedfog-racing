@@ -183,7 +183,7 @@ class TwitchLiveService:
                     race.id,
                     list(race.participants),
                     graph_json=graph,
-                    daily_date=race.daily_date,
+                    project_ghosts=race.projects_ghosts,
                 )
             except Exception:
                 logger.exception("Failed to broadcast live change for race %s", race.id)

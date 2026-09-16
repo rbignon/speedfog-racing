@@ -156,7 +156,7 @@ async def finalize_race(
     # to ABANDONED, so the in-game overlay can't react to its own auto-abandon.
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race.id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        race.id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
 
     await broadcast_race_state_update(race.id, race)

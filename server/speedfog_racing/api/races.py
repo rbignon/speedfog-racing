@@ -818,7 +818,7 @@ async def add_participant(
         race = await _get_race_or_404(db, race_id, load_participants=True)
         graph_json = race.seed.graph_json if race.seed else None
         await manager.broadcast_leaderboard(
-            race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+            race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
         )
         await broadcast_race_state_update(race_id, race)
 
@@ -932,7 +932,7 @@ async def remove_participant(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -1200,7 +1200,7 @@ async def join_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -1270,7 +1270,7 @@ async def leave_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -1578,7 +1578,7 @@ async def reroll_seed(
     if is_daily:
         graph_json = race.seed.graph_json if race.seed else None
         await manager.broadcast_leaderboard(
-            race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+            race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
         )
     await broadcast_race_state_update(race_id, race)
     # race_state is spectator-only; mods learn the new seed_id (to flag a stale
@@ -1800,7 +1800,7 @@ async def abandon_race(
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, daily_date=race.daily_date
+        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
     await broadcast_race_state_update(race_id, race)
 
