@@ -47,6 +47,10 @@ JOINABLE_PHASES: frozenset[Phase] = frozenset({"upcoming", "qualifier"})
 # opening day is the whole message rather than how few have committed yet.
 MIN_UPCOMING_PLAYERS = 10
 
+# The home page band previews this many players as an avatar stack, the
+# count carrying the rest.
+MAX_PLAYER_PREVIEWS = 8
+
 # An event stays on the bill (home page band, navbar link) this long after its
 # end, crowning its champion.
 FEATURED_TAIL = timedelta(days=7)

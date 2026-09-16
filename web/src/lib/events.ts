@@ -453,6 +453,8 @@ export interface EventBandState {
   actions: EventBandAction[];
   /** The viewer said they are in, and the event can still be joined. */
   signedUp: boolean;
+  /** Someone is in and the event can still be joined: stack their avatars after the line. */
+  showPlayers: boolean;
 }
 
 /**
@@ -479,27 +481,27 @@ export function eventBand(
       ? pageAction("primary")
       : { href: page, label: "Take part", kind: "primary" },
   ];
-  // A count of zero says nothing worth a word: the date is the whole message.
-  const players = event.players > 0 ? event.players : null;
-  const notSignedUp = { signedUp: false };
+  // While the event can be joined, who is in shows as avatars after the
+  // line; the server already hides them while too few have committed.
+  const joinable = {
+    signedUp: event.my_signup,
+    showPlayers: event.players > 0,
+  };
+  const closed = { signedUp: false, showPlayers: false };
   switch (event.phase) {
     case "upcoming":
       return {
         signal: { cls: "signal-setup", text: "Upcoming" },
-        line:
-          `Qualifier opens ${fmt(event.starts_at)}` +
-          (players ? ` · ${players} in` : ""),
+        line: `Qualifier opens ${fmt(event.starts_at)}`,
         actions: joinAction,
-        signedUp: event.my_signup,
+        ...joinable,
       };
     case "qualifier":
       return {
         signal: { cls: "signal-running", text: "Qualifier open" },
-        line:
-          `Closes ${fmt(event.qualifier_ends_at)}` +
-          (players ? ` · ${players} runner${players === 1 ? "" : "s"} in` : ""),
+        line: `Closes ${fmt(event.qualifier_ends_at)}`,
         actions: joinAction,
-        signedUp: event.my_signup,
+        ...joinable,
       };
     case "cut":
       return {
@@ -508,7 +510,7 @@ export function eventBand(
           ? `${event.next_stage.label} on ${fmt(event.next_stage.date)}`
           : null,
         actions: [pageAction("primary")],
-        ...notSignedUp,
+        ...closed,
       };
     case "playoffs": {
       const live = event.live;
@@ -532,7 +534,7 @@ export function eventBand(
                 },
             pageAction("outline"),
           ],
-          ...notSignedUp,
+          ...closed,
         };
       }
       return {
@@ -541,7 +543,7 @@ export function eventBand(
           ? `Next: ${event.next_stage.label} · ${fmt(event.next_stage.date)}`
           : null,
         actions: [pageAction("primary")],
-        ...notSignedUp,
+        ...closed,
       };
     }
     case "finished":
@@ -549,7 +551,7 @@ export function eventBand(
         signal: { cls: "signal-finished", text: "Finished" },
         line: event.champion ? "Champion" : null,
         actions: [pageAction("primary")],
-        ...notSignedUp,
+        ...closed,
       };
   }
 }

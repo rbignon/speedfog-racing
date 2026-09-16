@@ -3,7 +3,7 @@
   // the event page's lockup, a phase signal with one line of state, and the
   // buttons that lead there (or to the live race). Signing up stays on the
   // event page, which owns the Twitch intent flow.
-  import type { EventSummary } from "$lib/api";
+  import type { EventSummary, User } from "$lib/api";
   import { eventBand, formatEventDate } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
 
@@ -11,6 +11,11 @@
 
   // The instants on the line are ahead of the viewer, so they carry the zone.
   let state = $derived(eventBand(event, (iso) => formatEventDate(iso, true)));
+  let overflowCount = $derived(
+    Math.max(0, event.players - event.player_previews.length),
+  );
+  const nameOf = (user: User) =>
+    user.twitch_display_name || user.twitch_username;
 </script>
 
 <section class="band" aria-label="Current event">
@@ -27,6 +32,37 @@
         {#if state.line}<span class="line">{state.line}</span>{/if}
         {#if event.phase === "finished" && event.champion}
           <UserLink user={event.champion} showAvatar />
+        {/if}
+        {#if state.showPlayers}
+          <div
+            class="avatar-stack"
+            role="group"
+            aria-label="{event.players} player{event.players === 1
+              ? ''
+              : 's'} in"
+          >
+            {#each event.player_previews as user (user.id)}
+              {#if user.twitch_avatar_url}
+                <img
+                  src={user.twitch_avatar_url}
+                  alt={nameOf(user)}
+                  title={nameOf(user)}
+                  class="avatar"
+                />
+              {:else}
+                <span
+                  class="avatar avatar-placeholder"
+                  role="img"
+                  aria-label={nameOf(user)}
+                  title={nameOf(user)}
+                  >{nameOf(user).charAt(0).toUpperCase()}</span
+                >
+              {/if}
+            {/each}
+            {#if overflowCount > 0}
+              <span class="avatar avatar-overflow">+{overflowCount}</span>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>
@@ -123,6 +159,32 @@
   }
   .state .line {
     color: var(--color-text);
+  }
+  /* The race cards' crew row, on the band's own ground */
+  .avatar-stack {
+    display: flex;
+    align-items: center;
+  }
+  .avatar {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 2px solid var(--color-surface-elevated);
+    margin-left: -6px;
+    object-fit: cover;
+  }
+  .avatar:first-child {
+    margin-left: 0;
+  }
+  .avatar-placeholder,
+  .avatar-overflow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--color-surface);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
   }
   .band-right {
     display: flex;

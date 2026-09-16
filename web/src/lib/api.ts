@@ -582,6 +582,8 @@ export interface EventSummary {
   my_signup: boolean;
   /** Runners plus signups; zero while an upcoming event has too few to advertise. */
   players: number;
+  /** The first of them, the ladder's best first; the count carries the rest. */
+  player_previews: User[];
   next_stage: EventNextStage | null;
   live: EventLiveRace | null;
   champion: User | null;

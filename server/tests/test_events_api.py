@@ -657,19 +657,20 @@ async def test_listing_summary_during_the_qualifier(test_client, async_session):
         orga = await _user(db, "orga", UserRole.ORGANIZER)
         ana = await _user(db, "ana")
         bob = await _user(db, "bob")
-        cid = await _user(db, "cid")
+        # Sorts first and signed up first, yet previewed last: no run.
+        aaa = await _user(db, "aaa")
         event = await _season_event(db, "season-one", now - timedelta(days=1))
         s1 = await _seed(db, "standard", "s1")
         std1 = await _race(db, orga, s1, event, "qualifier:standard:1")
-        await _entry(db, std1, ana, ParticipantStatus.FINISHED, 2_000_000)
-        await _entry(db, std1, bob, ParticipantStatus.PLAYING, 400_000, layer=2)
-        db.add(EventSignup(event_id=event.id, user_id=cid.id))
+        db.add(EventSignup(event_id=event.id, user_id=aaa.id))
+        await _entry(db, std1, ana, ParticipantStatus.PLAYING, 400_000, layer=2)
+        await _entry(db, std1, bob, ParticipantStatus.FINISHED, 2_000_000)
         await db.commit()
 
     async with test_client as client:
         anonymous = (await client.get("/api/events")).json()
-        as_cid = (
-            await client.get("/api/events", headers={"Authorization": "Bearer tok-cid"})
+        as_aaa = (
+            await client.get("/api/events", headers={"Authorization": "Bearer tok-aaa"})
         ).json()
 
     (summary,) = anonymous
@@ -677,13 +678,16 @@ async def test_listing_summary_during_the_qualifier(test_client, async_session):
     assert summary["name"] == "Season One"
     assert summary["partner_name"] == "Ignite"
     assert summary["phase"] == "qualifier"
-    # Two runners on the seed plus one signup.
+    # Two runners on the seed plus one signup, previewed in the share card's
+    # order: the ladder best first (bob finished, ana is a DNF score), the
+    # signup without a run last, whatever the join order or the alphabet say.
     assert summary["players"] == 3
+    assert [u["twitch_username"] for u in summary["player_previews"]] == ["bob", "ana", "aaa"]
     assert summary["my_signup"] is False
     assert summary["next_stage"]["key"] == "semi_a"
     assert summary["live"] is None
     assert summary["champion"] is None
-    assert as_cid[0]["my_signup"] is True
+    assert as_aaa[0]["my_signup"] is True
 
 
 @pytest.mark.asyncio
@@ -701,6 +705,7 @@ async def test_listing_hides_a_young_upcoming_count(test_client, async_session):
         assert summary["phase"] == "upcoming"
         # Nine players in: the opening day is the whole message, not the count.
         assert summary["players"] == 0
+        assert summary["player_previews"] == []
 
         async with async_session() as db:
             tenth = await _user(db, "r9")
@@ -709,6 +714,10 @@ async def test_listing_hides_a_young_upcoming_count(test_client, async_session):
 
         (summary,) = (await client.get("/api/events")).json()
         assert summary["players"] == 10
+        # The stack is capped; the count carries the rest as a "+N" chip.
+        assert [u["twitch_username"] for u in summary["player_previews"]] == [
+            f"r{i}" for i in range(8)
+        ]
 
 
 @pytest.mark.asyncio

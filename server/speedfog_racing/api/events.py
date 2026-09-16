@@ -47,6 +47,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
+    MAX_PLAYER_PREVIEWS,
     MIN_UPCOMING_PLAYERS,
     UNDECIDED,
     Slot,
@@ -151,17 +152,33 @@ async def list_events(
             override=config.phase_override,
         )
 
-        # The Open Graph card's count: everyone who joined an event race, plus
-        # the signups while the event can still be joined, and nothing while
-        # an upcoming event has too few of them to advertise.
+        # The Open Graph card's count and order: everyone who joined an event
+        # race, plus the signups while the event can still be joined, the
+        # ladder's best first and the runners it could not rank after them;
+        # nothing while an upcoming event has too few of them to advertise.
         users: dict[UUID, User] = {
             p.user_id: p.user for race in event.races for p in race.participants
         }
+        signed_up: list[UUID] = []
         if phase in JOINABLE_PHASES:
+            signed_up = [s.user_id for s in event.signups]
             users.update({s.user_id: s.user for s in event.signups})
+        mode_keys = config.mode_keys()
+        qualifier = sorted(
+            ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
+            key=lambda item: (mode_keys.index(item[0].key), item[0].index),
+        )
+        ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
+        ranked_ids = {entry.user_id for entry in ladder}
+        ordered = [users[entry.user_id] for entry in ladder if entry.user_id in users]
+        ordered += sorted(
+            (user for user_id, user in users.items() if user_id not in ranked_ids),
+            key=lambda u: u.twitch_username,
+        )
         players = len(users)
+        previews = ordered[:MAX_PLAYER_PREVIEWS]
         if phase == "upcoming" and players < MIN_UPCOMING_PLAYERS:
-            players = 0
+            players, previews = 0, []
 
         live = None
         running = next(
@@ -200,6 +217,7 @@ async def list_events(
                 phase=phase,
                 my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
                 players=players,
+                player_previews=[UserResponse.model_validate(u) for u in previews],
                 next_stage=(
                     EventNextStageResponse(
                         key=upcoming.key, label=upcoming.label, date=upcoming.date

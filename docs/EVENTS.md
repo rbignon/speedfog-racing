@@ -338,13 +338,16 @@ season (kept for its champion) yields the head of the list to one still to
 come, so a season announced right after the last final is what the band
 shows; otherwise the earliest season leads.
 
-The summary is what the detail computes without the ladder: the phase, the
-`players` count under the Open Graph card's rule (everyone who joined an
-event race, plus the signups while the event can still be joined, and zero
-while an upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next
-stage, the live playoff race with the slot it fills (`live`), the champion
-once the final is complete, and `my_signup`. An event whose stored config no
-longer validates is left out rather than breaking the home page.
+The summary carries the phase, the `players` count and `player_previews`
+under the Open Graph card's rule (everyone who joined an event race, plus
+the signups while the event can still be joined, the ladder's best first;
+the first `MAX_PLAYER_PREVIEWS` of them are previewed; both empty while an
+upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
+live playoff race with the slot it fills (`live`), the champion once the
+final is complete, and `my_signup`. It skips the newcomer flags (the
+detail's only database work beyond the load) and the signature weapons. An
+event whose stored config no longer validates is left out rather than
+breaking the home page.
 
 `EventBand` sits between the hero and the Daily Seed on the home page and
 above the Daily Seed on the dashboard: the event page's lockup, a phase
@@ -353,12 +356,15 @@ signal, one line of state and the buttons, which `eventBand` in
 
 | phase       | line                                        | buttons                                                                      |
 | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
-| `upcoming`  | the opening, the count once it shows        | `Take part`, to the event page                                               |
-| `qualifier` | the closing, runners in                     | `Take part`, to the event page                                               |
+| `upcoming`  | the opening, then who is in                 | `Take part`, to the event page                                               |
+| `qualifier` | the closing, then who is in                 | `Take part`, to the event page                                               |
 | `cut`       | the first evening                           | `Event page`                                                                 |
 | `playoffs`  | live: stage and race index; else next stage | live: `Watch on Twitch` or `Race page`, then `Event page`; else `Event page` |
 | `finished`  | `Champion`, then the champion's link        | `Event page`                                                                 |
 
+Who is in shows as the race cards' avatar stack after the line (initials for
+a runner without an avatar, the name on hover, a `+N` chip for the players
+beyond the previews), while the event can be joined and someone is.
 Signing up stays on the event page: a viewer already in reads `You're in`
 next to the `Event page` button. The watch link follows the live strip's
 rule (a live caster's own stream, else the first caster's channel). The
@@ -394,7 +400,7 @@ whose final never happened falls back to the entrant row.
 
 Signups count as entrants while the event can still be joined: after the
 scored runners on the qualifier card, in signup order, and on the upcoming
-card once ten players are in (`_MIN_UPCOMING_ENTRANTS`). Below that the
+card once ten players are in (`MIN_UPCOMING_PLAYERS`). Below that the
 upcoming card carries neither the row nor the footer's player count, so a
 young event advertises its opening day rather than how few have committed,
 and its cache key does not move with the signups.

@@ -645,6 +645,7 @@ describe("eventBand", () => {
       phase: "upcoming",
       my_signup: false,
       players: 0,
+      player_previews: [],
       next_stage: null,
       live: null,
       champion: null,
@@ -652,33 +653,42 @@ describe("eventBand", () => {
     } as EventSummary;
   }
 
-  it("advertises the opening while upcoming, with the count only once there is one", () => {
+  it("advertises the opening while upcoming", () => {
     const young = eventBand(summaryWith({}), fmt);
     expect(young.signal.text).toBe("Upcoming");
     expect(young.line).toBe("Qualifier opens @2026-09-23T08:00:00Z");
     expect(young.actions).toEqual([
       { href: "/events/season-one", label: "Take part", kind: "primary" },
     ]);
-    expect(eventBand(summaryWith({ players: 14 }), fmt).line).toBe(
-      "Qualifier opens @2026-09-23T08:00:00Z · 14 in",
-    );
   });
 
-  it("names the deadline and counts the runners during the qualifier", () => {
+  it("names the deadline during the qualifier", () => {
     const open = eventBand(
       summaryWith({ phase: "qualifier", players: 41 }),
       fmt,
     );
     expect(open.signal.text).toBe("Qualifier open");
-    expect(open.line).toBe("Closes @2026-09-30T08:00:00Z · 41 runners in");
+    expect(open.line).toBe("Closes @2026-09-30T08:00:00Z");
     expect(open.actions[0].label).toBe("Take part");
-    expect(
-      eventBand(summaryWith({ phase: "qualifier", players: 1 }), fmt).line,
-    ).toBe("Closes @2026-09-30T08:00:00Z · 1 runner in");
-    // Opening morning: the deadline is the whole message, not "0 runners in".
-    expect(
-      eventBand(summaryWith({ phase: "qualifier", players: 0 }), fmt).line,
-    ).toBe("Closes @2026-09-30T08:00:00Z");
+  });
+
+  it("shows who is in only while the event can be joined and someone is", () => {
+    for (const phase of ["upcoming", "qualifier"] as const) {
+      expect(
+        eventBand(summaryWith({ phase, players: 14 }), fmt).showPlayers,
+        phase,
+      ).toBe(true);
+      expect(
+        eventBand(summaryWith({ phase, players: 0 }), fmt).showPlayers,
+        phase,
+      ).toBe(false);
+    }
+    for (const phase of ["cut", "playoffs", "finished"] as const) {
+      expect(
+        eventBand(summaryWith({ phase, players: 14 }), fmt).showPlayers,
+        phase,
+      ).toBe(false);
+    }
   });
 
   it("reports the viewer as in only while the event can still be joined", () => {

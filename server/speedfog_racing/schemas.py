@@ -1210,9 +1210,9 @@ class EventLiveRaceResponse(BaseModel):
 class EventSummaryResponse(BaseModel):
     """An event on the bill, as the home page and the navbar show it.
 
-    What the detail computes without the ladder: the phase, the player count
-    under the Open Graph card's rule, the next stage, the live playoff race and
-    the champion once the final is complete.
+    The phase, the player count and previews under the Open Graph card's rule
+    (the ladder orders them, best first), the next stage, the live playoff
+    race and the champion once the final is complete.
     """
 
     slug: str
@@ -1225,6 +1225,7 @@ class EventSummaryResponse(BaseModel):
     phase: str
     my_signup: bool
     players: int
+    player_previews: list[UserResponse]
     next_stage: EventNextStageResponse | None
     live: EventLiveRaceResponse | None
     champion: UserResponse | None

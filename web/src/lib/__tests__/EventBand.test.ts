@@ -15,6 +15,7 @@ function summaryWith(partial: Partial<EventSummary>): EventSummary {
     phase: "qualifier",
     my_signup: false,
     players: 3,
+    player_previews: [],
     next_stage: null,
     live: null,
     champion: null,
@@ -38,6 +39,50 @@ describe("EventBand", () => {
     expect(container.textContent).toContain("You're in");
     expect(links(container)["Take part"]).toBeUndefined();
     expect(links(container)["Event page"]).toBe("/events/season-one");
+  });
+
+  it("stacks the players' avatars, initials without one, and counts the rest", () => {
+    const player_previews = [
+      {
+        id: "u1",
+        twitch_username: "ana",
+        twitch_display_name: "Ana",
+        twitch_avatar_url: "https://cdn.test/ana.png",
+      },
+      {
+        id: "u2",
+        twitch_username: "bob",
+        twitch_display_name: null,
+        twitch_avatar_url: null,
+      },
+    ] as User[];
+    const { container } = render(EventBand, {
+      event: summaryWith({ players: 11, player_previews }),
+    });
+    const stack = container.querySelector(".avatar-stack");
+    expect(stack).not.toBeNull();
+    expect(stack?.querySelector("img")?.getAttribute("title")).toBe("Ana");
+    expect(stack?.querySelector(".avatar-placeholder")?.textContent).toBe("B");
+    expect(stack?.querySelector(".avatar-overflow")?.textContent).toBe("+9");
+    expect(container.textContent).not.toContain("11 in");
+  });
+
+  it("drops the stack once the event can no longer be joined", () => {
+    const { container } = render(EventBand, {
+      event: summaryWith({
+        phase: "cut",
+        players: 11,
+        player_previews: [
+          {
+            id: "u1",
+            twitch_username: "ana",
+            twitch_display_name: "Ana",
+            twitch_avatar_url: null,
+          },
+        ] as User[],
+      }),
+    });
+    expect(container.querySelector(".avatar-stack")).toBeNull();
   });
 
   it("crowns the champion as a link to their profile", () => {
