@@ -330,7 +330,6 @@
                         disabled={signupBusy}
                         onclick={() => setSignup(true)}>I'm in</button
                       >
-                      <p>Puts you on the ladder before you run.</p>
                     {/if}
                     {#if signupError}
                       <p class="signup-error">{signupError}</p>
@@ -352,7 +351,6 @@
                       );
                     }}>I'm in</a
                   >
-                  <p>Signs you in with Twitch first.</p>
                 {/if}
               </div>
             </div>
@@ -363,8 +361,8 @@
                 <p>
                   {detail.phase === "upcoming"
                     ? `Seeds open ${fmtZone(detail.starts_at)}.`
-                    : "Any of the seeds below."} The pack holds everything, game files
-                  and overlay. Nothing to install by hand.
+                    : "Any of the seeds below."}<br />The pack holds everything,
+                  game files and overlay. Nothing to install by hand.
                 </p>
               </div>
             </div>
