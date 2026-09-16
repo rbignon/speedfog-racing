@@ -464,9 +464,19 @@ class TimelineStop:
     kind: Literal["announce", "open", "cut", "semi", "newcomers", "final"]
 
 
+def announce_date(event: Event, config: EventConfig) -> datetime:
+    """When the event was announced: the first timeline stop and the newcomer cut.
+
+    A config with a newcomers' final always dates it (schema rule); without
+    one, the default only decides the newcomer tag.
+    """
+    starts_at, _, _ = event_window(event)
+    return config.announced_at or (starts_at - timedelta(days=7))
+
+
 def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
     starts_at, qualifier_ends_at, _ends_at = event_window(event)
-    announced = config.announced_at or (starts_at - timedelta(days=7))
+    announced = announce_date(event, config)
     stops = [
         TimelineStop(key="announce", label="Announce", date=announced, kind="announce"),
         TimelineStop(key="open", label="Seeds open", date=starts_at, kind="open"),

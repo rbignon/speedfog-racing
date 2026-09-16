@@ -33,6 +33,7 @@ CONFIG = {
         {"key": "boss_rush", "label": "Boss Rush"},
     ],
     "seeds_per_mode": 1,
+    "announced_at": "2026-09-16T18:00:00Z",
     "stages": [
         {
             "key": "semi_a",

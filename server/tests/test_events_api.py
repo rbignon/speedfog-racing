@@ -65,6 +65,7 @@ CONFIG = {
         },
     ],
     "rules": ["One sitting per run."],
+    "announced_at": "2026-09-16T18:00:00Z",
     "phase_override": "qualifier",
 }
 
@@ -541,3 +542,37 @@ async def test_signups_close_with_the_qualifier(test_client, world, async_sessio
     assert detail["ladder"]["signed_up"] == 0
     # The row itself stays; it just no longer lists anyone.
     assert detail["my_signup"] is True
+
+
+@pytest.mark.asyncio
+async def test_newcomer_cut_is_the_announcement(test_client, world, async_session):
+    """Runs between the announcement and the opening do not cost newcomer status:
+    what a player had finished when they learnt of the event is what counts."""
+    announced = datetime.fromisoformat(CONFIG["announced_at"])
+    async with async_session() as db:
+        orga = await _user(db, "orga3", UserRole.ORGANIZER)
+        dan = await _user(db, "dan")
+        eve = await _user(db, "eve")
+        for user, first_start in (
+            (dan, announced + timedelta(days=1)),
+            (eve, announced - timedelta(days=6)),
+        ):
+            for i in range(5):
+                race = await _race(
+                    db,
+                    orga,
+                    await _seed(db, "standard", f"{user.twitch_username}{i}"),
+                    None,
+                    None,
+                    status=RaceStatus.FINISHED,
+                    started_at=first_start + timedelta(hours=i),
+                )
+                await _entry(db, race, user, ParticipantStatus.FINISHED, 1_000_000)
+        await _entry(db, world["std1"], dan, ParticipantStatus.FINISHED, 2_500_000)
+        await _entry(db, world["std1"], eve, ParticipantStatus.FINISHED, 2_600_000)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    entries = {e["user"]["twitch_username"]: e for e in data["ladder"]["entries"]}
+    assert entries["dan"]["newcomer"] is True
+    assert entries["eve"]["newcomer"] is False

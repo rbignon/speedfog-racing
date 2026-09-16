@@ -25,7 +25,7 @@ computed on each request by `services/event_service.py`.
 | `playoff_rules`  | playoff rules, shown next to the bracket from the cut on (same cap)     |
 | `facts`          | optional `[{title, lines}]` tiles for the format block (see below)      |
 | `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)  |
-| `announced_at`   | first timeline stop; defaults to `starts_at` minus 7 days               |
+| `announced_at`   | the announcement: first timeline stop and newcomer cut (see Timeline)   |
 
 A stage: `key`, `label`, `kind` (`semi`, `newcomers`, `final`), `date`,
 `races` (per evening), `modes` (display labels, not pool keys: one chip per
@@ -39,9 +39,12 @@ Validation also rejects: seed numbers reused across `semi` stages (not just
 within one stage), semi seeds that do not cover the ladder from 1 without a
 gap (the newcomers' group draws from the ladder positions after the largest
 seed used by any semi, so a gap would exclude those positions from every
-playoff group at once), a `phase_override` outside the five phases, and a
-naive (timezone-less) `announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
-and `ends_at` on the upsert request are rejected the same way when naive.
+playoff group at once), a `phase_override` outside the five phases, a
+`newcomers` stage without `announced_at`, and a naive (timezone-less)
+`announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
+and `ends_at` on the upsert request are rejected the same way when naive, and
+so is an `announced_at` at or after `starts_at`: the qualifier's own runs
+would otherwise count towards the newcomer cut.
 
 One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of
@@ -71,6 +74,8 @@ viewer's timezone, so keep dates to the day.
 `announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then one
 `stage:<stage key>` per configured stage, in stage order. `announce` uses
 `announced_at` when the config sets it, otherwise `starts_at` minus 7 days.
+The same date is the newcomer cut (see Scoring), which is why a `newcomers`
+stage requires `announced_at`: a final's field must never hang on a default.
 
 ### Signups
 
@@ -109,10 +114,13 @@ first, proportional down the field, unfinished runs ranked by depth reached
 then time, floor of 1, over runs with at least two zone entries. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
 ranked; ties on the summed in-game time of the counted seeds. Newcomers have
-fewer than `newcomer_threshold` finished races started before `starts_at`.
-Daily seeds are races, so they count towards that; solo sessions are not, so
-they do not. The format block names daily seeds explicitly, since "races"
-alone reads as organised races to a player who mostly runs the daily.
+fewer than `newcomer_threshold` finished races started before the
+announcement (the timeline's `announce` stop), not the opening: what a player
+had played when they learnt of the event is what counts, so practising during
+the announcement week neither costs nor earns the status. Daily seeds are
+races, so they count towards that; solo sessions are not, so they do not. The
+format block names daily seeds explicitly, since "races" alone reads as
+organised races to a player who mostly runs the daily.
 
 A semi stage's `seeds` index into the sorted ladder position by position
 (seed 1 is the top entry, seed 2 the next, and so on), not by each entry's own

@@ -86,6 +86,12 @@
   let newcomersStage = $derived(
     detail.stages.find((s) => s.kind === "newcomers"),
   );
+  // The announcement is the newcomer cut. The timeline always carries it;
+  // the fallback only satisfies the type.
+  let announcedAt = $derived(
+    detail.timeline.find((s) => s.kind === "announce")?.date ??
+      detail.starts_at,
+  );
   let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(detail));
@@ -254,8 +260,8 @@
                 <strong>Newcomers get a final of their own</strong>
                 on <span class="date">{fmtDay(newcomersStage.date)}</span>. You
                 are a newcomer if you had finished fewer than {detail.newcomer_threshold}
-                SpeedFog races or daily seeds when the qualifier opened on
-                <span class="date">{fmtDay(detail.starts_at)}</span>: the {newcomersStage
+                SpeedFog races or daily seeds when the event was announced on
+                <span class="date">{fmtDay(announcedAt)}</span>: the {newcomersStage
                   .field.length} best newcomers outside the top {semiPlaces} make
                 up its field.
               </p>

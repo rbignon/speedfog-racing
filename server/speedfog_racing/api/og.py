@@ -18,9 +18,10 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Event, Participant, Race
+from speedfog_racing.schemas import EventConfig
 from speedfog_racing.services.avatar_cache import AvatarCache
 from speedfog_racing.services.daily_seed_loop import daily_date_for
-from speedfog_racing.services.event_service import count_finished_before, event_window, load_event
+from speedfog_racing.services.event_service import announce_date, count_finished_before, load_event
 from speedfog_racing.services.og_image import (
     STATUS_LABEL,
     event_og_description,
@@ -276,11 +277,11 @@ async def _load_event_card(db: AsyncSession, slug: str) -> tuple[Event, dict[UUI
     event = await load_event(db, slug)
     if event is None:
         return None
-    starts_at, _, _ = event_window(event)
+    config = EventConfig.model_validate(event.config)
     user_ids = {p.user_id for race in event.races for p in race.participants} | {
         s.user_id for s in event.signups
     }
-    return event, await count_finished_before(db, user_ids, starts_at)
+    return event, await count_finished_before(db, user_ids, announce_date(event, config))
 
 
 @router.get("/event/{slug}/meta", response_class=HTMLResponse)

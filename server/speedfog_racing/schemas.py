@@ -1033,6 +1033,11 @@ class EventConfig(BaseModel):
                 unknown = [k for k in (stage.from_ or []) if k not in semi_keys]
                 if unknown:
                     raise ValueError(f"from must name semi stages, got {unknown}")
+        # The announcement is the newcomer cut. A newcomers' final draws its
+        # field from that cut, so it must be an explicit date, never the
+        # timeline's display default.
+        if self.announced_at is None and any(s.kind == "newcomers" for s in self.stages):
+            raise ValueError("a newcomers stage needs announced_at")
         dates = [s.date for s in self.stages]
         if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
             raise ValueError("stage dates must be ascending")
@@ -1212,6 +1217,10 @@ class EventUpsertRequest(BaseModel):
                 raise ValueError(f"{field_name} must be timezone-aware")
         if not self.starts_at < self.qualifier_ends_at:
             raise ValueError("starts_at must be before qualifier_ends_at")
+        # The announcement is the newcomer cut: at or after the opening, the
+        # qualifier's own runs would count towards it.
+        if self.config.announced_at is not None and self.config.announced_at >= self.starts_at:
+            raise ValueError("announced_at must be before starts_at")
         if self.config.stages:
             if self.qualifier_ends_at > self.config.stages[0].date:
                 raise ValueError("qualifier_ends_at must not be after the first stage date")

@@ -47,6 +47,7 @@ from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     UNDECIDED,
     Slot,
+    announce_date,
     build_timeline,
     compute_ladder,
     compute_phase,
@@ -165,7 +166,7 @@ async def get_event(
 
     signed_up = [s.user_id for s in event.signups] if phase in JOINABLE_PHASES else []
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
-    finished_before = await count_finished_before(db, set(users), starts_at)
+    finished_before = await count_finished_before(db, set(users), announce_date(event, config))
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     qualified = compute_qualified(ladder, config, newcomers)
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)

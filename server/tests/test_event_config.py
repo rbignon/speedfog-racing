@@ -51,6 +51,7 @@ def _config(**overrides):
             },
         ],
         "rules": ["One sitting per run."],
+        "announced_at": "2026-09-16T18:00:00Z",
     }
     base.update(overrides)
     return base
@@ -160,6 +161,18 @@ def test_newcomers_without_size_rejected():
         EventConfig.model_validate(_config(stages=stages))
 
 
+def test_newcomers_stage_requires_announced_at():
+    """The announcement is the newcomer cut, so a newcomers' final needs it dated
+    rather than left to the timeline's display default."""
+    with pytest.raises(ValidationError, match="a newcomers stage needs announced_at"):
+        EventConfig.model_validate(_config(announced_at=None))
+
+
+def test_announced_at_stays_optional_without_a_newcomers_stage():
+    stages = [s for s in _config()["stages"] if s["kind"] != "newcomers"]
+    EventConfig.model_validate(_config(stages=stages, announced_at=None))
+
+
 def test_event_upsert_rejects_naive_dates():
     """A naive starts_at/ends_at must be rejected up front: compared against an aware
     stage date it would raise TypeError (a 500), and stored as-is it would silently
@@ -179,6 +192,21 @@ def test_event_upsert_rejects_naive_dates():
     naive_ends = dict(base_doc, ends_at="2026-10-26T00:00:00")
     with pytest.raises(ValidationError, match="ends_at"):
         EventUpsertRequest.model_validate(naive_ends)
+
+
+def test_event_upsert_rejects_announcement_at_or_after_the_opening():
+    """The announcement is the newcomer cut: at or after the opening, the
+    qualifier's own runs would count towards it."""
+    doc = {
+        "slug": "season-one",
+        "name": "Season One",
+        "starts_at": "2026-09-23T08:00:00+00:00",
+        "qualifier_ends_at": "2026-09-30T08:00:00+00:00",
+        "ends_at": "2026-10-26T00:00:00+00:00",
+        "config": _config(announced_at="2026-09-23T08:00:00+00:00"),
+    }
+    with pytest.raises(ValidationError, match="announced_at must be before starts_at"):
+        EventUpsertRequest.model_validate(doc)
 
 
 def test_from_alias_round_trips_through_json_dump():

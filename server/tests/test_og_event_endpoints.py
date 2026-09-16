@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import speedfog_racing.api.og as og_api
@@ -49,6 +49,7 @@ CONFIG = {
         },
     ],
     "phase_override": "qualifier",
+    "announced_at": "2026-09-16T18:00:00Z",
 }
 
 
@@ -228,3 +229,45 @@ async def test_png_endpoint_falls_back_when_the_stored_config_is_invalid(
         r = await c.get("/api/og/event/season-one.png", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"].endswith("/og-image.png")
+
+
+async def test_card_counts_runs_finished_before_the_announcement(event, async_session):
+    """The card flags newcomers with the same cut as the page: the announcement,
+    not the opening, so a run played in between is not counted."""
+    announced = datetime.fromisoformat(CONFIG["announced_at"])
+    async with async_session() as db:
+        ana = (await db.execute(select(User).where(User.twitch_username == "ana"))).scalar_one()
+        seed = Seed(
+            seed_number="ev2",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/seeds/ev2.zip",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        for started_at in (announced - timedelta(days=1), announced + timedelta(days=1)):
+            race = Race(
+                name="daily",
+                organizer_id=ana.id,
+                seed_id=seed.id,
+                status=RaceStatus.FINISHED,
+                started_at=started_at,
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=ana.id,
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=900_000,
+                    current_layer=4,
+                    zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+                )
+            )
+        await db.commit()
+        loaded = await og_api._load_event_card(db, "season-one")
+    assert loaded is not None
+    assert loaded[1] == {ana.id: 1}

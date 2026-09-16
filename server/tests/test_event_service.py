@@ -38,6 +38,7 @@ def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
         {
             "modes": [{"key": m, "label": m} for m in MODES],
             "seeds_per_mode": 2,
+            "announced_at": "2026-09-16T18:00:00Z",
             "stages": [
                 {
                     "key": "semi_a",
@@ -567,9 +568,9 @@ def test_timeline_uses_announced_at_when_present():
         "newcomers",
         "final",
     ]
-    assert stops[0].date == T0 - timedelta(days=7)
-    cfg.announced_at = datetime(2026, 9, 16, 18, tzinfo=UTC)
-    assert build_timeline(event, cfg)[0].date == cfg.announced_at
+    assert stops[0].date == datetime(2026, 9, 16, 18, tzinfo=UTC)
+    cfg.announced_at = None
+    assert build_timeline(event, cfg)[0].date == T0 - timedelta(days=7)
 
 
 def test_build_timeline_normalizes_naive_dates_without_mutating_event():
