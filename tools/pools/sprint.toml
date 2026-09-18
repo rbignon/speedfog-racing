@@ -61,8 +61,8 @@ stonesword_keys = 6
 enabled = true
 weapon_upgrade = 25
 weapons = 0
-shields = 0
-catalysts = 2
+shields = 1
+catalysts = 4
 talismans = 2
 sorceries = 2
 incantations = 2
@@ -71,7 +71,7 @@ body_armor = 1
 arm_armor = 1
 leg_armor = 1
 crystal_tears = 5
-ashes_of_war = 3
+ashes_of_war = 4
 
 [item_randomizer]
 difficulty = 40
