@@ -74,6 +74,7 @@ ashes_of_war = 3
 [item_randomizer]
 difficulty = 50
 nerf_gargoyles = true
+item_preset_path = "data/item_preset_without_weapons.yaml"
 
 [enemy]
 randomize_bosses = "minor"
