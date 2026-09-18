@@ -2,6 +2,34 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.28.0] - 2026-09-18
+
+### Speedfog × Ignite Season One
+
+These changes apply during the event:
+
+- **Bosses no longer drop weapons**: their drops now carry combat consumables instead (Exalted Flesh, Golden Vow, pickled livers, boluses, throwing daggers, greases, ...)
+- Sprint now gets the same care package as the other modes
+- **Dragonlord Placidusax, Scadutree Avatar, Metyr and Bayle** are no longer final bosses
+
+### Seeds
+
+- **Dragons are banned from most arenas**: a randomized dragon now only lands in the larger ones
+- **Fia's Champions** and the **Ghostflame Dragon and its skeletons** are no longer drawn to replace other bosses
+- The boss pool keeps only the **Altus Tibia Mariner**
+- The **Fire Giant** arena can now also lead onward by **burning the Erdtree** at the Forge of the Giants (mostly to prevent soft-locks)
+- Fix: a few bosses placed in another boss's arena, such as **Hornsent**, still wore that arena's vanilla name on their healthbar (a Hornsent read "Ancient Hero of Zamor"). They now show their own name
+
+### Auras
+
+- New **random aura**: once you own at least two auras, the picker offers a **Random** tile that draws one of your auras for each race, daily or training session
+- Fix: changing your aura while the game was running could leave your character **flipping between the old and the new aura** at each loading screen
+
+### Website
+
+- Fix: the **death skull in a training map's zone popup** no longer stretches the popup to full height
+- Fix: on phones, the **navigation bar now wraps** onto extra rows instead of cutting off links
+
 ## [1.27.0] - 2026-09-08
 
 ### Elden Ring 1.17.1
