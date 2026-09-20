@@ -180,6 +180,14 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "Click any **dungeon you have discovered** on the **metro map** to open its sheet and learn the **skips** available there, with videos.",
   },
   {
+    id: "gaol-keys",
+    kind: "tip",
+    level: "advanced",
+    title: "Lamenter's Gaol keys",
+    short:
+      "**Lamenter's Gaol** is split by two locked doors, and you start with **both gaol keys** in your inventory. There is no key to hunt in the cells: open each door on sight and walk the dungeon straight through to its **exit fog gate**.",
+  },
+  {
     id: "fia-champions-fortissax",
     kind: "tip",
     level: "advanced",

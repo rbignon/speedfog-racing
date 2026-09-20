@@ -299,6 +299,8 @@ def test_pool_config_starting_items_and_care_package(tmp_path, monkeypatch):
         '[display]\nestimated_duration = "~1h"\n'
         "[starting_items]\n"
         "academy_key = true\n"
+        "gaolupperlevelkey = true\n"
+        "gaollowerlevelkey = true\n"
         "lantern = true\n"
         "talisman_pouches = 3\n"
         "golden_seeds = 7\n"
@@ -337,6 +339,7 @@ def test_pool_config_starting_items_and_care_package(tmp_path, monkeypatch):
     si = config["starting_items"]
     assert "Lantern" in si
     assert "Academy Key" not in si  # anti-softlock keys excluded
+    assert "Lamenter's Gaol Keys" in si  # except the gaol pair, which opens a dungeon
 
     assert config["starting_runes"] == 100000
 
@@ -372,6 +375,22 @@ def test_pool_config_singular_items(tmp_path, monkeypatch):
     su = config["starting_upgrades"]
     assert "1 Talisman Pouch" in su
     assert "1 Larval Tear" in su
+
+
+def test_pool_config_single_gaol_key(tmp_path, monkeypatch):
+    """A pool granting only one gaol key names that key instead of the pair."""
+    pool_dir = tmp_path / "test_pool"
+    pool_dir.mkdir()
+    (pool_dir / "config.toml").write_text(
+        "[starting_items]\ngaolupperlevelkey = true\ngaollowerlevelkey = false\n"
+    )
+    monkeypatch.setattr(
+        "speedfog_racing.services.seed_service.settings",
+        type("S", (), {"seeds_pool_dir": str(tmp_path)})(),
+    )
+    config = _load_pool_config_from_disk("test_pool")
+    assert config is not None
+    assert config["starting_items"] == ["Lamenter's Gaol Upper Level Key"]
 
 
 def test_pool_config_defaults_to_race(tmp_path, monkeypatch):

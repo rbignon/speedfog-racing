@@ -103,6 +103,16 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
             starting_items.append(label)
     if sk := starting_items_raw.get("stonesword_keys"):
         starting_items.append(f"{sk} Stonesword Keys" if sk > 1 else "1 Stonesword Key")
+    # Lamenter's Gaol is cut in three by two locked doors; unlike the other
+    # anti-softlock keys, being handed both changes how the dungeon plays.
+    upper_gaol_key = starting_items_raw.get("gaolupperlevelkey")
+    lower_gaol_key = starting_items_raw.get("gaollowerlevelkey")
+    if upper_gaol_key and lower_gaol_key:
+        starting_items.append("Lamenter's Gaol Keys")
+    elif upper_gaol_key or lower_gaol_key:
+        # In-game names are "Gaol Upper/Lower Level Key"; prefix the dungeon.
+        level = "Upper" if upper_gaol_key else "Lower"
+        starting_items.append(f"Lamenter's Gaol {level} Level Key")
 
     # Build care package items list
     care_package_items: list[str] = []
