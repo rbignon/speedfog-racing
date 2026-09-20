@@ -330,6 +330,10 @@ the ones the tool hardcodes. It writes fabricated participations onto real
 user rows and consumes an available seed for each of the eighteen races it
 creates, so it refuses a database that is not on this machine.
 `--viewer <twitch username>` gives that runner a seed of every card state.
+`--exclude <twitch username>` (repeatable) keeps that user out of the roster,
+runners, casters and organizer alike, so a real account can join a qualifier
+seed by hand and see the field as a newcomer would, until the next run of the
+tool clears the participants again.
 The states before the cut also sign up the viewer and a dozen runners, so the
 ladder's signup rows and the upcoming card's avatar row show.
 

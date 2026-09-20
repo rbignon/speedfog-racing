@@ -30,7 +30,9 @@ Usage:
 
 With --viewer, that runner gets a seed of every card state (done, DNF,
 playing, joined, and two never entered), so the page can be checked from a
-participant's seat.
+participant's seat. With --exclude (repeatable), those users are kept out of
+the roster altogether, runners and casters alike, so a real account can join
+a qualifier seed by hand and see the field as a newcomer would.
 """
 
 from __future__ import annotations
@@ -483,7 +485,9 @@ async def ensure_race(
     that run detached it (the announce scenario does), created otherwise. Names
     match the ones docs/EVENTS.md has an organizer give real races, so the page
     shortens them the same way it will in production; adopting a race that
-    happens to carry one is why this tool refuses a non-local database.
+    happens to carry one is why this tool refuses a non-local database. The
+    organizer is rewritten on adoption too, so a run never leaves a race
+    organized by an account it was told to exclude.
     """
     by_slot = select(Race).where(Race.event_id == event.id, Race.event_slot == slot)
     by_name = select(Race).where(Race.name == name, Race.event_id.is_(None))
@@ -501,15 +505,24 @@ async def ensure_race(
         )
         db.add(race)
         await db.flush()
+    race.organizer_id = organizer.id
     for k, v in fields.items():
         setattr(race, k, v)
     return race
 
 
 async def pick_roster(
-    db, viewer: User | None, real_now: datetime, rng: random.Random
+    db,
+    viewer: User | None,
+    excluded: list[str],
+    real_now: datetime,
+    rng: random.Random,
 ) -> tuple[list[Runner], list[User]]:
-    """Runners and casters drawn from the local users, by their finished races."""
+    """Runners and casters drawn from the local users, by their finished races.
+
+    The viewer is drawn apart (it is added as the first runner below) and the
+    ``excluded`` usernames never enter the roster.
+    """
     # Only races outside any event count, so a previous run's fabricated
     # participations do not push its own newcomers out of the pool.
     finished_count = (
@@ -522,6 +535,7 @@ async def pick_roster(
         .subquery()
     )
     not_the_viewer = User.id != viewer.id if viewer else true()
+    not_excluded = User.twitch_username.notin_(excluded) if excluded else true()
     veterans = list(
         (
             await db.execute(
@@ -531,6 +545,7 @@ async def pick_roster(
                     User.twitch_avatar_url.isnot(None),
                     finished_count.c.n >= 15,
                     not_the_viewer,
+                    not_excluded,
                 )
                 .order_by(finished_count.c.n.desc())
                 .limit(40)
@@ -549,6 +564,7 @@ async def pick_roster(
                     func.coalesce(finished_count.c.n, 0) <= 2,
                     User.last_seen > real_now - timedelta(days=120),
                     not_the_viewer,
+                    not_excluded,
                 )
                 .order_by(User.last_seen.desc())
                 .limit(30)
@@ -572,7 +588,9 @@ async def pick_roster(
     return runners, casters
 
 
-async def simulate(stage: str, slug: str, viewer_name: str | None, force: bool) -> None:
+async def simulate(
+    stage: str, slug: str, viewer_name: str | None, excluded: list[str], force: bool
+) -> None:
     if not force:
         check_local_database()
     scenario = SCENARIOS[stage]
@@ -602,17 +620,32 @@ async def simulate(stage: str, slug: str, viewer_name: str | None, force: bool) 
             ).scalar_one_or_none()
             if viewer is None:
                 raise SystemExit(f"no user named {viewer_name!r}")
+        # A misspelt exclusion would silently let the account into the roster,
+        # the one thing the flag exists to prevent.
+        for name in excluded:
+            known = (
+                await db.execute(select(User.id).where(User.twitch_username == name))
+            ).scalar_one_or_none()
+            if known is None:
+                raise SystemExit(f"no user named {name!r} to exclude")
+        if viewer_name in excluded:
+            raise SystemExit("--viewer cannot also be excluded")
+        not_excluded = User.twitch_username.notin_(excluded) if excluded else true()
         organizer = (
             viewer
             or (
                 await db.execute(
-                    select(User).where(User.role == UserRole.ADMIN).limit(1)
+                    select(User)
+                    .where(User.role == UserRole.ADMIN, not_excluded)
+                    .order_by(User.created_at)
+                    .limit(1)
                 )
             ).scalar_one_or_none()
         )
         if organizer is None:
             raise SystemExit(
-                "no admin user to organize the races, and no --viewer given"
+                "no admin user outside --exclude to organize the races, "
+                "and no --viewer given"
             )
 
         config = EventConfig.model_validate(event.config)
@@ -633,7 +666,7 @@ async def simulate(stage: str, slug: str, viewer_name: str | None, force: bool) 
                 + "; ".join(mismatch)
             )
 
-        runners, casters = await pick_roster(db, viewer, real_now, rng)
+        runners, casters = await pick_roster(db, viewer, excluded, real_now, rng)
         skills = {r.user.id: r.skill for r in runners}
         newcomer_flags = {r.user.id: r.newcomer for r in runners}
         users_by_id = {r.user.id: r.user for r in runners}
@@ -885,12 +918,19 @@ def main() -> None:
         help="twitch username to give every seed-card state",
     )
     parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="USERNAME",
+        help="twitch username to keep out of the roster (repeatable)",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="write even though the database is not on this machine",
     )
     args = parser.parse_args()
-    asyncio.run(simulate(args.stage, args.slug, args.viewer, args.force))
+    asyncio.run(simulate(args.stage, args.slug, args.viewer, args.exclude, args.force))
 
 
 if __name__ == "__main__":
