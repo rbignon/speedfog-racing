@@ -675,9 +675,11 @@
       0,
       Math.floor((new Date(iso).getTime() - refMs) / 1000),
     );
-    const h = Math.floor(diff / 3600);
+    const d = Math.floor(diff / 86_400);
+    const h = Math.floor((diff % 86_400) / 3600);
     const m = Math.floor((diff % 3600) / 60);
     const s = diff % 60;
+    if (d > 0) return `${d}d ${h}h`;
     if (h > 0) return `${h}h ${m}min`;
     if (m > 0) return `${m}min ${s}s`;
     return `${s}s`;
