@@ -241,8 +241,17 @@ impl RaceTracker {
             OverlayAnchor::BottomRight => ([dw - ox, dh - oy], [1.0, 1.0]),
         };
 
-        let flags =
-            WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
+        // NO_INPUTS drops the panel out of ImGui's hit test. It carries no
+        // widget, and without a title bar its whole body answered to a
+        // click, which had ImGui take ActiveId and focus for the length of
+        // the hold. The window could not actually be displaced (the anchor
+        // above re-applies every frame) and the game always got the click
+        // (hudhook forwards every message); what goes away is ImGui
+        // reacting at all. Drop the flag if the panel gains a widget.
+        let flags = WindowFlags::NO_TITLE_BAR
+            | WindowFlags::ALWAYS_AUTO_RESIZE
+            | WindowFlags::NO_SCROLLBAR
+            | WindowFlags::NO_INPUTS;
 
         // Stays under the anchored panel, which keeps its own countdown
         // column readable: the ring and the vignette ride the background
