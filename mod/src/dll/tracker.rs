@@ -196,9 +196,6 @@ pub(crate) struct CachedColors {
 pub(crate) struct OverlayFonts {
     pub body_small: FontId,
     pub display: FontId,
-    /// Pixel size the display face was rasterized at, so callers that size
-    /// it off something other than `font_size` can scale it.
-    pub display_px: f32,
     pub mono: FontId,
     pub countdown: FontId,
 }

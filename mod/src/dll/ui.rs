@@ -89,8 +89,7 @@ impl ImguiRenderLoop for RaceTracker {
 
         // First added face is the atlas default (body)
         let _body = add_face(body_data, font_size);
-        let display_px = (font_size * DISPLAY_SCALE).round();
-        let display = add_face(EMBEDDED_FONT_DISPLAY, display_px);
+        let display = add_face(EMBEDDED_FONT_DISPLAY, (font_size * DISPLAY_SCALE).round());
         let mono = add_face(EMBEDDED_FONT_MONO, small_size);
         // Body at the mono pixel size: names inside mono rows
         let body_small = add_face(body_data, small_size);
@@ -122,14 +121,13 @@ impl ImguiRenderLoop for RaceTracker {
         self.overlay_fonts = Some(OverlayFonts {
             body_small,
             display,
-            display_px,
             mono,
             countdown,
         });
 
         info!(
             size = font_size,
-            "Overlay fonts registered (body, display, mono)"
+            "Overlay fonts registered (body, display, mono, countdown)"
         );
 
         // Load death icon texture.
@@ -286,10 +284,10 @@ impl RaceTracker {
     }
 
     /// Fullscreen race countdown, drawn over the character screen the players
-    /// wait on: the race name, a brass ring draining to zero, the digit
-    /// crossfading on every tick and a soft vignette closing in, then a `GO!`
-    /// burst. The status line keeps its own countdown column, which is what
-    /// remains when `overlay.fullscreen_countdown` is off.
+    /// wait on: a brass ring draining to zero, the digit crossfading on every
+    /// tick and a soft vignette closing in, then a `GO!` burst. The status
+    /// line keeps its own countdown column, which is what remains when
+    /// `overlay.fullscreen_countdown` is off.
     ///
     /// Everything is sized off the display, recomputed here every frame: a
     /// resolution change mid-session (alt-tab, borderless swap) is picked up
@@ -395,15 +393,6 @@ impl RaceTracker {
             .size([dw, dh], Condition::Always)
             .flags(flags)
             .build(|| {
-                if let Some(race) = self.race_info().filter(|_| frame.title_alpha > 0.0) {
-                    let _font = ui.push_font(fonts.display);
-                    ui.set_window_font_scale(layout.title_font_px / fonts.display_px);
-                    let width = ui.calc_text_size(&race.name)[0];
-                    ui.set_cursor_screen_pos([cx - width * 0.5, layout.title_y]);
-                    let t = c.text_disabled;
-                    ui.text_colored([t[0], t[1], t[2], frame.title_alpha], &race.name);
-                }
-
                 let _font = ui.push_font(fonts.countdown);
                 // Outgoing first, so the incoming glyph lands on top of it.
                 for glyph in frame

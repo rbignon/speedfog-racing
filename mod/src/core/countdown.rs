@@ -58,8 +58,6 @@ pub struct CountdownFrame {
     pub shockwave: Option<Shockwave>,
     /// Alpha of the screen-edge darkening.
     pub vignette: f32,
-    /// Alpha of the race name above the ring.
-    pub title_alpha: f32,
 }
 
 /// Distance from a drawn glyph's top-left origin down to the optical center
@@ -91,9 +89,6 @@ pub struct CountdownLayout {
     pub center: [f32; 2],
     /// Font size for the digits and `GO!`, before the glyph's own scale.
     pub digit_font_px: f32,
-    pub title_font_px: f32,
-    /// Top of the race name, which the overlay centers horizontally itself.
-    pub title_y: f32,
     pub ring_radius: f32,
     pub ring_thickness: f32,
     /// Segments in a full circle of the ring.
@@ -121,16 +116,11 @@ const GO_SHOCKWAVE_SPREAD: f32 = 1.6;
 const VIGNETTE_MAX: f32 = 0.3;
 /// How fast the screen clears once the race is on.
 const GO_CLEAR: f32 = 0.4;
-const TITLE_ALPHA: f32 = 0.85;
-const TITLE_FADE_IN: f32 = 0.4;
 
 /// Share of the display's reference dimension each part takes.
 const DIGIT_SIZE: f32 = 0.13;
 const RING_RADIUS: f32 = 0.115;
 const RING_THICKNESS: f32 = 0.009;
-const TITLE_SIZE: f32 = 0.026;
-/// Gap between the ring and the race name, in title font sizes.
-const TITLE_GAP: f32 = 2.0;
 
 fn ease_out_cubic(t: f32) -> f32 {
     let remaining = 1.0 - t.clamp(0.0, 1.0);
@@ -181,7 +171,6 @@ pub fn countdown_frame(total: Duration, elapsed: Duration) -> Option<CountdownFr
             ring_alpha: clearing,
             shockwave: shockwave(age, GO_SHOCKWAVE_DURATION, GO_SHOCKWAVE_SPREAD, 0.85),
             vignette: VIGNETTE_MAX * clearing,
-            title_alpha: TITLE_ALPHA * clearing,
         });
     }
 
@@ -210,7 +199,6 @@ pub fn countdown_frame(total: Duration, elapsed: Duration) -> Option<CountdownFr
         // Quadratic, so the screen barely moves early on and closes in over
         // the last few seconds.
         vignette: VIGNETTE_MAX * progress * progress,
-        title_alpha: TITLE_ALPHA * (elapsed_s / TITLE_FADE_IN).clamp(0.0, 1.0),
     })
 }
 
@@ -266,13 +254,10 @@ pub fn countdown_layout(display: [f32; 2]) -> CountdownLayout {
     // narrow enough that a height-sized ring would run off its sides.
     let base = display[1].min(display[0] * 0.75);
     let ring_radius = base * RING_RADIUS;
-    let title_font_px = (base * TITLE_SIZE).max(11.0);
 
     CountdownLayout {
         center: [display[0] * 0.5, display[1] * 0.5],
         digit_font_px: base * DIGIT_SIZE,
-        title_font_px,
-        title_y: display[1] * 0.5 - ring_radius - title_font_px * TITLE_GAP,
         ring_radius,
         ring_thickness: (base * RING_THICKNESS).max(2.0),
         // Segment count follows the radius so the arc stays smooth at 4K
@@ -431,11 +416,6 @@ mod tests {
     }
 
     #[test]
-    fn test_the_race_name_fades_in_at_the_start() {
-        assert!(at(0.0).title_alpha < at(0.5).title_alpha);
-    }
-
-    #[test]
     fn test_every_frame_stays_within_drawable_bounds() {
         let mut elapsed = 0.0;
         while let Some(frame) = countdown_frame(TOTAL, Duration::from_secs_f32(elapsed)) {
@@ -462,11 +442,6 @@ mod tests {
                 (0.0..=0.5).contains(&frame.vignette),
                 "vignette {} at {elapsed}s",
                 frame.vignette
-            );
-            assert!(
-                (0.0..=1.0).contains(&frame.title_alpha),
-                "title_alpha {} at {elapsed}s",
-                frame.title_alpha
             );
             if let Some(wave) = frame.shockwave {
                 assert!(wave.radius_factor >= 1.0, "wave shrank at {elapsed}s");
@@ -513,18 +488,6 @@ mod tests {
             "ring {} wider than the window",
             narrow.ring_radius * 2.0
         );
-    }
-
-    #[test]
-    fn test_the_race_name_sits_clear_of_the_ring() {
-        for display in [[1280.0, 720.0], [1920.0, 1080.0], [3840.0, 2160.0]] {
-            let layout = countdown_layout(display);
-            assert!(
-                layout.title_y + layout.title_font_px < layout.center[1] - layout.ring_radius,
-                "title overlaps the ring at {display:?}"
-            );
-            assert!(layout.title_y > 0.0, "title off-screen at {display:?}");
-        }
     }
 
     #[test]
