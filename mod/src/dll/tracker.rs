@@ -41,6 +41,8 @@ pub(crate) struct RenderBuffers {
     /// Last rendered "time left" seconds + its formatted text (rebuilt 1x/s).
     pub banner_secs: Option<i64>,
     pub banner_text: String,
+    /// Digit (or `GO!`) drawn by the fullscreen countdown.
+    pub countdown_label: String,
 }
 
 impl Default for RenderBuffers {
@@ -55,6 +57,7 @@ impl Default for RenderBuffers {
             buf_footer: String::new(),
             banner_secs: None,
             banner_text: String::new(),
+            countdown_label: String::new(),
         }
     }
 }
@@ -179,6 +182,7 @@ pub(crate) struct CachedColors {
     pub danger_dark: [f32; 4], // #B5462F
     pub purple: [f32; 4],      // #A99BC9 - fog, local player accent
     pub purple_bg: [f32; 4],   // fog at 0.12 - leaderboard row bg
+    pub ground: [f32; 4],      // #0F1923 - page ground, alpha set per use
 }
 
 /// ImGui font ids for the overlay's faces, registered at ImGui init. The
@@ -186,11 +190,17 @@ pub(crate) struct CachedColors {
 /// the race name; mono the data columns (IGT, gaps, counters, debug); and
 /// body_small is the body face at the mono pixel size, for names inside
 /// mono rows (ImGui top-aligns mixed-size text on a line, so equal pixel
-/// sizes are what keep a shared baseline).
+/// sizes are what keep a shared baseline). The countdown face is the display
+/// face again, rasterized once at `COUNTDOWN_FONT_ATLAS_PX` and scaled at
+/// draw time: its size follows the display, which the atlas cannot.
 pub(crate) struct OverlayFonts {
     pub body_small: FontId,
     pub display: FontId,
+    /// Pixel size the display face was rasterized at, so callers that size
+    /// it off something other than `font_size` can scale it.
+    pub display_px: f32,
     pub mono: FontId,
+    pub countdown: FontId,
 }
 
 // SAFETY: FontId wraps a raw pointer into the ImGui font atlas, which makes
@@ -343,6 +353,7 @@ impl RaceTracker {
             danger_dark: parse_hex_color("#B5462F", 1.0),
             purple: parse_hex_color("#A99BC9", 1.0),
             purple_bg: parse_hex_color("#A99BC9", 0.12),
+            ground: parse_hex_color("#0F1923", 1.0),
         };
 
         let config_seed_id = config.server.seed_id.clone();

@@ -111,6 +111,11 @@ pub struct OverlaySettings {
     /// Vertical margin from the anchored corner in pixels.
     #[serde(default = "default_position_offset_y")]
     pub position_offset_y: f32,
+
+    /// Draw the race countdown across the whole screen (digits, ring and a
+    /// soft vignette) on top of the status line's own countdown.
+    #[serde(default = "default_fullscreen_countdown")]
+    pub fullscreen_countdown: bool,
 }
 
 fn default_enabled() -> bool {
@@ -142,6 +147,9 @@ fn default_position_offset_x() -> f32 {
 fn default_position_offset_y() -> f32 {
     20.0
 }
+fn default_fullscreen_countdown() -> bool {
+    true
+}
 
 impl Default for OverlaySettings {
     fn default() -> Self {
@@ -158,6 +166,7 @@ impl Default for OverlaySettings {
             anchor: default_anchor(),
             position_offset_x: default_position_offset_x(),
             position_offset_y: default_position_offset_y(),
+            fullscreen_countdown: default_fullscreen_countdown(),
         }
     }
 }

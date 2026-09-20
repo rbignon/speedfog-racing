@@ -5,11 +5,15 @@ use std::fmt::Write;
 use std::time::Duration;
 
 use hudhook::imgui::{
-    Condition, FontConfig, FontGlyphRanges, FontSource, Image, StyleColor, WindowFlags,
+    Condition, FontConfig, FontGlyphRanges, FontSource, Image, StyleColor, StyleVar, WindowFlags,
 };
 use hudhook::{ImguiRenderLoop, RenderContext};
 use tracing::{error, info};
 
+use crate::core::countdown::{
+    countdown_frame, countdown_layout, ring_arc, GlyphLabel, COUNTDOWN_FONT_ATLAS_PX,
+    DIGIT_INK_CENTER,
+};
 use crate::core::protocol::{ParticipantStatus, RaceStatus};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
@@ -85,14 +89,42 @@ impl ImguiRenderLoop for RaceTracker {
 
         // First added face is the atlas default (body)
         let _body = add_face(body_data, font_size);
-        let display = add_face(EMBEDDED_FONT_DISPLAY, (font_size * DISPLAY_SCALE).round());
+        let display_px = (font_size * DISPLAY_SCALE).round();
+        let display = add_face(EMBEDDED_FONT_DISPLAY, display_px);
         let mono = add_face(EMBEDDED_FONT_MONO, small_size);
         // Body at the mono pixel size: names inside mono rows
         let body_small = add_face(body_data, small_size);
+
+        // The countdown face: the display face again, rasterized once at a
+        // size the whole screen can carry and scaled down at draw time, since
+        // its drawn size follows the display resolution rather than
+        // `font_size`. Only the glyphs it ever draws are packed, and at this
+        // size the rasterizer's default 3x horizontal oversampling would
+        // triple the atlas footprint for no visible gain.
+        const COUNTDOWN_RANGES: &[u32] = &[
+            0x0021, 0x0021, // !
+            0x0030, 0x0039, // digits
+            0x0047, 0x0047, // G
+            0x004F, 0x004F, // O
+            0,
+        ];
+        let countdown = fonts.add_font(&[FontSource::TtfData {
+            data: EMBEDDED_FONT_DISPLAY,
+            size_pixels: COUNTDOWN_FONT_ATLAS_PX,
+            config: Some(FontConfig {
+                glyph_ranges: FontGlyphRanges::from_slice(COUNTDOWN_RANGES),
+                oversample_h: 1,
+                oversample_v: 1,
+                ..FontConfig::default()
+            }),
+        }]);
+
         self.overlay_fonts = Some(OverlayFonts {
             body_small,
             display,
+            display_px,
             mono,
+            countdown,
         });
 
         info!(
@@ -214,6 +246,13 @@ impl RaceTracker {
         let flags =
             WindowFlags::NO_TITLE_BAR | WindowFlags::ALWAYS_AUTO_RESIZE | WindowFlags::NO_SCROLLBAR;
 
+        // Stays under the anchored panel, which keeps its own countdown
+        // column readable: the ring and the vignette ride the background
+        // draw list, and the glyph window never comes to the front.
+        if self.config.overlay.fullscreen_countdown {
+            self.render_countdown_overlay(ui, &mut bufs);
+        }
+
         {
             profile_span!("imgui_window");
             ui.window("SpeedFog Race")
@@ -244,6 +283,155 @@ impl RaceTracker {
         self.render_bufs = bufs;
 
         crate::core::profile::frame_mark();
+    }
+
+    /// Fullscreen race countdown, drawn over the character screen the players
+    /// wait on: the race name, a brass ring draining to zero, the digit
+    /// crossfading on every tick and a soft vignette closing in, then a `GO!`
+    /// burst. The status line keeps its own countdown column, which is what
+    /// remains when `overlay.fullscreen_countdown` is off.
+    ///
+    /// Everything is sized off the display, recomputed here every frame: a
+    /// resolution change mid-session (alt-tab, borderless swap) is picked up
+    /// by the next frame, and the face is scaled rather than re-rasterized.
+    fn render_countdown_overlay(&self, ui: &hudhook::imgui::Ui, bufs: &mut RenderBuffers) {
+        let (Some(end), Some(started)) = (
+            self.machine.race_state.countdown_end,
+            self.machine.race_state.race_started_at,
+        ) else {
+            return;
+        };
+        let Some(frame) =
+            countdown_frame(end.saturating_duration_since(started), started.elapsed())
+        else {
+            return;
+        };
+
+        // Without the registered faces there is no way to size the glyphs to
+        // the display, and a countdown at body size is worse than none.
+        let Some(fonts) = self.overlay_fonts.as_ref() else {
+            return;
+        };
+
+        profile_span!("countdown");
+
+        let c = &self.cached_colors;
+        let [dw, dh] = ui.io().display_size;
+        let layout = countdown_layout([dw, dh]);
+        let [cx, cy] = layout.center;
+
+        // The ring and the vignette go on the background list: unclipped by
+        // any window, and behind the anchored panel.
+        let draw = ui.get_background_draw_list();
+
+        // Four edge gradients. ImGui has no radial gradient, and at this
+        // alpha the corners reading twice is what a vignette does anyway.
+        if frame.vignette > 0.0 {
+            let edge = [c.ground[0], c.ground[1], c.ground[2], frame.vignette];
+            let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
+            let band_x = dw * 0.42;
+            let band_y = dh * 0.42;
+            draw.add_rect_filled_multicolor([0.0, 0.0], [dw, band_y], edge, edge, clear, clear);
+            draw.add_rect_filled_multicolor([0.0, dh - band_y], [dw, dh], clear, clear, edge, edge);
+            draw.add_rect_filled_multicolor([0.0, 0.0], [band_x, dh], edge, clear, clear, edge);
+            draw.add_rect_filled_multicolor([dw - band_x, 0.0], [dw, dh], clear, edge, edge, clear);
+        }
+
+        let gold = c.gold;
+        let ring = [gold[0], gold[1], gold[2], frame.ring_alpha];
+        draw.add_circle(
+            [cx, cy],
+            layout.ring_radius,
+            [gold[0], gold[1], gold[2], frame.ring_alpha * 0.15],
+        )
+        .thickness(layout.ring_thickness)
+        .num_segments(layout.ring_segments as u32)
+        .build();
+
+        if let Some(arc) = ring_arc(&layout, frame.ring_fill) {
+            // Two small Vecs per frame (add_polyline re-collects its points),
+            // for the ten seconds a countdown lasts.
+            let points: Vec<[f32; 2]> = (0..=arc.segments)
+                .map(|i| {
+                    let angle = arc.start_angle + arc.step * i as f32;
+                    [
+                        cx + layout.ring_radius * angle.cos(),
+                        cy + layout.ring_radius * angle.sin(),
+                    ]
+                })
+                .collect();
+            draw.add_polyline(points, ring)
+                .thickness(layout.ring_thickness)
+                .build();
+        }
+
+        if let Some(wave) = frame.shockwave {
+            let tint = match frame.incoming.label {
+                GlyphLabel::Go => c.success,
+                GlyphLabel::Digit(_) => gold,
+            };
+            draw.add_circle(
+                [cx, cy],
+                layout.ring_radius * wave.radius_factor,
+                [tint[0], tint[1], tint[2], wave.alpha],
+            )
+            .thickness((layout.ring_thickness * wave.thickness_factor).max(1.0))
+            .num_segments(layout.ring_segments as u32)
+            .build();
+        }
+
+        // The glyphs need a window: only there can a face be pushed and
+        // scaled to a size the atlas was not rasterized at.
+        let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
+        let flags = WindowFlags::NO_DECORATION
+            | WindowFlags::NO_INPUTS
+            | WindowFlags::NO_BACKGROUND
+            | WindowFlags::NO_SAVED_SETTINGS
+            | WindowFlags::NO_FOCUS_ON_APPEARING
+            | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS;
+
+        ui.window("##speedfog-countdown")
+            .position([0.0, 0.0], Condition::Always)
+            .size([dw, dh], Condition::Always)
+            .flags(flags)
+            .build(|| {
+                if let Some(race) = self.race_info().filter(|_| frame.title_alpha > 0.0) {
+                    let _font = ui.push_font(fonts.display);
+                    ui.set_window_font_scale(layout.title_font_px / fonts.display_px);
+                    let width = ui.calc_text_size(&race.name)[0];
+                    ui.set_cursor_screen_pos([cx - width * 0.5, layout.title_y]);
+                    let t = c.text_disabled;
+                    ui.text_colored([t[0], t[1], t[2], frame.title_alpha], &race.name);
+                }
+
+                let _font = ui.push_font(fonts.countdown);
+                // Outgoing first, so the incoming glyph lands on top of it.
+                for glyph in frame
+                    .outgoing
+                    .iter()
+                    .chain(std::iter::once(&frame.incoming))
+                {
+                    bufs.countdown_label.clear();
+                    let base = match glyph.label {
+                        GlyphLabel::Digit(digit) => {
+                            write!(bufs.countdown_label, "{}", digit).ok();
+                            gold
+                        }
+                        GlyphLabel::Go => {
+                            bufs.countdown_label.push_str("GO!");
+                            c.success
+                        }
+                    };
+                    draw_countdown_glyph(
+                        ui,
+                        &bufs.countdown_label,
+                        layout.center,
+                        layout.digit_font_px * glyph.scale,
+                        [base[0], base[1], base[2], glyph.alpha],
+                    );
+                }
+                ui.set_window_font_scale(1.0);
+            });
     }
 
     /// Write the IGT display string into a buffer.
@@ -418,10 +606,23 @@ impl RaceTracker {
                     self.write_igt(buf_right);
                     c.danger_dark
                 } else {
-                    let countdown_secs = self.machine.race_state.countdown_end.and_then(|end| {
-                        end.checked_duration_since(std::time::Instant::now())
-                            .map(|remaining| remaining.as_secs() + 1)
-                    });
+                    // The fullscreen countdown's own tick rule, so the two
+                    // can never show different digits on the same frame.
+                    let countdown_secs = self
+                        .machine
+                        .race_state
+                        .race_started_at
+                        .zip(self.machine.race_state.countdown_end)
+                        .and_then(|(started, end)| {
+                            countdown_frame(
+                                end.saturating_duration_since(started),
+                                started.elapsed(),
+                            )
+                        })
+                        .and_then(|frame| match frame.incoming.label {
+                            GlyphLabel::Digit(digit) => Some(digit),
+                            GlyphLabel::Go => None,
+                        });
                     if let Some(secs) = countdown_secs {
                         write!(buf_right, "{}", secs).ok();
                         gold
@@ -1201,6 +1402,44 @@ impl RaceTracker {
         ui.same_line();
         ui.text(debug.last_received.as_deref().unwrap_or("\u{2013}"));
     }
+}
+
+/// Draw one countdown glyph centered on `center` at `font_px`, haloed.
+///
+/// The caller pushes the countdown face first; the size comes from the window
+/// font scale, since the atlas holds that face at a single size.
+fn draw_countdown_glyph(
+    ui: &hudhook::imgui::Ui,
+    label: &str,
+    center: [f32; 2],
+    font_px: f32,
+    color: [f32; 4],
+) {
+    ui.set_window_font_scale(font_px / COUNTDOWN_FONT_ATLAS_PX);
+    // Horizontally the advance box is the right box to center on; vertically
+    // it is not, since its empty descender would push the digits above the
+    // ring they sit in.
+    let width = ui.calc_text_size(label)[0];
+    let origin = [
+        center[0] - width * 0.5,
+        center[1] - font_px * DIGIT_INK_CENTER,
+    ];
+
+    // Faux glow: the glyph ringed around itself at low alpha. ImGui offers no
+    // blur, and eight offsets read as a halo at this size.
+    let glow = [color[0], color[1], color[2], color[3] * 0.16];
+    let radius = font_px * 0.04;
+    for i in 0..8 {
+        let angle = std::f32::consts::TAU * i as f32 / 8.0;
+        ui.set_cursor_screen_pos([
+            origin[0] + radius * angle.cos(),
+            origin[1] + radius * angle.sin(),
+        ]);
+        ui.text_colored(glow, label);
+    }
+
+    ui.set_cursor_screen_pos(origin);
+    ui.text_colored(color, label);
 }
 
 /// Write a time value (unsigned ms) as HH:MM:SS into a buffer.

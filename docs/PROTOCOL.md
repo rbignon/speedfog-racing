@@ -1237,7 +1237,7 @@ Gameplay messages (`status_update`, `event_flag`, `zone_query`, `finished`) are 
 
 1. **Server:** Each handler checks `race.status == RUNNING` before processing. If the race is not running, the server responds with an `error` message and discards the payload.
 2. **Mod (outgoing):** The mod gates `status_update` and `event_flag` sends behind `is_race_running()`. Event flags detected before the race starts are buffered and sent once the race transitions to running.
-3. **Mod (overlay):** The status line's right side reflects the race state: gold "WAITING" (setup), countdown digits then green "GO!" for 3 seconds (start), then the running IGT (green once finished). During setup the overlay also shows an amber "Race has not started yet" waiting line, only while the player is in the world (never on the title screen or during loading screens).
+3. **Mod (overlay):** The status line's right side reflects the race state: gold "WAITING" (setup), countdown digits then green "GO!" for 3 seconds (start), then the running IGT (green once finished). During setup the overlay also shows an amber "Race has not started yet" waiting line, only while the player is in the world (never on the title screen or during loading screens). On top of that column, the countdown also plays fullscreen (digits, draining ring, vignette, `GO!` burst; see the charter's in-game overlay section), unless `overlay.fullscreen_countdown` is set to `false`. Both are local: they run off the `race_start` message's `countdown_seconds`, so a mod that authenticates mid-countdown shows neither and simply starts on the running IGT.
 
 The `ready` and `pong` messages are not gated; they are valid in any state.
 

@@ -4,7 +4,7 @@
 
 **"Timetable of the Lands Between"**: the fog-gate network is the identity. The metro-map DAG is not an illustration on top of the product, it _is_ the product, so its vocabulary (lines, stations, terminals) carries structure and status everywhere, and the typography speaks public-transit signage and race timing boards.
 
-The sobriety discipline of the previous charter survives intact: the dark theme does the heavy lifting, gold appears sparingly as punctuation on high-value elements, flat design with subtle depth (fine borders, soft glows on active elements only). No gradients, no blur, no background textures, outside the two documented exception zones (Rage Quit button, name templates).
+The sobriety discipline of the previous charter survives intact: the dark theme does the heavy lifting, gold appears sparingly as punctuation on high-value elements, flat design with subtle depth (fine borders, soft glows on active elements only). No gradients, no blur, no background textures, outside the three documented exception zones (Rage Quit button, name templates, the in-game countdown).
 
 What changed versus charter v1, in one list:
 
@@ -216,6 +216,12 @@ The HTML node popup does adopt the charter, but only through tokens (fonts, surf
 ### In-game overlay (mod)
 
 The ImGui overlay speaks the charter. The three faces ship embedded (the same instanced latin subsets the web self-hosts): Public Sans as the body and atlas default (the only face `overlay.font_path` can override), Barlow Condensed for the race name and the current zone, Spline Sans Mono for the data (IGT, gaps, counters, tier line, the DEATHLESS tag, the debug block, and the leaderboard's rank, gap and time columns). The zone is the overlay's operative title, flush left with the tier line and the exit list; the race name above stays the dimmed context line. Two size steps compensate the faces' optics: the display face registers ×1.15 of `font_size` (its narrow set reads a size smaller) and the mono face ×0.85 (the site's data-to-body ratio; its tall x-height reads a size bigger). Leaderboard names, the exit list and the warning/status lines ride the body face at the mono pixel size, so mixed rows keep one baseline (ImGui top-aligns mixed-size text). Source Sans 3 stays merged into each face for the symbols the charter faces lack (`●`, `→`). The semantic tokens color statuses (verdigris/ember/brass, fog as the local player's accent and row fill); the configurable base colors default to the foundations, except `text_disabled`, which sits one contrast step up at the secondary grey (`#96A0AD`): the overlay lies on live gameplay at partial opacity.
+
+#### Countdown
+
+The race countdown is the one moment the overlay leaves its corner and takes the screen, because it lands on the character screen the players wait on rather than on live gameplay: the race name in the display face, a brass ring emptying clockwise from 12 o'clock (the arc's end stays pinned at 12 while its start walks round, the way a clock hand erases behind itself), the digit crossfading on every tick (the entering one settles from ×1.25 while the one it replaces swells to ×1.5 and fades, the site's countdown dezoom at frame rate), a brass shockwave on the last three ticks, and a page-ground vignette closing in on the screen edges. Zero flips the slot to a verdigris `GO!` on a verdigris blast, and everything the countdown had put on screen lifts within 0.4s so the race opens on a clean image. The status line keeps its own countdown column throughout: it is the whole countdown when `overlay.fullscreen_countdown` is off.
+
+Unlike the panel, which is sized from `font_size` and stays put in pixels, the countdown is sized from the display height, recomputed every frame: the composition holds the same share of the screen from 720p to 4K, and a resolution change mid-session is picked up by the next frame. The display face is rasterized a second time at a fixed large size for it, limited to the glyphs it draws (`0`-`9`, `G`, `O`, `!`), and scaled at draw time, since a font atlas cannot follow a resolution. Glows are faked by ringing a glyph around itself at low alpha and the vignette by four edge gradients: ImGui has neither blur nor radial gradients.
 
 ### Chat
 
