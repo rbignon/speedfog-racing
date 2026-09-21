@@ -86,6 +86,8 @@ pub struct RingArc {
 /// Where the countdown's parts sit on screen, in pixels.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CountdownLayout {
+    /// Center of the ring, its shockwaves and the glyphs: the middle of the
+    /// display's upper half, horizontally centered.
     pub center: [f32; 2],
     /// Font size for the digits and `GO!`, before the glyph's own scale.
     pub digit_font_px: f32,
@@ -256,7 +258,7 @@ pub fn countdown_layout(display: [f32; 2]) -> CountdownLayout {
     let ring_radius = base * RING_RADIUS;
 
     CountdownLayout {
-        center: [display[0] * 0.5, display[1] * 0.5],
+        center: [display[0] * 0.5, display[1] * 0.25],
         digit_font_px: base * DIGIT_SIZE,
         ring_radius,
         ring_thickness: (base * RING_THICKNESS).max(2.0),
@@ -468,7 +470,32 @@ mod tests {
         assert!((uhd.digit_font_px / hd.digit_font_px - 2.0).abs() < 0.01);
         assert!((uhd.ring_radius / hd.ring_radius - 2.0).abs() < 0.01);
         assert!((uhd.ring_thickness / hd.ring_thickness - 2.0).abs() < 0.01);
-        assert_eq!(uhd.center, [1920.0, 1080.0]);
+        assert_eq!(uhd.center, [hd.center[0] * 2.0, hd.center[1] * 2.0]);
+    }
+
+    #[test]
+    fn test_the_tick_shockwaves_stay_on_screen() {
+        for display in [
+            [1280.0, 720.0],
+            [1920.0, 1080.0],
+            [3840.0, 2160.0],
+            [3440.0, 1440.0],
+            [800.0, 1200.0],
+        ] {
+            let layout = countdown_layout(display);
+            let mut elapsed = 0.0;
+            while elapsed < TOTAL.as_secs_f32() {
+                if let Some(wave) = at(elapsed).shockwave {
+                    let reach = layout.ring_radius * wave.radius_factor
+                        + layout.ring_thickness * wave.thickness_factor * 0.5;
+                    assert!(
+                        reach < layout.center[1],
+                        "wave runs off the top at {elapsed}s on {display:?}"
+                    );
+                }
+                elapsed += 1.0 / 120.0;
+            }
+        }
     }
 
     #[test]
