@@ -303,6 +303,11 @@ async def get_event(
         override=config.phase_override,
     )
 
+    # Before the opening the seed slots render as placeholders: the attached
+    # races stay out of the response, so their ids cannot lead anyone to a
+    # pack released early for the organizer to check the seed.
+    shown_qualifier = qualifier if phase != "upcoming" else []
+
     signed_up = [s.user_id for s in event.signups] if phase in JOINABLE_PHASES else []
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
     finished_before = await count_finished_before(db, set(users), announce_date(event, config))
@@ -374,7 +379,7 @@ async def get_event(
                 closes_at=compute_late_join_deadlines(race)[1],
                 my_result=_my_result(race, user),
             )
-            for slot, race in qualifier
+            for slot, race in shown_qualifier
         ],
         ladder=EventLadderResponse(
             provisional=not ladder_final,

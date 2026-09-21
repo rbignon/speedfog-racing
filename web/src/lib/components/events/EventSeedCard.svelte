@@ -4,10 +4,11 @@
   import { formatEventDate, ordinal, timeRemaining } from "$lib/events";
 
   /**
-   * With `entry` null the card is a placeholder for a seed slot that has no
-   * race yet (before the qualifier opens, or a voided seed): same geometry,
-   * grey dashed route line, no link. `index` names the slot in both cases;
-   * `opensAt` is the qualifier start while it is still ahead.
+   * With `entry` null the card is a placeholder for a seed slot with no race
+   * to show (before the qualifier opens, when the page withholds the races,
+   * or a voided seed): same geometry, grey dashed route line, no link.
+   * `index` names the slot in both cases; `opensAt` is the qualifier start
+   * while it is still ahead.
    */
   let {
     entry,
@@ -30,9 +31,9 @@
   let dnf = $derived(done && !finished);
   let playing = $derived(mine?.status === "playing");
   let joined = $derived(mine?.status === "joined");
-  // A race still in setup has no pack out yet, whether the qualifier has
-  // opened or not, so the card reads like the placeholder rather than like an
-  // open seed even when the race would take a registration.
+  // A race still in setup once the qualifier has opened has no pack out yet,
+  // so the card reads like the placeholder rather than like an open seed even
+  // when the race would take a registration.
   let notStarted = $derived(race?.status === "setup");
   let remaining = $derived(timeRemaining(entry?.closes_at ?? null, now));
   let closed = $derived(remaining === "closed");
@@ -141,11 +142,7 @@
               >{/if}
           </div>
           <span class="remaining"
-            >{notStarted
-              ? opensAt
-                ? `Opens ${formatEventDate(opensAt, true)}`
-                : "Not open yet"
-              : remaining}</span
+            >{notStarted ? "Not open yet" : remaining}</span
           >
         </div>
         <div class="foot">

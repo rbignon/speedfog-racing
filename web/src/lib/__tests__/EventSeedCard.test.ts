@@ -263,20 +263,19 @@ describe("EventSeedCard finished without a score", () => {
   });
 });
 
-describe("EventSeedCard before the qualifier opens", () => {
-  it("reads as upcoming, with the opening date and no Play strip", () => {
+describe("EventSeedCard for a race not started once the qualifier opened", () => {
+  it("reads as upcoming, not open yet, with no Play strip", () => {
     const { container, getByText } = render(EventSeedCard, {
       entry: entryWith({ status: "setup", can_join: true }, null, null),
       index: 1,
       modeLabel: "Standard",
       now,
-      opensAt: "2026-09-23T17:00:00Z",
     });
     expect(getByText("Upcoming")).toBeTruthy();
     expect(container.querySelector(".play-strip")).toBeNull();
     expect(container.querySelector(".seed-card.route-setup")).not.toBeNull();
-    expect(container.querySelector(".remaining")?.textContent).toMatch(
-      /^Opens /,
+    expect(container.querySelector(".remaining")?.textContent).toBe(
+      "Not open yet",
     );
   });
 });

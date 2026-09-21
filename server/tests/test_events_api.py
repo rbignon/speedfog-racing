@@ -499,6 +499,42 @@ async def test_qualifier_races_stay_in_admin_inflight(test_client, world, async_
 
 
 @pytest.mark.asyncio
+async def test_qualifier_races_stay_off_the_page_until_the_opening(test_client, async_session):
+    """An organizer may release a seed before the opening to check it: until
+    then the detail names no qualifier race, so nothing leads to that pack."""
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        soon = await _season_event(db, "soon", now + timedelta(days=1))
+        opened = await _season_event(db, "opened", now - timedelta(days=1))
+        early = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "e1"),
+            soon,
+            "qualifier:standard:1",
+            status=RaceStatus.SETUP,
+        )
+        early.seeds_released_at = now
+        live = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "l1"),
+            opened,
+            "qualifier:standard:1",
+            started_at=now - timedelta(days=1),
+        )
+        await db.commit()
+    async with test_client as client:
+        upcoming = await client.get("/api/events/soon")
+        running = await client.get("/api/events/opened")
+    assert upcoming.json()["phase"] == "upcoming"
+    assert upcoming.json()["qualifier_races"] == []
+    assert str(early.id) not in upcoming.text
+    assert [r["race"]["id"] for r in running.json()["qualifier_races"]] == [str(live.id)]
+
+
+@pytest.mark.asyncio
 async def test_signing_up_lists_the_runner_last_without_a_score(test_client, world, async_session):
     async with async_session() as db:
         await _user(db, "cleo")

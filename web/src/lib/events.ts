@@ -389,6 +389,30 @@ export function pollIntervalMs(
   return near ? STAGE_DAY_POLL_MS : null;
 }
 
+const OPENING_SPREAD_MS = 10_000;
+// The longest delay setTimeout holds (about 24.8 days).
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
+/**
+ * When an upcoming page reloads its data once, to show the seeds the opening
+ * brings out: the opening plus up to ten seconds (`spread` in [0, 1)), so the
+ * viewers do not all ask at the same instant. Null when the event is not
+ * upcoming, or opens too far ahead for a timer.
+ */
+export function openingRefreshMs(
+  detail: Pick<EventDetail, "phase" | "starts_at">,
+  now: Date,
+  spread: number,
+): number | null {
+  if (detail.phase !== "upcoming") return null;
+  const ms =
+    new Date(detail.starts_at).getTime() -
+    now.getTime() +
+    spread * OPENING_SPREAD_MS;
+  if (ms > MAX_TIMEOUT_MS) return null;
+  return Math.max(0, ms);
+}
+
 export function ordinal(n: number): string {
   const mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 13) return `${n}th`;

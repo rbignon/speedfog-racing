@@ -10,6 +10,7 @@ import {
   formatEventDate,
   formatEventDay,
   liveStage,
+  openingRefreshMs,
   ordinal,
   pollIntervalMs,
   racesSection,
@@ -594,6 +595,39 @@ describe("pollIntervalMs and ordinal", () => {
       "23rd",
       "101st",
     ]);
+  });
+});
+
+describe("openingRefreshMs", () => {
+  const opening = "2026-09-23T18:00:00Z";
+  const hourBefore = new Date("2026-09-23T17:00:00Z");
+
+  it("reloads an upcoming page at the opening, spread over ten seconds", () => {
+    const detail = detailWith({ phase: "upcoming", starts_at: opening });
+    expect(openingRefreshMs(detail, hourBefore, 0)).toBe(3_600_000);
+    expect(openingRefreshMs(detail, hourBefore, 0.5)).toBe(3_605_000);
+  });
+  it("reloads right away when the opening has already passed", () => {
+    const detail = detailWith({ phase: "upcoming", starts_at: opening });
+    expect(openingRefreshMs(detail, new Date("2026-09-23T18:01:00Z"), 0)).toBe(
+      0,
+    );
+  });
+  it("sets no timer once open, nor for an opening beyond a timer's reach", () => {
+    expect(
+      openingRefreshMs(
+        detailWith({ phase: "qualifier", starts_at: opening }),
+        hourBefore,
+        0,
+      ),
+    ).toBeNull();
+    expect(
+      openingRefreshMs(
+        detailWith({ phase: "upcoming", starts_at: "2026-11-01T18:00:00Z" }),
+        hourBefore,
+        0,
+      ),
+    ).toBeNull();
   });
 });
 

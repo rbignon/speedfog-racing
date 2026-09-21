@@ -5,11 +5,15 @@ on:
     branches: [master]
     paths:
       - "server/**"
+      # Checked, and driven by server/tests/test_start_qualifier.py
+      - "tools/start_qualifier.py"
       - ".github/workflows/ci-server.yml"
   pull_request:
     branches: [master]
     paths:
       - "server/**"
+      # Checked, and driven by server/tests/test_start_qualifier.py
+      - "tools/start_qualifier.py"
       - ".github/workflows/ci-server.yml"
   workflow_dispatch:
 
@@ -33,13 +37,14 @@ jobs:
         run: uv sync --all-extras
 
       - name: Lint
-        run: uv run ruff check .
+        run: uv run ruff check . ../tools/start_qualifier.py
 
+      # Not tools/: the pre-commit hook formats it with ruff's defaults.
       - name: Format check
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run mypy speedfog_racing/
+        run: uv run mypy speedfog_racing/ ../tools/start_qualifier.py
 
       - name: Run tests
         run: uv run pytest -q

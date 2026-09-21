@@ -155,11 +155,12 @@ for an abandoned run, which the page labels DNF. On the seed card a scored
 DNF takes the finished colour (verdigris route line and result facts, the
 points in brass while provisional), since the run holds a rank and points; a DNF without a score shows the spent grey
 line, since the seed can be neither scored nor replayed. `null` for anonymous
-viewers. A qualifier race still in setup, which is how it sits between the
-announcement and the opening, shows as upcoming on its card with no play
-strip whatever its registration state: the opening date while the event is
-upcoming, "Not open yet" once it has opened and the race has not been
-started.
+viewers. While the event is upcoming `qualifier_races` is empty, whatever is
+attached: the seed cards render as placeholders carrying the opening date,
+and the races being checked stay off the page (see "Running an event"
+below). The gate follows the phase, so a `phase_override` moves it too. From
+the opening on, a qualifier race still in setup shows as upcoming on its
+card, "Not open yet", with no play strip whatever its registration state.
 `closes_at` is the race's
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
@@ -186,14 +187,44 @@ See the "In-mod replay leaderboard" section of
    (a removed or renamed mode or stage, or a lowered `seeds_per_mode`): the
    error names the orphaned slots, and nothing is stored until the races are
    detached from the Races tab.
-2. Before the qualifier: create the qualifier races with the normal form,
-   private, registration by link, late join equal to the duration (10080
-   minutes for a week), then attach each to `qualifier:<mode>:<n>` from the
-   Races tab. Attaching sets `exclude_from_stats` and hides the race from the
-   public listings.
-3. On the opening day: start each qualifier race as its organizer. Until
-   then their cards read as upcoming, since the packs are not out. During the
-   week that follows: nothing. To void a broken seed, detach it.
+2. Before the qualifier: create the qualifier races with the normal form:
+   the mode's pool under Game Mode, "Organize only" as your role, "Private"
+   visibility, "Invite only" registration, and under Advanced options, Late
+   joiners and Auto-end both at the qualifier's length in minutes (10080 for
+   a week; attaching refuses two different values). Attach each to
+   `qualifier:<mode>:<n>` from the Races tab. Attaching sets
+   `exclude_from_stats` and hides the race from the public listings. To
+   check a seed, add a second account through the race page's "+ Invite"
+   search (a pack downloads for participants only, and an organizer who chose
+   "Organize only" cannot register; the account must have signed in to the
+   site once, or the search sends it an invite instead), release the seeds,
+   download the pack with that account, and re-roll a seed that does not suit
+   (a re-roll withdraws the release). Remove the account once satisfied: a
+   race started with it registered keeps it on the seed's card all week, and
+   the script below reports it. Registration
+   stays closed until the opening because a race id gets around (the
+   organizer's public activity lists every race they organize): closed, it
+   leads nobody to a released pack.
+3. The opening: `tools/start_qualifier.py` (usage in its docstring) opens
+   every qualifier race at `starts_at`. Run it with `--dry-run` first: it
+   flags a slot with no race, a race still holding a participant, a duration
+   that does not end at the cut, a public race, and a registration already
+   open. Then leave it running, logged in to the site (logging out replaces
+   the token it uses): shortly before the opening it opens registration
+   (100 places, the server's cap), releases the seeds still withheld, and
+   sends the start calls at the opening minus the server's countdown, so each
+   race's `started_at`, and so its close, lands on the event's dates. Started
+   by hand one after the other, the last races would close minutes after the
+   cut, and a run finished in that gap still counts. A race whose
+   registration could not be opened stays in setup (a started race's
+   registration can no longer change): fix it and rerun with `--now`, which
+   is refused before the opening (it would open every seed early) unless
+   `--before-opening` is added for a trial on a local server. A race
+   started late can have its `started_at` moved back to `starts_at` in the
+   database, never forward (a `started_at` still ahead reads as a
+   countdown); the edit is not broadcast, so a connected mod keeps the old
+   deadline until it reconnects. During the week that follows: nothing. To
+   void a broken seed, detach it.
 4. Before each playoff evening: create the stage's public races (four slots, a
    duration cap), add the qualified runners and the casters, attach to
    `<stage>:<n>`. Name them "Semi B - Race 1 - Standard", hyphenated like
@@ -241,7 +272,11 @@ ladder, on the race listings, or on the event page.
 `/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds while a
 stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
 within 12 hours of now) so an open page sees the evening's race go live;
-during the qualifier it only refreshes on page reload.
+during the qualifier it only refreshes on page reload. An upcoming page
+reloads its data at the opening, up to ten seconds after it (spread over the
+viewers), and a few more times five seconds apart while the answer still
+reads upcoming (a clock ahead of the server's), so the seeds appear without a
+reload.
 All dates and times render in the viewer's browser timezone, and the instants
 still ahead of the viewer name that timezone too ("Wed 30 Sept, 21:00 CEST"):
 the take-part steps, the seed cards' opening, the qualified groups with the

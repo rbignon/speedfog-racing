@@ -17,6 +17,7 @@
     formatEventDay,
     liveStage,
     pollIntervalMs,
+    openingRefreshMs,
     fillSlots,
     ordinal,
     racesSection,
@@ -166,10 +167,26 @@
     };
     arm();
     const watcher = setInterval(arm, 60_000);
+    // A clock ahead of the server's asks before the phase turns: ask again a
+    // few times (a phase_override can hold "upcoming" past the opening).
+    let opening: ReturnType<typeof setTimeout> | null = null;
+    let openingTries = 0;
+    let unmounted = false;
+    const atOpening = async () => {
+      await refresh();
+      openingTries += 1;
+      if (!unmounted && detail.phase === "upcoming" && openingTries < 3) {
+        opening = setTimeout(atOpening, 5_000);
+      }
+    };
+    const openingMs = openingRefreshMs(detail, new Date(), Math.random());
+    if (openingMs !== null) opening = setTimeout(atOpening, openingMs);
     return () => {
       clearInterval(clock);
       clearInterval(watcher);
       if (poll) clearInterval(poll);
+      unmounted = true;
+      if (opening) clearTimeout(opening);
     };
   });
 </script>
