@@ -427,7 +427,7 @@
         {#each seedsByMode as group (group.mode.key)}
           <div class="mode-group">
             <h3>{group.mode.label}</h3>
-            <div class="cards">
+            <div class="cards" class:trio={detail.seeds_per_mode === 3}>
               {#each group.slots as entry, i (i)}
                 <EventSeedCard
                   {entry}
@@ -876,6 +876,16 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+  }
+  /* Three seeds a mode share one row once the page has its full width (the
+   * container's 1180px plus room for a scrollbar), the play strip narrowed
+   * so the name and the crew row still fit a third of it. Narrower, they fall
+   * back to two a row; four always sit two by two. */
+  @media (min-width: 1200px) {
+    .cards.trio {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      --play-strip-width: 52px;
+    }
   }
   .two-col {
     display: grid;

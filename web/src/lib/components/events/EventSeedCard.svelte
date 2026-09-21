@@ -315,8 +315,9 @@
   .result .v.prov {
     color: var(--color-gold);
   }
+  /* A tighter grid can narrow the strip through --play-strip-width. */
   .play-strip {
-    width: 64px;
+    width: var(--play-strip-width, 64px);
     background: rgba(74, 174, 140, 0.12);
     border-left: 1px solid rgba(74, 174, 140, 0.25);
     display: flex;

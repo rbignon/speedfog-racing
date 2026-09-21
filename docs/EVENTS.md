@@ -164,6 +164,11 @@ started.
 `started_at + race_duration_minutes`, the same instant as the race's own
 `race_ends_at`.
 
+The seed cards of a mode sit two to a row, one at 900px and narrower. With
+three seeds per mode they share one row once the page has its full width
+(1200px and up), the play strip narrowed from 64px to 52px so the mode name
+and the avatars with the time left still fit; four seeds keep two by two.
+
 In game, a qualifier seed replays like a Daily Seed: once the runner is
 playing, the overlay's leaderboard is projected to their own IGT, so the
 other runners appear where they stood at that time instead of as a settled
