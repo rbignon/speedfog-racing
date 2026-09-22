@@ -1,4 +1,4 @@
-"""tools/start_qualifier.py: the start plan, and runs against the API it drives."""
+"""tools/qualifier.py: the start plan, and runs against the API it drives."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 import httpx
 import pytest
 from httpx import ASGITransport
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
@@ -18,6 +19,7 @@ from speedfog_racing.main import app
 from speedfog_racing.models import (
     Event,
     Participant,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -26,11 +28,11 @@ from speedfog_racing.models import (
     UserRole,
 )
 
-_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "start_qualifier.py"
-_spec = importlib.util.spec_from_file_location("start_qualifier", _SCRIPT)
+_SCRIPT = Path(__file__).resolve().parents[2] / "tools" / "qualifier.py"
+_spec = importlib.util.spec_from_file_location("qualifier", _SCRIPT)
 assert _spec is not None and _spec.loader is not None
 sq = importlib.util.module_from_spec(_spec)
-sys.modules["start_qualifier"] = sq  # dataclasses look their module up
+sys.modules["qualifier"] = sq  # dataclasses look their module up
 _spec.loader.exec_module(sq)
 
 WEEK = 7 * 24 * 60
@@ -203,7 +205,7 @@ async def _run(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> int:
     return int(
-        await sq.run(
+        await sq.run_start(
             "http://test",
             "cup",
             "tok-root",
@@ -277,17 +279,18 @@ async def test_run_refuses_an_opening_already_past(async_session):
     assert untouched is not None and untouched.status == RaceStatus.SETUP
 
 
-class _LoseFirstStartAnswer(httpx.AsyncBaseTransport):
-    """Lets the first start call through, then loses its answer, as a timeout
-    after the server committed would."""
+class _LoseFirstAnswer(httpx.AsyncBaseTransport):
+    """Lets the first call to a path ending in ``suffix`` through, then loses
+    its answer, as a timeout after the server committed would."""
 
-    def __init__(self) -> None:
+    def __init__(self, suffix: str) -> None:
         self.inner = ASGITransport(app=app)
+        self.suffix = suffix
         self.lost = False
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         response = await self.inner.handle_async_request(request)
-        if not self.lost and request.method == "POST" and request.url.path.endswith("/start"):
+        if not self.lost and request.method == "POST" and request.url.path.endswith(self.suffix):
             self.lost = True
             await response.aclose()
             raise httpx.ReadTimeout("answer lost", request=request)
@@ -302,7 +305,7 @@ async def test_a_start_whose_answer_was_lost_still_counts(async_session, capsys)
         await db.commit()
 
     # The retry reads "already started"; the race's state says it did.
-    assert await _run(now=True, before_opening=True, transport=_LoseFirstStartAnswer()) == 0
+    assert await _run(now=True, before_opening=True, transport=_LoseFirstAnswer("/start")) == 0
     assert "FAILED" not in capsys.readouterr().out
     async with async_session() as db:
         started = await db.get(Race, race.id)
@@ -396,3 +399,170 @@ async def test_a_participant_left_registered_fails_the_run(async_session, capsys
     async with async_session() as db:
         started = await db.get(Race, race.id)
     assert started is not None and started.status == RaceStatus.RUNNING
+
+
+async def _available(db: AsyncSession, pool: str, count: int) -> None:
+    """``count`` fresh seeds in ``pool``, the pool enabled (the test schema
+    comes with ``standard`` only)."""
+    if pool != "standard":
+        db.add(Pool(name=pool, enabled=True, config={"name": pool}))
+    for n in range(count):
+        db.add(
+            Seed(
+                seed_number=f"{pool}-{n}",
+                pool_name=pool,
+                graph_json={"total_layers": 5, "nodes": []},
+                total_layers=5,
+                folder_path=f"/seeds/{pool}-{n}.zip",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+    await db.flush()
+
+
+async def _create(dry_run: bool = False, transport: httpx.AsyncBaseTransport | None = None) -> int:
+    return int(
+        await sq.run_create(
+            "http://test",
+            "cup",
+            "tok-root",
+            dry_run,
+            transport=transport or ASGITransport(app=app),
+        )
+    )
+
+
+async def _attached(maker: async_sessionmaker[AsyncSession]) -> dict[str, Race]:
+    async with maker() as db:
+        races = (await db.execute(select(Race).where(Race.event_id.is_not(None)))).scalars()
+        return {race.event_slot or "": race for race in races}
+
+
+@pytest.mark.asyncio
+async def test_create_fills_the_empty_slots_as_the_opening_needs_them(async_session):
+    async with async_session() as db:
+        root, event = await _event(db, datetime.now(UTC) + timedelta(days=1))
+        taken = await _race(db, root, event, "qualifier:standard:1")
+        await _available(db, "standard", 1)
+        await _available(db, "boss_rush", 2)
+        await db.commit()
+
+    assert await _create() == 0
+
+    races = await _attached(async_session)
+    assert sorted(races) == [
+        "qualifier:boss_rush:1",
+        "qualifier:boss_rush:2",
+        "qualifier:standard:1",
+        "qualifier:standard:2",
+    ]
+    assert races["qualifier:standard:1"].id == taken.id
+    created = races["qualifier:boss_rush:2"]
+    assert created.name == "Cup qualifier - Boss Rush - Seed 2"
+    assert created.status == RaceStatus.SETUP
+    assert created.organizer_id == root.id
+    assert created.is_public is False and created.open_registration is False
+    assert created.late_join_window_minutes == WEEK == created.race_duration_minutes
+    async with async_session() as db:
+        seed_pools = {
+            slot: await db.scalar(select(Seed.pool_name).where(Seed.id == race.seed_id))
+            for slot, race in races.items()
+        }
+        entrants = await db.scalar(select(func.count()).select_from(Participant))
+    assert seed_pools["qualifier:boss_rush:1"] == "boss_rush"
+    assert seed_pools["qualifier:standard:2"] == "standard"
+    # Run without racing: the check account is the only one ever added.
+    assert entrants == 0
+
+
+@pytest.mark.asyncio
+async def test_create_dry_run_creates_nothing(async_session):
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) + timedelta(days=1))
+        await _available(db, "standard", 2)
+        await db.commit()
+
+    assert await _create(dry_run=True) == 0
+    async with async_session() as db:
+        assert await db.scalar(select(func.count()).select_from(Race)) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_refused_creation_does_not_stop_the_others(async_session, capsys):
+    """Boss Rush has no seed left: its slots fail, Standard's are created."""
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) + timedelta(days=1))
+        await _available(db, "standard", 2)
+        await _available(db, "boss_rush", 0)
+        await db.commit()
+
+    assert await _create() == 1
+    assert capsys.readouterr().out.count("FAILED") == 2
+    assert sorted(await _attached(async_session)) == [
+        "qualifier:standard:1",
+        "qualifier:standard:2",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_created_races_open_with_start(async_session):
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) + timedelta(days=1))
+        await _available(db, "standard", 2)
+        await _available(db, "boss_rush", 2)
+        await db.commit()
+
+    assert await _create() == 0
+    assert await _run(now=True, before_opening=True) == 0
+    races = await _attached(async_session)
+    assert len(races) == 4
+    for race in races.values():
+        assert race.status == RaceStatus.RUNNING
+        assert race.open_registration is True and race.seeds_released_at is not None
+
+
+def test_the_window_sizes_the_races_in_whole_minutes():
+    assert sq.window_minutes(DETAIL) == WEEK
+    with pytest.raises(ValueError):
+        sq.window_minutes({**DETAIL, "qualifier_ends_at": "2026-09-30T18:00:30Z"})
+
+
+@pytest.mark.asyncio
+async def test_create_is_refused_once_the_qualifier_opened(async_session):
+    """A race created now would last the whole window and close past the cut."""
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) - timedelta(minutes=1))
+        await _available(db, "standard", 2)
+        await db.commit()
+
+    assert await _create() == 1
+    async with async_session() as db:
+        assert await db.scalar(select(func.count()).select_from(Race)) == 0
+
+
+@pytest.mark.asyncio
+async def test_a_lost_creation_answer_is_not_tried_again(async_session, capsys):
+    """Trying again would create a second race; the run says where to look."""
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) + timedelta(days=1))
+        await _available(db, "standard", 2)
+        await _available(db, "boss_rush", 2)
+        await db.commit()
+
+    assert await _create(transport=_LoseFirstAnswer("/api/races")) == 1
+    assert "may exist, look for it before a rerun" in capsys.readouterr().out
+    async with async_session() as db:
+        assert await db.scalar(select(func.count()).select_from(Race)) == 4
+    assert len(await _attached(async_session)) == 3
+
+
+@pytest.mark.asyncio
+async def test_a_lost_attach_answer_is_tried_again(async_session):
+    async with async_session() as db:
+        await _event(db, datetime.now(UTC) + timedelta(days=1))
+        await _available(db, "standard", 2)
+        await _available(db, "boss_rush", 2)
+        await db.commit()
+
+    assert await _create(transport=_LoseFirstAnswer("/event")) == 0
+    assert len(await _attached(async_session)) == 4

@@ -1,21 +1,36 @@
 #!/usr/bin/env python3
-"""Open an event's qualifier seeds at the opening, to the second.
+"""Create and open an event's qualifier seeds.
 
-The qualifier races wait in setup with registration closed, so that their
-seeds can be released early and checked from a participant account without a
-race id that gets around leading anyone to a pack. This script turns them into
-open seeds at ``starts_at``: it opens registration (100 places, the server's
-cap), releases the seeds still withheld (a re-roll withdraws them), then
-starts every race so that its ``started_at`` lands on the opening. The server
-sets ``started_at`` to the start call plus its countdown (``countdown_seconds``,
-10 by default), so the start calls leave that long before the opening. A race
-closes ``race_duration_minutes`` after its ``started_at``, so every seed then
-closes on the cut too; started by hand one after the other, the last ones
-would close minutes after it.
+Two commands, both talking to the API with an admin's web session token taken
+from the SPEEDFOG_TOKEN environment variable (the ``speedfog_token`` entry of
+the browser's localStorage).
 
-A race already running is left alone, so a rerun is harmless. At launch the
-script prints what it found per slot and flags what needs a look: a slot with
-no race, a race neither in setup nor running, a race still holding a
+``create`` gives every qualifier slot still empty its race, named "<event>
+qualifier - <mode> - Seed <n>": the mode's pool, private, run by the token's
+account without racing, registration closed, late join and automatic end
+both the length of the qualifier window. A slot already taken is left as it
+is, so a rerun fills the slots a failed run left empty. It is refused once
+the qualifier has opened: a race created then would still last the whole
+window and close past the cut. The creation is tried once, since a retry
+after a lost answer would create a second race, and a race that may exist
+without its slot is named so it can be looked for in the admin Races tab
+before a rerun; the attach, which can be sent twice, is tried again.
+
+``start`` opens them at ``starts_at``, to the second. The races wait in setup
+with registration closed, so that their seeds can be released early and
+checked from a participant account without a race id that gets around
+leading anyone to a pack. ``start`` opens registration (100 places, the
+server's cap), releases the seeds still withheld (a re-roll withdraws them),
+then starts every race so that its ``started_at`` lands on the opening. The
+server sets ``started_at`` to the start call plus its countdown
+(``countdown_seconds``, 10 by default), so the start calls leave that long
+before the opening. A race closes ``race_duration_minutes`` after its
+``started_at``, so every seed then closes on the cut too; started by hand one
+after the other, the last ones would close minutes after it.
+
+A race already running is left alone, so a rerun of ``start`` is harmless. At
+launch it prints what it found per slot and flags what needs a look: a slot
+with no race, a race neither in setup nor running, a race still holding a
 participant (the check account has to be removed first), a race whose
 duration does not end it at the cut or whose late join differs from it, a
 public race, and a race whose registration is already open. It reads the
@@ -26,25 +41,21 @@ setup, since a started race's registration can no longer be changed. Calls
 are tried again on a network error, a server error, a conflict or the rate
 limit, and a start that still reads as failed is checked against the race's
 own state before it is reported. The exit code is 1 when a race could not be
-started or started with a participant still registered.
+started or started with a participant still registered. Logging out of the
+site replaces the token, so stay logged in until the opening. The machine's
+clock decides when the calls leave: run it on the server itself or on a
+machine synced over NTP, and keep it awake until the opening.
 
-It talks to the API with an admin's web session token, taken from the
-SPEEDFOG_TOKEN environment variable (the ``speedfog_token`` entry of the
-browser's localStorage). Logging out of the site replaces that token, so stay
-logged in until the opening. The machine's clock decides when the calls
-leave: run it on the server itself or on a machine synced over NTP, and keep
-it awake until the opening.
+Usage (each command also runs with --dry-run, which only prints):
+    cd server && SPEEDFOG_TOKEN=... uv run python ../tools/qualifier.py \\
+        create --api https://speedfog.racing --slug season-one
+    cd server && SPEEDFOG_TOKEN=... uv run python ../tools/qualifier.py \\
+        start --api https://speedfog.racing --slug season-one
 
-Usage:
-    cd server && SPEEDFOG_TOKEN=... uv run python ../tools/start_qualifier.py \\
-        --api https://speedfog.racing --slug season-one --dry-run
-    cd server && SPEEDFOG_TOKEN=... uv run python ../tools/start_qualifier.py \\
-        --api https://speedfog.racing --slug season-one
-
---now sends the calls right away instead of waiting for the opening, for a
-start that has to be redone after the opening. Before the opening it is
-refused unless --before-opening is given too, for a trial on a local server:
-on the real event it would open every seed early.
+``start --now`` sends the calls right away instead of waiting for the
+opening, for a start that has to be redone after the opening. Before the
+opening it is refused unless --before-opening is given too, for a trial on a
+local server: on the real event it would open every seed early.
 """
 
 from __future__ import annotations
@@ -66,6 +77,8 @@ REFRESH_LEAD = timedelta(seconds=20)
 ATTEMPTS = 3
 # Places of an open registration: the server's cap.
 PLACES = 100
+# The longest race name the server takes.
+NAME_MAX = 200
 # The server's answer to a release of seeds already out.
 ALREADY_RELEASED = "Seeds are already released"
 
@@ -176,25 +189,31 @@ async def call(
     method: str,
     path: str,
     body: dict[str, Any] | None = None,
+    attempts: int = ATTEMPTS,
 ) -> httpx.Response:
-    """A call tried again on what a retry can fix: the network, a server
-    error, a conflict (a concurrent edit) and the rate limit."""
+    """A call tried again, up to ``attempts`` times, on what a retry can
+    fix: the network, a server error and a conflict (a concurrent edit). The
+    rate limit refuses a call before the endpoint runs, so a 429 is tried
+    again up to ``ATTEMPTS`` times whatever ``attempts`` says."""
     for attempt in range(1, ATTEMPTS + 1):
         delay = 0.5
         try:
             response = await client.request(method, path, json=body)
         except httpx.TransportError as exc:
-            if attempt == ATTEMPTS:
+            if attempt >= attempts:
                 raise ApiError(f"{method} {path}: {exc!r}") from exc
         else:
             if response.status_code == 429:
+                if attempt == ATTEMPTS:
+                    return response
                 try:
                     delay = min(float(response.headers.get("Retry-After", "1")), 5.0)
                 except ValueError:
                     delay = 1.0
-            elif response.status_code != 409 and response.status_code < 500:
-                return response
-            if attempt == ATTEMPTS:
+            elif response.status_code == 409 or response.status_code >= 500:
+                if attempt >= attempts:
+                    return response
+            else:
                 return response
         await asyncio.sleep(delay)
     raise AssertionError("unreachable")
@@ -246,7 +265,9 @@ async def prepare(
     return registration_open, problems
 
 
-async def start(client: httpx.AsyncClient, race: dict[str, Any]) -> tuple[bool, str]:
+async def start_race(
+    client: httpx.AsyncClient, race: dict[str, Any]
+) -> tuple[bool, str]:
     """Start the race: ``(True, started_at)`` or ``(False, what failed)``."""
     base = f"/api/races/{race['id']}"
     try:
@@ -272,7 +293,121 @@ async def sleep_until(moment: datetime) -> None:
         await asyncio.sleep(min(left, 30))
 
 
-async def run(
+def api_client(
+    api: str, token: str, transport: httpx.AsyncBaseTransport | None
+) -> httpx.AsyncClient:
+    """``transport`` lets a test drive the app in process."""
+    headers = {"Authorization": f"Bearer {token}"}
+    return httpx.AsyncClient(
+        base_url=api.rstrip("/"), headers=headers, timeout=15, transport=transport
+    )
+
+
+def window_minutes(detail: dict[str, Any]) -> int:
+    """The qualifier window in whole minutes, the unit of a race's durations."""
+    window = parse_time(detail["qualifier_ends_at"]) - parse_time(detail["starts_at"])
+    seconds = window.total_seconds()
+    if seconds <= 0 or seconds % 60:
+        raise ValueError(f"a qualifier window of {seconds:g} s is no whole minutes")
+    return int(seconds // 60)
+
+
+async def create_race(
+    client: httpx.AsyncClient,
+    event_id: str,
+    slot: str,
+    name: str,
+    pool: str,
+    minutes: int,
+) -> tuple[bool, str]:
+    """Create the slot's race, then attach it: ``(True, name)`` or ``(False,
+    what failed)``. The creation is tried once, since a retry after a lost
+    answer would create a second race; the attach can be sent twice."""
+    body = {
+        "name": name,
+        "pool_name": pool,
+        "organizer_participates": False,
+        "is_public": False,
+        "open_registration": False,
+        "late_join_window_minutes": minutes,
+        "race_duration_minutes": minutes,
+    }
+    race_id: str | None = None
+    try:
+        response = await call(client, "POST", "/api/races", body, attempts=1)
+        if response.is_error:
+            return False, f"create: {response.status_code} {error_detail(response)}"
+        race_id = str(response.json()["id"])
+        link = {"event_id": event_id, "slot": slot}
+        path = f"/api/admin/races/{race_id}/event"
+        response = await call(client, "POST", path, link)
+    except ApiError as exc:
+        if race_id is None:
+            return False, f"{exc}; {name} may exist, look for it before a rerun"
+        return False, f"{exc}; {name} ({race_id}) created, its attachment unknown"
+    if response.is_error:
+        failure = f"attach: {response.status_code} {error_detail(response)}"
+        return False, f"{failure}; {name} ({race_id}) created but not attached"
+    return True, name
+
+
+async def run_create(
+    api: str,
+    slug: str,
+    token: str,
+    dry_run: bool,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> int:
+    """Create and attach the race of every empty qualifier slot."""
+    async with api_client(api, token, transport) as client:
+        try:
+            detail = await get_json(client, f"/api/events/{slug}")
+            events = await get_json(client, "/api/admin/events")
+        except ApiError as exc:
+            print(f"Cannot read the event: {exc}")
+            return 1
+        event = next((e for e in events if e["slug"] == slug), None)
+        if event is None:
+            print(f"No event {slug!r} in the admin list")
+            return 1
+        if datetime.now(UTC) >= parse_time(detail["starts_at"]):
+            print(
+                "The qualifier has opened: a race created now would still last the"
+                " whole window and close past the cut."
+            )
+            return 1
+        try:
+            minutes = window_minutes(detail)
+        except ValueError as exc:
+            print(f"Cannot size the races: {exc}")
+            return 1
+        print(f"{detail['name']}: races of {minutes} min")
+        failed = False
+        for mode in detail["modes"]:
+            for index in range(1, detail["seeds_per_mode"] + 1):
+                slot = f"qualifier:{mode['key']}:{index}"
+                name = f"{detail['name']} qualifier - {mode['label']} - Seed {index}"
+                if slot in event["attached"]:
+                    print(f"  {slot:32s} taken, left as is")
+                    continue
+                if len(name) > NAME_MAX:
+                    print(
+                        f"  {slot:32s} FAILED  {name!r} is over {NAME_MAX} characters"
+                    )
+                    failed = True
+                    continue
+                if dry_run:
+                    print(f"  {slot:32s} to create  {name}")
+                    continue
+                ok, text = await create_race(
+                    client, str(event["id"]), slot, name, mode["key"], minutes
+                )
+                print(f"  {slot:32s} {'created' if ok else 'FAILED'}  {text}")
+                failed = failed or not ok
+    return 1 if failed else 0
+
+
+async def run_start(
     api: str,
     slug: str,
     token: str,
@@ -282,11 +417,9 @@ async def run(
     before_opening: bool = False,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> int:
-    """The whole run; ``transport`` lets a test drive the app in process."""
-    headers = {"Authorization": f"Bearer {token}"}
-    async with httpx.AsyncClient(
-        base_url=api.rstrip("/"), headers=headers, timeout=15, transport=transport
-    ) as client:
+    """Open registration, release and start every qualifier race at the
+    opening."""
+    async with api_client(api, token, transport) as client:
         try:
             detail = await get_json(client, f"/api/events/{slug}")
             plans = await load_plans(client, slug, detail)
@@ -344,7 +477,7 @@ async def run(
             else:
                 print(f"  {slot:32s} left in setup: its registration is still closed")
         await sleep_until(fire_at)
-        results = await asyncio.gather(*(start(client, race) for _, race in ready))
+        results = await asyncio.gather(*(start_race(client, race) for _, race in ready))
 
     for (slot, _), (ok, text) in zip(ready, results, strict=True):
         if ok:
@@ -374,28 +507,36 @@ async def run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Open an event's qualifier seeds at the opening, to the second."
+        description="Create and open an event's qualifier seeds."
     )
-    parser.add_argument(
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
         "--api", required=True, help="site root, e.g. https://speedfog.racing"
     )
-    parser.add_argument("--slug", required=True, help="event slug")
-    parser.add_argument(
+    common.add_argument("--slug", required=True, help="event slug")
+    common.add_argument(
         "--dry-run",
         action="store_true",
         help="print the slots and what would be done, then stop",
     )
-    parser.add_argument(
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser(
+        "create", parents=[common], help="create the races of the empty slots"
+    )
+    start = commands.add_parser(
+        "start", parents=[common], help="open the races at the opening"
+    )
+    start.add_argument(
         "--now",
         action="store_true",
         help="send the calls right away instead of at the opening",
     )
-    parser.add_argument(
+    start.add_argument(
         "--before-opening",
         action="store_true",
         help="let --now run before the opening (a trial on a local server)",
     )
-    parser.add_argument(
+    start.add_argument(
         "--countdown",
         type=int,
         default=10,
@@ -407,9 +548,11 @@ def main() -> None:
         sys.exit(
             "SPEEDFOG_TOKEN is not set (the speedfog_token entry of the site's localStorage)"
         )
-    sys.exit(
-        asyncio.run(
-            run(
+    if args.command == "create":
+        code = asyncio.run(run_create(args.api, args.slug, token, args.dry_run))
+    else:
+        code = asyncio.run(
+            run_start(
                 args.api,
                 args.slug,
                 token,
@@ -419,7 +562,7 @@ def main() -> None:
                 before_opening=args.before_opening,
             )
         )
-    )
+    sys.exit(code)
 
 
 if __name__ == "__main__":
