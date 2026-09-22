@@ -181,7 +181,10 @@ mods no `death_counts`, since the deaths of the week's early runners would
 point a later one to the costly zones. The race page header leaves out the
 "Private" badge every qualifier race would carry (private here only keeps
 the race out of the Discord announcement) and the elapsed clock, since the
-time since the opening measures nobody's run.
+time since the opening measures nobody's run. The page also drops the info
+panel (participants, dates, late join, duration, deathless), which every
+qualifier race shares: its schedule, late join, duration and deathless
+settings are edited through the API, not from the race page.
 
 ## Running an event (admin)
 

@@ -1327,232 +1327,236 @@
         />
       {/if}
 
-      <div class="race-info">
-        <div class="info-grid">
-          <div class="info-item">
-            <span class="label">Participants</span>
-            <span class="value"
-              >{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
-                /{liveMaxParticipants}{/if}</span
-            >
-          </div>
-          <div class="info-item">
-            <span class="label">Created</span>
-            <span class="value">{formatDate(initialRace.created_at)}</span>
-          </div>
-          {#if raceStatus === "setup"}
+      <!-- Every qualifier race shares these dates and settings, and the
+           event page states the window. -->
+      {#if !isEventQualifier}
+        <div class="race-info">
+          <div class="info-grid">
             <div class="info-item">
-              <span class="label">Scheduled</span>
-              {#if editingSchedule}
-                <div class="schedule-edit">
-                  <DateTimePicker
-                    value={scheduleInput}
-                    onchange={(iso) => (scheduleInput = iso)}
-                    min={new Date()}
-                    disabled={scheduleSaving}
-                  />
-                  <div class="schedule-edit-actions">
-                    <button
-                      class="btn-inline"
-                      onclick={saveSchedule}
-                      disabled={scheduleSaving}
-                    >
-                      {scheduleSaving ? "..." : "Save"}
-                    </button>
-                    <button
-                      class="btn-inline btn-inline-secondary"
-                      onclick={() => (editingSchedule = false)}
-                      disabled={scheduleSaving}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                  {#if scheduleError}
-                    <span class="schedule-error">{scheduleError}</span>
-                  {/if}
-                </div>
-              {:else if liveScheduledAt}
-                <span class="value">
-                  {formatDate(liveScheduledAt)}
-                  {#if isOrganizer}
-                    <button class="btn-edit" onclick={startEditSchedule}
-                      >Edit</button
-                    >
-                  {/if}
-                </span>
-              {:else if isOrganizer}
-                <span class="value">
-                  To be defined
-                  <button class="btn-edit" onclick={startEditSchedule}
-                    >Set time</button
-                  >
-                </span>
-              {:else}
-                <span class="value">To be defined</span>
-              {/if}
+              <span class="label">Participants</span>
+              <span class="value"
+                >{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
+                  /{liveMaxParticipants}{/if}</span
+              >
             </div>
-            {#if isOrganizer || liveLateJoinWindow !== null}
+            <div class="info-item">
+              <span class="label">Created</span>
+              <span class="value">{formatDate(initialRace.created_at)}</span>
+            </div>
+            {#if raceStatus === "setup"}
               <div class="info-item">
-                <span class="label">Late join</span>
-                {#if editingLateJoin}
+                <span class="label">Scheduled</span>
+                {#if editingSchedule}
                   <div class="schedule-edit">
-                    <div class="inline-minutes">
-                      <input
-                        type="number"
-                        min="1"
-                        max={liveRaceDuration ?? undefined}
-                        bind:value={lateJoinInput}
-                        disabled={lateJoinSaving}
-                        aria-label="Late join window in minutes"
-                        class="inline-duration"
-                      />
-                      <span>min</span>
-                    </div>
+                    <DateTimePicker
+                      value={scheduleInput}
+                      onchange={(iso) => (scheduleInput = iso)}
+                      min={new Date()}
+                      disabled={scheduleSaving}
+                    />
                     <div class="schedule-edit-actions">
                       <button
                         class="btn-inline"
-                        onclick={() => saveLateJoin(lateJoinInput)}
-                        disabled={lateJoinSaving}
+                        onclick={saveSchedule}
+                        disabled={scheduleSaving}
                       >
-                        {lateJoinSaving ? "..." : "Save"}
+                        {scheduleSaving ? "..." : "Save"}
                       </button>
                       <button
                         class="btn-inline btn-inline-secondary"
-                        onclick={() => (editingLateJoin = false)}
-                        disabled={lateJoinSaving}
+                        onclick={() => (editingSchedule = false)}
+                        disabled={scheduleSaving}
                       >
                         Cancel
                       </button>
-                      {#if liveLateJoinWindow !== null}
+                    </div>
+                    {#if scheduleError}
+                      <span class="schedule-error">{scheduleError}</span>
+                    {/if}
+                  </div>
+                {:else if liveScheduledAt}
+                  <span class="value">
+                    {formatDate(liveScheduledAt)}
+                    {#if isOrganizer}
+                      <button class="btn-edit" onclick={startEditSchedule}
+                        >Edit</button
+                      >
+                    {/if}
+                  </span>
+                {:else if isOrganizer}
+                  <span class="value">
+                    To be defined
+                    <button class="btn-edit" onclick={startEditSchedule}
+                      >Set time</button
+                    >
+                  </span>
+                {:else}
+                  <span class="value">To be defined</span>
+                {/if}
+              </div>
+              {#if isOrganizer || liveLateJoinWindow !== null}
+                <div class="info-item">
+                  <span class="label">Late join</span>
+                  {#if editingLateJoin}
+                    <div class="schedule-edit">
+                      <div class="inline-minutes">
+                        <input
+                          type="number"
+                          min="1"
+                          max={liveRaceDuration ?? undefined}
+                          bind:value={lateJoinInput}
+                          disabled={lateJoinSaving}
+                          aria-label="Late join window in minutes"
+                          class="inline-duration"
+                        />
+                        <span>min</span>
+                      </div>
+                      <div class="schedule-edit-actions">
                         <button
-                          class="btn-inline btn-inline-secondary"
-                          onclick={() => saveLateJoin(null)}
+                          class="btn-inline"
+                          onclick={() => saveLateJoin(lateJoinInput)}
                           disabled={lateJoinSaving}
                         >
-                          Disable
+                          {lateJoinSaving ? "..." : "Save"}
                         </button>
-                      {/if}
-                    </div>
-                    {#if lateJoinError}
-                      <span class="schedule-error">{lateJoinError}</span>
-                    {/if}
-                  </div>
-                {:else if liveLateJoinWindow !== null}
-                  <span class="value">
-                    {formatMinutes(liveLateJoinWindow)}
-                    {#if isOrganizer}
-                      <button class="btn-edit" onclick={startEditLateJoin}
-                        >Edit</button
-                      >
-                    {/if}
-                  </span>
-                {:else}
-                  <span class="value">
-                    Disabled
-                    <button class="btn-edit" onclick={startEditLateJoin}
-                      >Enable</button
-                    >
-                  </span>
-                {/if}
-              </div>
-            {/if}
-            {#if isOrganizer || liveRaceDuration !== null}
-              <div class="info-item">
-                <span class="label">Duration</span>
-                {#if editingDuration}
-                  <div class="schedule-edit">
-                    <div class="inline-minutes">
-                      <input
-                        type="number"
-                        min={liveLateJoinWindow ?? 1}
-                        bind:value={durationInput}
-                        disabled={durationSaving}
-                        aria-label="Race duration in minutes"
-                        class="inline-duration"
-                      />
-                      <span>min</span>
-                    </div>
-                    <div class="schedule-edit-actions">
-                      <button
-                        class="btn-inline"
-                        onclick={() => saveDuration(durationInput)}
-                        disabled={durationSaving}
-                      >
-                        {durationSaving ? "..." : "Save"}
-                      </button>
-                      <button
-                        class="btn-inline btn-inline-secondary"
-                        onclick={() => (editingDuration = false)}
-                        disabled={durationSaving}
-                      >
-                        Cancel
-                      </button>
-                      {#if liveRaceDuration !== null}
                         <button
                           class="btn-inline btn-inline-secondary"
-                          onclick={() => saveDuration(null)}
-                          disabled={durationSaving}
+                          onclick={() => (editingLateJoin = false)}
+                          disabled={lateJoinSaving}
                         >
-                          Disable
+                          Cancel
                         </button>
+                        {#if liveLateJoinWindow !== null}
+                          <button
+                            class="btn-inline btn-inline-secondary"
+                            onclick={() => saveLateJoin(null)}
+                            disabled={lateJoinSaving}
+                          >
+                            Disable
+                          </button>
+                        {/if}
+                      </div>
+                      {#if lateJoinError}
+                        <span class="schedule-error">{lateJoinError}</span>
                       {/if}
                     </div>
-                    {#if durationError}
-                      <span class="schedule-error">{durationError}</span>
-                    {/if}
-                  </div>
-                {:else if liveRaceDuration !== null}
-                  <span class="value">
-                    {formatMinutes(liveRaceDuration)}
-                    {#if isOrganizer}
-                      <button class="btn-edit" onclick={startEditDuration}
-                        >Edit</button
+                  {:else if liveLateJoinWindow !== null}
+                    <span class="value">
+                      {formatMinutes(liveLateJoinWindow)}
+                      {#if isOrganizer}
+                        <button class="btn-edit" onclick={startEditLateJoin}
+                          >Edit</button
+                        >
+                      {/if}
+                    </span>
+                  {:else}
+                    <span class="value">
+                      Disabled
+                      <button class="btn-edit" onclick={startEditLateJoin}
+                        >Enable</button
                       >
-                    {/if}
-                  </span>
-                {:else}
-                  <span class="value">
-                    Disabled
-                    <button class="btn-edit" onclick={startEditDuration}
-                      >Enable</button
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+              {#if isOrganizer || liveRaceDuration !== null}
+                <div class="info-item">
+                  <span class="label">Duration</span>
+                  {#if editingDuration}
+                    <div class="schedule-edit">
+                      <div class="inline-minutes">
+                        <input
+                          type="number"
+                          min={liveLateJoinWindow ?? 1}
+                          bind:value={durationInput}
+                          disabled={durationSaving}
+                          aria-label="Race duration in minutes"
+                          class="inline-duration"
+                        />
+                        <span>min</span>
+                      </div>
+                      <div class="schedule-edit-actions">
+                        <button
+                          class="btn-inline"
+                          onclick={() => saveDuration(durationInput)}
+                          disabled={durationSaving}
+                        >
+                          {durationSaving ? "..." : "Save"}
+                        </button>
+                        <button
+                          class="btn-inline btn-inline-secondary"
+                          onclick={() => (editingDuration = false)}
+                          disabled={durationSaving}
+                        >
+                          Cancel
+                        </button>
+                        {#if liveRaceDuration !== null}
+                          <button
+                            class="btn-inline btn-inline-secondary"
+                            onclick={() => saveDuration(null)}
+                            disabled={durationSaving}
+                          >
+                            Disable
+                          </button>
+                        {/if}
+                      </div>
+                      {#if durationError}
+                        <span class="schedule-error">{durationError}</span>
+                      {/if}
+                    </div>
+                  {:else if liveRaceDuration !== null}
+                    <span class="value">
+                      {formatMinutes(liveRaceDuration)}
+                      {#if isOrganizer}
+                        <button class="btn-edit" onclick={startEditDuration}
+                          >Edit</button
+                        >
+                      {/if}
+                    </span>
+                  {:else}
+                    <span class="value">
+                      Disabled
+                      <button class="btn-edit" onclick={startEditDuration}
+                        >Enable</button
+                      >
+                    </span>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
+            {#if liveDeathless || (isOrganizer && raceStatus === "setup")}
+              <div class="info-item">
+                <span class="label">Deathless</span>
+                <span class="value">
+                  {liveDeathless ? "Enabled" : "Disabled"}
+                  {#if isOrganizer && raceStatus === "setup"}
+                    <button
+                      class="btn-edit"
+                      onclick={() => saveDeathless(!liveDeathless)}
+                      disabled={deathlessSaving}
                     >
-                  </span>
+                      {deathlessSaving
+                        ? "..."
+                        : liveDeathless
+                          ? "Disable"
+                          : "Enable"}
+                    </button>
+                  {/if}
+                </span>
+                {#if deathlessError}
+                  <span class="schedule-error">{deathlessError}</span>
                 {/if}
               </div>
             {/if}
-          {/if}
-          {#if liveDeathless || (isOrganizer && raceStatus === "setup")}
-            <div class="info-item">
-              <span class="label">Deathless</span>
-              <span class="value">
-                {liveDeathless ? "Enabled" : "Disabled"}
-                {#if isOrganizer && raceStatus === "setup"}
-                  <button
-                    class="btn-edit"
-                    onclick={() => saveDeathless(!liveDeathless)}
-                    disabled={deathlessSaving}
-                  >
-                    {deathlessSaving
-                      ? "..."
-                      : liveDeathless
-                        ? "Disable"
-                        : "Enable"}
-                  </button>
-                {/if}
-              </span>
-              {#if deathlessError}
-                <span class="schedule-error">{deathlessError}</span>
-              {/if}
-            </div>
-          {/if}
-          {#if startedAt}
-            <div class="info-item">
-              <span class="label">Started</span>
-              <span class="value">{formatDate(startedAt)}</span>
-            </div>
-          {/if}
+            {#if startedAt}
+              <div class="info-item">
+                <span class="label">Started</span>
+                <span class="value">{formatDate(startedAt)}</span>
+              </div>
+            {/if}
+          </div>
         </div>
-      </div>
+      {/if}
 
       {#if initialRace.pool_config}
         <PoolSettingsCard
