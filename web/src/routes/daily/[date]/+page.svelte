@@ -165,6 +165,7 @@
 
   let wsError = $derived(raceStore.wsError);
   let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
+  let theme = $derived(dailyTheme(initialRace));
   let kickerLabel = $derived(
     `DAILY · ${new Date(`${initialRace.daily_date}T00:00:00Z`)
       .toLocaleDateString("en-US", {
@@ -628,26 +629,29 @@
     </aside>
 
     <main class="main-content">
-      <header class="daily-header">
-        <div class="daily-title">
-          <span class="kicker">{kickerLabel}</span>
-          <h1>{dailyTheme(initialRace)}</h1>
-        </div>
-        <div class="daily-meta-right">
-          <ShareButtons />
-          {#if initialRace.seed_number}
-            <span class="seed-badge">Seed {initialRace.seed_number}</span>
-          {/if}
-          {#if initialRace.deathless}
-            <span class="chip deathless-badge" title="Dying once eliminates you"
-              >Deathless</span
-            >
-          {/if}
-          <span class="chip daily-pill" class:ended={dailyEnded}>
-            {dailyEnded ? "Ended" : countdownLabel}
-          </span>
-        </div>
-      </header>
+      <div class="daily-header-wrapper">
+        <header class="daily-header">
+          <div class="daily-title">
+            <span class="kicker">{kickerLabel}</span>
+            <h1 title={theme}>{theme}</h1>
+          </div>
+          <div class="daily-meta-right">
+            <ShareButtons />
+            {#if initialRace.seed_number}
+              <span class="seed-badge">Seed {initialRace.seed_number}</span>
+            {/if}
+            {#if initialRace.deathless}
+              <span
+                class="chip deathless-badge"
+                title="Dying once eliminates you">Deathless</span
+              >
+            {/if}
+            <span class="chip daily-pill" class:ended={dailyEnded}>
+              {dailyEnded ? "Ended" : countdownLabel}
+            </span>
+          </div>
+        </header>
+      </div>
 
       {#if liveWeek}
         <DailyWeekGrid
@@ -1061,12 +1065,24 @@
     min-width: 0;
   }
 
+  /* The header stacks on its own width, not the viewport's: the sidebar and
+     the chat panel both eat into it. */
+  .daily-header-wrapper {
+    container: daily-header / inline-size;
+  }
+
   .daily-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
     gap: 1rem;
-    flex-wrap: wrap;
+  }
+
+  /* The title holds one line and yields to an ellipsis only once the badges
+     are down to their reserved width (.daily-meta-right min-width). */
+  .daily-title {
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .daily-title .kicker {
@@ -1088,13 +1104,40 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
     line-height: 1.12;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
+  /* Takes whatever the title leaves and wraps its badges inside it */
   .daily-meta-right {
+    flex: 1 1 0;
+    min-width: 20rem;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
     gap: 0.75rem;
-    flex-wrap: wrap;
+  }
+
+  /* Too narrow to share a row without squeezing both: the title gets the
+     full width (wrapping rather than clipping the end of the name) and the
+     badges go under it. */
+  @container daily-header (max-width: 50rem) {
+    .daily-header {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .daily-title h1 {
+      white-space: normal;
+    }
+
+    .daily-meta-right {
+      flex: none;
+      min-width: 0;
+      justify-content: flex-start;
+    }
   }
 
   .seed-badge {
@@ -1207,11 +1250,6 @@
     .main-content {
       padding: 1rem;
       overflow-y: visible;
-    }
-
-    .daily-header {
-      flex-direction: column;
-      gap: 0.5rem;
     }
   }
 </style>

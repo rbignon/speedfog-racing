@@ -1106,44 +1106,46 @@
     </aside>
 
     <main class="main-content">
-      <header class="race-header">
-        <div>
-          <h1 class:frog={isFrogRace}>
-            {#if isFrogRace}
-              <img src="/badges/frog.svg" alt="" class="frog-icon" />
-            {/if}{raceName}
-          </h1>
-          <p class="organizer">
-            Organized by {initialRace.organizer.twitch_display_name ||
-              initialRace.organizer.twitch_username}
-          </p>
-        </div>
-        <div class="header-right">
-          <ShareButtons />
-          {#if initialRace.scheduled_at}
-            <AddToCalendar
-              scheduledAt={initialRace.scheduled_at}
-              {raceName}
-              raceUrl={window.location.href}
-            />
-          {/if}
-          {#if !initialRace.is_public}
-            <span class="visibility-badge">Private</span>
-          {/if}
-          {#if initialRace.seed_number}
-            <span class="seed-badge">Seed {initialRace.seed_number}</span>
-          {/if}
-          {#if liveRaceEndsAt && raceStatus === "running"}
-            <span class="race-ends-pill">
-              Ends in {formatCountdown(liveRaceEndsAt, now)}
-            </span>
-          {/if}
-          <RaceStatus status={raceStatus} />
-          {#if raceStatus === "running"}
-            <span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
-          {/if}
-        </div>
-      </header>
+      <div class="race-header-wrapper">
+        <header class="race-header">
+          <div class="race-title">
+            <h1 class:frog={isFrogRace} title={raceName}>
+              {#if isFrogRace}
+                <img src="/badges/frog.svg" alt="" class="frog-icon" />
+              {/if}{raceName}
+            </h1>
+            <p class="organizer">
+              Organized by {initialRace.organizer.twitch_display_name ||
+                initialRace.organizer.twitch_username}
+            </p>
+          </div>
+          <div class="header-right">
+            <ShareButtons />
+            {#if initialRace.scheduled_at}
+              <AddToCalendar
+                scheduledAt={initialRace.scheduled_at}
+                {raceName}
+                raceUrl={window.location.href}
+              />
+            {/if}
+            {#if !initialRace.is_public}
+              <span class="visibility-badge">Private</span>
+            {/if}
+            {#if initialRace.seed_number}
+              <span class="seed-badge">Seed {initialRace.seed_number}</span>
+            {/if}
+            {#if liveRaceEndsAt && raceStatus === "running"}
+              <span class="race-ends-pill">
+                Ends in {formatCountdown(liveRaceEndsAt, now)}
+              </span>
+            {/if}
+            <RaceStatus status={raceStatus} />
+            {#if raceStatus === "running"}
+              <span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
+            {/if}
+          </div>
+        </header>
+      </div>
 
       {#if editingRules || modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
@@ -1805,10 +1807,24 @@
     overflow-y: auto;
   }
 
+  /* The header stacks on its own width, not the viewport's: the sidebar and
+     the chat panel both eat into it. */
+  .race-header-wrapper {
+    container: race-header / inline-size;
+  }
+
   .race-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    gap: 1rem;
+  }
+
+  /* The title holds one line and yields to an ellipsis only once the badges
+     are down to their reserved width (.header-right min-width). */
+  .race-title {
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .race-header h1 {
@@ -1816,6 +1832,9 @@
     color: var(--color-text);
     font-weight: 600;
     letter-spacing: 0.03em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .race-header h1.frog {
@@ -1829,11 +1848,42 @@
     margin-right: 0.35rem;
   }
 
+  /* Takes whatever the title leaves and wraps its badges inside it */
   .header-right {
+    flex: 1 1 0;
+    min-width: 20rem;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     align-items: center;
     gap: 0.75rem;
-    flex-shrink: 0;
+  }
+
+  /* Too narrow to share a row without squeezing both: the title gets the
+     full width (wrapping rather than clipping the end of the name) and the
+     badges go under it. */
+  @container race-header (max-width: 50rem) {
+    .race-header {
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .race-header h1 {
+      white-space: normal;
+    }
+
+    .header-right {
+      flex: none;
+      min-width: 0;
+      justify-content: flex-start;
+    }
+
+    /* Left-aligned, the calendar sits near the left edge: its menu opens
+       rightward instead of spilling under the sidebar */
+    .header-right :global(.dropdown) {
+      left: 0;
+      right: auto;
+    }
   }
 
   .elapsed-clock {
@@ -2032,11 +2082,6 @@
     .main-content {
       padding: 1rem;
       overflow-y: visible;
-    }
-
-    .race-header {
-      flex-direction: column;
-      gap: 0.5rem;
     }
 
     .race-header h1 {
