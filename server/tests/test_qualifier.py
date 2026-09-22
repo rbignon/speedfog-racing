@@ -54,6 +54,7 @@ def _planned(race_id: str, status: str = "setup", **overrides: Any) -> dict[str,
         "open_registration": False,
         "max_participants": None,
         "seeds_released_at": None,
+        "organizer": {"id": "root"},
         "participant_count": 0,
         "participant_previews": [],
         "late_join_window_minutes": WEEK,
@@ -92,10 +93,14 @@ def test_a_race_to_start_is_flagged_when_it_would_not_open_clean():
         "qualifier:boss_rush:1": "short",
         "qualifier:boss_rush:2": "exposed",
     }
+    organizer = {"id": "root", "twitch_username": "root"}
     races = {
-        "clean": _planned("clean"),
+        # The organizer races their own seeds: not a leftover.
+        "clean": _planned("clean", participant_count=1, participant_previews=[organizer]),
         "busy": _planned(
-            "busy", participant_count=1, participant_previews=[{"twitch_username": "check"}]
+            "busy",
+            participant_count=2,
+            participant_previews=[organizer, {"id": "check", "twitch_username": "check"}],
         ),
         "short": _planned("short", race_duration_minutes=WEEK - 10),
         "exposed": _planned("exposed", is_public=True, open_registration=True),
@@ -391,11 +396,15 @@ async def test_a_participant_left_registered_fails_the_run(async_session, capsys
         check = User(twitch_id="id-check", twitch_username="check", api_token="tok-check")
         db.add(check)
         await db.flush()
+        db.add(Participant(race_id=race.id, user_id=root.id))
         db.add(Participant(race_id=race.id, user_id=check.id))
         await db.commit()
 
     assert await _run(now=True, before_opening=True) == 1
-    assert "participant still registered: qualifier:standard:1" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    # The organizer is counted out on the real payload, the check account is not.
+    assert "1 participant(s) registered: check" in out
+    assert "participant still registered: qualifier:standard:1" in out
     async with async_session() as db:
         started = await db.get(Race, race.id)
     assert started is not None and started.status == RaceStatus.RUNNING
@@ -458,7 +467,7 @@ async def test_create_fills_the_empty_slots_as_the_opening_needs_them(async_sess
     ]
     assert races["qualifier:standard:1"].id == taken.id
     created = races["qualifier:boss_rush:2"]
-    assert created.name == "Cup qualifier - Boss Rush - Seed 2"
+    assert created.name == "CUP QUALIFIER - BOSS RUSH - SEED 2"
     assert created.status == RaceStatus.SETUP
     assert created.organizer_id == root.id
     assert created.is_public is False and created.open_registration is False
@@ -468,11 +477,12 @@ async def test_create_fills_the_empty_slots_as_the_opening_needs_them(async_sess
             slot: await db.scalar(select(Seed.pool_name).where(Seed.id == race.seed_id))
             for slot, race in races.items()
         }
-        entrants = await db.scalar(select(func.count()).select_from(Participant))
+        entrants = (await db.execute(select(Participant.race_id, Participant.user_id))).all()
     assert seed_pools["qualifier:boss_rush:1"] == "boss_rush"
     assert seed_pools["qualifier:standard:2"] == "standard"
-    # Run without racing: the check account is the only one ever added.
-    assert entrants == 0
+    # The organizer races every seed created, and only those.
+    created_ids = {race.id for race in races.values() if race.id != taken.id}
+    assert sorted(entrants) == sorted((race_id, root.id) for race_id in created_ids)
 
 
 @pytest.mark.asyncio

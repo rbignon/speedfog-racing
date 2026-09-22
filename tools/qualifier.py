@@ -5,10 +5,10 @@ Two commands, both talking to the API with an admin's web session token taken
 from the SPEEDFOG_TOKEN environment variable (the ``speedfog_token`` entry of
 the browser's localStorage).
 
-``create`` gives every qualifier slot still empty its race, named "<event>
-qualifier - <mode> - Seed <n>": the mode's pool, private, run by the token's
-account without racing, registration closed, late join and automatic end
-both the length of the qualifier window. A slot already taken is left as it
+``create`` gives every qualifier slot still empty its race, named "<EVENT>
+QUALIFIER - <MODE> - SEED <N>" (upper case): the mode's pool, private, run by
+the token's account racing in it too, registration closed, late join and
+automatic end both the length of the qualifier window. A slot already taken is left as it
 is, so a rerun fills the slots a failed run left empty. It is refused once
 the qualifier has opened: a race created then would still last the whole
 window and close past the cut. The creation is tried once, since a retry
@@ -31,9 +31,9 @@ after the other, the last ones would close minutes after it.
 A race already running is left alone, so a rerun of ``start`` is harmless. At
 launch it prints what it found per slot and flags what needs a look: a slot
 with no race, a race neither in setup nor running, a race still holding a
-participant (the check account has to be removed first), a race whose
-duration does not end it at the cut or whose late join differs from it, a
-public race, and a race whose registration is already open. It reads the
+participant other than its organizer (a check account has to be removed
+first), a race whose duration does not end it at the cut or whose late join
+differs from it, a public race, and a race whose registration is already open. It reads the
 state again shortly before the start calls (falling back on the launch's
 reading when that fails or lingers), prints it, then opens registration and
 releases the seeds. A race whose registration could not be opened stays in
@@ -41,10 +41,11 @@ setup, since a started race's registration can no longer be changed. Calls
 are tried again on a network error, a server error, a conflict or the rate
 limit, and a start that still reads as failed is checked against the race's
 own state before it is reported. The exit code is 1 when a race could not be
-started or started with a participant still registered. Logging out of the
-site replaces the token, so stay logged in until the opening. The machine's
-clock decides when the calls leave: run it on the server itself or on a
-machine synced over NTP, and keep it awake until the opening.
+started or started with a participant other than its organizer still
+registered. Logging out of the site replaces the token, so stay logged in
+until the opening. The machine's clock decides when the calls leave: run it
+on the server itself or on a machine synced over NTP, and keep it awake until
+the opening.
 
 Usage (each command also runs with --dry-run, which only prints):
     cd server && SPEEDFOG_TOKEN=... uv run python ../tools/qualifier.py \\
@@ -107,6 +108,17 @@ def local(moment: datetime) -> str:
     return f"{moment.astimezone():%a %d %b %Y %H:%M:%S %Z}"
 
 
+def guests(race: dict[str, Any]) -> int:
+    """Participants other than the organizer, who races their own seeds.
+
+    The previews stop at five; the organizer is counted out only when they
+    show there, which holds for the few participants a race in setup has.
+    """
+    organizer = race["organizer"]["id"]
+    listed = sum(p["id"] == organizer for p in race["participant_previews"])
+    return int(race["participant_count"]) - listed
+
+
 def plan_slots(
     detail: dict[str, Any], attached: dict[str, str], races: dict[str, dict[str, Any]]
 ) -> list[SlotPlan]:
@@ -136,13 +148,13 @@ def plan_slots(
                 )
                 continue
             notes: list[str] = []
-            if race["participant_count"]:
+            if extra := guests(race):
                 names = ", ".join(
-                    p["twitch_username"] for p in race["participant_previews"]
+                    p["twitch_username"]
+                    for p in race["participant_previews"]
+                    if p["id"] != race["organizer"]["id"]
                 )
-                notes.append(
-                    f"{race['participant_count']} participant(s) registered: {names}"
-                )
+                notes.append(f"{extra} participant(s) registered: {names}")
             duration = race["race_duration_minutes"]
             if duration is None:
                 notes.append("no automatic end")
@@ -326,7 +338,7 @@ async def create_race(
     body = {
         "name": name,
         "pool_name": pool,
-        "organizer_participates": False,
+        "organizer_participates": True,
         "is_public": False,
         "open_registration": False,
         "late_join_window_minutes": minutes,
@@ -386,7 +398,7 @@ async def run_create(
         for mode in detail["modes"]:
             for index in range(1, detail["seeds_per_mode"] + 1):
                 slot = f"qualifier:{mode['key']}:{index}"
-                name = f"{detail['name']} qualifier - {mode['label']} - Seed {index}"
+                name = f"{detail['name']} qualifier - {mode['label']} - Seed {index}".upper()
                 if slot in event["attached"]:
                     print(f"  {slot:32s} taken, left as is")
                     continue
@@ -494,7 +506,7 @@ async def run_start(
     missing = [plan.slot for plan in plans if plan.race is None]
     # Past the start a participant can no longer be removed: they sit on the
     # seed's card all week.
-    crowded = [slot for slot, race in ready if race["participant_count"]]
+    crowded = [slot for slot, race in ready if guests(race)]
     if left_alone:
         print(f"Left alone, already running: {', '.join(left_alone)}")
     if missing:
