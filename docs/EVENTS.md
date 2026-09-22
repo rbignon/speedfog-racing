@@ -175,7 +175,13 @@ playing, the overlay's leaderboard is projected to their own IGT, so the
 other runners appear where they stood at that time instead of as a settled
 field of finishers. The web race page and the ladder keep the real state.
 See the "In-mod replay leaderboard" section of
-[DAILY_SEED.md](DAILY_SEED.md#in-mod-replay-leaderboard).
+[DAILY_SEED.md](DAILY_SEED.md#in-mod-replay-leaderboard). Unlike a Daily
+Seed, a qualifier shows no bloodstains at the fog gates: the server sends
+mods no `death_counts`, since the deaths of the week's early runners would
+point a later one to the costly zones. The race page header leaves out the
+"Private" badge every qualifier race would carry (private here only keeps
+the race out of the Discord announcement) and the elapsed clock, since the
+time since the opening measures nobody's run.
 
 ## Running an event (admin)
 

@@ -483,6 +483,43 @@ def test_heartbeat_routes_player_update_to_spectators_only(
         assert bravo_update["player"]["igt_ms"] == 60_000
 
 
+@pytest.mark.parametrize("kind", ASYNC_KINDS)
+def test_event_qualifier_mods_get_no_death_counts(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
+) -> None:
+    """Event qualifiers keep bloodstains off: no death_counts reaches a mod,
+    neither on a death nor on reconnect. The daily run is the control proving
+    both paths do send death_counts on another async race."""
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
+    expected = kind != "qualifier"
+
+    def saw_death_counts(mod: ModTestClient) -> bool:
+        seen = False
+        for _ in range(20):
+            try:
+                msg = mod.receive(timeout=2)
+            except TimeoutError:
+                break
+            seen = seen or msg.get("type") == "death_counts"
+        return seen
+
+    with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
+        mod = ModTestClient(mod_ws, b_token)
+        assert mod.auth(drain=False)["type"] == "auth_ok"
+        mod.receive_until_type("leaderboard_update")
+        mod.send_status_update(igt_ms=0, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+
+        # Two deaths attributed to the spawn zone.
+        mod.send_status_update(igt_ms=30_000, death_count=2)
+        assert saw_death_counts(mod) is expected
+
+    with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
+        mod = ModTestClient(mod_ws, b_token)
+        assert mod.auth(drain=False)["type"] == "auth_ok"
+        assert saw_death_counts(mod) is expected
+
+
 # ---------------------------------------------------------------------------
 # Regression: race_state carries per-rank daily_points on a finished daily
 # ---------------------------------------------------------------------------

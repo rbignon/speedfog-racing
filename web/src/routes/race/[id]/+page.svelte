@@ -192,6 +192,10 @@
   // Use live data if available, otherwise fall back to initial
   let raceName = $derived(liveRace?.name ?? initialRace.name);
   let isFrogRace = $derived(isFrogTitle(raceName));
+  // Twin of the server's Race.is_event_qualifier.
+  let isEventQualifier = $derived(
+    initialRace.event_slot?.startsWith("qualifier:") ?? false,
+  );
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
   let liveCustomRules = $derived(
     raceStore.race
@@ -1128,7 +1132,9 @@
                 raceUrl={window.location.href}
               />
             {/if}
-            {#if !initialRace.is_public}
+            <!-- Event qualifiers are all private (kept out of the Discord
+                 announcement), so the badge would only be noise there. -->
+            {#if !initialRace.is_public && !isEventQualifier}
               <span class="visibility-badge">Private</span>
             {/if}
             {#if initialRace.seed_number}
@@ -1140,7 +1146,9 @@
               </span>
             {/if}
             <RaceStatus status={raceStatus} />
-            {#if raceStatus === "running"}
+            <!-- A qualifier runs at each player's own time over days: the
+                 time since the opening measures nobody's run. -->
+            {#if raceStatus === "running" && !isEventQualifier}
               <span class="elapsed-clock">{formatElapsed(elapsedSeconds)}</span>
             {/if}
           </div>

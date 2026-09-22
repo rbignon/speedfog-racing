@@ -535,6 +535,8 @@ Aggregated death counts per DAG node across all race participants. Broadcast to 
 
 The mod uses these counts with `death_flags` from `SeedInfo` to set EMEVD event flags that control in-game bloodstain visibility. Three thresholds: low (1+), med (3+), high (5+).
 
+Never sent on event qualifier races (`Race.is_event_qualifier`): those run asynchronously over a long window, and bloodstains would leak the early runners' deaths to the later ones.
+
 ```json
 {
   "type": "death_counts",

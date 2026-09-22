@@ -188,6 +188,8 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         casters=casters,
         pending_invites=pending_invites,
         pool_config=pool_config,
+        event_id=race.event_id,
+        event_slot=race.event_slot,
     )
 
 

@@ -281,6 +281,10 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
         assert ok.json()["exclude_from_stats"] is True
         assert ok.json()["event_id"] == event_id
         assert ok.json()["event_slot"] == "qualifier:standard:1"
+        # The race page reads the slot from the detail endpoint.
+        detail = (await client.get(f"/api/races/{std.id}")).json()
+        assert detail["event_id"] == event_id
+        assert detail["event_slot"] == "qualifier:standard:1"
 
         taken = await client.post(
             f"/api/admin/races/{other.id}/event",

@@ -281,9 +281,11 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                         participant.zone_history,
                     )
 
-                # Send current death counts on reconnect
+                # Send current death counts on reconnect. Event qualifiers
+                # hide bloodstains: an early runner's deaths would tell a
+                # later one which zones are costly.
                 counts = aggregate_death_counts(race.participants)
-                if counts:
+                if counts and not race.is_event_qualifier:
                     await self.websocket.send_text(
                         DeathCountsMessage(counts=counts).model_dump_json()
                     )
@@ -582,7 +584,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 entity.race_id, entity.id, entity.zone_history or []
             )
 
-        if death_delta > 0:
+        if death_delta > 0 and not entity.race.is_event_qualifier:
             counts = aggregate_death_counts(entity.race.participants)
             logger.info(
                 "Broadcasting death_counts: race=%s, counts=%s",

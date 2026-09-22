@@ -501,6 +501,8 @@ class RaceDetailResponse(BaseModel):
     casters: list[CasterResponse] = []
     pending_invites: list[PendingInviteResponse] = []
     pool_config: PoolConfig | None = None
+    event_id: UUID | None = None
+    event_slot: str | None = None
 
 
 class RaceListResponse(BaseModel):
