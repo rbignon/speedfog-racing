@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DATE_TO_BE_AGREED,
   SIGNUP_INTENT_TTL_MS,
   blockOrder,
+  bracketLayout,
   champions,
   encodeSignupIntent,
   eventBand,
@@ -9,11 +11,14 @@ import {
   fillSlots,
   formatEventDate,
   formatEventDay,
+  linkPath,
   liveStage,
   openingRefreshMs,
   ordinal,
+  playoffsPlan,
   pollIntervalMs,
   racesSection,
+  shownStage,
   signupIntentStands,
   soloSeedLabel,
   stageTimes,
@@ -99,6 +104,174 @@ function detailWith(partial: Partial<EventDetail>): EventDetail {
   } as EventDetail;
 }
 
+function stageFixture(overrides: Partial<EventStage>): EventStage {
+  return {
+    key: "s",
+    label: "S",
+    kind: "quarter",
+    date: null,
+    date_fixed: false,
+    from: [],
+    races_expected: 3,
+    complete: false,
+    modes: [],
+    races: [],
+    results: [],
+    field: [],
+    ...overrides,
+  };
+}
+
+const seats = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ user: null, label: `Seed ${i + 1}` }));
+
+// This season: quarters into semis into the final, the newcomers' final aside.
+const quartersSeason: EventStage[] = [
+  stageFixture({ key: "quarter_a", label: "Quarter A", field: seats(4) }),
+  stageFixture({ key: "quarter_b", label: "Quarter B", field: seats(4) }),
+  stageFixture({ key: "quarter_c", label: "Quarter C", field: seats(4) }),
+  stageFixture({ key: "quarter_d", label: "Quarter D", field: seats(4) }),
+  stageFixture({
+    key: "semi_a",
+    label: "Semi A",
+    kind: "semi",
+    from: ["quarter_a", "quarter_b"],
+  }),
+  stageFixture({
+    key: "semi_b",
+    label: "Semi B",
+    kind: "semi",
+    from: ["quarter_c", "quarter_d"],
+  }),
+  stageFixture({
+    key: "newcomers",
+    label: "Newcomers' final",
+    kind: "newcomers",
+    date: "2026-10-18T19:00:00Z",
+    date_fixed: true,
+    field: seats(4),
+  }),
+  stageFixture({
+    key: "final",
+    label: "Final",
+    kind: "final",
+    date: "2026-10-25T19:00:00Z",
+    date_fixed: true,
+    from: ["semi_a", "semi_b"],
+  }),
+];
+
+describe("bracketLayout", () => {
+  it("lays quarters, semis and the final out as a tree, each stage centred on its sources", () => {
+    const layout = bracketLayout(quartersSeason);
+    expect(layout.rounds.map((r) => r.map((c) => c.stage.key))).toEqual([
+      ["quarter_a", "quarter_b", "quarter_c", "quarter_d"],
+      ["semi_a", "semi_b"],
+      ["final"],
+    ]);
+    expect(layout.rows).toBe(4);
+    expect(layout.tall).toBe(true);
+    const semiB = layout.rounds[1][1];
+    expect([semiB.row, semiB.span]).toEqual([2, 2]);
+    expect([layout.final?.row, layout.final?.span]).toEqual([0, 4]);
+    expect(layout.newcomers?.key).toBe("newcomers");
+    const toFinal = layout.links.find((l) => l.target.stage.key === "final");
+    expect(toFinal?.from).toEqual([25, 75]);
+  });
+
+  it("orders a round so that each stage's sources sit next to each other", () => {
+    const crossed = quartersSeason.map((s) =>
+      s.key === "semi_a"
+        ? { ...s, from: ["quarter_a", "quarter_c"] }
+        : s.key === "semi_b"
+          ? { ...s, from: ["quarter_b", "quarter_d"] }
+          : s,
+    );
+    const layout = bracketLayout(crossed);
+    expect(layout.rounds[0].map((c) => c.stage.key)).toEqual([
+      "quarter_a",
+      "quarter_c",
+      "quarter_b",
+      "quarter_d",
+    ]);
+  });
+
+  it("keeps a two-semis season short", () => {
+    const layout = bracketLayout([
+      stageFixture({ key: "semi_a", kind: "semi", field: seats(4) }),
+      stageFixture({ key: "semi_b", kind: "semi", field: seats(4) }),
+      stageFixture({ key: "final", kind: "final", from: ["semi_a", "semi_b"] }),
+    ]);
+    expect(layout.rows).toBe(2);
+    expect(layout.tall).toBe(false);
+  });
+});
+
+describe("linkPath", () => {
+  it("joins the sources on a spine and leads out of its middle", () => {
+    expect(linkPath([25, 75])).toBe(
+      "M0 25 H12 M0 75 H12 M12 25 V75 M12 50 H24",
+    );
+    expect(linkPath([50])).toBe("M0 50 H24");
+  });
+});
+
+describe("playoffsPlan", () => {
+  it("counts the seeded places and names the rounds scheduled with the players", () => {
+    const plan = playoffsPlan(quartersSeason);
+    expect(plan.places).toBe(16);
+    expect(plan.agreed).toBe("quarters and semis");
+    expect(plan.fixed.map((s) => s.key)).toEqual(["final"]);
+  });
+
+  it("lists every stage on its date when the config fixes them all", () => {
+    const plan = playoffsPlan([
+      stageFixture({
+        key: "semi_a",
+        kind: "semi",
+        date: "2026-10-04T19:00:00Z",
+        date_fixed: true,
+        field: seats(4),
+      }),
+      stageFixture({
+        key: "final",
+        kind: "final",
+        date: "2026-10-25T19:00:00Z",
+        date_fixed: true,
+        from: ["semi_a"],
+      }),
+    ]);
+    expect(plan.agreed).toBeNull();
+    expect(plan.fixed.map((s) => s.key)).toEqual(["semi_a", "final"]);
+  });
+});
+
+describe("shownStage and racesSection without a date", () => {
+  it("shows nothing during the playoffs when no evening is current or next", () => {
+    const base = {
+      current_stage_key: null,
+      next_stage: null,
+      stages: quartersSeason,
+    };
+    expect(shownStage({ ...base, phase: "playoffs" })).toBeNull();
+    expect(shownStage({ ...base, phase: "finished" })?.key).toBe("final");
+  });
+
+  it("names an undated stage's date as to be agreed", () => {
+    const detail = detailWith({
+      phase: "playoffs",
+      current_stage_key: "quarter_a",
+      stages: quartersSeason,
+    });
+    expect(
+      racesSection(detail, (iso) => iso, new Date("2026-10-09T12:00:00Z")),
+    ).toEqual({
+      signal: { cls: "signal-setup", text: "Up next" },
+      meta: DATE_TO_BE_AGREED,
+    });
+  });
+});
+
 describe("eventFacts", () => {
   const stages = [
     { kind: "semi", races_expected: 3, date: "2026-10-04T19:00:00Z" },
@@ -178,6 +351,8 @@ describe("champions", () => {
     label: kind,
     kind,
     date: "2026-10-25T19:00:00Z",
+    date_fixed: true,
+    from: [],
     races_expected: 3,
     complete,
     modes: [],
@@ -383,6 +558,7 @@ describe("racesSection", () => {
     const after = new Date("2026-10-26T00:00:00Z");
     const section = racesSection(
       detailWith({
+        phase: "finished",
         stages: [semiA, { ...semiB, complete: true }] as EventDetail["stages"],
       }),
       fmt,
@@ -443,7 +619,11 @@ describe("soloSeedLabel", () => {
 
 describe("formatEventDate with the zone, and stageTimes", () => {
   const stagesAt = (...isos: string[]) =>
-    isos.map((date, i) => ({ label: `Stage ${i + 1}`, date }));
+    isos.map((date, i) => ({
+      label: `Stage ${i + 1}`,
+      date,
+      date_fixed: true,
+    }));
   // The real season: four Sunday evenings, the last one the day Europe leaves
   // summer time, read from Paris.
   const season = (last: string) =>
@@ -452,7 +632,7 @@ describe("formatEventDate with the zone, and stageTimes", () => {
       ["Semi B", "2026-10-11T19:00:00Z"],
       ["Newcomers' final", "2026-10-18T19:00:00Z"],
       ["Final", last],
-    ].map(([label, date]) => ({ label, date }));
+    ].map(([label, date]) => ({ label, date, date_fixed: true }));
 
   afterEach(() => vi.unstubAllEnvs());
 
@@ -528,6 +708,13 @@ describe("formatEventDate with the zone, and stageTimes", () => {
     ).toBeNull();
     expect(stageTimes(stagesAt("2026-10-04T19:00:00Z"))).toBeNull();
   });
+
+  it("says nothing while a stage is scheduled with its players", () => {
+    const stages = season("2026-10-25T19:00:00Z").map((s, i) =>
+      i === 0 ? { ...s, date_fixed: false } : s,
+    );
+    expect(stageTimes(stages)).toBeNull();
+  });
 });
 
 describe("pollIntervalMs and ordinal", () => {
@@ -563,6 +750,15 @@ describe("pollIntervalMs and ordinal", () => {
       stages: stageAt("2026-10-04T19:00:00Z"),
     });
     expect(pollIntervalMs(detail, new Date("2026-10-06T19:00:00Z"))).toBeNull();
+  });
+  it("ignores a stage without a date", () => {
+    const detail = detailWith({
+      phase: "playoffs",
+      stages: [
+        { key: "q", date: null, races: [] },
+      ] as unknown as EventDetail["stages"],
+    });
+    expect(pollIntervalMs(detail, sunday)).toBeNull();
   });
   it("never polls outside the playoffs, even with a live race or a stage today", () => {
     expect(

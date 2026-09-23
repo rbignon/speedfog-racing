@@ -84,7 +84,9 @@ export function eventFacts(
   if (newcomers) {
     facts.push({
       title: "Newcomers",
-      lines: ["Own final", formatDay(newcomers.date)],
+      lines: newcomers.date
+        ? ["Own final", formatDay(newcomers.date)]
+        : ["Own final"],
     });
   }
   return facts;
@@ -188,20 +190,24 @@ export function champions(detail: ChampionsInput): Champion[] {
 
 type ShownStageInput = Pick<
   EventDetail,
-  "current_stage_key" | "next_stage" | "stages"
+  "current_stage_key" | "next_stage" | "stages" | "phase"
 >;
 
 /**
- * The evening whose races the bracket block lists: today's stage during the
- * playoffs, else the next one, else the last one once everything ran.
+ * The evening whose races the bracket block lists: the current stage during
+ * the playoffs, else the next one, else the last one once everything ran;
+ * none while no evening can honestly be called next.
  */
 export function shownStage(detail: ShownStageInput): EventStage | null {
   const key =
     detail.current_stage_key ??
     detail.next_stage?.key ??
-    detail.stages.at(-1)?.key;
+    (detail.phase === "finished" ? detail.stages.at(-1)?.key : undefined);
   return detail.stages.find((s) => s.key === key) ?? null;
 }
+
+/** What a stage's date line reads while its races are not scheduled yet. */
+export const DATE_TO_BE_AGREED = "Date to be agreed";
 
 type SectionInput = Pick<EventDetail, "live_race"> & ShownStageInput;
 
@@ -235,14 +241,17 @@ export function racesSection(
   if (stage.complete) {
     return {
       signal: { cls: "signal-finished", text: "Finished" },
-      meta: formatDate(stage.date),
+      meta: stage.date ? formatDate(stage.date) : DATE_TO_BE_AGREED,
     };
   }
   const started = stage.races.some((r) => r.race.status !== "setup");
-  if (!started || new Date(stage.date).getTime() > now.getTime()) {
+  if (
+    !started ||
+    (stage.date !== null && new Date(stage.date).getTime() > now.getTime())
+  ) {
     return {
       signal: { cls: "signal-setup", text: "Up next" },
-      meta: formatDate(stage.date),
+      meta: stage.date ? formatDate(stage.date) : DATE_TO_BE_AGREED,
     };
   }
   const played = stage.races.filter((r) => r.race.status === "finished").length;
@@ -289,6 +298,15 @@ export function formatEventDay(iso: string): string {
     weekday: "short",
     day: "numeric",
     month: "short",
+  }).format(new Date(iso));
+}
+
+/** "20:00" in the browser's timezone: a fixed evening's start, beside its day. */
+export function formatEventTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
   }).format(new Date(iso));
 }
 
@@ -339,18 +357,24 @@ export interface StageTimes {
  * single one evening out, so the exception is the common case, not a corner
  * one: the real season's last evening is the Sunday Europe leaves summer
  * time. Only the wall clock decides, never the zone's name: evenings at the
- * same local time either side of that change still share it.
+ * same local time either side of that change still share it. Nothing either
+ * while a stage is scheduled with its players (`date_fixed` false): the page
+ * then gives each fixed evening its own time.
  */
 export function stageTimes(
-  stages: Pick<EventStage, "label" | "date">[],
+  stages: Pick<EventStage, "label" | "date" | "date_fixed">[],
 ): StageTimes | null {
-  if (stages.length < 2) return null;
+  // An evening agreed with its players has no place in a shared start time.
+  const fixed = stages.flatMap((s) =>
+    s.date_fixed && s.date !== null ? [{ label: s.label, date: s.date }] : [],
+  );
+  if (fixed.length < 2 || fixed.length !== stages.length) return null;
   const format = new Intl.DateTimeFormat("en-GB", {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
   });
-  const times = stages.map((stage) => format.format(new Date(stage.date)));
+  const times = fixed.map((stage) => format.format(new Date(stage.date)));
   const counts = new Map<string, number>();
   for (const time of times) counts.set(time, (counts.get(time) ?? 0) + 1);
   if (counts.size === 1) return { time: times[0], exception: null };
@@ -358,7 +382,7 @@ export function stageTimes(
   // two evenings at two times have no rule to state an exception to.
   const [common, odd] = [...counts].sort((a, b) => b[1] - a[1]);
   if (counts.size !== 2 || common[1] < 2 || odd[1] !== 1) return null;
-  const stage = stages[times.indexOf(odd[0])];
+  const stage = fixed[times.indexOf(odd[0])];
   return {
     time: common[0],
     exception: { label: stage.label, time: odd[0] },
@@ -383,8 +407,9 @@ export function pollIntervalMs(
   if (detail.live_race !== null) return LIVE_POLL_MS;
   const near = detail.stages.some(
     (s) =>
+      s.date !== null &&
       Math.abs(new Date(s.date).getTime() - now.getTime()) <=
-      STAGE_DAY_WINDOW_MS,
+        STAGE_DAY_WINDOW_MS,
   );
   return near ? STAGE_DAY_POLL_MS : null;
 }
@@ -578,4 +603,154 @@ export function eventBand(
         ...closed,
       };
   }
+}
+
+export interface BracketCell {
+  stage: EventStage;
+  /** 0 for the stages the ladder seeds, one more per round after. */
+  round: number;
+  /** First tree row (0-based) and how many rows the stage spans. */
+  row: number;
+  span: number;
+}
+
+export interface BracketLink {
+  /** The fed stage the link leads into. */
+  target: BracketCell;
+  /** Its sources' centres, as percentages of the target's height (the target sits at 50). */
+  from: number[];
+}
+
+export interface BracketLayout {
+  rounds: BracketCell[][];
+  links: BracketLink[];
+  /** Boxes in the first round: the tree's rows. */
+  rows: number;
+  final: BracketCell | null;
+  newcomers: EventStage | null;
+  /**
+   * Four first-round boxes or more: the tree is tall enough for the evening
+   * section to sit above the Champion in a side column.
+   */
+  tall: boolean;
+}
+
+/**
+ * The bracket as a grid: one column per round (a seeded stage is round 0, a
+ * fed one follows its deepest source), each round ordered so a stage's
+ * sources sit next to each other, a fed stage spanning its sources' rows.
+ * The newcomers' final stands apart.
+ */
+export function bracketLayout(stages: EventStage[]): BracketLayout {
+  const tree = stages.filter((s) => s.kind !== "newcomers");
+  const byKey = new Map(tree.map((s) => [s.key, s]));
+  const roundOf = new Map<string, number>();
+  const round = (stage: EventStage): number => {
+    const known = roundOf.get(stage.key);
+    if (known !== undefined) return known;
+    const sources = stage.from.flatMap((k) => byKey.get(k) ?? []);
+    const value = sources.length ? 1 + Math.max(...sources.map(round)) : 0;
+    roundOf.set(stage.key, value);
+    return value;
+  };
+  const depth = tree.length ? Math.max(...tree.map(round)) + 1 : 0;
+  const order: EventStage[][] = Array.from({ length: depth }, () => []);
+  for (let r = depth - 1; r >= 0; r--) {
+    const inRound = tree.filter((s) => round(s) === r);
+    const wanted = r === depth - 1 ? [] : order[r + 1].flatMap((s) => s.from);
+    const placed = wanted.flatMap(
+      (k) => inRound.find((s) => s.key === k) ?? [],
+    );
+    order[r] = [...placed, ...inRound.filter((s) => !placed.includes(s))];
+  }
+  const cells = new Map<string, BracketCell>();
+  const links: BracketLink[] = [];
+  const rounds = order.map((stagesOfRound, r) =>
+    stagesOfRound.map((stage, i) => {
+      const sources = stage.from.flatMap((k) => cells.get(k) ?? []);
+      let cell: BracketCell;
+      if (r === 0 || sources.length === 0) {
+        cell = { stage, round: r, row: i, span: 1 };
+      } else {
+        const top = Math.min(...sources.map((c) => c.row));
+        const bottom = Math.max(...sources.map((c) => c.row + c.span));
+        cell = { stage, round: r, row: top, span: bottom - top };
+        links.push({
+          target: cell,
+          from: sources.map(
+            (c) => ((c.row + c.span / 2 - top) / (bottom - top)) * 100,
+          ),
+        });
+      }
+      cells.set(stage.key, cell);
+      return cell;
+    }),
+  );
+  const rows = rounds[0]?.length ?? 0;
+  const finalStage = tree.find((s) => s.kind === "final");
+  return {
+    rounds,
+    links,
+    rows,
+    final: finalStage ? (cells.get(finalStage.key) ?? null) : null,
+    newcomers: stages.find((s) => s.kind === "newcomers") ?? null,
+    tall: rows >= 4,
+  };
+}
+
+/**
+ * The connector into a fed stage, in a 24 by 100 box: a stub from each
+ * source centre, a spine joining them, and the way out at mid-height.
+ */
+export function linkPath(from: number[]): string {
+  if (from.length === 1 && from[0] === 50) return "M0 50 H24";
+  const stubs = from.map((y) => `M0 ${y} H12`).join(" ");
+  const ys = [...from, 50];
+  return `${stubs} M12 ${Math.min(...ys)} V${Math.max(...ys)} M12 50 H24`;
+}
+
+export interface PlayoffsPlan {
+  /** Runners the ladder sends to the playoffs: the seeded stages' seats. */
+  places: number;
+  /** The rounds scheduled with their players, "quarters and semis", or null. */
+  agreed: string | null;
+  /** The stages on a date the config fixes, newcomers' final aside, in order. */
+  fixed: {
+    key: string;
+    label: string;
+    kind: EventStage["kind"];
+    date: string;
+  }[];
+}
+
+const KIND_PLURAL: Record<EventStage["kind"], string> = {
+  quarter: "quarters",
+  semi: "semis",
+  final: "final",
+  newcomers: "newcomers' final",
+};
+
+/** What the format block's playoffs paragraph says about the bracket. */
+export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
+  const tree = stages.filter((s) => s.kind !== "newcomers");
+  const places = tree
+    .filter((s) => s.from.length === 0)
+    .reduce((n, s) => n + s.field.length, 0);
+  const kinds = [
+    ...new Set(
+      tree.filter((s) => !s.date_fixed).map((s) => KIND_PLURAL[s.kind]),
+    ),
+  ];
+  const agreed =
+    kinds.length === 0
+      ? null
+      : kinds.length === 1
+        ? kinds[0]
+        : `${kinds.slice(0, -1).join(", ")} and ${kinds.at(-1)}`;
+  const fixed = tree.flatMap((s) =>
+    s.date_fixed && s.date !== null
+      ? [{ key: s.key, label: s.label, kind: s.kind, date: s.date }]
+      : [],
+  );
+  return { places, agreed, fixed };
 }

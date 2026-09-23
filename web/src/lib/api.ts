@@ -430,7 +430,15 @@ export interface EventTimelineStop {
   key: string;
   label: string;
   date: string;
-  kind: "announce" | "open" | "cut" | "semi" | "newcomers" | "final";
+  kind:
+    | "announce"
+    | "open"
+    | "cut"
+    | "playoffs"
+    | "quarter"
+    | "semi"
+    | "newcomers"
+    | "final";
 }
 
 export interface EventMyResult {
@@ -514,8 +522,13 @@ export interface EventFieldSlot {
 export interface EventStage {
   key: string;
   label: string;
-  kind: "semi" | "newcomers" | "final";
-  date: string;
+  kind: "quarter" | "semi" | "newcomers" | "final";
+  /** The config's date, else the earliest of the stage's races; null until one exists. */
+  date: string | null;
+  /** Whether the config fixes the date, rather than the races scheduled with the players. */
+  date_fixed: boolean;
+  /** The stages this one takes its runners from (empty for a seeded stage). */
+  from: string[];
   races_expected: number;
   complete: boolean;
   modes: string[];
