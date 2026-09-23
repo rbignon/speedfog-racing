@@ -235,6 +235,53 @@
 </div>
 
 <main class="container">
+  {#snippet eveningSection()}
+    {#if shown}
+      {@const section = racesSection(detail, fmtZone, now)}
+      <div>
+        <SectionTitle>{shown.label}</SectionTitle>
+        {#if section}
+          <p class="meta-row">
+            <span class="signal {section.signal.cls}"
+              >{section.signal.text}</span
+            >
+            <span class="meta-right">{section.meta}</span>
+          </p>
+        {/if}
+        <div class="stage-races">
+          {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
+            {#if entry}
+              <RaceCard
+                race={entry.race}
+                title={stripStagePrefix(entry.race.name, shown.label)}
+                showFoot={false}
+                showRole={false}
+              />
+            {:else}
+              <EventRacePlaceholder
+                name={[`Race ${i + 1}`, shown.modes[i]]
+                  .filter(Boolean)
+                  .join(" - ")}
+                users={shown.field
+                  .map((slot) => slot.user)
+                  .filter((user) => user !== null)}
+              />
+            {/if}
+          {/each}
+        </div>
+      </div>
+    {/if}
+  {/snippet}
+
+  {#snippet playoffRules()}
+    <div class="rules-card">
+      <h3>Playoff rules</h3>
+      <ul>
+        {#each detail.playoff_rules as rule, i (i)}<li>{rule}</li>{/each}
+      </ul>
+    </div>
+  {/snippet}
+
   {#each blocks as block (block)}
     {#if block === "intro"}
       <section>
@@ -554,59 +601,12 @@
       {/if}
     {:else if block === "bracket_ladder"}
       <section class="bracket-block">
-        <div class="two-col wide-left">
-          <div>
-            <SectionTitle>Bracket</SectionTitle>
-            <EventBracket stages={detail.stages} formatDay={fmtDay} />
-          </div>
-          <div class="stack">
-            {#if shown}
-              {@const section = racesSection(detail, fmtZone, now)}
-              <div>
-                <SectionTitle>{shown.label}</SectionTitle>
-                {#if section}
-                  <p class="meta-row">
-                    <span class="signal {section.signal.cls}"
-                      >{section.signal.text}</span
-                    >
-                    <span class="meta-right">{section.meta}</span>
-                  </p>
-                {/if}
-                <div class="stage-races">
-                  {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
-                    {#if entry}
-                      <RaceCard
-                        race={entry.race}
-                        title={stripStagePrefix(entry.race.name, shown.label)}
-                        showFoot={false}
-                        showRole={false}
-                      />
-                    {:else}
-                      <EventRacePlaceholder
-                        name={[`Race ${i + 1}`, shown.modes[i]]
-                          .filter(Boolean)
-                          .join(" - ")}
-                        users={shown.field
-                          .map((slot) => slot.user)
-                          .filter((user) => user !== null)}
-                      />
-                    {/if}
-                  {/each}
-                </div>
-              </div>
-            {/if}
-            {#if detail.playoff_rules.length > 0}
-              <div class="rules-card">
-                <h3>Playoff rules</h3>
-                <ul>
-                  {#each detail.playoff_rules as rule, i (i)}<li>
-                      {rule}
-                    </li>{/each}
-                </ul>
-              </div>
-            {/if}
-          </div>
-        </div>
+        <EventBracket
+          stages={detail.stages}
+          formatDay={fmtDay}
+          aside={shown ? eveningSection : undefined}
+          rules={detail.playoff_rules.length > 0 ? playoffRules : undefined}
+        />
         <div class="ladder-col">
           <SectionTitle>Qualifier ladder</SectionTitle>
           <p class="meta-row">
@@ -1065,15 +1065,6 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
   }
-  .two-col.wide-left {
-    grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
-  }
-  .stack {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    min-width: 0;
-  }
   .stage-races {
     display: flex;
     flex-direction: column;
@@ -1091,8 +1082,7 @@
     .fmt,
     .take-part,
     .cards,
-    .two-col,
-    .two-col.wide-left {
+    .two-col {
       grid-template-columns: 1fr;
     }
   }

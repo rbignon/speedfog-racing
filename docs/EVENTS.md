@@ -339,6 +339,20 @@ whose races the bracket block lists. What the viewer can no longer act on
 keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
+From the cut on, the bracket block lays the playoffs out as a tree: one
+column per round (a seeded stage opens it, a fed stage follows its deepest
+source), each stage centred on the stages it takes runners from, connectors
+between them, the final leading to the Champion. With four first-round boxes
+or more (quarters) the tree takes the page's width: a side column holds the
+evening section on top, level with the "Bracket" title, and the Champion on
+the final's axis; the playoff rules sit under the first column and the
+newcomers' final under the final, level with the last first-round box. Under
+900px it becomes one column, the evening first. A shorter tree (two semis)
+keeps the older arrangement: the tree with a narrow Champion column, the
+evening section and the rules beside it. A stage without a date reads "Date
+to be agreed", and the evening section disappears while no evening is
+current or next.
+
 The format block keeps its dates to the day, in brass, and closes the playoff
 paragraph with the time the evenings start at ("Playoff evenings start at
 21:00 in your timezone"). `stageTimes` reads that from the stage dates: one

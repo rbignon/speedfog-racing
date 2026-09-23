@@ -316,3 +316,86 @@ describe("EventBracket champion box", () => {
     expect(getByText(/Decided Day\(2026-10-25T20:00:00Z\)/)).toBeTruthy();
   });
 });
+
+const quarters = ["a", "b", "c", "d"].map((x) =>
+  stage({
+    key: `quarter_${x}`,
+    label: `Quarter ${x.toUpperCase()}`,
+    kind: "quarter",
+    date: null,
+    date_fixed: false,
+  }),
+);
+const season = [
+  ...quarters,
+  stage({
+    key: "semi_a",
+    label: "Semi A",
+    kind: "semi",
+    date: null,
+    date_fixed: false,
+    from: ["quarter_a", "quarter_b"],
+    field: [],
+  }),
+  stage({
+    key: "semi_b",
+    label: "Semi B",
+    kind: "semi",
+    date: null,
+    date_fixed: false,
+    from: ["quarter_c", "quarter_d"],
+    field: [],
+  }),
+  stage({
+    key: "final",
+    label: "Final",
+    kind: "final",
+    date: "2026-10-25T19:00:00Z",
+    from: ["semi_a", "semi_b"],
+    field: [],
+  }),
+];
+
+describe("EventBracket layout", () => {
+  // Grid placement itself (rows, spans, link centres) is bracketLayout's,
+  // tested in events.test.ts; jsdom does not lay grids out.
+  it("puts a four-quarter season on one full-width grid with the Champion and the evening", () => {
+    const { container } = render(EventBracket, {
+      stages: season,
+      formatDay: fmtDay,
+    });
+    const grid = container.querySelector(".brk.tall");
+    expect(grid).not.toBeNull();
+    expect(grid?.querySelectorAll(".cell").length).toBe(7);
+    expect(grid?.querySelector(".champ-cell .champ")).not.toBeNull();
+    // The tall grid carries the section title itself, the short one beside it.
+    expect(grid?.querySelector(".title h2")?.textContent).toContain("Bracket");
+  });
+
+  it("names an unscheduled match's date as to be agreed", () => {
+    const { getAllByText } = render(EventBracket, {
+      stages: season,
+      formatDay: fmtDay,
+    });
+    expect(getAllByText("Date to be agreed").length).toBe(6);
+  });
+
+  it("keeps a two-semis season in two columns", () => {
+    const { container } = render(EventBracket, {
+      stages: [
+        stage({ key: "semi_a" }),
+        stage({ key: "semi_b", label: "Semi B" }),
+        stage({
+          key: "final",
+          label: "Final",
+          kind: "final",
+          from: ["semi_a", "semi_b"],
+          field: [],
+        }),
+      ],
+      formatDay: fmtDay,
+    });
+    expect(container.querySelector(".brk.tall")).toBeNull();
+    expect(container.querySelector(".split")).not.toBeNull();
+  });
+});
