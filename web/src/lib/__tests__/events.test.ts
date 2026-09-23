@@ -744,6 +744,33 @@ describe("pollIntervalMs and ordinal", () => {
       300_000,
     );
   });
+  it("also polls around a later race's own scheduled_at, for a match spread over two evenings", () => {
+    const detail = detailWith({
+      phase: "playoffs",
+      stages: [
+        stageFixture({
+          key: "quarter_b",
+          date: "2026-10-09T19:00:00Z",
+          races: [
+            {
+              slot: "quarter_b:1",
+              index: 1,
+              race: { scheduled_at: "2026-10-09T19:00:00Z" } as Race,
+            },
+            {
+              slot: "quarter_b:2",
+              index: 2,
+              race: { scheduled_at: "2026-10-10T19:00:00Z" } as Race,
+            },
+          ],
+        }),
+      ],
+    });
+    // Far from the stage's own date (its first race) but close to the second.
+    expect(pollIntervalMs(detail, new Date("2026-10-10T09:30:00Z"))).toBe(
+      300_000,
+    );
+  });
   it("does not poll between stage days", () => {
     const detail = detailWith({
       phase: "playoffs",

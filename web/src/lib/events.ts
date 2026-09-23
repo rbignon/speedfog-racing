@@ -395,9 +395,10 @@ const STAGE_DAY_WINDOW_MS = 12 * 3_600_000;
 
 /**
  * How often the page refreshes its data, or null for never: every minute while
- * a stage race is live, every five minutes around a stage's date so an open
- * page sees the evening's race go live, nothing otherwise (the qualifier
- * ladder moves on reload).
+ * a stage race is live, every five minutes around a stage's date, or around
+ * any of its attached races' own `scheduled_at` (so a page left open on the
+ * second evening of a two-evening match still polls), nothing otherwise (the
+ * qualifier ladder moves on reload).
  */
 export function pollIntervalMs(
   detail: Pick<EventDetail, "live_race" | "phase" | "stages">,
@@ -405,11 +406,14 @@ export function pollIntervalMs(
 ): number | null {
   if (detail.phase !== "playoffs") return null;
   if (detail.live_race !== null) return LIVE_POLL_MS;
+  const isNear = (iso: string) =>
+    Math.abs(new Date(iso).getTime() - now.getTime()) <= STAGE_DAY_WINDOW_MS;
   const near = detail.stages.some(
     (s) =>
-      s.date !== null &&
-      Math.abs(new Date(s.date).getTime() - now.getTime()) <=
-        STAGE_DAY_WINDOW_MS,
+      (s.date !== null && isNear(s.date)) ||
+      s.races.some(
+        (r) => r.race.scheduled_at !== null && isNear(r.race.scheduled_at),
+      ),
   );
   return near ? STAGE_DAY_POLL_MS : null;
 }
