@@ -13,11 +13,12 @@ page. Local databases only, and it refuses a database that is not on this
 machine unless --force is given: it writes fabricated participations onto real
 user rows and deletes the participants and casters of the races it manages.
 
-It manages eighteen races, named the way docs/EVENTS.md has an organizer name
+It manages thirty races, named the way docs/EVENTS.md has an organizer name
 real ones so the page renders them identically, and found again by their event
-slot on later runs. Creating them consumes one available seed each: three
-standard, three boss rush, two UWYG major rush, and one each of sprint,
-hardcore, UWYG rush and hardcore boss rush, plus the six qualifier seeds.
+slot on later runs. Creating them consumes one available seed each (four
+quarters, two semis, the newcomers' and the open final, three races apiece,
+plus the six qualifier seeds); a pool out of fresh seeds lends its latest
+consumed one.
 
 The event itself must already exist (create it from the admin Events tab), and
 its modes and stages must match the ones below; its dates are rewritten. One
@@ -26,6 +27,7 @@ event at a time: --slug names which one, it does not isolate two.
 Usage:
     cd server && uv run python ../tools/simulate_event.py qualifier
     cd server && uv run python ../tools/simulate_event.py semi_a_live --viewer alice
+    cd server && uv run python ../tools/simulate_event.py quarter_c_live
     cd server && uv run python ../tools/simulate_event.py final_done --slug season-one
 
 With --viewer, that runner gets a seed of every card state (done, DNF,
@@ -105,13 +107,28 @@ ANNOUNCE = D("2026-09-16T18:00")
 STARTS = D("2026-09-23T17:00")
 CUT = D("2026-09-30T17:00")
 ENDS = D("2026-10-25T23:00")
-STAGES: dict[str, tuple[datetime, list[str]]] = {
-    "semi_a": (D("2026-10-04T19:00"), ["standard", "boss_rush", "uwyg_major"]),
-    "semi_b": (D("2026-10-11T19:00"), ["standard", "boss_rush", "uwyg_major"]),
-    "newcomers": (D("2026-10-18T19:00"), ["standard", "sprint", "boss_rush"]),
-    "final": (D("2026-10-25T19:00"), ["hardcore", "uwyg_rush", "hardcore_boss_rush"]),
+MATCH_POOLS = ["standard", "boss_rush", "uwyg_major"]
+# key: (evening, pools, dated in the config). Quarters and semis are scheduled
+# with their players: the config leaves their date out and their races carry it.
+STAGES: dict[str, tuple[datetime, list[str], bool]] = {
+    "quarter_a": (D("2026-10-03T19:00"), MATCH_POOLS, False),
+    "quarter_b": (D("2026-10-04T19:00"), MATCH_POOLS, False),
+    "quarter_c": (D("2026-10-05T19:00"), MATCH_POOLS, False),
+    "quarter_d": (D("2026-10-08T19:00"), MATCH_POOLS, False),
+    "semi_a": (D("2026-10-11T19:00"), MATCH_POOLS, False),
+    "semi_b": (D("2026-10-13T19:00"), MATCH_POOLS, False),
+    "newcomers": (D("2026-10-18T19:00"), ["standard", "sprint", "boss_rush"], True),
+    "final": (
+        D("2026-10-25T19:00"),
+        ["hardcore", "uwyg_rush", "hardcore_boss_rush"],
+        True,
+    ),
 }
 STAGE_LABELS = {
+    "quarter_a": "Quarter A",
+    "quarter_b": "Quarter B",
+    "quarter_c": "Quarter C",
+    "quarter_d": "Quarter D",
     "semi_a": "Semi A",
     "semi_b": "Semi B",
     "newcomers": "Newcomers' final",
@@ -161,9 +178,13 @@ SCENARIOS: dict[str, datetime | tuple[str, str]] = {
     "announce": D("2026-09-18T15:00"),
     "announce_attached": D("2026-09-18T15:00"),
     "qualifier": D("2026-09-27T15:00"),
+    # Nothing scheduled yet: the evening section is hidden.
     "cut": D("2026-10-01T15:00"),
+    # Quarters A and B played, C live, D not scheduled yet.
+    "quarter_c_live": ("live", "quarter_c"),
+    # Every quarter played, no semi scheduled: the newcomers' final is next.
+    "quarters_done": D("2026-10-09T15:00"),
     "semi_a_live": ("live", "semi_a"),
-    "semi_a_done": D("2026-10-06T15:00"),
     "newcomers_live": ("live", "newcomers"),
     "newcomers_done": D("2026-10-20T15:00"),
     "final_live": ("live", "final"),
@@ -407,7 +428,7 @@ def plan_qualifier(
 def plan_stage(
     key: str, field: list[User], skills: dict[uuid.UUID, float], rng: random.Random
 ) -> dict[str, list[Run]]:
-    date, pools = STAGES[key]
+    date, pools, _dated = STAGES[key]
     runs: dict[str, list[Run]] = {}
     prev_end = date
     for i, pool in enumerate(pools, start=1):
@@ -470,9 +491,21 @@ async def pick_seed(db, pool: str) -> Seed:
             .limit(1)
         )
     ).scalar_one_or_none()
+    if seed is not None:
+        seed.status = SeedStatus.CONSUMED
+        return seed
+    # A local database rarely holds thirty fresh seeds: two simulated races
+    # may share a pack, which nothing on the event page can tell.
+    seed = (
+        await db.execute(
+            select(Seed)
+            .where(Seed.pool_name == pool, Seed.status == SeedStatus.CONSUMED)
+            .order_by(Seed.created_at.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
     if seed is None:
-        raise SystemExit(f"no available seed in pool {pool}")
-    seed.status = SeedStatus.CONSUMED
+        raise SystemExit(f"no seed at all in pool {pool}")
     return seed
 
 
@@ -584,7 +617,7 @@ async def pick_roster(
     runners = [Runner(viewer, 0.93, False)] if viewer else []
     runners += [Runner(u, rng.uniform(0.78, 1.32), False) for u in vets[:24]]
     runners += [Runner(u, rng.uniform(1.04, 1.4), True) for u in news]
-    runners[-1].skill = 0.9  # one newcomer strong enough to be seeded into a semi
+    runners[-1].skill = 0.9  # one newcomer strong enough to be seeded into a quarter
     return runners, casters
 
 
@@ -644,8 +677,7 @@ async def simulate(
         )
         if organizer is None:
             raise SystemExit(
-                "no admin user outside --exclude to organize the races, "
-                "and no --viewer given"
+                "no admin user outside --exclude to organize the races, and no --viewer given"
             )
 
         config = EventConfig.model_validate(event.config)
@@ -715,7 +747,11 @@ async def simulate(
         ladder = compute_ladder(MODES, final_qual)
         groups = compute_qualified(ladder, config, newcomer_flags)
         fields: dict[str, list[User]] = {}
-        for key in ("semi_a", "semi_b", "newcomers"):
+        for key in STAGES:
+            stage_cfg = config.stage(key)
+            assert stage_cfg is not None
+            if stage_cfg.from_:
+                continue
             slots = groups[key]
             if any(s.user_id is None for s in slots):
                 raise SystemExit(
@@ -724,11 +760,10 @@ async def simulate(
             fields[key] = [users_by_id[s.user_id] for s in slots]
 
         stage_runs: dict[str, dict[str, list[Run]]] = {
-            key: plan_stage(key, fields[key], skills, rng)
-            for key in ("semi_a", "semi_b", "newcomers")
+            key: plan_stage(key, field, skills, rng) for key, field in fields.items()
         }
         stage_races: dict[str, Race] = {}
-        for key, (_date, pools) in STAGES.items():
+        for key, (_date, pools, _dated) in STAGES.items():
             for i, pool in enumerate(pools, start=1):
                 slot = f"{key}:{i}"
                 stage_races[slot] = await ensure_race(
@@ -747,23 +782,29 @@ async def simulate(
                     custom_rules=None,
                 )
 
-        # The semis' advancing runners make the final's field.
-        semi_results = {}
-        for key in ("semi_a", "semi_b"):
+        # Round after round, the advancing runners of a stage's sources make
+        # its field, once those sources have been played out.
+        results = {}
+        for key in STAGES:
+            stage_cfg = config.stage(key)
+            assert stage_cfg is not None
+            if stage_cfg.from_:
+                fields[key] = [
+                    users_by_id[e.user_id]
+                    for source in stage_cfg.from_
+                    for e in results[source].entries
+                    if e.advances
+                ]
+                stage_runs[key] = plan_stage(key, fields[key], skills, rng)
             races = []
             for slot, runs in stage_runs[key].items():
                 _s, end = stage_bounds(runs)
                 races.append(
                     fake_race(runs, end, graph_of(stage_races[slot]), slot, end)
                 )
-            semi_results[key] = compute_stage_results(config.stage(key), races, 2)
-        fields["final"] = [
-            users_by_id[e.user_id]
-            for key in ("semi_a", "semi_b")
-            for e in semi_results[key].entries
-            if e.advances
-        ]
-        stage_runs["final"] = plan_stage("final", fields["final"], skills, rng)
+            results[key] = compute_stage_results(
+                stage_cfg, races, stage_cfg.advance or 0
+            )
 
         # A live scenario sits 15 minutes into the evening's second race, so
         # race 1 is over, race 2 runs and race 3 is still to come.
@@ -848,7 +889,7 @@ async def simulate(
                 )
 
         # Stage races: created (and public) a couple of days before the evening.
-        for key, (date, _pools) in STAGES.items():
+        for key, (date, _pools, _dated) in STAGES.items():
             created = vnow >= date - STAGE_ATTACH_LEAD
             for slot, runs in stage_runs[key].items():
                 race = stage_races[slot]
@@ -881,7 +922,14 @@ async def simulate(
         cfg = dict(event.config)
         cfg["announced_at"] = T(ANNOUNCE).isoformat().replace("+00:00", "Z")
         cfg["stages"] = [
-            {**s, "date": T(STAGES[s["key"]][0]).isoformat().replace("+00:00", "Z")}
+            {
+                **s,
+                "date": (
+                    T(STAGES[s["key"]][0]).isoformat().replace("+00:00", "Z")
+                    if STAGES[s["key"]][2]
+                    else None
+                ),
+            }
             for s in cfg["stages"]
         ]
         cfg["phase_override"] = None
@@ -894,9 +942,10 @@ async def simulate(
     print(
         f"qualifier {T(STARTS):%a %d %b %H:%M} to {T(CUT):%a %d %b %H:%M}, ends {T(ENDS):%a %d %b}"
     )
-    for key, (date, _pools) in STAGES.items():
+    for key, (date, _pools, dated) in STAGES.items():
         print(
-            f"  {key:10s} {T(date):%a %d %b %H:%M}Z  {[u.twitch_username for u in fields[key]]}"
+            f"  {key:10s} {T(date):%a %d %b %H:%M}Z{'' if dated else ' (races)'}  "
+            f"{[u.twitch_username for u in fields[key]]}"
         )
     print("ladder after the cut:")
     for e in ladder[:10]:
