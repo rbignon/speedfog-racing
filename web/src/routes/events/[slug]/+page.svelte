@@ -19,7 +19,9 @@
     pollIntervalMs,
     openingRefreshMs,
     fillSlots,
+    formatEventTime,
     ordinal,
+    playoffsPlan,
     racesSection,
     shownStage,
     signupIntentStands,
@@ -67,6 +69,7 @@
   // they can no longer act on keeps the plain form.
   const fmtZone = (iso: string) => formatEventDate(iso, true);
   const fmtDay = (iso: string) => formatEventDay(iso);
+  const fmtTime = (iso: string) => formatEventTime(iso);
 
   let blocks = $derived(blockOrder(detail.phase));
   let facts = $derived(eventFacts(detail, fmtDay));
@@ -82,8 +85,7 @@
   let seedsOpenAt = $derived(
     detail.phase === "upcoming" ? detail.starts_at : null,
   );
-  let semis = $derived(detail.stages.filter((s) => s.kind === "semi"));
-  let semiPlaces = $derived(semis.reduce((n, s) => n + s.field.length, 0));
+  let plan = $derived(playoffsPlan(detail.stages));
   let newcomersStage = $derived(
     detail.stages.find((s) => s.kind === "newcomers"),
   );
@@ -93,7 +95,6 @@
     detail.timeline.find((s) => s.kind === "announce")?.date ??
       detail.starts_at,
   );
-  let finalStage = $derived(detail.stages.find((s) => s.kind === "final"));
   let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(detail));
   let crowned = $derived(champions(detail));
@@ -305,15 +306,15 @@
             </p>
             <p>
               <strong
-                >The top {semiPlaces} on the ladder go to the playoffs</strong
+                >The top {plan.places} on the ladder go to the playoffs</strong
               >:
-              {#each semis as stage, i (stage.key)}{i > 0
-                  ? ", "
-                  : ""}{stage.label}
-                on
-                <span class="date">{fmtDay(stage.date)}</span
-                >{/each}{#if finalStage}, then the {finalStage.label} on
-                <span class="date">{fmtDay(finalStage.date)}</span>{/if}.
+              {#if plan.agreed}the {plan.agreed} are scheduled with their players{#if plan.fixed.length > 0},{/if}{/if}
+              {#each plan.fixed as stage, i (stage.key)}{#if i > 0},{/if}
+                {#if stage.kind === "final" && (i > 0 || plan.agreed)}then the{/if}
+                {stage.label} on
+                <span class="date">{fmtDay(stage.date)}</span>{!eveningTimes
+                  ? ` at ${fmtTime(stage.date)}`
+                  : ""}{/each}.
               {#if eveningTimes}Playoff evenings start at {eveningTimes.time} in your
                 timezone{#if eveningTimes.exception}, the {eveningTimes
                     .exception.label} at {eveningTimes.exception
@@ -321,12 +322,18 @@
             </p>
             {#if newcomersStage}
               <p>
-                <strong>Newcomers get a final of their own</strong>
-                on <span class="date">{fmtDay(newcomersStage.date)}</span>. You
-                are a newcomer if you had finished fewer than {detail.newcomer_threshold}
+                <strong>Newcomers get a final of their own</strong
+                >{newcomersStage.date
+                  ? " on "
+                  : ""}{#if newcomersStage.date}<span class="date"
+                    >{fmtDay(newcomersStage.date)}</span
+                  >{!eveningTimes
+                    ? ` at ${fmtTime(newcomersStage.date)}`
+                    : ""}{/if}. You are a newcomer if you had finished fewer
+                than {detail.newcomer_threshold}
                 SpeedFog races or daily seeds when the event was announced on
                 <span class="date">{fmtDay(announcedAt)}</span>: the {newcomersStage
-                  .field.length} best newcomers outside the top {semiPlaces} make
+                  .field.length} best newcomers outside the top {plan.places} make
                 up its field.
               </p>
             {/if}

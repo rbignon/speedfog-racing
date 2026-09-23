@@ -119,6 +119,49 @@ describe("EventQualified group titles", () => {
   });
 });
 
+describe("EventQualified with quarters", () => {
+  it("letters the seeded groups and leaves a date out until one exists", () => {
+    const quarterStages = [
+      stage({
+        key: "quarter_a",
+        label: "Quarter A",
+        kind: "quarter",
+        date: null,
+        date_fixed: false,
+      }),
+      stage({
+        key: "quarter_b",
+        label: "Quarter B",
+        kind: "quarter",
+        date: null,
+        date_fixed: false,
+      }),
+      stage({
+        key: "semi_a",
+        label: "Semi A",
+        kind: "semi",
+        date: null,
+        date_fixed: false,
+        from: ["quarter_a", "quarter_b"],
+      }),
+    ];
+    const { getByText, queryByText } = render(EventQualified, {
+      qualified: qualifiedWith({
+        groups: [
+          { stage_key: "quarter_a", label: "Quarter A", entries: [] },
+          { stage_key: "quarter_b", label: "Quarter B", entries: [] },
+        ],
+      }),
+      stages: quarterStages,
+      cutAt: "2026-10-08T08:00:00Z",
+      formatDate: fmt,
+    });
+    expect(getByText("Group B")).toBeTruthy();
+    expect(getByText("Quarter B")).toBeTruthy();
+    expect(queryByText(/Quarter B on/)).toBeNull();
+  });
+});
+
 describe("EventQualified provisional banner", () => {
   it("shows Provisional and the cut date while the qualifier is still open", () => {
     const { getByText } = render(EventQualified, {

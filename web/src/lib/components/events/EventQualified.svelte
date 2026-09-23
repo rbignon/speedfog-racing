@@ -14,19 +14,21 @@
     formatDate: (iso: string) => string;
   } = $props();
 
-  const letters = ["A", "B", "C", "D"];
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
   let boxes = $derived(
     qualified.groups.map((group) => {
       const stage = stages.find((s) => s.key === group.stage_key);
-      const semiIndex = stages
-        .filter((s) => s.kind === "semi")
+      const seededIndex = stages
+        .filter((s) => s.from.length === 0 && s.kind !== "newcomers")
         .findIndex((s) => s.key === group.stage_key);
       const title =
         stage?.kind === "newcomers"
           ? "Newcomers"
-          : `Group ${letters[semiIndex] ?? ""}`;
+          : `Group ${letters[seededIndex] ?? ""}`;
       const meta = stage
-        ? `${stage.label} on ${formatDate(stage.date)}`
+        ? stage.date
+          ? `${stage.label} on ${formatDate(stage.date)}`
+          : stage.label
         : group.label;
       const rows: StageRow[] = group.entries.map((e, i) => ({
         key: `${group.stage_key}-${i}`,

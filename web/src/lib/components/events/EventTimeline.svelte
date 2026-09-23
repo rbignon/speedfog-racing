@@ -57,7 +57,9 @@
       ></span>
       <div class="lbl">
         <div class="t" class:dim={!stop.done}>{stop.label}</div>
-        <div class="s">{day.format(new Date(stop.date))}</div>
+        {#if stop.kind !== "playoffs"}<div class="s">
+            {day.format(new Date(stop.date))}
+          </div>{/if}
       </div>
     </div>
   {/each}
@@ -65,7 +67,9 @@
 {#if highlight}
   <div class="tl-current" aria-hidden="true">
     <span class="t" class:dim={!highlight.done}>{highlight.label}</span>
-    <span class="s">{day.format(new Date(highlight.date))}</span>
+    {#if highlight.kind !== "playoffs"}<span class="s"
+        >{day.format(new Date(highlight.date))}</span
+      >{/if}
   </div>
 {/if}
 
@@ -142,16 +146,22 @@
     background: var(--color-gold);
     box-shadow: var(--glow-gold);
   }
-  .g.semi {
+  .g.quarter,
+  .g.semi,
+  .g.playoffs {
     transform: rotate(45deg) scale(0.8);
   }
   /* Passed stops ride in brass whatever their shape; the current one glows */
+  .g.quarter.done,
   .g.semi.done,
+  .g.playoffs.done,
   .g.newcomers.done,
   .g.final.done {
     background: var(--color-gold);
   }
+  .g.quarter.now,
   .g.semi.now,
+  .g.playoffs.now,
   .g.newcomers.now,
   .g.final.now {
     box-shadow: var(--glow-gold);

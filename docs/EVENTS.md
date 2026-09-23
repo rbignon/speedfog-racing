@@ -97,6 +97,8 @@ dated stage, in stage order. `announce` uses `announced_at` when the config
 sets it, otherwise `starts_at` minus 7 days.
 The same date is the newcomer cut (see Scoring), which is why a `newcomers`
 stage requires `announced_at`: a final's field must never hang on a default.
+The Playoffs stop shows no date line on the page: its date is the cut's,
+right beside it.
 
 ### Signups
 
@@ -353,19 +355,24 @@ evening section and the rules beside it. A stage without a date reads "Date
 to be agreed", and the evening section disappears while no evening is
 current or next.
 
-The format block keeps its dates to the day, in brass, and closes the playoff
-paragraph with the time the evenings start at ("Playoff evenings start at
-21:00 in your timezone"). `stageTimes` reads that from the stage dates: one
-time when they share it, plus the single evening that falls elsewhere when
-exactly one does ("the Final at 20:00"), and nothing when no single evening
-stands out against a majority: three or more times, an even split, two
-evenings that merely differ, or a lone stage. A season scheduled so that two
-evenings fall either side of a daylight saving change, out of four, loses the
-line for the viewers that change applies to, and for them only. Only the wall
-clock counts, never the zone's name,
-so evenings kept at one local time across a daylight saving change still read
-as one time. That change is the ordinary case rather than a corner one: the
-real season's last evening is the Sunday Europe leaves summer time.
+The format block keeps its dates to the day, in brass. Its playoffs
+paragraph counts the places (the seeded stages' seats), says the rounds
+without a fixed date are "scheduled with their players", and lists the
+stages the config dates. When every stage has a fixed date it closes with the
+time the evenings start at ("Playoff evenings start at 21:00 in your
+timezone"); otherwise each fixed evening carries its own time ("then the
+Final on Sun 25 Oct at 20:00"), and so does the newcomers' final. `stageTimes`
+reads the shared time from the stage dates: one time when they share it,
+plus the single evening that falls elsewhere when exactly one does ("the
+Final at 20:00"), and nothing when no single evening stands out against a
+majority: three or more times, an even split, two evenings that merely
+differ, or a lone stage. A season scheduled so that two evenings fall either
+side of a daylight saving change, out of four, loses the line for the
+viewers that change applies to, and for them only. Only the wall clock
+counts, never the zone's name, so evenings kept at one local time across a
+daylight saving change still read as one time. That change is the ordinary
+case rather than a corner one: the real season's last evening is the Sunday
+Europe leaves summer time.
 
 The take-part steps start on the viewer's own state. Step 01, "Sign up for the event", is
 one primary button, `I'm in`, whatever that state: signed out, it parks the

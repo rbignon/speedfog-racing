@@ -96,3 +96,25 @@ describe("EventTimeline stop state", () => {
     expect(stop?.getAttribute("style")).toContain("left: 50%");
   });
 });
+
+describe("EventTimeline Playoffs stop", () => {
+  it("gives the Playoffs stop no date line: its date is the cut's beside it", () => {
+    const withPlayoffs: EventTimelineStop[] = [
+      ...stops.slice(0, 3),
+      {
+        key: "playoffs",
+        label: "Playoffs",
+        date: "2026-09-20T00:00:00Z",
+        kind: "playoffs",
+      },
+    ];
+    const { container } = render(EventTimeline, {
+      stops: withPlayoffs,
+      now: new Date("2026-09-25T00:00:00Z"),
+    });
+    const labels = container.querySelectorAll(".stop .lbl");
+    expect(labels[3].querySelector(".t")?.textContent).toBe("Playoffs");
+    expect(labels[3].querySelector(".s")).toBeNull();
+    expect(labels[2].querySelector(".s")).not.toBeNull();
+  });
+});
