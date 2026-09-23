@@ -69,6 +69,7 @@ from speedfog_racing.services.analytics_service import compute_analytics
 from speedfog_racing.services.event_service import (
     compute_phase,
     event_window,
+    first_config_date,
     parse_slot,
     validate_slot,
 )
@@ -1124,7 +1125,7 @@ def _admin_event_response(event: Event) -> AdminEventResponse:
         starts_at=starts_at,
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
-        first_stage_at=config.stages[0].date if config and config.stages else None,
+        first_stage_at=first_config_date(config) if config else None,
         # The admin list does not group the attached races by stage (unlike the
         # public event page), so it cannot tell whether the last stage is
         # complete; treat it as not complete, which only affects the

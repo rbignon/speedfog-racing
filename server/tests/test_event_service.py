@@ -24,9 +24,11 @@ from speedfog_racing.services.event_service import (
     fed_field,
     newcomer_flags,
     parse_slot,
+    race_moment,
     resolve_stages,
     score_race,
     signature_weapon,
+    stage_dates,
     validate_slot,
 )
 from speedfog_racing.services.weapons import WEAPONS
@@ -652,6 +654,55 @@ FIRST = datetime(2026, 10, 4, 19, tzinfo=UTC)
 END = datetime(2026, 10, 26, 0, tzinfo=UTC)
 
 
+def _undated_quarters() -> EventConfig:
+    """This season as configured: quarters and semis left to their races, three per evening."""
+    raw = _quarters_config().model_dump(mode="json", by_alias=True)
+    for stage in raw["stages"]:
+        stage["races"] = 3
+        if stage["kind"] in ("quarter", "semi"):
+            stage["date"] = None
+    return EventConfig.model_validate(raw)
+
+
+def test_a_stage_date_is_the_config_one_else_its_earliest_race():
+    cfg = _undated_quarters()
+    monday = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    tuesday = monday + timedelta(days=1)
+    scheduled = SimpleNamespace(scheduled_at=tuesday, started_at=None)
+    # A private race needs no schedule: once started, its start dates the stage.
+    private = SimpleNamespace(scheduled_at=None, started_at=monday.replace(tzinfo=None))
+    races = {s.key: [] for s in cfg.stages}
+    races["quarter_a"] = [
+        (parse_slot("quarter_a:2"), scheduled),
+        (parse_slot("quarter_a:1"), private),
+    ]
+    dates = stage_dates(cfg, races)
+    assert dates["quarter_a"] == monday  # the naive SQLite value read as UTC
+    assert dates["quarter_b"] is None
+    assert dates["final"] == datetime(2026, 10, 25, 19, tzinfo=UTC)
+    assert race_moment(SimpleNamespace(scheduled_at=None, started_at=None)) is None
+
+
+def test_the_cut_lasts_until_the_first_scheduled_playoff_race():
+    cfg = _undated_quarters()
+    race = _slotted("quarter_c:1", RaceStatus.SETUP)
+    race.scheduled_at = datetime(2026, 10, 9, 19, tzinfo=UTC)
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END, races=[race])
+    assert resolve_stages(event, cfg, datetime(2026, 10, 9, 18, tzinfo=UTC)).phase == "cut"
+    assert resolve_stages(event, cfg, datetime(2026, 10, 9, 19, tzinfo=UTC)).phase == "playoffs"
+    # With nothing scheduled, the first dated stage (the newcomers') bounds it.
+    bare = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END, races=[])
+    assert resolve_stages(bare, cfg, datetime(2026, 10, 17, 9, tzinfo=UTC)).phase == "cut"
+
+
+def test_the_timeline_folds_the_undated_stages_into_one_playoffs_stop():
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    stops = build_timeline(event, _undated_quarters())
+    assert [s.kind for s in stops] == ["announce", "open", "cut", "playoffs", "newcomers", "final"]
+    assert stops[3].date == CUT
+    assert "playoffs" not in [s.kind for s in build_timeline(event, _config())]
+
+
 def _phase(now, **kw):
     args = dict(
         starts_at=T0,
@@ -690,9 +741,10 @@ def test_phase_override_and_completed_last_stage():
 
 def test_current_stage_is_today_else_next_else_last():
     cfg = _config()
-    assert current_stage_key(cfg, datetime(2026, 10, 11, 9, tzinfo=UTC)) == "semi_b"
-    assert current_stage_key(cfg, datetime(2026, 10, 12, 9, tzinfo=UTC)) == "newcomers"
-    assert current_stage_key(cfg, datetime(2026, 11, 1, 9, tzinfo=UTC)) == "final"
+    dates = {s.key: s.date for s in cfg.stages}
+    assert current_stage_key(cfg, dates, datetime(2026, 10, 11, 9, tzinfo=UTC)) == "semi_b"
+    assert current_stage_key(cfg, dates, datetime(2026, 10, 12, 9, tzinfo=UTC)) == "newcomers"
+    assert current_stage_key(cfg, dates, datetime(2026, 11, 1, 9, tzinfo=UTC)) == "final"
 
 
 def test_timeline_uses_announced_at_when_present():

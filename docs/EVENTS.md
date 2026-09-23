@@ -2,8 +2,9 @@
 
 A co-branded tournament run on the platform: one week of qualifying on dedicated
 week-long seeds, then playoff evenings, all on one page, `/events/[slug]`. The
-first instance is SpeedFog x Ignite Season One (qualifier 23 to 30 September
-2026, playoffs on Sundays 4, 11, 18 and 25 October).
+first instance is SpeedFog x Ignite Season One (qualifier 23 September to 8
+October 2026; quarters and semis scheduled with their players, the final on
+25 October).
 
 ## Model
 
@@ -28,16 +29,23 @@ computed on each request by `services/event_service.py`.
 | `announced_at`   | the announcement: first timeline stop and newcomer cut (see Timeline)   |
 
 A stage: `key`, `label`, `kind` (`quarter`, `semi`, `newcomers`, `final`),
-`date`, `races` (per evening), `modes` (display labels, not pool keys: one
-chip per race in the bracket boxes and qualified groups, linking to the race
-page once a race is attached, and the name of a race placeholder), and where
-its runners come from: `seeds` (ladder positions) or `from` (earlier stages
-it takes runners from), or `size` for the newcomers' final. `advance` sits on
-the stage that sends runners on: how many of its runners go to the stage
-naming it in `from` (the top 2 of each quarter, the top 2 of each semi). The
-kind only matters for display, except `final` (its winner is the champion)
-and `newcomers` (its own draw). Stage dates ascend; `qualifier_ends_at` is at
-or before the first stage; `ends_at` is after the last.
+`date` (optional: see below), `races` (per evening), `modes` (display labels,
+not pool keys: one chip per race in the bracket boxes and qualified groups,
+linking to the race page once a race is attached, and the name of a race
+placeholder), and where its runners come from: `seeds` (ladder positions) or
+`from` (earlier stages it takes runners from), or `size` for the newcomers'
+final. `advance` sits on the stage that sends runners on: how many of its
+runners go to the stage naming it in `from` (the top 2 of each quarter, the
+top 2 of each semi). The kind only matters for display, except `final` (its
+winner is the champion) and `newcomers` (its own draw).
+
+A stage without a `date` is scheduled with its players: its date is the
+earliest of its attached races' `scheduled_at` (or `started_at` for a private
+race, which needs no schedule), and it has none until a race is attached.
+The detail returns that effective date on each stage, with `date_fixed` true
+when the config sets it, and `from` for the connectors. The dated stages
+ascend; `qualifier_ends_at` is at or before the first dated stage; `ends_at`
+is after the last.
 
 Validation also rejects: a stage with both or neither of `seeds` and `from`
 (a newcomers stage has `size` and neither), a `from` naming a stage placed
@@ -82,9 +90,11 @@ viewer's timezone, so keep dates to the day.
 ### Timeline
 
 `GET /api/events/{slug}` returns the timeline as an ordered list of stops:
-`announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then one
-`stage:<stage key>` per configured stage, in stage order. `announce` uses
-`announced_at` when the config sets it, otherwise `starts_at` minus 7 days.
+`announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then,
+when a stage has no config date, one `playoffs` stop at the cut standing for
+every match scheduled with the players, then one `stage:<stage key>` per
+dated stage, in stage order. `announce` uses `announced_at` when the config
+sets it, otherwise `starts_at` minus 7 days.
 The same date is the newcomer cut (see Scoring), which is why a `newcomers`
 stage requires `announced_at`: a final's field must never hang on a default.
 
@@ -100,13 +110,13 @@ reporting the stored row after the cut, when the ladder no longer lists it.
 
 ## Phases
 
-| phase       | when                                                 |
-| ----------- | ---------------------------------------------------- |
-| `upcoming`  | before `starts_at`                                   |
-| `qualifier` | until `qualifier_ends_at`                            |
-| `cut`       | until the first stage date                           |
-| `playoffs`  | until `ends_at`, or until the last stage is complete |
-| `finished`  | after                                                |
+| phase       | when                                                                 |
+| ----------- | -------------------------------------------------------------------- |
+| `upcoming`  | before `starts_at`                                                   |
+| `qualifier` | until `qualifier_ends_at`                                            |
+| `cut`       | until the first stage date (a scheduled race dates an undated stage) |
+| `playoffs`  | until `ends_at`, or until the last stage is complete                 |
+| `finished`  | after                                                                |
 
 The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
@@ -116,7 +126,9 @@ The admin events list computes `phase` without grouping the races by stage, so
 it always treats the last stage as not yet complete. This only matters
 between the last stage finishing and `ends_at`: in that window the admin list
 still shows `playoffs`, while the public event page (which loads the stage
-races) already shows `finished`.
+races) already shows `finished`. It also reads only the config's dates, so an
+event whose first match is scheduled by its races stays `cut` there until the
+first dated stage.
 
 ## Scoring
 

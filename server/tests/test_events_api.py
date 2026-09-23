@@ -340,6 +340,49 @@ async def test_unknown_slug_is_404(test_client):
 
 
 @pytest.mark.asyncio
+async def test_detail_dates_a_stage_by_its_races_until_the_config_fixes_one(
+    test_client, async_session
+):
+    stages = [dict(s) for s in QUARTERS_CONFIG["stages"]]
+    for stage in stages:
+        if stage["kind"] in ("quarter", "semi"):
+            stage.pop("date")
+    config = {**QUARTERS_CONFIG, "stages": stages}
+    evening = datetime(2026, 10, 3, 19, tzinfo=UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(db, config=config)
+        await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "q1"),
+            event,
+            "quarter_b:1",
+            status=RaceStatus.SETUP,
+            is_public=True,
+            scheduled_at=evening,
+        )
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages_out = {s["key"]: s for s in data["stages"]}
+    assert stages_out["quarter_a"]["date"] is None
+    assert stages_out["quarter_a"]["date_fixed"] is False
+    assert datetime.fromisoformat(stages_out["quarter_b"]["date"]) == evening
+    assert stages_out["final"]["date_fixed"] is True
+    assert stages_out["semi_a"]["from"] == ["quarter_a", "quarter_b"]
+    assert stages_out["quarter_a"]["from"] == []
+    assert [s["kind"] for s in data["timeline"]] == [
+        "announce",
+        "open",
+        "cut",
+        "playoffs",
+        "newcomers",
+        "final",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_detail_seeds_the_quarters_and_names_what_the_later_rounds_wait_on(
     test_client, async_session
 ):

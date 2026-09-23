@@ -340,3 +340,37 @@ def test_one_final_at_most():
     stages[5]["kind"] = "final"
     with pytest.raises(ValidationError, match="at most one final"):
         EventConfig.model_validate(_config(stages=stages))
+
+
+def test_a_stage_may_leave_its_date_to_its_races():
+    stages = _quarters()["stages"]
+    for stage in stages[:6]:
+        del stage["date"]  # quarters and semis are scheduled with their players
+    cfg = EventConfig.model_validate(_config(stages=stages))
+    assert [s.key for s in cfg.stages if s.date is not None] == ["newcomers", "final"]
+
+
+def test_only_the_dated_stages_must_ascend():
+    stages = _quarters()["stages"]
+    del stages[0]["date"]
+    stages[1]["date"] = "2026-10-20T19:00:00Z"  # after semi_a's date
+    with pytest.raises(ValidationError, match="ascending"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_upsert_reads_the_window_against_the_dated_stages():
+    stages = _quarters()["stages"]
+    for stage in stages[:6]:
+        del stage["date"]
+    doc = {
+        "slug": "season-one",
+        "name": "Season One",
+        "starts_at": "2026-09-23T08:00:00+00:00",
+        "qualifier_ends_at": "2026-10-08T08:00:00+00:00",
+        "ends_at": "2026-10-26T00:00:00+00:00",
+        "config": _config(stages=stages),
+    }
+    EventUpsertRequest.model_validate(doc)
+    late_cut = dict(doc, qualifier_ends_at="2026-10-19T08:00:00+00:00")  # after the newcomers
+    with pytest.raises(ValidationError, match="first dated stage"):
+        EventUpsertRequest.model_validate(late_cut)

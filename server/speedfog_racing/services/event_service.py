@@ -439,20 +439,26 @@ def compute_phase(
     return "playoffs"
 
 
-def current_stage_key(config: EventConfig, now: datetime) -> str | None:
+def current_stage_key(
+    config: EventConfig, dates: dict[str, datetime | None], now: datetime
+) -> str | None:
     """The stage dated today (UTC), else the next one, else the last one.
 
     ``now`` must be timezone-aware; a naive datetime makes ``astimezone`` assume the
-    local zone (silently wrong) and the ``s.date > now`` comparison raise.
+    local zone (silently wrong) and the ``moment > now`` comparison raise.
     """
     if not config.stages:
         return None
     today = now.astimezone(UTC).date()
-    for stage in config.stages:
-        if stage.date.astimezone(UTC).date() == today:
-            return stage.key
-    upcoming = [s for s in config.stages if s.date > now]
-    return upcoming[0].key if upcoming else config.stages[-1].key
+    dated = sorted(
+        ((d, s.key) for s in config.stages if (d := dates.get(s.key)) is not None),
+        key=lambda item: item[0],
+    )
+    for moment, key in dated:
+        if moment.astimezone(UTC).date() == today:
+            return key
+    upcoming = [key for moment, key in dated if moment > now]
+    return upcoming[0] if upcoming else config.stages[-1].key
 
 
 # --- event window -----------------------------------------------------------
@@ -483,7 +489,7 @@ class TimelineStop:
     key: str
     label: str
     date: datetime
-    kind: Literal["announce", "open", "cut", "quarter", "semi", "newcomers", "final"]
+    kind: Literal["announce", "open", "cut", "playoffs", "quarter", "semi", "newcomers", "final"]
 
 
 def announce_date(event: Event, config: EventConfig) -> datetime:
@@ -504,11 +510,49 @@ def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
         TimelineStop(key="open", label="Seeds open", date=starts_at, kind="open"),
         TimelineStop(key="cut", label="Cut", date=qualifier_ends_at, kind="cut"),
     ]
+    # Stages scheduled with their players have no date to plot: one stop
+    # stands for them, at the cut where the playoffs begin.
+    if any(s.date is None for s in config.stages):
+        stops.append(
+            TimelineStop(key="playoffs", label="Playoffs", date=qualifier_ends_at, kind="playoffs")
+        )
     stops.extend(
         TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind)
         for s in config.stages
+        if s.date is not None
     )
     return stops
+
+
+# --- stage dates ------------------------------------------------------------
+
+
+def race_moment(race: Race) -> datetime | None:
+    """When a race is set to start: its schedule, else its actual start (a private race)."""
+    return as_aware_utc(race.scheduled_at) or as_aware_utc(race.started_at)
+
+
+def stage_dates(
+    config: EventConfig, stage_races: dict[str, list[tuple[Slot, Race]]]
+) -> dict[str, datetime | None]:
+    """Each stage's date: the config's when set, else its earliest race, else None."""
+    dates: dict[str, datetime | None] = {}
+    for stage in config.stages:
+        if stage.date is not None:
+            dates[stage.key] = stage.date
+            continue
+        moments = [
+            moment
+            for _, race in stage_races.get(stage.key, [])
+            if (moment := race_moment(race)) is not None
+        ]
+        dates[stage.key] = min(moments, default=None)
+    return dates
+
+
+def first_config_date(config: EventConfig) -> datetime | None:
+    """The earliest date the config fixes, for callers that do not load the races."""
+    return min((s.date for s in config.stages if s.date is not None), default=None)
 
 
 # --- resolved stages --------------------------------------------------------
@@ -524,6 +568,8 @@ class ResolvedStages:
     # Each configured stage's races by race index; slots of unknown stages are dropped.
     stage_races: dict[str, list[tuple[Slot, Race]]]
     results: dict[str, StageResult]
+    # Each stage's effective date (see ``stage_dates``).
+    dates: dict[str, datetime | None]
     phase: Phase
 
 
@@ -559,13 +605,14 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         )
         for stage in config.stages
     }
+    dates = stage_dates(config, stage_races)
     last = config.stages[-1] if config.stages else None
     phase = compute_phase(
         now=now,
         starts_at=starts_at,
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
-        first_stage_at=config.stages[0].date if config.stages else None,
+        first_stage_at=min((d for d in dates.values() if d is not None), default=None),
         last_stage_complete=results[last.key].complete if last is not None else False,
         override=config.phase_override,
     )
@@ -574,6 +621,7 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         qualifier=qualifier,
         stage_races=stage_races,
         results=results,
+        dates=dates,
         phase=phase,
     )
 

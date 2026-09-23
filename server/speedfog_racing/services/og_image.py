@@ -507,7 +507,9 @@ def summarize_event(
         if result.complete and result.entries:
             winner = users.get(result.entries[0].user_id)
     stage = (
-        config.stage(current_stage_key(config, now) or "") if phase in ("cut", "playoffs") else None
+        config.stage(current_stage_key(config, resolved.dates, now) or "")
+        if phase in ("cut", "playoffs")
+        else None
     )
 
     def user_of(user_id: UUID | None) -> User | None:
@@ -527,7 +529,8 @@ def summarize_event(
     elif stage is not None:
         kind = "event_stage"
         stage_label = _truncate(stage.label, _MAX_STAGE_LABEL)
-        stage_date = _event_day(stage.date, weekday=True)
+        stage_moment = resolved.dates.get(stage.key)
+        stage_date = _event_day(stage_moment, weekday=True) if stage_moment is not None else None
         if stage.from_:
             # "Top 2 of Quarter B" is the page's phrasing; under an empty ring the
             # card only has room for the stage the runner comes from.

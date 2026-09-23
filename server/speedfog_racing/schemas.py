@@ -972,7 +972,7 @@ class EventStage(BaseModel):
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
     kind: Literal["quarter", "semi", "newcomers", "final"]
-    date: datetime
+    date: datetime | None = None
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
     from_: list[str] | None = Field(default=None, alias="from")
@@ -983,7 +983,7 @@ class EventStage(BaseModel):
 
     @model_validator(mode="after")
     def _check_kind_fields(self) -> "EventStage":
-        if self.date.tzinfo is None:
+        if self.date is not None and self.date.tzinfo is None:
             raise ValueError("date must be timezone-aware")
         if self.seeds is not None:
             if not self.seeds or any(s < 1 for s in self.seeds):
@@ -1071,7 +1071,9 @@ class EventConfig(BaseModel):
         # timeline's display default.
         if self.announced_at is None and any(s.kind == "newcomers" for s in self.stages):
             raise ValueError("a newcomers stage needs announced_at")
-        dates = [s.date for s in self.stages]
+        # A stage without a date is scheduled with its players: only the
+        # dated ones fix an order.
+        dates = [s.date for s in self.stages if s.date is not None]
         if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
             raise ValueError("stage dates must be ascending")
         if any(len(r) > 300 for r in self.rules + self.playoff_rules):
@@ -1194,10 +1196,16 @@ class EventFieldSlotResponse(BaseModel):
 
 
 class EventStageResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     key: str
     label: str
     kind: str
-    date: datetime
+    # The config's date, else the earliest of the stage's races; None until one exists.
+    date: datetime | None
+    # Whether the config fixes the date rather than the races scheduled with the players.
+    date_fixed: bool
+    from_: list[str] = Field(default_factory=list, alias="from")
     races_expected: int
     complete: bool
     modes: list[str]
@@ -1296,11 +1304,12 @@ class EventUpsertRequest(BaseModel):
         # qualifier's own runs would count towards it.
         if self.config.announced_at is not None and self.config.announced_at >= self.starts_at:
             raise ValueError("announced_at must be before starts_at")
-        if self.config.stages:
-            if self.qualifier_ends_at > self.config.stages[0].date:
-                raise ValueError("qualifier_ends_at must not be after the first stage date")
-            if self.config.stages[-1].date >= self.ends_at:
-                raise ValueError("ends_at must be after the last stage date")
+        dated = [s.date for s in self.config.stages if s.date is not None]
+        if dated:
+            if self.qualifier_ends_at > dated[0]:
+                raise ValueError("qualifier_ends_at must not be after the first dated stage")
+            if dated[-1] >= self.ends_at:
+                raise ValueError("ends_at must be after the last dated stage")
         elif self.qualifier_ends_at >= self.ends_at:
             raise ValueError("ends_at must be after qualifier_ends_at")
         return self
