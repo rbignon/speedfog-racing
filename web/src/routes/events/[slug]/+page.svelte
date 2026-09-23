@@ -308,8 +308,10 @@
               <strong
                 >The top {plan.places} on the ladder go to the playoffs</strong
               >:
-              {#if plan.agreed}the {plan.agreed} are scheduled with their players{#if plan.fixed.length > 0},{/if}{/if}
-              {#each plan.fixed as stage, i (stage.key)}{#if i > 0},{/if}
+              {#if plan.agreed}the {plan.agreed} are scheduled with their players{#if plan.fixed.length > 0},{/if}{/if}{plan
+                .fixed.length > 0
+                ? " "
+                : ""}{#each plan.fixed as stage, i (stage.key)}{#if i > 0},{/if}
                 {#if stage.kind === "final" && (i > 0 || plan.agreed)}then the{/if}
                 {stage.label} on
                 <span class="date">{fmtDay(stage.date)}</span>{!eveningTimes
