@@ -121,6 +121,16 @@ def test_the_stage_caption_joins_the_label_and_the_date() -> None:
     assert "SUNDAY 11 OCTOBER" in svg
 
 
+def test_the_stage_caption_drops_the_date_line_when_the_stage_is_undated() -> None:
+    """A quarter or semi scheduled with its players has no date until a race is
+    attached; rendering must not raise on a None stage_date."""
+    svg = render_svg("event_stage", _ctx(stage_label="Quarter A", stage_date=None))
+    assert "QUARTER A" in svg
+    assert 'dx="76"' not in svg  # the date's tspan (caption_gap) is skipped entirely
+    root = ET.fromstring(svg)
+    assert root.tag == f"{_SVG_NS}svg"
+
+
 def test_the_winner_template_names_the_winner() -> None:
     svg = render_svg("event_winner", _ctx(winner={"name": "wospince", "avatar_b64": _AVATAR}))
     assert "wospince" in svg

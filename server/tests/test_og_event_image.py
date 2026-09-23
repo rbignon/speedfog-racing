@@ -11,6 +11,7 @@ from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.services.og_image import (
     _TEMPLATE_VERSION,
     build_event_context,
+    event_og_description,
     render_event_og,
     render_svg,
     summarize_event,
@@ -260,6 +261,24 @@ def test_an_undecided_final_slot_names_the_stage_it_waits_on() -> None:
     assert summary.stage_label == "Open final"
     assert [slot.user for slot in summary.field] == [None, None, None, None]
     assert [slot.label for slot in summary.field] == ["Semi A"] * 2 + ["Semi B"] * 2
+
+
+def test_an_undated_current_stage_shows_no_date_on_the_card() -> None:
+    """A quarter or semi scheduled with its players has no date until a race is
+    attached; the card and its description must leave the date out, not print
+    "on None". With no dated stage left after it, ``current_stage_key`` falls
+    back to the last stage, so an undated final exercises the same path."""
+    event, _ = _qualifier_world(["ana", "bob"])
+    event.config = {
+        **CONFIG,
+        "stages": [*CONFIG["stages"][:-1], {**CONFIG["stages"][-1], "date": None}],
+    }
+    now = NEWCOMERS + dt.timedelta(days=2)  # after every dated stage, before ends_at
+    summary = summarize_event(event, now=now, finished_before={})
+    assert summary.kind == "event_stage"
+    assert summary.stage_label == "Open final"
+    assert summary.stage_date is None
+    assert event_og_description(summary) == "Open final · 2 players"
 
 
 def test_a_finished_event_crowns_the_winner_of_the_final() -> None:

@@ -20,5 +20,5 @@
     <circle cx="{{ x + size / 2 }}" cy="340" r="{{ size / 2 }}" fill="#1c2a3f"/>
     <text x="{{ x + size / 2 }}" y="348" text-anchor="middle" font-family="Spline Sans Mono" font-size="22" font-weight="500" fill="#96a0ad">+{{ field_overflow_count }}</text>
   {% endif %}
-  <text x="600" y="500" text-anchor="middle" font-family="Spline Sans Mono" font-size="{{ caption_font_size }}" font-weight="600" letter-spacing="5"><tspan fill="{{ accent_color }}">{{ stage_label.upper() }}</tspan><tspan dx="{{ caption_gap }}" fill="#e8e6e1">{{ stage_date.upper() }}</tspan></text>
+  <text x="600" y="500" text-anchor="middle" font-family="Spline Sans Mono" font-size="{{ caption_font_size }}" font-weight="600" letter-spacing="5"><tspan fill="{{ accent_color }}">{{ stage_label.upper() }}</tspan>{% if stage_date %}<tspan dx="{{ caption_gap }}" fill="#e8e6e1">{{ stage_date.upper() }}</tspan>{% endif %}</text>
 {% endblock %}

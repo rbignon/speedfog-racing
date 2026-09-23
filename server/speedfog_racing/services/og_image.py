@@ -713,7 +713,13 @@ def event_og_description(summary: EventOgSummary) -> str:
     if summary.kind == "event_upcoming":
         parts = [f"{summary.headline_label} {summary.headline}"]
     elif summary.kind == "event_stage":
-        parts = [f"{summary.stage_label} on {summary.stage_date}"]
+        # A quarter or semi scheduled with its players has no date until a
+        # race is attached: the label alone, rather than "... on None".
+        parts = (
+            [f"{summary.stage_label} on {summary.stage_date}"]
+            if summary.stage_date is not None
+            else [f"{summary.stage_label}"]
+        )
     elif summary.winner is not None:
         name = summary.winner.twitch_display_name or summary.winner.twitch_username
         parts = [f"Won by {name}"]
