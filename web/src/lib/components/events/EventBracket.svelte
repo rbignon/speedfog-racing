@@ -40,6 +40,14 @@
   // The tall grid gives its first row to the titles.
   let top = $derived(layout.tall ? 2 : 1);
   let side = $derived(2 * depth + 1);
+  // Equal tree rows so a first-round box that grows (a wrapped label) does
+  // not throw off the connectors' row centres: title row, tree rows, rules
+  // row in the tall layout; tree rows, newcomers row in the short one.
+  let rowsTemplate = $derived(
+    layout.tall
+      ? `auto repeat(${layout.rows}, 1fr) auto`
+      : `repeat(${layout.rows}, 1fr) auto`,
+  );
   // Mobile reading order (tall layout): the evening first, then the rounds.
   let orderOf = $derived(
     new Map(
@@ -169,13 +177,14 @@
     class="brk"
     class:tall={layout.tall}
     style:grid-template-columns={columns}
+    style:grid-template-rows={rowsTemplate}
   >
     {#if layout.tall}
       <div
         class="title"
         style:grid-column="1 / {side - 1}"
         style:grid-row="1"
-        style:--order="0"
+        style:--order="1"
       >
         <SectionTitle>Bracket</SectionTitle>
       </div>
@@ -184,7 +193,7 @@
           class="aside"
           style:grid-column={side}
           style:grid-row="1 / {top + layout.rows}"
-          style:--order="1"
+          style:--order="0"
         >
           {@render aside()}
         </div>
@@ -292,6 +301,12 @@
     flex-direction: column;
     justify-content: center;
   }
+  /* A first-round cell's box fills its row (now an equal tree row), instead
+   * of keeping its own content height, so a wrapped label in one box does
+   * not throw the connectors' row centres off for the others. */
+  .cell:not(.fed) {
+    display: grid;
+  }
   /* The newcomers' final, its connector and its crown share the final's,
    * the gutter's and the side column's tracks, bottom-aligned together. */
   .newcomers {
@@ -392,6 +407,10 @@
     }
     .brk.tall > * {
       order: var(--order, 0);
+      align-self: stretch;
+    }
+    .brk.tall .newcomers {
+      align-items: stretch;
     }
     .brk.tall .conn {
       display: none;
@@ -407,6 +426,10 @@
       display: flex;
       flex-direction: column;
       gap: 14px;
+    }
+    .newcomers {
+      align-self: stretch;
+      align-items: stretch;
     }
     .conn {
       display: none;
