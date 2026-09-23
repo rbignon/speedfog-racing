@@ -64,7 +64,9 @@ repair path stays open: the admin Events tab lists such an event anyway, with
 the validation errors under its name (`config_error`) and a phase computed
 from the dates alone, and its editor loads the stored document as it is.
 Attaching a race to a slot needs the parsed config, so it refuses with a 422
-naming the same errors.
+naming the same errors. Moving `advance` from the final onto the stages that
+feed it was such a change: its migration (`4f7c2a9d1e6b`) rewrites the stored
+documents, and runs again harmlessly on one already moved.
 
 ### Facts
 
