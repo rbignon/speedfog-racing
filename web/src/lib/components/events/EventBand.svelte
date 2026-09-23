@@ -1,8 +1,8 @@
 <script lang="ts">
   // The event on the bill, as the home page and the dashboard feature it:
   // the event page's lockup, a phase signal with one line of state, and the
-  // buttons that lead there (or to the live race). Signing up stays on the
-  // event page, which owns the Twitch intent flow.
+  // buttons; the lockup and buttons lead there (or to the live race). Signing
+  // up stays on the event page, which owns the Twitch intent flow.
   import type { EventSummary, User } from "$lib/api";
   import { eventBand, formatEventDate } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
@@ -22,10 +22,12 @@
   <div class="band-inner">
     <div class="band-left">
       <h2>
-        SpeedFog
-        {#if event.partner_name}<span class="cross">&times;</span>
-          {event.partner_name}{/if}
-        <span class="brass">{event.name}</span>
+        <a class="lockup" href="/events/{event.slug}">
+          SpeedFog
+          {#if event.partner_name}<span class="cross">&times;</span>
+            {event.partner_name}{/if}
+          <span class="brass">{event.name}</span>
+        </a>
       </h2>
       <div class="state">
         <span class="signal {state.signal.cls}">{state.signal.text}</span>
@@ -140,6 +142,9 @@
     line-height: 1.12;
     color: var(--color-text);
   }
+  h2 .lockup {
+    color: inherit;
+  }
   h2 .cross {
     color: var(--color-text-secondary);
     font-weight: 500;
@@ -147,6 +152,9 @@
   h2 .brass {
     color: var(--color-gold);
     font-weight: 600;
+  }
+  h2 .lockup:hover .brass {
+    color: var(--color-gold-hover);
   }
   .state {
     display: flex;

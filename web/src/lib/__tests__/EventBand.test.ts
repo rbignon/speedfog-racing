@@ -41,6 +41,14 @@ describe("EventBand", () => {
     expect(links(container)["Event page"]).toBe("/events/season-one");
   });
 
+  it("links the whole lockup to the event page", () => {
+    const { container } = render(EventBand, { event: summaryWith({}) });
+    const lockup = container.querySelector("h2 a");
+    expect(lockup?.getAttribute("href")).toBe("/events/season-one");
+    expect(lockup?.textContent).toContain("Ignite");
+    expect(lockup?.textContent).toContain("Season One");
+  });
+
   it("stacks the players' avatars, initials without one, and counts the rest", () => {
     const player_previews = [
       {

@@ -419,9 +419,9 @@ event whose stored config no longer validates is left out rather than
 breaking the home page.
 
 `EventBand` sits between the hero and the Daily Seed on the home page and
-above the Daily Seed on the dashboard: the event page's lockup, a phase
-signal, one line of state and the buttons, which `eventBand` in
-`lib/events.ts` decides from the phase:
+above the Daily Seed on the dashboard: the event page's lockup (a link to
+that page), a phase signal, one line of state and the buttons, which
+`eventBand` in `lib/events.ts` decides from the phase:
 
 | phase       | line                                        | buttons                                                                      |
 | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
