@@ -292,9 +292,9 @@ async def test_detail_ladder_is_provisional_during_qualifier(test_client, world)
     # ana: std1 2nd of 2 (50), std2 1st (100) -> 100; boss1 1st -> 100; total 200, ranked
     assert entries["ana"]["mode_points"] == {"standard": 100, "boss_rush": 100}
     assert entries["ana"]["total"] == 200 and entries["ana"]["rank"] == 1
-    # bob: playing on boss1 counts as a DNF score, so he is ranked with a low boss_rush score
-    assert entries["bob"]["mode_points"]["standard"] == 100
-    assert entries["bob"]["modes_scored"] == 2 and entries["bob"]["rank"] == 2
+    # bob: his boss1 run is still in progress, so it does not score yet and he is unranked
+    assert entries["bob"]["mode_points"] == {"standard": 100, "boss_rush": None}
+    assert entries["bob"]["modes_scored"] == 1 and entries["bob"]["rank"] is None
     assert all(e["newcomer"] is True for e in entries.values())
     assert [r["slot"] for r in data["qualifier_races"]] == [
         "qualifier:standard:1",
@@ -364,6 +364,28 @@ async def test_my_result_marks_an_abandoned_run_as_unfinished_but_scored(
     # ana finished this seed; bob's abandon ranks after her, still scoring.
     assert mine["rank"] == 2
     assert mine["points"] == 50  # two scored runs: 100 to ana, half to the abandon
+
+
+@pytest.mark.asyncio
+async def test_my_result_leaves_a_run_in_progress_out_of_the_field(
+    test_client, world, async_session
+):
+    """The viewer's points are computed over the settled runs only, as on the
+    ladder: a runner still playing the seed neither ranks nor dilutes them."""
+    async with async_session() as db:
+        cleo = await _user(db, "cleo")
+        await _entry(db, world["std1"], cleo, ParticipantStatus.PLAYING, 500_000, layer=5)
+        await db.commit()
+    async with test_client as client:
+        response = await client.get(
+            "/api/events/season-one", headers={"Authorization": "Bearer tok-ana"}
+        )
+    mine = {r["slot"]: r["my_result"] for r in response.json()["qualifier_races"]}[
+        "qualifier:standard:1"
+    ]
+    # bob finished first, ana second: 2nd of 2 settled runs, not 2nd of 3 (67).
+    assert mine["rank"] == 2
+    assert mine["points"] == 50
 
 
 @pytest.mark.asyncio
@@ -715,10 +737,11 @@ async def test_listing_summary_during_the_qualifier(test_client, async_session):
     assert summary["partner_name"] == "Ignite"
     assert summary["phase"] == "qualifier"
     # Two runners on the seed plus one signup, previewed in the share card's
-    # order: the ladder best first (bob finished, ana is a DNF score), the
-    # signup without a run last, whatever the join order or the alphabet say.
+    # order: the ladder first (bob finished, then the signup), then the
+    # runners without a settled run (ana is still playing), whatever the join
+    # order or the alphabet say.
     assert summary["players"] == 3
-    assert [u["twitch_username"] for u in summary["player_previews"]] == ["bob", "ana", "aaa"]
+    assert [u["twitch_username"] for u in summary["player_previews"]] == ["bob", "aaa", "ana"]
     assert summary["my_signup"] is False
     assert summary["next_stage"]["key"] == "semi_a"
     assert summary["live"] is None

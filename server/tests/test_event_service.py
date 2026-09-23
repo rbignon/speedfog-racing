@@ -148,6 +148,24 @@ def test_score_race_ignores_unqualified_runs():
     assert score_race(_race([p])) == {}
 
 
+def test_score_race_settled_only_leaves_runs_in_progress_out_of_the_field():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 3_000_000),
+            _participant(b, ParticipantStatus.PLAYING, 500_000, layer=8),
+            _participant(c, ParticipantStatus.ABANDONED, 500_000, layer=3),
+        ],
+        status=RaceStatus.RUNNING,
+    )
+    # By default a run in progress ranks like a DNF on its depth so far.
+    assert set(score_race(race)) == {a, b, c}
+    scores = score_race(race, settled_only=True)
+    assert set(scores) == {a, c}
+    # The field is the settled runs only: 2nd of 2 scores 50, not 3rd of 3.
+    assert scores[a].points == 100 and scores[c].rank == 2 and scores[c].points == 50
+
+
 def test_score_race_ties_share_rank_and_skip_the_next_rank():
     a, b, c = uuid4(), uuid4(), uuid4()
     race = _race(
@@ -257,6 +275,24 @@ def test_ladder_provisional_true_when_the_faster_counted_seed_is_running():
     entry = ladder[0]
     assert entry.counted_slots["standard"] == "qualifier:standard:1"
     assert entry.provisional is True
+
+
+def test_ladder_ignores_a_run_in_progress():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    # b's partial run would otherwise enter the ladder, ranked like a DNF on its
+    # depth so far, and dilute the points of the runners behind the leader.
+    running = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 40),
+            _participant(c, ParticipantStatus.FINISHED, 60),
+            _participant(b, ParticipantStatus.PLAYING, 10),
+        ],
+        status=RaceStatus.RUNNING,
+    )
+    ladder = compute_ladder(["standard"], [(parse_slot("qualifier:standard:1"), running)])
+    assert [e.user_id for e in ladder] == [a, c]
+    # c is 2nd of the 2 settled runs (50), not 2nd of 3 (67).
+    assert ladder[1].mode_points == {"standard": 50}
 
 
 def test_ladder_ties_share_rank_and_skip_the_next_rank():

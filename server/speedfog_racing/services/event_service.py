@@ -116,11 +116,13 @@ class RaceScore:
     provisional: bool
 
 
-def score_race(race: Race) -> dict[UUID, RaceScore]:
+def score_race(race: Race, *, settled_only: bool = False) -> dict[UUID, RaceScore]:
     """Daily-formula points and ranks for one race, keyed by user.
 
     Runs with fewer than two zone entries are not qualified and get no score,
-    as on dailies. Scores are provisional until the race is FINISHED.
+    as on dailies. Scores are provisional until the race is FINISHED. A run
+    still in progress ranks like a DNF on its depth so far, unless
+    ``settled_only`` keeps only finished or abandoned runs in the field.
     """
     qualified = [
         QualifiedParticipant(
@@ -132,6 +134,10 @@ def score_race(race: Race) -> dict[UUID, RaceScore]:
         )
         for p in race.participants
         if len(p.zone_history or []) >= 2
+        and (
+            not settled_only
+            or p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
+        )
     ]
     points = compute_daily_points(qualified)
     ordered = sorted(qualified, key=rank_key)
@@ -184,12 +190,11 @@ def compute_ladder(
     for slot, race in qualifier_races:
         if slot.kind != "qualifier" or slot.key not in modes:
             continue
-        for user_id, score in score_race(race).items():
+        # A qualifier seed stays open for days: only settled runs score, so a run in
+        # progress neither enters the ladder nor moves the other runners' points.
+        for user_id, score in score_race(race, settled_only=True).items():
             per_mode = best.setdefault(user_id, {})
             current = per_mode.get(slot.key)
-            # A still-PLAYING participant's partial igt_ms can win this comparison and
-            # become the counted seed until the run ends; score.provisional flags that
-            # case and the entry self-corrects once the race finishes.
             candidate = (score.points, score.igt_ms, score.provisional, str(slot))
             if (
                 current is None

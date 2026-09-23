@@ -111,7 +111,12 @@ races) already shows `finished`.
 
 Each event race scores with the daily formula (`compute_daily_points`): 100 to
 first, proportional down the field, unfinished runs ranked by depth reached
-then time, floor of 1, over runs with at least two zone entries. Ladder: best
+then time, floor of 1, over runs with at least two zone entries. On a
+qualifier seed only settled runs (finished or abandoned) score: a seed stays
+open for days, so a run in progress neither enters the ladder nor moves the
+other runners' points until it ends; the seed card's `my_result` scores the
+same field. A playoff race instead scores its runs in progress like DNFs on
+the depth reached so far, so the bracket moves live. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
 ranked; ties on the summed in-game time of the counted seeds. Newcomers have
 fewer than `newcomer_threshold` finished races started before the
@@ -127,10 +132,11 @@ A semi stage's `seeds` index into the sorted ladder position by position
 displayed rank. Tied runners occupy consecutive positions sharing the same
 rank, so a seed number can resolve to a runner whose displayed ladder rank is
 lower than the seed itself (e.g. a three-way tie for rank 1 means seed 3 also
-holds a rank-1 runner). A runner with no scoring qualifier run (fewer than two
-zone entries on every attached seed) never enters the ladder at all: the
-ladder's `entered` count is the number of runners with at least one scoring
-run, not the number who joined a qualifier race.
+holds a rank-1 runner). A runner with no scoring qualifier run (on every
+attached seed, fewer than two zone entries or a run not yet finished or
+abandoned) is not on the ladder: the ladder's `entered` count is the number
+of runners with at least one scoring run, not the number who joined a
+qualifier race.
 
 While the event can still be joined, the ladder closes with the signed-up
 runners who have no scoring run, in signup order, without rank, score or

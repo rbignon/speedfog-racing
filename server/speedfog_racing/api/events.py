@@ -86,7 +86,8 @@ def _my_result(race: Race, user: User | None) -> EventMyResultResponse | None:
     if mine.status == ParticipantStatus.PLAYING:
         return EventMyResultResponse(status="playing")
     finished = mine.status == ParticipantStatus.FINISHED
-    score = score_race(race).get(user.id)
+    # Same field as the ladder, so the seed card and the ladder show the same points.
+    score = score_race(race, settled_only=True).get(user.id)
     if score is None:
         return EventMyResultResponse(status="done", finished=finished, igt_ms=mine.igt_ms)
     return EventMyResultResponse(
