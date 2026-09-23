@@ -304,6 +304,11 @@
               <strong>Play at least one seed per mode</strong>, whenever you
               want: the better of your seeds counts.
             </p>
+            <!-- The spaces before "at" and between clauses below sit inside
+                 ternary expressions on purpose, not as literal text next to
+                 an {#if}: Svelte trims static whitespace at the edge of an
+                 {#if} block, and a plain {#if} in their place produced
+                 "Octat 21:00" instead of "Oct at 21:00". -->
             <p>
               <strong
                 >The top {plan.places} on the ladder go to the playoffs</strong
