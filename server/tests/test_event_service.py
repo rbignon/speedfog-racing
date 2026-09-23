@@ -751,15 +751,37 @@ def _scheduled(slot: str, at: datetime, status=RaceStatus.SETUP):
     return race
 
 
-def test_a_running_race_makes_its_stage_current_first_in_bracket_order():
+def test_a_running_stage_wins_over_one_only_scheduled_later_the_same_day():
+    # Quarter A is merely scheduled for later that evening (still in setup);
+    # Quarter C is the one actually running. The live rule must win over
+    # Quarter A even though Quarter A comes first in bracket order and is
+    # also one of today's stages.
     cfg = _undated_quarters()
     evening = datetime(2026, 10, 9, 19, tzinfo=UTC)
     races = [
+        _scheduled("quarter_a:1", evening + timedelta(hours=3)),
         _scheduled("quarter_c:1", evening, RaceStatus.RUNNING),
-        _scheduled("quarter_a:1", evening, RaceStatus.RUNNING),
     ]
     now = evening + timedelta(minutes=20)
-    assert current_stage_key(cfg, _resolved(cfg, races, now), now) == "quarter_a"
+    assert current_stage_key(cfg, _resolved(cfg, races, now), now) == "quarter_c"
+
+
+def test_current_stage_prefers_a_started_match_over_one_only_scheduled_the_same_day():
+    # Quarter C is between its two races (race 1 finished, race 2 not yet
+    # started); Quarter A is scheduled later the same evening but has not
+    # started. Nothing is RUNNING, so the live rule is silent, and list order
+    # alone (Quarter A comes before Quarter C in bracket order) must not win:
+    # the started, in-progress match does.
+    cfg = _undated_quarters()
+    quarter_c_race1_at = datetime(2026, 10, 9, 19, tzinfo=UTC)
+    quarter_a_race1_at = datetime(2026, 10, 9, 22, tzinfo=UTC)
+    races = [
+        _scheduled("quarter_c:1", quarter_c_race1_at, RaceStatus.FINISHED),
+        _scheduled("quarter_c:2", quarter_c_race1_at + timedelta(hours=1, minutes=30)),
+        _scheduled("quarter_a:1", quarter_a_race1_at),
+    ]
+    now = quarter_c_race1_at + timedelta(minutes=45)
+    assert current_stage_key(cfg, _resolved(cfg, races, now), now) == "quarter_c"
 
 
 def test_a_match_spread_over_two_evenings_stays_current_on_the_second():

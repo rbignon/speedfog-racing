@@ -617,14 +617,22 @@ def current_stage_key(config: EventConfig, resolved: ResolvedStages, now: dateti
     """The stage being played: one with a race running, else one played today (UTC).
 
     Two stages running at once resolve to the first in bracket order, like the
-    live race. Among the stages of the day, the first not complete wins, else
-    the last of them. ``now`` must be timezone-aware.
+    live race. Among the stages of the day, the first that has started (any
+    attached race not in setup) and is not complete wins; failing that the
+    first not complete; else the last of them. ``now`` must be timezone-aware.
     """
     for stage in config.stages:
         if any(r.status == RaceStatus.RUNNING for _, r in resolved.stage_races.get(stage.key, [])):
             return stage.key
     today = now.astimezone(UTC).date()
     todays = [s for s in config.stages if today in _stage_days(s, resolved)]
+
+    def started(stage: EventStage) -> bool:
+        return any(r.status != RaceStatus.SETUP for _, r in resolved.stage_races.get(stage.key, []))
+
+    for stage in todays:
+        if started(stage) and not resolved.results[stage.key].complete:
+            return stage.key
     for stage in todays:
         if not resolved.results[stage.key].complete:
             return stage.key

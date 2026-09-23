@@ -41,7 +41,8 @@ winner is the champion) and `newcomers` (its own draw).
 
 A stage without a `date` is scheduled with its players: its date is the
 earliest of its attached races' `scheduled_at` (or `started_at` for a private
-race, which needs no schedule), and it has none until a race is attached.
+race, which needs no schedule), and it has none until an attached race is
+scheduled (or has started).
 The detail returns that effective date on each stage, with `date_fixed` true
 when the config sets it, and `from` for the connectors. The dated stages
 ascend; `qualifier_ends_at` is at or before the first dated stage; `ends_at`
@@ -137,10 +138,12 @@ first dated stage.
 The current stage (`current_stage_key`, during `playoffs`) is the one with a
 race RUNNING, the first in bracket order when two run at once; else a stage
 played today in UTC, by its date or by any of its races (so a match spread
-over two evenings stays current on the second), the first of the day not yet
-complete. The next stage (`next_stage`, on the detail and the summary) is the
-earliest stage ahead with a date, not complete, that waits on no stage
-without one: the final is not next while a semi feeding it is unscheduled,
+over two evenings stays current on the second): the first of the day that has
+started (any attached race not in setup) and is not complete, else the first
+not complete, else the last of them. The next stage (`next_stage`, on the
+detail and the summary) is the earliest stage ahead with a date, not
+complete, that waits on no stage without one: the final is not next while
+a semi feeding it is unscheduled,
 while the newcomers' final, drawn from the ladder, can be. The Open Graph
 card shows the current stage, else the next one.
 
@@ -280,17 +283,23 @@ settings are edited through the API, not from the race page.
    as a countdown); the edit is not broadcast, so a connected mod keeps the old
    deadline until it reconnects. During the week that follows: nothing. To void
    a broken seed, detach it.
-4. Before each playoff evening: create the stage's public races (four slots, a
-   duration cap), add the qualified runners and the casters, attach to
-   `<stage>:<n>`. Name them "Semi B - Race 1 - Standard", hyphenated like
-   daily races: the race cards beside the bracket display the race name
-   without the stage label the section already carries ("Race 1 -
-   Standard"), and drop the players / mode / organizer foot row and the
-   viewer's role mark, since the bracket beside them lists the field and
-   each stage's date and modes (an organizer or caster finds their role on
-   the race page). A slot with no race yet shows a placeholder named the
-   same way, carrying the stage's expected runners as an avatar stack. Start
-   each race as its organizer on the evening.
+4. Once a match is agreed with its players: create the stage's public races
+   (four slots, a duration cap) with their `scheduled_at`, add the qualified
+   runners and the casters, attach to `<stage>:<n>`. The earliest of the
+   stage's races then dates it, which ends the `cut`, makes it the next
+   stage, and drives the home band, the share card and polling (see
+   "Current and next stage" and "The event page"). Fixed evenings (the
+   newcomers' final, the final) keep their config date instead; create their
+   races the same way, whenever the players are ready, on that date. Name
+   the races "Semi B - Race 1 - Standard", hyphenated like daily races: the
+   race cards beside the bracket display the race name without the stage
+   label the section already carries ("Race 1 - Standard"), and drop the
+   players / mode / organizer foot row and the viewer's role mark, since the
+   bracket beside them lists the field and each stage's date and modes (an
+   organizer or caster finds their role on the race page). A slot with no
+   race yet shows a placeholder named the same way, carrying the stage's
+   expected runners as an avatar stack. Start each race as its organizer on
+   the evening.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.
@@ -487,7 +496,7 @@ that page), a phase signal, one line of state and the buttons, which
 | ----------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
 | `upcoming`  | the opening, then who is in                 | `Take part`, to the event page                                               |
 | `qualifier` | the closing, then who is in                 | `Take part`, to the event page                                               |
-| `cut`       | the first evening                           | `Event page`                                                                 |
+| `cut`       | the next evening, when one is known         | `Event page`                                                                 |
 | `playoffs`  | live: stage and race index; else next stage | live: `Watch on Twitch` or `Race page`, then `Event page`; else `Event page` |
 | `finished`  | `Champion`, then the champion's link        | `Event page`                                                                 |
 
