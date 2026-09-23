@@ -91,15 +91,19 @@ viewer's timezone, so keep dates to the day.
 ### Timeline
 
 `GET /api/events/{slug}` returns the timeline as an ordered list of stops:
-`announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then,
-when a stage has no config date, one `playoffs` stop at the cut standing for
-every match scheduled with the players, then one `stage:<stage key>` per
-dated stage, in stage order. `announce` uses `announced_at` when the config
-sets it, otherwise `starts_at` minus 7 days.
+`announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then one
+`stage:<stage key>` per dated stage, in stage order. When stages have no
+config date, one `playoffs` stop stands for every match scheduled with the
+players: it sits where the first of those stages sits in the list (a
+newcomers' final listed before the quarters comes before it), dated by the
+earliest match scheduled among them, kept between the stops around it so the
+rail never runs backwards, and, before any match is scheduled, at the date of
+the stop before it. `announce` uses `announced_at` when the config sets it,
+otherwise `starts_at` minus 7 days.
 The same date is the newcomer cut (see Scoring), which is why a `newcomers`
 stage requires `announced_at`: a final's field must never hang on a default.
-The Playoffs stop shows no date line on the page: its date is the cut's,
-right beside it.
+The Playoffs stop shows no date line on the page: its date only places the
+ridden rail, each match carrying its own date in the bracket.
 
 ### Signups
 

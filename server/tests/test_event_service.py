@@ -698,10 +698,42 @@ def test_the_cut_lasts_until_the_first_scheduled_playoff_race():
 
 def test_the_timeline_folds_the_undated_stages_into_one_playoffs_stop():
     event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
-    stops = build_timeline(event, _undated_quarters())
+    stops = build_timeline(event, _undated_quarters(), {})
     assert [s.kind for s in stops] == ["announce", "open", "cut", "playoffs", "newcomers", "final"]
     assert stops[3].date == CUT
-    assert "playoffs" not in [s.kind for s in build_timeline(event, _config())]
+    assert "playoffs" not in [s.kind for s in build_timeline(event, _config(), {})]
+
+
+def test_the_playoffs_stop_follows_the_list_and_the_first_scheduled_match():
+    """This season lists the newcomers' final first: it is played before the quarters."""
+    raw = _undated_quarters().model_dump(mode="json", by_alias=True)
+    raw["stages"].sort(key=lambda s: s["kind"] != "newcomers")
+    cfg = EventConfig.model_validate(raw)
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    newcomers = datetime(2026, 10, 18, 19, tzinfo=UTC)
+    final = datetime(2026, 10, 25, 19, tzinfo=UTC)
+
+    def playoffs_at(dates: dict[str, datetime | None]) -> datetime:
+        stops = build_timeline(event, cfg, dates)
+        assert [s.kind for s in stops] == [
+            "announce",
+            "open",
+            "cut",
+            "newcomers",
+            "playoffs",
+            "final",
+        ]
+        return stops[4].date
+
+    # Nothing scheduled yet: the stop takes the date of the one before it.
+    assert playoffs_at({}) == newcomers
+    # The earliest scheduled match dates it...
+    first_match = datetime(2026, 10, 20, 20, tzinfo=UTC)
+    later_match = datetime(2026, 10, 21, 20, tzinfo=UTC)
+    assert playoffs_at({"quarter_c": later_match, "quarter_b": first_match}) == first_match
+    # ...kept between the stops around it, so the rail never runs backwards.
+    assert playoffs_at({"quarter_a": datetime(2026, 10, 12, 20, tzinfo=UTC)}) == newcomers
+    assert playoffs_at({"quarter_a": datetime(2026, 10, 30, 20, tzinfo=UTC)}) == final
 
 
 def _phase(now, **kw):
@@ -823,7 +855,7 @@ def test_the_next_stage_reads_dated_stages_in_date_order():
 def test_timeline_uses_announced_at_when_present():
     cfg = _config()
     event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
-    stops = build_timeline(event, cfg)
+    stops = build_timeline(event, cfg, {})
     assert [s.kind for s in stops] == [
         "announce",
         "open",
@@ -835,7 +867,7 @@ def test_timeline_uses_announced_at_when_present():
     ]
     assert stops[0].date == datetime(2026, 9, 16, 18, tzinfo=UTC)
     cfg.announced_at = None
-    assert build_timeline(event, cfg)[0].date == T0 - timedelta(days=7)
+    assert build_timeline(event, cfg, {})[0].date == T0 - timedelta(days=7)
 
 
 def test_build_timeline_normalizes_naive_dates_without_mutating_event():
@@ -846,7 +878,7 @@ def test_build_timeline_normalizes_naive_dates_without_mutating_event():
         qualifier_ends_at=CUT.replace(tzinfo=None),
         ends_at=END.replace(tzinfo=None),
     )
-    stops = build_timeline(naive_event, cfg)
+    stops = build_timeline(naive_event, cfg, {})
     assert all(s.date.tzinfo is not None for s in stops)
     assert naive_event.starts_at.tzinfo is None
     assert naive_event.qualifier_ends_at.tzinfo is None

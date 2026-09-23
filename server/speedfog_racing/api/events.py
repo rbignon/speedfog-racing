@@ -307,7 +307,7 @@ async def get_event(
         facts=config.facts,
         timeline=[
             EventTimelineStopResponse(key=s.key, label=s.label, date=s.date, kind=s.kind)
-            for s in build_timeline(event, config)
+            for s in build_timeline(event, config, resolved.dates)
         ],
         qualifier_races=[
             EventQualifierRaceResponse(

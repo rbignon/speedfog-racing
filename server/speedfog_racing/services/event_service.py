@@ -8,7 +8,7 @@ the event dates and of the attached races. Nothing is stored.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
@@ -480,7 +480,18 @@ def announce_date(event: Event, config: EventConfig) -> datetime:
     return config.announced_at or (starts_at - timedelta(days=7))
 
 
-def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
+def build_timeline(
+    event: Event, config: EventConfig, dates: Mapping[str, datetime | None]
+) -> list[TimelineStop]:
+    """The announcement, the opening, the cut, then the playoffs in stage order.
+
+    ``dates`` are the stages' effective dates (``ResolvedStages.dates``). The
+    stages scheduled with their players (no config date) fold into one
+    ``playoffs`` stop, placed where the first of them sits in the list and
+    dated by the earliest match scheduled among them, kept between the stops
+    around it so the rail never runs backwards; with no match scheduled yet,
+    it takes the date of the stop before it.
+    """
     starts_at, qualifier_ends_at, _ends_at = event_window(event)
     announced = announce_date(event, config)
     stops = [
@@ -488,18 +499,24 @@ def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
         TimelineStop(key="open", label="Seeds open", date=starts_at, kind="open"),
         TimelineStop(key="cut", label="Cut", date=qualifier_ends_at, kind="cut"),
     ]
-    # Stages scheduled with their players have no date to plot: one stop
-    # stands for them, at the cut where the playoffs begin.
-    if any(s.date is None for s in config.stages):
-        stops.append(
-            TimelineStop(key="playoffs", label="Playoffs", date=qualifier_ends_at, kind="playoffs")
-        )
-    stops.extend(
-        TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind)
-        for s in config.stages
+    dated = [
+        (i, TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind))
+        for i, s in enumerate(config.stages)
         if s.date is not None
-    )
-    return stops
+    ]
+    first_undated = next((i for i, s in enumerate(config.stages) if s.date is None), None)
+    if first_undated is None:
+        return stops + [stop for _, stop in dated]
+    stops.extend(stop for i, stop in dated if i < first_undated)
+    after = [stop for i, stop in dated if i > first_undated]
+    scheduled = [
+        when for s in config.stages if s.date is None and (when := dates.get(s.key)) is not None
+    ]
+    moment = max(stops[-1].date, min(scheduled)) if scheduled else stops[-1].date
+    if after:
+        moment = min(moment, after[0].date)
+    stops.append(TimelineStop(key="playoffs", label="Playoffs", date=moment, kind="playoffs"))
+    return stops + after
 
 
 # --- stage dates ------------------------------------------------------------
