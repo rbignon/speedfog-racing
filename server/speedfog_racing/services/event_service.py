@@ -511,6 +511,73 @@ def build_timeline(event: Event, config: EventConfig) -> list[TimelineStop]:
     return stops
 
 
+# --- resolved stages --------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ResolvedStages:
+    """An event's attached races sorted into their slots, and what they decide."""
+
+    attached: list[tuple[Slot, Race]]
+    # Qualifier races in mode order, then seed index.
+    qualifier: list[tuple[Slot, Race]]
+    # Each configured stage's races by race index; slots of unknown stages are dropped.
+    stage_races: dict[str, list[tuple[Slot, Race]]]
+    results: dict[str, StageResult]
+    phase: Phase
+
+
+def resolve_stages(event: Event, config: EventConfig, now: datetime) -> ResolvedStages:
+    """The event's races sorted into slots, the stage results and the phase at ``now``.
+
+    ``event.races`` must be loaded (``load_event``, ``load_featured_events``).
+    """
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
+    attached: list[tuple[Slot, Race]] = []
+    for race in event.races:
+        if race.event_slot is None:
+            continue
+        try:
+            attached.append((parse_slot(race.event_slot), race))
+        except ValueError:
+            continue
+    mode_keys = config.mode_keys()
+    qualifier = sorted(
+        ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
+        key=lambda item: (mode_keys.index(item[0].key), item[0].index),
+    )
+    stage_races = {
+        stage.key: sorted(
+            ((s, r) for s, r in attached if s.kind == "stage" and s.key == stage.key),
+            key=lambda item: item[0].index,
+        )
+        for stage in config.stages
+    }
+    results = {
+        stage.key: compute_stage_results(
+            stage, [r for _, r in stage_races[stage.key]], stage.advance or 0
+        )
+        for stage in config.stages
+    }
+    last = config.stages[-1] if config.stages else None
+    phase = compute_phase(
+        now=now,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        first_stage_at=config.stages[0].date if config.stages else None,
+        last_stage_complete=results[last.key].complete if last is not None else False,
+        override=config.phase_override,
+    )
+    return ResolvedStages(
+        attached=attached,
+        qualifier=qualifier,
+        stage_races=stage_races,
+        results=results,
+        phase=phase,
+    )
+
+
 # --- loaders ----------------------------------------------------------------
 
 

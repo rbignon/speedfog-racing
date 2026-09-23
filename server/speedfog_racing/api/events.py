@@ -50,13 +50,11 @@ from speedfog_racing.services.event_service import (
     MAX_PLAYER_PREVIEWS,
     MIN_UPCOMING_PLAYERS,
     UNDECIDED,
-    Slot,
     announce_date,
     build_timeline,
     compute_ladder,
     compute_phase,
     compute_qualified,
-    compute_stage_results,
     count_finished_before,
     current_stage_key,
     event_window,
@@ -64,7 +62,7 @@ from speedfog_racing.services.event_service import (
     load_event,
     load_featured_events,
     newcomer_flags,
-    parse_slot,
+    resolve_stages,
     score_race,
     signature_weapon,
 )
@@ -117,40 +115,9 @@ async def list_events(
         starts_at, qualifier_ends_at, ends_at = event_window(event)
         config = EventConfig.model_validate(event.config)
 
-        attached: list[tuple[Slot, Race]] = []
-        for race in event.races:
-            if race.event_slot is None:
-                continue
-            try:
-                attached.append((parse_slot(race.event_slot), race))
-            except ValueError:
-                continue
-        stage_races = {
-            stage.key: sorted(
-                ((s, r) for s, r in attached if s.kind == "stage" and s.key == stage.key),
-                key=lambda item: item[0].index,
-            )
-            for stage in config.stages
-        }
+        resolved = resolve_stages(event, config, now)
+        stage_races, results, phase = resolved.stage_races, resolved.results, resolved.phase
         final = config.final_stage()
-        results = {
-            stage.key: compute_stage_results(
-                stage,
-                [r for _, r in stage_races[stage.key]],
-                stage.advance or 0,
-            )
-            for stage in config.stages
-        }
-        last = config.stages[-1] if config.stages else None
-        phase = compute_phase(
-            now=now,
-            starts_at=starts_at,
-            qualifier_ends_at=qualifier_ends_at,
-            ends_at=ends_at,
-            first_stage_at=config.stages[0].date if config.stages else None,
-            last_stage_complete=results[last.key].complete if last is not None else False,
-            override=config.phase_override,
-        )
 
         # The Open Graph card's count and order: everyone who joined an event
         # race, plus the signups while the event can still be joined, the
@@ -164,11 +131,7 @@ async def list_events(
             signed_up = [s.user_id for s in event.signups]
             users.update({s.user_id: s.user for s in event.signups})
         mode_keys = config.mode_keys()
-        qualifier = sorted(
-            ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
-            key=lambda item: (mode_keys.index(item[0].key), item[0].index),
-        )
-        ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
+        ladder = compute_ladder(mode_keys, resolved.qualifier, signed_up=signed_up)
         ranked_ids = {entry.user_id for entry in ladder}
         ordered = [users[entry.user_id] for entry in ladder if entry.user_id in users]
         ordered += sorted(
@@ -246,26 +209,10 @@ async def get_event(
     config = EventConfig.model_validate(event.config)
     now = datetime.now(UTC)
 
-    attached: list[tuple[Slot, Race]] = []
-    for race in event.races:
-        if race.event_slot is None:
-            continue
-        try:
-            attached.append((parse_slot(race.event_slot), race))
-        except ValueError:
-            continue
+    resolved = resolve_stages(event, config, now)
+    attached, qualifier = resolved.attached, resolved.qualifier
+    stage_races, results, phase = resolved.stage_races, resolved.results, resolved.phase
     mode_keys = config.mode_keys()
-    qualifier = sorted(
-        ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
-        key=lambda item: (mode_keys.index(item[0].key), item[0].index),
-    )
-    stage_races = {
-        stage.key: sorted(
-            ((s, r) for s, r in attached if s.kind == "stage" and s.key == stage.key),
-            key=lambda item: item[0].index,
-        )
-        for stage in config.stages
-    }
 
     users: dict[UUID, User] = {p.user_id: p.user for race in event.races for p in race.participants}
     users.update({s.user_id: s.user for s in event.signups})
@@ -281,25 +228,7 @@ async def get_event(
             weapons[user_id] = EventWeaponResponse(id=found[0], name=found[1]) if found else None
         return weapons[user_id]
 
-    results = {
-        stage.key: compute_stage_results(
-            stage,
-            [r for _, r in stage_races[stage.key]],
-            stage.advance or 0,
-        )
-        for stage in config.stages
-    }
     labels = {s.key: s.label for s in config.stages}
-    last = config.stages[-1] if config.stages else None
-    phase = compute_phase(
-        now=now,
-        starts_at=starts_at,
-        qualifier_ends_at=qualifier_ends_at,
-        ends_at=ends_at,
-        first_stage_at=config.stages[0].date if config.stages else None,
-        last_stage_complete=results[last.key].complete if last is not None else False,
-        override=config.phase_override,
-    )
 
     # Before the opening the seed slots render as placeholders: the attached
     # races stay out of the response, so their ids cannot lead anyone to a

@@ -25,16 +25,13 @@ from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MIN_UPCOMING_PLAYERS,
     UNDECIDED,
-    Slot,
     compute_ladder,
-    compute_phase,
     compute_qualified,
-    compute_stage_results,
     current_stage_key,
     event_window,
     fed_field,
     newcomer_flags,
-    parse_slot,
+    resolve_stages,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 
@@ -472,40 +469,14 @@ def summarize_event(
     starts_at, qualifier_ends_at, ends_at = event_window(event)
     config = EventConfig.model_validate(event.config)
 
-    attached: list[tuple[Slot, Race]] = []
-    for race in event.races:
-        if race.event_slot is None:
-            continue
-        try:
-            attached.append((parse_slot(race.event_slot), race))
-        except ValueError:
-            continue
+    resolved = resolve_stages(event, config, now)
+    qualifier = resolved.qualifier
+    results = resolved.results
+    phase = resolved.phase
     mode_keys = config.mode_keys()
-    qualifier = sorted(
-        ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
-        key=lambda item: (mode_keys.index(item[0].key), item[0].index),
-    )
     users = {p.user_id: p.user for race in event.races for p in race.participants}
 
     final = config.final_stage()
-    results = {
-        stage.key: compute_stage_results(
-            stage,
-            [r for s, r in attached if s.kind == "stage" and s.key == stage.key],
-            stage.advance or 0,
-        )
-        for stage in config.stages
-    }
-    last = config.stages[-1] if config.stages else None
-    phase = compute_phase(
-        now=now,
-        starts_at=starts_at,
-        qualifier_ends_at=qualifier_ends_at,
-        ends_at=ends_at,
-        first_stage_at=config.stages[0].date if config.stages else None,
-        last_stage_complete=results[last.key].complete if last is not None else False,
-        override=config.phase_override,
-    )
 
     if phase in JOINABLE_PHASES:
         signed_up = [s.user_id for s in event.signups]

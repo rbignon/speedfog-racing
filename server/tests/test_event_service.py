@@ -24,6 +24,7 @@ from speedfog_racing.services.event_service import (
     fed_field,
     newcomer_flags,
     parse_slot,
+    resolve_stages,
     score_race,
     signature_weapon,
     validate_slot,
@@ -725,3 +726,41 @@ def test_build_timeline_normalizes_naive_dates_without_mutating_event():
     assert naive_event.starts_at.tzinfo is None
     assert naive_event.qualifier_ends_at.tzinfo is None
     assert naive_event.ends_at.tzinfo is None
+
+
+# --- resolve_stages -----------------------------------------------------------
+
+
+def _slotted(slot: str, status=RaceStatus.FINISHED, participants=()):
+    return SimpleNamespace(
+        event_slot=slot,
+        status=status,
+        participants=list(participants),
+        scheduled_at=None,
+        started_at=None,
+    )
+
+
+def test_resolve_stages_sorts_the_slots_and_drops_what_the_config_does_not_know():
+    cfg = _config()
+    races = [
+        _slotted("semi_a:2", RaceStatus.RUNNING),
+        _slotted("nonsense"),
+        _slotted("qualifier:boss_rush:1"),
+        _slotted("semi_a:1"),
+        _slotted("qualifier:standard:2"),
+        _slotted("qualifier:standard:1"),
+        _slotted("qualifier:sprint:1"),
+        _slotted("quarter_z:1"),
+    ]
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END, races=races)
+    resolved = resolve_stages(event, cfg, FIRST)
+    assert [str(s) for s, _ in resolved.qualifier] == [
+        "qualifier:standard:1",
+        "qualifier:standard:2",
+        "qualifier:boss_rush:1",
+    ]
+    assert [str(s) for s, _ in resolved.stage_races["semi_a"]] == ["semi_a:1", "semi_a:2"]
+    assert set(resolved.stage_races) == {"semi_a", "semi_b", "newcomers", "final"}
+    assert resolved.results["semi_a"].complete is False
+    assert resolved.phase == "playoffs"
