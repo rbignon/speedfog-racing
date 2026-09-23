@@ -130,6 +130,18 @@ races) already shows `finished`. It also reads only the config's dates, so an
 event whose first match is scheduled by its races stays `cut` there until the
 first dated stage.
 
+### Current and next stage
+
+The current stage (`current_stage_key`, during `playoffs`) is the one with a
+race RUNNING, the first in bracket order when two run at once; else a stage
+played today in UTC, by its date or by any of its races (so a match spread
+over two evenings stays current on the second), the first of the day not yet
+complete. The next stage (`next_stage`, on the detail and the summary) is the
+earliest stage ahead with a date, not complete, that waits on no stage
+without one: the final is not next while a semi feeding it is unscheduled,
+while the newcomers' final, drawn from the ladder, can be. The Open Graph
+card shows the current stage, else the next one.
+
 ## Scoring
 
 Each event race scores with the daily formula (`compute_daily_points`): 100 to
@@ -477,19 +489,20 @@ whose tags point at `GET /api/og/event/{slug}.png`.
 The card follows the phase, on the same computation as the page
 (`summarize_event` in `services/og_image.py` reuses `event_service`):
 
-| phase             | body                                                                            |
-| ----------------- | ------------------------------------------------------------------------------- |
-| `upcoming`        | the day the qualifier opens; from ten players in, their row of avatars under it |
-| `qualifier`       | every entrant as one row of avatars, then the closing day                       |
-| `cut`, `playoffs` | the current stage's line-up by name, then the stage and date                    |
-| `finished`        | the winner of the final                                                         |
+| phase             | body                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------- |
+| `upcoming`        | the day the qualifier opens; from ten players in, their row of avatars under it                           |
+| `qualifier`       | every entrant as one row of avatars, then the closing day                                                 |
+| `cut`, `playoffs` | the current stage's line-up by name, else the next one's (see Current and next stage); the stage and date |
+| `finished`        | the winner of the final                                                                                   |
 
 The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
 a seed number for a seeded stage, the source stage for a fed one. A finished event
-whose final never happened falls back to the entrant row.
+whose final never happened, and a `cut` or `playoffs` card with neither a
+current nor a next stage, both fall back to the entrant row.
 
 Signups count as entrants while the event can still be joined: after the
 scored runners on the qualifier card, in signup order, and on the upcoming

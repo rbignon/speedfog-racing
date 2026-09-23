@@ -31,6 +31,7 @@ from speedfog_racing.services.event_service import (
     event_window,
     fed_field,
     newcomer_flags,
+    next_stage_key,
     resolve_stages,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
@@ -506,11 +507,8 @@ def summarize_event(
         result = results[final.key]
         if result.complete and result.entries:
             winner = users.get(result.entries[0].user_id)
-    stage = (
-        config.stage(current_stage_key(config, resolved.dates, now) or "")
-        if phase in ("cut", "playoffs")
-        else None
-    )
+    key = current_stage_key(config, resolved, now) or next_stage_key(config, resolved, now)
+    stage = config.stage(key or "") if phase in ("cut", "playoffs") else None
 
     def user_of(user_id: UUID | None) -> User | None:
         return users.get(user_id) if user_id is not None else None

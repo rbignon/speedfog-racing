@@ -23,6 +23,7 @@ from speedfog_racing.services.event_service import (
     current_stage_key,
     fed_field,
     newcomer_flags,
+    next_stage_key,
     parse_slot,
     race_moment,
     resolve_stages,
@@ -739,12 +740,62 @@ def test_phase_override_and_completed_last_stage():
     assert _phase(CUT, first_stage_at=None) == "playoffs"
 
 
-def test_current_stage_is_today_else_next_else_last():
+def _resolved(cfg: EventConfig, races, now: datetime):
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END, races=races)
+    return resolve_stages(event, cfg, now)
+
+
+def _scheduled(slot: str, at: datetime, status=RaceStatus.SETUP):
+    race = _slotted(slot, status)
+    race.scheduled_at = at
+    return race
+
+
+def test_a_running_race_makes_its_stage_current_first_in_bracket_order():
+    cfg = _undated_quarters()
+    evening = datetime(2026, 10, 9, 19, tzinfo=UTC)
+    races = [
+        _scheduled("quarter_c:1", evening, RaceStatus.RUNNING),
+        _scheduled("quarter_a:1", evening, RaceStatus.RUNNING),
+    ]
+    now = evening + timedelta(minutes=20)
+    assert current_stage_key(cfg, _resolved(cfg, races, now), now) == "quarter_a"
+
+
+def test_a_match_spread_over_two_evenings_stays_current_on_the_second():
+    cfg = _undated_quarters()
+    monday = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    races = [
+        _scheduled("quarter_b:1", monday, RaceStatus.FINISHED),
+        _scheduled("quarter_b:2", monday + timedelta(days=1)),
+    ]
+    tuesday_noon = datetime(2026, 10, 13, 12, tzinfo=UTC)
+    resolved = _resolved(cfg, races, tuesday_noon)
+    assert current_stage_key(cfg, resolved, tuesday_noon) == "quarter_b"
+
+
+def test_nothing_is_current_on_a_day_without_a_match():
+    cfg = _undated_quarters()
+    now = datetime(2026, 10, 14, 12, tzinfo=UTC)
+    assert current_stage_key(cfg, _resolved(cfg, [], now), now) is None
+
+
+def test_the_next_stage_never_skips_an_unscheduled_round():
+    cfg = _undated_quarters()
+    now = datetime(2026, 10, 10, 12, tzinfo=UTC)
+    # Nothing scheduled: the newcomers' final (drawn from the ladder) is the
+    # next evening; the final waits on semis nobody has a date for.
+    assert next_stage_key(cfg, _resolved(cfg, [], now), now) == "newcomers"
+    later = datetime(2026, 10, 19, 12, tzinfo=UTC)
+    assert next_stage_key(cfg, _resolved(cfg, [], later), later) is None
+    races = [_scheduled("quarter_d:1", datetime(2026, 10, 11, 19, tzinfo=UTC))]
+    assert next_stage_key(cfg, _resolved(cfg, races, now), now) == "quarter_d"
+
+
+def test_the_next_stage_reads_dated_stages_in_date_order():
     cfg = _config()
-    dates = {s.key: s.date for s in cfg.stages}
-    assert current_stage_key(cfg, dates, datetime(2026, 10, 11, 9, tzinfo=UTC)) == "semi_b"
-    assert current_stage_key(cfg, dates, datetime(2026, 10, 12, 9, tzinfo=UTC)) == "newcomers"
-    assert current_stage_key(cfg, dates, datetime(2026, 11, 1, 9, tzinfo=UTC)) == "final"
+    now = datetime(2026, 10, 5, 9, tzinfo=UTC)
+    assert next_stage_key(cfg, _resolved(cfg, [], now), now) == "semi_b"
 
 
 def test_timeline_uses_announced_at_when_present():

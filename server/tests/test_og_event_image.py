@@ -107,6 +107,8 @@ def _race(slot: str, participants: list[SimpleNamespace], *, finished: bool = Tr
         event_slot=slot,
         status=RaceStatus.FINISHED if finished else RaceStatus.RUNNING,
         participants=participants,
+        scheduled_at=None,
+        started_at=None,
     )
 
 
@@ -266,13 +268,14 @@ def test_an_undecided_final_slot_names_the_stage_it_waits_on() -> None:
 def test_an_undated_current_stage_shows_no_date_on_the_card() -> None:
     """A quarter or semi scheduled with its players has no date until a race is
     attached; the card and its description must leave the date out, not print
-    "on None". With no dated stage left after it, ``current_stage_key`` falls
-    back to the last stage, so an undated final exercises the same path."""
-    event, _ = _qualifier_world(["ana", "bob"])
+    "on None". A race RUNNING makes its stage current regardless of a date."""
+    event, users = _qualifier_world(["ana", "bob"])
     event.config = {
         **CONFIG,
         "stages": [*CONFIG["stages"][:-1], {**CONFIG["stages"][-1], "date": None}],
     }
+    running_final = _race("final:1", [_entry(users["ana"], 900_000)], finished=False)
+    event.races.append(running_final)
     now = NEWCOMERS + dt.timedelta(days=2)  # after every dated stage, before ends_at
     summary = summarize_event(event, now=now, finished_before={})
     assert summary.kind == "event_stage"

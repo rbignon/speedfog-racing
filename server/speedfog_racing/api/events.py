@@ -63,6 +63,7 @@ from speedfog_racing.services.event_service import (
     load_event,
     load_featured_events,
     newcomer_flags,
+    next_stage_key,
     resolve_stages,
     score_race,
     signature_weapon,
@@ -162,11 +163,15 @@ async def list_events(
                 index=slot.index,
                 races_expected=stage.races,
             )
-        dated = sorted(
-            ((d, s) for s in config.stages if (d := resolved.dates[s.key]) is not None and d > now),
-            key=lambda item: item[0],
-        )
-        upcoming = dated[0] if dated else None
+        upcoming_key = next_stage_key(config, resolved, now)
+        upcoming = config.stage(upcoming_key) if upcoming_key else None
+        next_stage = None
+        if upcoming is not None:
+            upcoming_date = resolved.dates[upcoming.key]
+            assert upcoming_date is not None, "next_stage_key only returns dated stages"
+            next_stage = EventNextStageResponse(
+                key=upcoming.key, label=upcoming.label, date=upcoming_date
+            )
         champion = None
         if phase == "finished" and final is not None and results[final.key].complete:
             leader = next(iter(results[final.key].entries), None)
@@ -186,13 +191,7 @@ async def list_events(
                 my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
                 players=players,
                 player_previews=[UserResponse.model_validate(u) for u in previews],
-                next_stage=(
-                    EventNextStageResponse(
-                        key=upcoming[1].key, label=upcoming[1].label, date=upcoming[0]
-                    )
-                    if upcoming is not None
-                    else None
-                ),
+                next_stage=next_stage,
                 live=live,
                 champion=champion,
             )
@@ -258,11 +257,15 @@ async def get_event(
         ),
         None,
     )
-    dated = sorted(
-        ((d, s) for s in config.stages if (d := resolved.dates[s.key]) is not None and d > now),
-        key=lambda item: item[0],
-    )
-    upcoming = dated[0] if dated else None
+    upcoming_key = next_stage_key(config, resolved, now)
+    upcoming = config.stage(upcoming_key) if upcoming_key else None
+    next_stage = None
+    if upcoming is not None:
+        upcoming_date = resolved.dates[upcoming.key]
+        assert upcoming_date is not None, "next_stage_key only returns dated stages"
+        next_stage = EventNextStageResponse(
+            key=upcoming.key, label=upcoming.label, date=upcoming_date
+        )
 
     def user_of(user_id: UUID | None) -> UserResponse | None:
         return UserResponse.model_validate(users[user_id]) if user_id in users else None
@@ -388,14 +391,10 @@ async def get_event(
             for stage in config.stages
         ],
         current_stage_key=(
-            current_stage_key(config, resolved.dates, now) if phase == "playoffs" else None
+            current_stage_key(config, resolved, now) if phase == "playoffs" else None
         ),
         live_race=race_response(live, user) if live is not None else None,
-        next_stage=(
-            EventNextStageResponse(key=upcoming[1].key, label=upcoming[1].label, date=upcoming[0])
-            if upcoming is not None
-            else None
-        ),
+        next_stage=next_stage,
     )
 
 

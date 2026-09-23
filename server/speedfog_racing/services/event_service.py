@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from uuid import UUID
 
@@ -439,28 +439,6 @@ def compute_phase(
     return "playoffs"
 
 
-def current_stage_key(
-    config: EventConfig, dates: dict[str, datetime | None], now: datetime
-) -> str | None:
-    """The stage dated today (UTC), else the next one, else the last one.
-
-    ``now`` must be timezone-aware; a naive datetime makes ``astimezone`` assume the
-    local zone (silently wrong) and the ``moment > now`` comparison raise.
-    """
-    if not config.stages:
-        return None
-    today = now.astimezone(UTC).date()
-    dated = sorted(
-        ((d, s.key) for s in config.stages if (d := dates.get(s.key)) is not None),
-        key=lambda item: item[0],
-    )
-    for moment, key in dated:
-        if moment.astimezone(UTC).date() == today:
-            return key
-    upcoming = [key for moment, key in dated if moment > now]
-    return upcoming[0] if upcoming else config.stages[-1].key
-
-
 # --- event window -----------------------------------------------------------
 
 
@@ -624,6 +602,65 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         dates=dates,
         phase=phase,
     )
+
+
+def _stage_days(stage: EventStage, resolved: ResolvedStages) -> set[date]:
+    """The UTC days a stage is played on: its date's, and each of its races'."""
+    moments = [
+        resolved.dates.get(stage.key),
+        *(race_moment(race) for _, race in resolved.stage_races.get(stage.key, [])),
+    ]
+    return {m.astimezone(UTC).date() for m in moments if m is not None}
+
+
+def current_stage_key(config: EventConfig, resolved: ResolvedStages, now: datetime) -> str | None:
+    """The stage being played: one with a race running, else one played today (UTC).
+
+    Two stages running at once resolve to the first in bracket order, like the
+    live race. Among the stages of the day, the first not complete wins, else
+    the last of them. ``now`` must be timezone-aware.
+    """
+    for stage in config.stages:
+        if any(r.status == RaceStatus.RUNNING for _, r in resolved.stage_races.get(stage.key, [])):
+            return stage.key
+    today = now.astimezone(UTC).date()
+    todays = [s for s in config.stages if today in _stage_days(s, resolved)]
+    for stage in todays:
+        if not resolved.results[stage.key].complete:
+            return stage.key
+    return todays[-1].key if todays else None
+
+
+def next_stage_key(config: EventConfig, resolved: ResolvedStages, now: datetime) -> str | None:
+    """The next evening that can honestly be announced, or None.
+
+    The earliest stage ahead of ``now``, not complete, that waits on no stage
+    without a date: a final is not "next" while a semi feeding it has none.
+    """
+
+    def waits_on_undated(stage: EventStage) -> bool:
+        for key in stage.from_ or []:
+            source = config.stage(key)
+            if source is None:
+                continue
+            if resolved.dates.get(key) is None and not resolved.results[key].complete:
+                return True
+            if waits_on_undated(source):
+                return True
+        return False
+
+    ahead = sorted(
+        (
+            (moment, stage.key)
+            for stage in config.stages
+            if (moment := resolved.dates.get(stage.key)) is not None
+            and moment > now
+            and not resolved.results[stage.key].complete
+            and not waits_on_undated(stage)
+        ),
+        key=lambda item: item[0],
+    )
+    return ahead[0][1] if ahead else None
 
 
 # --- loaders ----------------------------------------------------------------
