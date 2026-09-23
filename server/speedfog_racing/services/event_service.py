@@ -284,12 +284,12 @@ class QualifiedSlot:
 def compute_qualified(
     ladder: list[LadderEntry], config: EventConfig, newcomers: dict[UUID, bool]
 ) -> dict[str, list[QualifiedSlot]]:
-    """Seeds are positions in the ranked ladder; newcomers come after the last seed."""
+    """Seeded stages take ladder positions; newcomers come after the largest seed."""
     ranked = [e for e in ladder if e.rank is not None]
     groups: dict[str, list[QualifiedSlot]] = {}
     last_seed = 0
     for stage in config.stages:
-        if stage.kind != "semi":
+        if stage.seeds is None:
             continue
         slots: list[QualifiedSlot] = []
         for seed in stage.seeds or []:
@@ -359,19 +359,22 @@ class FieldSlot:
     label: str
 
 
-def final_field(
-    final: EventStage, results: dict[str, StageResult], labels: dict[str, str]
+def fed_field(
+    stage: EventStage, config: EventConfig, results: dict[str, StageResult]
 ) -> list[FieldSlot]:
-    """The final's field: the union of advancing runners from ``from``, or a placeholder."""
-    assert final.advance is not None, "a final stage always declares advance"
-    count = final.advance
+    """A fed stage's field: each source's advancing runners, or a placeholder per seat."""
     slots: list[FieldSlot] = []
-    for key in final.from_ or []:
+    for key in stage.from_ or []:
+        source = config.stage(key)
+        assert source is not None and source.advance is not None, (
+            "the schema ties every source to an earlier stage with advance"
+        )
+        count = source.advance
+        placeholder = f"Top {count} of {source.label}"
         result = results.get(key)
-        placeholder = f"Top {count} of {labels[key]}"
         if result is not None and result.complete:
             decided = [
-                FieldSlot(user_id=e.user_id, label=labels[key])
+                FieldSlot(user_id=e.user_id, label=source.label)
                 for e in result.entries
                 if e.advances
             ]
@@ -480,7 +483,7 @@ class TimelineStop:
     key: str
     label: str
     date: datetime
-    kind: Literal["announce", "open", "cut", "semi", "newcomers", "final"]
+    kind: Literal["announce", "open", "cut", "quarter", "semi", "newcomers", "final"]
 
 
 def announce_date(event: Event, config: EventConfig) -> datetime:

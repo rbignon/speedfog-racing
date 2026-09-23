@@ -32,7 +32,7 @@ from speedfog_racing.services.event_service import (
     compute_stage_results,
     current_stage_key,
     event_window,
-    final_field,
+    fed_field,
     newcomer_flags,
     parse_slot,
 )
@@ -488,16 +488,14 @@ def summarize_event(
     users = {p.user_id: p.user for race in event.races for p in race.participants}
 
     final = config.final_stage()
-    advance = (final.advance or 0) if final is not None else 0
     results = {
         stage.key: compute_stage_results(
             stage,
             [r for s, r in attached if s.kind == "stage" and s.key == stage.key],
-            advance if stage.kind == "semi" else 0,
+            stage.advance or 0,
         )
         for stage in config.stages
     }
-    labels = {s.key: s.label for s in config.stages}
     last = config.stages[-1] if config.stages else None
     phase = compute_phase(
         now=now,
@@ -559,12 +557,12 @@ def summarize_event(
         kind = "event_stage"
         stage_label = _truncate(stage.label, _MAX_STAGE_LABEL)
         stage_date = _event_day(stage.date, weekday=True)
-        if stage.kind == "final":
-            # "Top 2 of Semi B" is the page's phrasing; under an empty ring the
+        if stage.from_:
+            # "Top 2 of Quarter B" is the page's phrasing; under an empty ring the
             # card only has room for the stage the runner comes from.
             field = [
                 EventOgSlot(user_of(slot.user_id), slot.label.split(" of ", 1)[-1])
-                for slot in final_field(stage, results, labels)
+                for slot in fed_field(stage, config, results)
             ]
         else:
             field = [

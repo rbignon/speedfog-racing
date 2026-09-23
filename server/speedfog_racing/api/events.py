@@ -60,7 +60,7 @@ from speedfog_racing.services.event_service import (
     count_finished_before,
     current_stage_key,
     event_window,
-    final_field,
+    fed_field,
     load_event,
     load_featured_events,
     newcomer_flags,
@@ -133,12 +133,11 @@ async def list_events(
             for stage in config.stages
         }
         final = config.final_stage()
-        advance = (final.advance or 0) if final is not None else 0
         results = {
             stage.key: compute_stage_results(
                 stage,
                 [r for _, r in stage_races[stage.key]],
-                advance if stage.kind == "semi" else 0,
+                stage.advance or 0,
             )
             for stage in config.stages
         }
@@ -282,13 +281,11 @@ async def get_event(
             weapons[user_id] = EventWeaponResponse(id=found[0], name=found[1]) if found else None
         return weapons[user_id]
 
-    final = config.final_stage()
-    advance = (final.advance or 0) if final is not None else 0
     results = {
         stage.key: compute_stage_results(
             stage,
             [r for _, r in stage_races[stage.key]],
-            advance if stage.kind == "semi" else 0,
+            stage.advance or 0,
         )
         for stage in config.stages
     }
@@ -336,10 +333,10 @@ async def get_event(
         stage = config.stage(stage_key)
         if stage is None:
             return []
-        if stage.kind == "final":
+        if stage.from_:
             return [
                 EventFieldSlotResponse(user=user_of(slot.user_id), label=slot.label)
-                for slot in final_field(stage, results, labels)
+                for slot in fed_field(stage, config, results)
             ]
         return [
             EventFieldSlotResponse(

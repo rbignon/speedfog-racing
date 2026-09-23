@@ -38,6 +38,7 @@ CONFIG = {
             "races": 3,
             "seeds": [1, 4],
             "modes": ["Standard", "Boss Rush", "UWYG Major Rush"],
+            "advance": 2,
         },
         {
             "key": "semi_b",
@@ -46,6 +47,7 @@ CONFIG = {
             "date": "2026-10-11T19:00:00Z",
             "races": 3,
             "seeds": [2, 3],
+            "advance": 2,
         },
         {
             "key": "newcomers",
@@ -62,12 +64,71 @@ CONFIG = {
             "date": "2026-10-25T19:00:00Z",
             "races": 3,
             "from": ["semi_a", "semi_b"],
-            "advance": 2,
         },
     ],
     "rules": ["One sitting per run."],
     "announced_at": "2026-09-16T18:00:00Z",
     "phase_override": "qualifier",
+}
+
+QUARTERS_CONFIG = {
+    **CONFIG,
+    "stages": [
+        *(
+            {
+                "key": key,
+                "label": label,
+                "kind": "quarter",
+                "date": f"2026-10-0{2 + i}T19:00:00Z",
+                "races": 3,
+                "seeds": seeds,
+                "advance": 2,
+            }
+            for i, (key, label, seeds) in enumerate(
+                [
+                    ("quarter_a", "Quarter A", [1, 8, 9, 16]),
+                    ("quarter_b", "Quarter B", [4, 5, 12, 13]),
+                    ("quarter_c", "Quarter C", [2, 7, 10, 15]),
+                    ("quarter_d", "Quarter D", [3, 6, 11, 14]),
+                ]
+            )
+        ),
+        {
+            "key": "semi_a",
+            "label": "Semi A",
+            "kind": "semi",
+            "date": "2026-10-10T19:00:00Z",
+            "races": 3,
+            "from": ["quarter_a", "quarter_b"],
+            "advance": 2,
+        },
+        {
+            "key": "semi_b",
+            "label": "Semi B",
+            "kind": "semi",
+            "date": "2026-10-11T19:00:00Z",
+            "races": 3,
+            "from": ["quarter_c", "quarter_d"],
+            "advance": 2,
+        },
+        {
+            "key": "newcomers",
+            "label": "Newcomers",
+            "kind": "newcomers",
+            "date": "2026-10-18T19:00:00Z",
+            "races": 2,
+            "size": 2,
+        },
+        {
+            "key": "final",
+            "label": "Final",
+            "kind": "final",
+            "date": "2026-10-25T19:00:00Z",
+            "races": 3,
+            "from": ["semi_a", "semi_b"],
+        },
+    ],
+    "phase_override": "cut",
 }
 
 
@@ -276,6 +337,37 @@ async def world(async_session):
 async def test_unknown_slug_is_404(test_client):
     async with test_client as client:
         assert (await client.get("/api/events/nope")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_detail_seeds_the_quarters_and_names_what_the_later_rounds_wait_on(
+    test_client, async_session
+):
+    async with async_session() as db:
+        await _event(db, config=QUARTERS_CONFIG)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    assert [f["label"] for f in stages["quarter_a"]["field"]] == [
+        "Seed 1",
+        "Seed 8",
+        "Seed 9",
+        "Seed 16",
+    ]
+    assert [f["label"] for f in stages["semi_a"]["field"]] == (
+        ["Top 2 of Quarter A"] * 2 + ["Top 2 of Quarter B"] * 2
+    )
+    assert [f["label"] for f in stages["final"]["field"]] == (
+        ["Top 2 of Semi A"] * 2 + ["Top 2 of Semi B"] * 2
+    )
+    assert [g["stage_key"] for g in data["qualified"]["groups"]] == [
+        "quarter_a",
+        "quarter_b",
+        "quarter_c",
+        "quarter_d",
+        "newcomers",
+    ]
 
 
 @pytest.mark.asyncio

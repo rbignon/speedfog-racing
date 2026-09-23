@@ -23,6 +23,7 @@ def _config(**overrides):
                 "date": "2026-10-04T19:00:00Z",
                 "races": 3,
                 "seeds": [1, 4],
+                "advance": 2,
             },
             {
                 "key": "semi_b",
@@ -31,6 +32,7 @@ def _config(**overrides):
                 "date": "2026-10-11T19:00:00Z",
                 "races": 3,
                 "seeds": [2, 3],
+                "advance": 2,
             },
             {
                 "key": "newcomers",
@@ -47,7 +49,6 @@ def _config(**overrides):
                 "date": "2026-10-25T19:00:00Z",
                 "races": 3,
                 "from": ["semi_a", "semi_b"],
-                "advance": 2,
             },
         ],
         "rules": ["One sitting per run."],
@@ -78,7 +79,7 @@ def test_semi_requires_distinct_seeds():
         EventConfig.model_validate(_config(stages=stages))
 
 
-def test_semi_seeds_must_be_distinct_across_semi_stages():
+def test_seeds_must_be_distinct_across_stages():
     stages = _config()["stages"]
     stages[1]["seeds"] = [1, 3]  # seed 1 already used by semi_a
     with pytest.raises(ValidationError, match="distinct across"):
@@ -95,13 +96,6 @@ def test_semi_seeds_must_cover_the_ladder_from_one():
     stages[0]["seeds"] = [2, 4]
     stages[1]["seeds"] = [3, 5]  # nobody holds seed 1
     with pytest.raises(ValidationError, match="without a gap"):
-        EventConfig.model_validate(_config(stages=stages))
-
-
-def test_final_must_reference_semi_stages():
-    stages = _config()["stages"]
-    stages[3]["from"] = ["semi_a", "newcomers"]
-    with pytest.raises(ValidationError, match="from"):
         EventConfig.model_validate(_config(stages=stages))
 
 
@@ -144,13 +138,6 @@ def test_stage_date_must_be_timezone_aware():
     stages = _config()["stages"]
     stages[0]["date"] = "2026-10-04T19:00:00"
     with pytest.raises(ValidationError, match="date must be timezone-aware"):
-        EventConfig.model_validate(_config(stages=stages))
-
-
-def test_final_without_advance_rejected():
-    stages = _config()["stages"]
-    del stages[3]["advance"]
-    with pytest.raises(ValidationError, match="a final stage needs from and advance"):
         EventConfig.model_validate(_config(stages=stages))
 
 
@@ -219,3 +206,137 @@ def test_from_alias_round_trips_through_json_dump():
     restored = EventConfig.model_validate(dumped)
     assert restored.stage("final") is not None
     assert restored.stage("final").from_ == cfg.stage("final").from_
+
+
+def _quarters(**overrides):
+    """This season's shape: four quarters into two semis into a final."""
+
+    def quarter(key: str, label: str, seeds: list[int], day: int) -> dict:
+        return {
+            "key": key,
+            "label": label,
+            "kind": "quarter",
+            "date": f"2026-10-0{day}T19:00:00Z",
+            "races": 3,
+            "seeds": seeds,
+            "advance": 2,
+        }
+
+    stages = [
+        quarter("quarter_a", "Quarter A", [1, 8, 9, 16], 2),
+        quarter("quarter_b", "Quarter B", [4, 5, 12, 13], 3),
+        quarter("quarter_c", "Quarter C", [2, 7, 10, 15], 4),
+        quarter("quarter_d", "Quarter D", [3, 6, 11, 14], 5),
+        {
+            "key": "semi_a",
+            "label": "Semi A",
+            "kind": "semi",
+            "date": "2026-10-10T19:00:00Z",
+            "races": 3,
+            "from": ["quarter_a", "quarter_b"],
+            "advance": 2,
+        },
+        {
+            "key": "semi_b",
+            "label": "Semi B",
+            "kind": "semi",
+            "date": "2026-10-11T19:00:00Z",
+            "races": 3,
+            "from": ["quarter_c", "quarter_d"],
+            "advance": 2,
+        },
+        {
+            "key": "newcomers",
+            "label": "Newcomers",
+            "kind": "newcomers",
+            "date": "2026-10-18T19:00:00Z",
+            "races": 3,
+            "size": 4,
+        },
+        {
+            "key": "final",
+            "label": "Final",
+            "kind": "final",
+            "date": "2026-10-25T19:00:00Z",
+            "races": 3,
+            "from": ["semi_a", "semi_b"],
+        },
+    ]
+    return _config(stages=stages, **overrides)
+
+
+def test_quarters_feed_semis_that_feed_the_final():
+    cfg = EventConfig.model_validate(_quarters())
+    semi_a, final = cfg.stage("semi_a"), cfg.stage("final")
+    assert semi_a is not None and final is not None
+    # A fed stage seats what its sources send on: two quarters of 2 each.
+    assert cfg.field_size(semi_a) == 4
+    assert cfg.field_size(final) == 4
+
+
+def test_advance_sits_on_the_stage_that_sends_runners_on():
+    stages = _quarters()["stages"]
+    stages[-1]["advance"] = 2  # the final takes from the semis, nothing takes from it
+    with pytest.raises(ValidationError, match="no stage takes from it"):
+        EventConfig.model_validate(_config(stages=stages))
+    stages = _quarters()["stages"]
+    del stages[0]["advance"]  # quarter_a feeds semi_a without saying how many
+    with pytest.raises(ValidationError, match="needs advance"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_from_only_names_earlier_stages():
+    stages = _quarters()["stages"]
+    stages[4]["from"] = ["quarter_a", "semi_b"]  # semi_b comes after semi_a
+    with pytest.raises(ValidationError, match="placed before"):
+        EventConfig.model_validate(_config(stages=stages))
+    stages = _quarters()["stages"]
+    stages[4]["from"] = ["quarter_a", "nowhere"]
+    with pytest.raises(ValidationError, match="placed before"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_from_never_names_the_newcomers_stage():
+    stages = _config()["stages"]
+    stages[3]["from"] = ["semi_a", "newcomers"]
+    with pytest.raises(ValidationError, match="newcomers"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_a_stage_feeds_one_stage_at_most():
+    stages = _quarters()["stages"]
+    stages[5]["from"] = ["quarter_c", "quarter_a"]  # quarter_a already feeds semi_a
+    with pytest.raises(ValidationError, match="more than one stage"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_a_stage_takes_its_field_from_exactly_one_source():
+    stages = _config()["stages"]
+    stages[3]["seeds"] = [5]  # the final would take seeds and semi runners at once
+    with pytest.raises(ValidationError, match="exactly one of seeds or from"):
+        EventConfig.model_validate(_config(stages=stages))
+    stages = _config()["stages"]
+    del stages[3]["from"]  # nor may it take nothing at all
+    with pytest.raises(ValidationError, match="exactly one of seeds or from"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_newcomers_take_no_other_source():
+    stages = _config()["stages"]
+    stages[2]["seeds"] = [5]
+    with pytest.raises(ValidationError, match="a newcomers stage takes no seeds"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_advance_never_exceeds_the_field_it_comes_from():
+    stages = _config()["stages"]
+    stages[0]["advance"] = 3  # semi_a seats 2 runners
+    with pytest.raises(ValidationError, match="exceeds its field of 2"):
+        EventConfig.model_validate(_config(stages=stages))
+
+
+def test_one_final_at_most():
+    stages = _quarters()["stages"]
+    stages[5]["kind"] = "final"
+    with pytest.raises(ValidationError, match="at most one final"):
+        EventConfig.model_validate(_config(stages=stages))

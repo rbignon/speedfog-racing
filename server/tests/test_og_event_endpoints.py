@@ -37,6 +37,7 @@ CONFIG = {
             "date": "2026-10-04T19:00:00Z",
             "races": 1,
             "seeds": [1, 2],
+            "advance": 2,
         },
         {
             "key": "final",
@@ -45,7 +46,6 @@ CONFIG = {
             "date": "2026-10-25T19:00:00Z",
             "races": 1,
             "from": ["semi_a"],
-            "advance": 2,
         },
     ],
     "phase_override": "qualifier",

@@ -27,24 +27,33 @@ computed on each request by `services/event_service.py`.
 | `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)  |
 | `announced_at`   | the announcement: first timeline stop and newcomer cut (see Timeline)   |
 
-A stage: `key`, `label`, `kind` (`semi`, `newcomers`, `final`), `date`,
-`races` (per evening), `modes` (display labels, not pool keys: one chip per
-race in the bracket boxes and qualified groups, linking to the race page once
-a race is attached, and the name of a race placeholder), plus `seeds` (ladder positions) for a semi, `size` for the
-newcomers' final, `from` and `advance` for the final. Stage dates ascend;
-`qualifier_ends_at` is at or before the first stage; `ends_at` is after the
-last.
+A stage: `key`, `label`, `kind` (`quarter`, `semi`, `newcomers`, `final`),
+`date`, `races` (per evening), `modes` (display labels, not pool keys: one
+chip per race in the bracket boxes and qualified groups, linking to the race
+page once a race is attached, and the name of a race placeholder), and where
+its runners come from: `seeds` (ladder positions) or `from` (earlier stages
+it takes runners from), or `size` for the newcomers' final. `advance` sits on
+the stage that sends runners on: how many of its runners go to the stage
+naming it in `from` (the top 2 of each quarter, the top 2 of each semi). The
+kind only matters for display, except `final` (its winner is the champion)
+and `newcomers` (its own draw). Stage dates ascend; `qualifier_ends_at` is at
+or before the first stage; `ends_at` is after the last.
 
-Validation also rejects: seed numbers reused across `semi` stages (not just
-within one stage), semi seeds that do not cover the ladder from 1 without a
-gap (the newcomers' group draws from the ladder positions after the largest
-seed used by any semi, so a gap would exclude those positions from every
-playoff group at once), a `phase_override` outside the five phases, a
-`newcomers` stage without `announced_at`, and a naive (timezone-less)
-`announced_at` or stage `date`. `starts_at`, `qualifier_ends_at`
-and `ends_at` on the upsert request are rejected the same way when naive, and
-so is an `announced_at` at or after `starts_at`: the qualifier's own runs
-would otherwise count towards the newcomer cut.
+Validation also rejects: a stage with both or neither of `seeds` and `from`
+(a newcomers stage has `size` and neither), a `from` naming a stage placed
+later in the list, an unknown stage or the newcomers stage (list order is
+bracket order), a stage feeding more than one stage, `advance` on a stage
+nothing takes from or missing on one something does, an `advance` larger
+than the field it comes from, a second final or newcomers stage, seed numbers
+reused across stages (not just within one), seeds that do not cover the
+ladder from 1 without a gap (the newcomers' group draws from the ladder
+positions after the largest seed used by any stage, so a gap would exclude
+those positions from every playoff group at once), a `phase_override`
+outside the five phases, a `newcomers` stage without `announced_at`, and a
+naive (timezone-less) `announced_at` or stage `date`. `starts_at`,
+`qualifier_ends_at` and `ends_at` on the upsert request are rejected the same
+way when naive, and so is an `announced_at` at or after `starts_at`: the
+qualifier's own runs would otherwise count towards the newcomer cut.
 
 One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of
@@ -99,7 +108,7 @@ reporting the stored row after the cut, when the ladder no longer lists it.
 
 The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
-advancing runners (the final's `advance`) then fill the final automatically.
+advancing runners (its `advance`) then fill the stage it feeds automatically.
 
 The admin events list computes `phase` without grouping the races by stage, so
 it always treats the last stage as not yet complete. This only matters
@@ -127,7 +136,7 @@ races, so they count towards that; solo sessions are not, so they do not. The
 format block names daily seeds explicitly, since "races" alone reads as
 organised races to a player who mostly runs the daily.
 
-A semi stage's `seeds` index into the sorted ladder position by position
+A seeded stage's `seeds` index into the sorted ladder position by position
 (seed 1 is the top entry, seed 2 the next, and so on), not by each entry's own
 displayed rank. Tied runners occupy consecutive positions sharing the same
 rank, so a seed number can resolve to a runner whose displayed ladder rank is
@@ -144,7 +153,7 @@ counted mode (`signed_up` counts them, `entered` does not); from the cut on
 they leave it. Seeding reads only ranked entries, so a signup never resolves
 a seed or a newcomers' slot.
 
-Qualified groups map each semi's `seeds` to ladder positions; the newcomers'
+Qualified groups map each seeded stage's `seeds` to ladder positions; the newcomers'
 group takes the first ranked newcomers positioned after the last seed. Playoff
 evenings sum the points of their races (100 / 75 / 50 / 25 with four runners);
 a running race scores provisionally, so the bracket shows a stage's points in
@@ -271,8 +280,9 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
   mode key, and `late_join_window_minutes` and `race_duration_minutes` both
   set and equal; attaching then sets `exclude_from_stats` on the race.
 - A stage slot requires `max_participants` to be null or at least the stage's
-  field size: the number of `seeds` for a semi, `size` for a newcomers stage,
-  `advance` times the number of `from` stages for a final.
+  field size: the number of `seeds` for a seeded stage, `size` for a
+  newcomers stage, the sum of its sources' `advance` for a stage fed by
+  others.
 - A Daily Seed race is refused.
 - An event whose stored config no longer parses is refused (422, naming the
   validation errors): the slot cannot be checked without it. Detaching still
@@ -464,7 +474,7 @@ The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
-a seed number for a semi, the source stage for the final. A finished event
+a seed number for a seeded stage, the source stage for a fed one. A finished event
 whose final never happened falls back to the entrant row.
 
 Signups count as entrants while the event can still be joined: after the

@@ -21,7 +21,7 @@ from speedfog_racing.services.event_service import (
     compute_qualified,
     compute_stage_results,
     current_stage_key,
-    final_field,
+    fed_field,
     newcomer_flags,
     parse_slot,
     score_race,
@@ -47,6 +47,7 @@ def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
                     "date": "2026-10-04T19:00:00Z",
                     "races": 3,
                     "seeds": list(seeds_a),
+                    "advance": 2,
                 },
                 {
                     "key": "semi_b",
@@ -55,6 +56,7 @@ def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
                     "date": "2026-10-11T19:00:00Z",
                     "races": 3,
                     "seeds": list(seeds_b),
+                    "advance": 2,
                 },
                 {
                     "key": "newcomers",
@@ -71,7 +73,6 @@ def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
                     "date": "2026-10-25T19:00:00Z",
                     "races": 3,
                     "from": ["semi_a", "semi_b"],
-                    "advance": 2,
                 },
             ],
         }
@@ -499,8 +500,7 @@ def test_final_field_labels_undecided_semis():
         complete=True,
         entries=[StageEntry(a, 300, 0, True), StageEntry(b, 200, 0, True)],
     )
-    labels = {"semi_a": "Semi A", "semi_b": "Semi B"}
-    slots = final_field(final, {"semi_a": done}, labels)
+    slots = fed_field(final, cfg, {"semi_a": done})
     assert [(s.user_id, s.label) for s in slots[:2]] == [(a, "Semi A"), (b, "Semi A")]
     assert [(s.user_id, s.label) for s in slots[2:]] == [(None, "Top 2 of Semi B")] * 2
 
@@ -513,14 +513,117 @@ def test_final_field_pads_short_decided_stages_to_the_advance_count():
     # the field must still be padded to the full advance count with a placeholder.
     short_a = StageResult(complete=True, entries=[StageEntry(a, 300, 0, True)])
     short_b = StageResult(complete=True, entries=[StageEntry(b, 250, 0, True)])
-    labels = {"semi_a": "Semi A", "semi_b": "Semi B"}
-    slots = final_field(final, {"semi_a": short_a, "semi_b": short_b}, labels)
+    slots = fed_field(final, cfg, {"semi_a": short_a, "semi_b": short_b})
     assert [(s.user_id, s.label) for s in slots] == [
         (a, "Semi A"),
         (None, "Top 2 of Semi A"),
         (b, "Semi B"),
         (None, "Top 2 of Semi B"),
     ]
+
+
+def _quarters_config() -> EventConfig:
+    """Four quarters of four into two semis into a final, one race per stage."""
+    quarters = [
+        ("quarter_a", "Quarter A", [1, 8, 9, 16]),
+        ("quarter_b", "Quarter B", [4, 5, 12, 13]),
+        ("quarter_c", "Quarter C", [2, 7, 10, 15]),
+        ("quarter_d", "Quarter D", [3, 6, 11, 14]),
+    ]
+    stages: list[dict[str, object]] = [
+        {
+            "key": key,
+            "label": label,
+            "kind": "quarter",
+            "date": f"2026-10-0{2 + i}T19:00:00Z",
+            "races": 1,
+            "seeds": seeds,
+            "advance": 2,
+        }
+        for i, (key, label, seeds) in enumerate(quarters)
+    ]
+    stages += [
+        {
+            "key": "semi_a",
+            "label": "Semi A",
+            "kind": "semi",
+            "date": "2026-10-10T19:00:00Z",
+            "races": 1,
+            "from": ["quarter_a", "quarter_b"],
+            "advance": 2,
+        },
+        {
+            "key": "semi_b",
+            "label": "Semi B",
+            "kind": "semi",
+            "date": "2026-10-11T19:00:00Z",
+            "races": 1,
+            "from": ["quarter_c", "quarter_d"],
+            "advance": 2,
+        },
+        {
+            "key": "newcomers",
+            "label": "Newcomers",
+            "kind": "newcomers",
+            "date": "2026-10-18T19:00:00Z",
+            "races": 1,
+            "size": 2,
+        },
+        {
+            "key": "final",
+            "label": "Final",
+            "kind": "final",
+            "date": "2026-10-25T19:00:00Z",
+            "races": 1,
+            "from": ["semi_a", "semi_b"],
+        },
+    ]
+    return EventConfig.model_validate(
+        {
+            "modes": [{"key": m, "label": m} for m in MODES],
+            "seeds_per_mode": 2,
+            "announced_at": "2026-09-16T18:00:00Z",
+            "stages": stages,
+        }
+    )
+
+
+def test_quarters_seed_from_the_ladder_and_newcomers_draw_after_seed_16():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(19)]
+    newcomers = {u[3]: True, u[16]: True, u[17]: True, u[18]: True}
+    groups = compute_qualified(_ladder_of(*u), cfg, newcomers)
+    assert list(groups) == ["quarter_a", "quarter_b", "quarter_c", "quarter_d", "newcomers"]
+    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
+    # u[3] is a newcomer but seeded 4th (Quarter B): the newcomers' final
+    # draws from position 17 on.
+    assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
+
+
+def test_three_rounds_feed_each_other():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(16)]
+    quarter_a, semi_a, final = cfg.stage("quarter_a"), cfg.stage("semi_a"), cfg.stage("final")
+    assert quarter_a is not None and semi_a is not None and final is not None
+    # Quarter A played: seeds 1 and 9 finish first and second.
+    order = [u[0], u[8], u[7], u[15]]
+    race = _race(
+        [
+            _participant(user, ParticipantStatus.FINISHED, 100 * (i + 1))
+            for i, user in enumerate(order)
+        ]
+    )
+    results = {"quarter_a": compute_stage_results(quarter_a, [race], quarter_a.advance or 0)}
+    assert [(s.user_id, s.label) for s in fed_field(semi_a, cfg, results)] == [
+        (u[0], "Quarter A"),
+        (u[8], "Quarter A"),
+        (None, "Top 2 of Quarter B"),
+        (None, "Top 2 of Quarter B"),
+    ]
+    # Nothing of the semis is decided: the final only names where it waits.
+    assert [s.label for s in fed_field(final, cfg, results)] == (
+        ["Top 2 of Semi A"] * 2 + ["Top 2 of Semi B"] * 2
+    )
 
 
 # --- signature weapon -------------------------------------------------------

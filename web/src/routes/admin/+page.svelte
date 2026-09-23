@@ -182,6 +182,7 @@
           races: 3,
           seeds: [1, 4, 5, 8],
           modes: ["Standard", "Boss Rush", "UWYG Major Rush"],
+          advance: 2,
         },
         {
           key: "semi_b",
@@ -191,6 +192,7 @@
           races: 3,
           seeds: [2, 3, 6, 7],
           modes: ["Standard", "Boss Rush", "UWYG Major Rush"],
+          advance: 2,
         },
         {
           key: "newcomers",
@@ -208,7 +210,6 @@
           date: "2026-10-25T19:00:00Z",
           races: 3,
           from: ["semi_a", "semi_b"],
-          advance: 2,
           modes: ["Hardcore", "UWYG Boss Rush", "Halloween"],
         },
       ],

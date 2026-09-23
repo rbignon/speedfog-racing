@@ -33,6 +33,7 @@ DOC = {
                 "date": "2026-10-04T19:00:00Z",
                 "races": 3,
                 "seeds": [1, 2],
+                "advance": 2,
             },
             {
                 "key": "final",
@@ -41,11 +42,64 @@ DOC = {
                 "date": "2026-10-25T19:00:00Z",
                 "races": 3,
                 "from": ["semi_a"],
-                "advance": 2,
             },
         ],
         "rules": [],
         "phase_override": "cut",
+    },
+}
+
+QUARTERS_DOC = {
+    **DOC,
+    "config": {
+        **DOC["config"],
+        "stages": [
+            *(
+                {
+                    "key": key,
+                    "label": key.replace("_", " ").title(),
+                    "kind": "quarter",
+                    "date": f"2026-10-0{2 + i}T19:00:00Z",
+                    "races": 3,
+                    "seeds": seeds,
+                    "advance": 2,
+                }
+                for i, (key, seeds) in enumerate(
+                    [
+                        ("quarter_a", [1, 8, 9, 16]),
+                        ("quarter_b", [4, 5, 12, 13]),
+                        ("quarter_c", [2, 7, 10, 15]),
+                        ("quarter_d", [3, 6, 11, 14]),
+                    ]
+                )
+            ),
+            {
+                "key": "semi_a",
+                "label": "Semi A",
+                "kind": "semi",
+                "date": "2026-10-10T19:00:00Z",
+                "races": 3,
+                "from": ["quarter_a", "quarter_b"],
+                "advance": 2,
+            },
+            {
+                "key": "semi_b",
+                "label": "Semi B",
+                "kind": "semi",
+                "date": "2026-10-11T19:00:00Z",
+                "races": 3,
+                "from": ["quarter_c", "quarter_d"],
+                "advance": 2,
+            },
+            {
+                "key": "final",
+                "label": "Final",
+                "kind": "final",
+                "date": "2026-10-25T19:00:00Z",
+                "races": 3,
+                "from": ["semi_a", "semi_b"],
+            },
+        ],
     },
 }
 
@@ -400,3 +454,55 @@ async def test_attach_stage_slot_succeeds_without_excluding_from_stats(
         )
     assert response.status_code == 200, response.text
     assert response.json()["exclude_from_stats"] is False
+
+
+@pytest.mark.asyncio
+async def test_attach_to_a_fed_stage_needs_room_for_every_source(test_client, users, async_session):
+    _, orga = users
+    async with async_session() as db:
+        three = await _race(db, orga, "standard", "s10", max_participants=3)
+        four = await _race(db, orga, "standard", "s11", max_participants=4)
+        await db.commit()
+    async with test_client as client:
+        event_id = (
+            await client.post("/api/admin/events", json=QUARTERS_DOC, headers=ADMIN)
+        ).json()["id"]
+        refused = await client.post(
+            f"/api/admin/races/{three.id}/event",
+            json={"event_id": event_id, "slot": "semi_a:1"},
+            headers=ADMIN,
+        )
+        accepted = await client.post(
+            f"/api/admin/races/{four.id}/event",
+            json={"event_id": event_id, "slot": "semi_a:1"},
+            headers=ADMIN,
+        )
+    # Two quarters send two runners each.
+    assert refused.status_code == 422 and "field of 4" in refused.text
+    assert accepted.status_code == 200, accepted.text
+
+
+@pytest.mark.asyncio
+async def test_the_quarters_config_replaces_the_semis_one_under_attached_qualifiers(
+    test_client, users, async_session
+):
+    """The rollout: the season's qualifier races stay attached while the
+    stored semis config gives way to quarters."""
+    _, orga = users
+    async with async_session() as db:
+        std = await _race(db, orga, "standard", "s12")
+        await db.commit()
+    async with test_client as client:
+        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        attached = await client.post(
+            f"/api/admin/races/{std.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+        assert attached.status_code == 200, attached.text
+        replaced = await client.post("/api/admin/events", json=QUARTERS_DOC, headers=ADMIN)
+    assert replaced.status_code == 200, replaced.text
+    assert [s["key"] for s in replaced.json()["config"]["stages"]][:2] == [
+        "quarter_a",
+        "quarter_b",
+    ]

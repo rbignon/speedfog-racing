@@ -971,11 +971,12 @@ class EventStage(BaseModel):
 
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
-    kind: Literal["semi", "newcomers", "final"]
+    kind: Literal["quarter", "semi", "newcomers", "final"]
     date: datetime
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
     from_: list[str] | None = Field(default=None, alias="from")
+    # How many of this stage's runners go on to the stage naming it in ``from``.
     advance: int | None = Field(default=None, ge=1, le=3)
     size: int | None = Field(default=None, ge=2, le=8)
     modes: list[str] = []
@@ -984,15 +985,23 @@ class EventStage(BaseModel):
     def _check_kind_fields(self) -> "EventStage":
         if self.date.tzinfo is None:
             raise ValueError("date must be timezone-aware")
-        if self.kind == "semi":
+        if self.seeds is not None:
             if not self.seeds or any(s < 1 for s in self.seeds):
-                raise ValueError("a semi stage needs positive seeds")
+                raise ValueError("seeds must be positive ladder positions")
             if len(set(self.seeds)) != len(self.seeds):
                 raise ValueError("seeds must be distinct")
-        if self.kind == "final" and (not self.from_ or self.advance is None):
-            raise ValueError("a final stage needs from and advance")
-        if self.kind == "newcomers" and self.size is None:
-            raise ValueError("a newcomers stage needs size")
+        if self.from_ is not None and not self.from_:
+            raise ValueError("from must name at least one stage")
+        if self.kind == "newcomers":
+            if self.size is None:
+                raise ValueError("a newcomers stage needs size")
+            if self.seeds is not None or self.from_ is not None or self.advance is not None:
+                raise ValueError("a newcomers stage takes no seeds, from or advance")
+        else:
+            if (self.seeds is None) == (self.from_ is None):
+                raise ValueError("a stage takes its field from exactly one of seeds or from")
+            if self.size is not None:
+                raise ValueError("size only applies to a newcomers stage")
         return self
 
 
@@ -1014,27 +1023,49 @@ class EventConfig(BaseModel):
         stage_keys = [s.key for s in self.stages]
         if len(set(stage_keys)) != len(stage_keys):
             raise ValueError("stage keys must be unique")
-        semi_keys = {s.key for s in self.stages if s.kind == "semi"}
-        semi_seeds = [seed for s in self.stages if s.kind == "semi" for seed in (s.seeds or [])]
-        duplicated_seeds = sorted({seed for seed in semi_seeds if semi_seeds.count(seed) > 1})
+        seeded = [s for s in self.stages if s.seeds is not None]
+        all_seeds = [seed for s in seeded for seed in s.seeds or []]
+        duplicated_seeds = sorted({seed for seed in all_seeds if all_seeds.count(seed) > 1})
         if duplicated_seeds:
             raise ValueError(
-                f"seeds must be distinct across semi stages, duplicated: {duplicated_seeds}"
+                f"seeds must be distinct across stages, duplicated: {duplicated_seeds}"
             )
         # The newcomers' group starts after the largest seed, so a gap would
         # drop those ladder positions from every playoff group at once; and the
-        # page reads the cut off the semis' own field sizes, which a gap makes
-        # a smaller number than the positions the semis actually reach into.
-        missing = sorted(set(range(1, len(semi_seeds) + 1)) - set(semi_seeds))
+        # page reads the cut off the seeded fields' sizes, which a gap makes
+        # a smaller number than the positions the seeds actually reach into.
+        missing = sorted(set(range(1, len(all_seeds) + 1)) - set(all_seeds))
         if missing:
             raise ValueError(
                 f"seeds must cover the ladder from 1 without a gap, missing: {missing}"
             )
+        position = {s.key: i for i, s in enumerate(self.stages)}
+        takers: dict[str, list[str]] = {}
         for stage in self.stages:
-            if stage.kind == "final":
-                unknown = [k for k in (stage.from_ or []) if k not in semi_keys]
-                if unknown:
-                    raise ValueError(f"from must name semi stages, got {unknown}")
+            for source in stage.from_ or []:
+                if position.get(source, len(self.stages)) >= position[stage.key]:
+                    raise ValueError(
+                        f"from must name stages placed before {stage.key}, got {source!r}"
+                    )
+                if self.stages[position[source]].kind == "newcomers":
+                    raise ValueError(f"from cannot name the newcomers stage ({stage.key})")
+                takers.setdefault(source, []).append(stage.key)
+        for stage in self.stages:
+            taken_by = takers.get(stage.key, [])
+            if len(taken_by) > 1:
+                raise ValueError(f"{stage.key} feeds more than one stage: {taken_by}")
+            if taken_by and stage.advance is None:
+                raise ValueError(f"{stage.key} feeds {taken_by[0]} and needs advance")
+            if not taken_by and stage.advance is not None:
+                raise ValueError(f"{stage.key} has advance but no stage takes from it")
+            if stage.advance is not None and stage.advance > self.field_size(stage):
+                raise ValueError(
+                    f"{stage.key}: advance {stage.advance} exceeds its field of "
+                    f"{self.field_size(stage)}"
+                )
+        for kind in ("final", "newcomers"):
+            if sum(1 for s in self.stages if s.kind == kind) > 1:
+                raise ValueError(f"at most one {kind} stage")
         # The announcement is the newcomer cut. A newcomers' final draws its
         # field from that cut, so it must be an explicit date, never the
         # timeline's display default.
@@ -1059,6 +1090,15 @@ class EventConfig(BaseModel):
 
     def final_stage(self) -> EventStage | None:
         return next((s for s in self.stages if s.kind == "final"), None)
+
+    def field_size(self, stage: EventStage) -> int:
+        """Runners a stage seats: its seeds, the newcomers' size, or what its sources send on."""
+        if stage.seeds is not None:
+            return len(stage.seeds)
+        if stage.size is not None:
+            return stage.size
+        sources = [self.stage(key) for key in stage.from_ or []]
+        return sum(source.advance or 0 for source in sources if source is not None)
 
 
 class EventTimelineStopResponse(BaseModel):

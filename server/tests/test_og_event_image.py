@@ -42,6 +42,7 @@ CONFIG = {
             "date": SEMI_A.isoformat(),
             "races": 1,
             "seeds": [1, 2],
+            "advance": 2,
         },
         {
             "key": "semi_b",
@@ -50,6 +51,7 @@ CONFIG = {
             "date": SEMI_B.isoformat(),
             "races": 1,
             "seeds": [3, 4],
+            "advance": 2,
         },
         {
             "key": "newcomers",
@@ -66,7 +68,6 @@ CONFIG = {
             "date": FINAL.isoformat(),
             "races": 1,
             "from": ["semi_a", "semi_b"],
-            "advance": 2,
         },
     ],
 }
@@ -448,7 +449,7 @@ def test_a_wide_semi_keeps_its_line_up_on_the_card() -> None:
         **CONFIG,
         "stages": [
             {**CONFIG["stages"][0], "seeds": list(range(1, 12))},
-            {**CONFIG["stages"][1], "seeds": [12]},
+            {**CONFIG["stages"][1], "seeds": [12], "advance": 1},
             *CONFIG["stages"][2:],
         ],
     }

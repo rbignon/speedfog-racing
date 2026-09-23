@@ -1297,17 +1297,7 @@ async def admin_attach_race_to_event(
     else:
         stage = config.stage(slot.key)
         assert stage is not None, "validate_slot already rejected unknown stages"
-        if stage.kind == "semi":
-            assert stage.seeds is not None, "schema requires seeds for a semi stage"
-            size = len(stage.seeds)
-        elif stage.kind == "newcomers":
-            assert stage.size is not None, "schema requires size for a newcomers stage"
-            size = stage.size
-        else:
-            assert stage.advance is not None and stage.from_ is not None, (
-                "schema requires from and advance for a final stage"
-            )
-            size = stage.advance * len(stage.from_)
+        size = config.field_size(stage)
         if race.max_participants is not None and race.max_participants < size:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
