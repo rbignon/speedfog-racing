@@ -327,7 +327,9 @@ async def download_pack(
             " Seed files are periodically removed after use.",
         )
 
-    filename = f"speedfog_training_{sanitize_filename(session.user.twitch_username)}.zip"
+    username = sanitize_filename(session.user.twitch_username)
+    seed_slug = sanitize_filename(session.seed.seed_number)
+    filename = f"speedfog_training_{username}_{seed_slug}.zip"
     return StreamingResponse(
         stream,
         media_type="application/zip",

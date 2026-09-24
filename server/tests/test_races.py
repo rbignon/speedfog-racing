@@ -953,7 +953,8 @@ async def test_download_my_seed_pack_success(
         )
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/zip"
-        assert "speedfog_player1.zip" in response.headers["content-disposition"]
+        disposition = response.headers["content-disposition"]
+        assert 'filename="speedfog_player1_abc123.zip"' in disposition
 
 
 @pytest.mark.asyncio
@@ -989,7 +990,8 @@ async def test_seed_pack_ticket_download_flow(
         dl = await client.get(f"/api/races/{race_id}/my-seed-pack?t={ticket}")
         assert dl.status_code == 200
         assert dl.headers["content-type"] == "application/zip"
-        assert "speedfog_player1.zip" in dl.headers["content-disposition"]
+        disposition = dl.headers["content-disposition"]
+        assert 'filename="speedfog_player1_abc123.zip"' in disposition
 
 
 @pytest.mark.asyncio

@@ -186,7 +186,7 @@ The ticket endpoints run the same gating as the download endpoints, including ch
 
 4. **Inject config**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, followed by the rewritten central directory and a new EOCD.
 
-5. **Serve response**: FastAPI `StreamingResponse` with the exact `Content-Length` computed up front (original size, minus the dropped `graph.json` record, plus the config entry). No temp file is written.
+5. **Serve response**: FastAPI `StreamingResponse` with the exact `Content-Length` computed up front (original size, minus the dropped `graph.json` record, plus the config entry). No temp file is written. The download is named `speedfog_<username>_<slug>.zip`, `<slug>` being the seed's `seed_number` (the slug shown as "Seed <slug>" on the race, daily and training pages); both parts are sanitized to `[a-zA-Z0-9_]`.
 
 ### Training Mode Variant
 
@@ -195,6 +195,7 @@ The ticket endpoints run the same gating as the download endpoints, including ch
 - Sets `training = true` in the `[server]` section.
 - Uses the training session's `mod_token` and `id` (as `race_id`).
 - Omits `seed_id`, since training sessions don't use stale seed detection.
+- Names the download `speedfog_training_<username>_<slug>.zip`.
 
 ### Stale Seed Detection
 

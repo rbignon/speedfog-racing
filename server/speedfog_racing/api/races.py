@@ -2001,7 +2001,9 @@ async def download_my_seed_pack(
             " Seed files are removed after a race ends.",
         )
 
-    filename = f"speedfog_{sanitize_filename(user.twitch_username)}.zip"
+    username = sanitize_filename(user.twitch_username)
+    seed_slug = sanitize_filename(race.seed.seed_number)
+    filename = f"speedfog_{username}_{seed_slug}.zip"
     return StreamingResponse(
         stream,
         media_type="application/zip",

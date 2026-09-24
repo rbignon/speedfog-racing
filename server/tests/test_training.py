@@ -2360,6 +2360,8 @@ async def test_training_pack_ticket_download_flow(
         dl = await client.get(f"/api/training/{session_id}/pack?t={ticket}")
         assert dl.status_code == 200
         assert dl.headers["content-type"] == "application/zip"
+        disposition = dl.headers["content-disposition"]
+        assert 'filename="speedfog_training_trainer_train_zip.zip"' in disposition
 
 
 @pytest.mark.asyncio
