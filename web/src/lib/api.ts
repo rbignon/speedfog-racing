@@ -1178,8 +1178,11 @@ export async function fetchMyRaces(status?: string): Promise<Race[]> {
 /**
  * Fetch a user's public profile by Twitch username.
  */
-export async function fetchUserProfile(username: string): Promise<UserProfile> {
-  const response = await fetch(
+export async function fetchUserProfile(
+  username: string,
+  customFetch: typeof fetch = fetch,
+): Promise<UserProfile> {
+  const response = await customFetch(
     `${API_BASE}/users/${encodeURIComponent(username)}`,
   );
   if (!response.ok)

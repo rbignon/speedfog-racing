@@ -9,7 +9,11 @@
 
   interface Props {
     scene: CastSceneId;
-    race: RaceDetail;
+    /** Absent on the talk scene: it has no single race to describe, and its
+     * layout carries no `race` or `clock` panel for this component to draw
+     * into, so the race-zone and clock-zone blocks below simply don't
+     * render. Every other scene always passes one. */
+    race?: RaceDetail;
     cams: number;
     casters: [string | null, string | null];
     /** The co-brand's name, resolved by the route from `?event=<slug>`; null
@@ -25,10 +29,16 @@
 
   // raceStore carries the live values once connected; the initial REST fetch
   // (`race`) is what the page paints before the WebSocket catches up, same
-  // fallback the existing overlays use.
-  let status = $derived(raceStore.race?.status ?? race.status);
-  let startedAt = $derived(raceStore.race?.started_at ?? race.started_at);
-  let raceEndsAt = $derived(raceStore.race?.race_ends_at ?? race.race_ends_at);
+  // fallback the existing overlays use. Neither exists on the talk scene
+  // (no race, no socket), so these fall back to a harmless default that is
+  // never actually shown, since `panels.clock` is absent there too.
+  let status = $derived(raceStore.race?.status ?? race?.status ?? "setup");
+  let startedAt = $derived(
+    raceStore.race?.started_at ?? race?.started_at ?? null,
+  );
+  let raceEndsAt = $derived(
+    raceStore.race?.race_ends_at ?? race?.race_ends_at ?? null,
+  );
 
   // The clock lags by the same delay the rest of the scene's data does
   // (raceStore.connect's delay queue), read straight from the URL like the
@@ -42,7 +52,7 @@
   // the interval stops rather than ticking on for a clock nobody reads.
   let now = $state(Date.now());
   $effect(() => {
-    if (status === "finished") return;
+    if (!panels.clock || status === "finished") return;
     const id = setInterval(() => {
       now = Date.now();
     }, 1000);
@@ -87,10 +97,12 @@
     3: ["rz1", "rz2", "rz3"],
   };
   let raceLines = $derived(
-    splitRaceName(race.name).map((text, i, all) => ({
-      text,
-      cls: RACE_LINE_CLASSES[all.length][i],
-    })),
+    race
+      ? splitRaceName(race.name).map((text, i, all) => ({
+          text,
+          cls: RACE_LINE_CLASSES[all.length][i],
+        }))
+      : [],
   );
 </script>
 
