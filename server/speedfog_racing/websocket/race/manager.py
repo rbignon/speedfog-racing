@@ -18,6 +18,7 @@ from speedfog_racing.services.chat_access import (
 )
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.twitch_live import twitch_live_service
+from speedfog_racing.websocket.handler import close_evicted
 from speedfog_racing.websocket.race.projection import (
     ProjectedParticipant,
     project_participant_at,
@@ -107,6 +108,7 @@ class RaceRoom:
                 # during the send may have replaced it with a newer one.
                 if self.mods.get(pid) is conn:
                     self.mods.pop(pid, None)
+                    close_evicted(conn.websocket)
 
     async def send_to_mod(self, participant_id: uuid.UUID, message: str) -> bool:
         """Unicast a message to a single mod connection.
@@ -131,6 +133,7 @@ class RaceRoom:
             # the send may have replaced it with a newer one.
             if self.mods.get(participant_id) is conn:
                 self.mods.pop(participant_id, None)
+                close_evicted(conn.websocket)
             return False
 
     async def broadcast_to_spectators(self, message: str) -> None:
@@ -153,8 +156,8 @@ class RaceRoom:
 
         results = await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in results:
-            if conn is not None:
-                self.spectators.pop(conn.connection_id, None)
+            if conn is not None and self.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
 
     async def broadcast_to_all(self, message: str) -> None:
         """Send message to all connections (mods + spectators) concurrently."""
@@ -182,7 +185,8 @@ class RaceRoom:
 
         await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in failed:
-            self.spectators.pop(conn.connection_id, None)
+            if self.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
 
     async def broadcast_chat_public(self, message: str, race: Race) -> None:
         """Broadcast public chat respecting per-connection access.
@@ -216,7 +220,8 @@ class RaceRoom:
 
         await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in failed:
-            self.spectators.pop(conn.connection_id, None)
+            if self.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
 
     def get_spectator_by_user_id(self, user_id: uuid.UUID) -> SpectatorConnection | None:
         """Find a spectator connection by user ID."""
@@ -515,12 +520,18 @@ class ConnectionManager:
             *(_send_spectator(c) for c in spectator_conns),
         )
 
-        if failed_mod is not None and room.mods.get(failed_mod) is evicted_mod:
+        if (
+            failed_mod is not None
+            and evicted_mod is not None
+            and room.mods.get(failed_mod) is evicted_mod
+        ):
             # Only evict if it is still the same connection: a reconnect during
             # the send may have replaced it with a newer one.
             room.mods.pop(failed_mod, None)
+            close_evicted(evicted_mod.websocket)
         for conn in failed_spectators:
-            room.spectators.pop(conn.connection_id, None)
+            if room.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
 
     async def broadcast_player_update(
         self,

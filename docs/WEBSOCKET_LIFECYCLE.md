@@ -241,7 +241,7 @@ RaceRoom:
 
 **Snapshot pattern**: Both `broadcast_to_mods()` and `broadcast_to_spectators()` take a snapshot (`dict(self.mods)` / `list(self.spectators)`) before the `asyncio.gather()`. This prevents index corruption if `connect_mod`/`disconnect_mod` modify the collection during the concurrent sends.
 
-**Send timeout**: Each individual send is wrapped in `asyncio.wait_for(send, timeout=5.0s)`. Failed sends return the connection identity; the stale connection is then removed from the collection after the gather completes.
+**Send timeout**: Each individual send is wrapped in `asyncio.wait_for(send, timeout=5.0s)`. Failed sends return the connection identity; the stale connection is then removed from the collection after the gather completes, and closed with code `1013` (`close_evicted` in `handler.py`). Without the close, the handler's heartbeat would keep the socket alive and the client would silently stop receiving broadcasts (frozen web leaderboard, mod shown as disconnected); with it, both clients reconnect and resync. The close runs as a background task so a stalled peer's close handshake cannot hold up the broadcast. A mod eviction only happens (and only closes) when the room entry still refers to the failing connection, so a reconnect that replaced it mid-send is left untouched.
 
 **Room cleanup**: Rooms are deleted from `self.rooms` when both `mods` and `spectators` are empty, preventing unbounded memory growth from abandoned races.
 

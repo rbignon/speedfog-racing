@@ -37,7 +37,7 @@ from speedfog_racing.services.chat_access import (
 )
 from speedfog_racing.services.daily_points_service import daily_points_for_race
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.websocket.handler import BaseSpectatorHandler
+from speedfog_racing.websocket.handler import BaseSpectatorHandler, close_evicted
 from speedfog_racing.websocket.race.manager import (
     SEND_TIMEOUT,
     SpectatorConnection,
@@ -757,8 +757,8 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
 
     results = await asyncio.gather(*(_send_to(conn) for conn in snapshot))
     for conn in results:
-        if conn is not None:
-            room.spectators.pop(conn.connection_id, None)
+        if conn is not None and room.spectators.pop(conn.connection_id, None) is not None:
+            close_evicted(conn.websocket)
 
 
 async def broadcast_race_info_update(race: Race) -> None:

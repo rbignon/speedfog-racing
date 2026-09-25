@@ -175,6 +175,37 @@ async def heartbeat_loop(
             pass
 
 
+# Close code for a connection dropped from its room after a failed send
+# ("Try Again Later"). Below 4000, so web and mod clients reconnect and
+# resync instead of treating it as a permanent application error.
+EVICTED_CLOSE_CODE = 1013
+
+# Strong references to in-flight eviction closes (tasks are otherwise only
+# weakly held by the loop).
+_eviction_closes: set[asyncio.Task[None]] = set()
+
+
+def close_evicted(websocket: WebSocket) -> None:
+    """Close a connection just evicted from its room, without waiting for it.
+
+    Eviction stops room broadcasts to the connection, but its handler's
+    heartbeat would keep the socket alive and the client would silently stop
+    receiving updates. Closing makes the client reconnect. The close runs in
+    the background: the handshake with a stalled peer can take seconds and
+    must not hold up the broadcast that detected the failure.
+    """
+
+    async def _close() -> None:
+        try:
+            await websocket.close(code=EVICTED_CLOSE_CODE, reason="evicted after failed send")
+        except Exception:
+            logger.debug("Failed to close evicted connection", exc_info=True)
+
+    task = asyncio.create_task(_close())
+    _eviction_closes.add(task)
+    task.add_done_callback(_eviction_closes.discard)
+
+
 def extract_event_ids(graph_json: dict[str, Any]) -> tuple[list[int], int | None]:
     """Extract sorted event_ids and finish_event from graph_json."""
     finish_event_id: int | None = None

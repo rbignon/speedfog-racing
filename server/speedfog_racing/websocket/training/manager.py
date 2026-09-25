@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 from fastapi import WebSocket
 
+from speedfog_racing.websocket.handler import close_evicted
+
 SEND_TIMEOUT = 5.0
 
 logger = logging.getLogger(__name__)
@@ -54,8 +56,8 @@ class TrainingRoom:
 
         results = await asyncio.gather(*(_send(c) for c in snapshot))
         for conn in results:
-            if conn is not None:
-                self.spectators.pop(conn.connection_id, None)
+            if conn is not None and self.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
 
     async def broadcast_to_mod(self, message: str) -> None:
         """Send message to mod if connected."""
@@ -66,13 +68,10 @@ class TrainingRoom:
             await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
         except Exception:
             logger.warning(f"Failed to send to mod for session {self.session_id}")
-            try:
-                await conn.websocket.close()
-            except Exception:
-                pass
             # Only clear if still the current connection (may have been replaced)
             if self.mod is conn:
                 self.mod = None
+                close_evicted(conn.websocket)
 
     async def broadcast_to_all(self, message: str) -> None:
         """Send message to mod and all spectators."""
