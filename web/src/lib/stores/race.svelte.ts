@@ -15,6 +15,7 @@ import {
 } from "$lib/websocket";
 import { preserveZoneHistory } from "$lib/zone-history";
 import { computeGap } from "$lib/gap";
+import { createDelayQueue, type DelayQueue } from "$lib/cast/delay";
 
 /**
  * Restore daily_points from the previous participant when an incoming
@@ -81,6 +82,7 @@ class RaceStore {
   private currentRaceId: string | null = null;
   private currentLocale: string | null = null;
   private finishCheckTimer: ReturnType<typeof setTimeout> | null = null;
+  private delayQueue: DelayQueue | null = null;
 
   // Render in the server's order (the server is the single source of ranking
   // truth, identical to the in-game mod) and attach each player's live gap to
@@ -114,8 +116,12 @@ class RaceStore {
 
   /**
    * Connect to a race's WebSocket for live updates.
+   *
+   * `delayMs` holds every update back by that much, for cast overlays whose
+   * video sources run behind the data. The first race_state still applies at
+   * once, so the overlay never starts blank.
    */
-  connect(raceId: string, locale: string = "en") {
+  connect(raceId: string, locale: string = "en", delayMs: number = 0) {
     // If already connected to this race with same locale, do nothing
     if (
       this.currentRaceId === raceId &&
@@ -127,6 +133,8 @@ class RaceStore {
 
     // Disconnect from previous race
     this.disconnect();
+
+    this.delayQueue = delayMs > 0 ? createDelayQueue(delayMs) : null;
 
     this.currentRaceId = raceId;
     this.currentLocale = locale;
@@ -160,128 +168,172 @@ class RaceStore {
         },
 
         onRaceState: (msg) => {
-          this.race = msg.race;
-          this.seed = msg.seed;
-          this.participants = msg.participants;
-          // Older servers may not include pending_invites: keep an empty
-          // array so the page can distinguish "WS sent the list" from
-          // "WS hasn't broadcast yet" (null).
-          this.pendingInvites = msg.pending_invites ?? [];
-          this.loading = false;
-          // Cancel pending finish check, race_state already has the data
-          if (this.finishCheckTimer) {
-            clearTimeout(this.finishCheckTimer);
-            this.finishCheckTimer = null;
-          }
+          const apply = () => {
+            this.race = msg.race;
+            this.seed = msg.seed;
+            this.participants = msg.participants;
+            // Older servers may not include pending_invites: keep an empty
+            // array so the page can distinguish "WS sent the list" from
+            // "WS hasn't broadcast yet" (null).
+            this.pendingInvites = msg.pending_invites ?? [];
+            this.loading = false;
+            // Cancel pending finish check, race_state already has the data
+            if (this.finishCheckTimer) {
+              clearTimeout(this.finishCheckTimer);
+              this.finishCheckTimer = null;
+            }
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply, { immediate: this.race === null });
         },
 
         onLeaderboardUpdate: (msg) => {
-          // Restore the fields race_state carries but this high-frequency
-          // message drops: zone_history (so the DAG keeps its trail) and
-          // daily_points (so a finished daily's "+points" indicator survives
-          // the connect-time leaderboard_update).
-          const prevById = new Map(this.participants.map((p) => [p.id, p]));
-          this.participants = msg.participants.map((p) => {
-            const prev = prevById.get(p.id);
-            return preserveDailyPoints(
-              preserveZoneHistory(p, prev?.zone_history),
-              prev?.daily_points,
-            );
-          });
-          // Capture the gap inputs this message uniquely carries. The full
-          // participant list lets us rebuild layerEntryIgts wholesale, which
-          // self-heals stale ids; leader_splits is absent until a leader exists.
-          this.leaderSplits = msg.leader_splits ?? null;
-          const entries: Record<string, number> = {};
-          for (const p of msg.participants) {
-            if (p.layer_entry_igt != null) entries[p.id] = p.layer_entry_igt;
-          }
-          this.layerEntryIgts = entries;
+          const apply = () => {
+            // Restore the fields race_state carries but this high-frequency
+            // message drops: zone_history (so the DAG keeps its trail) and
+            // daily_points (so a finished daily's "+points" indicator survives
+            // the connect-time leaderboard_update).
+            const prevById = new Map(this.participants.map((p) => [p.id, p]));
+            this.participants = msg.participants.map((p) => {
+              const prev = prevById.get(p.id);
+              return preserveDailyPoints(
+                preserveZoneHistory(p, prev?.zone_history),
+                prev?.daily_points,
+              );
+            });
+            // Capture the gap inputs this message uniquely carries. The full
+            // participant list lets us rebuild layerEntryIgts wholesale, which
+            // self-heals stale ids; leader_splits is absent until a leader exists.
+            this.leaderSplits = msg.leader_splits ?? null;
+            const entries: Record<string, number> = {};
+            for (const p of msg.participants) {
+              if (p.layer_entry_igt != null) entries[p.id] = p.layer_entry_igt;
+            }
+            this.layerEntryIgts = entries;
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onPlayerUpdate: (msg) => {
-          // Same as leaderboard_update: restore the race_state-only fields the
-          // message drops (zone_history, daily_points).
-          const existing = this.participants.find(
-            (p) => p.id === msg.player.id,
-          );
-          const player = preserveDailyPoints(
-            preserveZoneHistory(msg.player, existing?.zone_history),
-            existing?.daily_points,
-          );
-          this.participants = this.participants.map((p) =>
-            p.id === player.id ? player : p,
-          );
+          const apply = () => {
+            // Same as leaderboard_update: restore the race_state-only fields the
+            // message drops (zone_history, daily_points).
+            const existing = this.participants.find(
+              (p) => p.id === msg.player.id,
+            );
+            const player = preserveDailyPoints(
+              preserveZoneHistory(msg.player, existing?.zone_history),
+              existing?.daily_points,
+            );
+            this.participants = this.participants.map((p) =>
+              p.id === player.id ? player : p,
+            );
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onZoneHistory: (msg) => {
-          this.participants = this.participants.map((p) =>
-            p.id === msg.participant_id
-              ? { ...p, zone_history: msg.history }
-              : p,
-          );
+          const apply = () => {
+            this.participants = this.participants.map((p) =>
+              p.id === msg.participant_id
+                ? { ...p, zone_history: msg.history }
+                : p,
+            );
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onRaceStatusChange: (msg) => {
-          if (this.race) {
-            this.race = {
-              ...this.race,
-              status: msg.status,
-              started_at: msg.started_at ?? this.race.started_at,
-              countdown_seconds:
-                msg.countdown_seconds ?? this.race.countdown_seconds,
-            };
-          }
-          // Safety net: if status changed to "finished" but zone_history is
-          // missing (e.g. race_state broadcast failed), reconnect after a
-          // short delay to get the full state from the initial handshake.
-          if (msg.status === "finished") {
-            this.scheduleFinishCheck();
-          }
+          const apply = () => {
+            if (this.race) {
+              this.race = {
+                ...this.race,
+                status: msg.status,
+                started_at: msg.started_at ?? this.race.started_at,
+                countdown_seconds:
+                  msg.countdown_seconds ?? this.race.countdown_seconds,
+              };
+            }
+            // Safety net: if status changed to "finished" but zone_history is
+            // missing (e.g. race_state broadcast failed), reconnect after a
+            // short delay to get the full state from the initial handshake.
+            if (msg.status === "finished") {
+              this.scheduleFinishCheck();
+            }
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onRaceInfoUpdate: (msg) => {
-          // Wholesale replacement so any field the organizer changed via
-          // PATCH /races (race_duration_minutes extension, max_participants
-          // bump, open_registration toggle, etc.) propagates to the live UI.
-          this.race = msg.race;
+          const apply = () => {
+            // Wholesale replacement so any field the organizer changed via
+            // PATCH /races (race_duration_minutes extension, max_participants
+            // bump, open_registration toggle, etc.) propagates to the live UI.
+            this.race = msg.race;
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onSpectatorCount: (msg) => {
-          this.spectatorCount = msg.count;
+          const apply = () => {
+            this.spectatorCount = msg.count;
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onChatMessage: (msg) => {
-          if (msg.channel === "participants") {
-            this.chatMessagesParticipants = [
-              ...this.chatMessagesParticipants,
-              msg,
-            ];
-          } else {
-            this.chatMessagesPublic = [...this.chatMessagesPublic, msg];
-          }
+          const apply = () => {
+            if (msg.channel === "participants") {
+              this.chatMessagesParticipants = [
+                ...this.chatMessagesParticipants,
+                msg,
+              ];
+            } else {
+              this.chatMessagesPublic = [...this.chatMessagesPublic, msg];
+            }
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onChatHistory: (msg) => {
-          if (msg.channel === "participants") {
-            this.chatMessagesParticipants = [...msg.messages];
-          } else {
-            this.chatMessagesPublic = [...msg.messages];
-          }
-          this.chatHistoryVersion++;
+          const apply = () => {
+            if (msg.channel === "participants") {
+              this.chatMessagesParticipants = [...msg.messages];
+            } else {
+              this.chatMessagesPublic = [...msg.messages];
+            }
+            this.chatHistoryVersion++;
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onChatReactionUpdate: (msg) => {
-          applyChatReactionUpdate(
-            msg.channel === "participants"
-              ? this.chatMessagesParticipants
-              : this.chatMessagesPublic,
-            msg,
-          );
+          const apply = () => {
+            applyChatReactionUpdate(
+              msg.channel === "participants"
+                ? this.chatMessagesParticipants
+                : this.chatMessagesPublic,
+              msg,
+            );
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
 
         onDailyStreakUpdate: (msg) => {
-          this.dailyStreakUpdate = msg;
+          const apply = () => {
+            this.dailyStreakUpdate = msg;
+          };
+          if (!this.delayQueue) return apply();
+          this.delayQueue.push(apply);
         },
       },
       locale,
@@ -298,6 +350,8 @@ class RaceStore {
       clearTimeout(this.finishCheckTimer);
       this.finishCheckTimer = null;
     }
+    this.delayQueue?.clear();
+    this.delayQueue = null;
     if (this.ws) {
       this.ws.disconnect();
       this.ws = null;
