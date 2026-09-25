@@ -80,7 +80,25 @@
     color: var(--color-text-disabled);
   }
 
+  /* A resolved zone name here is the whole route label ("Ancient Ruins of
+   * Rauh - Romina, Saint of the Bud"), not shortened (unlike CastStandings'
+   * zoneLabel): the log's job is what just happened, where the full label
+   * is the information. Its exposure is a layout one, not a data one: one
+   * line, clipped with an ellipsis rather than wrapping into the next row
+   * or spilling into the standings panel 16px to the right. The player
+   * name cell carries the same guard for the same reason (a long Twitch
+   * display name is the same kind of unbounded string). `min-width: 0`
+   * overrides the flex item's default auto min-width (which would sit at
+   * the full unwrapped content width and defeat the guard); `display:
+   * inline-block` is what makes `overflow`/`text-overflow` apply at all,
+   * since both are no-ops on a plain inline box (mirrors CastMiniStandings'
+   * and CastStandings' own `.nm`). */
   .fn {
+    display: inline-block;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 24px;
@@ -88,9 +106,12 @@
   }
 
   .fe {
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    display: inline-block;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .fe.dead {

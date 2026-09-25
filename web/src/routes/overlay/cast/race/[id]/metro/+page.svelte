@@ -108,10 +108,17 @@
 </CastPlate>
 
 <style>
+  /* A plain block of the rect's own width and height, not a centring flex
+   * box: FollowViewport's inner svg is `width: 100%`, and a flex child's
+   * percentage width resolves against its content rather than the
+   * container unless something makes it grow, which nothing here does. As
+   * a block child its 100% resolves against this element's own definite
+   * width (from mapRect, the same rectangle layout.ts gives every other
+   * coordinate in this scene), which is what lets the svg's own aspect
+   * (fitted to containerAspect) land on this box's actual size instead of
+   * FollowViewport's `min-width: 600px` winning by default.
+   */
   .map {
     position: absolute;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
 </style>
