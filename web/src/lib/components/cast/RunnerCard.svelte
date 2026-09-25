@@ -191,6 +191,9 @@
     padding: 14px 16px;
     background: var(--color-surface);
     border: 1px solid var(--color-border);
+    /* The card has a fixed height from `rect`; nothing inside it, however a
+     * future seed names a node, may spill past its edge onto the plate. */
+    overflow: hidden;
   }
 
   /* The route colour that used to live on a separate dot now runs along
@@ -413,13 +416,22 @@
   }
 
   .sp-r b {
+    flex: 1 1 auto;
+    min-width: 0;
     font-family: var(--font-family);
     font-weight: 400;
     font-size: 16px;
     color: var(--color-text-secondary);
+    /* One line, always: a shortened name (see buildCastSplits) is meant to
+     * fit, but nothing here should be able to wrap and push the row (and
+     * the splits block behind it) past the card's fixed height. */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .sp-r i {
+    flex-shrink: 0;
     font-style: normal;
     font-family: var(--font-mono);
     font-size: 16px;

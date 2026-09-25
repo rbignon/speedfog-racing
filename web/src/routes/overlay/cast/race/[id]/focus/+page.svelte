@@ -32,7 +32,7 @@
 
   // WsParticipant.current_zone is a graph node id, never a display string
   // (see RunnerCard's zoneLabel): resolve it from the seed's own graph, the
-  // same nodeNames pattern the quad scene's log and buildCastSplits share.
+  // same nodeNames pattern the quad scene builds and buildCastSplits reuses.
   let zoneNames = $derived(
     new Map(
       raceStore.seed?.graph_json
