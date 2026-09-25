@@ -41,11 +41,14 @@ export function parseCastParams(url: URL): CastParams {
  * the runners nobody named, in join order. Join order is the default on
  * purpose: the live ranking moves during the race, and a hole that changed
  * runner mid-race would name the wrong player over someone else's video.
+ * The fallback pool is sorted by `color_index`, which the server assigns as
+ * max + 1 when a runner joins, so it is join order by construction. Callers
+ * pass the live leaderboard, which is ordered by rank, so sorting here is what
+ * keeps a hole from re-seating itself when the standings move.
  */
-export function resolveSlots<T extends { twitch_username: string }>(
-  participants: T[],
-  wanted: (string | null)[],
-): (T | null)[] {
+export function resolveSlots<
+  T extends { twitch_username: string; color_index: number },
+>(participants: T[], wanted: (string | null)[]): (T | null)[] {
   const seated: (T | null)[] = [null, null, null, null];
   const taken = new Set<T>();
 
@@ -61,7 +64,9 @@ export function resolveSlots<T extends { twitch_username: string }>(
     }
   });
 
-  const rest = participants.filter((p) => !taken.has(p));
+  const rest = participants
+    .filter((p) => !taken.has(p))
+    .sort((a, b) => a.color_index - b.color_index);
   for (let i = 0; i < seated.length; i++) {
     if (seated[i] === null && wanted[i] == null) {
       seated[i] = rest.shift() ?? null;

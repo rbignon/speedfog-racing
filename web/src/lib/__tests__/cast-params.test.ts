@@ -51,20 +51,23 @@ describe("parseCastParams", () => {
 });
 
 describe("resolveSlots", () => {
+  // color_index is the join order the server stamps on each runner; the live
+  // leaderboard hands them over sorted by rank instead, so these are shuffled.
   const field = [
-    { twitch_username: "nicky_rr" },
-    { twitch_username: "mm420_" },
-    { twitch_username: "isumami" },
-    { twitch_username: "funion_" },
+    { twitch_username: "isumami", color_index: 2 },
+    { twitch_username: "nicky_rr", color_index: 0 },
+    { twitch_username: "funion_", color_index: 3 },
+    { twitch_username: "mm420_", color_index: 1 },
   ];
+  const byJoin = [...field].sort((a, b) => a.color_index - b.color_index);
 
-  it("falls back to join order when no slot is named", () => {
-    expect(resolveSlots(field, [null, null, null, null])).toEqual(field);
+  it("seats the runners in join order, not in the order it was handed them", () => {
+    expect(resolveSlots(field, [null, null, null, null])).toEqual(byJoin);
   });
 
   it("matches a name whatever its case", () => {
     const seated = resolveSlots(field, ["ISUMAMI", null, null, null]);
-    expect(seated[0]).toBe(field[2]);
+    expect(seated[0]?.twitch_username).toBe("isumami");
   });
 
   it("fills the slots left open with the runners not seated yet, in join order", () => {
@@ -84,8 +87,8 @@ describe("resolveSlots", () => {
 
   it("seats a runner once: the second mention of the same name loses", () => {
     const seated = resolveSlots(field, ["mm420_", "mm420_", null, null]);
-    expect(seated[0]).toBe(field[1]);
-    expect(seated[1]).not.toBe(field[1]);
+    expect(seated[0]?.twitch_username).toBe("mm420_");
+    expect(seated[1]?.twitch_username).not.toBe("mm420_");
   });
 
   it("leaves the tail empty when the race is short of runners", () => {
