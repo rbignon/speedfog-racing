@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { page } from "$app/state";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
   import { raceStore } from "$lib/stores/race.svelte";
@@ -30,6 +31,7 @@
   } from "$lib/public-chat-access";
   import { isFrogTitle } from "$lib/format";
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
+  import CastSetup from "$lib/components/cast/CastSetup.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import TipTicker from "$lib/components/TipTicker.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
@@ -367,6 +369,7 @@
       : false,
   );
   let showObsModal = $state(false);
+  let showCastSetup = $state(false);
 
   let myParticipant = $derived(
     auth.user
@@ -486,6 +489,14 @@
   }
 
   let isCasterOrOrganizer = $derived(isCaster || isOrganizer);
+
+  // `?cast=1` opens the panel directly, so a caster can bookmark their own
+  // setup rather than clicking through from the sidebar every time.
+  $effect(() => {
+    if (page.url.searchParams.get("cast") === "1" && isCasterOrOrganizer) {
+      showCastSetup = true;
+    }
+  });
 
   // Live values: prefer the WS-broadcast race when present (raceStore.race
   // is updated by race_state on connect and race_info_update on PATCH) so
@@ -1104,6 +1115,13 @@
         >
       {/if}
 
+      {#if isCasterOrOrganizer}
+        <button
+          class="btn btn-outline cast-setup-btn"
+          onclick={() => (showCastSetup = true)}>Cast Setup</button
+        >
+      {/if}
+
       <div class="sidebar-footer">
         <SpectatorCount count={spectatorCount} />
       </div>
@@ -1230,83 +1248,87 @@
         </div>
       {/if}
 
-      <div class="dag-wrapper">
-        {#if countdownRemaining !== null}
-          <div class="go-overlay countdown-overlay">
-            <span class="countdown-text">{countdownRemaining}</span>
-          </div>
-        {:else if showGo}
-          <div class="go-overlay">
-            <span class="go-text">GO!</span>
-          </div>
-        {/if}
+      {#if showCastSetup}
+        <CastSetup race={initialRace} onClose={() => (showCastSetup = false)} />
+      {:else}
+        <div class="dag-wrapper">
+          {#if countdownRemaining !== null}
+            <div class="go-overlay countdown-overlay">
+              <span class="countdown-text">{countdownRemaining}</span>
+            </div>
+          {:else if showGo}
+            <div class="go-overlay">
+              <span class="go-text">GO!</span>
+            </div>
+          {/if}
 
-        {#if raceStatus === "setup" && myWsParticipantId && !dagHidden}
-          <div class="tip-rail">
-            <TipTicker poolName={initialRace.pool_name} variant="panel" />
-          </div>
-        {/if}
+          {#if raceStatus === "setup" && myWsParticipantId && !dagHidden}
+            <div class="tip-rail">
+              <TipTicker poolName={initialRace.pool_name} variant="panel" />
+            </div>
+          {/if}
 
-        {#if showJoinCta}
-          <JoinRaceCta
-            label={joinCtaLabel}
-            busy={joining}
-            error={joinError}
-            onclick={handleJoin}
-          />
-        {:else if dagHidden}
-          <div class="dag-placeholder">
-            <p class="dag-note">{dagHiddenReason}</p>
-          </div>
-        {:else if liveSeed?.graph_json && raceStatus === "running"}
-          {#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
+          {#if showJoinCta}
+            <JoinRaceCta
+              label={joinCtaLabel}
+              busy={joining}
+              error={joinError}
+              onclick={handleJoin}
+            />
+          {:else if dagHidden}
+            <div class="dag-placeholder">
+              <p class="dag-note">{dagHiddenReason}</p>
+            </div>
+          {:else if liveSeed?.graph_json && raceStatus === "running"}
+            {#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
+              <MetroDagProgressive
+                graphJson={liveSeed.graph_json}
+                participants={raceStore.participants}
+                myParticipantId={myWsParticipantId}
+                onzonecodex={showChatSidebar ? openZoneCodex : undefined}
+              />
+            {:else}
+              <MetroDagFull
+                graphJson={liveSeed.graph_json}
+                participants={raceStore.leaderboard}
+                {raceStatus}
+                highlightIds={selectedParticipantIds}
+                myParticipantId={myWsParticipantId}
+                onzonecodex={showChatSidebar ? openZoneCodex : undefined}
+              />
+            {/if}
+          {:else if liveSeed?.graph_json && raceStatus === "finished"}
+            {#if dagView === "map"}
+              <MetroDagFull
+                graphJson={liveSeed.graph_json}
+                participants={raceStore.leaderboard}
+                {raceStatus}
+                highlightIds={selectedParticipantIds}
+                focusNodeId={highlightFocusNodeId}
+                myParticipantId={myWsParticipantId}
+                onzonecodex={showChatSidebar ? openZoneCodex : undefined}
+              />
+            {:else}
+              <RaceReplay
+                graphJson={liveSeed.graph_json}
+                participants={raceStore.leaderboard}
+                focusNodeId={highlightFocusNodeId}
+                highlightIds={selectedParticipantIds}
+                myParticipantId={myWsParticipantId}
+              />
+            {/if}
+          {:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
             <MetroDagProgressive
               graphJson={liveSeed.graph_json}
               participants={raceStore.participants}
               myParticipantId={myWsParticipantId}
               onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
-          {:else}
-            <MetroDagFull
-              graphJson={liveSeed.graph_json}
-              participants={raceStore.leaderboard}
-              {raceStatus}
-              highlightIds={selectedParticipantIds}
-              myParticipantId={myWsParticipantId}
-              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
-            />
+          {:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
+            <MetroDag graphJson={liveSeed.graph_json} />
           {/if}
-        {:else if liveSeed?.graph_json && raceStatus === "finished"}
-          {#if dagView === "map"}
-            <MetroDagFull
-              graphJson={liveSeed.graph_json}
-              participants={raceStore.leaderboard}
-              {raceStatus}
-              highlightIds={selectedParticipantIds}
-              focusNodeId={highlightFocusNodeId}
-              myParticipantId={myWsParticipantId}
-              onzonecodex={showChatSidebar ? openZoneCodex : undefined}
-            />
-          {:else}
-            <RaceReplay
-              graphJson={liveSeed.graph_json}
-              participants={raceStore.leaderboard}
-              focusNodeId={highlightFocusNodeId}
-              highlightIds={selectedParticipantIds}
-              myParticipantId={myWsParticipantId}
-            />
-          {/if}
-        {:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
-          <MetroDagProgressive
-            graphJson={liveSeed.graph_json}
-            participants={raceStore.participants}
-            myParticipantId={myWsParticipantId}
-            onzonecodex={showChatSidebar ? openZoneCodex : undefined}
-          />
-        {:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
-          <MetroDag graphJson={liveSeed.graph_json} />
-        {/if}
-      </div>
+        </div>
+      {/if}
 
       {#if isOrganizer || auth.isAdmin}
         <RaceControls
@@ -2063,7 +2085,8 @@
   }
 
   /* Layout only: the rest comes from the global .btn-outline */
-  .obs-overlay-btn {
+  .obs-overlay-btn,
+  .cast-setup-btn {
     width: 100%;
     margin-top: 0.5rem;
   }
