@@ -51,6 +51,9 @@
     focusNodeId?: string | null;
     anonymous?: boolean;
     showLiveDots?: boolean;
+    /** Draw each live dot's runner name beside it. Off by default: see
+     * LivePlayerDots' own doc on the prop it forwards to. */
+    showPlayerLabels?: boolean;
     follow?: boolean;
     maxLayers?: number;
     fullPathOpacity?: boolean;
@@ -79,6 +82,7 @@
     focusNodeId = null,
     anonymous = false,
     showLiveDots = false,
+    showPlayerLabels = false,
     follow = false,
     maxLayers = 5,
     fullPathOpacity = false,
@@ -721,6 +725,7 @@
       {nodeMap}
       {raceStatus}
       preRace={raceStatus === "setup"}
+      {showPlayerLabels}
     />
   {:else}
     {#each playerPaths as path (path.id)}

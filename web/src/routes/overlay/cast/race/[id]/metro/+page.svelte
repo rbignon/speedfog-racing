@@ -82,6 +82,7 @@
         transparent
         follow
         showLiveDots
+        showPlayerLabels
         showLabels
         labelMaxChars={26}
         containerAspect={1888 / 482}

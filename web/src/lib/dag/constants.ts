@@ -175,3 +175,16 @@ export const LIVE_FINISHED_X_OFFSET = 20;
 
 /** X offset for setup player dots left of start node (px) */
 export const LIVE_START_X_OFFSET = -20;
+
+/** Font size for a live dot's player-name label (px), when `LivePlayerDots`
+ * is asked to draw one: a little larger than a zone label (LABEL_FONT_SIZE)
+ * since it identifies a person, not a place. */
+export const LIVE_LABEL_FONT_SIZE = 14;
+
+/** Vertical offset from a live dot's centre to its label's baseline, above
+ * the dot (px). Mirrors MetroDagFull's own node-label offsets (`labelY`),
+ * sized for the dot's fixed `RACER_DOT_RADIUS` rather than a per-node one. */
+export const LIVE_LABEL_OFFSET_ABOVE = 14;
+
+/** Same, when the label sits below the dot (px). */
+export const LIVE_LABEL_OFFSET_BELOW = 18;

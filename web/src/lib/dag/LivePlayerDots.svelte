@@ -13,6 +13,9 @@
     LIVE_SKULL_SIZE,
     LIVE_FINISHED_X_OFFSET,
     LIVE_START_X_OFFSET,
+    LIVE_LABEL_FONT_SIZE,
+    LIVE_LABEL_OFFSET_ABOVE,
+    LIVE_LABEL_OFFSET_BELOW,
   } from "./constants";
 
   interface Props {
@@ -21,9 +24,22 @@
     raceStatus?: string;
     /** Show dots in pre-race position (aligned left of start) */
     preRace?: boolean;
+    /** Draw each dot's runner name beside it, in the player's own colour.
+     * Off by default: the strip-sized embeds this component already serves
+     * (the race page, the plain /dag overlays, training) have no room for
+     * it, and drawing it here rather than as an HTML overlay is what lets
+     * it ride the SVG's own pan/zoom transform for free, however the
+     * follow viewport moves. */
+    showPlayerLabels?: boolean;
   }
 
-  let { participants, nodeMap, raceStatus, preRace = false }: Props = $props();
+  let {
+    participants,
+    nodeMap,
+    raceStatus,
+    preRace = false,
+    showPlayerLabels = false,
+  }: Props = $props();
 
   // Wall-clock elapsed time for orbit animation
   let elapsed = $state(0);
@@ -217,7 +233,7 @@
 </script>
 
 <!-- Player dots -->
-{#each dots as dot (dot.participantId)}
+{#each dots as dot, i (dot.participantId)}
   <circle
     cx={dot.x}
     cy={dot.y}
@@ -229,6 +245,19 @@
   >
     <title>{dot.displayName}</title>
   </circle>
+  {#if showPlayerLabels}
+    <text
+      x={dot.x}
+      y={i % 2 === 0
+        ? dot.y - LIVE_LABEL_OFFSET_ABOVE
+        : dot.y + LIVE_LABEL_OFFSET_BELOW}
+      text-anchor="middle"
+      font-size={LIVE_LABEL_FONT_SIZE}
+      fill={dot.color}
+      opacity={dot.opacity}
+      class="player-label">{dot.displayName}</text
+    >
+  {/if}
 {/each}
 
 <!-- Skull animations -->
@@ -254,5 +283,20 @@
   }
   .skull-anim {
     pointer-events: none;
+  }
+
+  /* Same halo technique as MetroDagFull's own .dag-label, so a runner's
+   * name reads the same way a zone name does over the map's varying line
+   * colours, bold and a step larger since it names a person, not a place. */
+  .player-label {
+    pointer-events: none;
+    user-select: none;
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    paint-order: stroke;
+    stroke: var(--color-surface, #1a1a2e);
+    stroke-width: 4px;
+    stroke-linejoin: round;
   }
 </style>
