@@ -9,7 +9,7 @@
   interface SplitRow {
     zone: string;
     /** Gap to the leader at this split, ms (negative = ahead); null shows
-     * the dim placeholder. */
+     * nothing, matching the main Gap row's leader case. */
     gapMs: number | null;
   }
 
@@ -151,10 +151,10 @@
         class="cv"
         class:ahead={participant.gap_ms != null && participant.gap_ms < 0}
         class:behind={participant.gap_ms != null && participant.gap_ms > 0}
-        class:dim={participant.gap_ms == null}
-        >{participant.gap_ms != null
-          ? formatGap(participant.gap_ms)
-          : "-"}</span
+        class:dnf={participant.status === "abandoned"}
+        >{#if participant.status === "abandoned"}DNF{:else if participant.gap_ms != null}{formatGap(
+            participant.gap_ms,
+          )}{/if}</span
       >
     </div>
     <div class="crow">
@@ -174,7 +174,7 @@
       {#each splits as s, i (i)}
         <div class="sp-r">
           <b>{s.zone}</b>
-          <i>{s.gapMs != null ? formatGap(s.gapMs) : "-"}</i>
+          <i>{s.gapMs != null ? formatGap(s.gapMs) : ""}</i>
         </div>
       {/each}
     </div>
@@ -322,8 +322,9 @@
     color: var(--color-success);
   }
 
-  .cv.dim {
-    color: var(--color-text-disabled);
+  /* DNF is a state, not an alarm: the secondary text colour, not ember. */
+  .cv.dnf {
+    color: var(--color-text-secondary);
   }
 
   .rcard.mirror .chead {
