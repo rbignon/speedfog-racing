@@ -181,10 +181,11 @@ export const LIVE_START_X_OFFSET = -20;
  * since it identifies a person, not a place. */
 export const LIVE_LABEL_FONT_SIZE = 14;
 
-/** Vertical offset from a live dot's centre to its label's baseline, above
- * the dot (px). Mirrors MetroDagFull's own node-label offsets (`labelY`),
- * sized for the dot's fixed `RACER_DOT_RADIUS` rather than a per-node one. */
-export const LIVE_LABEL_OFFSET_ABOVE = 14;
-
-/** Same, when the label sits below the dot (px). */
-export const LIVE_LABEL_OFFSET_BELOW = 18;
+/** Radial distance from a live dot's centre to its label's anchor point,
+ * along the dot's own `labelAngle` (px). For an orbiting dot, `labelAngle`
+ * is that dot's current orbit angle, so the label sits outward from the dot
+ * wherever it currently is on the shared node's circle, tracking it instead
+ * of colliding with another co-located runner's label at a fixed slot. For a
+ * stationary dot (pre-race, finished, abandoned), `labelAngle` alternates
+ * straight up/down, the same above/below placement this replaces. */
+export const LIVE_LABEL_RADIAL_OFFSET = 16;

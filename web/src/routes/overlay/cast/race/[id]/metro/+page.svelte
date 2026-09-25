@@ -85,7 +85,7 @@
         showPlayerLabels
         showLabels
         labelMaxChars={26}
-        containerAspect={1888 / 482}
+        containerAspect={mapRect.w / mapRect.h}
         {maxLayers}
         {labelFontSize}
       />

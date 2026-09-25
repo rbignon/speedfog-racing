@@ -68,21 +68,25 @@
 >
   <span class="seyebrow">After {racesPlayed} of {racesExpected} races</span>
   <span class="stitle">{label} standings</span>
-  {#each results as entry, i (entry.user.id)}
-    <div class="srow" class:adv={entry.advances}>
-      <span class="srk">{i + 1}</span>
-      {#if entry.user.twitch_avatar_url}
-        <img class="sav" src={entry.user.twitch_avatar_url} alt="" />
-      {:else}
-        <span class="sav sav-placeholder">{initial(entry.user)}</span>
-      {/if}
-      <span class="sn" style={nameStyleFor(entry.user)}
-        >{displayName(entry.user)}</span
-      >
-      {#if entry.advances}<span class="stag">Final</span>{/if}
-      <span class="sp">{entry.points}</span>
-    </div>
-  {/each}
+  {#if results.length === 0}
+    <span class="sempty">Standings arrive after the first race finishes.</span>
+  {:else}
+    {#each results as entry, i (entry.user.id)}
+      <div class="srow" class:adv={entry.advances}>
+        <span class="srk">{i + 1}</span>
+        {#if entry.user.twitch_avatar_url}
+          <img class="sav" src={entry.user.twitch_avatar_url} alt="" />
+        {:else}
+          <span class="sav sav-placeholder">{initial(entry.user)}</span>
+        {/if}
+        <span class="sn" style={nameStyleFor(entry.user)}
+          >{displayName(entry.user)}</span
+        >
+        {#if entry.advances}<span class="stag">Final</span>{/if}
+        <span class="sp">{entry.points}</span>
+      </div>
+    {/each}
+  {/if}
 </div>
 
 <style>
@@ -109,6 +113,15 @@
     text-transform: uppercase;
     line-height: 1;
     margin: 4px 0 14px;
+  }
+
+  /* Reads as "empty on purpose", not broken: the talk scene holds this
+   * frame longest, before any race in the stage has a result to show. */
+  .sempty {
+    max-width: 90%;
+    color: var(--color-text-secondary);
+    font-size: 22px;
+    line-height: 1.35;
   }
 
   .srow {

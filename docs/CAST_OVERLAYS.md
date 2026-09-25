@@ -135,6 +135,12 @@ carries no live race data of its own; it is pointed at an event stage rather
 than at a race, via its own path
 (`/overlay/cast/event/<slug>/<stage>/talk`).
 
+This is the scene a broadcast typically opens on and returns to between
+races, so it holds the frame longest before the stage's first race has a
+result. Before then, the standings panel shows its title with a line of
+muted copy underneath saying results arrive after the first race, rather
+than an empty list under a title that would read as broken.
+
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |
 | CAM 1 | 16, 76          | 736 x 552    | `cams >= 1` |

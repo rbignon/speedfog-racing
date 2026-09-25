@@ -14,8 +14,7 @@
     LIVE_FINISHED_X_OFFSET,
     LIVE_START_X_OFFSET,
     LIVE_LABEL_FONT_SIZE,
-    LIVE_LABEL_OFFSET_ABOVE,
-    LIVE_LABEL_OFFSET_BELOW,
+    LIVE_LABEL_RADIAL_OFFSET,
   } from "./constants";
 
   interface Props {
@@ -132,6 +131,12 @@
     color: string;
     displayName: string;
     opacity: number;
+    /** Direction (radians) the label sits outward from this dot, at
+     * `LIVE_LABEL_RADIAL_OFFSET`. An orbiting dot passes its own current
+     * orbit angle, so its label tracks it around a shared node instead of
+     * colliding with another co-located runner's label; a stationary dot
+     * alternates straight up/down. */
+    labelAngle: number;
   }
 
   let dots: DotPosition[] = $derived.by(() => {
@@ -155,6 +160,8 @@
           color,
           displayName,
           opacity: 1,
+          // Stationary: alternates straight up/down, same as before.
+          labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
         });
         continue;
       }
@@ -172,6 +179,7 @@
           color,
           displayName,
           opacity: 1,
+          labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
         });
         continue;
       }
@@ -186,6 +194,7 @@
             color,
             displayName,
             opacity: 0.35,
+            labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
           });
         }
         continue;
@@ -209,6 +218,11 @@
             color,
             displayName,
             opacity: 1,
+            // Orbiting: the label rides the dot's own current angle around
+            // the shared node, so co-located runners' labels spread around
+            // the circle with their dots instead of colliding at a fixed
+            // above/below slot.
+            labelAngle: angle,
           });
         }
         continue;
@@ -233,7 +247,7 @@
 </script>
 
 <!-- Player dots -->
-{#each dots as dot, i (dot.participantId)}
+{#each dots as dot (dot.participantId)}
   <circle
     cx={dot.x}
     cy={dot.y}
@@ -247,10 +261,8 @@
   </circle>
   {#if showPlayerLabels}
     <text
-      x={dot.x}
-      y={i % 2 === 0
-        ? dot.y - LIVE_LABEL_OFFSET_ABOVE
-        : dot.y + LIVE_LABEL_OFFSET_BELOW}
+      x={dot.x + Math.cos(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
+      y={dot.y + Math.sin(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
       text-anchor="middle"
       font-size={LIVE_LABEL_FONT_SIZE}
       fill={dot.color}
