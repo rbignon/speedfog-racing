@@ -301,7 +301,7 @@
     padding: 5px 14px;
     /* Load-bearing scrim (the caster name sits over the video hole), so the
      * literal fallback comes first; see the note above .pill-live. */
-    background: rgba(8, 13, 19, 0.86);
+    background: rgba(15, 25, 35, 0.86);
     background: color-mix(in srgb, var(--color-bg) 86%, transparent);
     font-family: var(--font-mono);
     font-size: 15px;
