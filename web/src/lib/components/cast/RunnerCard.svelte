@@ -24,9 +24,10 @@
     leader: boolean;
     /** Node id -> display name, from the seed's own graph
      * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
-     * wire is a graph node id, never a display string. Falls back to the
-     * raw id when the seed hasn't resolved it yet, same as
-     * `$lib/cast/log`'s `buildCastLog`. */
+     * wire is a graph node id, never a display string. On a miss (the seed
+     * hasn't resolved it yet) the zone line is left blank, same as
+     * `Leaderboard.svelte`'s `zoneName`: a raw node id on a broadcast is
+     * worse than nothing. */
     zoneNames?: Map<string, string> | null;
     /** The runner's last few zone splits. Only the "tall" variant renders
      * this (the focus scene's panel, the next task); every caller here
@@ -91,13 +92,13 @@
   }
 
   // Node id -> short display name, matching Leaderboard.svelte's zoneName
-  // (same 20-char truncation and "A - B" -> "B" convention), except the
-  // fallback: a caster-facing overlay shows the raw id rather than hiding
-  // the zone outright when the seed hasn't resolved it yet.
+  // exactly, fallback included: on a broadcast, a raw node id like
+  // "stormveil_godrick_48fd" reaching the screen in the window before
+  // graph_json arrives is worse than the line sitting blank for a moment.
   function zoneLabel(zone: string | null): string {
     if (!zone) return "";
     const name = zoneNames?.get(zone);
-    if (!name) return zone;
+    if (!name) return "";
     const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
     return short.length > 20 ? short.slice(0, 19) + "…" : short;
   }
