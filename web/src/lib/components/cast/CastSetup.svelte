@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { copyToClipboard } from "$lib/utils/clipboard";
   import {
     fetchEvents,
@@ -243,8 +243,36 @@
     `${castUrl}${castUrl.includes("?") ? "&" : "?"}guides=1`,
   );
 
+  // Selecting the talk scene before an event and stage are both chosen
+  // builds a URL with an empty path segment
+  // (`/overlay/cast/event//talk?...`), which 404s: nothing derived from
+  // castUrl should be handed to the caster as if it were usable until then.
+  // Every other scene's URL is always valid, whatever slots or casters are
+  // filled in.
+  let castUrlReady = $derived(scene !== "talk" || (!!eventSlug && !!stageKey));
+
+  // The iframe's own `src` only settles a moment after typing stops, so a
+  // caster typing a caster or runner name doesn't reload the preview (and
+  // its spectator WebSocket, rebroadcasting the spectator count) on every
+  // keystroke. Everything else in the panel stays live off castUrl/urlOpts
+  // directly.
+  let previewUrl = $state(untrack(() => castUrl));
+  $effect(() => {
+    const next = castUrlReady ? castUrl : "";
+    const timer = setTimeout(() => {
+      previewUrl = next;
+    }, 500);
+    return () => clearTimeout(timer);
+  });
+
   let layout = $derived(sceneLayout(scene, { cams, focus: focusSlot }));
-  let positionLines = $derived(layout.holes.map(formatGeo));
+  // The map is drawn by the page, not pierced: it is listed in the layout
+  // only so the guides mode can print its box (see CastPlate's own
+  // `role !== "map"` filter). Printing it here too would tell the caster to
+  // place a video source over the map itself.
+  let positionLines = $derived(
+    layout.holes.filter((h) => h.role !== "map").map(formatGeo),
+  );
 
   // Every race scene this race can show, plus the talk scene once the
   // caster has actually picked which stage it introduces: an unconfigured
@@ -263,6 +291,7 @@
   let allCopied = $state(false);
 
   async function copyUrl() {
+    if (!castUrlReady) return;
     if (!(await copyToClipboard(castUrl))) return;
     urlCopied = true;
     setTimeout(() => (urlCopied = false), 2000);
@@ -284,17 +313,25 @@
   </div>
 
   <div class="preview-wrap">
-    <!-- The real scene at its real URL, scaled to a third by CastPlate's
-         own innerWidth/innerHeight sizing: this is the live race, not a
-         drawing of it. It opens its own WebSocket connection, which is
-         fine for a setup surface nobody keeps open for the whole race. -->
-    <iframe
-      class="preview"
-      src={castUrl}
-      width="640"
-      height="360"
-      title="Scene preview"
-    ></iframe>
+    {#if castUrlReady}
+      <!-- The real scene at its real URL, scaled to a third by CastPlate's
+           own innerWidth/innerHeight sizing: this is the live race, not a
+           drawing of it. It opens its own WebSocket connection, which is
+           fine for a setup surface nobody keeps open for the whole race.
+           `previewUrl` settles a moment after typing stops rather than
+           reloading (and reopening that connection) on every keystroke. -->
+      <iframe
+        class="preview"
+        src={previewUrl}
+        width="640"
+        height="360"
+        title="Scene preview"
+      ></iframe>
+    {:else}
+      <div class="preview preview-empty">
+        Pick an event and stage below to preview the talk scene.
+      </div>
+    {/if}
   </div>
 
   <div class="scene-picker">
@@ -399,12 +436,16 @@
 
   <div class="section">
     <h3>URL</h3>
-    <div class="url-row">
-      <input type="text" readonly value={castUrl} class="url-input" />
-      <button class="btn btn-primary" onclick={copyUrl}>
-        {urlCopied ? "Copied!" : "Copy"}
-      </button>
-    </div>
+    {#if castUrlReady}
+      <div class="url-row">
+        <input type="text" readonly value={castUrl} class="url-input" />
+        <button class="btn btn-primary" onclick={copyUrl}>
+          {urlCopied ? "Copied!" : "Copy"}
+        </button>
+      </div>
+    {:else}
+      <p class="hint">Pick an event and stage above to get this scene's URL.</p>
+    {/if}
     <button class="btn btn-outline" onclick={copyAllUrls}>
       {allCopied ? "Copied!" : "Copy all scene URLs"}
     </button>
@@ -421,9 +462,13 @@
         <div class="position-row">{line}</div>
       {/each}
     </div>
-    <a href={guidesUrl} target="_blank" rel="noopener noreferrer"
-      >Open with position guides</a
-    >
+    {#if castUrlReady}
+      <a href={guidesUrl} target="_blank" rel="noopener noreferrer"
+        >Open with position guides</a
+      >
+    {:else}
+      <span class="hint">Pick an event and stage above to open this link.</span>
+    {/if}
   </div>
 </div>
 
@@ -477,6 +522,16 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     background: #000;
+  }
+
+  .preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    text-align: center;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .scene-picker,

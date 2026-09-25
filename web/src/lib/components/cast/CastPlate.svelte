@@ -5,6 +5,7 @@
     sceneLayout,
     maskDataUri,
     formatGeo,
+    pierceableHoles,
     type CastSceneId,
   } from "$lib/cast/layout";
 
@@ -13,6 +14,13 @@
     focus?: number;
     cams?: number;
     guides?: boolean;
+    /** Which POV/hero slots (1-based) currently hold a seated runner, from
+     * the same `resolveSlots` result the page renders. Omitted on scenes
+     * with no such holes (metro, talk). A slot missing from this list is
+     * not pierced: with no runner seated there, there is nothing for a
+     * video source to show through, and an unseated hole would otherwise
+     * broadcast an empty, numbered frame over whatever sits beneath it. */
+    seatedSlots?: number[];
     children: Snippet;
   }
 
@@ -21,13 +29,12 @@
     focus = 1,
     cams = 2,
     guides = false,
+    seatedSlots,
     children,
   }: Props = $props();
 
   let layout = $derived(sceneLayout(scene, { focus, cams }));
-  // The map is drawn by the page: piercing the plate there would cut a hole
-  // in the very thing it displays.
-  let pierced = $derived(layout.holes.filter((h) => h.role !== "map"));
+  let pierced = $derived(pierceableHoles(layout.holes, seatedSlots));
   let mask = $derived(maskDataUri(pierced));
 
   // The canvas is a fixed 1920x1080 design; the browser source (or a dev

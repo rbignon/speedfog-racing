@@ -290,6 +290,30 @@ export function formatGeo(rect: CastRect): string {
 }
 
 /**
+ * Which of a scene's holes the plate should actually pierce: never the map
+ * (the page draws it itself), and, when the caller says which POV/hero
+ * slots hold a seated runner, only those. A `pov`/`hero` hole's id is always
+ * `pov<slot>`, so the slot number comes straight off it. `seatedSlots`
+ * omitted (metro, talk, or a caller that hasn't resolved seating yet) keeps
+ * every non-map hole, so a scene with no POV holes needs no change to keep
+ * working. Otherwise a race with fewer than four runners would still
+ * broadcast a framed, numbered hole onto whatever sits under the browser
+ * source, with nothing seated in it.
+ */
+export function pierceableHoles(
+  holes: CastRect[],
+  seatedSlots?: number[],
+): CastRect[] {
+  return holes.filter((h) => {
+    if (h.role === "map") return false;
+    if (seatedSlots && (h.role === "pov" || h.role === "hero")) {
+      return seatedSlots.includes(Number(h.id.slice(3)));
+    }
+    return true;
+  });
+}
+
+/**
  * An SVG mask that paints the whole canvas white except the holes, so the
  * plate below shows everywhere but there.
  */

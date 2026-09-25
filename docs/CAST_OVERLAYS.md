@@ -26,7 +26,14 @@ The canvas has two kinds of content:
   these out of the opaque plate, so whatever OBS source sits directly beneath
   the Browser Source in the scene's source list shows through exactly there.
   The caster places one video source per hole, at that hole's position and
-  size, underneath the Browser Source.
+  size, underneath the Browser Source. A `pov`/`hero` hole for a slot nobody
+  is seated in (a field smaller than four; see `resolveSlots` below) is never
+  pierced: `CastPlate`'s `seatedSlots` prop, computed by the quad and focus
+  pages from the same seating they render, keeps that rectangle part of the
+  opaque plate instead of broadcasting a framed, numbered hole onto whatever
+  sits underneath. The guides mode still outlines every hole, seated or not,
+  since a caster sets OBS sources up once for a scene that could seat a full
+  field.
 - **Panels**: rectangles the scene draws itself on top of the plate (race
   name, lockup, clock, standings, runner cards, the log, the metro map).
   These need no OBS source: the page renders them directly.
@@ -217,7 +224,10 @@ assigned to the race; nobody else sees the button.
 It gives a caster, without hand-editing a URL:
 
 - A live preview of the currently selected scene, scaled down, connected to
-  the race over its own WebSocket.
+  the race over its own WebSocket. The preview's own URL settles about half a
+  second after the panel's inputs stop changing, so typing a runner or
+  caster name doesn't reload the preview (and reopen its spectator
+  WebSocket) on every keystroke; every other field in the panel stays live.
 - A scene picker: Quad, Focus 1 through 4, Metro, Talk.
 - Hole assignment (race scenes only): a dropdown per POV hole, defaulting to
   "(auto, join order)"; picking the same runner twice is refused rather than
@@ -228,11 +238,15 @@ It gives a caster, without hand-editing a URL:
 - Delay in seconds (race scenes only).
 - The built URL for the current scene, with a copy button, and a "Copy all
   scene URLs" button that copies every race scene's URL plus talk's once an
-  event and stage are both chosen (an unconfigured talk URL would only point
-  at a 404).
+  event and stage are both chosen. Selecting the talk scene before then
+  withholds the preview, the URL and its copy button, and the "Open with
+  position guides" link below, each replaced with a hint to pick an event
+  and stage first: none of the three are valid URLs yet (an unconfigured
+  talk URL would only point at a 404).
 - An "OBS positions" table: every hole of the current scene's label,
-  position and size (the same `formatGeo` line the guides mode prints), plus
-  a link that opens the same scene with `guides=1`.
+  position and size (the same `formatGeo` line the guides mode prints), minus
+  the metro scene's map, which is never a video source (see "Composition
+  model" above), plus a link that opens the same scene with `guides=1`.
 
 Settings are kept per race in `localStorage` under `cast-setup:<raceId>`, so
 reopening the panel for the same race remembers the last setup; a private

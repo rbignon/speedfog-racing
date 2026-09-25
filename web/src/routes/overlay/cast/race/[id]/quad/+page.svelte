@@ -14,6 +14,9 @@
 
   // Live rows, seated in the order the URL asked for.
   let seated = $derived(resolveSlots(raceStore.leaderboard, params.slots));
+  // Which POV holes actually hold a runner right now, for CastPlate: a
+  // field smaller than four should not pierce a hole nobody sits in.
+  let seatedSlots = $derived(seated.flatMap((p, i) => (p ? [i + 1] : [])));
   let ranks = $derived(
     new Map(raceStore.leaderboard.map((p, i) => [p.id, i + 1])),
   );
@@ -41,7 +44,7 @@
   );
 </script>
 
-<CastPlate scene="quad" cams={params.cams} guides={params.guides}>
+<CastPlate scene="quad" cams={params.cams} guides={params.guides} {seatedSlots}>
   {#each seated as participant, i (i)}
     {@const slot = i + 1}
     {@const hole = layout.holes.find((h) => h.id === `pov${slot}`)!}

@@ -3,6 +3,7 @@ import {
   CANVAS,
   sceneLayout,
   formatGeo,
+  pierceableHoles,
   type Rect,
   type CastSceneId,
 } from "$lib/cast/layout";
@@ -89,5 +90,37 @@ describe("formatGeo", () => {
   it("prints the label, the origin and the size the way OBS asks for them", () => {
     const rect = sceneLayout("quad").holes.find((h) => h.id === "pov1")!;
     expect(formatGeo(rect)).toBe("POV 1  312,16  640x360");
+  });
+});
+
+describe("pierceableHoles", () => {
+  it("never pierces the map hole, seatedSlots or not", () => {
+    const { holes } = sceneLayout("metro");
+    expect(pierceableHoles(holes).some((h) => h.role === "map")).toBe(false);
+    expect(
+      pierceableHoles(holes, [1, 2, 3, 4]).some((h) => h.role === "map"),
+    ).toBe(false);
+  });
+
+  it("pierces every POV and cam hole when seatedSlots is omitted", () => {
+    const { holes } = sceneLayout("quad");
+    const pierced = pierceableHoles(holes);
+    expect(pierced.filter((h) => h.role === "pov")).toHaveLength(4);
+    expect(pierced.filter((h) => h.role === "cam")).toHaveLength(2);
+  });
+
+  it("leaves an unseated POV hole unpierced, but keeps the seated ones and the cams", () => {
+    const { holes } = sceneLayout("quad");
+    const pierced = pierceableHoles(holes, [1, 2, 4]);
+    expect(pierced.map((h) => h.id).sort()).toEqual(
+      ["cam1", "cam2", "pov1", "pov2", "pov4"].sort(),
+    );
+  });
+
+  it("leaves the hero hole unpierced when its own slot has no seated runner", () => {
+    const { holes } = sceneLayout("focus", { focus: 4 });
+    const pierced = pierceableHoles(holes, [1, 2, 3]);
+    expect(pierced.some((h) => h.id === "pov4")).toBe(false);
+    expect(pierced.filter((h) => h.role === "pov")).toHaveLength(3);
   });
 });

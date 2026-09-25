@@ -95,3 +95,41 @@ describe("CastSetup: hole assignment", () => {
     expect(container.textContent).not.toContain("Already seated");
   });
 });
+
+function selectScenePill(container: HTMLElement, label: string) {
+  const btn = [...container.querySelectorAll(".scene-picker .pill")].find(
+    (b) => b.textContent?.trim() === label,
+  ) as HTMLButtonElement | undefined;
+  if (!btn) throw new Error(`no scene pill labelled ${label}`);
+  return fireEvent.click(btn);
+}
+
+describe("CastSetup: OBS positions", () => {
+  it("never lists the metro map as a position to place a video source at", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-4"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Metro");
+
+    const text = container.querySelector(".positions")?.textContent ?? "";
+    expect(text).not.toContain("METRO MAP");
+    // The desk's cam holes are still real OBS sources, so they stay listed.
+    expect(text).toContain("CAM 1");
+  });
+});
+
+describe("CastSetup: talk scene URL guard", () => {
+  it("withholds the copyable URL and the preview until an event and stage are chosen", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-5"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Talk");
+
+    expect(container.querySelector("iframe.preview")).toBeNull();
+    expect(container.querySelector(".preview-empty")).not.toBeNull();
+    expect(container.querySelector(".url-input")).toBeNull();
+    expect(container.textContent).toContain(
+      "Pick an event and stage above to get this scene's URL.",
+    );
+  });
+});
