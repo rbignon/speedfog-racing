@@ -132,6 +132,10 @@ Requires `MIN_RACES_FOR_TRAITS` (3) **finished** races, same threshold as all ot
 
 `PlayerTraitScores` stores all 7 scores as integers (0-100) plus `dominant_trait` (nullable string) and `dominant_description` (nullable string). Keyed by `user_id`. Raw scores are upserted per-user after each race; dominant trait is resolved globally via `resolve_dominant_traits()`.
 
+#### Recomputation Cost
+
+Every score averages the player's whole history, so a race-end recomputation rescans every finished race of every scored player (and all finishers of those races). `update_player_traits` reads these inputs once for the whole batch with narrow column selects, takes node metadata from the cached `SeedNodes` projection (`services/seed_nodes.py`, shared with the zone stats) instead of each seed's `graph_json`, and fetches `zone_history` as raw JSON text. Decoding and scoring (`_compute_trait_scores`, pure) run in a worker thread via `asyncio.to_thread`, so the event loop keeps serving WebSockets and requests. On production data this took a 39-finisher daily from ~25 s of event-loop blocking to ~4 s of mostly off-loop work; the remaining loop pauses (~0.2 s) are garbage collections triggered by the decoded histories.
+
 #### Dominant Trait Selection
 
 The dominant trait is determined by **percentile ranking**, not highest raw score. For each of the 7 traits, all players are ranked by their raw score (highest = rank 1). A player's dominant trait is the trait where they rank best (lowest percentile) among all players. If two traits have the same percentile, the one with the higher raw score wins.
@@ -248,7 +252,7 @@ Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), w
 
 ## Recalculation
 
-`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then replays all finished races in chronological order (`started_at ASC`) to rebuild trait scores. Races with `exclude_from_stats` set are skipped. This ensures consistency after formula changes or bug fixes.
+`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then rebuilds trait scores in one batched pass over every player who finished, or abandoned with in-game time, a finished race. Races with `exclude_from_stats` set do not select players (a player seen only in excluded races gets no scores). Since each score is computed from the player's full history, this gives the same result as replaying races one by one. This ensures consistency after formula changes or bug fixes.
 
 ---
 

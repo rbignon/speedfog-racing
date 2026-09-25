@@ -1,4 +1,4 @@
-"""recalculate_all_stats skips exclude-flagged races in the trait replay."""
+"""recalculate_all_stats selects players from non-excluded races in the trait rebuild."""
 
 from datetime import UTC, datetime
 
@@ -64,3 +64,54 @@ async def test_excluded_race_feeds_no_traits(async_session):
 
         rows = (await db.execute(select(PlayerTraitScores))).scalars().all()
         assert rows == []
+
+
+async def test_rebuild_scores_finishers_and_playing_quitters_only(async_session):
+    """The rebuild scores users who finished, or quit after starting (igt > 0),
+    a finished non-excluded race; never-started quitters and players seen only
+    in excluded races get no row."""
+    async with async_session() as db:
+        users = {
+            name: User(
+                twitch_id=name, twitch_username=name, api_token=f"t{name}", role=UserRole.USER
+            )
+            for name in ("finisher", "quitter", "no_show", "excluded_only", "org")
+        }
+        db.add_all(users.values())
+        await db.flush()
+        included = Race(
+            name="included",
+            organizer_id=users["org"].id,
+            status=RaceStatus.FINISHED,
+            started_at=datetime.now(UTC),
+        )
+        excluded = Race(
+            name="excluded",
+            organizer_id=users["org"].id,
+            status=RaceStatus.FINISHED,
+            exclude_from_stats=True,
+            started_at=datetime.now(UTC),
+        )
+        db.add_all([included, excluded])
+        await db.flush()
+        for race, name, status, igt in (
+            (included, "finisher", ParticipantStatus.FINISHED, 1000),
+            (included, "quitter", ParticipantStatus.ABANDONED, 500),
+            (included, "no_show", ParticipantStatus.ABANDONED, 0),
+            (excluded, "excluded_only", ParticipantStatus.FINISHED, 1000),
+        ):
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=users[name].id,
+                    mod_token=f"m{name}",
+                    status=status,
+                    igt_ms=igt,
+                )
+            )
+        await db.commit()
+
+        await recalculate_all_stats(db)
+
+        scored = set((await db.execute(select(PlayerTraitScores.user_id))).scalars().all())
+        assert scored == {users["finisher"].id, users["quitter"].id}

@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import median
 from time import monotonic
@@ -41,6 +40,7 @@ from speedfog_racing.schemas import (
     ZoneStatsResponse,
     ZoneTimeEntry,
 )
+from speedfog_racing.services.seed_nodes import NodeDisplay, SeedNodes, load_seed_nodes
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
 logger = logging.getLogger(__name__)
@@ -86,53 +86,6 @@ async def get_stats_heatmap(
     return await _cached(f"heatmap:{resolved}", _compute, db)
 
 
-@dataclass(frozen=True)
-class NodeDisplay:
-    """Resolved per-node naming/type/zones from the most recent seed containing it.
-
-    ``short_name`` is the last " - " segment (area prefix stripped), used by
-    the top-5 panels. ``full_name`` is the unmodified display_name, used by
-    the zone codex index/detail and as the merge key in
-    ``_aggregate_zone_stats`` (see there for why merging must use the full
-    name).
-    """
-
-    short_name: str
-    full_name: str
-    type: str
-    # A tuple, not a list: NodeDisplay instances live forever in the shared
-    # seed projection cache, so their contents must be structurally immutable.
-    zones: tuple[str, ...]
-    # 0-indexed layer in the owning seed's graph. Meaningful per seed (the
-    # same cluster can sit at different layers across seeds), so read it from
-    # the participant's own SeedNodes, never from the merged node_display.
-    layer: int
-    # Short boss label for the boss stats page: the node's boss_name
-    # (canonical name from ItemRandomizer's enemy.txt) when present, else the
-    # display_name, with the area prefix pre-stripped. Bosses are randomized
-    # per seed, so like ``layer`` this must be read from the participant's
-    # own SeedNodes, never from the merged node_display.
-    boss_name: str
-
-
-@dataclass(frozen=True)
-class SeedNodes:
-    """Cached projection of one seed's graph nodes.
-
-    The zone stats endpoints only need node membership and per-node display
-    metadata, a few KB out of a graph_json that can weigh hundreds of KB.
-    ``created_at`` orders seeds for most-recent display resolution.
-    """
-
-    created_at: datetime
-    nodes: dict[str, NodeDisplay]
-
-
-# Seed graphs are immutable once the seed is consumed, so projections are
-# cached in-process forever: no TTL, no invalidation. Entries are a few KB
-# each and only accumulate at the pace new seeds get raced.
-_seed_nodes_cache: dict[Any, SeedNodes] = {}
-
 T = TypeVar("T")
 
 # In-process stale-while-revalidate TTL cache for the public aggregation
@@ -145,10 +98,10 @@ T = TypeVar("T")
 # legitimately no longer resolves, e.g. a zone-detail node aged out of its
 # window; serving the stale value forever would mask the 404), so the dict's
 # size is bounded by the number of distinct keys ever requested, not by time.
-# Like
-# ``_seed_nodes_cache`` above, this is fine because the key space is small in
-# practice (a handful of pool names, a capped ``days`` range on real UI
-# calls, a finite zone-codex ``node_id`` set); it is not a hard cap against
+# Like the seed projection cache (``services.seed_nodes``), this is fine
+# because the key space is small in practice (a handful of pool names, a
+# capped ``days`` range on real UI calls, a finite zone-codex ``node_id``
+# set); it is not a hard cap against
 # an adversarial client varying ``days``. ``_stats_cache_locks`` shares the
 # same unbounded-growth tradeoff: it accumulates one lock per key ever seen,
 # but is acceptable given the same bounded key space rationale.
@@ -203,23 +156,6 @@ def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]])
             _refresh_tasks.pop(key, None)
 
     _refresh_tasks[key] = asyncio.create_task(_refresh())
-
-
-def _project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> SeedNodes:
-    """Extract the SeedNodes projection from a raw graph_json."""
-    nodes: dict[str, NodeDisplay] = {}
-    for nid, meta in graph_json.get("nodes", {}).items():
-        full_name = meta.get("display_name", nid)
-        short_name = full_name.rsplit(" - ", 1)[-1]
-        nodes[nid] = NodeDisplay(
-            short_name=short_name,
-            full_name=full_name,
-            type=meta.get("type", ""),
-            zones=tuple(meta.get("zones", [])),
-            layer=meta.get("layer") or 0,
-            boss_name=(meta.get("boss_name") or full_name).rsplit(" - ", 1)[-1],
-        )
-    return SeedNodes(created_at=created_at, nodes=nodes)
 
 
 def _resolve_node_display(seed_nodes_by_id: dict[Any, SeedNodes]) -> dict[str, NodeDisplay]:
@@ -471,18 +407,7 @@ async def _load_zone_stats_inputs(
     # Races can have a NULL seed_id; None is never cacheable and would force
     # a pointless seed query on every request if left in the set.
     seed_ids = {row.seed_id for row in participants if row.seed_id is not None}
-    missing = [sid for sid in seed_ids if sid not in _seed_nodes_cache]
-    if missing:
-        seed_rows = (
-            await db.execute(
-                select(Seed.id, Seed.created_at, Seed.graph_json).where(Seed.id.in_(missing))
-            )
-        ).all()
-        for sid, created_at, graph_json in seed_rows:
-            _seed_nodes_cache[sid] = _project_seed_nodes(created_at, graph_json)
-
-    seed_nodes_by_id = {sid: _seed_nodes_cache[sid] for sid in seed_ids if sid in _seed_nodes_cache}
-    return participants, seed_nodes_by_id
+    return participants, await load_seed_nodes(db, seed_ids)
 
 
 @router.get("/zones", response_model=ZoneStatsResponse)

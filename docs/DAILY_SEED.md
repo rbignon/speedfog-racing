@@ -196,7 +196,7 @@ Route resolution is unambiguous: `today` and `recent` are literal segments, `{da
 Endpoints whose audience is "regular races" filter Daily Seeds out explicitly:
 
 - `GET /api/races` and the joinable subquery: `WHERE Race.daily_date IS NULL`.
-- `services/stats_service.py` `recalculate_all_stats`: `Race.exclude_from_stats.is_(False)` when selecting which finished races to replay for trait recomputation.
+- `services/stats_service.py` `recalculate_all_stats`: `Race.exclude_from_stats.is_(False)` when selecting which players to rescore in the trait rebuild.
 - `services/analytics_service.py` admin dashboard: race-side volume aggregates filter with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only. The one exception is the "Active players per week" series, which measures distinct active people rather than race volume and so counts daily participations too (see [Stats and Analytics Skip](#stats-and-analytics-skip)).
 
 The Daily nav indicator on the frontend uses `GET /api/daily/today` rather than `GET /api/races/joinable`, which assumes scheduled races and would not yield the right answer.
@@ -224,7 +224,7 @@ Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_rac
 
 ## Stats and Analytics Skip
 
-`exclude_from_stats` short-circuits stats aggregations. `recalculate_all_stats` (in `services/stats_service.py`) filters `Race.exclude_from_stats.is_(False)` when selecting which finished races to replay for trait recomputation, so a flagged race's finish never re-triggers a full recompute pass.
+`exclude_from_stats` short-circuits stats aggregations. `recalculate_all_stats` (in `services/stats_service.py`) filters `Race.exclude_from_stats.is_(False)` when selecting which players to rescore in the trait rebuild, so a player seen only in flagged races gets no trait scores.
 
 The flag is generic: any future race type that should be skipped by stats aggregations can opt in by setting `exclude_from_stats = True` without further wiring.
 

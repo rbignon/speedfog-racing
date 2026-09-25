@@ -1,15 +1,16 @@
 """Stats computation: behavioral traits."""
 
 import asyncio
+import json
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 from math import sqrt
 from typing import Any
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Row, Text, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import async_session_maker
 from speedfog_racing.models import (
@@ -19,6 +20,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
 )
+from speedfog_racing.services.seed_nodes import SeedNodes, load_seed_nodes
 
 logger = logging.getLogger(__name__)
 
@@ -27,23 +29,149 @@ BOSS_NODE_TYPES = {"boss_arena", "major_boss", "final_boss"}
 MIN_RACES_FOR_TRAITS = 3
 
 
+@dataclass(frozen=True)
+class _Finisher:
+    """The fields of one finished participation that trait scoring reads."""
+
+    user_id: Any
+    igt_ms: int
+    death_count: int
+    zone_history: list[dict[str, Any]]
+
+
+# Participations whose user gets trait scores: finished, or abandoned after
+# actually starting (in-game time recorded).
+_SCORED_PARTICIPATION = or_(
+    Participant.status == ParticipantStatus.FINISHED,
+    (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
+)
+
+
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
     """Recompute trait scores for all participants of a finished race."""
-    race = await db.get(Race, race_id, options=[selectinload(Race.participants)])
-    if race is None:
+    user_ids = (
+        (
+            await db.execute(
+                select(Participant.user_id)
+                .distinct()
+                .where(Participant.race_id == race_id, _SCORED_PARTICIPATION)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await _recompute_traits_for_users(user_ids, db)
+    await db.commit()
+
+
+async def _recompute_traits_for_users(user_ids: Sequence[Any], db: AsyncSession) -> None:
+    """Recompute and stage (without committing) the raw trait scores of users.
+
+    Each score averages the user's whole race history, so the inputs cover
+    every finished race of every user. They are read once for the whole
+    batch with narrow column selects (seed graphs come from the cached
+    SeedNodes projection instead of graph_json), and the CPU-bound scoring
+    runs in a worker thread: a veteran's history takes seconds to score, and
+    the event loop serves every WebSocket and request meanwhile.
+    """
+    if not user_ids:
         return
 
-    user_ids = [
-        p.user_id
-        for p in race.participants
-        if p.status == ParticipantStatus.FINISHED
-        or (p.status == ParticipantStatus.ABANDONED and p.igt_ms > 0)
-    ]
+    history_race_ids = select(Participant.race_id).where(
+        Participant.user_id.in_(user_ids),
+        Participant.status == ParticipantStatus.FINISHED,
+    )
 
+    # Every finisher of every race a user finished: the users' own finished
+    # participations come from the same rows (one snapshot), and they are
+    # ranked against all finishers, batch members or not. zone_history is
+    # fetched as raw JSON text: the driver would otherwise decode thousands of
+    # histories inside its network callbacks, on the loop.
+    finisher_rows = (
+        await db.execute(
+            select(
+                Participant.race_id,
+                Participant.user_id,
+                Participant.igt_ms,
+                Participant.death_count,
+                cast(Participant.zone_history, Text),
+            ).where(
+                Participant.status == ParticipantStatus.FINISHED,
+                Participant.race_id.in_(history_race_ids),
+            )
+        )
+    ).all()
+    finishers_by_race = await asyncio.to_thread(_group_finishers, finisher_rows)
+    races_by_user: dict[Any, list[Any]] = {uid: [] for uid in user_ids}
+    for finisher in finisher_rows:
+        if finisher.user_id in races_by_user:
+            races_by_user[finisher.user_id].append(finisher.race_id)
+
+    seed_by_race = {
+        rid: sid
+        for rid, sid in (
+            await db.execute(select(Race.id, Race.seed_id).where(Race.id.in_(history_race_ids)))
+        ).all()
+        if sid is not None
+    }
+    seed_nodes = await load_seed_nodes(db, seed_by_race.values())
+    nodes_by_race = {rid: seed_nodes[sid] for rid, sid in seed_by_race.items() if sid in seed_nodes}
+
+    # Counts over every run with in-game time, finished or abandoned.
+    participated: dict[Any, int] = {}
+    abandoned_playing: dict[Any, int] = {}
+    for uid, status, count in (
+        await db.execute(
+            select(Participant.user_id, Participant.status, func.count())
+            .where(
+                Participant.user_id.in_(user_ids),
+                Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
+                Participant.igt_ms > 0,
+            )
+            .group_by(Participant.user_id, Participant.status)
+        )
+    ).all():
+        participated[uid] = participated.get(uid, 0) + count
+        if status == ParticipantStatus.ABANDONED:
+            abandoned_playing[uid] = count
+
+    existing = {
+        row.user_id: row
+        for row in (
+            await db.execute(
+                select(PlayerTraitScores).where(PlayerTraitScores.user_id.in_(user_ids))
+            )
+        ).scalars()
+    }
     for user_id in user_ids:
-        await _recompute_traits_for_user(user_id, db)
+        scores = await asyncio.to_thread(
+            _compute_trait_scores,
+            user_id,
+            races_by_user[user_id],
+            finishers_by_race,
+            nodes_by_race,
+            participated.get(user_id, 0),
+            abandoned_playing.get(user_id, 0),
+        )
+        # Upsert raw scores only; dominant_trait and dominant_description
+        # are resolved globally by resolve_dominant_traits()
+        row = existing.get(user_id)
+        if row is not None:
+            for key, val in scores.items():
+                setattr(row, key, val)
+        else:
+            db.add(PlayerTraitScores(user_id=user_id, **scores))
 
-    await db.commit()
+
+def _group_finishers(rows: Sequence[Row[Any]]) -> dict[Any, list[_Finisher]]:
+    """Group finisher rows by race, decoding each JSON-text zone_history."""
+    by_race: dict[Any, list[_Finisher]] = {}
+    for race_id, user_id, igt_ms, death_count, zone_history_json in rows:
+        history = json.loads(zone_history_json) if zone_history_json else None
+        by_race.setdefault(race_id, []).append(
+            _Finisher(user_id, igt_ms, death_count, history or [])
+        )
+    return by_race
 
 
 def _first_visit_path(zh: list[dict[str, Any]]) -> list[str]:
@@ -58,48 +186,21 @@ def _first_visit_path(zh: list[dict[str, Any]]) -> list[str]:
     return path
 
 
-async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
-    """Recompute all trait scores for a single user across all their races."""
-    all_participations = (
-        (
-            await db.execute(
-                select(Participant)
-                .where(
-                    Participant.user_id == user_id,
-                    Participant.status == ParticipantStatus.FINISHED,
-                )
-                .options(
-                    selectinload(Participant.race).selectinload(Race.participants),
-                    selectinload(Participant.race).selectinload(Race.seed),
-                )
-            )
-        )
-        .scalars()
-        .all()
-    )
+def _compute_trait_scores(
+    user_id: Any,
+    race_ids: Sequence[Any],
+    finishers_by_race: dict[Any, list[_Finisher]],
+    nodes_by_race: dict[Any, SeedNodes],
+    total_participated: int,
+    total_abandoned_playing: int,
+) -> dict[str, int]:
+    """Score one user's traits over their finished races (pure, CPU-bound).
 
-    # Count global stats
-    total_participated = (
-        await db.execute(
-            select(func.count()).where(
-                Participant.user_id == user_id,
-                Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
-                Participant.igt_ms > 0,
-            )
-        )
-    ).scalar() or 0
-
-    total_abandoned_playing = (
-        await db.execute(
-            select(func.count()).where(
-                Participant.user_id == user_id,
-                Participant.status == ParticipantStatus.ABANDONED,
-                Participant.igt_ms > 0,
-            )
-        )
-    ).scalar() or 0
-
-    total_finished = len(all_participations)
+    ``race_ids`` lists the user's finished participations. Races without a
+    seed projection or with fewer than two finishers contribute no per-race
+    score but still count as finished for the resilient/rage-quit rates.
+    """
+    total_finished = len(race_ids)
 
     # Accumulate per-race trait scores
     rusher_scores: list[float] = []
@@ -109,18 +210,16 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
     boss_slayer_scores: list[float] = []
     death_percentiles: list[float] = []
 
-    for pp in all_participations:
-        race_obj = pp.race
-        seed = race_obj.seed
-        if seed is None:
+    for race_id in race_ids:
+        seed_nodes = nodes_by_race.get(race_id)
+        if seed_nodes is None:
             continue
 
-        finishers = [rp for rp in race_obj.participants if rp.status == ParticipantStatus.FINISHED]
+        finishers = finishers_by_race.get(race_id, [])
         if len(finishers) < 2:
             continue
 
-        graph = seed.graph_json
-        nodes = graph.get("nodes", {})
+        nodes = seed_nodes.nodes
         total_nodes = len(nodes)
         igts = [f.igt_ms for f in finishers]
         deaths = [f.death_count for f in finishers]
@@ -129,7 +228,7 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         rusher_scores.append(compute_rusher_score(igts, deaths, player_idx))
         cautious_scores.append(compute_cautious_score(igts, deaths, player_idx))
 
-        history = pp.zone_history or []
+        history = finishers[player_idx].zone_history
         visited = {e.get("node_id", "") for e in history if e.get("node_id")}
         explorer_scores.append(compute_explorer_score(visited, total_nodes, history))
 
@@ -138,7 +237,7 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         other_paths: list[list[str]] = []
         for f in finishers:
             if f.user_id != user_id:
-                other_path = _first_visit_path(f.zone_history or [])
+                other_path = _first_visit_path(f.zone_history)
                 if other_path:
                     other_paths.append(other_path)
         pathfinder_scores.append(compute_pathfinder_score(player_path, other_paths))
@@ -149,10 +248,10 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         boss_all_deaths: dict[str, list[int]] = {}
         for f in finishers:
             finisher_boss_deaths: dict[str, int] = {}
-            for e in f.zone_history or []:
+            for e in f.zone_history:
                 nid = e.get("node_id", "")
-                node_info = nodes.get(nid, {})
-                if node_info.get("type") in BOSS_NODE_TYPES:
+                node_info = nodes.get(nid)
+                if node_info is not None and node_info.type in BOSS_NODE_TYPES:
                     finisher_boss_deaths[nid] = e.get("deaths", 0)
             for nid, d in finisher_boss_deaths.items():
                 boss_all_deaths.setdefault(nid, []).append(d)
@@ -171,7 +270,7 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
             return 0
         return round(sum(vals) / len(vals) * 100)
 
-    scores = {
+    return {
         "rusher": avg_or_zero(rusher_scores),
         "cautious": avg_or_zero(cautious_scores),
         "explorer": avg_or_zero(explorer_scores),
@@ -188,20 +287,6 @@ async def _recompute_traits_for_user(user_id: Any, db: AsyncSession) -> None:
         if total_finished >= MIN_RACES_FOR_TRAITS
         else 0,
     }
-
-    # Upsert raw scores only; dominant_trait and dominant_description
-    # are resolved globally by resolve_dominant_traits()
-    existing = await db.get(PlayerTraitScores, user_id)
-    if existing:
-        for key, val in scores.items():
-            setattr(existing, key, val)
-    else:
-        db.add(
-            PlayerTraitScores(
-                user_id=user_id,
-                **scores,
-            )
-        )
 
 
 def _compute_ranks(values: Sequence[int | float], *, descending: bool = False) -> list[float]:
@@ -414,7 +499,7 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
 
 
 async def recalculate_all_stats(db: AsyncSession) -> None:
-    """Refresh seed difficulty scores and replay all trait data from scratch."""
+    """Refresh seed difficulty scores and rebuild all trait data from scratch."""
     from speedfog_racing.services.seed_difficulty import backfill_difficulty_scores
 
     await backfill_difficulty_scores(db)
@@ -422,23 +507,26 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
     await db.execute(delete(PlayerTraitScores))
     await db.commit()
 
-    race_ids = (
+    # Scores only depend on each user's full history, so one batched pass over
+    # every user a per-race replay would reach gives the same final state.
+    user_ids = (
         (
             await db.execute(
-                select(Race.id)
+                select(Participant.user_id)
+                .distinct()
+                .join(Race, Participant.race_id == Race.id)
                 .where(
                     Race.status == RaceStatus.FINISHED,
                     Race.exclude_from_stats.is_(False),
+                    _SCORED_PARTICIPATION,
                 )
-                .order_by(Race.started_at.asc())
             )
         )
         .scalars()
         .all()
     )
-
-    for race_id in race_ids:
-        await update_player_traits(race_id, db)
+    await _recompute_traits_for_users(user_ids, db)
+    await db.commit()
 
     # After all per-user raw scores are computed, resolve dominant traits
     # using percentile ranking across all players

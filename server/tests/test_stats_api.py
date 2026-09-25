@@ -12,7 +12,6 @@ from speedfog_racing.api.stats import (
     DUNGEON_NODE_TYPES,
     _aggregate_zone_stats,
     _load_zone_stats_inputs,
-    _project_seed_nodes,
     _resolve_node_display,
     get_zone_detail,
     get_zone_index,
@@ -30,6 +29,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.services.seed_nodes import project_seed_nodes
 from speedfog_racing.services.stats_service import (
     resolve_dominant_traits,
     update_player_traits,
@@ -717,6 +717,174 @@ class TestUpdatePlayerTraits:
         for entries in response.profiles.values():
             assert "no_dominant" not in [p.twitch_username for p in entries]
 
+    @staticmethod
+    async def _snapshot_scores(async_session, user_ids):
+        async with async_session() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(PlayerTraitScores).where(PlayerTraitScores.user_id.in_(user_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return {
+                r.user_id: (
+                    r.rusher,
+                    r.cautious,
+                    r.explorer,
+                    r.pathfinder,
+                    r.boss_slayer,
+                    r.resilient,
+                    r.rage_quitter,
+                )
+                for r in rows
+            }
+
+    async def test_abandoned_runner_does_not_shift_finisher_scores(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Per-race ranks only compare finishers: an abandoned runner joining
+        every race leaves the finishers' scores untouched."""
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+        before = await self._snapshot_scores(async_session, user_ids)
+
+        async with async_session() as db:
+            quitter = User(
+                twitch_id="abq", twitch_username="abq", api_token="abqt", role=UserRole.USER
+            )
+            db.add(quitter)
+            await db.flush()
+            for i, rid in enumerate(race_ids):
+                db.add(
+                    Participant(
+                        race_id=rid,
+                        user_id=quitter.id,
+                        mod_token=f"abq{i}",
+                        status=ParticipantStatus.ABANDONED,
+                        igt_ms=100_000,
+                        death_count=99,
+                        zone_history=[
+                            {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                            {"node_id": "margit_g7h8", "igt_ms": 50_000, "deaths": 99},
+                        ],
+                    )
+                )
+            await db.commit()
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+
+        assert await self._snapshot_scores(async_session, user_ids) == before
+
+    async def test_seedless_race_does_not_count(self, async_session, three_races_with_zone_history):
+        """A finished race without a seed has no graph to score against, so it
+        contributes nothing to the per-race averages."""
+        race_ids, user_ids = three_races_with_zone_history
+        for rid in race_ids:
+            async with async_session() as db:
+                await update_player_traits(rid, db)
+        before = await self._snapshot_scores(async_session, user_ids)
+
+        async with async_session() as db:
+            org_id = (await db.get(Race, race_ids[0])).organizer_id
+            race = Race(
+                name="Seedless",
+                organizer_id=org_id,
+                seed_id=None,
+                status=RaceStatus.FINISHED,
+                started_at=datetime.now(UTC),
+            )
+            db.add(race)
+            await db.flush()
+            # Inverted pattern: would flip rusher/cautious if it were scored.
+            for i, uid in enumerate(user_ids):
+                db.add(
+                    Participant(
+                        race_id=race.id,
+                        user_id=uid,
+                        mod_token=f"seedless{i}",
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=5_000_000 - i * 1_000_000,
+                        death_count=i * 20,
+                        zone_history=[{"node_id": "start_a1b2", "igt_ms": 0}],
+                    )
+                )
+            await db.commit()
+            seedless_id = race.id
+        async with async_session() as db:
+            await update_player_traits(seedless_id, db)
+
+        assert await self._snapshot_scores(async_session, user_ids) == before
+
+    async def test_scores_do_not_depend_on_the_triggering_race(
+        self, async_session, three_races_with_zone_history
+    ):
+        """Users are ranked against every finisher of their races, including
+        finishers who are not part of the recomputed batch."""
+        race_ids, user_ids = three_races_with_zone_history
+        async with async_session() as db:
+            outsider = User(
+                twitch_id="out", twitch_username="out", api_token="outt", role=UserRole.USER
+            )
+            db.add(outsider)
+            await db.flush()
+            # Fastest and deathless: shifts every rank-based score of race 0.
+            db.add(
+                Participant(
+                    race_id=race_ids[0],
+                    user_id=outsider.id,
+                    mod_token="out0",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=1_000_000,
+                    death_count=0,
+                    zone_history=[
+                        {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                        {"node_id": "cave_e5f6", "igt_ms": 300_000},
+                        {"node_id": "margit_g7h8", "igt_ms": 600_000},
+                        {"node_id": "final_k1l2", "igt_ms": 900_000},
+                    ],
+                )
+            )
+            await db.commit()
+
+        async with async_session() as db:
+            await update_player_traits(race_ids[0], db)  # batch includes the outsider
+        with_outsider_in_batch = await self._snapshot_scores(async_session, user_ids)
+        async with async_session() as db:
+            await update_player_traits(race_ids[2], db)  # batch without the outsider
+
+        assert await self._snapshot_scores(async_session, user_ids) == with_outsider_in_batch
+
+    async def test_scoring_runs_off_the_event_loop(
+        self, async_session, three_races_with_zone_history, monkeypatch
+    ):
+        """The CPU-bound scoring rescans whole race histories (seconds on
+        production data): it must run in a worker thread, never on the loop
+        thread that serves every WebSocket and request."""
+        import threading
+
+        from speedfog_racing.services import stats_service
+
+        real = stats_service._compute_trait_scores
+        seen_threads: list[threading.Thread] = []
+
+        def spy(*args, **kwargs):
+            seen_threads.append(threading.current_thread())
+            return real(*args, **kwargs)
+
+        monkeypatch.setattr(stats_service, "_compute_trait_scores", spy)
+        race_ids, _ = three_races_with_zone_history
+        async with async_session() as db:
+            await update_player_traits(race_ids[0], db)
+
+        assert seen_threads
+        assert all(t is not threading.main_thread() for t in seen_threads)
+
     async def test_upserts_on_recompute(self, async_session, three_races_with_zone_history):
         """Running update_player_traits again should update, not duplicate."""
         race_ids, user_ids = three_races_with_zone_history
@@ -868,7 +1036,7 @@ class TestZoneStatsAggregation:
 
         async with async_session() as db:
             seed = (await db.execute(select(Seed).where(Seed.id == seed_id))).scalar_one()
-            seed_nodes = _project_seed_nodes(seed.created_at, seed.graph_json)
+            seed_nodes = project_seed_nodes(seed.created_at, seed.graph_json)
             node_display = _resolve_node_display({seed_id: seed_nodes})
         info = node_display["no_zones_key_ab12"]
         assert (info.short_name, info.full_name, info.type, info.zones) == (
