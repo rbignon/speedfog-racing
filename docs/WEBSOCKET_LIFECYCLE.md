@@ -213,7 +213,7 @@ Each spectator connection carries:
 - `participant_id`: set when `role == "participant"`
 - `participant_status`: cached `ParticipantStatus` of the user in this race, used by the chat-access helpers to evaluate broadcasts without re-iterating `race.participants`. Set at auth, refreshed by `RaceRoom.set_participant_status` on race start (`mark_participants_playing`) and on per-user finish/abandon transitions, and lazily refreshed from DB inside `_handle_request_chat_history` for the public channel.
 
-`race_state` messages are sent individually per connection (not broadcast as a single shared message) because `graph_json` visibility and locale differ per viewer.
+`race_state` messages carry the seed graph translated to each viewer's locale, so `broadcast_race_state_update` cannot send one shared message to the whole room. It still does the expensive work once per broadcast: pending invites are queried once and the state is serialized once per locale (`build_race_state_payload`), then each connection receives the payload for its locale. If the invites cannot be loaded (bounded by the 5s send timeout), every spectator is evicted and closed with `1013` so its reconnect resyncs the state. The per-connection path (`send_race_state`, on spectator connect) reuses the same helpers.
 
 ### Chat Access
 

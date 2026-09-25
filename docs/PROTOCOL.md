@@ -1223,7 +1223,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 **Close code notes:**
 
 - `1000` (race reset): non-permanent; mods reconnect silently and resume where they left off.
-- `1013` (eviction): non-permanent; the client reconnects and receives a fresh state. Sent when a broadcast to the connection failed or exceeded the 5s send timeout.
+- `1013` (eviction): non-permanent; the client reconnects and receives a fresh state. Sent when a broadcast to the connection failed or exceeded the 5s send timeout, or when the server could not build a `race_state` to broadcast (spectators are then closed so their reconnect resyncs).
 - `4001` (race deleted): permanent; organizer deleted the race mid-session. No reconnect.
 - `4008` (rate limit): mod or spectator sending messages too frequently; treated as permanent (code >= 4000), no reconnect.
 

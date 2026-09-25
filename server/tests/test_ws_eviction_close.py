@@ -185,10 +185,14 @@ async def test_failed_race_state_recipient_is_evicted_and_closed(monkeypatch):
     mgr = ConnectionManager()
     monkeypatch.setattr(race_spectator, "manager", mgr)
 
-    async def failing_send_race_state(*args, **kwargs):
+    async def no_invites(race_id):
+        return []
+
+    def failing_build(*args, **kwargs):
         raise RuntimeError("race_state failed")
 
-    monkeypatch.setattr(race_spectator, "send_race_state", failing_send_race_state)
+    monkeypatch.setattr(race_spectator, "load_pending_invites", no_invites)
+    monkeypatch.setattr(race_spectator, "build_race_state_payload", failing_build)
     race_id = uuid.uuid4()
     room = mgr.get_or_create_room(race_id)
     broken = _FakeWS()
@@ -200,6 +204,31 @@ async def test_failed_race_state_recipient_is_evicted_and_closed(monkeypatch):
 
     assert room.spectators == {}
     _assert_closed_for_reconnect(broken)
+
+
+@pytest.mark.asyncio
+async def test_race_state_invite_load_failure_closes_spectators(monkeypatch):
+    """Without the invites there is no state to send: spectators are closed so
+    their reconnect resyncs, rather than kept on a stale state."""
+    mgr = ConnectionManager()
+    monkeypatch.setattr(race_spectator, "manager", mgr)
+
+    async def failing_invites(race_id):
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(race_spectator, "load_pending_invites", failing_invites)
+    race_id = uuid.uuid4()
+    room = mgr.get_or_create_room(race_id)
+    ws = _FakeWS()
+    conn = SpectatorConnection(websocket=ws)  # type: ignore[arg-type]
+    room.spectators = {conn.connection_id: conn}
+
+    await race_spectator.broadcast_race_state_update(race_id, SimpleNamespace())  # type: ignore[arg-type]
+    await _drain()
+
+    assert room.spectators == {}
+    assert ws.sent == []
+    _assert_closed_for_reconnect(ws)
 
 
 @pytest.mark.asyncio

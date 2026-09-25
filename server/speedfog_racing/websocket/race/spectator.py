@@ -658,13 +658,44 @@ async def get_race_with_details(db: AsyncSession, race_id: uuid.UUID) -> Race | 
     return result.scalar_one_or_none()
 
 
-async def send_race_state(
-    websocket: WebSocket,
+async def load_pending_invites(race_id: uuid.UUID) -> list[PendingInviteInfo]:
+    """Pending (not yet accepted) invites of a race, oldest first.
+
+    Always re-queried rather than relying on callers to eager-load
+    Race.invites: every race_state call site would otherwise need an extra
+    option, and the tiny dedicated query is cheaper than auditing every path.
+    """
+    from speedfog_racing.database import async_session_maker
+
+    async with async_session_maker() as inv_db:
+        pending_rows = (
+            (
+                await inv_db.execute(
+                    select(Invite)
+                    .where(Invite.race_id == race_id, Invite.accepted.is_(False))
+                    .order_by(Invite.created_at.asc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return [
+        PendingInviteInfo(
+            id=str(inv.id),
+            twitch_username=inv.twitch_username,
+            created_at=inv.created_at.isoformat(),
+        )
+        for inv in pending_rows
+    ]
+
+
+def build_race_state_payload(
     race: Race,
     *,
-    locale: str = "en",
-) -> None:
-    """Send current race state to a spectator."""
+    locale: str,
+    pending_invites: list[PendingInviteInfo],
+) -> str:
+    """Serialize the full race_state message (seed graph translated to ``locale``)."""
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
@@ -680,41 +711,26 @@ async def send_race_state(
         )
         for p in sorted_participants
     ]
-
-    # Always re-query pending invites here rather than relying on the caller
-    # to eager-load Race.invites: every existing call site to
-    # broadcast_race_state_update would otherwise need an extra option, and
-    # the tiny dedicated query is cheaper than auditing every path.
-    from speedfog_racing.database import async_session_maker
-
-    async with async_session_maker() as inv_db:
-        pending_rows = (
-            (
-                await inv_db.execute(
-                    select(Invite)
-                    .where(Invite.race_id == race.id, Invite.accepted.is_(False))
-                    .order_by(Invite.created_at.asc())
-                )
-            )
-            .scalars()
-            .all()
-        )
-    pending_invites = [
-        PendingInviteInfo(
-            id=str(inv.id),
-            twitch_username=inv.twitch_username,
-            created_at=inv.created_at.isoformat(),
-        )
-        for inv in pending_rows
-    ]
-
     message = RaceStateMessage(
         race=build_race_info(race, countdown_seconds=settings.countdown_seconds),
         seed=build_seed_info(race, locale=locale),
         participants=participant_infos,
         pending_invites=pending_invites,
     )
-    await websocket.send_text(message.model_dump_json())
+    return message.model_dump_json()
+
+
+async def send_race_state(
+    websocket: WebSocket,
+    race: Race,
+    *,
+    locale: str = "en",
+) -> None:
+    """Send current race state to a spectator."""
+    pending_invites = await load_pending_invites(race.id)
+    await websocket.send_text(
+        build_race_state_payload(race, locale=locale, pending_invites=pending_invites)
+    )
 
 
 async def send_leaderboard_state(websocket: WebSocket, race: Race) -> None:
@@ -734,20 +750,45 @@ async def send_leaderboard_state(websocket: WebSocket, race: Race) -> None:
 
 
 async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
-    """Send race_state to each spectator with per-connection locale."""
+    """Send race_state to each spectator with per-connection locale.
+
+    The state (tens to hundreds of KB with the seed graph) is built once per
+    locale and the pending invites are queried once, however many spectators
+    are watching.
+    """
     room = manager.get_room(race_id)
     if not room:
         return
 
     # Snapshot to avoid issues with concurrent dict modification
     snapshot = list(room.spectators.values())
+    if not snapshot:
+        return
+
+    pending_invites: list[PendingInviteInfo] | None
+    try:
+        # Bounded like a send: callers (HTTP handlers, the mod message loop)
+        # await the broadcast, and a saturated connection pool would
+        # otherwise hold them for the pool timeout.
+        pending_invites = await asyncio.wait_for(
+            load_pending_invites(race_id), timeout=SEND_TIMEOUT
+        )
+    except Exception:
+        logger.warning("Error loading pending invites for race %s", race_id, exc_info=True)
+        pending_invites = None
+    payloads: dict[str, str] = {}
 
     async def _send_to(conn: SpectatorConnection) -> SpectatorConnection | None:
         try:
-            await asyncio.wait_for(
-                send_race_state(conn.websocket, race, locale=conn.locale),
-                timeout=SEND_TIMEOUT,
-            )
+            if pending_invites is None:
+                return conn  # evicted below, the reconnect resyncs the state
+            payload = payloads.get(conn.locale)
+            if payload is None:
+                payload = build_race_state_payload(
+                    race, locale=conn.locale, pending_invites=pending_invites
+                )
+                payloads[conn.locale] = payload
+            await asyncio.wait_for(conn.websocket.send_text(payload), timeout=SEND_TIMEOUT)
         except Exception:
             logger.warning(
                 "Error sending race state to spectator in race %s", race_id, exc_info=True
