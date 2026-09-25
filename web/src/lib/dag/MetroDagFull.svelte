@@ -55,6 +55,12 @@
     maxLayers?: number;
     fullPathOpacity?: boolean;
     labelFontSize?: number;
+    /** Draw the zone names. Off for a strip too short to read them. */
+    showLabels?: boolean;
+    /** Where a zone name is cut. The default is the map's usual 15. */
+    labelMaxChars?: number;
+    /** Width over height of the box the map fills, for the follow viewport. */
+    containerAspect?: number;
     /** Viewer's participant id; highlights their row in the node popup. */
     myParticipantId?: string | null;
     onzonecodex?: (
@@ -77,6 +83,9 @@
     maxLayers = 5,
     fullPathOpacity = false,
     labelFontSize = LABEL_FONT_SIZE,
+    showLabels = true,
+    labelMaxChars = LABEL_MAX_CHARS,
+    containerAspect = undefined,
     myParticipantId = null,
     onzonecodex,
   }: Props = $props();
@@ -403,8 +412,8 @@
 
   function truncateLabel(name: string): string {
     const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
-    if (short.length <= LABEL_MAX_CHARS) return short;
-    return short.slice(0, LABEL_MAX_CHARS - 1) + "\u2026";
+    if (short.length <= labelMaxChars) return short;
+    return short.slice(0, labelMaxChars - 1) + "\u2026";
   }
 
   const ANON_RADIUS = 7;
@@ -688,7 +697,7 @@
       {/if}
 
       <!-- Label -->
-      {#if !anonymous}
+      {#if !anonymous && showLabels}
         <text
           x={labelX(node)}
           y={labelY(node)}
@@ -742,6 +751,7 @@
         {raceStatus}
         {transparent}
         {maxLayers}
+        {containerAspect}
       >
         {@render dagContent()}
       </FollowViewport>

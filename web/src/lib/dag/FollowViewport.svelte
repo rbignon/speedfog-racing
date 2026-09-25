@@ -2,6 +2,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import type { PositionedNode } from "./types";
   import { PADDING, PLAYER_COLORS } from "./constants";
+  import { fitViewportToContainer } from "./viewport";
 
   interface Props {
     width: number;
@@ -11,6 +12,8 @@
     raceStatus?: string;
     transparent?: boolean;
     maxLayers?: number;
+    /** Width over height of the box the map is drawn in. Unset keeps the graph's own shape. */
+    containerAspect?: number;
     children: import("svelte").Snippet;
   }
 
@@ -22,6 +25,7 @@
     raceStatus,
     transparent = false,
     maxLayers = 5,
+    containerAspect = undefined,
     children,
   }: Props = $props();
 
@@ -57,7 +61,7 @@
     visibleHeight: number;
   }
 
-  let targetViewport: Viewport = $derived.by(() => {
+  let rawViewport: Viewport = $derived.by(() => {
     const activePlayers =
       raceStatus === "finished"
         ? participants.filter(
@@ -145,6 +149,10 @@
       visibleHeight: height,
     };
   });
+
+  let targetViewport = $derived(
+    fitViewportToContainer(rawViewport, containerAspect, height),
+  );
 
   // Smooth interpolation of viewBox via requestAnimationFrame
   const LERP_SPEED = 3; // Higher = faster convergence
