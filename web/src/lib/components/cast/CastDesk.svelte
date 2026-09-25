@@ -36,8 +36,13 @@
   // always matches what the caster's delayed video is showing.
   let delayMs = $derived(parseCastParams(page.url).delayMs);
 
+  // A finished race has no clock to keep. Freezing at race_ends_at was
+  // considered and rejected: a race everyone finished early would then show
+  // a time longer than it actually ran. Showing nothing claims nothing, so
+  // the interval stops rather than ticking on for a clock nobody reads.
   let now = $state(Date.now());
   $effect(() => {
+    if (status === "finished") return;
     const id = setInterval(() => {
       now = Date.now();
     }, 1000);
@@ -122,9 +127,11 @@
       .clock.w}px; height: {panels.clock.h}px;"
   >
     <span class="pill pill-{pillClass}">{pillText}</span>
-    <span class="cz-big">{formatElapsed(elapsedMs)}</span>
-    {#if endsInText}
-      <span class="cz-end">Ends in <b>{endsInText}</b></span>
+    {#if status !== "finished"}
+      <span class="cz-big">{formatElapsed(elapsedMs)}</span>
+      {#if endsInText}
+        <span class="cz-end">Ends in <b>{endsInText}</b></span>
+      {/if}
     {/if}
   </div>
 {/if}
