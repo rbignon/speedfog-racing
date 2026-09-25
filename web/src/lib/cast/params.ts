@@ -7,6 +7,8 @@ export interface CastParams {
   delayMs: number;
   focus: number;
   guides: boolean;
+  /** The event slug the co-brand is drawn from, null off an event. */
+  event: string | null;
 }
 
 /** Longest delay a caster can plausibly be running behind, in seconds. */
@@ -33,6 +35,7 @@ export function parseCastParams(url: URL): CastParams {
     delayMs: clampInt(q.get("delay"), 0, MAX_DELAY_S, 0) * 1000,
     focus: clampInt(q.get("focus"), 1, 4, 1),
     guides: q.get("guides") === "1",
+    event: q.get("event") || null,
   };
 }
 

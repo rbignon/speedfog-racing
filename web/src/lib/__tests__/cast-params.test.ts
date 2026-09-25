@@ -13,6 +13,7 @@ describe("parseCastParams", () => {
       delayMs: 0,
       focus: 1,
       guides: false,
+      event: null,
     });
   });
 
@@ -47,6 +48,10 @@ describe("parseCastParams", () => {
   it("reads the two caster usernames", () => {
     const p = parseCastParams(url("?c1=fogcaster&c2=nightbell"));
     expect(p.casters).toEqual(["fogcaster", "nightbell"]);
+  });
+
+  it("reads the event slug the co-brand needs", () => {
+    expect(parseCastParams(url("?event=season-one")).event).toBe("season-one");
   });
 });
 

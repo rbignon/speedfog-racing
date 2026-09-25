@@ -4,6 +4,7 @@
   import { sceneLayout, type CastSceneId } from "$lib/cast/layout";
   import { parseCastParams } from "$lib/cast/params";
   import { formatElapsed, formatCountdown } from "$lib/cast/clock";
+  import { splitRaceName } from "$lib/cast/race-name";
   import type { RaceDetail } from "$lib/api";
 
   interface Props {
@@ -11,9 +12,12 @@
     race: RaceDetail;
     cams: number;
     casters: [string | null, string | null];
+    /** The co-brand's name, resolved by the route from `?event=<slug>`; null
+     * off an event, or when that slug fails to resolve. */
+    partnerName: string | null;
   }
 
-  let { scene, race, cams, casters }: Props = $props();
+  let { scene, race, cams, casters, partnerName }: Props = $props();
 
   let layout = $derived(sceneLayout(scene, { cams }));
   let panels = $derived(layout.panels);
@@ -67,35 +71,22 @@
         : "upcoming",
   );
 
-  // Best-effort stage label from the race's own event slot. A stage race's
-  // slot is "<stage_key>:<index>" (server/services/event_service.py's
-  // parse_slot), e.g. "semi_b:1"; humanising the key gives "Semi B", which
-  // matches this event's real stage labels (server/tests/test_event_config.py
-  // pairs "semi_b" with "Semi B", "newcomers" with "Newcomers", and so on).
-  // RaceDetail carries only the event's id (a UUID), not its stage list
-  // where the canonical label actually lives, so this is a local guess, not
-  // a fetch of the real thing. A qualifier slot ("qualifier:<mode>:<n>") has
-  // no stage to name, so it is left out rather than humanised into nonsense.
-  function formatStage(slot: string | null): string | null {
-    if (!slot) return null;
-    const parts = slot.split(":");
-    if (parts.length !== 2) return null;
-    return parts[0]
-      .split(/[_-]/)
-      .filter(Boolean)
-      .map((w) => w[0].toUpperCase() + w.slice(1))
-      .join(" ");
-  }
-  let stageLabel = $derived(formatStage(race.event_slot));
-  let modeLabel = $derived(race.pool_display_name ?? race.pool_name ?? "");
-
-  // The partner co-brand. RaceDetail only carries the event's id, and no
-  // client endpoint resolves an id to an EventDetail (fetchEvent takes a
-  // slug), so the partner name is not reachable here today. Every race
-  // therefore takes the documented no-partner degrade below: the lockup
-  // shows the SpeedFog wordmark alone rather than a hole where the partner
-  // would sit.
-  let partnerName: string | null = null;
+  // The race-zone lines come from the organizer-authored name, not from
+  // event_slot (a routing key, not a display string; see race-name.ts). A
+  // name that doesn't split still needs to look intentional, not like a
+  // stray secondary line, so a single line takes the prominent style (rz2)
+  // rather than the small one (rz1) a first part would otherwise get.
+  const RACE_LINE_CLASSES: Record<number, readonly string[]> = {
+    1: ["rz2"],
+    2: ["rz1", "rz2"],
+    3: ["rz1", "rz2", "rz3"],
+  };
+  let raceLines = $derived(
+    splitRaceName(race.name).map((text, i, all) => ({
+      text,
+      cls: RACE_LINE_CLASSES[all.length][i],
+    })),
+  );
 </script>
 
 {#if panels.race}
@@ -104,9 +95,9 @@
     style="left: {panels.race.x}px; top: {panels.race.y}px; width: {panels.race
       .w}px; height: {panels.race.h}px;"
   >
-    {#if stageLabel}<span class="rz1">{stageLabel}</span>{/if}
-    <span class="rz2">{race.name}</span>
-    {#if modeLabel}<span class="rz3">{modeLabel}</span>{/if}
+    {#each raceLines as line, i (i)}
+      <span class={line.cls}>{line.text}</span>
+    {/each}
   </div>
 {/if}
 
