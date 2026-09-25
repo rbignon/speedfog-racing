@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import (
@@ -101,6 +101,11 @@ from speedfog_racing.websocket.schemas import persist_system_chat
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+# Finished races accumulate forever, so a listing that can include them is
+# capped when the caller passes no limit. Active-only listings (setup,
+# running) stay complete: they are naturally small.
+DEFAULT_FEED_LIMIT = 100
 
 
 async def sentry_race_context(race_id: UUID) -> None:
@@ -397,8 +402,10 @@ async def list_joinable_races(
         select(Race)
         .options(
             selectinload(Race.organizer),
-            selectinload(Race.seed),
-            selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.seed).defer(Seed.graph_json),
+            selectinload(Race.participants).options(
+                defer(Participant.zone_history), selectinload(Participant.user)
+            ),
             selectinload(Race.casters).selectinload(Caster.user),
         )
         .outerjoin(participant_count_sq, Race.id == participant_count_sq.c.race_id)
@@ -445,12 +452,23 @@ async def list_races(
     db: AsyncSession = Depends(get_db),
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceListResponse:
-    """List races, optionally filtered by status with pagination."""
+    """List races, optionally filtered by status with pagination.
+
+    Without ``limit``, a listing that can include finished races is capped at
+    ``DEFAULT_FEED_LIMIT`` (``total``/``has_more`` report the truncation, and
+    ``offset`` then applies too).
+    """
     status_enums = parse_enum_csv(status_filter, RaceStatus)
+    if limit is None and (not status_enums or RaceStatus.FINISHED in status_enums):
+        limit = DEFAULT_FEED_LIMIT
+    # List rows never render the seed graph nor zone histories: skip both
+    # heavy JSON columns (graph_json alone averages ~120 KB per seed).
     query = select(Race).options(
         selectinload(Race.organizer),
-        selectinload(Race.seed),
-        selectinload(Race.participants).selectinload(Participant.user),
+        selectinload(Race.seed).defer(Seed.graph_json),
+        selectinload(Race.participants).options(
+            defer(Participant.zone_history), selectinload(Participant.user)
+        ),
         selectinload(Race.casters).selectinload(Caster.user),
     )
     # Daily Seeds are listed under /api/daily; keep them out of the regular feed.

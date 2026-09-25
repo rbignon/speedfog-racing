@@ -17,6 +17,7 @@ from speedfog_racing.auth import get_current_user, get_current_user_optional
 from speedfog_racing.database import get_db
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
+    Seed,
     TrainingSession,
     TrainingSessionStatus,
     User,
@@ -31,8 +32,8 @@ from speedfog_racing.schemas import (
     TrainingSessionResponse,
 )
 from speedfog_racing.services import get_pool
-from speedfog_racing.services.layer_service import get_layer_for_node
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.seed_nodes import SeedNodes, load_seed_nodes
 from speedfog_racing.services.seed_pack_service import (
     generate_training_config,
     sanitize_filename,
@@ -82,15 +83,15 @@ async def _get_session_or_404_public(db: AsyncSession, session_id: uuid.UUID) ->
     return session
 
 
-def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
+def _build_list_response(
+    session: TrainingSession, seed_nodes: SeedNodes | None
+) -> TrainingSessionResponse:
     current_layer = 0
-    if session.zone_history and session.seed.graph_json:
+    if session.zone_history and seed_nodes is not None:
         for entry in session.zone_history:
-            node_id = entry.get("node_id")
-            if node_id:
-                layer = get_layer_for_node(node_id, session.seed.graph_json)
-                if layer > current_layer:
-                    current_layer = layer
+            node = seed_nodes.nodes.get(entry.get("node_id") or "")
+            if node is not None and node.layer > current_layer:
+                current_layer = node.layer
         if session.status == TrainingSessionStatus.FINISHED:
             current_layer = session.seed.total_layers
 
@@ -105,9 +106,7 @@ def _build_list_response(session: TrainingSession) -> TrainingSessionResponse:
         created_at=session.created_at,
         finished_at=session.finished_at,
         seed_total_layers=session.seed.total_layers,
-        seed_total_nodes=(
-            session.seed.graph_json.get("total_nodes") if session.seed.graph_json else None
-        ),
+        seed_total_nodes=seed_nodes.total_nodes if seed_nodes is not None else None,
         current_layer=current_layer,
     )
 
@@ -197,9 +196,15 @@ async def list_sessions(
     response.
     """
     status_enums = parse_enum_csv(status_filter, TrainingSessionStatus)
+    # Layers and node counts come from the cached seed projection: decoding
+    # every session's graph_json (~120 KB each) made a veteran's list cost
+    # hundreds of milliseconds of event-loop time.
     query = (
         select(TrainingSession)
-        .options(*_session_load_options())
+        .options(
+            selectinload(TrainingSession.user),
+            selectinload(TrainingSession.seed).defer(Seed.graph_json),
+        )
         .where(TrainingSession.user_id == user.id)
         .order_by(TrainingSession.created_at.desc())
     )
@@ -207,7 +212,8 @@ async def list_sessions(
         query = query.where(TrainingSession.status.in_(status_enums))
     result = await db.execute(query)
     sessions = list(result.scalars().all())
-    return [_build_list_response(s) for s in sessions]
+    seed_nodes = await load_seed_nodes(db, {s.seed_id for s in sessions})
+    return [_build_list_response(s, seed_nodes.get(s.seed_id)) for s in sessions]
 
 
 @router.get("/{session_id}", response_model=TrainingSessionDetailResponse)

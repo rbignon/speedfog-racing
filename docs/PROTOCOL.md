@@ -46,6 +46,8 @@ Reference document for API endpoints and WebSocket messages.
 | GET    | `/api/races/{id}/seed-pack-ticket`    | Bearer           | Mint a short-lived download ticket for own seed pack (same gating as the download)                                     |
 | GET    | `/api/races/{id}/my-seed-pack`        | Bearer or ticket | Download own seed pack (requires seeds released)                                                                       |
 
+Without `limit`, a `GET /api/races` listing that can include finished races (no `status`, or one containing `finished`) is capped at 100 rows (`offset` then applies as well); `total` and `has_more` report the truncation. Active-only listings (`setup`, `running`) stay complete.
+
 ### Daily Seeds
 
 | Method | Endpoint                             | Auth | Description                                                                                                                                                                                                                                                                                                 |

@@ -348,6 +348,42 @@ async def test_list_races_with_races(test_client, organizer, seed):
 
 
 @pytest.mark.asyncio
+async def test_list_races_caps_listings_that_include_finished(
+    test_client, organizer, async_session, monkeypatch
+):
+    """Finished races accumulate forever: without an explicit limit, a listing
+    that can include them is capped and reports the truncation, while an
+    active-only listing stays complete."""
+    from speedfog_racing.api import races as races_api
+
+    monkeypatch.setattr(races_api, "DEFAULT_FEED_LIMIT", 2)
+    async with async_session() as db:
+        for i in range(3):
+            db.add(
+                Race(
+                    name=f"Done {i}",
+                    organizer_id=organizer.id,
+                    status=RaceStatus.FINISHED,
+                    started_at=datetime.now(UTC),
+                )
+            )
+            db.add(Race(name=f"Open {i}", organizer_id=organizer.id, status=RaceStatus.SETUP))
+        await db.commit()
+
+    async with test_client as client:
+        unfiltered = (await client.get("/api/races")).json()
+        finished = (await client.get("/api/races?status=finished")).json()
+        active = (await client.get("/api/races?status=setup,running")).json()
+
+    assert len(unfiltered["races"]) == 2
+    assert unfiltered["total"] == 6
+    assert unfiltered["has_more"] is True
+    assert len(finished["races"]) == 2
+    assert finished["has_more"] is True
+    assert len(active["races"]) == 3
+
+
+@pytest.mark.asyncio
 async def test_list_races_filter_by_status(test_client, organizer, async_session):
     """Listing races can filter by status."""
     # Create seeds and races with different statuses

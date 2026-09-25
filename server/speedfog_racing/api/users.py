@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, field_validator
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from speedfog_racing.api.helpers import (
     compute_race_stats,
@@ -158,8 +158,10 @@ async def get_my_races(
         )
         .options(
             selectinload(Race.organizer),
-            selectinload(Race.seed),
-            selectinload(Race.participants).selectinload(Participant.user),
+            selectinload(Race.seed).defer(Seed.graph_json),
+            selectinload(Race.participants).options(
+                defer(Participant.zone_history), selectinload(Participant.user)
+            ),
             selectinload(Race.casters).selectinload(Caster.user),
         )
         .order_by(func.coalesce(Race.started_at, Race.scheduled_at, Race.created_at).desc())
@@ -307,11 +309,16 @@ async def get_user_activity(
     # 1. Race participations (no Race.participants loaded, use batch stats).
     # ``Race.seed`` is eager-loaded so the daily-vs-regular branch below can
     # read pool info without triggering N+1 lazy loads. ``Seed.pool`` is
-    # already ``lazy="joined"`` on the model, so it comes for free.
+    # already ``lazy="joined"`` on the model, so it comes for free. The whole
+    # history is loaded before pagination, so the heavy JSON columns the
+    # timeline never renders (seed graphs, zone histories) are skipped.
     part_q = await db.execute(
         select(Participant)
         .where(Participant.user_id == user_id)
-        .options(selectinload(Participant.race).selectinload(Race.seed))
+        .options(
+            defer(Participant.zone_history),
+            selectinload(Participant.race).selectinload(Race.seed).defer(Seed.graph_json),
+        )
     )
     participations = part_q.scalars().all()
 
@@ -400,7 +407,10 @@ async def get_user_activity(
             TrainingSession.user_id == user_id,
             TrainingSession.status != TrainingSessionStatus.CANCELLED,
         )
-        .options(selectinload(TrainingSession.seed))
+        .options(
+            defer(TrainingSession.zone_history),
+            selectinload(TrainingSession.seed).defer(Seed.graph_json),
+        )
     )
     trainings = training_q.scalars().all()
 

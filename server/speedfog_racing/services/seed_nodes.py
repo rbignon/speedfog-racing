@@ -51,16 +51,18 @@ class SeedNodes:
 
     Holds every node of the graph with its display metadata, a few KB out of
     a graph_json that can weigh hundreds of KB. ``created_at`` orders seeds
-    for most-recent display resolution.
+    for most-recent display resolution. ``total_nodes`` is the graph's own
+    ``total_nodes`` field (None on graphs that predate it).
     """
 
     created_at: datetime
     nodes: dict[str, NodeDisplay]
+    total_nodes: int | None
 
 
 # Seed graphs are immutable once the seed is consumed, so projections are
 # cached in-process forever: no TTL, no invalidation. Entries are a few KB
-# each and only accumulate at the pace new seeds get raced.
+# each and only accumulate at the pace new seeds get raced or trained on.
 _seed_nodes_cache: dict[Any, SeedNodes] = {}
 
 # Cold loads (e.g. the first call after a restart) can miss hundreds of seeds.
@@ -83,7 +85,7 @@ def project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> Seed
             layer=meta.get("layer") or 0,
             boss_name=(meta.get("boss_name") or full_name).rsplit(" - ", 1)[-1],
         )
-    return SeedNodes(created_at=created_at, nodes=nodes)
+    return SeedNodes(created_at=created_at, nodes=nodes, total_nodes=graph_json.get("total_nodes"))
 
 
 async def load_seed_nodes(db: AsyncSession, seed_ids: Iterable[Any]) -> dict[Any, SeedNodes]:
