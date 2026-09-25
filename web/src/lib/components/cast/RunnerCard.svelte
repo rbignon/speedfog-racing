@@ -8,9 +8,10 @@
 
   interface SplitRow {
     zone: string;
-    /** Gap to the leader at this split, ms (negative = ahead); null shows
-     * nothing, matching the main Gap row's leader case. */
-    gapMs: number | null;
+    /** How long the runner spent in this zone. A split only exists once the
+     * runner has left the zone (see `buildCastSplits`), so this is always a
+     * real duration, never a placeholder. */
+    durationMs: number;
   }
 
   interface Props {
@@ -29,10 +30,10 @@
      * `Leaderboard.svelte`'s `zoneName`: a raw node id on a broadcast is
      * worse than nothing. */
     zoneNames?: Map<string, string> | null;
-    /** The runner's last few zone splits. Only the "tall" variant renders
-     * this (the focus scene's panel, the next task); every caller here
-     * passes nothing, so the section renders empty rather than fabricating
-     * data no caller yet computes. */
+    /** The runner's last few zone splits, most recent first (see
+     * `buildCastSplits`). Only the "tall" variant renders this; the quad
+     * scene's cards pass nothing, so the section renders empty rather than
+     * fabricating data for a card that has no room for it anyway. */
     splits?: SplitRow[];
   }
 
@@ -175,7 +176,7 @@
       {#each splits as s, i (i)}
         <div class="sp-r">
           <b>{s.zone}</b>
-          <i>{s.gapMs != null ? formatGap(s.gapMs) : ""}</i>
+          <i>{formatIgt(s.durationMs)}</i>
         </div>
       {/each}
     </div>

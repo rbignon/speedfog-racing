@@ -146,3 +146,42 @@ describe("RunnerCard: name template", () => {
     expect(name?.getAttribute("style") ?? "").toContain("Times New Roman");
   });
 });
+
+describe("RunnerCard: splits (tall variant)", () => {
+  it("renders each split's zone and duration as a plain time, not a signed gap", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        variant: "tall",
+        participant: fakeParticipant(),
+        splits: [
+          { zone: "Liurnia of the Lakes", durationMs: 125_000 },
+          { zone: "Stormveil Castle", durationMs: 45_000 },
+        ],
+      },
+    });
+    const rows = Array.from(container.querySelectorAll(".sp-r"));
+    expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual([
+      "Liurnia of the Lakes",
+      "Stormveil Castle",
+    ]);
+    // A duration reads like IGT (2:05), never a signed gap (+2:05 or -2:05):
+    // a split is time spent in a finished zone, not an offset to the leader.
+    expect(rows.map((r) => r.querySelector("i")?.textContent)).toEqual([
+      "2:05",
+      "0:45",
+    ]);
+  });
+
+  it("renders no splits section for the card and mirror variants", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        variant: "card",
+        participant: fakeParticipant(),
+        splits: [{ zone: "Liurnia of the Lakes", durationMs: 125_000 }],
+      },
+    });
+    expect(container.querySelector(".splits")).toBeNull();
+  });
+});
