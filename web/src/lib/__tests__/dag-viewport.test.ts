@@ -30,8 +30,13 @@ describe("fitViewportToContainer", () => {
     expect(fitViewportToContainer(base, Number.NaN, 360)).toEqual(base);
   });
 
-  it("never zooms past the whole graph's height", () => {
-    const fitted = fitViewportToContainer(base, 20, 360);
-    expect(fitted.visibleHeight).toBeGreaterThanOrEqual(40);
+  it("never zooms out past the whole graph's height", () => {
+    // 1300 / 2 = 650, more than the graph's own 360, so the ceiling takes over.
+    expect(fitViewportToContainer(base, 2, 360).visibleHeight).toBe(360);
+  });
+
+  it("stops shrinking at the floor, so a sliver never collapses the map", () => {
+    // 1300 / 40 = 32.5, under the 40px floor.
+    expect(fitViewportToContainer(base, 40, 360).visibleHeight).toBe(40);
   });
 });

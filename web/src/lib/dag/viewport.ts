@@ -19,7 +19,8 @@ const MIN_VISIBLE_HEIGHT = 40;
  *
  * The fitted height is clamped between MIN_VISIBLE_HEIGHT (never a sliver
  * too thin to read) and the graph's own height (never zoomed out past what
- * the map actually has to show).
+ * the map actually has to show), except that the floor wins if the graph
+ * itself is shorter than MIN_VISIBLE_HEIGHT.
  */
 export function fitViewportToContainer(
   viewport: DagViewport,
