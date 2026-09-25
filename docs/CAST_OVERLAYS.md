@@ -135,14 +135,21 @@ than at a race, via its own path
 
 Panels: the topline at (16, 16), 1888 x 44; a lockup between the two cams at
 (780, 76), 360 x 552; three race cards at (16, 652), (468, 652) and (920,
-652), each 436 x 412; a separator line at (1388, 652); the stage standings at
-(1420, 652), 484 x 412.
+652), each 436 x 412; a 1px-wide separator at (1388, 652), 1 x 412; the stage
+standings at (1420, 652), 484 x 412.
 
 ## URL parameters
 
-Parsed by `parseCastParams` in `web/src/lib/cast/params.ts`. Race scenes
-(quad, focus, metro) read every one of them; talk only reads `c1`, `c2`,
-`cams` and `guides` (it has no runners to seat and no live race to delay).
+Parsed by `parseCastParams` in `web/src/lib/cast/params.ts`, then handed to
+each scene as `castParams`. Not every scene reads every one of them: quad
+reads `p1`..`p4`, `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but not
+`focus`, since it has no single hero slot to pick. Focus reads all seven.
+Metro reads `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but neither
+`p1`..`p4` nor `focus`: it has no POV holes to seat and no hero, so
+`sceneLayout("metro", ...)` is called with `cams` alone and `resolveSlots` is
+never called on that page at all. A `p1` or `focus` added to a metro URL is
+silently ignored. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no
+runners to seat and no live race to delay).
 
 | Param      | Meaning                                                                                     | Default |
 | ---------- | ------------------------------------------------------------------------------------------- | ------- |
