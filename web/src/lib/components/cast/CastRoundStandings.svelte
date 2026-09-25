@@ -119,6 +119,9 @@
   }
 
   .srow + .srow {
+    /* Literal fallback first: OBS builds in the field still ship Chromium
+     * 103, which predates color-mix() (needs 111). */
+    border-top: 1px solid rgba(37, 53, 80, 0.55);
     border-top: 1px solid
       color-mix(in srgb, var(--color-border) 55%, transparent);
   }
@@ -178,6 +181,8 @@
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--color-gold);
+    /* Literal fallback first; see the note on .srow + .srow above. */
+    border: 1px solid rgba(200, 164, 78, 0.5);
     border: 1px solid color-mix(in srgb, var(--color-gold) 50%, transparent);
     padding: 2px 7px;
     flex-shrink: 0;

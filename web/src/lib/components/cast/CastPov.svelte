@@ -109,6 +109,11 @@
     left: 0;
     bottom: 0;
     padding: 6px 16px;
+    /* Literal fallback first: OBS builds in the field still ship Chromium
+     * 103, which does not understand color-mix() (needs 111). This scrim is
+     * the only thing standing between the runner's name and raw video, so
+     * it must never depend on that support. */
+    background: rgba(8, 13, 19, 0.86);
     background: color-mix(in srgb, var(--color-bg) 86%, transparent);
   }
 

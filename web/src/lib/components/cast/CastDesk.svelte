@@ -241,21 +241,28 @@
     border: 1px solid transparent;
   }
 
+  /* Every color-mix() below has a literal fallback declared first: OBS
+   * builds in the field still ship Chromium 103, which predates
+   * color-mix() (needs 111). The literal is kept when unsupported and
+   * overridden by the color-mix() line when it is. */
   .pill-live {
     color: var(--color-danger);
     border-color: var(--color-danger);
+    background: rgba(220, 106, 81, 0.12);
     background: color-mix(in srgb, var(--color-danger) 12%, transparent);
   }
 
   .pill-finished {
     color: var(--color-info);
     border-color: var(--color-info);
+    background: rgba(123, 162, 204, 0.12);
     background: color-mix(in srgb, var(--color-info) 12%, transparent);
   }
 
   .pill-upcoming {
     color: var(--color-text-secondary);
     border-color: var(--color-text-secondary);
+    background: rgba(150, 160, 173, 0.12);
     background: color-mix(
       in srgb,
       var(--color-text-secondary) 12%,
@@ -292,6 +299,9 @@
     left: 0;
     bottom: 0;
     padding: 5px 14px;
+    /* Load-bearing scrim (the caster name sits over the video hole), so the
+     * literal fallback comes first; see the note above .pill-live. */
+    background: rgba(8, 13, 19, 0.86);
     background: color-mix(in srgb, var(--color-bg) 86%, transparent);
     font-family: var(--font-mono);
     font-size: 15px;

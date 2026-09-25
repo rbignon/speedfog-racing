@@ -211,6 +211,17 @@
 
   .rcard.lead {
     border: 2px solid var(--color-gold);
+    /* Literal fallback first: OBS builds in the field still ship Chromium
+     * 103, which predates color-mix() (needs 111), and an unsupported value
+     * anywhere in a shorthand drops the whole declaration, not just that
+     * stop. */
+    background:
+      linear-gradient(
+        180deg,
+        rgba(200, 164, 78, 0.1),
+        rgba(200, 164, 78, 0.03)
+      ),
+      var(--color-surface);
     background:
       linear-gradient(
         180deg,
@@ -411,6 +422,8 @@
     justify-content: space-between;
     gap: 8px;
     padding: 5px 0;
+    /* Literal fallback first; see the note on .rcard.lead's background. */
+    border-top: 1px solid rgba(37, 53, 80, 0.55);
     border-top: 1px solid
       color-mix(in srgb, var(--color-border) 55%, transparent);
   }
