@@ -182,6 +182,9 @@
     // race has different participants, so clear it to avoid a stale
     // "N selected" pill and phantom DAG highlights.
     selectedParticipantIds = new Set();
+    // The Cast Setup panel belongs to one race's casters: it closes on the
+    // way to another race, where `?cast=1` reopens it for them.
+    showCastSetup = false;
   });
 
   // Live data from WebSocket
@@ -491,9 +494,11 @@
   let isCasterOrOrganizer = $derived(isCaster || isOrganizer);
 
   // `?cast=1` opens the panel directly, so a caster can bookmark their own
-  // setup rather than clicking through from the sidebar every time.
+  // setup rather than clicking through from the sidebar every time. The
+  // panel is the casters' own: an organizer who does not cast has no scene
+  // to build.
   $effect(() => {
-    if (page.url.searchParams.get("cast") === "1" && isCasterOrOrganizer) {
+    if (page.url.searchParams.get("cast") === "1" && isCaster) {
       showCastSetup = true;
     }
   });
@@ -1116,7 +1121,7 @@
         >
       {/if}
 
-      {#if isCasterOrOrganizer}
+      {#if isCaster}
         <button
           class="btn btn-outline cast-setup-btn"
           onclick={() => (showCastSetup = true)}>Cast Setup</button

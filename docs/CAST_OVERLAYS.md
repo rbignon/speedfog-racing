@@ -308,8 +308,9 @@ a delayed capture does.
 
 `CastSetup.svelte` is a panel on the race page (`/race/[id]`), opened with
 the "Cast Setup" button, or automatically by adding `?cast=1` to the race
-page's own URL. It is visible to the race's organizer and to any caster
-assigned to the race; nobody else sees the button.
+page's own URL. Only the race's casters see the button, and `?cast=1` opens
+the panel only for them: the race's organizer does not, unless they cast it
+too.
 
 It gives a caster, without hand-editing a URL:
 
@@ -344,7 +345,7 @@ window that refuses storage just does not persist between visits.
 
 ## Setting up in OBS
 
-1. On the race page, as its organizer or a caster, open Cast Setup.
+1. On the race page, as one of its casters, open Cast Setup.
 2. Pick a scene, set `cams`, optionally pin specific runners into POV holes,
    name the casters, and optionally pick an event co-brand (and, for talk, a
    stage). Set the delay to roughly how far behind live your own capture
