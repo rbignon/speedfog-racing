@@ -91,7 +91,6 @@
   {/if}
   <CastMiniStandings
     participants={raceStore.leaderboard}
-    {totalLayers}
     rect={layout.panels.standings}
   />
   <CastDesk

@@ -125,9 +125,11 @@ its own zone splits render beside it.
 | pov (3rd remaining slot) | POV n              | 1584, 408       | 320 x 180    |
 
 The three small POV holes are whichever slots `focus` did not pick, in slot
-order. A mini standings panel sits at (1584, 604), 320 x 148, and the hero's
-own runner card fills the panel at (1328, 16), 240 x 736. Plus the shared
-desk band.
+order. A mini standings panel sits at (1584, 604), 320 x 148 (rank, colour
+dot, name and gap; no depth cell, since the scene's own POVs already show
+what each runner is doing, the same reasoning behind the metro standings'
+own missing depth column below), and the hero's own runner card fills the
+panel at (1328, 16), 240 x 736. Plus the shared desk band.
 
 ### Metro
 
@@ -164,10 +166,15 @@ illegible in the first place), the same tuning knobs
 or less room than the default zoom fits.
 
 The standings panel beneath the map reads two columns wide, rank 1 down the
-first column then rank `perColumnCapacity + 1` down the second (dropping the
-zone column, which only repeated what the map directly above it already
-shows, is what buys the room): rank, colour dot, name, deaths, depth and gap
-stay, in that order, in both columns. It also reads a `lines` query
+first column then rank `perColumnCapacity + 1` down the second. Two columns
+carry rank, colour dot, name, deaths and gap, in that order; neither the
+zone nor the depth cell survived: zone only repeated what the map directly
+above it already shows, and depth is the same kind of restatement (how far
+along a runner is is exactly what the map shows too), so both were dropped
+to give the name cell (the thing a caster actually says out loud) a real
+budget instead of the leftovers. Deaths and gap stay, since neither reads
+off the map: a death's skull marks the node it happened at, not the runner,
+and nothing else on screen shows the gap. It also reads a `lines` query
 parameter (default: fit as many rows as the panel allows, across both
 columns; see "Field-size overflow" above), the same name and spirit as
 `/overlay/race/[id]/leaderboard`'s own `lines`, letting the caster show

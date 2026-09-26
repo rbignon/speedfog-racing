@@ -3,7 +3,6 @@ import { render } from "@testing-library/svelte";
 import CastStandings from "$lib/components/cast/CastStandings.svelte";
 
 const baseProps = {
-  totalLayers: 10,
   rect: { x: 0, y: 0, w: 972, h: 230 },
 };
 
@@ -32,6 +31,18 @@ function fakeParticipant(over: Record<string, unknown> = {}) {
 function gapCell(container: HTMLElement, i: number): Element | null {
   return container.querySelectorAll(".rrow")[i]?.querySelector(".gap") ?? null;
 }
+
+describe("CastStandings: no depth column", () => {
+  it("does not render a depth cell, the map above already shows how far along a runner is", () => {
+    const { container } = render(CastStandings, {
+      props: {
+        ...baseProps,
+        participants: [fakeParticipant({ current_layer: 5 })],
+      },
+    });
+    expect(container.querySelector(".layer")).toBeNull();
+  });
+});
 
 describe("CastStandings: gap column", () => {
   it("shows nothing, not a placeholder, for the leader (gap_ms null)", () => {

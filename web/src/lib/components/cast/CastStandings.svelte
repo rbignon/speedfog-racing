@@ -13,7 +13,6 @@
      * store's `computeGap`), which is what makes its gap cell blank below
      * without special-casing the first row. */
     participants: WsParticipant[];
-    totalLayers: number | null;
     rect: Rect;
     /** Caster override for how many rows to show, from the metro scene's own
      * `lines` URL parameter (see `/overlay/race/[id]/leaderboard`, which
@@ -23,7 +22,7 @@
     lines?: number | null;
   }
 
-  let { participants, totalLayers, rect, lines = null }: Props = $props();
+  let { participants, rect, lines = null }: Props = $props();
 
   // The panel can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number. .blk-title reserves font-size (24) +
@@ -90,15 +89,11 @@
 
 {#snippet row(p: WsParticipant, rank: number)}
   {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
-  {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
   <div class="rrow" style="--c: {color};">
     <span class="rk" class:first={rank === 1}>{rank}</span>
     <span class="dot"></span>
     <span class="nm" style={nameStyleFor(p)}>{displayName(p)}</span>
     <span class="dth"><SkullIcon size={17} />{p.death_count}</span>
-    <span class="layer"
-      >{depth}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
-    >
     <span
       class="gap"
       class:ahead={p.gap_ms != null && p.gap_ms < 0}
@@ -221,7 +216,14 @@
    * play: without a zone column there is nothing else in the row to give
    * ground, and a narrower per-column width means a long name needs to.
    * Mirrors CastMiniStandings' own .nm, which has never had a zone column
-   * to lean on either. */
+   * to lean on either. A caster reads this name out loud; .dth and .gap
+   * below are trimmed to a real minimum instead of their old single-column
+   * widths so this cell gets the room, not the leftovers: measured on a
+   * real 13-runner race, the old 98px budget cut 7 of 8 names ("chewy9…"
+   * for "chewy9502"), and a cut name reads as a different runner. At a
+   * 474px column this leaves about 220px, enough for the longest name in
+   * that race (13 characters) with room to spare; a longer Twitch name
+   * (up to 25) can still ellipsize. */
   .nm {
     flex: 1;
     min-width: 0;
@@ -239,30 +241,15 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    min-width: 64px;
+    min-width: 52px;
     font-family: var(--font-mono);
     font-size: 19px;
     color: var(--color-text-secondary);
     flex-shrink: 0;
   }
 
-  .layer {
-    min-width: 80px;
-    font-family: var(--font-mono);
-    font-size: 26px;
-    font-weight: 600;
-    text-align: right;
-    flex-shrink: 0;
-  }
-
-  .layer i {
-    font-style: normal;
-    font-size: 17px;
-    color: var(--color-text-secondary);
-  }
-
   .gap {
-    min-width: 120px;
+    min-width: 104px;
     font-family: var(--font-mono);
     font-size: 26px;
     font-weight: 600;

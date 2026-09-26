@@ -3,7 +3,6 @@ import { render } from "@testing-library/svelte";
 import CastMiniStandings from "$lib/components/cast/CastMiniStandings.svelte";
 
 const baseProps = {
-  totalLayers: 10,
   rect: { x: 0, y: 0, w: 320, h: 148 },
 };
 
@@ -32,6 +31,18 @@ function fakeParticipant(over: Record<string, unknown> = {}) {
 function gapCell(container: HTMLElement, i: number): Element | null {
   return container.querySelectorAll(".lrow")[i]?.querySelector(".gap") ?? null;
 }
+
+describe("CastMiniStandings: no depth column", () => {
+  it("does not render a depth cell, the focus scene's own POVs already show it", () => {
+    const { container } = render(CastMiniStandings, {
+      props: {
+        ...baseProps,
+        participants: [fakeParticipant({ current_layer: 5 })],
+      },
+    });
+    expect(container.querySelector(".dep")).toBeNull();
+  });
+});
 
 describe("CastMiniStandings: row cap", () => {
   // baseProps.rect is 320x148, the real FOCUS_STANDINGS rect from layout.ts:

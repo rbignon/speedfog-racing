@@ -19,9 +19,6 @@
   let mapRect = $derived(layout.holes.find((h) => h.id === "map")!);
 
   let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
-  let totalLayers = $derived(
-    raceStore.seed?.total_layers ?? data.race.seed_total_layers,
-  );
 
   // WsParticipant.current_zone (and zone_history's node_id) are graph node
   // ids, never display strings: resolve them through the seed's own graph,
@@ -119,7 +116,6 @@
   <CastLog rows={logRows} rect={layout.panels.log} />
   <CastStandings
     participants={raceStore.leaderboard}
-    {totalLayers}
     rect={layout.panels.standings}
     {lines}
   />

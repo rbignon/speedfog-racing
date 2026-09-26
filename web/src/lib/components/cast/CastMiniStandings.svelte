@@ -12,11 +12,10 @@
      * store's `computeGap`), which is what makes its gap cell blank below
      * without special-casing the first row. */
     participants: WsParticipant[];
-    totalLayers: number | null;
     rect: Rect;
   }
 
-  let { participants, totalLayers, rect }: Props = $props();
+  let { participants, rect }: Props = $props();
 
   // The panel can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number, the same rowCapacity/planRows the
@@ -71,7 +70,6 @@
 >
   {#each plan.visible as p, i (p.id)}
     {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
-    {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
     <div class="lrow" style="--c: {color};">
       <span class="rk" class:first={i === 0}>{i + 1}</span>
       <span class="dot"></span>
@@ -84,9 +82,6 @@
         >{#if p.status === "abandoned"}DNF{:else if p.gap_ms != null}{formatGap(
             p.gap_ms,
           )}{/if}</span
-      >
-      <span class="dep"
-        >{depth}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
       >
     </div>
   {/each}
@@ -137,6 +132,10 @@
     flex-shrink: 0;
   }
 
+  /* No depth cell here any more: the focus scene's own POVs already show
+   * what each runner is doing, the same reasoning that dropped
+   * CastStandings' depth column, and this panel is only 320px wide, so a
+   * cell that only restates the map/POV was the weakest use of its width. */
   .nm {
     flex: 1;
     min-width: 0;
@@ -170,21 +169,6 @@
   /* DNF is a state, not an alarm: the secondary text colour, not ember.
    * Mirrors RunnerCard's own Gap row. */
   .gap.dnf {
-    color: var(--color-text-secondary);
-  }
-
-  .dep {
-    font-family: var(--font-mono);
-    font-size: 18px;
-    font-weight: 600;
-    text-align: right;
-    flex-shrink: 0;
-    min-width: 44px;
-  }
-
-  .dep i {
-    font-style: normal;
-    font-size: 14px;
     color: var(--color-text-secondary);
   }
 
