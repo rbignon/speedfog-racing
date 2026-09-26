@@ -5,7 +5,7 @@ extends = "standard"
 [display]
 name = "Boss Shuffle"
 sort_order = 40
-description = "Standard race with randomized boss encounters"
+description = "Standard race with all randomized boss encounters, including major ones"
 
 [structure]
 final_boss_candidates = [

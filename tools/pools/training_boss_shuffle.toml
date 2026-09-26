@@ -3,4 +3,4 @@
 extends = ["boss_shuffle", "_training_base"]
 
 [display]
-description = "Solo run with randomized boss encounters"
+description = "Solo Standard with all randomized boss encounters, including major ones"
