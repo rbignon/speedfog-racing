@@ -11,10 +11,13 @@
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
 
-  // General page: mode-specific tips stay in the race and solo tickers.
-  const beginnerTips = CONTENT_ITEMS.filter(
-    (i) => i.kind === "tip" && i.level === "beginner" && !i.pools,
+  // General page: mode-specific tips stay in the race and solo tickers, and
+  // zone-scoped ones in their zone sheet.
+  const generalTips = CONTENT_ITEMS.filter(
+    (i) => i.kind === "tip" && !i.pools && i.zoneId === undefined,
   );
+  const beginnerTips = generalTips.filter((i) => i.level === "beginner");
+  const advancedTips = generalTips.filter((i) => i.level === "advanced");
 
   let openDetails = $state<Set<string>>(new Set());
 
@@ -55,12 +58,13 @@
     loadPools();
   });
 
-  // Deep links such as /help#faq-game-update open the targeted accordion,
-  // both on first load and when the hash changes while already on this page.
-  // Scrolling to the id is handled by the browser / SvelteKit.
+  // Deep links such as /help#faq-game-update or /help#tips-advanced open the
+  // targeted accordion, both on first load and when the hash changes while
+  // already on this page. Scrolling to the id is handled by the browser /
+  // SvelteKit.
   $effect(() => {
     const target = page.url.hash.slice(1);
-    if (!target.startsWith("faq-")) return;
+    if (!target.startsWith("faq-") && !target.startsWith("tips-")) return;
     untrack(() => {
       if (!openDetails.has(target)) toggleDetail(target);
     });
@@ -325,18 +329,42 @@
 
     <!-- Accordion: Tips -->
     <button
+      id="tips-beginner"
       class="accordion"
-      class:open={isOpen("tips")}
-      aria-expanded={isOpen("tips")}
-      onclick={() => toggleDetail("tips")}
+      class:open={isOpen("tips-beginner")}
+      aria-expanded={isOpen("tips-beginner")}
+      onclick={() => toggleDetail("tips-beginner")}
     >
       <span>Tips</span>
       <span class="chevron"></span>
     </button>
-    {#if isOpen("tips")}
+    {#if isOpen("tips-beginner")}
       <div class="panel">
         <ul>
           {#each beginnerTips as tip}
+            <li>
+              <strong>{tip.title}</strong>: <EmphasisText text={tip.short} />
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {/if}
+
+    <!-- Accordion: Advanced tips -->
+    <button
+      id="tips-advanced"
+      class="accordion"
+      class:open={isOpen("tips-advanced")}
+      aria-expanded={isOpen("tips-advanced")}
+      onclick={() => toggleDetail("tips-advanced")}
+    >
+      <span>Advanced tips</span>
+      <span class="chevron"></span>
+    </button>
+    {#if isOpen("tips-advanced")}
+      <div class="panel">
+        <ul>
+          {#each advancedTips as tip}
             <li>
               <strong>{tip.title}</strong>: <EmphasisText text={tip.short} />
             </li>
