@@ -107,7 +107,7 @@
         transparent
         follow
         showLiveDots
-        showPlayerLabels
+        playerTags
         showLabels
         labelMaxChars={26}
         containerAspect={mapRect.w / mapRect.h}

@@ -176,16 +176,37 @@ export const LIVE_FINISHED_X_OFFSET = 20;
 /** X offset for setup player dots left of start node (px) */
 export const LIVE_START_X_OFFSET = -20;
 
-/** Font size for a live dot's player-name label (px), when `LivePlayerDots`
- * is asked to draw one: a little larger than a zone label (LABEL_FONT_SIZE)
- * since it identifies a person, not a place. */
-export const LIVE_LABEL_FONT_SIZE = 14;
+// Player tags (`LivePlayerDots` with `playerTags`): a still dot in a dark
+// ring with a coloured halo, a straight connector, the runner's name at its
+// end. Sized from the tag mockup (18px dot, 4px ring, 58px connector, 28px
+// name) at the ~1.45 px per unit a 13-layer window gets across a 1888px-wide
+// map; like zone labels, they scale with the map's zoom.
 
-/** Radial distance from a live dot's centre to its label's anchor point,
- * along the dot's own `labelAngle` (px). For an orbiting dot, `labelAngle`
- * is that dot's current orbit angle, so the label sits outward from the dot
- * wherever it currently is on the shared node's circle, tracking it instead
- * of colliding with another co-located runner's label at a fixed slot. For a
- * stationary dot (pre-race, finished, abandoned), `labelAngle` alternates
- * straight up/down, the same above/below placement this replaces. */
-export const LIVE_LABEL_RADIAL_OFFSET = 16;
+/** Dark ring around a tag's dot (px) */
+export const LIVE_TAG_RING = 2.75;
+
+/** Coloured halo under the ring: its body reaches this far beyond the dot,
+ * and only its blur shows past the ring (px) */
+export const LIVE_TAG_GLOW_SPREAD = 2;
+export const LIVE_TAG_GLOW_BLUR = 4;
+
+/** Connector from the dot's edge toward the name (px) */
+export const LIVE_TAG_LINE_LENGTH = 40;
+export const LIVE_TAG_LINE_WIDTH = 1.4;
+
+/** Space between the connector's end and the name (px) */
+export const LIVE_TAG_NAME_GAP = 1;
+
+/** Name font size (px): well above a zone label, it names a person */
+export const LIVE_TAG_FONT_SIZE = 19;
+
+/** Soft dark shadow under a name, so it reads across the map's lines:
+ * its downward offset and its blur (px) */
+export const LIVE_TAG_SHADOW_OFFSET = 1.4;
+export const LIVE_TAG_SHADOW_BLUR = 2.75;
+
+/** Extra room between stacked names when a tag is pushed a tier out (px) */
+export const LIVE_TAG_TIER_GAP = 3;
+
+/** Tiers tried in each direction before two names are allowed to overlap */
+export const LIVE_TAG_MAX_TIERS = 4;

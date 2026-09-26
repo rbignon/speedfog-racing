@@ -4,6 +4,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import type { PositionedNode } from "./types";
   import {
+    PADDING,
     PLAYER_COLORS,
     RACER_DOT_RADIUS,
     LIVE_ORBIT_RADIUS,
@@ -13,9 +14,25 @@
     LIVE_SKULL_SIZE,
     LIVE_FINISHED_X_OFFSET,
     LIVE_START_X_OFFSET,
-    LIVE_LABEL_FONT_SIZE,
-    LIVE_LABEL_RADIAL_OFFSET,
+    LIVE_TAG_RING,
+    LIVE_TAG_GLOW_SPREAD,
+    LIVE_TAG_GLOW_BLUR,
+    LIVE_TAG_LINE_LENGTH,
+    LIVE_TAG_LINE_WIDTH,
+    LIVE_TAG_NAME_GAP,
+    LIVE_TAG_FONT_SIZE,
+    LIVE_TAG_TIER_GAP,
+    LIVE_TAG_MAX_TIERS,
+    LIVE_TAG_SHADOW_OFFSET,
+    LIVE_TAG_SHADOW_BLUR,
   } from "./constants";
+  import {
+    estimateNameWidth,
+    placeTags,
+    spreadColocated,
+    type TagPoint,
+    type TagView,
+  } from "./tags";
 
   interface Props {
     participants: WsParticipant[];
@@ -23,13 +40,17 @@
     raceStatus?: string;
     /** Show dots in pre-race position (aligned left of start) */
     preRace?: boolean;
-    /** Draw each dot's runner name beside it, in the player's own colour.
-     * Off by default: the strip-sized embeds this component already serves
-     * (the race page, the plain /dag overlays, training) have no room for
-     * it, and drawing it here rather than as an HTML overlay is what lets
-     * it ride the SVG's own pan/zoom transform for free, however the
-     * follow viewport moves. */
-    showPlayerLabels?: boolean;
+    /** Draw each runner as a tag instead of an orbiting dot: a still dot, a
+     * straight connector and the runner's name above or below it, placed
+     * so names don't cover each other (see `placeTags`). Off by default:
+     * the strip-sized embeds (the race page, the plain /dag overlays,
+     * training) have no room for names. Drawn in the SVG rather than as an
+     * HTML overlay so tags ride the viewport's pan and zoom for free. */
+    playerTags?: boolean;
+    /** Vertical extent on screen, in graph units, that tags must stay
+     * inside. Defaults to the nodes' own extent plus the layout's padding,
+     * i.e. the whole map. */
+    view?: TagView;
   }
 
   let {
@@ -37,7 +58,8 @@
     nodeMap,
     raceStatus,
     preRace = false,
-    showPlayerLabels = false,
+    playerTags = false,
+    view,
   }: Props = $props();
 
   // Wall-clock elapsed time for orbit animation
@@ -131,15 +153,12 @@
     color: string;
     displayName: string;
     opacity: number;
-    /** Direction (radians) the label sits outward from this dot, at
-     * `LIVE_LABEL_RADIAL_OFFSET`. An orbiting dot passes its own current
-     * orbit angle, so its label tracks it around a shared node instead of
-     * colliding with another co-located runner's label; a stationary dot
-     * alternates straight up/down. */
-    labelAngle: number;
   }
 
   let dots: DotPosition[] = $derived.by(() => {
+    // Reads `elapsed` below, so this reruns every frame: skip it entirely
+    // when tags are drawn instead.
+    if (playerTags) return [];
     const result: DotPosition[] = [];
     const playingAtNode = new Map<string, number>();
 
@@ -160,8 +179,6 @@
           color,
           displayName,
           opacity: 1,
-          // Stationary: alternates straight up/down, same as before.
-          labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
         });
         continue;
       }
@@ -179,7 +196,6 @@
           color,
           displayName,
           opacity: 1,
-          labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
         });
         continue;
       }
@@ -194,7 +210,6 @@
             color,
             displayName,
             opacity: 0.35,
-            labelAngle: i % 2 === 0 ? -Math.PI / 2 : Math.PI / 2,
           });
         }
         continue;
@@ -218,17 +233,132 @@
             color,
             displayName,
             opacity: 1,
-            // Orbiting: the label rides the dot's own current angle around
-            // the shared node, so co-located runners' labels spread around
-            // the circle with their dots instead of colliding at a fixed
-            // above/below slot.
-            labelAngle: angle,
           });
         }
         continue;
       }
     }
     return result;
+  });
+
+  // --- tags ---------------------------------------------------------------
+
+  // Rings touch with a hair between them when runners share a spot.
+  const TAG_SPACING = 2 * (RACER_DOT_RADIUS + LIVE_TAG_RING) + 1;
+  // The box the text-before/after-edge baselines align is the font's
+  // ascent plus descent, about 1.2em, not the bare em.
+  const TAG_NAME_HEIGHT = LIVE_TAG_FONT_SIZE * 1.2;
+  const TAG_METRICS = {
+    dotRadius: RACER_DOT_RADIUS + LIVE_TAG_RING,
+    reach: RACER_DOT_RADIUS + LIVE_TAG_LINE_LENGTH + LIVE_TAG_NAME_GAP,
+    nameHeight: TAG_NAME_HEIGHT,
+    tierStep: TAG_NAME_HEIGHT + LIVE_TAG_TIER_GAP,
+    maxTiers: LIVE_TAG_MAX_TIERS,
+  };
+
+  let tagView: TagView = $derived.by(() => {
+    if (view) return view;
+    let left = Infinity;
+    let right = -Infinity;
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const node of nodeMap.values()) {
+      left = Math.min(left, node.x - PADDING);
+      right = Math.max(right, node.x + PADDING);
+      top = Math.min(top, node.y - PADDING);
+      bottom = Math.max(bottom, node.y + PADDING);
+    }
+    return { left, right, top, bottom };
+  });
+
+  interface TagPosition {
+    participantId: string;
+    x: number;
+    y: number;
+    color: string;
+    displayName: string;
+    opacity: number;
+    dir: -1 | 1;
+    reach: number;
+    nameX: number;
+  }
+
+  let tags: TagPosition[] = $derived.by(() => {
+    if (!playerTags) return [];
+    const points: (TagPoint & {
+      color: string;
+      displayName: string;
+      opacity: number;
+      lean: -1 | 1;
+    })[] = [];
+    // Same spots as the orbiting dots, minus the orbit. Pre-race, the field
+    // gathers on the start node itself, as it does once the race starts:
+    // the viewport shows little to its left. The finish group extends past
+    // the final node, so a crowd doesn't sit on it.
+    const finishShift = ((finishedPlayers.length - 1) / 2) * TAG_SPACING;
+    for (const p of participants) {
+      let spot: { key: string; x: number; y: number; opacity: number };
+      if (preRace && startNode) {
+        spot = {
+          key: "start",
+          x: startNode.x,
+          y: startNode.y,
+          opacity: 1,
+        };
+      } else if (p.status === "finished" && finalBossNode) {
+        spot = {
+          key: "finish",
+          x: finalBossNode.x + LIVE_FINISHED_X_OFFSET + finishShift,
+          y: finalBossNode.y,
+          opacity: 1,
+        };
+      } else if (
+        (p.status === "abandoned" ||
+          p.status === "playing" ||
+          p.status === "ready") &&
+        p.current_zone
+      ) {
+        const node = nodeMap.get(p.current_zone);
+        if (!node) continue;
+        spot = {
+          key: node.id,
+          x: node.x,
+          y: node.y,
+          opacity: p.status === "abandoned" ? 0.35 : 1,
+        };
+      } else {
+        continue;
+      }
+      points.push({
+        id: p.id,
+        key: spot.key,
+        x: spot.x,
+        y: spot.y,
+        color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
+        displayName: p.twitch_display_name || p.twitch_username,
+        opacity: spot.opacity,
+        // Stable per runner, so a tag on the middle row keeps its side.
+        lean: p.color_index % 2 === 0 ? -1 : 1,
+      });
+    }
+
+    const spread = spreadColocated(points, TAG_SPACING);
+    const anchors = points.map((pt) => ({
+      id: pt.id,
+      ...spread.get(pt.id)!,
+      width: estimateNameWidth(pt.displayName, LIVE_TAG_FONT_SIZE),
+      lean: pt.lean,
+    }));
+    const placements = placeTags(anchors, tagView, TAG_METRICS);
+    return points.map((pt, i) => ({
+      participantId: pt.id,
+      x: anchors[i].x,
+      y: anchors[i].y,
+      color: pt.color,
+      displayName: pt.displayName,
+      opacity: pt.opacity,
+      ...placements.get(pt.id)!,
+    }));
   });
 
   function skullScale(progress: number): number {
@@ -246,49 +376,84 @@
   }
 </script>
 
-<!-- Player dots -->
-{#each dots as dot (dot.participantId)}
-  <circle
-    cx={dot.x}
-    cy={dot.y}
-    r={RACER_DOT_RADIUS}
-    fill={dot.color}
-    opacity={dot.opacity}
-    filter={dot.opacity < 1 ? undefined : "url(#player-glow)"}
-    class="live-dot"
-  >
-    <title>{dot.displayName}</title>
-  </circle>
-  {#if showPlayerLabels}
-    <!-- Connector: a short line in the player's own colour, from the dot's
-    edge to just short of its label, along the same labelAngle the label
-    itself is placed on. Ties a floating name back to its dot on a dense
-    map, the same role .mt-line plays beside .mt-dot and .mt-name in the
-    cast overlay mockup (docs/superpowers/specs/2026-09-23-cast-overlays-
-    mockup.py's CSS); generalized here to any angle since an orbiting dot's
-    labelAngle isn't fixed to straight up/down like the mockup's static
-    tags. -->
+{#if playerTags}
+  <defs>
+    <filter id="player-tag-glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation={LIVE_TAG_GLOW_BLUR} />
+    </filter>
+    <filter id="player-tag-shadow" x="-20%" y="-50%" width="140%" height="200%">
+      <feDropShadow
+        dx="0"
+        dy={LIVE_TAG_SHADOW_OFFSET}
+        stdDeviation={LIVE_TAG_SHADOW_BLUR}
+        flood-color="#080d13"
+        flood-opacity="0.95"
+      />
+    </filter>
+  </defs>
+  <!-- Three passes, so every name sits above every connector and dot. -->
+  {#each tags as tag (tag.participantId)}
     <line
-      x1={dot.x + Math.cos(dot.labelAngle) * RACER_DOT_RADIUS}
-      y1={dot.y + Math.sin(dot.labelAngle) * RACER_DOT_RADIUS}
-      x2={dot.x + Math.cos(dot.labelAngle) * (LIVE_LABEL_RADIAL_OFFSET - 4)}
-      y2={dot.y + Math.sin(dot.labelAngle) * (LIVE_LABEL_RADIAL_OFFSET - 4)}
-      stroke={dot.color}
-      stroke-width="2"
-      opacity={dot.opacity * 0.6}
-      class="player-line"
+      x1={tag.x}
+      y1={tag.y + tag.dir * RACER_DOT_RADIUS}
+      x2={tag.x}
+      y2={tag.y + tag.dir * (tag.reach - LIVE_TAG_NAME_GAP)}
+      stroke={tag.color}
+      stroke-width={LIVE_TAG_LINE_WIDTH}
+      opacity={tag.opacity * 0.5}
+      class="tag-line"
     />
+  {/each}
+  {#each tags as tag (tag.participantId)}
+    <g opacity={tag.opacity} class="tag-dot">
+      <circle
+        cx={tag.x}
+        cy={tag.y}
+        r={RACER_DOT_RADIUS + LIVE_TAG_GLOW_SPREAD}
+        fill={tag.color}
+        filter="url(#player-tag-glow)"
+      />
+      <circle
+        cx={tag.x}
+        cy={tag.y}
+        r={RACER_DOT_RADIUS + LIVE_TAG_RING}
+        fill="var(--color-bg, #0f1923)"
+        fill-opacity="0.95"
+      />
+      <circle cx={tag.x} cy={tag.y} r={RACER_DOT_RADIUS} fill={tag.color}>
+        <title>{tag.displayName}</title>
+      </circle>
+    </g>
+  {/each}
+  {#each tags as tag (tag.participantId)}
     <text
-      x={dot.x + Math.cos(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
-      y={dot.y + Math.sin(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
+      x={tag.nameX}
+      y={tag.y + tag.dir * tag.reach}
       text-anchor="middle"
-      font-size={LIVE_LABEL_FONT_SIZE}
+      dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
+      font-size={LIVE_TAG_FONT_SIZE}
+      fill={tag.color}
+      opacity={tag.opacity}
+      filter="url(#player-tag-shadow)"
+      class="tag-name">{tag.displayName}</text
+    >
+  {/each}
+{:else}
+  <!-- Player dots -->
+  {#each dots as dot (dot.participantId)}
+    <circle
+      cx={dot.x}
+      cy={dot.y}
+      r={RACER_DOT_RADIUS}
       fill={dot.color}
       opacity={dot.opacity}
-      class="player-label">{dot.displayName}</text
+      filter={dot.opacity < 1 ? undefined : "url(#player-glow)"}
+      class="live-dot"
     >
-  {/if}
-{/each}
+      <title>{dot.displayName}</title>
+    </circle>
+  {/each}
+{/if}
 
 <!-- Skull animations -->
 {#each skulls as skull (skull.id)}
@@ -314,22 +479,16 @@
   .skull-anim {
     pointer-events: none;
   }
-  .player-line {
+  .tag-line,
+  .tag-dot {
     pointer-events: none;
   }
 
-  /* Same halo technique as MetroDagFull's own .dag-label, so a runner's
-   * name reads the same way a zone name does over the map's varying line
-   * colours, bold and a step larger since it names a person, not a place. */
-  .player-label {
+  .tag-name {
     pointer-events: none;
     user-select: none;
     font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: 0.02em;
-    paint-order: stroke;
-    stroke: var(--color-surface, #1a1a2e);
-    stroke-width: 4px;
-    stroke-linejoin: round;
   }
 </style>

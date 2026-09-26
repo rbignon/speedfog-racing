@@ -51,9 +51,9 @@
     focusNodeId?: string | null;
     anonymous?: boolean;
     showLiveDots?: boolean;
-    /** Draw each live dot's runner name beside it. Off by default: see
-     * LivePlayerDots' own doc on the prop it forwards to. */
-    showPlayerLabels?: boolean;
+    /** Draw live runners as named tags instead of orbiting dots. Off by
+     * default: see LivePlayerDots' own doc on the prop it forwards to. */
+    playerTags?: boolean;
     follow?: boolean;
     maxLayers?: number;
     fullPathOpacity?: boolean;
@@ -82,7 +82,7 @@
     focusNodeId = null,
     anonymous = false,
     showLiveDots = false,
-    showPlayerLabels = false,
+    playerTags = false,
     follow = false,
     maxLayers = 5,
     fullPathOpacity = false,
@@ -95,6 +95,11 @@
   }: Props = $props();
 
   let hasHighlight = $derived(highlightIds != null && highlightIds.size > 0);
+
+  // What the follow viewport shows, so player tags stay on screen.
+  let followWindow = $state<
+    { left: number; right: number; top: number; bottom: number } | undefined
+  >();
 
   let graph = $derived(parseDagGraph(graphJson));
 
@@ -725,7 +730,8 @@
       {nodeMap}
       {raceStatus}
       preRace={raceStatus === "setup"}
-      {showPlayerLabels}
+      {playerTags}
+      view={followWindow}
     />
   {:else}
     {#each playerPaths as path (path.id)}
@@ -757,6 +763,7 @@
         {transparent}
         {maxLayers}
         {containerAspect}
+        bind:visibleWindow={followWindow}
       >
         {@render dagContent()}
       </FollowViewport>

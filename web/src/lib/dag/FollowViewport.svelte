@@ -14,6 +14,14 @@
     maxLayers?: number;
     /** Width over height of the box the map is drawn in. Unset keeps the graph's own shape. */
     containerAspect?: number;
+    /** Out: the part of the graph the viewport settles on, in graph units,
+     * for content that must stay on screen. */
+    visibleWindow?: {
+      left: number;
+      right: number;
+      top: number;
+      bottom: number;
+    };
     children: import("svelte").Snippet;
   }
 
@@ -26,6 +34,7 @@
     transparent = false,
     maxLayers = 5,
     containerAspect = undefined,
+    visibleWindow = $bindable(),
     children,
   }: Props = $props();
 
@@ -153,6 +162,27 @@
   let targetViewport = $derived(
     fitViewportToContainer(rawViewport, containerAspect, height),
   );
+
+  // The target, not the animated viewBox: it changes when the runners move
+  // the viewport, not on every frame of the glide toward it.
+  $effect(() => {
+    const t = targetViewport;
+    const next = {
+      left: t.centerX - t.visibleWidth / 2,
+      right: t.centerX + t.visibleWidth / 2,
+      top: t.centerY - t.visibleHeight / 2,
+      bottom: t.centerY + t.visibleHeight / 2,
+    };
+    const prev = visibleWindow;
+    if (
+      prev?.left !== next.left ||
+      prev?.right !== next.right ||
+      prev?.top !== next.top ||
+      prev?.bottom !== next.bottom
+    ) {
+      visibleWindow = next;
+    }
+  });
 
   // Smooth interpolation of viewBox via requestAnimationFrame
   const LERP_SPEED = 3; // Higher = faster convergence

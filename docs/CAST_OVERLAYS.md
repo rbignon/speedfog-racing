@@ -141,12 +141,23 @@ that same rectangle (at 16, 16, 1888 x 482).
 Plus the shared desk band (cam holes only; the map takes the space the other
 two scenes give the four POV holes).
 
-Each runner's live position on the map is a dot plus a short connector line
-in the runner's own colour, leading out to their name (`LivePlayerDots`'
-`showPlayerLabels`, following the dot's own orbit angle so co-located
-runners' names spread around their shared node instead of colliding): the
-line is what ties a name back to its dot on a dense map, the same three
-pieces (`.mt-dot`, `.mt-line`, `.mt-name`) the reference mockup draws.
+Each runner on the map is a tag, as the reference mockup draws it
+(`.mt-dot`, `.mt-line`, `.mt-name`): a still dot in a dark ring with a halo
+in the runner's colour, a straight vertical connector, and the name in large
+type at its end (`LivePlayerDots`' `playerTags`, instead of the orbiting dots
+the race page shows). Tags are sized in graph units, so they scale with the
+map's zoom like the zone labels do; at the default `maxLayers` they render
+at the mockup's size. Runners on the same node sit side by side, and before
+the start the whole field gathers on the start node the same way. Each name
+points toward the middle of the visible window, where there is room; a
+runner on the middle row keeps a side of their own (from their colour
+slot), so a tag doesn't flip because someone else moved. When a name would
+cover another name or another runner's dot, it tries the other side, then
+moves one tier further out (`placeTags` in `web/src/lib/dag/tags.ts`). Names
+stay inside the window the viewport shows (`FollowViewport`'s
+`visibleWindow`): a runner on the top or bottom row points inward, and a
+name near the left or right edge slides in while its connector still leaves
+from the dot.
 
 The map also reads two of its own query parameters directly, not through the
 shared cast params: `maxLayers` (default 13) and `fontSize` (default 9, down
