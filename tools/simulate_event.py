@@ -11,27 +11,32 @@ fall on a Wednesday.
 Meant for looking at /events/<slug> in each of its states while working on the
 page. Local databases only, and it refuses a database that is not on this
 machine unless --force is given: it writes fabricated participations onto real
-user rows and deletes the participants and casters of the races it manages.
+user rows, deletes the participants and casters of the races it manages, and
+detaches every other race from the event.
 
-It manages thirty races, named the way docs/EVENTS.md has an organizer name
-real ones so the page renders them identically, and found again by their event
-slot on later runs. Creating them consumes one available seed each (four
+It manages thirty-three races, named the way docs/EVENTS.md has an organizer
+name real ones so the page renders them identically, and found again by their
+event slot on later runs. Creating them consumes one available seed each (four
 quarters, two semis, the newcomers' and the open final, three races apiece,
-plus the six qualifier seeds); a pool out of fresh seeds lends its latest
+plus the nine qualifier seeds); a pool out of fresh seeds lends its latest
 consumed one.
 
-The event itself must already exist (create it from the admin Events tab), and
-its modes and stages must match the ones below; its dates are rewritten. One
-event at a time: --slug names which one, it does not isolate two.
+The event itself must already exist, and its modes and stages must match the
+real season's, reproduced below; its dates are rewritten, its showcases left
+empty. One event at a time: --slug names which one, it does not isolate two. A
+local database restored from production holds the real event with its real
+qualifier runs, which a run would wipe: the tool refuses an event holding a
+run with mod activity unless --force is given, so point it at a copy of that
+event under another slug instead.
 
 Usage:
-    cd server && uv run python ../tools/simulate_event.py qualifier
+    cd server && uv run python ../tools/simulate_event.py qualifier --slug sim-season
     cd server && uv run python ../tools/simulate_event.py semi_a_live --viewer alice
     cd server && uv run python ../tools/simulate_event.py quarter_c_live
     cd server && uv run python ../tools/simulate_event.py final_done --slug season-one
 
 With --viewer, that runner gets a seed of every card state (done, DNF,
-playing, joined, and two never entered), so the page can be checked from a
+playing, joined, and the rest never entered), so the page can be checked from a
 participant's seat. With --exclude (repeatable), those users are kept out of
 the roster altogether, runners and casters alike, so a real account can join
 a qualifier seed by hand and see the field as a newcomer would.
@@ -101,50 +106,36 @@ def D(s: str) -> datetime:
     return datetime.fromisoformat(s).replace(tzinfo=UTC)
 
 
-# The season's shape. Only the intervals matter: every date is shifted so the
-# scenario's virtual now becomes the real now.
-ANNOUNCE = D("2026-09-16T18:00")
-STARTS = D("2026-09-23T17:00")
-CUT = D("2026-09-30T17:00")
-ENDS = D("2026-10-25T23:00")
+# Season One's shape, as configured in production. Only the intervals matter:
+# every date is shifted so the scenario's virtual now becomes the real now.
+ANNOUNCE = D("2026-09-16T08:00")
+STARTS = D("2026-09-23T08:00")
+CUT = D("2026-10-08T08:00")
+ENDS = D("2026-11-01T23:00")
 MATCH_POOLS = ["standard", "boss_rush", "uwyg_major"]
-# key: (evening, pools, dated in the config). Quarters and semis are scheduled
-# with their players: the config leaves their date out and their races carry it.
+# key: (evening, pools, dated in the config), in the config's stage order. The
+# pools are the ones each race's seed is drawn from, in race order; the race is
+# named after the stage's own mode label. Quarters and semis are scheduled with
+# their players: the config leaves their date out and their races carry it, so
+# their evenings here are one plausible calendar between the cut and the final.
 STAGES: dict[str, tuple[datetime, list[str], bool]] = {
-    "quarter_a": (D("2026-10-03T19:00"), MATCH_POOLS, False),
-    "quarter_b": (D("2026-10-04T19:00"), MATCH_POOLS, False),
-    "quarter_c": (D("2026-10-05T19:00"), MATCH_POOLS, False),
-    "quarter_d": (D("2026-10-08T19:00"), MATCH_POOLS, False),
-    "semi_a": (D("2026-10-11T19:00"), MATCH_POOLS, False),
-    "semi_b": (D("2026-10-13T19:00"), MATCH_POOLS, False),
-    "newcomers": (D("2026-10-18T19:00"), ["standard", "sprint", "boss_rush"], True),
+    "newcomers": (D("2026-10-11T19:00"), ["standard", "sprint", "boss_rush"], True),
+    "quarter_a": (D("2026-10-12T19:00"), MATCH_POOLS, False),
+    "quarter_b": (D("2026-10-13T19:00"), MATCH_POOLS, False),
+    "quarter_c": (D("2026-10-14T19:00"), MATCH_POOLS, False),
+    "quarter_d": (D("2026-10-17T19:00"), MATCH_POOLS, False),
+    "semi_a": (D("2026-10-22T19:00"), MATCH_POOLS, False),
+    "semi_b": (D("2026-10-25T19:00"), MATCH_POOLS, False),
+    # Hardcore, UWYG Boss Rush, Halloween: the last two have no pool yet, so
+    # their seeds come from the closest pools that exist.
     "final": (
-        D("2026-10-25T19:00"),
+        D("2026-11-01T19:00"),
         ["hardcore", "uwyg_rush", "hardcore_boss_rush"],
         True,
     ),
 }
-STAGE_LABELS = {
-    "quarter_a": "Quarter A",
-    "quarter_b": "Quarter B",
-    "quarter_c": "Quarter C",
-    "quarter_d": "Quarter D",
-    "semi_a": "Semi A",
-    "semi_b": "Semi B",
-    "newcomers": "Newcomers' final",
-    "final": "Final",
-}
-POOL_LABELS = {
-    "standard": "Standard",
-    "boss_rush": "Boss Rush",
-    "uwyg_major": "UWYG Major Rush",
-    "sprint": "Sprint",
-    "hardcore": "Hardcore",
-    "uwyg_rush": "UWYG Rush",
-    "hardcore_boss_rush": "Hardcore Boss Rush",
-}
-MODES = ["standard", "uwyg_major", "boss_rush"]
-SEEDS_PER_MODE = 2
+MODES = ["standard", "sprint", "boss_rush"]
+SEEDS_PER_MODE = 3
 BASE_MINUTES = {
     "standard": 62,
     "uwyg_major": 55,
@@ -178,17 +169,19 @@ SCENARIOS: dict[str, datetime | tuple[str, str]] = {
     "announce": D("2026-09-18T15:00"),
     "announce_attached": D("2026-09-18T15:00"),
     "qualifier": D("2026-09-27T15:00"),
-    # Nothing scheduled yet: the evening section is hidden.
-    "cut": D("2026-10-01T15:00"),
+    # The qualifier closed, no race attached yet: the newcomers' final, dated
+    # in the config, is the next evening.
+    "cut": D("2026-10-09T12:00"),
+    "newcomers_live": ("live", "newcomers"),
+    # The newcomers' final played, Quarters A and B attached, A tonight.
+    "newcomers_done": D("2026-10-12T08:00"),
     # Quarters A and B played, C live, D not scheduled yet.
     "quarter_c_live": ("live", "quarter_c"),
-    # Every quarter played, no semi scheduled: the newcomers' final is next.
-    "quarters_done": D("2026-10-09T15:00"),
+    # Every quarter played, no semi scheduled.
+    "quarters_done": D("2026-10-18T15:00"),
     "semi_a_live": ("live", "semi_a"),
-    "newcomers_live": ("live", "newcomers"),
-    "newcomers_done": D("2026-10-20T15:00"),
     "final_live": ("live", "final"),
-    "final_done": D("2026-10-25T22:30"),
+    "final_done": D("2026-11-01T22:30"),
 }
 
 
@@ -329,7 +322,7 @@ def plan_qualifier(
 ) -> dict[str, list[Run]]:
     """Runs per qualifier slot, ``qualifier:<mode>:<n>``."""
     runs: dict[str, list[Run]] = {
-        f"qualifier:{m}:{i}": [] for m in MODES for i in (1, 2)
+        f"qualifier:{m}:{i}": [] for m in MODES for i in range(1, SEEDS_PER_MODE + 1)
     }
     window_start = STARTS + timedelta(hours=1)
     window_end = CUT - timedelta(hours=5)
@@ -380,7 +373,7 @@ def plan_qualifier(
         return runs
     # The viewer plays one seed of every card state, all visible at once in the
     # qualifier scenario: done, DNF, still playing, joined but not started, and
-    # one seed never entered.
+    # the other seeds never entered.
     skill = next(r.skill for r in runners if r.user.id == viewer.id)
     s = D("2026-09-24T20:00")
     add(
@@ -394,21 +387,23 @@ def plan_qualifier(
     )
     s = D("2026-09-25T20:00")
     add(
-        "qualifier:uwyg_major:1",
+        "qualifier:sprint:1",
         viewer,
         s - timedelta(minutes=10),
         s,
-        s + timedelta(minutes=24),
+        s + timedelta(minutes=12),
         False,
         0.4,
     )
-    s = D("2026-09-27T14:30")
+    # A sprint lasts under half an hour: started this close to the qualifier
+    # scenario's 15:00, it is still running then.
+    s = D("2026-09-27T14:45")
     add(
-        "qualifier:uwyg_major:2",
+        "qualifier:sprint:2",
         viewer,
         s - timedelta(minutes=5),
         s,
-        s + duration("uwyg_major", skill, rng),
+        s + duration("sprint", skill, rng),
         True,
         1.0,
     )
@@ -494,7 +489,7 @@ async def pick_seed(db, pool: str) -> Seed:
     if seed is not None:
         seed.status = SeedStatus.CONSUMED
         return seed
-    # A local database rarely holds thirty fresh seeds: two simulated races
+    # A local database rarely holds thirty-three fresh seeds: two simulated races
     # may share a pack, which nothing on the event page can tell.
     seed = (
         await db.execute(
@@ -692,13 +687,45 @@ async def simulate(
             mismatch.append(
                 f"stages {[st.key for st in config.stages]} != {list(STAGES)}"
             )
+        else:
+            # Each race is named after its stage's mode label, by index.
+            for key, (_date, pools, _dated) in STAGES.items():
+                stage_cfg = config.stage(key)
+                labels = stage_cfg.modes if stage_cfg else []
+                if len(labels) != len(pools):
+                    mismatch.append(
+                        f"{key} has {len(labels)} modes for {len(pools)} races"
+                    )
         if mismatch:
             raise SystemExit(
                 f"event {slug!r} does not match this tool's season: "
                 + "; ".join(mismatch)
             )
+        # Every participant this tool writes has no IGT change on record, so one
+        # that has comes from a real mod: this is the real event, whose runs a
+        # run would wipe.
+        real_runs = (
+            await db.execute(
+                select(func.count())
+                .select_from(Participant)
+                .join(Race, Race.id == Participant.race_id)
+                .where(
+                    Race.event_id == event.id,
+                    Participant.last_igt_change_at.isnot(None),
+                )
+            )
+        ).scalar_one()
+        if real_runs and not force:
+            raise SystemExit(
+                f"event {slug!r} holds {real_runs} real runs, which a run would wipe: "
+                "copy the event under another slug and pass --slug, or --force"
+            )
 
         runners, casters = await pick_roster(db, viewer, excluded, real_now, rng)
+        mode_labels = {m.key: m.label for m in config.modes}
+        # As tools/qualifier.py sizes them: late join and auto-end both span the
+        # qualifier window, so every seed closes at the cut.
+        qualifier_minutes = int((CUT - STARTS).total_seconds() // 60)
         skills = {r.user.id: r.skill for r in runners}
         newcomer_flags = {r.user.id: r.newcomer for r in runners}
         users_by_id = {r.user.id: r.user for r in runners}
@@ -713,14 +740,15 @@ async def simulate(
                     db,
                     event,
                     slot,
-                    f"{event.name} qualifier - {POOL_LABELS[mode]} - Seed {n}",
+                    # tools/qualifier.py's naming, upper case included.
+                    f"{event.name} qualifier - {mode_labels[mode]} - Seed {n}".upper(),
                     mode,
                     organizer,
                     is_public=False,
                     open_registration=True,
                     max_participants=None,
-                    late_join_window_minutes=10080,
-                    race_duration_minutes=10080,
+                    late_join_window_minutes=qualifier_minutes,
+                    race_duration_minutes=qualifier_minutes,
                     exclude_from_stats=True,
                     daily_date=None,
                     custom_rules="Same seed for everyone; one sitting per run.",
@@ -764,13 +792,15 @@ async def simulate(
         }
         stage_races: dict[str, Race] = {}
         for key, (_date, pools, _dated) in STAGES.items():
+            stage_cfg = config.stage(key)
+            assert stage_cfg is not None
             for i, pool in enumerate(pools, start=1):
                 slot = f"{key}:{i}"
                 stage_races[slot] = await ensure_race(
                     db,
                     event,
                     slot,
-                    f"{STAGE_LABELS[key]} - Race {i} - {POOL_LABELS[pool]}",
+                    f"{stage_cfg.label} - Race {i} - {stage_cfg.modes[i - 1]}",
                     pool,
                     organizer,
                     open_registration=False,
@@ -932,6 +962,20 @@ async def simulate(
             }
             for s in cfg["stages"]
         ]
+        # Showcases get no races here, but a dated one moves with the rest.
+        cfg["showcases"] = [
+            {
+                **s,
+                "date": (
+                    T(datetime.fromisoformat(s["date"]))
+                    .isoformat()
+                    .replace("+00:00", "Z")
+                    if s.get("date")
+                    else None
+                ),
+            }
+            for s in cfg.get("showcases", [])
+        ]
         cfg["phase_override"] = None
         event.config = cfg
         EventConfig.model_validate(cfg)
@@ -976,7 +1020,8 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="write even though the database is not on this machine",
+        help="write even though the database is not on this machine, or the event "
+        "holds real runs",
     )
     args = parser.parse_args()
     asyncio.run(simulate(args.stage, args.slug, args.viewer, args.exclude, args.force))

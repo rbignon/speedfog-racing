@@ -495,14 +495,19 @@ final incomplete shows no plate.
 `tools/simulate_event.py <stage>` fills a local database with a whole
 simulated season and projects it at the state named by the stage, shifting
 every date so that state is the current one: the announcement, the open
-qualifier, the cut with nothing scheduled, Quarter C live beside two played
-quarters and an unscheduled one, the quarters over with no semi scheduled,
-Semi A live, and the newcomers' and open finals live and finished. The event
-must already exist, and its modes and stages must match the ones the tool
-hardcodes. It writes fabricated participations onto real user rows and
-consumes an available seed for each of the thirty races it creates (a pool
-out of fresh seeds lends its latest consumed one), so it refuses a database
-that is not on this machine.
+qualifier, the cut with no race attached, the newcomers' final live and
+played, Quarter C live beside two played quarters and an unscheduled one,
+the quarters over with no semi scheduled, Semi A live, and the final live and
+finished. The event must already exist, and its modes and stages must match
+Season One's real configuration, which the tool reproduces (its showcases
+stay empty). It writes fabricated participations onto real user rows,
+detaches every race it does not manage from the event, and consumes an
+available seed for each of the thirty-three races it creates (a pool out of
+fresh seeds lends its latest consumed one), so it refuses a database that is
+not on this machine. On a database restored from production, the real event
+carries the real qualifier runs, which a run would wipe: the tool refuses an
+event holding a run with mod activity (unless `--force`), so copy the event
+under another slug and pass `--slug`.
 `--viewer <twitch username>` gives that runner a seed of every card state.
 `--exclude <twitch username>` (repeatable) keeps that user out of the roster,
 runners, casters and organizer alike, so a real account can join a qualifier
