@@ -52,6 +52,10 @@ export interface TagAnchor {
   /** The dot's centre. */
   x: number;
   y: number;
+  /** Where the runner is: the x of the node their dot sits at or is spread
+   * around. It decides whether they are on screen at all, so a group on
+   * screen keeps every member even when spreading pushes one past the edge. */
+  spotX: number;
   /** The name's estimated width. */
   width: number;
   /** The side this tag prefers when its dot sits on the window's middle,
@@ -115,11 +119,15 @@ function overlaps(a: Box, b: Box): boolean {
  * preferred slot collides or would leave the window, the other direction is
  * tried at the same distance, then both again one tier further out. If
  * nothing is free within `maxTiers`, the first direction that stays inside
- * the window is kept and the overlap accepted: a tag is never dropped.
+ * the window is kept and the overlap accepted: a tag is never dropped for
+ * want of room.
  *
  * A name near the window's left or right edge slides inward rather than
- * being cut, its connector still leaving from the dot. Tags are placed left
- * to right, so the result doesn't depend on the input order.
+ * being cut, its connector still leaving from the dot. A runner whose spot
+ * is beyond either side gets no tag at all: sliding their name in would put
+ * it by the wrong place (the viewport's own side indicators cover the
+ * runners still racing). Tags are placed left to right, so the result
+ * doesn't depend on the input order.
  */
 export function placeTags(
   anchors: TagAnchor[],
@@ -128,7 +136,9 @@ export function placeTags(
 ): Map<string, TagPlacement> {
   const EPS = 0.5;
   const mid = (view.top + view.bottom) / 2;
-  const ordered = [...anchors].sort((a, b) => a.x - b.x || a.y - b.y);
+  const ordered = anchors
+    .filter((a) => a.spotX >= view.left && a.spotX <= view.right)
+    .sort((a, b) => a.x - b.x || a.y - b.y);
 
   const dotBoxes = new Map<string, Box>(
     anchors.map((a) => [

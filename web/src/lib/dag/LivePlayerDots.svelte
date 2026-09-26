@@ -47,9 +47,9 @@
      * training) have no room for names. Drawn in the SVG rather than as an
      * HTML overlay so tags ride the viewport's pan and zoom for free. */
     playerTags?: boolean;
-    /** Vertical extent on screen, in graph units, that tags must stay
-     * inside. Defaults to the nodes' own extent plus the layout's padding,
-     * i.e. the whole map. */
+    /** The part of the map on screen, in graph units: tags stay inside it,
+     * and a runner whose spot is outside it gets none. Defaults to the
+     * nodes' own extent plus the layout's padding, i.e. the whole map. */
     view?: TagView;
   }
 
@@ -286,6 +286,7 @@
   let tags: TagPosition[] = $derived.by(() => {
     if (!playerTags) return [];
     const points: (TagPoint & {
+      spotX: number;
       color: string;
       displayName: string;
       opacity: number;
@@ -297,11 +298,18 @@
     // the final node, so a crowd doesn't sit on it.
     const finishShift = ((finishedPlayers.length - 1) / 2) * TAG_SPACING;
     for (const p of participants) {
-      let spot: { key: string; x: number; y: number; opacity: number };
+      let spot: {
+        key: string;
+        x: number;
+        y: number;
+        spotX: number;
+        opacity: number;
+      };
       if (preRace && startNode) {
         spot = {
           key: "start",
           x: startNode.x,
+          spotX: startNode.x,
           y: startNode.y,
           opacity: 1,
         };
@@ -309,6 +317,7 @@
         spot = {
           key: "finish",
           x: finalBossNode.x + LIVE_FINISHED_X_OFFSET + finishShift,
+          spotX: finalBossNode.x,
           y: finalBossNode.y,
           opacity: 1,
         };
@@ -323,6 +332,7 @@
         spot = {
           key: node.id,
           x: node.x,
+          spotX: node.x,
           y: node.y,
           opacity: p.status === "abandoned" ? 0.35 : 1,
         };
@@ -334,6 +344,7 @@
         key: spot.key,
         x: spot.x,
         y: spot.y,
+        spotX: spot.spotX,
         color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
         displayName: p.twitch_display_name || p.twitch_username,
         opacity: spot.opacity,
@@ -347,18 +358,25 @@
       id: pt.id,
       ...spread.get(pt.id)!,
       width: estimateNameWidth(pt.displayName, LIVE_TAG_FONT_SIZE),
+      spotX: pt.spotX,
       lean: pt.lean,
     }));
     const placements = placeTags(anchors, tagView, TAG_METRICS);
-    return points.map((pt, i) => ({
-      participantId: pt.id,
-      x: anchors[i].x,
-      y: anchors[i].y,
-      color: pt.color,
-      displayName: pt.displayName,
-      opacity: pt.opacity,
-      ...placements.get(pt.id)!,
-    }));
+    return points.flatMap((pt, i) => {
+      const placement = placements.get(pt.id);
+      if (!placement) return [];
+      return [
+        {
+          participantId: pt.id,
+          x: anchors[i].x,
+          y: anchors[i].y,
+          color: pt.color,
+          displayName: pt.displayName,
+          opacity: pt.opacity,
+          ...placement,
+        },
+      ];
+    });
   });
 
   function skullScale(progress: number): number {

@@ -157,7 +157,9 @@ moves one tier further out (`placeTags` in `web/src/lib/dag/tags.ts`). Names
 stay inside the window the viewport shows (`FollowViewport`'s
 `visibleWindow`): a runner on the top or bottom row points inward, and a
 name near the left or right edge slides in while its connector still leaves
-from the dot.
+from the dot. A runner whose node is off to the side gets no tag at all
+(the viewport's own side indicators cover those still racing); runners
+spread around a node on screen all keep theirs, even past the edge.
 
 The map also reads two of its own query parameters directly, not through the
 shared cast params: `maxLayers` (default 13) and `fontSize` (default 9, down

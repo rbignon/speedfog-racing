@@ -18,8 +18,9 @@ function anchor(
   y: number,
   lean: -1 | 1 = -1,
   width = 80,
+  spotX = x,
 ): TagAnchor {
-  return { id, x, y, width, lean };
+  return { id, x, y, width, lean, spotX };
 }
 
 describe("spreadColocated", () => {
@@ -113,6 +114,34 @@ describe("placeTags", () => {
     expect(out.get("left")!.nameX).toBe(40);
     expect(out.get("inside")!.nameX).toBe(600);
     expect(out.get("right")!.nameX).toBe(1260);
+  });
+
+  it("keeps every member of a group whose spot is on screen, past the edge too", () => {
+    // Four runners on a node 10 inside the left edge, spread 18.5 apart.
+    const out = placeTags(
+      [
+        anchor("a", -17.75, 170, -1, 80, 10),
+        anchor("b", 0.75, 170, 1, 80, 10),
+        anchor("c", 19.25, 170, -1, 80, 10),
+        anchor("d", 37.75, 170, 1, 80, 10),
+      ],
+      VIEW,
+      METRICS,
+    );
+    expect([...out.keys()].sort()).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("leaves out a runner whose spot is off the side of the view", () => {
+    const out = placeTags(
+      [
+        anchor("before", -30, 170),
+        anchor("in", 600, 170),
+        anchor("after", 1400, 170),
+      ],
+      VIEW,
+      METRICS,
+    );
+    expect([...out.keys()]).toEqual(["in"]);
   });
 
   it("uses the slid position when checking collisions", () => {
