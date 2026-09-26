@@ -5,7 +5,7 @@
   import FollowViewport from "./FollowViewport.svelte";
   import LivePlayerDots from "./LivePlayerDots.svelte";
   import { parseDagGraph } from "./types";
-  import { computeLayout } from "./layout";
+  import { computeLayout, stretchToAspect } from "./layout";
   import {
     buildDirectedAdjacency,
     expandNodePath,
@@ -27,6 +27,7 @@
     LABEL_OFFSET_Y,
     PLAYER_COLORS,
     RACER_DOT_RADIUS,
+    MARK_REFERENCE_WIDTH,
     PARALLEL_PATH_SPACING,
     MAX_PARALLEL,
   } from "./constants";
@@ -64,6 +65,14 @@
     labelMaxChars?: number;
     /** Width over height of the box the map fills, for the follow viewport. */
     containerAspect?: number;
+    /** Spread the rows apart so the whole graph fills `containerAspect`'s
+     * box: for a map shown whole, which would otherwise be a thin strip. */
+    fillContainer?: boolean;
+    /** With `follow`: keep the runners' marks (tags, trails, death skulls)
+     * the size they have in a MARK_REFERENCE_WIDTH-wide window however far
+     * the viewport zooms out, and grow the nodes partway, so a map shown
+     * whole in a fixed box stays readable. */
+    keepMarkSize?: boolean;
     /** Viewer's participant id; highlights their row in the node popup. */
     myParticipantId?: string | null;
     onzonecodex?: (
@@ -90,6 +99,8 @@
     showLabels = true,
     labelMaxChars = LABEL_MAX_CHARS,
     containerAspect = undefined,
+    fillContainer = false,
+    keepMarkSize = false,
     myParticipantId = null,
     onzonecodex,
   }: Props = $props();
@@ -103,8 +114,25 @@
 
   let graph = $derived(parseDagGraph(graphJson));
 
+  // How much wider than the reference the follow window is: marks scale by
+  // that much, nodes and the edges between them by its square root, enough
+  // to stay visible without crowding a whole seed's worth of them. Never
+  // below 1: zooming in leaves everything as drawn.
+  let markScale = $derived(
+    keepMarkSize && follow && followWindow
+      ? Math.max(
+          1,
+          (followWindow.right - followWindow.left) / MARK_REFERENCE_WIDTH,
+        )
+      : 1,
+  );
+  let nodeScale = $derived(Math.sqrt(markScale));
+
   let layout: DagLayout = $derived.by(() => {
-    return computeLayout(graph);
+    const base = computeLayout(graph);
+    return fillContainer && containerAspect
+      ? stretchToAspect(base, containerAspect)
+      : base;
   });
 
   // Build node ID lookup
@@ -442,7 +470,7 @@
   }
 
   function labelY(node: PositionedNode): number {
-    const r = nodeRadius(node);
+    const r = nodeRadius(node) * nodeScale;
     if (labelAbove.has(node.id)) {
       return node.y - r - 8;
     }
@@ -557,7 +585,7 @@
         x2={seg.x2}
         y2={seg.y2}
         stroke={EDGE_COLOR}
-        stroke-width={EDGE_STROKE_WIDTH}
+        stroke-width={EDGE_STROKE_WIDTH * nodeScale}
         stroke-linecap="round"
         opacity="0.25"
       />
@@ -594,7 +622,7 @@
         x2={segment.x2}
         y2={segment.y2}
         stroke={segment.color}
-        stroke-width="4"
+        stroke-width={4 * markScale}
         stroke-linecap="round"
         opacity={segment.opacity}
       />
@@ -611,7 +639,7 @@
     >
       {#if !anonymous}<title>{node.displayName}</title>{/if}
 
-      <g class="dag-node-shape">
+      <g class="dag-node-shape" style="--node-scale: {nodeScale};">
         {#if anonymous}
           <circle
             cx={node.x}
@@ -690,10 +718,11 @@
 
       <!-- Death icon (opposite side of label) -->
       {#if !anonymous && nodesWithDeaths.has(node.id)}
-        {@const ds = (labelFontSize - 1) / 24}
+        {@const ds = ((labelFontSize - 1) / 24) * markScale}
+        {@const nr = nodeRadius(node) * nodeScale}
         {@const baseline = labelAbove.has(node.id)
-          ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
-          : node.y - nodeRadius(node) - 6}
+          ? node.y + nr + (LABEL_OFFSET_Y - 2) * markScale
+          : node.y - nr - 6 * markScale}
         <path
           d={SKULL_PATH}
           fill="var(--color-danger)"
@@ -732,6 +761,7 @@
       preRace={raceStatus === "setup"}
       {playerTags}
       view={followWindow}
+      {markScale}
     />
   {:else}
     {#each playerPaths as path (path.id)}
@@ -816,12 +846,13 @@
   .dag-node-shape {
     transform-box: fill-box;
     transform-origin: center;
+    transform: scale(var(--node-scale, 1));
     transition: transform 0.15s ease;
   }
 
   .dag-node:hover .dag-node-shape,
   .dag-node.selected .dag-node-shape {
-    transform: scale(1.3);
+    transform: scale(calc(var(--node-scale, 1) * 1.3));
   }
 
   .player-path {

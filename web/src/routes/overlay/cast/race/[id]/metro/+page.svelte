@@ -37,29 +37,35 @@
     ),
   );
 
-  // maxLayers=13 at this box's 1888x482 aspect gives roughly the 1.5x zoom
-  // the spec measured, where zone labels render near 17px instead of the
-  // strip's under-7px. Both stay overridable from the URL for a seed that
-  // needs more or less room, the same maxLayers/fontSize pattern
-  // /overlay/race/[id]/dag already reads.
+  // The map shows the whole seed by default, its rows spread apart to fill
+  // the box, so a viewer sees at a glance how far into the race each runner
+  // is; zone names are left out, since at that zoom they would render at a
+  // few pixels (the standings below carry each runner's zone). Runner marks
+  // keep their on-screen size whatever the zoom (MetroDagFull's
+  // `keepMarkSize`).
   //
-  // The label font itself is set smaller here than that strip's own default
-  // (LABEL_FONT_SIZE, 11 graph units): this scene shows every zone label on
-  // the map at once, seed graphs run to dozens of nodes, and at 11 units
-  // those labels fought each other on a real race's map. 9 was measured on
-  // the live overlay against 7 (about 10px on the 1920x1080 canvas, legible
-  // at 100% but thin at broadcast distance) and against the strip's own
-  // 11-equivalent (about 16px, still what made a 90-node seed illegible):
-  // 9 renders near 13px, keeping the reduction that cuts collisions on a
-  // dense map without going as thin as 7 read at actual broadcast distance.
-  const DEFAULT_MAX_LAYERS = 13;
+  // `maxLayers=N` in the URL follows the runners instead, with a window N
+  // layers wide, and brings the zone names back; `labels=0|1` overrides
+  // that choice either way and `fontSize` sets their size, the same knobs
+  // /overlay/race/[id]/dag reads. 9 graph units renders near 13px at a
+  // 13-layer window: 11 made a 90-node seed illegible, 7 read thin at
+  // broadcast distance.
   const DEFAULT_LABEL_FONT_SIZE = 9;
-  let maxLayers = $derived(
+  let followLayers = $derived(
     (() => {
       const raw = page.url.searchParams.get("maxLayers");
-      if (raw === null || raw === "") return DEFAULT_MAX_LAYERS;
+      if (raw === null || raw === "") return null;
       const n = parseInt(raw, 10);
-      return isNaN(n) || n < 3 ? DEFAULT_MAX_LAYERS : n;
+      return isNaN(n) || n < 3 ? null : n;
+    })(),
+  );
+  let wholeMap = $derived(followLayers === null);
+  let showZoneLabels = $derived(
+    (() => {
+      const raw = page.url.searchParams.get("labels");
+      if (raw === "0") return false;
+      if (raw === "1") return true;
+      return !wholeMap;
     })(),
   );
   let labelFontSize = $derived(
@@ -70,6 +76,10 @@
       return isNaN(n) || n < 6 || n > 32 ? DEFAULT_LABEL_FONT_SIZE : n;
     })(),
   );
+  // More layers than any seed has: the follow viewport clamps its window to
+  // the graph, so this shows it whole.
+  const WHOLE_MAP_LAYERS = 1000;
+  let maxLayers = $derived(followLayers ?? WHOLE_MAP_LAYERS);
 
   // 6 rows is what the log panel's 230px height fits under its ~32px title
   // (blk-title + its margin): 230 - 32 = 198, / 31px per row = 6.38.
@@ -108,9 +118,11 @@
         follow
         showLiveDots
         playerTags
-        showLabels
+        showLabels={showZoneLabels}
         labelMaxChars={26}
         containerAspect={mapRect.w / mapRect.h}
+        fillContainer={wholeMap}
+        keepMarkSize
         {maxLayers}
         {labelFontSize}
       />

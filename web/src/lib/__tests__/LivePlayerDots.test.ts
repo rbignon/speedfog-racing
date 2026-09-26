@@ -92,3 +92,40 @@ describe("LivePlayerDots: player tags", () => {
     expect(Math.sign(ys[0] - 100)).toBe(-Math.sign(ys[1] - 100));
   });
 });
+
+describe("LivePlayerDots: the final node at the end of a race", () => {
+  it("puts a finisher past a runner still fighting there, without overlap", () => {
+    const finalMap = new Map([
+      ["end", fakeNode({ id: "end", type: "final_boss", x: 500, y: 100 })],
+    ]);
+    const { container } = render(LivePlayerDots, {
+      props: {
+        participants: [
+          fakeParticipant({
+            id: "p-1",
+            twitch_display_name: "Winner",
+            status: "finished",
+            current_zone: "end",
+          }),
+          fakeParticipant({
+            id: "p-2",
+            twitch_display_name: "Fighter",
+            status: "playing",
+            current_zone: "end",
+            color_index: 1,
+          }),
+        ],
+        nodeMap: finalMap,
+        playerTags: true,
+      },
+    });
+    const dotX = (name: string) =>
+      Number(
+        [...container.querySelectorAll(".tag-dot circle")]
+          .find((c) => c.querySelector("title")?.textContent === name)
+          ?.getAttribute("cx"),
+      );
+    // Dot radius plus ring, twice: the two rings must not overlap.
+    expect(dotX("Winner") - dotX("Fighter")).toBeGreaterThanOrEqual(17.5);
+  });
+});

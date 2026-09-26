@@ -19,10 +19,17 @@ export interface TagPoint {
 /**
  * Spreads runners that share a spot horizontally, centred on it, `spacing`
  * apart and in input order. A runner alone on its spot keeps its position.
+ *
+ * With `view`, a group whose spot is on screen but which would spill past
+ * either side slides inward as a whole, until every dot centre is at least
+ * `margin` inside, so a crowd at the start or the finish of a map shown
+ * whole stays on screen. A group too wide for the view is centred in it.
  */
 export function spreadColocated(
   points: TagPoint[],
   spacing: number,
+  view?: { left: number; right: number },
+  margin = 0,
 ): Map<string, { x: number; y: number }> {
   const groups = new Map<string, TagPoint[]>();
   for (const p of points) {
@@ -33,8 +40,19 @@ export function spreadColocated(
   const result = new Map<string, { x: number; y: number }>();
   for (const group of groups.values()) {
     const mid = (group.length - 1) / 2;
+    const spot = group[0].x;
+    let centre = spot;
+    if (view && spot >= view.left && spot <= view.right) {
+      const half = mid * spacing;
+      const lo = view.left + margin + half;
+      const hi = view.right - margin - half;
+      centre =
+        lo <= hi
+          ? Math.min(Math.max(spot, lo), hi)
+          : (view.left + view.right) / 2;
+    }
     group.forEach((p, i) => {
-      result.set(p.id, { x: p.x + (i - mid) * spacing, y: p.y });
+      result.set(p.id, { x: centre + (i - mid) * spacing, y: p.y });
     });
   }
   return result;
@@ -53,8 +71,8 @@ export interface TagAnchor {
   x: number;
   y: number;
   /** Where the runner is: the x of the node their dot sits at or is spread
-   * around. It decides whether they are on screen at all, so a group on
-   * screen keeps every member even when spreading pushes one past the edge. */
+   * around. It decides whether they are on screen at all, so every member
+   * of a group on screen keeps a tag. */
   spotX: number;
   /** The name's estimated width. */
   width: number;

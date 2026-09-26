@@ -180,7 +180,8 @@ export const LIVE_START_X_OFFSET = -20;
 // ring with a coloured halo, a straight connector, the runner's name at its
 // end. Sized from the tag mockup (18px dot, 4px ring, 58px connector, 28px
 // name) at the ~1.45 px per unit a 13-layer window gets across a 1888px-wide
-// map; like zone labels, they scale with the map's zoom.
+// map. Drawn in graph units, they follow the map's zoom unless MetroDagFull's
+// `keepMarkSize` scales them back (see MARK_REFERENCE_WIDTH).
 
 /** Dark ring around a tag's dot (px) */
 export const LIVE_TAG_RING = 2.75;
@@ -210,3 +211,9 @@ export const LIVE_TAG_TIER_GAP = 3;
 
 /** Tiers tried in each direction before two names are allowed to overlap */
 export const LIVE_TAG_MAX_TIERS = 4;
+
+/** Width of the window a map's marks (tags, trails, death skulls) are drawn
+ * for (px): 13 layers. With MetroDagFull's `keepMarkSize`, a wider window
+ * scales them up by the same ratio, so they keep their size on screen
+ * however far the map zooms out. */
+export const MARK_REFERENCE_WIDTH = 13 * (BASE_GAP + NODE_AREA);

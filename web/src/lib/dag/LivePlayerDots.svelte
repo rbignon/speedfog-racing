@@ -51,6 +51,10 @@
      * and a runner whose spot is outside it gets none. Defaults to the
      * nodes' own extent plus the layout's padding, i.e. the whole map. */
     view?: TagView;
+    /** How much larger than drawn to make tags and death skulls, so they
+     * keep their size on screen when the map zooms out (MetroDagFull's
+     * `keepMarkSize`). */
+    markScale?: number;
   }
 
   let {
@@ -60,6 +64,7 @@
     preRace = false,
     playerTags = false,
     view,
+    markScale = 1,
   }: Props = $props();
 
   // Wall-clock elapsed time for orbit animation
@@ -244,17 +249,32 @@
   // --- tags ---------------------------------------------------------------
 
   // Rings touch with a hair between them when runners share a spot.
-  const TAG_SPACING = 2 * (RACER_DOT_RADIUS + LIVE_TAG_RING) + 1;
+  let tg = $derived.by(() => {
+    const k = markScale;
+    return {
+      dot: RACER_DOT_RADIUS * k,
+      ring: LIVE_TAG_RING * k,
+      glowSpread: LIVE_TAG_GLOW_SPREAD * k,
+      glowBlur: LIVE_TAG_GLOW_BLUR * k,
+      lineLength: LIVE_TAG_LINE_LENGTH * k,
+      lineWidth: LIVE_TAG_LINE_WIDTH * k,
+      nameGap: LIVE_TAG_NAME_GAP * k,
+      font: LIVE_TAG_FONT_SIZE * k,
+      tierGap: LIVE_TAG_TIER_GAP * k,
+      shadowOffset: LIVE_TAG_SHADOW_OFFSET * k,
+      shadowBlur: LIVE_TAG_SHADOW_BLUR * k,
+    };
+  });
+  let tagSpacing = $derived(2 * (tg.dot + tg.ring) + 1);
   // The box the text-before/after-edge baselines align is the font's
   // ascent plus descent, about 1.2em, not the bare em.
-  const TAG_NAME_HEIGHT = LIVE_TAG_FONT_SIZE * 1.2;
-  const TAG_METRICS = {
-    dotRadius: RACER_DOT_RADIUS + LIVE_TAG_RING,
-    reach: RACER_DOT_RADIUS + LIVE_TAG_LINE_LENGTH + LIVE_TAG_NAME_GAP,
-    nameHeight: TAG_NAME_HEIGHT,
-    tierStep: TAG_NAME_HEIGHT + LIVE_TAG_TIER_GAP,
+  let tagMetrics = $derived({
+    dotRadius: tg.dot + tg.ring,
+    reach: tg.dot + tg.lineLength + tg.nameGap,
+    nameHeight: tg.font * 1.2,
+    tierStep: tg.font * 1.2 + tg.tierGap,
     maxTiers: LIVE_TAG_MAX_TIERS,
-  };
+  });
 
   let tagView: TagView = $derived.by(() => {
     if (view) return view;
@@ -291,12 +311,14 @@
       displayName: string;
       opacity: number;
       lean: -1 | 1;
+      finished: boolean;
     })[] = [];
-    // Same spots as the orbiting dots, minus the orbit. Pre-race, the field
-    // gathers on the start node itself, as it does once the race starts:
-    // the viewport shows little to its left. The finish group extends past
-    // the final node, so a crowd doesn't sit on it.
-    const finishShift = ((finishedPlayers.length - 1) / 2) * TAG_SPACING;
+    // Same spots as the orbiting dots, minus the orbit, except that the
+    // field gathers on the start node itself before the race, and finishers
+    // on the final node, sharing its group with anyone still fighting there
+    // (placed after them below, so past them on the line): a group spread
+    // beside a node at the map's edge would leave the map, and two groups on
+    // one spot would draw over each other.
     for (const p of participants) {
       let spot: {
         key: string;
@@ -315,8 +337,8 @@
         };
       } else if (p.status === "finished" && finalBossNode) {
         spot = {
-          key: "finish",
-          x: finalBossNode.x + LIVE_FINISHED_X_OFFSET + finishShift,
+          key: finalBossNode.id,
+          x: finalBossNode.x,
           spotX: finalBossNode.x,
           y: finalBossNode.y,
           opacity: 1,
@@ -350,18 +372,27 @@
         opacity: spot.opacity,
         // Stable per runner, so a tag on the middle row keeps its side.
         lean: p.color_index % 2 === 0 ? -1 : 1,
+        finished: spot.key === finalBossNode?.id && p.status === "finished",
       });
     }
 
-    const spread = spreadColocated(points, TAG_SPACING);
+    // Within a shared spot, finishers come last: right of the runners still
+    // on the final node. A stable sort, so rank order holds otherwise.
+    points.sort((a, b) => Number(a.finished) - Number(b.finished));
+    const spread = spreadColocated(
+      points,
+      tagSpacing,
+      tagView,
+      tg.dot + tg.ring,
+    );
     const anchors = points.map((pt) => ({
       id: pt.id,
       ...spread.get(pt.id)!,
-      width: estimateNameWidth(pt.displayName, LIVE_TAG_FONT_SIZE),
+      width: estimateNameWidth(pt.displayName, tg.font),
       spotX: pt.spotX,
       lean: pt.lean,
     }));
-    const placements = placeTags(anchors, tagView, TAG_METRICS);
+    const placements = placeTags(anchors, tagView, tagMetrics);
     return points.flatMap((pt, i) => {
       const placement = placements.get(pt.id);
       if (!placement) return [];
@@ -397,13 +428,13 @@
 {#if playerTags}
   <defs>
     <filter id="player-tag-glow" x="-100%" y="-100%" width="300%" height="300%">
-      <feGaussianBlur stdDeviation={LIVE_TAG_GLOW_BLUR} />
+      <feGaussianBlur stdDeviation={tg.glowBlur} />
     </filter>
     <filter id="player-tag-shadow" x="-20%" y="-50%" width="140%" height="200%">
       <feDropShadow
         dx="0"
-        dy={LIVE_TAG_SHADOW_OFFSET}
-        stdDeviation={LIVE_TAG_SHADOW_BLUR}
+        dy={tg.shadowOffset}
+        stdDeviation={tg.shadowBlur}
         flood-color="#080d13"
         flood-opacity="0.95"
       />
@@ -413,11 +444,11 @@
   {#each tags as tag (tag.participantId)}
     <line
       x1={tag.x}
-      y1={tag.y + tag.dir * RACER_DOT_RADIUS}
+      y1={tag.y + tag.dir * tg.dot}
       x2={tag.x}
-      y2={tag.y + tag.dir * (tag.reach - LIVE_TAG_NAME_GAP)}
+      y2={tag.y + tag.dir * (tag.reach - tg.nameGap)}
       stroke={tag.color}
-      stroke-width={LIVE_TAG_LINE_WIDTH}
+      stroke-width={tg.lineWidth}
       opacity={tag.opacity * 0.5}
       class="tag-line"
     />
@@ -427,18 +458,18 @@
       <circle
         cx={tag.x}
         cy={tag.y}
-        r={RACER_DOT_RADIUS + LIVE_TAG_GLOW_SPREAD}
+        r={tg.dot + tg.glowSpread}
         fill={tag.color}
         filter="url(#player-tag-glow)"
       />
       <circle
         cx={tag.x}
         cy={tag.y}
-        r={RACER_DOT_RADIUS + LIVE_TAG_RING}
+        r={tg.dot + tg.ring}
         fill="var(--color-bg, #0f1923)"
         fill-opacity="0.95"
       />
-      <circle cx={tag.x} cy={tag.y} r={RACER_DOT_RADIUS} fill={tag.color}>
+      <circle cx={tag.x} cy={tag.y} r={tg.dot} fill={tag.color}>
         <title>{tag.displayName}</title>
       </circle>
     </g>
@@ -449,7 +480,7 @@
       y={tag.y + tag.dir * tag.reach}
       text-anchor="middle"
       dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
-      font-size={LIVE_TAG_FONT_SIZE}
+      font-size={tg.font}
       fill={tag.color}
       opacity={tag.opacity}
       filter="url(#player-tag-shadow)"
@@ -478,7 +509,7 @@
   {@const pos = nodeMap.get(skull.nodeId)}
   {@const progress = (performance.now() - skull.startTime) / LIVE_SKULL_ANIM_MS}
   {#if pos && progress < 1}
-    {@const s = (LIVE_SKULL_SIZE / 24) * skullScale(progress)}
+    {@const s = (LIVE_SKULL_SIZE / 24) * skullScale(progress) * markScale}
     <path
       d={SKULL_PATH}
       fill="var(--color-danger)"

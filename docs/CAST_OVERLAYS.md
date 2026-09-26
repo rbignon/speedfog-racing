@@ -126,11 +126,11 @@ at (1328, 16), 240 x 736. Plus the shared desk band.
 
 ### Metro
 
-The seed's zone graph, drawn live and followed as runners move through it,
-with a log of recent zone entries and a full standings panel beneath. The map
-itself is not a hole: it is listed in the layout only so the guides mode can
-draw its box, since it carries no video and the page renders it directly in
-that same rectangle (at 16, 16, 1888 x 482).
+The seed's whole zone graph, drawn live, with a log of recent zone entries
+and a full standings panel beneath. The map itself is not a hole: it is
+listed in the layout only so the guides mode can draw its box, since it
+carries no video and the page renders it directly in that same rectangle (at
+16, 16, 1888 x 482).
 
 | Panel                   | Position (x, y) | Size (w x h) |
 | ----------------------- | --------------- | ------------ |
@@ -141,35 +141,47 @@ that same rectangle (at 16, 16, 1888 x 482).
 Plus the shared desk band (cam holes only; the map takes the space the other
 two scenes give the four POV holes).
 
+The map shows the whole seed at once, start on the left and final on the
+right, so a viewer reads at a glance how far into the race each runner is.
+A seed is far wider than the box is tall, so the space between its top and
+bottom rows is spread until the graph has the box's shape (MetroDagFull's
+`fillContainer`, through `stretchToAspect` in `web/src/lib/dag/layout.ts`)
+instead of sitting in a thin strip. Zone names are left out: at this zoom
+they would render at a few pixels, and the standings below already name each
+runner's zone. The runners' marks (tags, trails, death skulls) keep the size
+they have at a 13-layer window however far the map zooms out, and the nodes
+and edges grow partway (by the square root of the zoom-out), enough to stay
+visible without crowding (MetroDagFull's `keepMarkSize`, with
+`MARK_REFERENCE_WIDTH`).
+
 Each runner on the map is a tag, as the reference mockup draws it
 (`.mt-dot`, `.mt-line`, `.mt-name`): a still dot in a dark ring with a halo
 in the runner's colour, a straight vertical connector, and the name in large
-type at its end (`LivePlayerDots`' `playerTags`, instead of the orbiting dots
-the race page shows). Tags are sized in graph units, so they scale with the
-map's zoom like the zone labels do; at the default `maxLayers` they render
-at the mockup's size. Runners on the same node sit side by side, and before
-the start the whole field gathers on the start node the same way. Each name
-points toward the middle of the visible window, where there is room; a
-runner on the middle row keeps a side of their own (from their colour
-slot), so a tag doesn't flip because someone else moved. When a name would
-cover another name or another runner's dot, it tries the other side, then
-moves one tier further out (`placeTags` in `web/src/lib/dag/tags.ts`). Names
-stay inside the window the viewport shows (`FollowViewport`'s
-`visibleWindow`): a runner on the top or bottom row points inward, and a
-name near the left or right edge slides in while its connector still leaves
-from the dot. A runner whose node is off to the side gets no tag at all
-(the viewport's own side indicators cover those still racing); runners
-spread around a node on screen all keep theirs, even past the edge.
+type at its end (`LivePlayerDots`' `playerTags`, instead of the orbiting
+dots the race page shows). Runners on the same node sit side by side; before
+the start the field gathers on the start node, and finishers on the final
+node, past anyone still fighting there. A crowd at an edge of the map slides
+inward as a whole. Each name points toward the middle of the visible window,
+where there is room; a runner on the middle row keeps a side of their own
+(from their colour slot), so a tag doesn't flip because someone else moved.
+When a name would cover another name or another runner's dot, it tries the
+other side, then moves one tier further out (`placeTags` in
+`web/src/lib/dag/tags.ts`). Names stay inside the window the viewport shows
+(`FollowViewport`'s `visibleWindow`): a runner on the top or bottom row
+points inward, and a name near the left or right edge slides in while its
+connector still leaves from the dot. A runner whose node is off to the side
+(only possible with `maxLayers`, below) gets no tag at all (the viewport's
+own side indicators cover those still racing); whether a runner is on screen
+is judged by their node, not by where spreading put their dot.
 
-The map also reads two of its own query parameters directly, not through the
-shared cast params: `maxLayers` (default 13) and `fontSize` (default 9, down
-from the plain `/dag` strip's 11: this scene shows every zone label on the
-map at once, and a seed graph large enough to run to dozens of nodes reads
-better with a smaller default; measured against 7, which read thin at
-broadcast distance, and against 11, which is what made a 90-node seed
-illegible in the first place), the same tuning knobs
-`/overlay/race/[id]/dag` already exposes, for a seed graph that needs more
-or less room than the default zoom fits.
+The map also reads its own query parameters directly, not through the
+shared cast params, the same knobs `/overlay/race/[id]/dag` exposes:
+`maxLayers` follows the runners with a window that many layers wide instead
+of showing the whole seed, and brings the zone names back; `labels=0` or
+`labels=1` forces the zone names off or on either way; `fontSize` sets their
+size (default 9, down from the plain `/dag` strip's 11: measured against 7,
+which read thin at broadcast distance, and against 11, which made a 90-node
+seed illegible).
 
 The standings panel beneath the map is a single column, one row per runner
 as the mockup draws it: rank, colour dot, name, zone, deaths, depth and gap.

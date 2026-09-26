@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
-import { computeLayout } from "../layout";
+import { computeLayout, stretchToAspect } from "../layout";
 import { parseDagGraph } from "../types";
 import type { DagGraph, DagNode } from "../types";
 import {
@@ -378,5 +378,58 @@ describe("computeLayout, edge cases", () => {
     expect(layout.nodes).toHaveLength(1);
     expect(layout.nodes[0].x).toBe(PADDING);
     expect(layout.width).toBe(PADDING * 2);
+  });
+});
+
+// =============================================================================
+// stretchToAspect
+// =============================================================================
+
+describe("stretchToAspect", () => {
+  // Rows from PADDING to 410, the layout's own padding above and below.
+  const layout = {
+    nodes: [
+      { ...makeNode("a", 0), x: 90, y: PADDING },
+      { ...makeNode("b", 1), x: 190, y: 170 },
+      { ...makeNode("c", 2), x: 290, y: 410 },
+    ],
+    edges: [
+      {
+        fromId: "a",
+        toId: "b",
+        segments: [{ x1: 90, y1: PADDING, x2: 190, y2: 170 }],
+      },
+    ],
+    width: 3600,
+    height: 410 + PADDING,
+  };
+
+  it("spreads the rows until the whole graph has the box's shape", () => {
+    const out = stretchToAspect(layout, 4);
+    expect(out.width / out.height).toBeCloseTo(4, 6);
+    expect(out.nodes.map((n) => n.x)).toEqual([90, 190, 290]);
+    // Nodes and the edges between them move together, so lines still meet.
+    expect(out.edges[0].segments[0].y2).toBeCloseTo(out.nodes[1].y, 6);
+  });
+
+  it("grows the span between the rows, not the padding around them", () => {
+    const out = stretchToAspect(layout, 4);
+    expect(out.nodes[0].y).toBe(PADDING);
+    expect(out.height - out.nodes[2].y).toBeCloseTo(PADDING, 6);
+  });
+
+  it("centres a single row", () => {
+    const row = {
+      ...layout,
+      nodes: [{ ...makeNode("a", 0), x: 90, y: PADDING }],
+      edges: [],
+      height: 2 * PADDING,
+    };
+    const out = stretchToAspect(row, 4);
+    expect(out.nodes[0].y).toBeCloseTo(out.height / 2, 6);
+  });
+
+  it("never squeezes a graph already taller than the box asks for", () => {
+    expect(stretchToAspect(layout, 10)).toBe(layout);
   });
 });

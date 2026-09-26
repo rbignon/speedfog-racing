@@ -87,12 +87,17 @@
           break;
         }
       }
-      // Show maxVisibleLayers worth of width from the start
+      // Show maxVisibleLayers worth of width from the start, never more
+      // than the whole graph, clamped like the running view below.
       const layerWidth =
         totalLayers > 1 ? (maxX - minX) / (totalLayers - 1) : 100;
-      const visibleWidth = layerWidth * maxVisibleLayers;
+      const visibleWidth = Math.min(layerWidth * maxVisibleLayers, width);
+      const half = visibleWidth / 2;
       return {
-        centerX: startX + visibleWidth / 2 - layerWidth / 2,
+        centerX: Math.max(
+          minX - PADDING + half,
+          Math.min(maxX + PADDING - half, startX + half - layerWidth / 2),
+        ),
         centerY: height / 2,
         visibleWidth,
         visibleHeight: height,

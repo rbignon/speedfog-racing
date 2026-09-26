@@ -336,3 +336,30 @@ export function computeLayout(graph: DagGraph): DagLayout {
     height,
   };
 }
+
+/**
+ * Spreads a layout's rows apart so that the whole graph, shown in a box of
+ * the given width-over-height aspect, fills the box's height instead of
+ * leaving it empty above and below. Only the span between the top and bottom
+ * rows grows: the padding around it stays as it was, and a single row is
+ * centred. Never squeezes: a layout already at least as tall as the box asks
+ * for comes back as it is.
+ */
+export function stretchToAspect(layout: DagLayout, aspect: number): DagLayout {
+  const target = layout.width / aspect;
+  if (!(target > layout.height)) return layout;
+  const span = layout.height - 2 * PADDING;
+  const y =
+    span > 0
+      ? (v: number) => PADDING + ((v - PADDING) * (target - 2 * PADDING)) / span
+      : (v: number) => v + (target - layout.height) / 2;
+  return {
+    ...layout,
+    height: target,
+    nodes: layout.nodes.map((n) => ({ ...n, y: y(n.y) })),
+    edges: layout.edges.map((e) => ({
+      ...e,
+      segments: e.segments.map((sg) => ({ ...sg, y1: y(sg.y1), y2: y(sg.y2) })),
+    })),
+  };
+}

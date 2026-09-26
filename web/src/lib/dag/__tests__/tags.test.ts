@@ -46,6 +46,49 @@ describe("spreadColocated", () => {
   });
 });
 
+describe("spreadColocated within the view", () => {
+  const VIEW_X = { left: 0, right: 300 };
+  const crowd = (x: number, n = 4) =>
+    Array.from({ length: n }, (_, i) => ({
+      id: `r${i}`,
+      key: "start",
+      x,
+      y: 50,
+    }));
+
+  it("slides a crowd at the edge inward as a whole, keeping its spacing", () => {
+    const out = spreadColocated(crowd(20), 18, VIEW_X, 10);
+    expect(out.get("r0")!.x).toBe(10);
+    expect(out.get("r3")!.x).toBe(64);
+  });
+
+  it("slides a crowd whose spot sits inside the margin just the same", () => {
+    // No jump between a spot 5 from the edge and one a little further in.
+    expect(spreadColocated(crowd(5), 18, VIEW_X, 10).get("r0")!.x).toBe(10);
+  });
+
+  it("leaves a group alone when it fits, and one whose spot is off the view", () => {
+    const out = spreadColocated(
+      [
+        { id: "a", key: "n1", x: 150, y: 50 },
+        { id: "b", key: "n1", x: 150, y: 50 },
+        { id: "c", key: "n2", x: 400, y: 50 },
+        { id: "d", key: "n2", x: 400, y: 50 },
+      ],
+      18,
+      VIEW_X,
+      10,
+    );
+    expect(out.get("a")!.x).toBe(141);
+    expect(out.get("c")!.x).toBe(391);
+  });
+
+  it("centres a group too wide for the view", () => {
+    const out = spreadColocated(crowd(20, 21), 18, VIEW_X, 10);
+    expect((out.get("r0")!.x + out.get("r20")!.x) / 2).toBe(150);
+  });
+});
+
 describe("placeTags", () => {
   it("points toward the middle of the view, where there is room", () => {
     const out = placeTags(
