@@ -46,15 +46,14 @@
   // The label font itself is set smaller here than that strip's own default
   // (LABEL_FONT_SIZE, 11 graph units): this scene shows every zone label on
   // the map at once, seed graphs run to dozens of nodes, and at 11 units
-  // those labels fought each other on a real race's map. 7 keeps them
-  // legible at 1920x1080 (checked against a 13-runner race showing the
-  // whole map and a 4-runner race zoomed into a slice of a bigger one:
-  // both windows are close to the same graph-unit width, since either is
-  // the whole graph or a maxLayers-wide slice of one, so a single default
-  // reads at a similar on-screen size in both) while cutting each label's
-  // footprint enough to meaningfully reduce collisions on a dense map.
+  // those labels fought each other on a real race's map. 9 was measured on
+  // the live overlay against 7 (about 10px on the 1920x1080 canvas, legible
+  // at 100% but thin at broadcast distance) and against the strip's own
+  // 11-equivalent (about 16px, still what made a 90-node seed illegible):
+  // 9 renders near 13px, keeping the reduction that cuts collisions on a
+  // dense map without going as thin as 7 read at actual broadcast distance.
   const DEFAULT_MAX_LAYERS = 13;
-  const DEFAULT_LABEL_FONT_SIZE = 7;
+  const DEFAULT_LABEL_FONT_SIZE = 9;
   let maxLayers = $derived(
     (() => {
       const raw = page.url.searchParams.get("maxLayers");
@@ -121,7 +120,6 @@
   <CastStandings
     participants={raceStore.leaderboard}
     {totalLayers}
-    zoneNames={nodeNames}
     rect={layout.panels.standings}
     {lines}
   />

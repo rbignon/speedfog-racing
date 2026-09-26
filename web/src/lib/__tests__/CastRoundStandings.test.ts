@@ -35,7 +35,7 @@ function fakeEntry(over: Partial<EventStageEntry> = {}): EventStageEntry {
 
 describe("CastRoundStandings: row cap", () => {
   // baseProps.rect is 484x412, the real STANDINGS rect from layout.ts's
-  // talk scene: (412 - 74 header reserve) / 72 row height = 4 rows fit.
+  // talk scene: (412 - 74 header reserve) / 56 row height = 6 rows fit.
   function results(n: number) {
     return Array.from({ length: n }, (_, i) =>
       fakeEntry({ user: fakeUser({ id: `u-${i}` }) }),
@@ -52,10 +52,10 @@ describe("CastRoundStandings: row cap", () => {
 
   it("shows every row and no overflow line when the field exactly fills capacity", () => {
     const { container } = render(CastRoundStandings, {
-      props: { ...baseProps, results: results(4) },
+      props: { ...baseProps, results: results(6) },
     });
     expect(container.querySelectorAll(".srow.more")).toHaveLength(0);
-    expect(container.querySelectorAll(".srow")).toHaveLength(4);
+    expect(container.querySelectorAll(".srow")).toHaveLength(6);
   });
 
   it("caps rows and reports the rest once the field exceeds capacity, never overflowing the panel", () => {
@@ -63,9 +63,9 @@ describe("CastRoundStandings: row cap", () => {
       props: { ...baseProps, results: results(10) },
     });
     const rows = container.querySelectorAll(".srow");
-    expect(rows).toHaveLength(4); // 3 data rows + 1 overflow row
+    expect(rows).toHaveLength(6); // 5 data rows + 1 overflow row
     const more = container.querySelector(".srow.more .more-text");
-    expect(more?.textContent).toBe("+ 7 more");
+    expect(more?.textContent).toBe("+ 5 more");
   });
 });
 

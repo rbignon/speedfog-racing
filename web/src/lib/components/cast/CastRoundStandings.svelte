@@ -22,12 +22,15 @@
   // own height, not a typed number. HEADER_RESERVE is the eyebrow + title
   // block above the rows (.standings' own 2px top padding, .seyebrow's
   // font-size 14, .stitle's 4px/14px margins and font-size 40, none of
-  // which scale with the field). ROW_HEIGHT is .srow's own height,
-  // unchanged from the validated mockup (.srow height:72px). There is no
-  // caster override here (unlike the metro scene's CastStandings): the
-  // stage decides how many runners exist, not the caster.
+  // which scale with the field). ROW_HEIGHT is .srow's own height, brought
+  // down from the validated mockup's 72px to 56px (with .sav shrunk to
+  // match, 46px to 36px): measured on a real 10-runner stage, 72px rows
+  // only fit 3 of them in this 412px panel, and 56 fits 5 data rows plus
+  // the hidden-count line with room to spare. There is no caster override
+  // here (unlike the metro scene's CastStandings): the stage decides how
+  // many runners exist, not the caster.
   const HEADER_RESERVE = 2 + 14 + 4 + 40 + 14;
-  const ROW_HEIGHT = 72;
+  const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
 
@@ -147,7 +150,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    height: 72px;
+    height: 56px;
   }
 
   .srow + .srow {
@@ -176,8 +179,8 @@
   }
 
   .sav {
-    width: 46px;
-    height: 46px;
+    width: 36px;
+    height: 36px;
     object-fit: cover;
     border: 1px solid var(--color-border);
     flex-shrink: 0;

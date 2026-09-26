@@ -57,19 +57,25 @@ A panel's rect is fixed, but the field it lists (standings, a race's
 finishers) is not: a race can seat far more than the four runners every
 scene was first validated against. Every panel that lists a variable-length
 field caps how many rows it shows to what its own rect actually fits, using
-`rowCapacity`/`planRows` (`web/src/lib/cast/rows.ts`): the row count is
-computed from the rect's own height and the panel's row height, never a
-typed constant, so a bigger field (or a rect that changes) can never print
-past the panel's bottom. Once the field doesn't fit, the panel's last row is
-given up to a quiet "+ N more" line, the same phrasing the in-game overlay's
-own leaderboard footer uses for the same situation (`mod/src/dll/ui.rs`).
-Four panels do this: `CastStandings` (metro), `CastMiniStandings` (focus),
-`CastRoundStandings` and `CastRaceCard` (talk). The metro scene's
-`CastStandings` additionally takes a `lines` URL parameter (see below)
-letting the caster show fewer rows than the panel fits; nothing lets any of
-them show more than the panel's own capacity allows. The quad scene's four
-runner cards seat exactly four runners by construction (see `resolveSlots`)
-and need no cap.
+`rowCapacity` plus either `planRows` or `capRows` (`web/src/lib/cast/rows.ts`):
+the row count is computed from the rect's own height and the panel's row
+height, never a typed constant, so a bigger field (or a rect that changes)
+can never print past the panel's bottom. Four panels do this:
+`CastStandings` (metro), `CastMiniStandings` (focus), `CastRoundStandings`
+and `CastRaceCard` (talk). The metro scene's `CastStandings` additionally
+takes a `lines` URL parameter (see below) letting the caster show fewer
+rows than the panel fits; nothing lets any of them show more than the
+panel's own capacity allows. The quad scene's four runner cards seat
+exactly four runners by construction (see `resolveSlots`) and need no cap.
+
+Once the field doesn't fit, three of the four (`CastMiniStandings`,
+`CastRoundStandings`, `CastRaceCard`) give up their last row to a quiet
+"+ N more" line (`planRows`), the same phrasing the in-game overlay's own
+leaderboard footer uses for the same situation (`mod/src/dll/ui.rs`).
+`CastStandings` is the exception: its panel is only 230px tall, so its
+overflow count sits on the title line instead ("Standings" on the left,
+"+ N more" on the right, via `capRows`, which spends no row on it) and every
+row slot the rect fits stays a data row.
 
 ## The four scenes
 
@@ -148,18 +154,25 @@ line is what ties a name back to its dot on a dense map, the same three
 pieces (`.mt-dot`, `.mt-line`, `.mt-name`) the reference mockup draws.
 
 The map also reads two of its own query parameters directly, not through the
-shared cast params: `maxLayers` (default 13) and `fontSize` (default 7, down
+shared cast params: `maxLayers` (default 13) and `fontSize` (default 9, down
 from the plain `/dag` strip's 11: this scene shows every zone label on the
 map at once, and a seed graph large enough to run to dozens of nodes reads
-better with a smaller default), the same tuning knobs `/overlay/race/[id]/dag`
-already exposes, for a seed graph that needs more or less room than the
-default zoom fits.
+better with a smaller default; measured against 7, which read thin at
+broadcast distance, and against 11, which is what made a 90-node seed
+illegible in the first place), the same tuning knobs
+`/overlay/race/[id]/dag` already exposes, for a seed graph that needs more
+or less room than the default zoom fits.
 
-The standings panel beneath the map also reads a `lines` query parameter
-(default: fit as many rows as the panel allows; see "Field-size overflow"
-above), the same name and spirit as `/overlay/race/[id]/leaderboard`'s own
-`lines`, letting the caster show fewer rows for a field they'd rather keep
-short. It cannot ask for more rows than the panel actually fits.
+The standings panel beneath the map reads two columns wide, rank 1 down the
+first column then rank `perColumnCapacity + 1` down the second (dropping the
+zone column, which only repeated what the map directly above it already
+shows, is what buys the room): rank, colour dot, name, deaths, depth and gap
+stay, in that order, in both columns. It also reads a `lines` query
+parameter (default: fit as many rows as the panel allows, across both
+columns; see "Field-size overflow" above), the same name and spirit as
+`/overlay/race/[id]/leaderboard`'s own `lines`, letting the caster show
+fewer rows for a field they'd rather keep short. It cannot ask for more
+rows than the panel actually fits.
 
 ### Talk
 
@@ -181,7 +194,11 @@ Both the stage standings panel (`CastRoundStandings`) and each race card's
 finisher list (`CastRaceCard`) cap their rows to what their own rect fits
 (see "Field-size overflow" above); unlike the metro scene there is no
 caster override here, since the stage's field size and a race's finisher
-count aren't something a caster usefully chooses.
+count aren't something a caster usefully chooses. The stage standings
+panel's own row is 56px tall with a 36px avatar (down from the mockup's
+72px/46px), measured against a real 10-runner stage where the original
+size only fit 3 of them in the panel's 412px height; the brass `Final`
+chip and the advancing runner's rule stay exactly as they were.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |

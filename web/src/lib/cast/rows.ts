@@ -29,10 +29,10 @@ export interface RowPlan<T> {
 
 /**
  * Caps `items` to `capacity` rows. Once there isn't room for everything,
- * the last row is given up to the "+ N more" line (see `CastStandings`,
- * `CastMiniStandings`, `CastRoundStandings`, `CastRaceCard`), the same
- * phrasing the in-game overlay's own footer uses for the same situation
- * (`mod/src/dll/ui.rs`'s "+ N more", `footer_more` in `mod/src/core/format.rs`).
+ * the last row is given up to the "+ N more" line (see `CastMiniStandings`,
+ * `CastRoundStandings`, `CastRaceCard`), the same phrasing the in-game
+ * overlay's own footer uses for the same situation (`mod/src/dll/ui.rs`'s
+ * "+ N more", `footer_more` in `mod/src/core/format.rs`).
  */
 export function planRows<T>(items: T[], capacity: number): RowPlan<T> {
   if (items.length <= capacity) {
@@ -40,4 +40,20 @@ export function planRows<T>(items: T[], capacity: number): RowPlan<T> {
   }
   const shown = Math.max(0, capacity - 1);
   return { visible: items.slice(0, shown), hiddenCount: items.length - shown };
+}
+
+/**
+ * Caps `items` to `capacity` rows with no row given up for an overflow
+ * line: for a panel that reports its hidden count somewhere else instead
+ * (`CastStandings` puts it on the title line, alongside "Standings"),
+ * so every row slot the rect fits stays a data row.
+ */
+export function capRows<T>(items: T[], capacity: number): RowPlan<T> {
+  if (items.length <= capacity) {
+    return { visible: items, hiddenCount: 0 };
+  }
+  return {
+    visible: items.slice(0, capacity),
+    hiddenCount: items.length - capacity,
+  };
 }
