@@ -197,6 +197,14 @@
     font-size: 20px;
   }
 
+  /* A qualifier's top rows (the ones carrying .stag below) are the ones
+   * that matter most and have the least room, since they add a fifth cell
+   * to the row: measured on a real name, SeriousChallenges needed 232px
+   * against this cell's 224px budget there. .stag and .sp below give up
+   * about 12px between them (padding on the chip, font-size on the points)
+   * rather than this cell, so it clears with a few pixels to spare; .sav
+   * stays 36px, since a real avatar is what makes this panel read as a
+   * podium rather than another list. */
   .sn {
     flex: 1;
     min-width: 0;
@@ -219,16 +227,16 @@
     /* Literal fallback first; see the note on .srow + .srow above. */
     border: 1px solid rgba(200, 164, 78, 0.5);
     border: 1px solid color-mix(in srgb, var(--color-gold) 50%, transparent);
-    padding: 2px 7px;
+    padding: 2px 5px;
     flex-shrink: 0;
   }
 
   .sp {
     font-family: var(--font-mono);
-    font-size: 34px;
+    font-size: 30px;
     font-weight: 600;
     color: var(--color-gold);
-    min-width: 62px;
+    min-width: 54px;
     text-align: right;
     flex-shrink: 0;
   }
