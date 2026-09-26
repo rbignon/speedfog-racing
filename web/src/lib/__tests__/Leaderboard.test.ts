@@ -86,6 +86,23 @@ describe("Leaderboard: +XX indicator (finished mode)", () => {
   });
 });
 
+describe("Leaderboard: +XX indicator (open qualifier, running mode)", () => {
+  it("shows a settled run's points in place of the ✓, marked provisional", () => {
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [fakeParticipant({ daily_points: 67 })],
+        mode: "running",
+        provisionalPoints: true,
+        showRunDetails: true,
+      },
+    });
+    const indicator = container.querySelector(".points-earned");
+    expect(indicator?.textContent ?? "").toMatch(/\+67/);
+    expect(indicator?.classList.contains("provisional")).toBe(true);
+    expect(container.querySelector(".finish-icon")).toBeNull();
+  });
+});
+
 describe("Leaderboard: clear-selection pill", () => {
   it("renders the pill with the selected count when there is a selection", () => {
     const { container } = render(Leaderboard, {

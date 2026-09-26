@@ -19,10 +19,11 @@ import { createDelayQueue, type DelayQueue } from "$lib/cast/delay";
 
 /**
  * Restore daily_points from the previous participant when an incoming
- * high-frequency message drops it. daily_points (a finished daily's per-rank
- * score) rides only on race_state; leaderboard_update and player_update omit
- * it, so without this the connect-time leaderboard_update would null the
- * "+points" indicator on a finished-daily page. Mirrors preserveZoneHistory.
+ * high-frequency message drops it. daily_points (a row's per-rank score: a
+ * finished daily's field, or an event qualifier's settled runs) rides only on
+ * race_state; leaderboard_update and player_update omit it, so without this
+ * every such update would null the "+points" indicator. Mirrors
+ * preserveZoneHistory.
  */
 export function preserveDailyPoints<T extends { daily_points?: number | null }>(
   incoming: T,
@@ -191,8 +192,8 @@ class RaceStore {
           const apply = () => {
             // Restore the fields race_state carries but this high-frequency
             // message drops: zone_history (so the DAG keeps its trail) and
-            // daily_points (so a finished daily's "+points" indicator survives
-            // the connect-time leaderboard_update).
+            // daily_points (so the "+points" indicator survives until the next
+            // race_state refreshes it).
             const prevById = new Map(this.participants.map((p) => [p.id, p]));
             this.participants = msg.participants.map((p) => {
               const prev = prevById.get(p.id);

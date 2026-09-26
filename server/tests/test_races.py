@@ -1614,6 +1614,87 @@ async def test_handle_finished_clamps_igt_to_recorded_value(organizer, player, a
         assert refreshed.status == ParticipantStatus.FINISHED
 
 
+@pytest.mark.parametrize(
+    "event_slot, other_status, pushes, status_after",
+    [
+        # One more finisher on an open qualifier moves every settled runner's
+        # points, which only race_state carries to spectators.
+        ("qualifier:standard:1", ParticipantStatus.PLAYING, 1, RaceStatus.RUNNING),
+        # A regular race scores nothing while it runs: no extra full push.
+        (None, ParticipantStatus.PLAYING, 0, None),
+        # The finish that ends the race pushes it once, not twice.
+        ("qualifier:standard:1", ParticipantStatus.ABANDONED, 1, RaceStatus.FINISHED),
+    ],
+)
+@pytest.mark.asyncio
+async def test_finish_pushes_race_state_once_when_points_move(
+    organizer, player, async_session, event_slot, other_status, pushes, status_after
+):
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from speedfog_racing.websocket.race.mod import handle_finished
+
+    two_zones = [
+        {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+        {"node_id": "a", "igt_ms": 1000, "type": "fog"},
+    ]
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s_finish_push",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": []},
+            total_layers=5,
+            folder_path="/test/finish_push",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        race = Race(
+            name="Finish Push Race",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            event_slot=event_slot,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+
+        finisher = Participant(
+            race_id=race.id,
+            user_id=player.id,
+            status=ParticipantStatus.PLAYING,
+            current_layer=4,
+            igt_ms=250000,
+            zone_history=two_zones,
+        )
+        # Still playing keeps the race open; already abandoned lets the
+        # finish end it.
+        other = Participant(
+            race_id=race.id,
+            user_id=organizer.id,
+            status=other_status,
+            current_layer=2,
+            igt_ms=100000,
+            zone_history=two_zones,
+        )
+        db.add_all([finisher, other])
+        await db.commit()
+        race_id = race.id
+        participant_id = finisher.id
+
+    with patch(
+        "speedfog_racing.websocket.race.mod.broadcast_race_state_update", new=AsyncMock()
+    ) as push:
+        await handle_finished(MagicMock(), async_session, participant_id, {"igt_ms": 300000})
+
+    assert push.await_count == pushes
+    if pushes:
+        assert push.await_args.args[0] == race_id
+        assert push.await_args.args[1].status == status_after
+
+
 # =============================================================================
 # Race Delete Tests
 # =============================================================================

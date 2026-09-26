@@ -83,7 +83,7 @@ from speedfog_racing.services.calendar_sync import (
     remove_calendar_participant,
     update_calendar_events,
 )
-from speedfog_racing.services.daily_points_service import daily_points_for_race
+from speedfog_racing.services.event_service import leaderboard_points
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.seed_pack_service import (
@@ -158,7 +158,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         pool_config = PoolConfig(**race.seed.pool.config)
     registration_closes_at, race_ends_at = compute_late_join_deadlines(race)
     participants_list = [participant_response(p) for p in race.participants]
-    points_map = daily_points_for_race(race)
+    points_map = leaderboard_points(race)
     for proj in participants_list:
         proj.daily_points = points_map.get(proj.id)
     return RaceDetailResponse(

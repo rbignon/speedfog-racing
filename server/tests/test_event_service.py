@@ -22,6 +22,7 @@ from speedfog_racing.services.event_service import (
     compute_stage_results,
     current_stage_key,
     fed_field,
+    leaderboard_points,
     newcomer_flags,
     next_stage_key,
     parse_slot,
@@ -169,6 +170,19 @@ def test_score_race_settled_only_leaves_runs_in_progress_out_of_the_field():
     assert set(scores) == {a, c}
     # The field is the settled runs only: 2nd of 2 scores 50, not 3rd of 3.
     assert scores[a].points == 100 and scores[c].rank == 2 and scores[c].points == 50
+
+
+def test_leaderboard_points_score_an_open_qualifier_s_settled_runs_by_participant():
+    a, b, c = uuid4(), uuid4(), uuid4()
+    finished = _participant(a, ParticipantStatus.FINISHED, 3_000_000)
+    playing = _participant(b, ParticipantStatus.PLAYING, 500_000, layer=8)
+    abandoned = _participant(c, ParticipantStatus.ABANDONED, 500_000, layer=3)
+    race = _race([finished, playing, abandoned], status=RaceStatus.RUNNING)
+    race.is_event_qualifier = True
+    race.daily_date = None
+    # Keyed by participant, the run in progress left out of the field and of
+    # the map: the same points the seed card and the ladder show.
+    assert leaderboard_points(race) == {finished.id: 100, abandoned.id: 50}
 
 
 def test_score_race_ties_share_rank_and_skip_the_next_rank():

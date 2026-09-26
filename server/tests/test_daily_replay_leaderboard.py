@@ -653,3 +653,31 @@ def test_spectator_race_state_carries_daily_points_on_finished_daily(
     assert alice["daily_points"] == 100
     assert bob["daily_points"] == 50
     assert carol["daily_points"] is None
+
+
+@pytest.mark.parametrize("kind", ["daily", "qualifier", "regular"])
+def test_spectator_race_state_scores_settled_runs_only_on_an_open_qualifier(
+    daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
+) -> None:
+    """While the race runs, only a qualifier scores its settled runs on the
+    leaderboard (the points move as more runs settle); a running daily waits
+    for its close and a regular race never scores."""
+    race_id, _a_token, _b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
+
+    race_state: dict[str, Any] | None = None
+    with daily_client.websocket_connect(f"/ws/race/{race_id}") as spec_ws:
+        spec_ws.send_json({"type": "no_auth"})
+        for _ in range(20):
+            try:
+                msg = _receive_with_timeout(spec_ws, timeout=2)
+            except TimeoutError:
+                break
+            if msg.get("type") == "race_state":
+                race_state = msg
+                break
+
+    assert race_state is not None, "spectator received no race_state"
+    alpha = _participant_by_username(race_state, "alpha")
+    assert alpha["daily_points"] == (100 if kind == "qualifier" else None)
+    # The registered runner has no run yet, so no points on any kind.
+    assert _participant_by_username(race_state, "bravo")["daily_points"] is None

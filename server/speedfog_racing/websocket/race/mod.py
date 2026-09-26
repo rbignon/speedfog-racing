@@ -946,6 +946,10 @@ async def handle_finished(
         graph_json=_get_graph_json(participant),
         project_ghosts=participant.race.projects_ghosts,
     )
+    if not race_transitioned and participant.race.is_event_qualifier:
+        # An open qualifier scores its settled runs on the leaderboard: one
+        # more finisher moves their points, which only race_state carries.
+        await broadcast_race_state_update(participant.race_id, participant.race)
 
     # Unlock the PUBLIC channel for the finished participant before
     # broadcasting so they receive their own "X has finished" notice.

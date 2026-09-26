@@ -22,6 +22,9 @@
     // Deathless race: an abandoned participant with at least one death was
     // eliminated by the rule, shown as "Dead" instead of "Abandoned".
     deathless?: boolean;
+    // The rows' points can still move (an open event qualifier scores its
+    // settled runs as they settle): shown in gold instead of green.
+    provisionalPoints?: boolean;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -34,6 +37,7 @@
     zoneNames = null,
     showRunDetails = false,
     deathless = false,
+    provisionalPoints = false,
     selectedIds,
     onToggle,
     onClearSelection,
@@ -194,11 +198,18 @@
                   onclick={(e) => e.stopPropagation()}
                 />
               {/if}
-              {#if mode === "finished" && participant.daily_points != null}
-                <!-- Qualified finishers and abandoners both earn points on a
-                     closed daily; the abandoner's layer moves to the
-                     Abandoned line below. -->
-                <span class="points-earned">+{participant.daily_points}</span>
+              {#if participant.daily_points != null}
+                <!-- The server scores only settled runs (a closed daily's
+                     field, an open qualifier's finished and abandoned runs),
+                     so points never displace a run in progress's layer; the
+                     abandoner's layer sits on the Abandoned line below. -->
+                <span
+                  class="points-earned"
+                  class:provisional={provisionalPoints}
+                  title={provisionalPoints
+                    ? "Provisional: moves as more runs settle"
+                    : undefined}>+{participant.daily_points}</span
+                >
               {:else if isPlaying}
                 <span class="layer-fraction"
                   >{Math.min(
@@ -509,6 +520,11 @@
     font-weight: 500;
     flex-shrink: 0;
     margin-left: auto;
+  }
+
+  /* Points still move while the race is open: gold, as on the event ladder */
+  .points-earned.provisional {
+    color: var(--color-gold);
   }
 
   .death-count {

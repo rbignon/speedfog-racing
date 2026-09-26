@@ -478,7 +478,7 @@ API surface:
 
 The `weekly_daily_champion` transient badge and the `cyan-aura` permanent skin are granted to the points champion(s) of the prior week. See [REWARDS.md](REWARDS.md) for the badge lifecycle.
 
-Computation is on demand, no schema change: the helpers in `services/daily_points_service.py` (`compute_daily_points`, `compute_weekly_leaderboard`, `compute_weekly_winners`, plus `daily_points_for_race` which gates per-race scoring to closed dailies) are called from the race-detail builder, the WebSocket `race_state` broadcast, the two daily endpoints, and the rewards hook.
+Computation is on demand, no schema change: the helpers in `services/daily_points_service.py` (`compute_daily_points`, `compute_weekly_leaderboard`, `compute_weekly_winners`, plus `daily_points_for_race` which gates per-race scoring to closed dailies) are called from the race-detail builder, the WebSocket `race_state` broadcast (both through `event_service.leaderboard_points`, which also scores event qualifiers), the two daily endpoints, and the rewards hook.
 
 ## See also
 

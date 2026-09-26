@@ -236,6 +236,14 @@ panel (participants, dates, late join, duration, deathless), which every
 qualifier race shares: its schedule, late join, duration and deathless
 settings are edited through the API, not from the race page.
 
+The race page leaderboard shows each settled run's points in the row's
+top-right slot, as a closed Daily Seed does: a scored finished or abandoned
+run (at least two zone entries) carries `+XX` in brass while the seed is open
+(the provisional points of the seed card and the ladder, moving as more runs
+settle), in verdigris once it has closed; a run in progress keeps its layer
+count there. See `daily_points` in
+[PROTOCOL.md](PROTOCOL.md).
+
 ## Running an event (admin)
 
 1. `/admin`, Events tab: create the event from the template, adjust dates,

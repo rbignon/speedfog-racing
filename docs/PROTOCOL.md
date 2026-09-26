@@ -697,7 +697,7 @@ Toggle the sender's reaction on a chat message: adds it if absent, removes it if
 
 #### `race_state`
 
-Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, RUNNING → FINISHED) and when seeds are released, with recomputed DAG access. On the initial connection it is immediately followed by a unicast `leaderboard_update` so the client has the gap inputs (`leader_splits` + `layer_entry_igt`) that `race_state` omits; see [Gap Timing](#gap-timing).
+Sent immediately on connection (after optional auth). Full race state. Also re-sent on status transitions (SETUP → RUNNING, RUNNING → FINISHED), when seeds are released, when a run is abandoned, and when a run finishes on an open event qualifier, with recomputed DAG access. On the initial connection it is immediately followed by a unicast `leaderboard_update` so the client has the gap inputs (`leader_splits` + `layer_entry_igt`) that `race_state` omits; see [Gap Timing](#gap-timing).
 
 ```json
 {
@@ -740,7 +740,7 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 
 `zone_history` is always included (as a list, possibly empty) in `race_state` for every participant. It seeds the client's local history store, which is then kept in sync via `zone_history` snapshot messages. See [zone_history updates](#zone_history-updates).
 
-Each participant carries `daily_points` (integer) only on a **finished daily**: it is the per-rank Daily Seed score `round(50 * (n - r + 1) / n)` for qualified participants, and `null` for non-qualified ones and for any non-daily or still-running race. It is computed server-side (single source: `daily_points_service.daily_points_for_race`) and feeds the `+XX` indicator in the web leaderboard. The high-frequency `player_update` and `leaderboard_update` messages do not carry it (a finished daily emits no such updates).
+Each participant carries `daily_points` (integer), the per-rank score behind the `+XX` indicator in the web leaderboard. It is set on a **finished daily**, with the Daily Seed score `round(100 * (n - r + 1) / n)` (only rank 1 reaches 100, floor of 1) for qualified participants, and on an **event qualifier**, while it is still running too: there only settled runs (finished or abandoned) score, with the points the event page shows, so a run in progress has none and the settled runs' points move as more runs settle. It is `null` for non-qualified participants and on any other race. It is computed server-side (single source: `event_service.leaderboard_points`). The high-frequency `player_update` and `leaderboard_update` messages do not carry it: the client keeps the value of the last `race_state`, and on an open event qualifier a finish that leaves the race running pushes a fresh `race_state` (an abandon always does).
 
 #### `player_update`
 
@@ -1263,27 +1263,27 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 
 ### Broadcasting Strategy
 
-| Event                          | Mods                                                                     | Spectators                                                               |
-| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| Mod connects/disconnects       | `leaderboard_update`                                                     | `leaderboard_update`                                                     |
-| `ready`                        | `leaderboard_update`                                                     | `leaderboard_update`                                                     |
-| `status_update` (periodic)     | `player_update`                                                          | `player_update`                                                          |
-| `status_update` (READY→PLAY)   | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (spawn)                            |
-| `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                         |
-| `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                              |
-| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                                   |
-| `event_flag` (finish)          | `leaderboard_update`                                                     | `race_state` + status change + `chat_message` (system)                   |
-| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                          |
-| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack)     |
-| Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`                 |
-| Race finishes                  | `race_status_change`                                                     | `race_state` + `race_status_change`                                      |
-| Seeds released                 | (none)                                                                   | `race_state`                                                             |
-| `PATCH /races` (field changes) | `race_info_update`                                                       | `race_info_update`                                                       |
-| Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                       |
-| Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                           |
-| Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system)                           |
-| Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)         |
-| Chat reaction toggled          | (none)                                                                   | `chat_reaction_update` (filtered per [Chat System](#chat-system) matrix) |
+| Event                          | Mods                                                                     | Spectators                                                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Mod connects/disconnects       | `leaderboard_update`                                                     | `leaderboard_update`                                                                                                                              |
+| `ready`                        | `leaderboard_update`                                                     | `leaderboard_update`                                                                                                                              |
+| `status_update` (periodic)     | `player_update`                                                          | `player_update`                                                                                                                                   |
+| `status_update` (READY→PLAY)   | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (spawn)                                                                                                     |
+| `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                                                                                                  |
+| `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                                                                                                       |
+| `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                                                                                                            |
+| `event_flag` (finish)          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system); `race_state` + status change when it ends the race, `race_state` alone on an open event qualifier |
+| `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                                                                                                   |
+| `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack)                                                                              |
+| Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`                                                                                          |
+| Race finishes                  | `race_status_change`                                                     | `race_state` + `race_status_change`                                                                                                               |
+| Seeds released                 | (none)                                                                   | `race_state`                                                                                                                                      |
+| `PATCH /races` (field changes) | `race_info_update`                                                       | `race_info_update`                                                                                                                                |
+| Spectator connects/disconnects | (none)                                                                   | `spectator_count` + `chat_history`                                                                                                                |
+| Player abandons                | `leaderboard_update`                                                     | `leaderboard_update` + `race_state` + `chat_message` (system)                                                                                     |
+| Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `race_state` + `chat_message` (system)                                                                                     |
+| Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)                                                                                  |
+| Chat reaction toggled          | (none)                                                                   | `chat_reaction_update` (filtered per [Chat System](#chat-system) matrix)                                                                          |
 
 Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
 

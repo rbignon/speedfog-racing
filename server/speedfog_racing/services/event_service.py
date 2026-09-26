@@ -33,6 +33,7 @@ from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage, as_aw
 from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
     compute_daily_points,
+    daily_points_for_race,
     rank_key,
 )
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS, WEAPONS
@@ -156,6 +157,20 @@ def score_race(race: Race, *, settled_only: bool = False) -> dict[UUID, RaceScor
             provisional=provisional,
         )
     return scores
+
+
+def leaderboard_points(race: Race) -> dict[UUID, int]:
+    """Map participant_id -> points shown on the race leaderboard's rows.
+
+    A closed daily scores its whole field (``daily_points_for_race``). An event
+    qualifier scores each run as soon as it settles, with the points the seed
+    card and the ladder show: a run in progress shows none, and the settled
+    runs' points move while the seed stays open. Any other race shows none.
+    """
+    if race.is_event_qualifier:
+        scores = score_race(race, settled_only=True)
+        return {p.id: scores[p.user_id].points for p in race.participants if p.user_id in scores}
+    return daily_points_for_race(race)
 
 
 # --- ladder -----------------------------------------------------------------

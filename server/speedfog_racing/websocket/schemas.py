@@ -156,7 +156,9 @@ class ParticipantInfo(BaseModel):
     equipped_badge_id: str | None = None
     equipped_name_template_id: str | None = None
     name_template: NameTemplatePayload | None = None
-    # Per-rank Daily Seed points, only set on a FINISHED daily (null otherwise).
+    # Per-rank race points (``event_service.leaderboard_points``): a FINISHED
+    # daily's field, or an event qualifier's settled runs while it is open
+    # too; null otherwise. Carried by race_state only.
     daily_points: int | None = None
 
 

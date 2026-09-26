@@ -961,6 +961,7 @@
             {zoneNames}
             {showRunDetails}
             deathless={liveDeathless}
+            provisionalPoints={isEventQualifier && raceStatus !== "finished"}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
