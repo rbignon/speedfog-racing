@@ -418,6 +418,19 @@ describe("stretchToAspect", () => {
     expect(out.height - out.nodes[2].y).toBeCloseTo(PADDING, 6);
   });
 
+  it("caps the spread and leaves the rest as equal bands around the graph", () => {
+    const out = stretchToAspect(layout, 4, 1.4);
+    expect(out.height).toBeCloseTo(900, 6);
+    const top = out.nodes[0].y;
+    const bottom = out.nodes[2].y;
+    expect(bottom - top).toBeCloseTo((410 - PADDING) * 1.4, 6);
+    expect(out.height - bottom).toBeCloseTo(top, 6);
+  });
+
+  it("changes nothing when the cap is above the spread the box needs", () => {
+    expect(stretchToAspect(layout, 4, 10)).toEqual(stretchToAspect(layout, 4));
+  });
+
   it("centres a single row", () => {
     const row = {
       ...layout,

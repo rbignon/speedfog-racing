@@ -198,6 +198,89 @@ describe("placeTags", () => {
     expect(out.get("a")!.dir).toBe(1);
   });
 
+  describe("with lanes past the graph's top and bottom rows", () => {
+    const LANES = { top: 150, bottom: 350 };
+
+    it("sends a name to the nearer lane, reaching past it", () => {
+      const out = placeTags(
+        [anchor("upper", 200, 230), anchor("lower", 700, 290)],
+        VIEW,
+        METRICS,
+        LANES,
+      );
+      expect(out.get("upper")).toMatchObject({ dir: -1, reach: 80 });
+      expect(out.get("lower")).toMatchObject({ dir: 1, reach: 60 });
+    });
+
+    it("keeps at least the usual reach for a dot already on the lane", () => {
+      const out = placeTags([anchor("top", 200, 160)], VIEW, METRICS, LANES);
+      expect(out.get("top")).toMatchObject({ dir: -1, reach: 47 });
+    });
+
+    it("stacks two names in the same lane rather than overlapping them", () => {
+      const out = placeTags(
+        [anchor("a", 200, 230), anchor("b", 220, 200)],
+        VIEW,
+        METRICS,
+        LANES,
+      );
+      expect(out.get("a")).toMatchObject({ dir: -1, reach: 80 });
+      expect(out.get("b")).toMatchObject({ dir: -1, reach: 50 + 22 });
+    });
+
+    it("never puts a name between another dot and that dot's own name", () => {
+      // b sits on the top row, a below it in the same layer: a's name would
+      // land right above b's dot, under b's own name, on the same vertical.
+      const out = placeTags(
+        [anchor("b", 500, 160), anchor("a", 500, 220)],
+        VIEW,
+        METRICS,
+        LANES,
+      );
+      expect(out.get("b")).toMatchObject({ dir: -1, reach: 47 });
+      expect(out.get("a")!.dir).toBe(1);
+    });
+
+    it("takes the other band when the nearer one is out of view", () => {
+      const out = placeTags(
+        [anchor("a", 200, 200)],
+        { ...VIEW, top: 140 },
+        METRICS,
+        LANES,
+      );
+      expect(out.get("a")).toMatchObject({ dir: 1, reach: 150 });
+    });
+
+    it("falls back over the graph once both bands are full", () => {
+      // Seven names side by side: three tiers fit in each band.
+      const crowd = Array.from({ length: 7 }, (_, i) =>
+        anchor(`r${i}`, 500 + i * 18.5, 250, i % 2 === 0 ? -1 : 1),
+      );
+      const out = placeTags(crowd, VIEW, METRICS, LANES);
+      const boxes = crowd.map((a) => {
+        const p = out.get(a.id)!;
+        const near = a.y + p.dir * p.reach;
+        const far = a.y + p.dir * (p.reach + METRICS.nameHeight);
+        return {
+          left: p.nameX - a.width / 2,
+          right: p.nameX + a.width / 2,
+          top: Math.min(near, far),
+          bottom: Math.max(near, far),
+        };
+      });
+      for (let i = 0; i < boxes.length; i++)
+        for (let j = i + 1; j < boxes.length; j++) {
+          const [p, q] = [boxes[i], boxes[j]];
+          const clash =
+            p.left < q.right &&
+            q.left < p.right &&
+            p.top < q.bottom &&
+            q.top < p.bottom;
+          expect(clash, `${i} and ${j}`).toBe(false);
+        }
+    });
+  });
+
   it("keeps a name off another runner's dot", () => {
     // Down from a is free of names but lands on b's dot, 60 below: up it is.
     const out = placeTags(

@@ -338,21 +338,26 @@ export function computeLayout(graph: DagGraph): DagLayout {
 }
 
 /**
- * Spreads a layout's rows apart so that the whole graph, shown in a box of
- * the given width-over-height aspect, fills the box's height instead of
- * leaving it empty above and below. Only the span between the top and bottom
- * rows grows: the padding around it stays as it was, and a single row is
- * centred. Never squeezes: a layout already at least as tall as the box asks
- * for comes back as it is.
+ * Makes a layout the given width-over-height aspect by growing its height, so
+ * that the whole graph shown in a box of that aspect fills the box instead of
+ * sitting in a thin strip. The span between the top and bottom rows grows by
+ * at most `maxStretch` (past that, diagonals turn steep and the graph looks
+ * squeezed); whatever height is still missing goes to equal free bands above
+ * and below, which the graph sits centred between. A single row is centred.
+ * Never squeezes: a layout already at least as tall as the box asks for comes
+ * back as it is.
  */
-export function stretchToAspect(layout: DagLayout, aspect: number): DagLayout {
+export function stretchToAspect(
+  layout: DagLayout,
+  aspect: number,
+  maxStretch = Infinity,
+): DagLayout {
   const target = layout.width / aspect;
   if (!(target > layout.height)) return layout;
   const span = layout.height - 2 * PADDING;
-  const y =
-    span > 0
-      ? (v: number) => PADDING + ((v - PADDING) * (target - 2 * PADDING)) / span
-      : (v: number) => v + (target - layout.height) / 2;
+  const k = span > 0 ? Math.min(maxStretch, (target - 2 * PADDING) / span) : 1;
+  const top = (target - span * k) / 2;
+  const y = (v: number) => top + (v - PADDING) * k;
   return {
     ...layout,
     height: target,

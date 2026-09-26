@@ -212,6 +212,11 @@ export const LIVE_TAG_TIER_GAP = 3;
 /** Tiers tried in each direction before two names are allowed to overlap */
 export const LIVE_TAG_MAX_TIERS = 4;
 
+/** How much MetroDagFull's `fillContainer` may spread a graph's rows apart:
+ * further, diagonals turn steep and the graph looks squeezed, so the rest of
+ * the box becomes free bands above and below, where tags put their names. */
+export const FILL_MAX_ROW_STRETCH = 1.4;
+
 /** Width of the window a map's marks (tags, trails, death skulls) are drawn
  * for (px): 13 layers. With MetroDagFull's `keepMarkSize`, a wider window
  * scales them up by the same ratio, so they keep their size on screen

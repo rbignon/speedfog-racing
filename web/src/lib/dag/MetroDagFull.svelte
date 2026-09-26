@@ -28,6 +28,7 @@
     PLAYER_COLORS,
     RACER_DOT_RADIUS,
     MARK_REFERENCE_WIDTH,
+    FILL_MAX_ROW_STRETCH,
     PARALLEL_PATH_SPACING,
     MAX_PARALLEL,
   } from "./constants";
@@ -65,8 +66,10 @@
     labelMaxChars?: number;
     /** Width over height of the box the map fills, for the follow viewport. */
     containerAspect?: number;
-    /** Spread the rows apart so the whole graph fills `containerAspect`'s
-     * box: for a map shown whole, which would otherwise be a thin strip. */
+    /** Fill `containerAspect`'s box with the whole graph, which would
+     * otherwise be a thin strip: its rows spread apart up to
+     * FILL_MAX_ROW_STRETCH, the rest left as free bands above and below
+     * where the player tags put their names. */
     fillContainer?: boolean;
     /** With `follow`: keep the runners' marks (tags, trails, death skulls)
      * the size they have in a MARK_REFERENCE_WIDTH-wide window however far
@@ -131,7 +134,7 @@
   let layout: DagLayout = $derived.by(() => {
     const base = computeLayout(graph);
     return fillContainer && containerAspect
-      ? stretchToAspect(base, containerAspect)
+      ? stretchToAspect(base, containerAspect, FILL_MAX_ROW_STRETCH)
       : base;
   });
 
@@ -762,6 +765,8 @@
       {playerTags}
       view={followWindow}
       {markScale}
+      nameLanes={fillContainer && !!containerAspect}
+      {nodeScale}
     />
   {:else}
     {#each playerPaths as path (path.id)}

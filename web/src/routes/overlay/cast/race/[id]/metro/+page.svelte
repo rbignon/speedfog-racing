@@ -37,11 +37,13 @@
     ),
   );
 
-  // The map shows the whole seed by default, its rows spread apart to fill
-  // the box, so a viewer sees at a glance how far into the race each runner
-  // is; zone names are left out, since at that zoom they would render at a
-  // few pixels (the standings below carry each runner's zone). Runner marks
-  // keep their on-screen size whatever the zoom (MetroDagFull's
+  // The map shows the whole seed by default, so a viewer sees at a glance
+  // how far into the race each runner is: the graph grows taller to fill the
+  // box (its rows spread up to a cap, the rest left as free bands above and
+  // below, where the runners' names go; MetroDagFull's `fillContainer`), and
+  // zone names are left out, since at that zoom they would render at a few
+  // pixels (the standings below carry each runner's zone). Runner marks keep
+  // their on-screen size however far the map zooms out (MetroDagFull's
   // `keepMarkSize`).
   //
   // `maxLayers=N` in the URL follows the runners instead, with a window N

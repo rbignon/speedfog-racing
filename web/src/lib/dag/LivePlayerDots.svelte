@@ -4,6 +4,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import type { PositionedNode } from "./types";
   import {
+    NODE_RADIUS,
     PADDING,
     PLAYER_COLORS,
     RACER_DOT_RADIUS,
@@ -55,6 +56,12 @@
      * keep their size on screen when the map zooms out (MetroDagFull's
      * `keepMarkSize`). */
     markScale?: number;
+    /** Put the names in the free bands above and below the graph (see
+     * `placeTags`' lanes), for a map that leaves such bands. */
+    nameLanes?: boolean;
+    /** How much larger than drawn the map draws its node glyphs, so the
+     * name lanes clear them. */
+    nodeScale?: number;
   }
 
   let {
@@ -65,6 +72,8 @@
     playerTags = false,
     view,
     markScale = 1,
+    nameLanes = false,
+    nodeScale = 1,
   }: Props = $props();
 
   // Wall-clock elapsed time for orbit animation
@@ -303,6 +312,23 @@
     nameX: number;
   }
 
+  // The largest node glyph's reach from its centre, half of its 3-unit ring
+  // stroke included.
+  const NODE_GLYPH_REACH = Math.max(...Object.values(NODE_RADIUS)) + 1.5;
+
+  // Just past the top and bottom rows, far enough to clear both a tag dot on
+  // an outer row and the node glyphs there.
+  let lanes = $derived.by(() => {
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const node of nodeMap.values()) {
+      top = Math.min(top, node.y);
+      bottom = Math.max(bottom, node.y);
+    }
+    const clear = Math.max(tagMetrics.dotRadius, NODE_GLYPH_REACH * nodeScale);
+    return { top: top - clear, bottom: bottom + clear };
+  });
+
   let tags: TagPosition[] = $derived.by(() => {
     if (!playerTags) return [];
     const points: (TagPoint & {
@@ -392,7 +418,12 @@
       spotX: pt.spotX,
       lean: pt.lean,
     }));
-    const placements = placeTags(anchors, tagView, tagMetrics);
+    const placements = placeTags(
+      anchors,
+      tagView,
+      tagMetrics,
+      nameLanes ? lanes : undefined,
+    );
     return points.flatMap((pt, i) => {
       const placement = placements.get(pt.id);
       if (!placement) return [];

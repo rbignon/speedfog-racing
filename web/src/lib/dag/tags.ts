@@ -132,13 +132,23 @@ function overlaps(a: Box, b: Box): boolean {
  * how far out, so that no name covers another name or another runner's dot,
  * and every name stays inside the visible window.
  *
- * Each tag prefers pointing toward the middle of the window, where there is
- * room; a dot on the middle itself follows its own `lean`. When the
- * preferred slot collides or would leave the window, the other direction is
- * tried at the same distance, then both again one tier further out. If
- * nothing is free within `maxTiers`, the first direction that stays inside
- * the window is kept and the overlap accepted: a tag is never dropped for
- * want of room.
+ * Without `lanes`, each tag prefers pointing toward the middle of the window,
+ * where there is room. When the preferred slot collides or would leave the
+ * window, the other direction is tried at the same distance, then both again
+ * one tier further out.
+ *
+ * With `lanes`, the lines just past the graph's top and bottom rows, names go
+ * in the free bands beyond them instead of over the graph: a name reaches
+ * past the lane on its side, and the free slot with the shortest connector
+ * wins, so names stack in the nearer band until crossing to the other one is
+ * shorter. Each dot also keeps the stretch between itself and its own name
+ * (toward its nearer lane) free of other names, so a name never lands
+ * between a dot and that dot's own name. Only when both bands are full does a
+ * name fall back over the graph, as without lanes.
+ *
+ * A dot on the middle follows its own `lean`. If nothing is free within
+ * `maxTiers`, the first direction that stays inside the window is kept and
+ * the overlap accepted: a tag is never dropped for want of room.
  *
  * A name near the window's left or right edge slides inward rather than
  * being cut, its connector still leaving from the dot. A runner whose spot
@@ -151,23 +161,48 @@ export function placeTags(
   anchors: TagAnchor[],
   view: TagView,
   m: TagMetrics,
+  lanes?: { top: number; bottom: number },
 ): Map<string, TagPlacement> {
   const EPS = 0.5;
-  const mid = (view.top + view.bottom) / 2;
+  const viewMid = (view.top + view.bottom) / 2;
+  const laneMid = lanes ? (lanes.top + lanes.bottom) / 2 : viewMid;
   const ordered = anchors
     .filter((a) => a.spotX >= view.left && a.spotX <= view.right)
     .sort((a, b) => a.x - b.x || a.y - b.y);
 
+  // Toward the middle of the window: the order without lanes.
+  function inwardDirs(a: TagAnchor): (-1 | 1)[] {
+    if (Math.abs(a.y - viewMid) < EPS) return [a.lean, -a.lean as -1 | 1];
+    return a.y < viewMid ? [1, -1] : [-1, 1];
+  }
+
+  // Toward the nearer lane.
+  function laneDirs(a: TagAnchor): (-1 | 1)[] {
+    if (Math.abs(a.y - laneMid) < EPS) return [a.lean, -a.lean as -1 | 1];
+    return a.y < laneMid ? [-1, 1] : [1, -1];
+  }
+
+  // A name in a band reaches past the lane on its side, never shorter than
+  // the usual connector.
+  function laneReach(a: TagAnchor, dir: -1 | 1): number {
+    if (!lanes) return m.reach;
+    return Math.max(m.reach, dir < 0 ? a.y - lanes.top : lanes.bottom - a.y);
+  }
+
+  const guard = lanes ? Math.max(0, m.reach - m.dotRadius) : 0;
   const dotBoxes = new Map<string, Box>(
-    anchors.map((a) => [
-      a.id,
-      {
-        left: a.x - m.dotRadius,
-        right: a.x + m.dotRadius,
-        top: a.y - m.dotRadius,
-        bottom: a.y + m.dotRadius,
-      },
-    ]),
+    anchors.map((a) => {
+      const side = lanes ? laneDirs(a)[0] : 0;
+      return [
+        a.id,
+        {
+          left: a.x - m.dotRadius,
+          right: a.x + m.dotRadius,
+          top: a.y - m.dotRadius - (side < 0 ? guard : 0),
+          bottom: a.y + m.dotRadius + (side > 0 ? guard : 0),
+        },
+      ];
+    }),
   );
   const placedNames: Box[] = [];
   const result = new Map<string, TagPlacement>();
@@ -195,33 +230,49 @@ export function placeTags(
     return box.top >= view.top && box.bottom <= view.bottom;
   }
 
+  const tiers = Array.from({ length: m.maxTiers }, (_, t) => t);
+
   for (const a of ordered) {
-    let dirs: (-1 | 1)[];
-    if (Math.abs(a.y - mid) < EPS) dirs = [a.lean, -a.lean as -1 | 1];
-    else dirs = a.y < mid ? [1, -1] : [-1, 1];
+    const overGraph = tiers.flatMap((tier) =>
+      inwardDirs(a).map((dir) => ({ dir, reach: m.reach + tier * m.tierStep })),
+    );
+    // Shortest connector first; a stable sort keeps the nearer band ahead on
+    // a tie.
+    const candidates = lanes
+      ? [
+          ...laneDirs(a)
+            .flatMap((dir) =>
+              tiers.map((tier) => ({
+                dir,
+                reach: laneReach(a, dir) + tier * m.tierStep,
+              })),
+            )
+            .sort((p, q) => p.reach - q.reach),
+          ...overGraph,
+        ]
+      : overGraph;
 
     let chosen: { dir: -1 | 1; reach: number } | null = null;
     let chosenBox: Box | null = null;
-    for (let tier = 0; tier < m.maxTiers && !chosen; tier++) {
-      const reach = m.reach + tier * m.tierStep;
-      for (const dir of dirs) {
-        const box = nameBox(a, dir, reach);
-        if (!inView(box)) continue;
-        const hitsName = placedNames.some((b) => overlaps(box, b));
-        const hitsDot = [...dotBoxes].some(
-          ([id, b]) => id !== a.id && overlaps(box, b),
-        );
-        if (!hitsName && !hitsDot) {
-          chosen = { dir, reach };
-          chosenBox = box;
-          break;
-        }
+    for (const { dir, reach } of candidates) {
+      const box = nameBox(a, dir, reach);
+      if (!inView(box)) continue;
+      const hitsName = placedNames.some((b) => overlaps(box, b));
+      const hitsDot = [...dotBoxes].some(
+        ([id, b]) => id !== a.id && overlaps(box, b),
+      );
+      if (!hitsName && !hitsDot) {
+        chosen = { dir, reach };
+        chosenBox = box;
+        break;
       }
     }
     if (!chosen) {
-      const dir = dirs.find((d) => inView(nameBox(a, d, m.reach))) ?? dirs[0];
-      chosen = { dir, reach: m.reach };
-      chosenBox = nameBox(a, dir, m.reach);
+      const dirs = lanes ? laneDirs(a) : inwardDirs(a);
+      const dir =
+        dirs.find((d) => inView(nameBox(a, d, laneReach(a, d)))) ?? dirs[0];
+      chosen = { dir, reach: laneReach(a, dir) };
+      chosenBox = nameBox(a, dir, chosen.reach);
     }
     placedNames.push(chosenBox!);
     result.set(a.id, { ...chosen, nameX: nameCentre(a) });
