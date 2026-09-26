@@ -308,7 +308,10 @@ count there. See `daily_points` in
    label the section already carries ("Race 1 - Standard"), and drop the
    players / mode / organizer foot row and the viewer's role mark, since the
    bracket beside them lists the field and each stage's date and modes (an
-   organizer or caster finds their role on the race page). A slot with no
+   organizer or caster finds their role on the race page). The casters build
+   their OBS scenes from the Cast Setup panel on the race page, and point the
+   talk scene at the stage rather than at one of its races, so it stays up all
+   evening (see [CAST_OVERLAYS.md](CAST_OVERLAYS.md)). A slot with no
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
