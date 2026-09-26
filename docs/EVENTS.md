@@ -22,6 +22,7 @@ computed on each request by `services/event_service.py`.
 | `modes`          | `[{key, label}]`, keys are pool names, one ladder column each           |
 | `seeds_per_mode` | seeds per mode in the qualifier (default 2)                             |
 | `stages`         | ordered playoff stages, see below                                       |
+| `showcases`      | evenings outside the bracket, for the cast scenes (see Showcases)       |
 | `rules`          | qualifier rules, shown next to the Take part steps (max 300 chars each) |
 | `playoff_rules`  | playoff rules, shown next to the bracket from the cut on (same cap)     |
 | `facts`          | optional `[{title, lines}]` tiles for the format block (see below)      |
@@ -76,6 +77,28 @@ Attaching a race to a slot needs the parsed config, so it refuses with a 422
 naming the same errors. Moving `advance` from the final onto the stages that
 feed it was such a change: its migration (`4f7c2a9d1e6b`) rewrites the stored
 documents, and runs again harmlessly on one already moved.
+
+### Showcases
+
+A showcase is an evening outside the bracket, a match between runners picked
+by hand, that the talk cast scene can still score (see
+[CAST_OVERLAYS.md](CAST_OVERLAYS.md)). It takes a `key`, a `label`, `races`,
+`modes` and an optional `date`, with the same meaning as a stage's, and none
+of `kind`, `seeds`, `from`, `advance` or `size`: its field is whoever races
+it, the participants of its attached races by username. Its races attach to
+`<key>:<n>` like a stage's, so validation rejects a key used by both a stage
+and a showcase. They score as a stage's do (points summed over the races, a
+running race provisionally), and nobody advances.
+
+A showcase stays out of everything the site shows about the event. The detail
+lists it apart, in `showcases`, never in `stages`, so the bracket, the
+timeline, the format block, the phase (a showcase never holds the season
+open), the current and next stage, the live race (home band, navbar dot) and
+the Open Graph line-up never see it; its date is bound neither by the stage
+order nor by the event window. Its races are still attached to the event, so
+the counts read straight off the event's races leave them out by hand: the
+players and their previews in the summary and on the Open Graph card, and
+the signature weapon, so a runner seen only in a showcase is no entrant.
 
 ### Facts
 
@@ -251,9 +274,9 @@ count there. See `daily_points` in
    shows the server's validation errors next to the JSON editor, each
    prefixed with its field path. A save is also rejected when the new config
    would orphan a race already attached to a slot it no longer has room for
-   (a removed or renamed mode or stage, or a lowered `seeds_per_mode`): the
-   error names the orphaned slots, and nothing is stored until the races are
-   detached from the Races tab.
+   (a removed or renamed mode, stage or showcase, or a lowered
+   `seeds_per_mode`): the error names the orphaned slots, and nothing is
+   stored until the races are detached from the Races tab.
 2. Before the qualifier: `tools/qualifier.py create` (usage in its docstring;
    `--dry-run` shows what it would do) creates the race of every empty
    `qualifier:<mode>:<n>` slot and attaches it, named "SEASON ONE QUALIFIER -
@@ -315,6 +338,15 @@ count there. See `daily_points` in
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
+5. A showcase (see "Showcases" above) runs the same way: add it to the
+   config's `showcases`, create its races with the chosen runners and the
+   casters, named after its label like a stage's ("Ignite Showcase - Race 1 -
+   Standard"), and attach them to `<showcase>:<n>`. Its field is read off its
+   races, so until one of them is attached its race cards list nobody:
+   create them ahead, runners registered. The casters point the talk scene
+   at the showcase as they would at a stage. Cast Setup only offers the
+   events on the bill (from the announcement to a week after `ends_at`), so
+   a showcase held outside that window needs its talk URL written by hand.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.
@@ -326,15 +358,15 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
 `event_slot` and leaving `exclude_from_stats` unchanged. Attaching validates:
 
 - The slot must exist for the event's config (a known mode and seed index for
-  a `qualifier:<mode>:<n>` slot, a known stage and race index for a
-  `<stage>:<n>` slot).
+  a `qualifier:<mode>:<n>` slot, a known stage or showcase and race index for
+  a `<stage>:<n>` slot).
 - A `qualifier:<mode>:<n>` slot requires the race's seed pool to equal the
   mode key, and `late_join_window_minutes` and `race_duration_minutes` both
   set and equal; attaching then sets `exclude_from_stats` on the race.
 - A stage slot requires `max_participants` to be null or at least the stage's
   field size: the number of `seeds` for a seeded stage, `size` for a
   newcomers stage, the sum of its sources' `advance` for a stage fed by
-  others.
+  others. A showcase slot takes any `max_participants`, having no field.
 - A Daily Seed race is refused.
 - An event whose stored config no longer parses is refused (422, naming the
   validation errors): the slot cannot be checked without it. Detaching still
@@ -454,8 +486,8 @@ newcomers' final's winners (the leader of each complete stage), the champion's
 larger, with their story: the position they qualified at on the ladder, the
 evening's races finished first out of the races expected (a race nobody
 finished counts for no one), and their signature weapon, the one carried the
-longest over every event race they entered (`signature_weapon` on each stage
-result, from the zone histories). An event that ends at `ends_at` with the
+longest over every event race they entered, showcases aside
+(`signature_weapon` on each stage result, from the zone histories). An event that ends at `ends_at` with the
 final incomplete shows no plate.
 
 ### Seeing each state locally
@@ -492,8 +524,8 @@ come, so a season announced right after the last final is what the band
 shows; otherwise the earliest season leads.
 
 The summary carries the phase, the `players` count and `player_previews`
-under the Open Graph card's rule (everyone who joined an event race, plus
-the signups while the event can still be joined, the ladder's best first;
+under the Open Graph card's rule (everyone who joined an event race other
+than a showcase's, plus the signups while the event can still be joined, the ladder's best first;
 the first `MAX_PLAYER_PREVIEWS` of them are previewed; both empty while an
 upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
@@ -574,7 +606,8 @@ fetched is left out rather than replaced by a placeholder.
 
 - `GET /api/events`: the events on the bill (`EventSummaryResponse`, see Home
   page and navbar).
-- `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`).
+- `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`),
+  plus the showcases, which only the talk cast scene reads.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

@@ -8,7 +8,7 @@ the event dates and of the attached races. Nothing is stored.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
@@ -29,7 +29,13 @@ from speedfog_racing.models import (
     RaceStatus,
     Seed,
 )
-from speedfog_racing.schemas import EVENT_PHASES, EventConfig, EventStage, as_aware_utc
+from speedfog_racing.schemas import (
+    EVENT_PHASES,
+    EventConfig,
+    EventShowcase,
+    EventStage,
+    as_aware_utc,
+)
 from speedfog_racing.services.daily_points_service import (
     QualifiedParticipant,
     compute_daily_points,
@@ -96,7 +102,7 @@ def validate_slot(slot: Slot, config: EventConfig) -> str | None:
         if slot.index > config.seeds_per_mode:
             return f"seed index {slot.index} exceeds seeds_per_mode ({config.seeds_per_mode})"
         return None
-    stage = config.stage(slot.key)
+    stage = config.stage(slot.key) or config.showcase(slot.key)
     if stage is None:
         return f"unknown stage {slot.key!r}"
     if slot.index > stage.races:
@@ -351,7 +357,9 @@ class StageResult:
     entries: list[StageEntry] = field(default_factory=list)
 
 
-def compute_stage_results(stage: EventStage, races: list[Race], advance: int) -> StageResult:
+def compute_stage_results(
+    stage: EventStage | EventShowcase, races: list[Race], advance: int
+) -> StageResult:
     """Sum the daily-formula points of a stage's races; ``advance`` best qualify once complete."""
     complete = len(races) == stage.races and all(r.status == RaceStatus.FINISHED for r in races)
     totals: dict[UUID, list[int]] = {}
@@ -400,6 +408,13 @@ def fed_field(
         else:
             slots.extend(FieldSlot(user_id=None, label=placeholder) for _ in range(count))
     return slots
+
+
+def showcase_field(showcase: EventShowcase, races: list[Race]) -> list[FieldSlot]:
+    """A showcase's field: whoever joined one of its races, by username."""
+    users = {p.user_id: p.user for race in races for p in race.participants}
+    ordered = sorted(users.items(), key=lambda item: item[1].twitch_username)
+    return [FieldSlot(user_id=user_id, label=showcase.label) for user_id, _ in ordered]
 
 
 # --- signature weapon -------------------------------------------------------
@@ -543,11 +558,11 @@ def race_moment(race: Race) -> datetime | None:
 
 
 def stage_dates(
-    config: EventConfig, stage_races: dict[str, list[tuple[Slot, Race]]]
+    stages: Sequence[EventStage | EventShowcase], stage_races: dict[str, list[tuple[Slot, Race]]]
 ) -> dict[str, datetime | None]:
     """Each stage's date: the config's when set, else its earliest race, else None."""
     dates: dict[str, datetime | None] = {}
-    for stage in config.stages:
+    for stage in stages:
         if stage.date is not None:
             dates[stage.key] = stage.date
             continue
@@ -581,6 +596,18 @@ class ResolvedStages:
     # Each stage's effective date (see ``stage_dates``).
     dates: dict[str, datetime | None]
     phase: Phase
+    # The showcases, resolved like stages, apart so nothing the bracket drives sees them.
+    showcase_races: dict[str, list[tuple[Slot, Race]]]
+    showcase_results: dict[str, StageResult]
+    showcase_dates: dict[str, datetime | None]
+
+    @property
+    def showcase_race_ids(self) -> set[UUID]:
+        """The races of the showcases, attached to the event but entering nobody in it.
+
+        Anything counting the event's players off ``event.races`` must skip them.
+        """
+        return {race.id for races in self.showcase_races.values() for _, race in races}
 
 
 def resolve_stages(event: Event, config: EventConfig, now: datetime) -> ResolvedStages:
@@ -602,20 +629,22 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         ((s, r) for s, r in attached if s.kind == "qualifier" and s.key in mode_keys),
         key=lambda item: (mode_keys.index(item[0].key), item[0].index),
     )
-    stage_races = {
-        stage.key: sorted(
-            ((s, r) for s, r in attached if s.kind == "stage" and s.key == stage.key),
+
+    def races_of(key: str) -> list[tuple[Slot, Race]]:
+        return sorted(
+            ((s, r) for s, r in attached if s.kind == "stage" and s.key == key),
             key=lambda item: item[0].index,
         )
-        for stage in config.stages
-    }
+
+    stage_races = {stage.key: races_of(stage.key) for stage in config.stages}
+    showcase_races = {showcase.key: races_of(showcase.key) for showcase in config.showcases}
     results = {
         stage.key: compute_stage_results(
             stage, [r for _, r in stage_races[stage.key]], stage.advance or 0
         )
         for stage in config.stages
     }
-    dates = stage_dates(config, stage_races)
+    dates = stage_dates(config.stages, stage_races)
     last = config.stages[-1] if config.stages else None
     phase = compute_phase(
         now=now,
@@ -633,6 +662,12 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         results=results,
         dates=dates,
         phase=phase,
+        showcase_races=showcase_races,
+        showcase_results={
+            s.key: compute_stage_results(s, [r for _, r in showcase_races[s.key]], 0)
+            for s in config.showcases
+        },
+        showcase_dates=stage_dates(config.showcases, showcase_races),
     )
 
 

@@ -323,13 +323,17 @@
       modes?: { key: string }[];
       seeds_per_mode?: number;
       stages?: { key: string; races: number }[];
+      showcases?: { key: string; races: number }[];
     };
     const slots: string[] = [];
     for (const mode of config.modes ?? []) {
       for (let i = 1; i <= (config.seeds_per_mode ?? 2); i++)
         slots.push(`qualifier:${mode.key}:${i}`);
     }
-    for (const stage of config.stages ?? []) {
+    for (const stage of [
+      ...(config.stages ?? []),
+      ...(config.showcases ?? []),
+    ]) {
       for (let i = 1; i <= stage.races; i++) slots.push(`${stage.key}:${i}`);
     }
     return slots;

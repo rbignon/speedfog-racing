@@ -506,3 +506,42 @@ async def test_the_quarters_config_replaces_the_semis_one_under_attached_qualifi
         "quarter_a",
         "quarter_b",
     ]
+
+
+SHOWCASE_DOC = {
+    **DOC,
+    "config": {
+        **DOC["config"],
+        "showcases": [{"key": "showcase", "label": "Ignite Showcase", "races": 3}],
+    },
+}
+
+
+@pytest.mark.asyncio
+async def test_a_showcase_slot_takes_any_field_and_keeps_its_races(
+    test_client, users, async_session
+):
+    _, orga = users
+    async with async_session() as db:
+        duel = await _race(db, orga, "standard", "s20", max_participants=2)
+        extra = await _race(db, orga, "standard", "s21")
+        await db.commit()
+    async with test_client as client:
+        created = await client.post("/api/admin/events", json=SHOWCASE_DOC, headers=ADMIN)
+        event_id = created.json()["id"]
+        # The runners are picked by hand: no field size to make room for.
+        accepted = await client.post(
+            f"/api/admin/races/{duel.id}/event",
+            json={"event_id": event_id, "slot": "showcase:1"},
+            headers=ADMIN,
+        )
+        assert accepted.status_code == 200, accepted.text
+        beyond = await client.post(
+            f"/api/admin/races/{extra.id}/event",
+            json={"event_id": event_id, "slot": "showcase:4"},
+            headers=ADMIN,
+        )
+        assert beyond.status_code == 422 and "races" in beyond.text
+
+        dropped = await client.post("/api/admin/events", json=DOC, headers=ADMIN)
+        assert dropped.status_code == 422 and "showcase:1" in dropped.text

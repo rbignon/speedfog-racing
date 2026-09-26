@@ -8,7 +8,7 @@ vi.mock("$lib/api", async () => {
   return {
     ...actual,
     fetchEvents: vi.fn().mockResolvedValue([]),
-    fetchEvent: vi.fn().mockResolvedValue({ stages: [] }),
+    fetchEvent: vi.fn().mockResolvedValue({ stages: [], showcases: [] }),
   };
 });
 

@@ -16,6 +16,10 @@
   let params = $derived(data.castParams);
   let stage = $derived(data.stage);
   let layout = $derived(sceneLayout("talk", { cams: params.cams }));
+  // A showcase is no playoff round: its label stands alone.
+  let toplineLabel = $derived(
+    stage.kind === "showcase" ? stage.label : `${stage.label} · Playoff night`,
+  );
 
   // Rendered in the viewer's own timezone, like every other date on the
   // site: no explicit timeZone is passed to these, same as formatEventDay
@@ -50,7 +54,7 @@
       .y}px; width: {layout.panels.topline.w}px; height: {layout.panels.topline
       .h}px;"
   >
-    <span class="tl-left">{stage.label} &middot; Playoff night</span>
+    <span class="tl-left">{toplineLabel}</span>
     <span class="tl-right">{dateText}</span>
   </div>
 

@@ -37,6 +37,8 @@ from speedfog_racing.schemas import (
     EventQualifiedResponse,
     EventQualifiedSlotResponse,
     EventQualifierRaceResponse,
+    EventShowcase,
+    EventStage,
     EventStageEntryResponse,
     EventStageRaceResponse,
     EventStageResponse,
@@ -50,6 +52,8 @@ from speedfog_racing.services.event_service import (
     MAX_PLAYER_PREVIEWS,
     MIN_UPCOMING_PLAYERS,
     UNDECIDED,
+    Slot,
+    StageResult,
     announce_date,
     build_timeline,
     compute_ladder,
@@ -66,6 +70,7 @@ from speedfog_racing.services.event_service import (
     next_stage_key,
     resolve_stages,
     score_race,
+    showcase_field,
     signature_weapon,
 )
 
@@ -122,11 +127,16 @@ async def list_events(
         final = config.final_stage()
 
         # The Open Graph card's count and order: everyone who joined an event
-        # race, plus the signups while the event can still be joined, the
-        # ladder's best first and the runners it could not rank after them;
-        # nothing while an upcoming event has too few of them to advertise.
+        # race (a showcase's hand-picked runners aside), plus the signups while
+        # the event can still be joined, the ladder's best first and the
+        # runners it could not rank after them; nothing while an upcoming event
+        # has too few of them to advertise.
+        showcase_ids = resolved.showcase_race_ids
         users: dict[UUID, User] = {
-            p.user_id: p.user for race in event.races for p in race.participants
+            p.user_id: p.user
+            for race in event.races
+            if race.id not in showcase_ids
+            for p in race.participants
         }
         signed_up: list[UUID] = []
         if phase in JOINABLE_PHASES:
@@ -221,7 +231,10 @@ async def get_event(
     users: dict[UUID, User] = {p.user_id: p.user for race in event.races for p in race.participants}
     users.update({s.user_id: s.user for s in event.signups})
     histories: dict[UUID, list[list[dict[str, Any]]]] = {}
+    showcase_ids = resolved.showcase_race_ids
     for _, race in attached:
+        if race.id in showcase_ids:
+            continue
         for p in race.participants:
             histories.setdefault(p.user_id, []).append(p.zone_history or [])
     weapons: dict[UUID, EventWeaponResponse | None] = {}
@@ -269,6 +282,44 @@ async def get_event(
 
     def user_of(user_id: UUID | None) -> UserResponse | None:
         return UserResponse.model_validate(users[user_id]) if user_id in users else None
+
+    def stage_response(
+        stage: EventStage | EventShowcase,
+        *,
+        kind: str,
+        sources: list[str],
+        date: datetime | None,
+        races: list[tuple[Slot, Race]],
+        result: StageResult,
+        field: list[EventFieldSlotResponse],
+    ) -> EventStageResponse:
+        return EventStageResponse(
+            key=stage.key,
+            label=stage.label,
+            kind=kind,
+            date=date,
+            date_fixed=stage.date is not None,
+            from_=sources,  # type: ignore[call-arg]  # mypy ignores populate_by_name
+            races_expected=stage.races,
+            complete=result.complete,
+            modes=stage.modes,
+            races=[
+                EventStageRaceResponse(slot=str(s), index=s.index, race=race_response(r, user))
+                for s, r in races
+            ],
+            results=[
+                EventStageEntryResponse(
+                    user=UserResponse.model_validate(users[e.user_id]),
+                    newcomer=newcomers.get(e.user_id, False),
+                    points=e.points,
+                    igt_total=e.igt_total,
+                    advances=e.advances,
+                    signature_weapon=weapon_of(e.user_id),
+                )
+                for e in result.entries
+            ],
+            field=field,
+        )
 
     def field_of(stage_key: str) -> list[EventFieldSlotResponse]:
         stage = config.stage(stage_key)
@@ -361,34 +412,33 @@ async def get_event(
             ],
         ),
         stages=[
-            EventStageResponse(
-                key=stage.key,
-                label=stage.label,
+            stage_response(
+                stage,
                 kind=stage.kind,
+                sources=stage.from_ or [],
                 date=resolved.dates[stage.key],
-                date_fixed=stage.date is not None,
-                from_=stage.from_ or [],  # type: ignore[call-arg]  # mypy ignores populate_by_name
-                races_expected=stage.races,
-                complete=results[stage.key].complete,
-                modes=stage.modes,
-                races=[
-                    EventStageRaceResponse(slot=str(s), index=s.index, race=race_response(r, user))
-                    for s, r in stage_races[stage.key]
-                ],
-                results=[
-                    EventStageEntryResponse(
-                        user=UserResponse.model_validate(users[e.user_id]),
-                        newcomer=newcomers.get(e.user_id, False),
-                        points=e.points,
-                        igt_total=e.igt_total,
-                        advances=e.advances,
-                        signature_weapon=weapon_of(e.user_id),
-                    )
-                    for e in results[stage.key].entries
-                ],
+                races=stage_races[stage.key],
+                result=results[stage.key],
                 field=field_of(stage.key),
             )
             for stage in config.stages
+        ],
+        showcases=[
+            stage_response(
+                showcase,
+                kind="showcase",
+                sources=[],
+                date=resolved.showcase_dates[showcase.key],
+                races=resolved.showcase_races[showcase.key],
+                result=resolved.showcase_results[showcase.key],
+                field=[
+                    EventFieldSlotResponse(user=user_of(slot.user_id), label=slot.label)
+                    for slot in showcase_field(
+                        showcase, [r for _, r in resolved.showcase_races[showcase.key]]
+                    )
+                ],
+            )
+            for showcase in config.showcases
         ],
         current_stage_key=(
             current_stage_key(config, resolved, now) if phase == "playoffs" else None

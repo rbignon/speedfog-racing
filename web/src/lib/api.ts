@@ -537,6 +537,12 @@ export interface EventStage {
   field: EventFieldSlot[];
 }
 
+/** An evening outside the bracket, scored like a stage for the talk scene;
+ * the event page never renders it. Its field is whoever races it. */
+export interface EventShowcase extends Omit<EventStage, "kind"> {
+  kind: "showcase";
+}
+
 export interface EventNextStage {
   key: string;
   label: string;
@@ -566,6 +572,7 @@ export interface EventDetail {
   ladder: EventLadder;
   qualified: EventQualified;
   stages: EventStage[];
+  showcases: EventShowcase[];
   current_stage_key: string | null;
   live_race: Race | null;
   next_stage: EventNextStage | null;

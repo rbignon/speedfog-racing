@@ -11,7 +11,9 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
   } catch {
     throw error(404, "Event not found");
   }
-  const stage = event.stages.find((s) => s.key === params.stage);
+  const stage = [...event.stages, ...event.showcases].find(
+    (s) => s.key === params.stage,
+  );
   if (!stage) throw error(404, "Stage not found");
 
   // The scene has no race, so the casters come from the URL. A username that

@@ -601,6 +601,162 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
         assert data["next_stage"]["key"] == expected_next
 
 
+SHOWCASE = {"key": "showcase", "label": "Ignite Showcase", "races": 3, "modes": ["Standard"]}
+
+
+@pytest.mark.asyncio
+async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async_session):
+    """One showcase race done, one live: points summed, none of the bracket's state."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        aaron = await _user(db, "aaron")
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        cleo = await _user(db, "cleo")
+        duel = {"key": "duel", "label": "Duel", "races": 1}
+        event = await _event(
+            db, config={**CONFIG, "phase_override": "playoffs", "showcases": [SHOWCASE, duel]}
+        )
+        semi = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(
+            db,
+            semi,
+            ana,
+            ParticipantStatus.FINISHED,
+            1_000_000,
+            weapons=[{"ids": [9000010], "ticks": 3}],
+        )
+        first_at = T0 + timedelta(days=9)
+        first = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "show1"),
+            event,
+            "showcase:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+            scheduled_at=first_at,
+        )
+        # A heavier weapon than the semi's: a showcase run must not become ana's signature.
+        await _entry(
+            db,
+            first,
+            ana,
+            ParticipantStatus.FINISHED,
+            1_000_000,
+            weapons=[{"ids": [8030025], "ticks": 99}],
+        )
+        await _entry(db, first, bob, ParticipantStatus.FINISHED, 1_500_000)
+        second = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "show2"),
+            event,
+            "showcase:2",
+            status=RaceStatus.RUNNING,
+            is_public=True,
+            scheduled_at=first_at + timedelta(hours=1),
+        )
+        await _entry(db, second, cleo, ParticipantStatus.PLAYING, 500_000, layer=2)
+        await _entry(db, second, bob, ParticipantStatus.PLAYING, 400_000, layer=4)
+        # Joins last yet sorts first in the field.
+        await _entry(db, second, aaron, ParticipantStatus.PLAYING, 300_000, layer=1)
+        # A complete showcase still sends nobody on.
+        duel_race = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "duel1"),
+            event,
+            "duel:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(db, duel_race, ana, ParticipantStatus.FINISHED, 1_000_000)
+        await _entry(db, duel_race, bob, ParticipantStatus.FINISHED, 1_500_000)
+        await db.commit()
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    assert [s["key"] for s in data["stages"]] == [s["key"] for s in CONFIG["stages"]]
+    assert not any("showcase" in stop["key"] for stop in data["timeline"])
+    assert data["live_race"] is None
+    assert data["current_stage_key"] is None
+    semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
+    assert semi_a["results"][0]["signature_weapon"]["id"] == 9000000
+
+    showcase, duel_result = data["showcases"]
+    assert showcase["kind"] == "showcase"
+    assert datetime.fromisoformat(showcase["date"]) == first_at
+    assert showcase["races_expected"] == 3 and len(showcase["races"]) == 2
+    assert showcase["complete"] is False
+    # bob: second then first on the live race's depth; ana won the first; cleo and
+    # aaron behind bob on the live race.
+    assert [(r["user"]["twitch_username"], r["points"]) for r in showcase["results"]] == [
+        ("bob", 150),
+        ("ana", 100),
+        ("cleo", 67),
+        ("aaron", 33),
+    ]
+    assert [f["user"]["twitch_username"] for f in showcase["field"]] == [
+        "aaron",
+        "ana",
+        "bob",
+        "cleo",
+    ]
+    assert duel_result["complete"] is True
+    assert not any(r["advances"] for r in duel_result["results"])
+
+
+@pytest.mark.asyncio
+async def test_a_showcase_holds_neither_the_season_nor_its_player_count(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        cleo = await _user(db, "cleo")
+        # The final was dated a day ago; the season ends tomorrow.
+        starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=33))
+        event = await _event(
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "showcases": [SHOWCASE]},
+        )
+        for i in (1, 2, 3):
+            seed = await _seed(db, "standard", f"final{i}")
+            race = await _race(
+                db, orga, seed, event, f"final:{i}", status=RaceStatus.FINISHED, is_public=True
+            )
+            await _entry(db, race, ana, ParticipantStatus.FINISHED, 1_000_000)
+            await _entry(db, race, bob, ParticipantStatus.FINISHED, 1_500_000)
+        # Still running, and a runner nothing else in the season knows.
+        seed = await _seed(db, "standard", "show1")
+        race = await _race(
+            db, orga, seed, event, "showcase:1", status=RaceStatus.RUNNING, is_public=True
+        )
+        await _entry(db, race, cleo, ParticipantStatus.PLAYING, 500_000)
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    assert summary["phase"] == "finished"
+    assert summary["champion"]["twitch_username"] == "ana"
+    assert summary["live"] is None
+    assert summary["players"] == 2
+    assert "cleo" not in [u["twitch_username"] for u in summary["player_previews"]]
+
+
 @pytest.mark.asyncio
 async def test_qualifier_races_are_hidden_from_listings(test_client, world, async_session):
     """Even a public qualifier seed stays off the feeds; a public stage race is listed."""

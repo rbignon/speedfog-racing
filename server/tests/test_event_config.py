@@ -374,3 +374,24 @@ def test_upsert_reads_the_window_against_the_dated_stages():
     late_cut = dict(doc, qualifier_ends_at="2026-10-19T08:00:00+00:00")  # after the newcomers
     with pytest.raises(ValidationError, match="first dated stage"):
         EventUpsertRequest.model_validate(late_cut)
+
+
+SHOWCASE = {"key": "showcase", "label": "Ignite Showcase", "races": 3}
+
+
+def test_showcase_keys_share_the_slot_namespace_with_stages():
+    # A race attaches to "<key>:<n>" whether the key names a stage or a showcase.
+    with pytest.raises(ValidationError, match="unique"):
+        EventConfig.model_validate(_config(showcases=[dict(SHOWCASE, key="final")]))
+    with pytest.raises(ValidationError, match="unique"):
+        EventConfig.model_validate(_config(showcases=[SHOWCASE, SHOWCASE]))
+
+
+def test_a_showcase_date_stays_out_of_the_bracket_order():
+    # Before the first stage and after the final, listed backwards: only stages ascend.
+    early = dict(SHOWCASE, key="warmup", date="2026-09-20T19:00:00Z")
+    late = dict(SHOWCASE, date="2026-11-01T19:00:00Z")
+    EventConfig.model_validate(_config(showcases=[late, early]))
+    naive = dict(SHOWCASE, date="2026-11-01T19:00:00")
+    with pytest.raises(ValidationError, match="date must be timezone-aware"):
+        EventConfig.model_validate(_config(showcases=[naive]))

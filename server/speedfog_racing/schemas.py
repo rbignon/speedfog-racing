@@ -1005,10 +1005,30 @@ class EventStage(BaseModel):
         return self
 
 
+class EventShowcase(BaseModel):
+    """An evening outside the bracket: its races score like a stage's, for the cast scenes only.
+
+    Its runners are whoever races it, so it has no field of its own to declare.
+    """
+
+    key: str = Field(min_length=1, max_length=30)
+    label: str = Field(min_length=1, max_length=60)
+    date: datetime | None = None
+    races: int = Field(ge=1, le=5)
+    modes: list[str] = []
+
+    @model_validator(mode="after")
+    def _check_date(self) -> "EventShowcase":
+        if self.date is not None and self.date.tzinfo is None:
+            raise ValueError("date must be timezone-aware")
+        return self
+
+
 class EventConfig(BaseModel):
     modes: list[EventMode] = Field(min_length=1, max_length=6)
     seeds_per_mode: int = Field(default=2, ge=1, le=4)
     stages: list[EventStage] = []
+    showcases: list[EventShowcase] = []
     rules: list[str] = []
     playoff_rules: list[str] = []
     facts: list[EventFact] | None = Field(default=None, max_length=8)
@@ -1020,9 +1040,10 @@ class EventConfig(BaseModel):
         keys = [m.key for m in self.modes]
         if len(set(keys)) != len(keys):
             raise ValueError("mode keys must be unique")
-        stage_keys = [s.key for s in self.stages]
+        # Stages and showcases share the "<key>:<n>" slot namespace.
+        stage_keys = [s.key for s in self.stages] + [s.key for s in self.showcases]
         if len(set(stage_keys)) != len(stage_keys):
-            raise ValueError("stage keys must be unique")
+            raise ValueError("stage and showcase keys must be unique")
         seeded = [s for s in self.stages if s.seeds is not None]
         all_seeds = [seed for s in seeded for seed in s.seeds or []]
         duplicated_seeds = sorted({seed for seed in all_seeds if all_seeds.count(seed) > 1})
@@ -1089,6 +1110,9 @@ class EventConfig(BaseModel):
 
     def stage(self, key: str) -> EventStage | None:
         return next((s for s in self.stages if s.key == key), None)
+
+    def showcase(self, key: str) -> EventShowcase | None:
+        return next((s for s in self.showcases if s.key == key), None)
 
     def final_stage(self) -> EventStage | None:
         return next((s for s in self.stages if s.kind == "final"), None)
@@ -1243,6 +1267,8 @@ class EventDetailResponse(BaseModel):
     ladder: EventLadderResponse
     qualified: EventQualifiedResponse
     stages: list[EventStageResponse]
+    # For the cast scenes: the event page never renders them.
+    showcases: list[EventStageResponse]
     current_stage_key: str | None
     live_race: RaceResponse | None
     next_stage: EventNextStageResponse | None

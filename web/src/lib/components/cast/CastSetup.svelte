@@ -6,6 +6,7 @@
     fetchEvent,
     type RaceDetail,
     type EventSummary,
+    type EventShowcase,
     type EventStage,
   } from "$lib/api";
   import { sceneLayout, formatGeo, type CastSceneId } from "$lib/cast/layout";
@@ -195,9 +196,9 @@
       .catch(() => {});
   });
 
-  // The talk scene's stage picker: only the chosen event's own stages are
-  // valid, so this refetches whenever eventSlug changes.
-  let stages = $state<EventStage[]>([]);
+  // The talk scene's stage picker: only the chosen event's own stages (and
+  // showcases) are valid, so this refetches whenever eventSlug changes.
+  let stages = $state<(EventStage | EventShowcase)[]>([]);
   $effect(() => {
     const slug = eventSlug;
     if (!slug) {
@@ -207,7 +208,7 @@
     let cancelled = false;
     fetchEvent(slug)
       .then((detail) => {
-        if (!cancelled) stages = detail.stages;
+        if (!cancelled) stages = [...detail.stages, ...detail.showcases];
       })
       .catch(() => {
         if (!cancelled) stages = [];

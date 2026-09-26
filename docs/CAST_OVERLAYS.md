@@ -194,6 +194,14 @@ result. Before then, the standings panel shows its title with a line of
 muted copy underneath saying results arrive after the first race, rather
 than an empty list under a title that would read as broken.
 
+The same scene can point at one of the event's showcases instead (an
+evening outside the bracket, see "Showcases" in [EVENTS.md](EVENTS.md)), at
+the same path with the showcase's key in place of the stage's. The topline
+then carries the showcase's label alone, without "Playoff night"; a race card
+with no race yet lists the runners of the showcase's other races, since a
+showcase declares no field; and no runner in its standings carries the
+advancing mark, since nobody goes on from it.
+
 Both the stage standings panel (`CastRoundStandings`) and each race card's
 finisher list (`CastRaceCard`) cap their rows to what their own rect fits
 (see "Field-size overflow" above); unlike the metro scene there is no
@@ -303,7 +311,7 @@ It gives a caster, without hand-editing a URL:
   silently hiding another runner.
 - Cams (0, 1 or 2) and the two caster usernames.
 - An event co-brand picker, and, on the talk scene, a stage picker scoped to
-  the chosen event.
+  the chosen event: its stages, then its showcases.
 - Delay in seconds (race scenes only).
 - The built URL for the current scene, with a copy button, and a "Copy all
   scene URLs" button that copies every race scene's URL plus talk's once an

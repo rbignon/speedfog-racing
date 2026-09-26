@@ -1295,9 +1295,8 @@ async def admin_attach_race_to_event(
                     "race_duration_minutes both set and equal"
                 ),
             )
-    else:
-        stage = config.stage(slot.key)
-        assert stage is not None, "validate_slot already rejected unknown stages"
+    # A showcase slot has no field to make room for: its runners are whoever races it.
+    elif (stage := config.stage(slot.key)) is not None:
         size = config.field_size(stage)
         if race.max_participants is not None and race.max_participants < size:
             raise HTTPException(

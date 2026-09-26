@@ -691,7 +691,7 @@ def test_a_stage_date_is_the_config_one_else_its_earliest_race():
         (parse_slot("quarter_a:2"), scheduled),
         (parse_slot("quarter_a:1"), private),
     ]
-    dates = stage_dates(cfg, races)
+    dates = stage_dates(cfg.stages, races)
     assert dates["quarter_a"] == monday  # the naive SQLite value read as UTC
     assert dates["quarter_b"] is None
     assert dates["final"] == datetime(2026, 10, 25, 19, tzinfo=UTC)

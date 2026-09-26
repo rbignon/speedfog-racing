@@ -475,7 +475,14 @@ def summarize_event(
     results = resolved.results
     phase = resolved.phase
     mode_keys = config.mode_keys()
-    users = {p.user_id: p.user for race in event.races for p in race.participants}
+    # A showcase's runners were picked by hand: they are not the event's entrants.
+    showcase_ids = resolved.showcase_race_ids
+    users = {
+        p.user_id: p.user
+        for race in event.races
+        if race.id not in showcase_ids
+        for p in race.participants
+    }
 
     final = config.final_stage()
 

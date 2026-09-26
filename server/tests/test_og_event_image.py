@@ -234,6 +234,16 @@ def test_signups_leave_the_card_at_the_cut() -> None:
     assert summary.player_count_label == "4 players"
 
 
+def test_a_showcase_runner_is_no_entrant() -> None:
+    event, users = _qualifier_world(["ana", "bob"])
+    event.config = {**CONFIG, "showcases": [{"key": "showcase", "label": "Showcase", "races": 3}]}
+    showcase = _race("showcase:1", [_entry(users["ana"], 800_000), _entry(_user("cleo"), 900_000)])
+    event.races.append(showcase)
+    summary = summarize_event(event, now=STARTS + dt.timedelta(days=2), finished_before={})
+    assert [u.twitch_username for u in summary.entrants] == ["ana", "bob"]
+    assert summary.player_count_label == "2 players"
+
+
 def test_the_cut_shows_the_first_stage_still_to_come() -> None:
     event, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
     summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before={})
