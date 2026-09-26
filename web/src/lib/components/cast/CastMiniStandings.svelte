@@ -135,7 +135,14 @@
   /* No depth cell here any more: the focus scene's own POVs already show
    * what each runner is doing, the same reasoning that dropped
    * CastStandings' depth column, and this panel is only 320px wide, so a
-   * cell that only restates the map/POV was the weakest use of its width. */
+   * cell that only restates the map/POV was the weakest use of its width.
+   * .gap below is also trimmed (60px to 42px) so this cell clears the
+   * budget rather than getting the leftovers: measured on a real field,
+   * SeriousChallenges (17 characters) clipped at the old ~174px budget;
+   * at 294px content width with rank (20) + dot (10) + the new gap
+   * minimum (42) + 3 gaps (30), this cell gets about 192px, a few pixels
+   * clear of that name. A longer Twitch name (up to 25 characters) can
+   * still ellipsize. */
   .nm {
     flex: 1;
     min-width: 0;
@@ -149,13 +156,18 @@
     white-space: nowrap;
   }
 
+  /* min-width is a floor, not a cap: nothing here clips this cell's own
+   * text (no overflow/ellipsis, and flex-shrink stays 0), so a longer gap
+   * a short race never produces (a two-minute-plus "+12:04") still renders
+   * whole, just wider than this floor, at .nm's expense on that one row
+   * rather than this cell's. */
   .gap {
     font-family: var(--font-mono);
     font-size: 20px;
     font-weight: 600;
     text-align: right;
     flex-shrink: 0;
-    min-width: 60px;
+    min-width: 42px;
   }
 
   .gap.behind {
