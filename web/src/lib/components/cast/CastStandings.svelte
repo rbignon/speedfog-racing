@@ -4,7 +4,7 @@
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { formatGap } from "$lib/gap";
-  import { rowCapacity, capRows } from "$lib/cast/rows";
+  import { rowCapacity, planRows } from "$lib/cast/rows";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
 
   interface Props {
@@ -13,6 +13,11 @@
      * store's `computeGap`), which is what makes its gap cell blank below
      * without special-casing the first row. */
     participants: WsParticipant[];
+    totalLayers: number | null;
+    /** Node id -> display name, from the seed's own graph
+     * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
+     * wire is a graph node id, never a display string. */
+    zoneNames: Map<string, string>;
     rect: Rect;
     /** Caster override for how many rows to show, from the metro scene's own
      * `lines` URL parameter (see `/overlay/race/[id]/leaderboard`, which
@@ -22,34 +27,27 @@
     lines?: number | null;
   }
 
-  let { participants, rect, lines = null }: Props = $props();
+  let {
+    participants,
+    totalLayers,
+    zoneNames,
+    rect,
+    lines = null,
+  }: Props = $props();
 
   // The panel can never overflow: how many rows fit comes from this rect's
-  // own height, not a typed number. .blk-title reserves font-size (24) +
-  // margin-bottom (8) = 32 (now carried by .title-row, see below); ROW_HEIGHT
-  // is .rrow's own height, unchanged from the validated mockup
-  // (docs/superpowers/specs/2026-09-23-cast-overlays-mockup.py's CSS,
-  // .rrow height:45px). The panel reads two columns wide (this rect's own
-  // 972px width comfortably fits two ~475px columns with a gutter once the
-  // zone column below is gone), so the total capacity is twice what one
-  // column holds; there is no row spent on an overflow line here (see
-  // title-more below), unlike CastMiniStandings/CastRoundStandings/
-  // CastRaceCard, so capRows (not planRows) is what caps the field.
+  // own height, not a typed number, so a bigger field (or a resized panel)
+  // never prints past the panel's bottom. .blk-title reserves font-size (24)
+  // + margin-bottom (8) = 32, the same title-reserve convention the metro
+  // page's own log-row cap already uses; ROW_HEIGHT is .rrow's own height
+  // below, the validated mockup's own 45px row.
   const TITLE_RESERVE = 32;
   const ROW_HEIGHT = 45;
-  const COLUMNS = 2;
-  let perColumnCapacity = $derived(
-    rowCapacity(rect.h, TITLE_RESERVE, ROW_HEIGHT),
-  );
-  let totalCapacity = $derived(perColumnCapacity * COLUMNS);
+  let capacity = $derived(rowCapacity(rect.h, TITLE_RESERVE, ROW_HEIGHT));
   let effectiveCapacity = $derived(
-    lines != null && lines > 0 ? Math.min(totalCapacity, lines) : totalCapacity,
+    lines != null && lines > 0 ? Math.min(capacity, lines) : capacity,
   );
-  let plan = $derived(capRows(participants, effectiveCapacity));
-  // Reading order is down the first column then down the second: the first
-  // perColumnCapacity ranks go left, the rest go right.
-  let col1 = $derived(plan.visible.slice(0, perColumnCapacity));
-  let col2 = $derived(plan.visible.slice(perColumnCapacity));
+  let plan = $derived(planRows(participants, effectiveCapacity));
 
   function displayName(p: WsParticipant): string {
     return p.twitch_display_name || p.twitch_username;
@@ -85,49 +83,59 @@
     }
     return parts.join(" ");
   }
-</script>
 
-{#snippet row(p: WsParticipant, rank: number)}
-  {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
-  <div class="rrow" style="--c: {color};">
-    <span class="rk" class:first={rank === 1}>{rank}</span>
-    <span class="dot"></span>
-    <span class="nm" style={nameStyleFor(p)}>{displayName(p)}</span>
-    <span class="dth"><SkullIcon size={17} />{p.death_count}</span>
-    <span
-      class="gap"
-      class:ahead={p.gap_ms != null && p.gap_ms < 0}
-      class:behind={p.gap_ms != null && p.gap_ms > 0}
-      class:dnf={p.status === "abandoned"}
-      >{#if p.status === "abandoned"}DNF{:else if p.gap_ms != null}{formatGap(
-          p.gap_ms,
-        )}{/if}</span
-    >
-  </div>
-{/snippet}
+  // A resolved node name is a whole route label ("Gravesite Plain - Fog
+  // Rift Catacombs - Death Knight"), not a short zone name: strip the
+  // region prefix and cap the length, exactly like RunnerCard.zoneLabel and
+  // $lib/cast/splits.ts's own zoneLabel do for the same data (duplicated
+  // rather than shared, this codebase's established way of shortening a
+  // node name). Without it this column overflowed the row, the earlier bug
+  // this same treatment already fixed once.
+  const ZONE_LABEL_MAX = 20;
+  function zoneLabel(zone: string | null): string {
+    if (!zone) return "";
+    const name = zoneNames.get(zone);
+    if (!name) return "";
+    const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
+    return short.length > ZONE_LABEL_MAX
+      ? short.slice(0, ZONE_LABEL_MAX - 1) + "…"
+      : short;
+  }
+</script>
 
 <div
   class="rank"
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
-  <div class="title-row">
-    <span class="blk-title">Standings</span>
-    {#if plan.hiddenCount > 0}
-      <span class="title-more">+ {plan.hiddenCount} more</span>
-    {/if}
-  </div>
-  <div class="columns">
-    <div class="column">
-      {#each col1 as p, i (p.id)}
-        {@render row(p, i + 1)}
-      {/each}
+  <span class="blk-title">Standings</span>
+  {#each plan.visible as p, i (p.id)}
+    {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
+    {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
+    <div class="rrow" style="--c: {color};">
+      <span class="rk" class:first={i === 0}>{i + 1}</span>
+      <span class="dot"></span>
+      <span class="nm" style={nameStyleFor(p)}>{displayName(p)}</span>
+      <span class="rzone">{zoneLabel(p.current_zone)}</span>
+      <span class="dth"><SkullIcon size={17} />{p.death_count}</span>
+      <span class="layer"
+        >{depth}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
+      >
+      <span
+        class="gap"
+        class:ahead={p.gap_ms != null && p.gap_ms < 0}
+        class:behind={p.gap_ms != null && p.gap_ms > 0}
+        class:dnf={p.status === "abandoned"}
+        >{#if p.status === "abandoned"}DNF{:else if p.gap_ms != null}{formatGap(
+            p.gap_ms,
+          )}{/if}</span
+      >
     </div>
-    <div class="column">
-      {#each col2 as p, i (p.id)}
-        {@render row(p, col1.length + i + 1)}
-      {/each}
+  {/each}
+  {#if plan.hiddenCount > 0}
+    <div class="rrow more">
+      <span class="more-text">+ {plan.hiddenCount} more</span>
     </div>
-  </div>
+  {/if}
 </div>
 
 <style>
@@ -137,47 +145,15 @@
     flex-direction: column;
   }
 
-  .title-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-  }
-
   .blk-title {
+    display: block;
+    margin-bottom: 8px;
     font-family: var(--font-display);
     font-size: 24px;
     font-weight: 600;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
-  }
-
-  /* The overflow count moves up here instead of spending a row on it (see
-   * CastMiniStandings/CastRoundStandings/CastRaceCard for the row-based
-   * version): this panel is only 230px tall, so that row is worth buying
-   * back. Same phrasing as those, still a quiet line, not a shout. */
-  .title-more {
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 18px;
-    letter-spacing: 0.04em;
-    color: var(--color-text-secondary);
-  }
-
-  .columns {
-    display: flex;
-    flex: 1;
-    gap: 24px;
-    min-height: 0;
-  }
-
-  .column {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
   }
 
   .rrow {
@@ -211,22 +187,9 @@
     flex-shrink: 0;
   }
 
-  /* The column's own flexible cell (flex:1, min-width:0), the same
-   * shrink-and-ellipsis role .rzone (the now-removed zone column) used to
-   * play: without a zone column there is nothing else in the row to give
-   * ground, and a narrower per-column width means a long name needs to.
-   * Mirrors CastMiniStandings' own .nm, which has never had a zone column
-   * to lean on either. A caster reads this name out loud; .dth and .gap
-   * below are trimmed to a real minimum instead of their old single-column
-   * widths so this cell gets the room, not the leftovers: measured on a
-   * real 13-runner race, the old 98px budget cut 7 of 8 names ("chewy9…"
-   * for "chewy9502"), and a cut name reads as a different runner. At a
-   * 474px column this leaves about 220px, enough for the longest name in
-   * that race (13 characters) with room to spare; a longer Twitch name
-   * (up to 25) can still ellipsize. */
   .nm {
-    flex: 1;
-    min-width: 0;
+    flex: none;
+    min-width: 210px;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 27px;
@@ -237,19 +200,44 @@
     white-space: nowrap;
   }
 
+  .rzone {
+    flex: 1;
+    min-width: 0;
+    font-size: 19px;
+    color: var(--color-text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .dth {
     display: flex;
     align-items: center;
     gap: 6px;
-    min-width: 52px;
+    min-width: 64px;
     font-family: var(--font-mono);
     font-size: 19px;
     color: var(--color-text-secondary);
     flex-shrink: 0;
   }
 
+  .layer {
+    min-width: 80px;
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 600;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .layer i {
+    font-style: normal;
+    font-size: 17px;
+    color: var(--color-text-secondary);
+  }
+
   .gap {
-    min-width: 104px;
+    min-width: 120px;
     font-family: var(--font-mono);
     font-size: 26px;
     font-weight: 600;
@@ -269,5 +257,18 @@
    * Mirrors RunnerCard's and CastMiniStandings' own Gap row. */
   .gap.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* A quiet line, not a shout: same row rhythm as the data above it, but
+   * plain secondary-coloured text instead of columns. Mirrors the in-game
+   * overlay's own "+ N more" footer for the same situation. */
+  .rrow.more {
+    color: var(--color-text-secondary);
+  }
+
+  .more-text {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    letter-spacing: 0.04em;
   }
 </style>
