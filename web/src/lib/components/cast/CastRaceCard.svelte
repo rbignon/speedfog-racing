@@ -2,6 +2,7 @@
   import type { Rect } from "$lib/cast/layout";
   import type { EventStageRace, EventFieldSlot, User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import { rowCapacity, planRows } from "$lib/cast/rows";
 
   interface Props {
     rect: Rect;
@@ -127,6 +128,17 @@
           right: "",
         })),
   );
+
+  // The card can never overflow: how many rows fit comes from this rect's
+  // own height, not a typed number. HEADER_RESERVE is everything the rows
+  // list doesn't get: .bracket's own 16px top+bottom padding, .bhead's
+  // line (.brn font-size 30), and .bst's block (6px/14px margins + 13px
+  // font-size), none of which grow with the field. ROW_HEIGHT is .brow's
+  // own height, unchanged from the validated mockup (.brow height:56px).
+  const HEADER_RESERVE = 16 + 16 + 30 + (6 + 13 + 14);
+  const ROW_HEIGHT = 56;
+  let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
+  let plan = $derived(planRows(rows, capacity));
 </script>
 
 <div
@@ -138,7 +150,7 @@
     {#if mode}<span class="bmode">{mode}</span>{/if}
   </div>
   <span class="bst {status}">{statusText}</span>
-  {#each rows as row (row.key)}
+  {#each plan.visible as row (row.key)}
     <div class="brow">
       <span class="bn" class:tbd={row.tbd} style={row.nameStyle}
         >{row.name}</span
@@ -146,6 +158,11 @@
       <span class="bp" class:prov={row.right === ""}>{row.right}</span>
     </div>
   {/each}
+  {#if plan.hiddenCount > 0}
+    <div class="brow more">
+      <span class="more-text">+ {plan.hiddenCount} more</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -249,5 +266,18 @@
 
   .bp.prov {
     opacity: 0.75;
+  }
+
+  /* A quiet line, not a shout: same row rhythm as the data above it, but
+   * plain secondary-coloured text instead of columns. Mirrors the in-game
+   * overlay's own "+ N more" footer for the same situation. */
+  .brow.more {
+    color: var(--color-text-secondary);
+  }
+
+  .more-text {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    letter-spacing: 0.04em;
   }
 </style>

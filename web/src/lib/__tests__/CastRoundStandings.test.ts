@@ -33,6 +33,42 @@ function fakeEntry(over: Partial<EventStageEntry> = {}): EventStageEntry {
   };
 }
 
+describe("CastRoundStandings: row cap", () => {
+  // baseProps.rect is 484x412, the real STANDINGS rect from layout.ts's
+  // talk scene: (412 - 74 header reserve) / 72 row height = 4 rows fit.
+  function results(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      fakeEntry({ user: fakeUser({ id: `u-${i}` }) }),
+    );
+  }
+
+  it("shows every row and no overflow line when the field fits under capacity", () => {
+    const { container } = render(CastRoundStandings, {
+      props: { ...baseProps, results: results(2) },
+    });
+    expect(container.querySelectorAll(".srow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".srow")).toHaveLength(2);
+  });
+
+  it("shows every row and no overflow line when the field exactly fills capacity", () => {
+    const { container } = render(CastRoundStandings, {
+      props: { ...baseProps, results: results(4) },
+    });
+    expect(container.querySelectorAll(".srow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".srow")).toHaveLength(4);
+  });
+
+  it("caps rows and reports the rest once the field exceeds capacity, never overflowing the panel", () => {
+    const { container } = render(CastRoundStandings, {
+      props: { ...baseProps, results: results(10) },
+    });
+    const rows = container.querySelectorAll(".srow");
+    expect(rows).toHaveLength(4); // 3 data rows + 1 overflow row
+    const more = container.querySelector(".srow.more .more-text");
+    expect(more?.textContent).toBe("+ 7 more");
+  });
+});
+
 describe("CastRoundStandings: advancing mark", () => {
   it("gives an advancing entry the Final chip and row accent, and withholds both from the rest", () => {
     const { container } = render(CastRoundStandings, {

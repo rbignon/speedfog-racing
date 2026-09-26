@@ -42,8 +42,19 @@
   // strip's under-7px. Both stay overridable from the URL for a seed that
   // needs more or less room, the same maxLayers/fontSize pattern
   // /overlay/race/[id]/dag already reads.
+  //
+  // The label font itself is set smaller here than that strip's own default
+  // (LABEL_FONT_SIZE, 11 graph units): this scene shows every zone label on
+  // the map at once, seed graphs run to dozens of nodes, and at 11 units
+  // those labels fought each other on a real race's map. 7 keeps them
+  // legible at 1920x1080 (checked against a 13-runner race showing the
+  // whole map and a 4-runner race zoomed into a slice of a bigger one:
+  // both windows are close to the same graph-unit width, since either is
+  // the whole graph or a maxLayers-wide slice of one, so a single default
+  // reads at a similar on-screen size in both) while cutting each label's
+  // footprint enough to meaningfully reduce collisions on a dense map.
   const DEFAULT_MAX_LAYERS = 13;
-  const DEFAULT_LABEL_FONT_SIZE = 11;
+  const DEFAULT_LABEL_FONT_SIZE = 7;
   let maxLayers = $derived(
     (() => {
       const raw = page.url.searchParams.get("maxLayers");
@@ -66,6 +77,21 @@
   const LOG_LIMIT = 6;
   let logRows = $derived(
     buildCastLog(raceStore.leaderboard, nodeNames, LOG_LIMIT),
+  );
+
+  // Caster override for how many standings rows to show, same name and
+  // spirit as /overlay/race/[id]/leaderboard's own `lines`: default fits as
+  // many as the panel allows, an explicit empty value keeps that same
+  // default (there is no "unlimited" here, the panel is a fixed box, not an
+  // OBS widget the caster sizes themselves), and a positive integer asks
+  // for that many, still capped to what CastStandings' own rect fits.
+  let lines = $derived(
+    (() => {
+      const raw = page.url.searchParams.get("lines");
+      if (raw === null || raw === "") return null;
+      const n = parseInt(raw, 10);
+      return isNaN(n) || n <= 0 ? null : n;
+    })(),
   );
 </script>
 
@@ -97,6 +123,7 @@
     {totalLayers}
     zoneNames={nodeNames}
     rect={layout.panels.standings}
+    {lines}
   />
   <CastDesk
     scene="metro"

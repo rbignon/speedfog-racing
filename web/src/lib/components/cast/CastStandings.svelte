@@ -4,6 +4,7 @@
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { formatGap } from "$lib/gap";
+  import { rowCapacity, planRows } from "$lib/cast/rows";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
 
   interface Props {
@@ -18,9 +19,36 @@
      * wire is a graph node id, never a display string. */
     zoneNames: Map<string, string>;
     rect: Rect;
+    /** Caster override for how many rows to show, from the metro scene's own
+     * `lines` URL parameter (see `/overlay/race/[id]/leaderboard`, which
+     * reads the same name for the same reason): `null` or omitted fits as
+     * many as the panel allows. Never raises the count past what the panel
+     * actually fits: a caster can ask for fewer rows, never for overflow. */
+    lines?: number | null;
   }
 
-  let { participants, totalLayers, zoneNames, rect }: Props = $props();
+  let {
+    participants,
+    totalLayers,
+    zoneNames,
+    rect,
+    lines = null,
+  }: Props = $props();
+
+  // The panel can never overflow: how many rows fit comes from this rect's
+  // own height, not a typed number, so a bigger field (or a resized panel)
+  // never prints past the panel's bottom. .blk-title reserves font-size (24)
+  // + margin-bottom (8) = 32, the same title-reserve convention the metro
+  // page's own log-row cap already uses; ROW_HEIGHT is .rrow's own height
+  // below, unchanged from the validated mockup (docs/superpowers/specs/
+  // 2026-09-23-cast-overlays-mockup.py's CSS, .rrow height:45px).
+  const TITLE_RESERVE = 32;
+  const ROW_HEIGHT = 45;
+  let capacity = $derived(rowCapacity(rect.h, TITLE_RESERVE, ROW_HEIGHT));
+  let effectiveCapacity = $derived(
+    lines != null && lines > 0 ? Math.min(capacity, lines) : capacity,
+  );
+  let plan = $derived(planRows(participants, effectiveCapacity));
 
   function displayName(p: WsParticipant): string {
     return p.twitch_display_name || p.twitch_username;
@@ -81,7 +109,7 @@
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
   <span class="blk-title">Standings</span>
-  {#each participants as p, i (p.id)}
+  {#each plan.visible as p, i (p.id)}
     {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
     {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
     <div class="rrow" style="--c: {color};">
@@ -104,6 +132,11 @@
       >
     </div>
   {/each}
+  {#if plan.hiddenCount > 0}
+    <div class="rrow more">
+      <span class="more-text">+ {plan.hiddenCount} more</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -225,5 +258,18 @@
    * Mirrors RunnerCard's and CastMiniStandings' own Gap row. */
   .gap.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* A quiet line, not a shout: same row rhythm as the data above it, but
+   * plain secondary-coloured text instead of columns. Mirrors the in-game
+   * overlay's own "+ N more" footer for the same situation. */
+  .rrow.more {
+    color: var(--color-text-secondary);
+  }
+
+  .more-text {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    letter-spacing: 0.04em;
   }
 </style>

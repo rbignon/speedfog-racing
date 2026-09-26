@@ -99,6 +99,63 @@ describe("CastStandings: gap column", () => {
   });
 });
 
+describe("CastStandings: row cap", () => {
+  // baseProps.rect is 972x230, the real METRO_STANDINGS rect from layout.ts:
+  // (230 - 32 title reserve) / 45 row height = 4 rows fit.
+  function participants(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      fakeParticipant({ id: `p-${i}`, twitch_username: `runner${i}` }),
+    );
+  }
+
+  it("shows every row and no overflow line when the field fits under capacity", () => {
+    const { container } = render(CastStandings, {
+      props: { ...baseProps, participants: participants(2) },
+    });
+    expect(container.querySelectorAll(".rrow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".rrow")).toHaveLength(2);
+  });
+
+  it("shows every row and no overflow line when the field exactly fills capacity", () => {
+    const { container } = render(CastStandings, {
+      props: { ...baseProps, participants: participants(4) },
+    });
+    expect(container.querySelectorAll(".rrow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".rrow")).toHaveLength(4);
+  });
+
+  it("caps rows and reports the rest once the field exceeds capacity, never overflowing the panel", () => {
+    const { container } = render(CastStandings, {
+      props: { ...baseProps, participants: participants(13) },
+    });
+    // capacity 4, last slot given up to the overflow line: 3 data rows shown.
+    const rows = container.querySelectorAll(".rrow");
+    expect(rows).toHaveLength(4); // 3 data rows + 1 overflow row
+    const more = container.querySelector(".rrow.more .more-text");
+    expect(more?.textContent).toBe("+ 10 more");
+  });
+
+  it("lets a caster's lines override show fewer rows than the panel fits", () => {
+    const { container } = render(CastStandings, {
+      props: { ...baseProps, participants: participants(13), lines: 2 },
+    });
+    const rows = container.querySelectorAll(".rrow");
+    expect(rows).toHaveLength(2); // 1 data row + 1 overflow row
+    const more = container.querySelector(".rrow.more .more-text");
+    expect(more?.textContent).toBe("+ 12 more");
+  });
+
+  it("never lets a caster's lines override exceed what the panel actually fits", () => {
+    const { container } = render(CastStandings, {
+      props: { ...baseProps, participants: participants(13), lines: 100 },
+    });
+    const rows = container.querySelectorAll(".rrow");
+    expect(rows).toHaveLength(4); // same cap as no override at all
+    const more = container.querySelector(".rrow.more .more-text");
+    expect(more?.textContent).toBe("+ 10 more");
+  });
+});
+
 describe("CastStandings: zone column", () => {
   it("shortens a resolved route label to its last leg, like RunnerCard", () => {
     const { container } = render(CastStandings, {

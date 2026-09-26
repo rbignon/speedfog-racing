@@ -2,6 +2,7 @@
   import type { Rect } from "$lib/cast/layout";
   import type { EventStageEntry, User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
+  import { rowCapacity, planRows } from "$lib/cast/rows";
 
   interface Props {
     rect: Rect;
@@ -16,6 +17,19 @@
   }
 
   let { rect, label, racesPlayed, racesExpected, results }: Props = $props();
+
+  // The panel can never overflow: how many rows fit comes from this rect's
+  // own height, not a typed number. HEADER_RESERVE is the eyebrow + title
+  // block above the rows (.standings' own 2px top padding, .seyebrow's
+  // font-size 14, .stitle's 4px/14px margins and font-size 40, none of
+  // which scale with the field). ROW_HEIGHT is .srow's own height,
+  // unchanged from the validated mockup (.srow height:72px). There is no
+  // caster override here (unlike the metro scene's CastStandings): the
+  // stage decides how many runners exist, not the caster.
+  const HEADER_RESERVE = 2 + 14 + 4 + 40 + 14;
+  const ROW_HEIGHT = 72;
+  let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
+  let plan = $derived(planRows(results, capacity));
 
   function displayName(u: User): string {
     return u.twitch_display_name || u.twitch_username;
@@ -71,7 +85,7 @@
   {#if results.length === 0}
     <span class="sempty">Standings arrive after the first race finishes.</span>
   {:else}
-    {#each results as entry, i (entry.user.id)}
+    {#each plan.visible as entry, i (entry.user.id)}
       <div class="srow" class:adv={entry.advances}>
         <span class="srk">{i + 1}</span>
         {#if entry.user.twitch_avatar_url}
@@ -86,6 +100,11 @@
         <span class="sp">{entry.points}</span>
       </div>
     {/each}
+    {#if plan.hiddenCount > 0}
+      <div class="srow more">
+        <span class="more-text">+ {plan.hiddenCount} more</span>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -209,5 +228,18 @@
     min-width: 62px;
     text-align: right;
     flex-shrink: 0;
+  }
+
+  /* A quiet line, not a shout: same row rhythm as the data above it, but
+   * plain secondary-coloured text instead of columns. Mirrors the in-game
+   * overlay's own "+ N more" footer for the same situation. */
+  .srow.more {
+    color: var(--color-text-secondary);
+  }
+
+  .more-text {
+    font-family: var(--font-mono);
+    font-size: 22px;
+    letter-spacing: 0.04em;
   }
 </style>

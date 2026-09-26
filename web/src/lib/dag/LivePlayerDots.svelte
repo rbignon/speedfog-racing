@@ -260,6 +260,24 @@
     <title>{dot.displayName}</title>
   </circle>
   {#if showPlayerLabels}
+    <!-- Connector: a short line in the player's own colour, from the dot's
+    edge to just short of its label, along the same labelAngle the label
+    itself is placed on. Ties a floating name back to its dot on a dense
+    map, the same role .mt-line plays beside .mt-dot and .mt-name in the
+    cast overlay mockup (docs/superpowers/specs/2026-09-23-cast-overlays-
+    mockup.py's CSS); generalized here to any angle since an orbiting dot's
+    labelAngle isn't fixed to straight up/down like the mockup's static
+    tags. -->
+    <line
+      x1={dot.x + Math.cos(dot.labelAngle) * RACER_DOT_RADIUS}
+      y1={dot.y + Math.sin(dot.labelAngle) * RACER_DOT_RADIUS}
+      x2={dot.x + Math.cos(dot.labelAngle) * (LIVE_LABEL_RADIAL_OFFSET - 4)}
+      y2={dot.y + Math.sin(dot.labelAngle) * (LIVE_LABEL_RADIAL_OFFSET - 4)}
+      stroke={dot.color}
+      stroke-width="2"
+      opacity={dot.opacity * 0.6}
+      class="player-line"
+    />
     <text
       x={dot.x + Math.cos(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
       y={dot.y + Math.sin(dot.labelAngle) * LIVE_LABEL_RADIAL_OFFSET}
@@ -294,6 +312,9 @@
     pointer-events: none;
   }
   .skull-anim {
+    pointer-events: none;
+  }
+  .player-line {
     pointer-events: none;
   }
 

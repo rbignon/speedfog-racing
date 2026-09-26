@@ -41,6 +41,45 @@ function fakeEntry(
   };
 }
 
+describe("CastRaceCard: row cap", () => {
+  // rect is 436x412, the real per-slot race card rect from layout.ts's talk
+  // scene: (412 - 95 header reserve) / 56 row height = 5 rows fit.
+  function previews(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      fakePreview({ id: `p-${i}`, status: "playing", igt_ms: null }),
+    );
+  }
+
+  it("shows every row and no overflow line when the field fits under capacity", () => {
+    const entry = fakeEntry({ participant_previews: previews(3) });
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    expect(container.querySelectorAll(".brow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".brow")).toHaveLength(3);
+  });
+
+  it("shows every row and no overflow line when the field exactly fills capacity", () => {
+    const entry = fakeEntry({ participant_previews: previews(5) });
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    expect(container.querySelectorAll(".brow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".brow")).toHaveLength(5);
+  });
+
+  it("caps rows and reports the rest once the field exceeds capacity, never overflowing the card", () => {
+    const entry = fakeEntry({ participant_previews: previews(8) });
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    const rows = container.querySelectorAll(".brow");
+    expect(rows).toHaveLength(5); // 4 data rows + 1 overflow row
+    const more = container.querySelector(".brow.more .more-text");
+    expect(more?.textContent).toBe("+ 4 more");
+  });
+});
+
 describe("CastRaceCard: per-runner result", () => {
   it("shows a finisher's time and leaves an unfinished runner's cell blank", () => {
     const entry = fakeEntry({

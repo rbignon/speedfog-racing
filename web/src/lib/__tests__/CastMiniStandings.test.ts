@@ -33,6 +33,42 @@ function gapCell(container: HTMLElement, i: number): Element | null {
   return container.querySelectorAll(".lrow")[i]?.querySelector(".gap") ?? null;
 }
 
+describe("CastMiniStandings: row cap", () => {
+  // baseProps.rect is 320x148, the real FOCUS_STANDINGS rect from layout.ts:
+  // (148 - 10 chrome reserve) / 33 row height = 4 rows fit.
+  function participants(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      fakeParticipant({ id: `p-${i}`, twitch_username: `runner${i}` }),
+    );
+  }
+
+  it("shows every row and no overflow line when the field fits under capacity", () => {
+    const { container } = render(CastMiniStandings, {
+      props: { ...baseProps, participants: participants(2) },
+    });
+    expect(container.querySelectorAll(".lrow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".lrow")).toHaveLength(2);
+  });
+
+  it("shows every row and no overflow line when the field exactly fills capacity", () => {
+    const { container } = render(CastMiniStandings, {
+      props: { ...baseProps, participants: participants(4) },
+    });
+    expect(container.querySelectorAll(".lrow.more")).toHaveLength(0);
+    expect(container.querySelectorAll(".lrow")).toHaveLength(4);
+  });
+
+  it("caps rows and reports the rest once the field exceeds capacity, never overflowing the panel", () => {
+    const { container } = render(CastMiniStandings, {
+      props: { ...baseProps, participants: participants(13) },
+    });
+    const rows = container.querySelectorAll(".lrow");
+    expect(rows).toHaveLength(4); // 3 data rows + 1 overflow row
+    const more = container.querySelector(".lrow.more .more-text");
+    expect(more?.textContent).toBe("+ 10 more");
+  });
+});
+
 describe("CastMiniStandings: gap column", () => {
   it("shows nothing, not a placeholder, for the leader (gap_ms null)", () => {
     const { container } = render(CastMiniStandings, {

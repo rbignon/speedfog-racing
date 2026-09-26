@@ -4,6 +4,7 @@
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { formatGap } from "$lib/gap";
+  import { rowCapacity, planRows } from "$lib/cast/rows";
 
   interface Props {
     /** Already rank-ordered (raceStore.leaderboard): row `i` is rank `i + 1`,
@@ -16,6 +17,17 @@
   }
 
   let { participants, totalLayers, rect }: Props = $props();
+
+  // The panel can never overflow: how many rows fit comes from this rect's
+  // own height, not a typed number, the same rowCapacity/planRows the
+  // metro scene's CastStandings uses. No title here (unlike CastStandings):
+  // the reserve is .clb's own padding (4px top + 4px bottom) and border
+  // (1px top + 1px bottom) below, unchanged from the mockup. ROW_HEIGHT is
+  // .lrow's own height, matching the validated mockup's .lrow (height:33px).
+  const CHROME_RESERVE = 10;
+  const ROW_HEIGHT = 33;
+  let capacity = $derived(rowCapacity(rect.h, CHROME_RESERVE, ROW_HEIGHT));
+  let plan = $derived(planRows(participants, capacity));
 
   function displayName(p: WsParticipant): string {
     return p.twitch_display_name || p.twitch_username;
@@ -57,7 +69,7 @@
   class="clb"
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
-  {#each participants as p, i (p.id)}
+  {#each plan.visible as p, i (p.id)}
     {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
     {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
     <div class="lrow" style="--c: {color};">
@@ -78,6 +90,11 @@
       >
     </div>
   {/each}
+  {#if plan.hiddenCount > 0}
+    <div class="lrow more">
+      <span class="more-text">+ {plan.hiddenCount} more</span>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -169,5 +186,18 @@
     font-style: normal;
     font-size: 14px;
     color: var(--color-text-secondary);
+  }
+
+  /* A quiet line, not a shout: same row rhythm as the data above it, but
+   * plain secondary-coloured text instead of columns. Mirrors the in-game
+   * overlay's own "+ N more" footer for the same situation. */
+  .lrow.more {
+    color: var(--color-text-secondary);
+  }
+
+  .more-text {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    letter-spacing: 0.04em;
   }
 </style>

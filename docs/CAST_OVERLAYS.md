@@ -51,6 +51,26 @@ live scene. It is how a caster lines OBS sources up under the plate: open the
 scene with `guides=1`, drag each video source's transform until it matches
 its outline, then drop `guides=1` for the real broadcast.
 
+### Field-size overflow
+
+A panel's rect is fixed, but the field it lists (standings, a race's
+finishers) is not: a race can seat far more than the four runners every
+scene was first validated against. Every panel that lists a variable-length
+field caps how many rows it shows to what its own rect actually fits, using
+`rowCapacity`/`planRows` (`web/src/lib/cast/rows.ts`): the row count is
+computed from the rect's own height and the panel's row height, never a
+typed constant, so a bigger field (or a rect that changes) can never print
+past the panel's bottom. Once the field doesn't fit, the panel's last row is
+given up to a quiet "+ N more" line, the same phrasing the in-game overlay's
+own leaderboard footer uses for the same situation (`mod/src/dll/ui.rs`).
+Four panels do this: `CastStandings` (metro), `CastMiniStandings` (focus),
+`CastRoundStandings` and `CastRaceCard` (talk). The metro scene's
+`CastStandings` additionally takes a `lines` URL parameter (see below)
+letting the caster show fewer rows than the panel fits; nothing lets any of
+them show more than the panel's own capacity allows. The quad scene's four
+runner cards seat exactly four runners by construction (see `resolveSlots`)
+and need no cap.
+
 ## The four scenes
 
 Three of the four scenes (quad, focus, metro) share a **desk** band along the
@@ -120,10 +140,26 @@ that same rectangle (at 16, 16, 1888 x 482).
 Plus the shared desk band (cam holes only; the map takes the space the other
 two scenes give the four POV holes).
 
+Each runner's live position on the map is a dot plus a short connector line
+in the runner's own colour, leading out to their name (`LivePlayerDots`'
+`showPlayerLabels`, following the dot's own orbit angle so co-located
+runners' names spread around their shared node instead of colliding): the
+line is what ties a name back to its dot on a dense map, the same three
+pieces (`.mt-dot`, `.mt-line`, `.mt-name`) the reference mockup draws.
+
 The map also reads two of its own query parameters directly, not through the
-shared cast params: `maxLayers` (default 13) and `fontSize` (default 11),
-the same tuning knobs `/overlay/race/[id]/dag` already exposes, for a seed
-graph that needs more or less room than the default zoom fits.
+shared cast params: `maxLayers` (default 13) and `fontSize` (default 7, down
+from the plain `/dag` strip's 11: this scene shows every zone label on the
+map at once, and a seed graph large enough to run to dozens of nodes reads
+better with a smaller default), the same tuning knobs `/overlay/race/[id]/dag`
+already exposes, for a seed graph that needs more or less room than the
+default zoom fits.
+
+The standings panel beneath the map also reads a `lines` query parameter
+(default: fit as many rows as the panel allows; see "Field-size overflow"
+above), the same name and spirit as `/overlay/race/[id]/leaderboard`'s own
+`lines`, letting the caster show fewer rows for a field they'd rather keep
+short. It cannot ask for more rows than the panel actually fits.
 
 ### Talk
 
@@ -140,6 +176,12 @@ races, so it holds the frame longest before the stage's first race has a
 result. Before then, the standings panel shows its title with a line of
 muted copy underneath saying results arrive after the first race, rather
 than an empty list under a title that would read as broken.
+
+Both the stage standings panel (`CastRoundStandings`) and each race card's
+finisher list (`CastRaceCard`) cap their rows to what their own rect fits
+(see "Field-size overflow" above); unlike the metro scene there is no
+caster override here, since the stage's field size and a race's finisher
+count aren't something a caster usefully chooses.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |
