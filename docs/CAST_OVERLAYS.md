@@ -194,6 +194,16 @@ result. Before then, the standings panel shows its title with a line of
 muted copy underneath saying results arrive after the first race, rather
 than an empty list under a title that would read as broken.
 
+Having no WebSocket, the scene re-reads the event every 30 seconds, so the
+race cards and the standings follow the evening while the source stays up
+in OBS all night, with no reload from the caster. The standings' "After N
+of M races" eyebrow counts the finished races, as the event page's evening
+section does ("N of M races played"), not the attached ones: races created ahead of the evening do not
+count until they are over. A race still running adds its provisional
+points to the standings without moving that count. A stage whose key leaves
+the event's config mid-evening freezes the scene on its last copy rather
+than blanking it on air; the URL has to follow the new key.
+
 The same scene can point at one of the event's showcases instead (an
 evening outside the bracket, see "Showcases" in [EVENTS.md](EVENTS.md)), at
 the same path with the showcase's key in place of the stage's. The topline
@@ -233,7 +243,7 @@ Metro reads `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but neither
 `sceneLayout("metro", ...)` is called with `cams` alone and `resolveSlots` is
 never called on that page at all. A `p1` or `focus` added to a metro URL is
 silently ignored. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no
-runners to seat and no live race to delay).
+runners to seat and no live feed to delay; see "Delay" below).
 
 | Param      | Meaning                                                                                     | Default |
 | ---------- | ------------------------------------------------------------------------------------------- | ------- |
@@ -288,8 +298,11 @@ milliseconds before applying it (`web/src/lib/cast/delay.ts`): a `setTimeout`
 per message, so messages sent in order still apply in order. The scene's own
 clock (`CastDesk`) reads the same delay from the URL directly, so the
 elapsed time and the countdown it shows always match what the delayed video
-is showing, not the server's real time. Talk carries no `delay` parameter
-because it holds no live race data to hold back.
+is showing, not the server's real time. Talk carries no `delay` parameter:
+it holds no live feed, only the event it re-reads every 30 seconds, and it
+is meant for between races. A race ending while it is on air can therefore
+show there (a finisher's time on its card, the standings reordering) before
+a delayed capture does.
 
 ## The setup panel
 

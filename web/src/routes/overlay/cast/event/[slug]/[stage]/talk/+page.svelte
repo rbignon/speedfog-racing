@@ -1,5 +1,11 @@
 <script lang="ts">
-  import type { UserProfile } from "$lib/api";
+  import { onMount } from "svelte";
+  import {
+    fetchEvent,
+    type EventShowcase,
+    type EventStage,
+    type UserProfile,
+  } from "$lib/api";
   import { sceneLayout } from "$lib/cast/layout";
   import {
     fillSlots,
@@ -14,7 +20,9 @@
 
   let { data } = $props();
   let params = $derived(data.castParams);
-  let stage = $derived(data.stage);
+  // Writable $derived, like the event page's detail: starts from the loaded
+  // stage and takes each poll's fresher copy below.
+  let stage: EventStage | EventShowcase = $derived(data.stage);
   let layout = $derived(sceneLayout("talk", { cams: params.cams }));
   // A showcase is no playoff round: its label stands alone.
   let toplineLabel = $derived(
@@ -45,6 +53,32 @@
   // fillSlots keeps a stage slot with no race yet in its place as null, the
   // same shape the event page itself renders (see EventRacePlaceholder).
   let slots = $derived(fillSlots(stage.races, stage.races_expected));
+  // Played means finished, as in the event page's evening section: a race
+  // created ahead of the evening is attached long before it counts.
+  let racesPlayed = $derived(
+    stage.races.filter((r) => r.race.status === "finished").length,
+  );
+
+  // The scene stays up in OBS all evening and holds no WebSocket: re-read
+  // the event so the race cards and the standings follow the races without
+  // the caster reloading the source.
+  const POLL_MS = 30_000;
+  onMount(() => {
+    const poll = setInterval(async () => {
+      const slug = data.event.slug;
+      const key = stage.key;
+      try {
+        const event = await fetchEvent(slug);
+        const fresh = [...event.stages, ...event.showcases].find(
+          (s) => s.key === key,
+        );
+        if (fresh) stage = fresh;
+      } catch {
+        /* keep the last good state; the next tick retries */
+      }
+    }, POLL_MS);
+    return () => clearInterval(poll);
+  });
 </script>
 
 <CastPlate scene="talk" cams={params.cams} guides={params.guides}>
@@ -78,7 +112,7 @@
   <CastRoundStandings
     rect={layout.panels.standings}
     label={stage.label}
-    racesPlayed={stage.races.length}
+    {racesPlayed}
     racesExpected={stage.races_expected}
     results={stage.results}
   />

@@ -8,7 +8,7 @@
     rect: Rect;
     /** The stage's own label ("Semi B"), for the "Semi B standings" title. */
     label: string;
-    /** How many of the evening's races have a race attached, for the
+    /** How many of the evening's races are finished, for the
      * "After N of M races" eyebrow. */
     racesPlayed: number;
     racesExpected: number;

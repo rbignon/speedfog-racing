@@ -35,8 +35,9 @@ export interface CastUrlOpts {
  * - race scenes (quad, focus, metro): p1..p4, then focus (focus scene
  *   only), then c1 and c2 when named, then event when chosen, then cams
  *   always, then delay only when it is not 0.
- * - talk: c1, c2, cams. No seating and no delay: that scene holds no live
- *   race data to seat or to hold back.
+ * - talk: c1, c2, cams. No seating and no delay: that scene has no runner
+ *   holes, and no live feed to hold back (it re-reads the event every 30
+ *   seconds, between races).
  */
 export function buildCastUrl(
   origin: string,
