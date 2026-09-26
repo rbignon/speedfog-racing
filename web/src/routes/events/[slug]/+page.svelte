@@ -473,6 +473,14 @@
               <h3>Tips</h3>
               <ul>
                 <li>
+                  <strong
+                    >Before your first qualifier, skim both the <a
+                      href="/help#tips-beginner">beginner tips</a
+                    >
+                    and <a href="/help#tips-advanced">advanced tips</a> to be competitive.</strong
+                  >
+                </li>
+                <li>
                   Warm up on the <a href="/daily">Daily Seed</a>: one shared
                   seed a day, scored like a qualifier seed.
                 </li>
@@ -1068,6 +1076,9 @@
   }
   .tips-card {
     border-left-color: var(--color-info);
+  }
+  .tips-card strong {
+    color: var(--color-text);
   }
   .rules-card h3 {
     margin: 0;

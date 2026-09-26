@@ -335,7 +335,7 @@
       aria-expanded={isOpen("tips-beginner")}
       onclick={() => toggleDetail("tips-beginner")}
     >
-      <span>Tips</span>
+      <span>Beginner tips</span>
       <span class="chevron"></span>
     </button>
     {#if isOpen("tips-beginner")}
