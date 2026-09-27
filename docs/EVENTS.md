@@ -248,9 +248,14 @@ stays on in-game time.
 Evenings sum the points of their races; ties on the summed in-game time, in
 which a DNF counts as its race winner's time plus the cutoff (or the slowest
 finisher's, if slower), however early the run stopped, so abandoning early
-never buys a better tie-break. A race nobody has finished, one still in setup
-included, lists nobody: stage races are created with their runners ahead of
-the evening, and the bracket keeps showing the field until the first finish.
+never buys a better tie-break. Runners still tied (two who finished nothing
+all evening share both) rank by the summed layer reached, then by user id: an
+arbitrary but fixed order, so the page never flips between loads, which the
+bracket applies to who advances (the site has no override for a tie settled
+otherwise). A race nobody has finished lists nobody and counts for nothing,
+not even for the tie-breaks: stage races are created with their runners
+ahead of the evening, and the bracket keeps showing the field until the first
+finish.
 A running race scores provisionally, so the bracket shows a stage's points in
 brass until the stage is complete.
 

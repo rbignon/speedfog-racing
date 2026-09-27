@@ -364,8 +364,17 @@ class StageResult:
     entries: list[StageEntry] = field(default_factory=list)
 
 
-def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, tuple[int, int]]:
-    """Map user -> (points, tie-break in-game time) for one stage or showcase race.
+@dataclass(frozen=True)
+class PlayoffScore:
+    points: int
+    # The in-game time the stage's tie-break sums, a DNF's included.
+    igt_ms: int
+    # The layer reached, the tie-break after in-game time.
+    depth: int
+
+
+def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, PlayoffScore]:
+    """Playoff score per user for one stage or showcase race.
 
     Only the runs finished by the race's end (the cutoff its first finisher
     sets) score: ``config.playoff_points`` by in-game time, equal times sharing
@@ -392,34 +401,46 @@ def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, tuple[int,
     if not finishers:
         return {}
     table = config.playoff_points
-    scores: dict[UUID, tuple[int, int]] = {}
+    scores: dict[UUID, PlayoffScore] = {}
     rank = 0
     for i, p in enumerate(finishers):
         if i == 0 or p.igt_ms != finishers[i - 1].igt_ms:
             rank = i
-        scores[p.user_id] = (table[min(rank, len(table) - 1)], p.igt_ms)
+        scores[p.user_id] = PlayoffScore(
+            table[min(rank, len(table) - 1)], p.igt_ms, p.current_layer
+        )
     # The wall-clock cutoff can let a finisher in past the winner's time plus
     # the cutoff in game time: a DNF never counts faster than them.
     dnf_igt = max(
         finishers[0].igt_ms + config.playoff_cutoff_minutes * 60_000, finishers[-1].igt_ms
     )
     for p in race.participants:
-        scores.setdefault(p.user_id, (0, dnf_igt))
+        scores.setdefault(p.user_id, PlayoffScore(0, dnf_igt, p.current_layer))
     return scores
 
 
 def compute_stage_results(
     stage: EventStage | EventShowcase, races: list[Race], advance: int, config: EventConfig
 ) -> StageResult:
-    """Sum the playoff points of a stage's races; ``advance`` best qualify once complete."""
+    """Sum the playoff points of a stage's races; ``advance`` best qualify once complete.
+
+    Ties on points go to the lower summed in-game time, then to the deeper
+    summed reach (two runners who finished nothing all evening), then to the
+    user id: an arbitrary but fixed order, so the page never flips between
+    loads.
+    """
     complete = len(races) == stage.races and all(r.status == RaceStatus.FINISHED for r in races)
+    # user -> [points, igt_ms, depth], each summed over the races
     totals: dict[UUID, list[int]] = {}
     for race in races:
-        for user_id, (points, igt_ms) in score_playoff_race(race, config).items():
-            bucket = totals.setdefault(user_id, [0, 0])
-            bucket[0] += points
-            bucket[1] += igt_ms
-    ordered = sorted(totals.items(), key=lambda item: (-item[1][0], item[1][1]))
+        for user_id, score in score_playoff_race(race, config).items():
+            bucket = totals.setdefault(user_id, [0, 0, 0])
+            bucket[0] += score.points
+            bucket[1] += score.igt_ms
+            bucket[2] += score.depth
+    ordered = sorted(
+        totals.items(), key=lambda item: (-item[1][0], item[1][1], -item[1][2], item[0])
+    )
     entries = [
         StageEntry(user_id=user_id, points=t[0], igt_total=t[1], advances=complete and i < advance)
         for i, (user_id, t) in enumerate(ordered)

@@ -627,6 +627,44 @@ def test_a_playoff_race_nobody_finished_lists_nobody(race_status, runner_status)
     assert compute_stage_results(stage, [race], 0, cfg).entries == []
 
 
+def test_playoff_runners_tied_on_points_and_time_rank_by_depth_reached():
+    # Neither chaser finishes all evening: same points, same DNF time. The
+    # deeper run goes through, whatever order the rows load in.
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    # The ids order the other way round, so only depth can put deep first.
+    winner, shallow, deep = uuid4(), UUID(int=1), UUID(int=2)
+    race = _race(
+        [
+            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
+            _participant(shallow, ParticipantStatus.ABANDONED, 45 * MIN, layer=5),
+            _participant(deep, ParticipantStatus.ABANDONED, 45 * MIN, layer=7),
+        ]
+    )
+    entries = compute_stage_results(stage, [race], 0, cfg).entries
+    assert [e.user_id for e in entries] == [winner, deep, shallow]
+
+
+def test_a_full_playoff_tie_keeps_one_order_whatever_the_rows_order():
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    winner, x, y = uuid4(), uuid4(), uuid4()
+    runs = {u: _participant(u, ParticipantStatus.ABANDONED, 45 * MIN, layer=6) for u in (x, y)}
+    orders = [
+        [
+            e.user_id
+            for e in compute_stage_results(
+                stage,
+                [_race([_participant(winner, ParticipantStatus.FINISHED, 40 * MIN), *rows])],
+                0,
+                cfg,
+            ).entries
+        ]
+        for rows in ([runs[x], runs[y]], [runs[y], runs[x]])
+    ]
+    assert orders[0] == orders[1]
+
+
 def test_a_playoff_dnf_never_counts_faster_than_a_slow_finisher():
     cfg = _config()
     stage = cfg.stage("newcomers")
