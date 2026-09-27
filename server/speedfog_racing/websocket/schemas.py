@@ -397,8 +397,9 @@ class RaceStateMessage(BaseModel):
 class RaceInfoUpdateMessage(BaseModel):
     """Live update of race-level info, broadcast to mod and spectator clients.
 
-    Emitted by PATCH /races whenever a RaceInfo field changes so connected
-    clients keep their cached race state in sync without reconnecting.
+    Emitted by PATCH /races whenever a RaceInfo field changes, and when a
+    playoff race's first finisher sets its deadline, so connected clients keep
+    their cached race state in sync without reconnecting.
     """
 
     type: Literal["race_info_update"] = "race_info_update"

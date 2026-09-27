@@ -372,6 +372,11 @@ class Race(Base):
         return self.event_slot is not None and self.event_slot.startswith("qualifier:")
 
     @property
+    def is_event_stage(self) -> bool:
+        """A playoff stage or showcase race: an event slot that is not a qualifier's."""
+        return self.event_slot is not None and not self.is_event_qualifier
+
+    @property
     def projects_ghosts(self) -> bool:
         """Whether mods replay this race against asynchronous ghosts.
 

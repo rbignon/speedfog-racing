@@ -17,17 +17,19 @@ computed on each request by `services/event_service.py`.
 
 ### Config
 
-| field            | meaning                                                                 |
-| ---------------- | ----------------------------------------------------------------------- |
-| `modes`          | `[{key, label}]`, keys are pool names, one ladder column each           |
-| `seeds_per_mode` | seeds per mode in the qualifier (default 2)                             |
-| `stages`         | ordered playoff stages, see below                                       |
-| `showcases`      | evenings outside the bracket, for the cast scenes (see Showcases)       |
-| `rules`          | qualifier rules, shown next to the Take part steps (max 300 chars each) |
-| `playoff_rules`  | playoff rules, shown next to the bracket from the cut on (same cap)     |
-| `facts`          | optional `[{title, lines}]` tiles for the format block (see below)      |
-| `phase_override` | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)  |
-| `announced_at`   | the announcement: first timeline stop and newcomer cut (see Timeline)   |
+| field                    | meaning                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                  |
+| `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                    |
+| `stages`                 | ordered playoff stages, see below                                              |
+| `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)              |
+| `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)        |
+| `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)            |
+| `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)             |
+| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10) |
+| `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)             |
+| `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)         |
+| `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)          |
 
 A stage: `key`, `label`, `kind` (`quarter`, `semi`, `newcomers`, `final`),
 `date` (optional: see below), `races` (per evening), `modes` (display labels,
@@ -88,7 +90,7 @@ of `kind`, `seeds`, `from`, `advance` or `size`: its field is whoever races
 it, the participants of its attached races by username. Its races attach to
 `<key>:<n>` like a stage's, so validation rejects a key used by both a stage
 and a showcase. They score as a stage's do (points summed over the races, a
-running race provisionally), and nobody advances.
+running race provisionally, the same cutoff), and nobody advances.
 
 A showcase stays out of everything the site shows about the event. The detail
 lists it apart, in `showcases`, never in `stages`, so the bracket, the
@@ -176,14 +178,13 @@ card shows the current stage, else the next one.
 
 ## Scoring
 
-Each event race scores with the daily formula (`compute_daily_points`): 100 to
-first, proportional down the field, unfinished runs ranked by depth reached
-then time, floor of 1, over runs with at least two zone entries. On a
-qualifier seed only settled runs (finished or abandoned) score: a seed stays
-open for days, so a run in progress neither enters the ladder nor moves the
-other runners' points until it ends; the seed card's `my_result` scores the
-same field. A playoff race instead scores its runs in progress like DNFs on
-the depth reached so far, so the bracket moves live. Ladder: best
+A qualifier seed scores with the daily formula (`compute_daily_points`): 100
+to first, proportional down the field, unfinished runs ranked by depth
+reached then time, floor of 1, over runs with at least two zone entries. Only
+settled runs (finished or abandoned) score: a seed stays open for days, so a
+run in progress neither enters the ladder nor moves the other runners' points
+until it ends; the seed card's `my_result` scores the same field. Playoff
+races score differently, see Playoff scoring below. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
 ranked; ties on the summed in-game time of the counted seeds. Newcomers have
 fewer than `newcomer_threshold` finished races started before the
@@ -212,9 +213,45 @@ they leave it. Seeding reads only ranked entries, so a signup never resolves
 a seed or a newcomers' slot.
 
 Qualified groups map each seeded stage's `seeds` to ladder positions; the newcomers'
-group takes the first ranked newcomers positioned after the last seed. Playoff
-evenings sum the points of their races (100 / 75 / 50 / 25 with four runners);
-a running race scores provisionally, so the bracket shows a stage's points in
+group takes the first ranked newcomers positioned after the last seed.
+
+### Playoff scoring
+
+A stage or showcase race scores on the event's own table
+(`score_playoff_race`), never the daily formula. Only the runs finished by
+the race's end score: `playoff_points` by in-game time, equal times sharing a
+rank, the table's last value for every finisher past it (a showcase can field
+more runners than the table has entries). Every other runner of the race is a
+DNF on 0 points: an abandoned run, a run cut off at the race's end, a runner
+who never started, and, while the race runs, a run still in progress, so the
+bracket moves at the finish line only. The table must be positive and never
+rise down the ranks, so a finish always outscores a DNF.
+
+The cutoff: when a race's first runner finishes, the server gives the race a
+`race_duration_minutes` so that `race_ends_at` falls on the first minute of
+the race clock at least `playoff_cutoff_minutes` after that finish
+(`start_playoff_cutoff`, called by the finish handler), and pushes a
+`race_info_update`. The mod counts the time left down, the race page and the
+cast scenes show it, and the hard-close loop then ends the race, turning the
+runs still going into DNFs. The loop polls every 10 seconds, so the finish
+handler rejects a finish landing after `race_ends_at` in the meantime
+(`race_not_running`, as on a closed race), and scoring counts a finish
+recorded after it as a DNF: the countdown is the rule. Only the first
+finisher sets the deadline, so an organizer can still extend it through
+`PATCH /races` (a crashed game, say) without a later finisher shortening it
+back; an earlier deadline already set stands, and a race that ended in the
+meantime gets none. A reset drops the deadline (an organizer's own cap on a
+playoff race included), so the replay's first finisher sets a fresh one. The
+cutoff runs on the wall clock, which the stream shows, while the ranking
+stays on in-game time.
+
+Evenings sum the points of their races; ties on the summed in-game time, in
+which a DNF counts as its race winner's time plus the cutoff (or the slowest
+finisher's, if slower), however early the run stopped, so abandoning early
+never buys a better tie-break. A race nobody has finished, one still in setup
+included, lists nobody: stage races are created with their runners ahead of
+the evening, and the bracket keeps showing the field until the first finish.
+A running race scores provisionally, so the bracket shows a stage's points in
 brass until the stage is complete.
 
 ## Qualifier races

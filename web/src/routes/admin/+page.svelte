@@ -255,10 +255,13 @@
       ],
       playoff_rules: [
         "Four runners, three races per evening, same seed for everyone.",
-        "100 / 75 / 50 / 25 points per race, summed over the evening; ties on total in-game time.",
+        "100 / 70 / 40 / 20 points per race, summed over the evening; ties on total in-game time.",
+        "Once the first runner finishes, the others have ten minutes (to the next full minute of the race clock); whoever has not finished by then is DNF, on 0 points.",
         "The top 2 of each quarter and each semi go on to the next round.",
         "Runners stream live on Twitch with VOD; thirty minutes without progress ends a run.",
       ],
+      playoff_points: [100, 70, 40, 20],
+      playoff_cutoff_minutes: 10,
       facts: [
         { title: "Qualifier", lines: ["6 seeds", "3 modes"] },
         { title: "Modes", lines: ["Standard", "UWYG Major Rush", "Boss Rush"] },

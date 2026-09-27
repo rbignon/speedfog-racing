@@ -224,8 +224,9 @@ race cards and the standings follow the evening while the source stays up
 in OBS all night, with no reload from the caster. The standings' "After N
 of M races" eyebrow counts the finished races, as the event page's evening
 section does ("N of M races played"), not the attached ones: races created ahead of the evening do not
-count until they are over. A race still running adds its provisional
-points to the standings without moving that count. A stage whose key leaves
+count until they are over. A race still running adds the provisional
+points of its runners already finished to the standings without moving that
+count (see the Playoff scoring section of `EVENTS.md`). A stage whose key leaves
 the event's config mid-evening freezes the scene on its last copy rather
 than blanking it on air; the URL has to follow the new key.
 

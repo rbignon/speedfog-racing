@@ -469,9 +469,19 @@ def fake_race(
                 igt_ms=st.igt_ms,
                 current_layer=st.current_layer,
                 zone_history=st.zone_history,
+                finished_at=(
+                    run.end if st.status == ParticipantStatus.FINISHED else None
+                ),
             )
         )
-    return SimpleNamespace(status=status, participants=parts)
+    # No deadline: the planned runs ignore the playoff cutoff.
+    return SimpleNamespace(
+        status=status,
+        participants=parts,
+        started_at=None,
+        late_join_window_minutes=None,
+        race_duration_minutes=None,
+    )
 
 
 # --- database ---------------------------------------------------------------
@@ -833,7 +843,7 @@ async def simulate(
                     fake_race(runs, end, graph_of(stage_races[slot]), slot, end)
                 )
             results[key] = compute_stage_results(
-                stage_cfg, races, stage_cfg.advance or 0
+                stage_cfg, races, stage_cfg.advance or 0, config
             )
 
         # A live scenario sits 15 minutes into the evening's second race, so

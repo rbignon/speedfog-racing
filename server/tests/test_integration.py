@@ -7,6 +7,7 @@ import tempfile
 import time
 import uuid
 import zipfile
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,7 @@ from starlette.testclient import TestClient
 from speedfog_racing.database import Base
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Event,
     Invite,
     Participant,
     ParticipantStatus,
@@ -2602,6 +2604,119 @@ def test_finished_rejected_when_race_not_running(integration_client, race_with_p
         assert resp["type"] == "error"
         assert "not running" in resp["message"].lower()
         assert resp["code"] == "race_not_running"
+
+
+def test_a_playoff_race_s_first_finish_starts_the_cutoff_countdown(
+    integration_client, race_with_participants, integration_db
+):
+    """The first finisher of a playoff race sets race_ends_at, and the mods hear of it."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    async def attach_to_event():
+        async with integration_db() as db:
+            now = datetime.now(UTC)
+            event = Event(
+                slug="season-one",
+                name="Season One",
+                starts_at=now - timedelta(days=30),
+                qualifier_ends_at=now - timedelta(days=10),
+                ends_at=now + timedelta(days=10),
+                config={
+                    "modes": [{"key": "standard", "label": "Standard"}],
+                    "stages": [
+                        {
+                            "key": "final",
+                            "label": "Final",
+                            "kind": "final",
+                            "races": 3,
+                            "seeds": [1, 2, 3],
+                        }
+                    ],
+                    "playoff_cutoff_minutes": 7,
+                },
+            )
+            db.add(event)
+            await db.flush()
+            await db.execute(
+                update(Race)
+                .where(Race.id == uuid.UUID(race_id))
+                .values(event_id=event.id, event_slot="final:1")
+            )
+            await db.commit()
+
+    asyncio.run(attach_to_event())
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+        mod.send_event_flag(9000003, igt_ms=50000)
+        info = mod.receive_until_type("race_info_update")
+        # Finished within the race's first minute: that minute plus the event's 7.
+        assert info["race"]["race_duration_minutes"] in (7, 8)
+        assert info["race"]["race_ends_at"] is not None
+
+
+def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(
+    integration_client, race_with_participants, integration_db
+):
+    """Between the deadline and the hard-close loop's next poll, a finish is too late."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    async def pass_the_deadline():
+        async with integration_db() as db:
+            await db.execute(
+                update(Race)
+                .where(Race.id == uuid.UUID(race_id))
+                .values(
+                    event_slot="final:1",
+                    started_at=datetime.now(UTC) - timedelta(minutes=50),
+                    race_duration_minutes=48,
+                )
+            )
+            await db.commit()
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, players[0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_status_update(igt_ms=1000, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+        asyncio.run(pass_the_deadline())
+        mod.send_finished(igt_ms=50000)
+        resp = mod.receive_until_type("error")
+        assert resp["code"] == "race_not_running"
+
+    async def status_of_player():
+        async with integration_db() as db:
+            return (
+                await db.execute(
+                    select(Participant.status).where(
+                        Participant.race_id == uuid.UUID(race_id),
+                        Participant.user_id == players[0]["user"].id,
+                    )
+                )
+            ).scalar_one()
+
+    assert asyncio.run(status_of_player()) != ParticipantStatus.FINISHED
 
 
 def test_event_flag_rejected_during_countdown(

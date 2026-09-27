@@ -1709,6 +1709,11 @@ async def reset_race(
         p.layer_entry_igts = {}
         p.last_igt_change_at = None
 
+    # A playoff race's deadline comes from its first finisher (the playoff
+    # cutoff): the replay's first finisher sets a fresh one.
+    if race.is_event_stage:
+        race.race_duration_minutes = None
+
     await db.commit()
 
     # Re-query with eager-loaded relationships (refresh only reloads columns)

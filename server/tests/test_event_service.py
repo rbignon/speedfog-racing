@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
+from pydantic import ValidationError
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.schemas import EventConfig
@@ -84,7 +85,13 @@ def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
     )
 
 
-def _participant(user_id: UUID, status: ParticipantStatus, igt_ms: int, layer: int = 5):
+def _participant(
+    user_id: UUID,
+    status: ParticipantStatus,
+    igt_ms: int,
+    layer: int = 5,
+    finished_at: datetime | None = None,
+):
     # Two zone entries make the run "qualified" for scoring, as on dailies.
     return SimpleNamespace(
         id=uuid4(),
@@ -93,11 +100,23 @@ def _participant(user_id: UUID, status: ParticipantStatus, igt_ms: int, layer: i
         igt_ms=igt_ms,
         current_layer=layer,
         zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+        finished_at=finished_at,
     )
 
 
-def _race(participants, status=RaceStatus.FINISHED):
-    return SimpleNamespace(status=status, participants=list(participants))
+def _race(
+    participants,
+    status=RaceStatus.FINISHED,
+    started_at: datetime | None = None,
+    race_duration_minutes: int | None = None,
+):
+    return SimpleNamespace(
+        status=status,
+        participants=list(participants),
+        started_at=started_at,
+        late_join_window_minutes=None,
+        race_duration_minutes=race_duration_minutes,
+    )
 
 
 # --- slots ------------------------------------------------------------------
@@ -466,48 +485,168 @@ def test_stage_results_sum_points_and_advance_only_when_complete():
     race2 = _race(
         [_participant(u, ParticipantStatus.FINISHED, 100 * (4 - i)) for i, u in enumerate(order)]
     )
-    partial = compute_stage_results(stage, [race1, race2], advance=2)
+    partial = compute_stage_results(stage, [race1, race2], 2, cfg)
     assert partial.complete is False
     assert all(not e.advances for e in partial.entries)
-    # a: 100 + 25, d: 25 + 100, b: 75 + 50, c: 50 + 75 -> four-way points tie in this
-    # partial (two-race) state; race3 below breaks it by points alone (225/200/175/150,
+    # a: 100 + 20, d: 20 + 100, b: 70 + 40, c: 40 + 70 -> two points ties in this
+    # partial (two-race) state; race3 below breaks them by points alone (220/180/150/140,
     # all distinct), so this test does not exercise the igt tie-break at completion. See
     # test_stage_results_breaks_points_tie_by_igt_total for that.
     race3 = _race(
         [_participant(u, ParticipantStatus.FINISHED, 100 * (i + 1)) for i, u in enumerate(order)]
     )
-    full = compute_stage_results(stage, [race1, race2, race3], advance=2)
+    full = compute_stage_results(stage, [race1, race2, race3], 2, cfg)
     assert full.complete is True
     assert [e.user_id for e in full.entries][:2] == [a, b]
     assert [e.advances for e in full.entries] == [True, True, False, False]
-    assert full.entries[0].points == 225
+    assert full.entries[0].points == 220
 
 
 def test_stage_results_breaks_points_tie_by_igt_total():
     cfg = _config()
     stage = cfg.stage("newcomers")  # races=2, kind is irrelevant to compute_stage_results
     x, y = uuid4(), uuid4()
-    # race1: x wins (100pts, igt 100), y loses (50pts, igt 150).
+    # race1: x wins (100pts, igt 100), y is second (70pts, igt 150).
     race1 = _race(
         [
             _participant(x, ParticipantStatus.FINISHED, 100),
             _participant(y, ParticipantStatus.FINISHED, 150),
         ]
     )
-    # race2: y wins (100pts, igt 50), x loses (50pts, igt 300).
+    # race2: y wins (100pts, igt 50), x is second (70pts, igt 300).
     race2 = _race(
         [
             _participant(y, ParticipantStatus.FINISHED, 50),
             _participant(x, ParticipantStatus.FINISHED, 300),
         ]
     )
-    # Totals: x = 150pts / 400ms igt, y = 150pts / 200ms igt -> tied on points,
+    # Totals: x = 170pts / 400ms igt, y = 170pts / 200ms igt -> tied on points,
     # y's lower summed igt must sort it first and, with advance=1, only y advances.
-    result = compute_stage_results(stage, [race1, race2], advance=1)
+    result = compute_stage_results(stage, [race1, race2], 1, cfg)
     assert result.complete is True
-    assert [e.points for e in result.entries] == [150, 150]
+    assert [e.points for e in result.entries] == [170, 170]
     assert [e.user_id for e in result.entries] == [y, x]
     assert [e.advances for e in result.entries] == [True, False]
+
+
+MIN = 60_000
+
+
+def _with(cfg: EventConfig, **fields: object) -> EventConfig:
+    return EventConfig.model_validate({**cfg.model_dump(mode="json", by_alias=True), **fields})
+
+
+def test_playoff_points_follow_the_event_table_ties_sharing_a_rank():
+    cfg = _with(_config(), playoff_points=[100, 60, 30])
+    stage = cfg.stage("newcomers")
+    a, b, c, d, e = (uuid4() for _ in range(5))
+    race = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 100),
+            _participant(b, ParticipantStatus.FINISHED, 200),
+            _participant(c, ParticipantStatus.FINISHED, 200),
+            _participant(d, ParticipantStatus.FINISHED, 300),
+            _participant(e, ParticipantStatus.FINISHED, 400),
+        ]
+    )
+    result = compute_stage_results(stage, [race], 0, cfg)
+    # b and c share rank 2; d is 4th and e 5th, both past the table: its last value.
+    assert {x.user_id: x.points for x in result.entries} == {a: 100, b: 60, c: 60, d: 30, e: 30}
+
+
+def test_a_playoff_dnf_scores_nothing_and_counts_the_winner_time_plus_the_cutoff():
+    cfg = _with(_config(), playoff_cutoff_minutes=7)
+    stage = cfg.stage("newcomers")
+    winner, quitter, chaser, no_show = (uuid4() for _ in range(4))
+    never_started = _participant(no_show, ParticipantStatus.REGISTERED, 0, layer=0)
+    never_started.zone_history = []
+    race = _race(
+        [
+            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
+            _participant(quitter, ParticipantStatus.ABANDONED, 15 * MIN, layer=2),
+            _participant(chaser, ParticipantStatus.PLAYING, 44 * MIN, layer=4),
+            never_started,
+        ],
+        status=RaceStatus.RUNNING,
+    )
+    entries = {x.user_id: x for x in compute_stage_results(stage, [race], 0, cfg).entries}
+    assert entries[winner].points == 100
+    # An early quit buys no better tie-break than chasing the leader until the cutoff.
+    for user in (quitter, chaser, no_show):
+        assert (entries[user].points, entries[user].igt_total) == (0, 47 * MIN)
+
+
+def test_a_finish_past_the_race_end_is_a_playoff_dnf():
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    start = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    first, late = uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(
+                first,
+                ParticipantStatus.FINISHED,
+                40 * MIN,
+                finished_at=start + timedelta(minutes=41),
+            ),
+            # The hard-close loop polls: a finish can land a few seconds past the deadline.
+            _participant(
+                late,
+                ParticipantStatus.FINISHED,
+                49 * MIN,
+                finished_at=start + timedelta(minutes=52, seconds=5),
+            ),
+        ],
+        started_at=start,
+        race_duration_minutes=52,
+    )
+    entries = {x.user_id: x for x in compute_stage_results(stage, [race], 0, cfg).entries}
+    assert (entries[first].points, entries[late].points) == (100, 0)
+    assert entries[late].igt_total == 50 * MIN
+
+
+@pytest.mark.parametrize(
+    "race_status, runner_status",
+    [
+        (RaceStatus.SETUP, ParticipantStatus.REGISTERED),
+        (RaceStatus.RUNNING, ParticipantStatus.PLAYING),
+    ],
+)
+def test_a_playoff_race_nobody_finished_lists_nobody(race_status, runner_status):
+    # Stage races are created with their runners ahead of the evening: until
+    # someone finishes, the bracket keeps showing the field, not a board of zeros.
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    race = _race(
+        [
+            _participant(uuid4(), runner_status, 20 * MIN, layer=3),
+            _participant(uuid4(), runner_status, 25 * MIN, layer=4),
+        ],
+        status=race_status,
+    )
+    assert compute_stage_results(stage, [race], 0, cfg).entries == []
+
+
+def test_a_playoff_dnf_never_counts_faster_than_a_slow_finisher():
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    winner, slow, dnf = uuid4(), uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
+            # In by the wall-clock deadline, yet past the winner + 10 in game time.
+            _participant(slow, ParticipantStatus.FINISHED, 51 * MIN),
+            _participant(dnf, ParticipantStatus.ABANDONED, 30 * MIN, layer=3),
+        ]
+    )
+    entries = {x.user_id: x for x in compute_stage_results(stage, [race], 0, cfg).entries}
+    assert entries[dnf].igt_total == entries[slow].igt_total == 51 * MIN
+
+
+@pytest.mark.parametrize("points", [[], [100, 120, 40], [100, 70, 0]])
+def test_playoff_points_must_be_positive_and_never_rise(points):
+    with pytest.raises(ValidationError):
+        _with(_config(), playoff_points=points)
 
 
 def test_final_field_labels_undecided_semis():
@@ -631,7 +770,7 @@ def test_three_rounds_feed_each_other():
             for i, user in enumerate(order)
         ]
     )
-    results = {"quarter_a": compute_stage_results(quarter_a, [race], quarter_a.advance or 0)}
+    results = {"quarter_a": compute_stage_results(quarter_a, [race], quarter_a.advance or 0, cfg)}
     assert [(s.user_id, s.label) for s in fed_field(semi_a, cfg, results)] == [
         (u[0], "Quarter A"),
         (u[8], "Quarter A"),

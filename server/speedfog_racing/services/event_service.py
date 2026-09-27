@@ -1,13 +1,17 @@
 """Tournament events: slots, scoring, ladder, groups, phase (pure functions).
 
-Everything the event page shows is derived here from loaded rows. Points reuse
-the daily formula so a seed scores exactly like a daily; the ladder is the
-best of the seeds per mode, summed over the modes; the phase is a function of
-the event dates and of the attached races. Nothing is stored.
+Everything the event page shows is derived here from loaded rows. Qualifier
+points reuse the daily formula so a seed scores exactly like a daily, while
+playoff races score on the event's own table; the ladder is the best of the
+seeds per mode, summed over the modes; the phase is a function of the event
+dates and of the attached races. Nothing is stored, except the deadline a
+playoff race's first finisher sets (``start_playoff_cutoff``).
 """
 
 from __future__ import annotations
 
+import logging
+import math
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -15,7 +19,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -28,6 +32,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     Seed,
+    compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import (
     EVENT_PHASES,
@@ -43,6 +48,8 @@ from speedfog_racing.services.daily_points_service import (
     rank_key,
 )
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS, WEAPONS
+
+logger = logging.getLogger(__name__)
 
 Phase = Literal["upcoming", "qualifier", "cut", "playoffs", "finished"]
 
@@ -357,17 +364,61 @@ class StageResult:
     entries: list[StageEntry] = field(default_factory=list)
 
 
+def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, tuple[int, int]]:
+    """Map user -> (points, tie-break in-game time) for one stage or showcase race.
+
+    Only the runs finished by the race's end (the cutoff its first finisher
+    sets) score: ``config.playoff_points`` by in-game time, equal times sharing
+    a rank, the table's last value for every finisher past it. Every other
+    runner of the race, a run still in progress included, is a DNF on 0 points
+    whose tie-break time is the winner's plus the cutoff (or the slowest
+    finisher's, if slower), however early the run stopped. A race nobody has
+    finished, one still in setup included, lists nobody.
+    """
+    _, ends_at = compute_late_join_deadlines(race)
+    finishers = sorted(
+        (
+            p
+            for p in race.participants
+            if p.status == ParticipantStatus.FINISHED
+            and (
+                ends_at is None
+                or (finished_at := as_aware_utc(p.finished_at)) is None
+                or finished_at <= ends_at
+            )
+        ),
+        key=lambda p: p.igt_ms,
+    )
+    if not finishers:
+        return {}
+    table = config.playoff_points
+    scores: dict[UUID, tuple[int, int]] = {}
+    rank = 0
+    for i, p in enumerate(finishers):
+        if i == 0 or p.igt_ms != finishers[i - 1].igt_ms:
+            rank = i
+        scores[p.user_id] = (table[min(rank, len(table) - 1)], p.igt_ms)
+    # The wall-clock cutoff can let a finisher in past the winner's time plus
+    # the cutoff in game time: a DNF never counts faster than them.
+    dnf_igt = max(
+        finishers[0].igt_ms + config.playoff_cutoff_minutes * 60_000, finishers[-1].igt_ms
+    )
+    for p in race.participants:
+        scores.setdefault(p.user_id, (0, dnf_igt))
+    return scores
+
+
 def compute_stage_results(
-    stage: EventStage | EventShowcase, races: list[Race], advance: int
+    stage: EventStage | EventShowcase, races: list[Race], advance: int, config: EventConfig
 ) -> StageResult:
-    """Sum the daily-formula points of a stage's races; ``advance`` best qualify once complete."""
+    """Sum the playoff points of a stage's races; ``advance`` best qualify once complete."""
     complete = len(races) == stage.races and all(r.status == RaceStatus.FINISHED for r in races)
     totals: dict[UUID, list[int]] = {}
     for race in races:
-        for user_id, score in score_race(race).items():
+        for user_id, (points, igt_ms) in score_playoff_race(race, config).items():
             bucket = totals.setdefault(user_id, [0, 0])
-            bucket[0] += score.points
-            bucket[1] += score.igt_ms
+            bucket[0] += points
+            bucket[1] += igt_ms
     ordered = sorted(totals.items(), key=lambda item: (-item[1][0], item[1][1]))
     entries = [
         StageEntry(user_id=user_id, points=t[0], igt_total=t[1], advances=complete and i < advance)
@@ -640,7 +691,7 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
     showcase_races = {showcase.key: races_of(showcase.key) for showcase in config.showcases}
     results = {
         stage.key: compute_stage_results(
-            stage, [r for _, r in stage_races[stage.key]], stage.advance or 0
+            stage, [r for _, r in stage_races[stage.key]], stage.advance or 0, config
         )
         for stage in config.stages
     }
@@ -664,7 +715,7 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         phase=phase,
         showcase_races=showcase_races,
         showcase_results={
-            s.key: compute_stage_results(s, [r for _, r in showcase_races[s.key]], 0)
+            s.key: compute_stage_results(s, [r for _, r in showcase_races[s.key]], 0, config)
             for s in config.showcases
         },
         showcase_dates=stage_dates(config.showcases, showcase_races),
@@ -802,3 +853,58 @@ async def count_finished_before(
         .group_by(Participant.user_id)
     )
     return {user_id: count for user_id, count in (await db.execute(stmt)).all()}
+
+
+# --- playoff cutoff ---------------------------------------------------------
+
+
+async def start_playoff_cutoff(db: AsyncSession, race: Race, finisher: Participant) -> bool:
+    """Close a stage or showcase race ``playoff_cutoff_minutes`` after its first finisher.
+
+    Sets ``race_duration_minutes`` so ``race_ends_at`` falls on the first
+    minute of the race clock at least the cutoff after that finish: the
+    in-game countdown shows it, and the hard-close loop then ends the race and
+    turns the runs still going into DNFs. Only the first finisher sets it, so
+    an organizer's later extension stands, and an earlier deadline is kept.
+    ``race`` must be RUNNING with its participants loaded, ``finisher`` among
+    them and already FINISHED. Returns whether the deadline moved.
+    """
+    started_at = as_aware_utc(race.started_at)
+    if not race.is_event_stage or race.event_id is None or started_at is None:
+        return False
+    finishes = [
+        (finished_at, p.id)
+        for p in race.participants
+        if p.status == ParticipantStatus.FINISHED
+        and (finished_at := as_aware_utc(p.finished_at)) is not None
+    ]
+    if not finishes:
+        return False
+    first_at, first_id = min(finishes)
+    if first_id != finisher.id:
+        return False
+    event = await db.get(Event, race.event_id)
+    try:
+        config = EventConfig.model_validate(event.config if event is not None else None)
+    except ValidationError:
+        # Later finishers never qualify: the race keeps running without a cutoff.
+        logger.warning("Playoff cutoff skipped for race %s: no valid event config", race.id)
+        return False
+    elapsed = (first_at - started_at).total_seconds()
+    minutes = math.ceil(elapsed / 60) + config.playoff_cutoff_minutes
+    # Conditional write: a race that just finished concurrently must not be
+    # broadcast back as running, and an earlier deadline stands.
+    result = await db.execute(
+        update(Race)
+        .where(
+            Race.id == race.id,
+            Race.status == RaceStatus.RUNNING,
+            or_(Race.race_duration_minutes.is_(None), Race.race_duration_minutes > minutes),
+        )
+        .values(race_duration_minutes=minutes)
+    )
+    await db.commit()
+    if result.rowcount == 0:  # type: ignore[attr-defined]
+        return False
+    race.race_duration_minutes = minutes
+    return True

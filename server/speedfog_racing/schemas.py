@@ -945,6 +945,12 @@ class WeaponStatsResponse(BaseModel):
 
 EVENT_PHASES: tuple[str, ...] = ("upcoming", "qualifier", "cut", "playoffs", "finished")
 
+# Playoff scoring of an event whose config does not set its own: points per
+# finishing rank, and the minutes the rest of the field has once the first
+# runner of a playoff race finishes.
+DEFAULT_PLAYOFF_POINTS: tuple[int, ...] = (100, 70, 40, 20)
+DEFAULT_PLAYOFF_CUTOFF_MINUTES = 10
+
 
 class EventMode(BaseModel):
     key: str = Field(min_length=1, max_length=50)
@@ -1031,6 +1037,12 @@ class EventConfig(BaseModel):
     showcases: list[EventShowcase] = []
     rules: list[str] = []
     playoff_rules: list[str] = []
+    # Points per finishing rank in a playoff race; a finisher past the table
+    # scores its last value, a DNF scores nothing.
+    playoff_points: list[int] = Field(
+        default_factory=lambda: list(DEFAULT_PLAYOFF_POINTS), min_length=1, max_length=8
+    )
+    playoff_cutoff_minutes: int = Field(default=DEFAULT_PLAYOFF_CUTOFF_MINUTES, ge=1, le=120)
     facts: list[EventFact] | None = Field(default=None, max_length=8)
     phase_override: str | None = None
     announced_at: datetime | None = None
@@ -1099,6 +1111,11 @@ class EventConfig(BaseModel):
             raise ValueError("stage dates must be ascending")
         if any(len(r) > 300 for r in self.rules + self.playoff_rules):
             raise ValueError("each rule is at most 300 characters")
+        # A finish always outscores a DNF, and a better rank never scores less.
+        if any(p < 1 for p in self.playoff_points):
+            raise ValueError("playoff_points must be positive")
+        if any(b > a for a, b in zip(self.playoff_points, self.playoff_points[1:], strict=False)):
+            raise ValueError("playoff_points must not rise down the ranks")
         if self.phase_override is not None and self.phase_override not in EVENT_PHASES:
             raise ValueError(f"phase_override must be one of {EVENT_PHASES}")
         if self.announced_at is not None and self.announced_at.tzinfo is None:

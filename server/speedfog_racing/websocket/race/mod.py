@@ -22,6 +22,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    compute_late_join_deadlines,
 )
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import (
@@ -29,6 +30,7 @@ from speedfog_racing.services.daily_streak_service import (
     apply_qualification_to_user,
     qualifies_for_streak,
 )
+from speedfog_racing.services.event_service import start_playoff_cutoff
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -47,7 +49,10 @@ from speedfog_racing.websocket.race.manager import (
     participant_to_info,
     sort_leaderboard,
 )
-from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
+from speedfog_racing.websocket.race.spectator import (
+    broadcast_race_info_update,
+    broadcast_race_state_update,
+)
 from speedfog_racing.websocket.schemas import (
     CONDITION_MESSAGES,
     AuthOkMessage,
@@ -858,17 +863,25 @@ async def handle_finished(
 ) -> None:
     """Handle player finish event."""
     race_transitioned = False
+    cutoff_started = False
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
         if not participant:
             return
 
-        if participant.race.status != RaceStatus.RUNNING:
+        # A playoff race's deadline is its cutoff: a finish landing between it
+        # and the hard-close loop's next poll is too late, like one after it.
+        _, ends_at = compute_late_join_deadlines(participant.race)
+        past_cutoff = (
+            participant.race.is_event_stage and ends_at is not None and datetime.now(UTC) >= ends_at
+        )
+        if participant.race.status != RaceStatus.RUNNING or past_cutoff:
             logger.warning(
-                "Rejected finished: race=%s status=%s",
+                "Rejected finished: race=%s status=%s past_cutoff=%s",
                 participant.race_id,
                 participant.race.status.value,
+                past_cutoff,
             )
             try:
                 await asyncio.wait_for(
@@ -930,6 +943,9 @@ async def handle_finished(
                 db, participant.race_id, ChatChannel.PUBLIC, race_finished_msg
             )
         await db.commit()
+        cutoff_started = not race_transitioned and await start_playoff_cutoff(
+            db, participant.race, participant
+        )
 
     # Session closed. All broadcasts use detached objects.
 
@@ -950,6 +966,9 @@ async def handle_finished(
         # An open qualifier scores its settled runs on the leaderboard: one
         # more finisher moves their points, which only race_state carries.
         await broadcast_race_state_update(participant.race_id, participant.race)
+    if cutoff_started:
+        # The race now ends at the playoff cutoff: every mod counts it down.
+        await broadcast_race_info_update(participant.race)
 
     # Unlock the PUBLIC channel for the finished participant before
     # broadcasting so they receive their own "X has finished" notice.

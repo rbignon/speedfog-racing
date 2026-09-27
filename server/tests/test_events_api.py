@@ -574,7 +574,9 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
             1_000,
             weapons=[{"ids": [8030025], "ticks": 99}],
         )
-        await _entry(db, semi_race, ana, ParticipantStatus.PLAYING, 500_000)
+        # ana is through while bob still runs: the semi race stays live and scores her.
+        await _entry(db, semi_race, ana, ParticipantStatus.FINISHED, 500_000)
+        await _entry(db, semi_race, bob, ParticipantStatus.PLAYING, 400_000)
         await db.commit()
         bogus_id, semi_race_id = str(bogus.id), str(semi_race.id)
 
@@ -698,13 +700,11 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
     assert datetime.fromisoformat(showcase["date"]) == first_at
     assert showcase["races_expected"] == 3 and len(showcase["races"]) == 2
     assert showcase["complete"] is False
-    # bob: second then first on the live race's depth; ana won the first; cleo and
-    # aaron behind bob on the live race.
+    # ana won the first race, bob came second; nobody has finished the live race yet,
+    # so it lists nobody (cleo and aaron wait in the field) and moves no one.
     assert [(r["user"]["twitch_username"], r["points"]) for r in showcase["results"]] == [
-        ("bob", 150),
         ("ana", 100),
-        ("cleo", 67),
-        ("aaron", 33),
+        ("bob", 70),
     ]
     assert [f["user"]["twitch_username"] for f in showcase["field"]] == [
         "aaron",

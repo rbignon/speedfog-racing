@@ -1196,6 +1196,45 @@ async def test_reset_race_from_running(test_client, organizer, player, async_ses
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("slot, kept", [("final:1", None), (None, 48)])
+async def test_reset_drops_a_playoff_race_s_cutoff_only(
+    test_client, organizer, player, async_session, slot, kept
+):
+    """A playoff race's deadline came from its first finisher: the replay sets a fresh one."""
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="s901",
+            pool_name="standard",
+            graph_json={"total_layers": 10, "nodes": []},
+            total_layers=10,
+            folder_path="/test/901",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Semi",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+            race_duration_minutes=48,
+            event_slot=slot,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/races/{race_id}/reset",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["race_duration_minutes"] == kept
+
+
+@pytest.mark.asyncio
 async def test_reset_race_from_finished(test_client, organizer, player, async_session):
     """Resetting a FINISHED race sets status to setup and clears participant progress."""
     async with async_session() as db:

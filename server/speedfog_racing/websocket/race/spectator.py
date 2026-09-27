@@ -805,9 +805,10 @@ async def broadcast_race_state_update(race_id: uuid.UUID, race: Race) -> None:
 async def broadcast_race_info_update(race: Race) -> None:
     """Push a RaceInfo snapshot to every connected mod and spectator.
 
-    Called from PATCH /races whenever a race-level field changes so clients
-    can refresh their cached state (race_duration_minutes extension,
-    max_participants bump, etc.) without reconnecting.
+    Called whenever a race-level field changes (PATCH /races, a playoff
+    race's first finish setting its deadline) so clients can refresh their
+    cached state (race_duration_minutes extension, max_participants bump,
+    etc.) without reconnecting.
     """
     room = manager.get_room(race.id)
     if not room:
