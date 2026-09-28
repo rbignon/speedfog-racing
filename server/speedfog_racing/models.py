@@ -18,10 +18,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    Uuid,
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSON, UUID
+from sqlalchemy.dialects.postgresql import JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from speedfog_racing.database import Base
@@ -103,7 +104,7 @@ class User(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     twitch_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     twitch_username: Mapped[str] = mapped_column(String(100), nullable=False)
     twitch_display_name: Mapped[str | None] = mapped_column(String(100))
@@ -150,7 +151,7 @@ class Pool(Base):
 
     __tablename__ = "pools"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
@@ -188,7 +189,7 @@ class Seed(Base):
         Index("ix_seeds_pool_status", "pool_name", "status"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     seed_number: Mapped[str] = mapped_column(String(50), nullable=False)
     pool_name: Mapped[str] = mapped_column(String(50), ForeignKey("pools.name"), nullable=False)
     graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
@@ -198,7 +199,7 @@ class Seed(Base):
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     reported_by_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     reported_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -223,7 +224,7 @@ class Event(Base):
 
     __tablename__ = "events"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     partner_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -258,12 +259,12 @@ class EventSignup(Base):
     __tablename__ = "event_signups"
     __table_args__ = (UniqueConstraint("event_id", "user_id", name="uq_event_signups_event_user"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
+        Uuid, ForeignKey("events.id", ondelete="CASCADE"), nullable=False, index=True
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -298,14 +299,10 @@ class Race(Base):
         Index("ix_races_event_id", "event_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    organizer_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
-    seed_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("seeds.id"), nullable=True
-    )
+    organizer_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    seed_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("seeds.id"), nullable=True)
     status: Mapped[RaceStatus] = mapped_column(Enum(RaceStatus), default=RaceStatus.SETUP)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -347,9 +344,7 @@ class Race(Base):
     )
     # Tournament attachment: NULL on ordinary races. The slot names the
     # role inside the event, "qualifier:<mode>:<n>" or "<stage>:<n>".
-    event_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("events.id"), nullable=True
-    )
+    event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("events.id"), nullable=True)
     event_slot: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Relationships
@@ -402,13 +397,9 @@ class Participant(Base):
         Index("ix_participants_status_igt_change", "status", "last_igt_change_at"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    race_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("races.id"), nullable=False
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("races.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     mod_token: Mapped[str] = mapped_column(
         String(100), unique=True, nullable=False, default=generate_token
     )
@@ -462,7 +453,7 @@ class DailyStreakFreeze(Base):
     __tablename__ = "daily_streak_freezes"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid,
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -489,18 +480,14 @@ class Feedback(Base):
         Index("ix_feedback_user_id", "user_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     rating: Mapped[int] = mapped_column(Integer, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[FeedbackSource] = mapped_column(
         Enum(FeedbackSource, name="feedback_source"), nullable=False
     )
-    race_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("races.id"), nullable=True
-    )
+    race_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("races.id"), nullable=True)
     races_played_at_feedback: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -516,13 +503,9 @@ class Caster(Base):
     __tablename__ = "casters"
     __table_args__ = (UniqueConstraint("race_id", "user_id", name="uq_casters_race_user"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    race_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("races.id"), nullable=False
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("races.id"), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="casters")
@@ -534,10 +517,8 @@ class Invite(Base):
 
     __tablename__ = "invites"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    race_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("races.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("races.id"), nullable=False)
     token: Mapped[str] = mapped_column(
         String(100), unique=True, nullable=False, default=generate_token
     )
@@ -558,13 +539,9 @@ class TrainingSession(Base):
         Index("ix_training_sessions_user_status", "user_id", "status"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
-    seed_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("seeds.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    seed_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("seeds.id"), nullable=False)
     mod_token: Mapped[str] = mapped_column(
         String(100), unique=True, nullable=False, default=generate_token
     )
@@ -621,20 +598,20 @@ class ChatMessage(Base):
         Index("ix_chat_messages_user", "user_id"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     race_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("races.id", ondelete="CASCADE"), nullable=False
+        Uuid, ForeignKey("races.id", ondelete="CASCADE"), nullable=False
     )
     channel: Mapped[ChatChannel] = mapped_column(Enum(ChatChannel), nullable=False)
     user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=True
     )
     message: Mapped[str] = mapped_column(String(500), nullable=False)
     # Message being answered. SET NULL (not CASCADE) so deleting a user,
     # which cascades away their messages, never blocks on replies that
     # point at them.
     reply_to_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid,
         ForeignKey("chat_messages.id", ondelete="SET NULL"),
         nullable=True,
     )
@@ -667,12 +644,12 @@ class ChatMessageReaction(Base):
     __tablename__ = "chat_message_reactions"
 
     message_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid,
         ForeignKey("chat_messages.id", ondelete="CASCADE"),
         primary_key=True,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
+        Uuid,
         ForeignKey("users.id", ondelete="CASCADE"),
         primary_key=True,
     )
@@ -713,15 +690,13 @@ class BadgeGrant(Base):
 
     __tablename__ = "badge_grants"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     badge_id: Mapped[str] = mapped_column(String(50), nullable=False)
     granted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
@@ -742,16 +717,14 @@ class NameTemplateUnlock(Base):
 
     __tablename__ = "name_template_unlocks"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     template_id: Mapped[str] = mapped_column(String(50), nullable=False)
     unlocked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
@@ -766,16 +739,14 @@ class PhantomSkinUnlock(Base):
 
     __tablename__ = "phantom_skin_unlocks"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     skin_id: Mapped[str] = mapped_column(String(50), nullable=False)
     unlocked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
     granted_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+        Uuid, ForeignKey("users.id"), nullable=True
     )
     reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
@@ -790,10 +761,8 @@ class RewardNotification(Base):
 
     __tablename__ = "reward_notifications"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
-    )
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     reward_id: Mapped[str] = mapped_column(String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
