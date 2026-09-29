@@ -32,11 +32,16 @@
 
   let layout = $derived(bracketLayout(stages));
   let depth = $derived(layout.rounds.length);
+  // A tree of four rounds or more (a round of 32 before the quarters)
+  // narrows the side column so the rounds keep their width; the final's
+  // column then sits empty above the final (the final is centred on the
+  // first round), so the evening section spreads over it too.
+  let wideAside = $derived(layout.tall && depth >= 4);
   // A tall tree seats the evening section above the Champion in a side
   // column, narrower from four rounds on so the rounds keep their width; a
   // short one keeps a narrow Champion column, the evening beside it.
   let sideWidth = $derived(
-    !layout.tall ? "0.7fr" : depth >= 4 ? "0.8fr" : "1.25fr",
+    !layout.tall ? "0.7fr" : wideAside ? "0.8fr" : "1.25fr",
   );
   let columns = $derived(
     `${"minmax(0, 1fr) 24px ".repeat(depth)}minmax(0, ${sideWidth})`,
@@ -186,7 +191,7 @@
     {#if layout.tall}
       <div
         class="title"
-        style:grid-column="1 / {side - 1}"
+        style:grid-column={wideAside ? `1 / ${side - 2}` : `1 / ${side - 1}`}
         style:grid-row="1"
         style:--order="1"
       >
@@ -195,7 +200,7 @@
       {#if aside}
         <div
           class="aside"
-          style:grid-column={side}
+          style:grid-column={wideAside ? `${side - 2} / span 3` : side}
           style:grid-row="1 / {top + layout.rows}"
           style:--order="0"
         >
@@ -259,7 +264,7 @@
     {#if layout.tall && rules}
       <div
         class="rules"
-        style:grid-column="1"
+        style:grid-column="1 / -1"
         style:grid-row={top + layout.rows}
         style:--order={afterTree + 2}
       >
@@ -331,6 +336,17 @@
     grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
     gap: 24px;
     align-items: start;
+  }
+  /* The rules card runs full width in the tall layout; on a wide screen its
+   * list flows in two text columns instead of one long single column. */
+  @media (min-width: 900px) {
+    .brk.tall .rules :global(ul) {
+      columns: 2;
+      column-gap: 2.5rem;
+    }
+    .brk.tall .rules :global(li) {
+      break-inside: avoid;
+    }
   }
   .stack {
     display: flex;

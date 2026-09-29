@@ -1,4 +1,5 @@
 import { render } from "@testing-library/svelte";
+import { createRawSnippet } from "svelte";
 import { describe, expect, it } from "vitest";
 import EventBracket from "$lib/components/events/EventBracket.svelte";
 import type { EventStage, Race } from "$lib/api";
@@ -437,5 +438,46 @@ describe("EventBracket layout", () => {
     expect(sideOf(wide.container)).toContain("1.25fr");
     expect(sideOf(narrow.container)).toContain("0.8fr");
     expect(sideOf(narrow.container)).not.toContain("1.25fr");
+  });
+
+  const evening = createRawSnippet(() => ({ render: () => "<p>Evening</p>" }));
+  const rulesCard = createRawSnippet(() => ({
+    render: () => "<ul><li>Rule</li></ul>",
+  }));
+
+  it("spreads the evening over the final's column in a four-round tree", () => {
+    const { container } = render(EventBracket, {
+      stages: roundSeason,
+      formatDay: fmtDay,
+      aside: evening,
+      rules: rulesCard,
+    });
+    const grid = container.querySelector(".brk.tall") as HTMLElement;
+    // Rounds sit in columns 1, 3, 5 and 7 (the final), the side column is 9.
+    expect((grid.querySelector(".aside") as HTMLElement).style.gridColumn).toBe(
+      "7 / span 3",
+    );
+    expect((grid.querySelector(".title") as HTMLElement).style.gridColumn).toBe(
+      "1 / 7",
+    );
+    expect((grid.querySelector(".rules") as HTMLElement).style.gridColumn).toBe(
+      "1 / -1",
+    );
+  });
+
+  it("keeps the evening in the side column of a three-round tree", () => {
+    const { container } = render(EventBracket, {
+      stages: season,
+      formatDay: fmtDay,
+      aside: evening,
+      rules: rulesCard,
+    });
+    const grid = container.querySelector(".brk.tall") as HTMLElement;
+    expect((grid.querySelector(".aside") as HTMLElement).style.gridColumn).toBe(
+      "7",
+    );
+    expect((grid.querySelector(".rules") as HTMLElement).style.gridColumn).toBe(
+      "1 / -1",
+    );
   });
 });
