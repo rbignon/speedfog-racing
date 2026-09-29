@@ -17,6 +17,7 @@ import {
   ordinal,
   playoffsPlan,
   pollIntervalMs,
+  qualifiedMeta,
   racesSection,
   shownStage,
   signupIntentStands,
@@ -161,7 +162,44 @@ const quartersSeason: EventStage[] = [
   }),
 ];
 
+// Eight groups of a round of 32 into quarters, semis and the final.
+const groupPairs = [
+  ["a", "b"],
+  ["c", "d"],
+  ["e", "f"],
+  ["g", "h"],
+];
+const roundSeason: EventStage[] = [
+  ...groupPairs.flat().map((x) =>
+    stageFixture({
+      key: `group_${x}`,
+      label: `Group ${x.toUpperCase()}`,
+      kind: "round",
+      field: seats(4),
+    }),
+  ),
+  ...groupPairs.map(([a, b], i) => {
+    const q = "abcd"[i];
+    return stageFixture({
+      key: `quarter_${q}`,
+      label: `Quarter ${q.toUpperCase()}`,
+      from: [`group_${a}`, `group_${b}`],
+    });
+  }),
+  ...quartersSeason.filter((s) => s.kind !== "quarter"),
+];
+
 describe("bracketLayout", () => {
+  it("centres each quarter on its two groups in a four-round tree", () => {
+    const layout = bracketLayout(roundSeason);
+    expect(layout.rounds.length).toBe(4);
+    expect(layout.rows).toBe(8);
+    const quarterB = layout.rounds[1][1];
+    expect(quarterB.stage.key).toBe("quarter_b");
+    expect([quarterB.row, quarterB.span]).toEqual([2, 2]);
+    expect([layout.final?.row, layout.final?.span]).toEqual([0, 8]);
+  });
+
   it("lays quarters, semis and the final out as a tree, each stage centred on its sources", () => {
     const layout = bracketLayout(quartersSeason);
     expect(layout.rounds.map((r) => r.map((c) => c.stage.key))).toEqual([
@@ -243,6 +281,38 @@ describe("playoffsPlan", () => {
     ]);
     expect(plan.agreed).toBeNull();
     expect(plan.fixed.map((s) => s.key)).toEqual(["semi_a", "final"]);
+  });
+
+  it("names a round before the quarters after its seats", () => {
+    const plan = playoffsPlan(roundSeason);
+    expect(plan.places).toBe(32);
+    expect(plan.agreed).toBe("round of 32, quarters and semis");
+  });
+});
+
+describe("qualifiedMeta", () => {
+  const fmt = (iso: string) => `Day(${iso})`;
+  const groupA = roundSeason[0];
+
+  it("names the round when the stage is labelled like its box", () => {
+    expect(qualifiedMeta(groupA, "Group A", roundSeason, fmt)).toBe(
+      "Round of 32",
+    );
+    expect(
+      qualifiedMeta(
+        { ...groupA, date: "2026-10-10T19:00:00Z" },
+        "Group A",
+        roundSeason,
+        fmt,
+      ),
+    ).toBe("Round of 32 on Day(2026-10-10T19:00:00Z)");
+  });
+
+  it("keeps a stage's own label when it differs from the box title", () => {
+    const quarterA = quartersSeason[0];
+    expect(qualifiedMeta(quarterA, "Group A", quartersSeason, fmt)).toBe(
+      "Quarter A",
+    );
   });
 });
 

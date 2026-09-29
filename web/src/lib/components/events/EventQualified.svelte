@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { EventQualified, EventStage } from "$lib/api";
+  import { qualifiedMeta } from "$lib/events";
   import EventStageBox, { type StageRow } from "./EventStageBox.svelte";
 
   let {
@@ -26,9 +27,7 @@
           ? "Newcomers"
           : `Group ${letters[seededIndex] ?? ""}`;
       const meta = stage
-        ? stage.date
-          ? `${stage.label} on ${formatDate(stage.date)}`
-          : stage.label
+        ? qualifiedMeta(stage, title, stages, formatDate)
         : group.label;
       const rows: StageRow[] = group.entries.map((e, i) => ({
         key: `${group.stage_key}-${i}`,

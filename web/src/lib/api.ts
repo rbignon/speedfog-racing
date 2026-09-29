@@ -435,6 +435,7 @@ export interface EventTimelineStop {
     | "open"
     | "cut"
     | "playoffs"
+    | "round"
     | "quarter"
     | "semi"
     | "newcomers"
@@ -522,7 +523,7 @@ export interface EventFieldSlot {
 export interface EventStage {
   key: string;
   label: string;
-  kind: "quarter" | "semi" | "newcomers" | "final";
+  kind: "round" | "quarter" | "semi" | "newcomers" | "final";
   /** The config's date, else the earliest of the stage's races; null until one exists. */
   date: string | null;
   /** Whether the config fixes the date, rather than the races scheduled with the players. */

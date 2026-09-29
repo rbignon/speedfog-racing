@@ -727,12 +727,20 @@ export interface PlayoffsPlan {
   }[];
 }
 
-const KIND_PLURAL: Record<EventStage["kind"], string> = {
+const KIND_PLURAL: Record<Exclude<EventStage["kind"], "round">, string> = {
   quarter: "quarters",
   semi: "semis",
   final: "final",
   newcomers: "newcomers' final",
 };
+
+/** A round played before the quarters, named after its seats: "round of 32". */
+function roundName(stages: EventStage[]): string {
+  const seats = stages
+    .filter((s) => s.kind === "round")
+    .reduce((n, s) => n + s.field.length, 0);
+  return `round of ${seats}`;
+}
 
 /** What the format block's playoffs paragraph says about the bracket. */
 export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
@@ -742,7 +750,11 @@ export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
     .reduce((n, s) => n + s.field.length, 0);
   const kinds = [
     ...new Set(
-      tree.filter((s) => !s.date_fixed).map((s) => KIND_PLURAL[s.kind]),
+      tree
+        .filter((s) => !s.date_fixed)
+        .map((s) =>
+          s.kind === "round" ? roundName(tree) : KIND_PLURAL[s.kind],
+        ),
     ),
   ];
   const agreed =
@@ -757,4 +769,23 @@ export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
       : [],
   );
   return { places, agreed, fixed };
+}
+
+/**
+ * The meta line of a qualified group's box: the stage's label, with its date
+ * when it has one. A round's stage labelled like its box title ("Group A")
+ * would repeat it, so it names its round instead ("Round of 32").
+ */
+export function qualifiedMeta(
+  stage: EventStage,
+  title: string,
+  stages: EventStage[],
+  formatDate: (iso: string) => string,
+): string {
+  const round = roundName(stages);
+  const name =
+    stage.kind === "round" && stage.label === title
+      ? round.charAt(0).toUpperCase() + round.slice(1)
+      : stage.label;
+  return stage.date ? `${name} on ${formatDate(stage.date)}` : name;
 }
