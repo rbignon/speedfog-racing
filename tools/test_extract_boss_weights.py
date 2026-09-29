@@ -11,6 +11,7 @@ from extract_boss_weights import (
     attribute,
     boss_clears,
     fit_effects,
+    rounded_weights,
     shrunk_weights,
 )
 
@@ -165,3 +166,19 @@ def test_apply_weights_only_sets_the_weight_field() -> None:
 def test_apply_weights_rejects_unknown_entities() -> None:
     with pytest.raises(KeyError):
         apply_weights(TAGS_TEXT, {3000: 1.0})
+
+
+def test_rounded_weights_give_thin_bosses_the_job_median() -> None:
+    """A handful of clears must neither block nor be blocked by the spread."""
+    weights = {
+        "a": (0.64, 120),
+        "b": (1.36, 80),
+        "c": (2.0, 40),
+        "thin": (0.4, 3),
+        "tiny": (0.01, 50),
+    }
+    out = rounded_weights(weights, min_samples=20)
+    assert out["thin"] == (1.0, True)  # median of 0.01, 0.64, 1.36, 2.0
+    assert out["a"] == (0.6, False)
+    assert out["b"] == (1.4, False)
+    assert out["tiny"] == (0.1, False)  # boss.weight must stay > 0

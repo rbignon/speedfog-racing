@@ -55,6 +55,9 @@ BOSS_JOBS = {"boss_arena": "minor", "major_boss": "major"}
 FACTORS = ("arena", "boss", "tier", "user", "pool")
 # Tiers above this are rare; pooling them keeps their factor estimable.
 TIER_CAP = 24
+# Bosses measured on fewer clears get the job's median weight: an estimate
+# that noisy should neither block nor be blocked by the spread rule.
+MIN_SAMPLES = 20
 
 
 @dataclass(frozen=True)
@@ -198,6 +201,25 @@ def shrunk_weights(
     }
 
 
+def rounded_weights(
+    weights: Mapping[Any, tuple[float, int]],
+    min_samples: int = MIN_SAMPLES,
+) -> dict[Any, tuple[float, bool]]:
+    """``{boss: (weight, thin)}`` rounded to 0.1 minute (at least 0.1).
+
+    A thin boss (fewer than ``min_samples`` clears) gets the median of the
+    well-measured ones instead of its own estimate.
+    """
+    solid = [minutes for minutes, n in weights.values() if n >= min_samples]
+    fallback = statistics.median(solid) if solid else None
+    out: dict[Any, tuple[float, bool]] = {}
+    for boss, (minutes, n) in weights.items():
+        thin = n < min_samples
+        value = fallback if thin and fallback is not None else minutes
+        out[boss] = (max(0.1, round(value, 1)), thin)
+    return out
+
+
 def apply_weights(tags_text: str, weights: Mapping[int, float]) -> str:
     """Set ``boss.weight`` for ``weights``; everything else round-trips."""
     data = json.loads(tags_text)
@@ -309,11 +331,14 @@ async def main() -> None:
             f"bosses measured, typical node {math.exp(mu):.2f} min"
         )
         print(f"{'boss':45} {'current':>7} {'suggest':>7} {'n':>5}")
-        for eid, (minutes, n) in sorted(weights.items(), key=lambda x: -x[1][0]):
-            weight = max(0.1, round(minutes, 1))
+        final = rounded_weights(weights)
+        for eid, (weight, thin) in sorted(final.items(), key=lambda x: -x[1][0]):
             suggested[eid] = weight
             current = tags[eid].boss.weight
+            n = weights[eid][1]
             flag = "  *" if abs(weight - current) >= 0.2 else ""
+            if thin:
+                flag += f"  (thin, n<{MIN_SAMPLES}: job median)"
             print(f"{tags[eid].name[:45]:45} {current:7.1f} {weight:7.1f} {n:5d}{flag}")
         missing = [tags[e].name for e in pool if e not in weights]
         if missing:
