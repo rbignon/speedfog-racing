@@ -248,6 +248,18 @@ Visits where the player passed through without fighting (deaths = 0 and the next
 
 Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), with merging by resolved name across participants.
 
+### Boss Weight Calibration
+
+`tools/extract_boss_weights.py` calibrates SpeedFog's `boss.weight` values
+(`data/boss_arena_tags.json`, used to keep extreme bosses apart on parallel
+branches) from the same clears as the zone calibration: time summed over
+every visit, kept when the last visit cleared the node. Minor (`boss_arena`)
+and major (`major_boss`) nodes are fitted separately with a robust additive
+model of the log clear time (arena + boss + tier + player + pool), so a
+weight compares bosses rather than the conditions they were met in. Run it
+from `server/`; `--write` updates the weights in the sibling speedfog
+checkout.
+
 ---
 
 ## Recalculation
