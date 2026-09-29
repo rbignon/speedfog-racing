@@ -146,12 +146,14 @@
     background: var(--color-gold);
     box-shadow: var(--glow-gold);
   }
+  .g.round,
   .g.quarter,
   .g.semi,
   .g.playoffs {
     transform: rotate(45deg) scale(0.8);
   }
   /* Passed stops ride in brass whatever their shape; the current one glows */
+  .g.round.done,
   .g.quarter.done,
   .g.semi.done,
   .g.playoffs.done,
@@ -159,6 +161,7 @@
   .g.final.done {
     background: var(--color-gold);
   }
+  .g.round.now,
   .g.quarter.now,
   .g.semi.now,
   .g.playoffs.now,
