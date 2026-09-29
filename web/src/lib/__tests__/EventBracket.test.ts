@@ -356,6 +356,32 @@ const season = [
   }),
 ];
 
+const groups = ["a", "b", "c", "d", "e", "f", "g", "h"].map((x) =>
+  stage({
+    key: `group_${x}`,
+    label: `Group ${x.toUpperCase()}`,
+    kind: "round",
+    date: null,
+    date_fixed: false,
+    field: new Array(4).fill(null).map((_, i) => ({
+      user: null,
+      label: `Seed ${i + 1}`,
+    })),
+  }),
+);
+const roundSeason = [
+  ...groups,
+  ...season.map((s, i) =>
+    s.kind === "quarter"
+      ? {
+          ...s,
+          from: [`group_${"aceg"[i]}`, `group_${"bdfh"[i]}`],
+          field: [],
+        }
+      : s,
+  ),
+];
+
 describe("EventBracket layout", () => {
   // Grid placement itself (rows, spans, link centres) is bracketLayout's,
   // tested in events.test.ts; jsdom does not lay grids out.
@@ -397,5 +423,19 @@ describe("EventBracket layout", () => {
     });
     expect(container.querySelector(".brk.tall")).toBeNull();
     expect(container.querySelector(".split")).not.toBeNull();
+  });
+
+  it("narrows the side column so a four-round tree keeps wide rounds", () => {
+    const wide = render(EventBracket, { stages: season, formatDay: fmtDay });
+    const narrow = render(EventBracket, {
+      stages: roundSeason,
+      formatDay: fmtDay,
+    });
+    const sideOf = (container: HTMLElement) =>
+      (container.querySelector(".brk.tall") as HTMLElement).style
+        .gridTemplateColumns;
+    expect(sideOf(wide.container)).toContain("1.25fr");
+    expect(sideOf(narrow.container)).toContain("0.8fr");
+    expect(sideOf(narrow.container)).not.toContain("1.25fr");
   });
 });

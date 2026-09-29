@@ -470,13 +470,14 @@ source), each stage centred on the stages it takes runners from, connectors
 between them, the final leading to the Champion. With four first-round boxes
 or more (quarters) the tree takes the page's width: a side column holds the
 evening section on top, level with the "Bracket" title, and the Champion on
-the final's axis; the playoff rules sit under the first column and the
-newcomers' final under the final, level with the last first-round box. Under
-900px it becomes one column, the evening first. A shorter tree (two semis)
-keeps the older arrangement: the tree with a narrow Champion column, the
-evening section and the rules beside it. A stage without a date reads "Date
-to be agreed", and the evening section disappears while no evening is
-current or next.
+the final's axis; that side column narrows for a tree of four rounds or more
+(a round of 32 before the quarters) so the rounds keep their width; the
+playoff rules sit under the first column and the newcomers' final under the
+final, level with the last first-round box. Under 900px it becomes one
+column, the evening first. A shorter tree (two semis) keeps the older
+arrangement: the tree with a narrow Champion column, the evening section and
+the rules beside it. A stage without a date reads "Date to be agreed", and
+the evening section disappears while no evening is current or next.
 
 The format block keeps its dates to the day, in brass. Its playoffs paragraph
 counts the places (the seeded stages' seats), says the rounds without a fixed

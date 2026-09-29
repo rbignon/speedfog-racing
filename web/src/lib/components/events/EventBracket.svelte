@@ -32,10 +32,14 @@
 
   let layout = $derived(bracketLayout(stages));
   let depth = $derived(layout.rounds.length);
-  // A tall tree seats the evening section above the Champion in a wide side
-  // column; a short one keeps a narrow Champion column, the evening beside it.
+  // A tall tree seats the evening section above the Champion in a side
+  // column, narrower from four rounds on so the rounds keep their width; a
+  // short one keeps a narrow Champion column, the evening beside it.
+  let sideWidth = $derived(
+    !layout.tall ? "0.7fr" : depth >= 4 ? "0.8fr" : "1.25fr",
+  );
   let columns = $derived(
-    `${"minmax(0, 1fr) 24px ".repeat(depth)}minmax(0, ${layout.tall ? "1.25fr" : "0.7fr"})`,
+    `${"minmax(0, 1fr) 24px ".repeat(depth)}minmax(0, ${sideWidth})`,
   );
   // The tall grid gives its first row to the titles.
   let top = $derived(layout.tall ? 2 : 1);
