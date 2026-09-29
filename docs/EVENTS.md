@@ -4,7 +4,7 @@ A co-branded tournament run on the platform: one week of qualifying on dedicated
 week-long seeds, then playoff evenings, all on one page, `/events/[slug]`. The
 first instance is SpeedFog x Ignite Season One (qualifier 23 September to 8
 October 2026; a round of 32 in eight groups, quarters and semis scheduled with
-their players, the final on 25 October).
+their players, the final on 1 November).
 
 ## Model
 
@@ -229,10 +229,11 @@ up a fed stage leaves it one short. The newcomers' group takes the first
 ranked newcomers positioned after the last seed or the furthest runner
 called up, withdrawn ones skipped. A seat nobody can fill reads "TBD" while
 the ladder is provisional and "No runner" once it is final; a seat past the
-end of a provisional ladder keeps its "Seed N" placeholder. The ladder
-itself is unchanged by a withdrawal, and a stage that has raced shows its
-results, so a late edit of the list changes nothing it already displays. On
-the page, the seeded stages' boxes are titled Group A, Group B and so on; a
+end of a provisional ladder keeps its "Seed N" placeholder. A withdrawal
+declared once any race of the runner's seeded stage has left setup calls
+nobody up: the runner keeps the seat, and the stage goes on with whoever
+races. The ladder itself is unchanged by a withdrawal. On the page, the
+seeded stages' boxes are titled Group A, Group B and so on; a
 box whose stage carries that same label shows its round's name ("Round of
 32") in its meta line instead of repeating it.
 
@@ -401,10 +402,17 @@ count there. See `daily_points` in
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
-5. A qualified runner withdraws before their group plays: add their Twitch
-   username at the end of the config's `withdrawn` list and save; the page
-   hands the seat to the next runner on the ladder, whom the organizer tells.
-   If that runner declines too, add them as well.
+5. A qualified runner withdraws: list them at the end of the config's
+   `withdrawn` list before their group's first race starts, and save; the
+   page hands the seat to the next runner on the ladder, whom the organizer
+   tells. If that runner declines too, add them as well. A call-up can move
+   a newcomer out of the newcomers' final, or shift its field, so update the
+   registrations of any races already created for those stages. A runner who
+   renames on Twitch and logs in under the new name must be re-listed under
+   it: the old name no longer matches any user, and the admin refuses it on
+   the next save. This `withdrawn` list is unrelated to the signup
+   "Withdraw" button (an intent signal taken before the qualifier closes,
+   see "Signups" above).
 6. A showcase (see "Showcases" above) runs the same way: add it to the
    config's `showcases`, create its races with the chosen runners and the
    casters, named after its label like a stage's ("Ignite Showcase - Race 1 -
@@ -495,8 +503,8 @@ scheduled so that two evenings fall either side of a daylight saving change,
 out of four, loses the line for the viewers that change applies to, and for
 them only. Only the wall clock counts, never the zone's name, so evenings kept
 at one local time across a daylight saving change still read as one time. That
-change is the ordinary case rather than a corner one: the real season's last
-evening is the Sunday Europe leaves summer time.
+change is the ordinary case rather than a corner one: the real season's
+evenings fall on both sides of the change Europe makes on 25 October.
 
 The take-part steps start on the viewer's own state. Step 01, "Sign up for the event", is
 one primary button, `I'm in`, whatever that state: signed out, it parks the

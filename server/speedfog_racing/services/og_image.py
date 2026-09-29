@@ -495,8 +495,13 @@ def summarize_event(
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
+    started = {
+        key
+        for key, races in resolved.stage_races.items()
+        if any(r.status != RaceStatus.SETUP for _, r in races)
+    }
     qualified = compute_qualified(
-        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final
+        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final, started
     )
 
     # The ladder already runs best first, then the runners it could not rank;

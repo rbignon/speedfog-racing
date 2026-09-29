@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
@@ -329,6 +329,7 @@ def compute_qualified(
     newcomers: dict[UUID, bool],
     withdrawn: Sequence[UUID] = (),
     ladder_final: bool = False,
+    started: Collection[str] = (),
 ) -> dict[str, list[QualifiedSlot]]:
     """Seeded stages take ladder positions; newcomers come after the last position used.
 
@@ -339,7 +340,10 @@ def compute_qualified(
     a runner holding no seat only keeps them from being called up. A replacement
     once called up therefore stays put whatever is declared after. A seat nobody
     can fill reads ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER``
-    once it is final.
+    once it is final. ``started`` names the stages whose field has already begun
+    racing: a withdrawal from a seat there changes nothing, though the runner
+    still counts as withdrawn everywhere else (never called up, skipped in the
+    newcomers' draw).
     """
     ranked = [e for e in ladder if e.rank is not None]
     empty = NO_RUNNER if ladder_final else UNDECIDED
@@ -364,9 +368,10 @@ def compute_qualified(
     furthest = last_seed
     for user_id in withdrawn:
         gone.add(user_id)
-        seat = seat_of.pop(user_id, None)
-        if seat is None:
+        seat = seat_of.get(user_id)
+        if seat is None or seat[0] in started:
             continue
+        del seat_of[user_id]
         key, i = seat
         called = next(
             ((pos, e) for pos, e in bench if e.user_id not in gone and e.user_id not in seat_of),

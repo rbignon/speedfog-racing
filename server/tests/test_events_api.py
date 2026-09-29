@@ -446,6 +446,26 @@ async def test_detail_calls_up_the_next_runner_for_a_withdrawn_seed(test_client,
 
 
 @pytest.mark.asyncio
+async def test_detail_a_withdrawal_from_a_started_stage_calls_nobody_up(test_client, async_session):
+    async with async_session() as db:
+        event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
+        await _ranked_runners(db, event, 5, RaceStatus.RUNNING)
+        orga = await _user(db, "orga2", UserRole.ORGANIZER)
+        semi_seed = await _seed(db, "standard", "s-semi-b")
+        await _race(db, orga, semi_seed, event, "semi_b:1", status=RaceStatus.RUNNING)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    # Semi B (seeds 2 and 3) already has a race under way: runner2 keeps
+    # seed 2 instead of being replaced by the withdrawal.
+    assert [(f["label"], f["user"]["twitch_username"]) for f in stages["semi_b"]["field"]] == [
+        ("Seed 2", "runner2"),
+        ("Seed 3", "runner3"),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_detail_reads_no_runner_once_the_ladder_is_final(test_client, async_session):
     async with async_session() as db:
         event = await _event(db, config={**CONFIG, "phase_override": "cut"})

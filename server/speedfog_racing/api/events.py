@@ -258,8 +258,13 @@ async def get_event(
     finished_before = await count_finished_before(db, set(users), announce_date(event, config))
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
+    started = {
+        key
+        for key, races in stage_races.items()
+        if any(r.status != RaceStatus.SETUP for _, r in races)
+    }
     qualified = compute_qualified(
-        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final
+        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final, started
     )
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties

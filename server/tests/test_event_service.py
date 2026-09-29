@@ -857,6 +857,29 @@ def test_the_newcomers_draw_after_the_furthest_runner_called_up():
     assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
 
 
+def test_a_withdrawal_from_a_started_stage_keeps_the_seat_and_calls_nobody_up():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    # Seed 16 (Quarter A) withdraws once Quarter A has started: they keep the seat.
+    # Seed 2 (Quarter C) withdraws too, from a stage still in setup: the first bench
+    # runner (position 17) takes that seat, proving the Quarter A withdrawal used
+    # nobody.
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1]], started={"quarter_a"})
+    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
+    assert groups["quarter_c"][0].user_id == u[16]
+    assert groups["quarter_c"][0].seed == 17
+
+
+def test_a_newcomer_behind_a_started_stage_withdrawal_stays_in_the_draw():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    newcomers = {u[16]: True, u[17]: True}
+    # The only withdrawal sits in a started stage: furthest stays at 16, so the
+    # newcomers' draw still opens at position 17.
+    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]], started={"quarter_a"})
+    assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
+
+
 def test_a_seat_nobody_can_fill_reads_tbd_then_no_runner():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(16)]
