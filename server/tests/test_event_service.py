@@ -837,6 +837,17 @@ def test_a_withdrawn_runner_off_the_seeds_is_never_called_up_nor_a_newcomer():
     assert [s.user_id for s in groups["newcomers"]] == [u[18], u[19]]
 
 
+def test_a_withdrawn_newcomer_off_the_seeds_is_skipped_in_the_newcomers_draw():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    newcomers = {u[16]: True, u[17]: True, u[18]: True}
+    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16]])
+    # u[16] holds no seat (nobody was called up): withdrawing them changes no
+    # seed, only removes them from the newcomers' draw.
+    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
+    assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
+
+
 def test_the_newcomers_draw_after_the_furthest_runner_called_up():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
