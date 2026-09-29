@@ -179,8 +179,8 @@ SCENARIOS: dict[str, datetime | tuple[str, str]] = {
     "announce": D("2026-09-18T15:00"),
     "announce_attached": D("2026-09-18T15:00"),
     "qualifier": D("2026-09-27T15:00"),
-    # The qualifier closed, no race attached yet: the newcomers' final, dated
-    # in the config, is the next evening.
+    # The qualifier closed, no race attached yet: the newcomers' final, the only dated evening, is
+    # what the page announces next, though Group A plays a day earlier with none yet.
     "cut": D("2026-10-08T12:00"),
     "newcomers_live": ("live", "newcomers"),
     # The newcomers' final and Group A played, Group B tonight.
