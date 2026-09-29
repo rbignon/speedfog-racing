@@ -14,12 +14,12 @@ machine unless --force is given: it writes fabricated participations onto real
 user rows, deletes the participants and casters of the races it manages, and
 detaches every other race from the event.
 
-It manages thirty-three races, named the way docs/EVENTS.md has an organizer
+It manages fifty-seven races, named the way docs/EVENTS.md has an organizer
 name real ones so the page renders them identically, and found again by their
-event slot on later runs. Creating them consumes one available seed each (four
-quarters, two semis, the newcomers' and the open final, three races apiece,
-plus the nine qualifier seeds); a pool out of fresh seeds lends its latest
-consumed one.
+event slot on later runs. Creating them consumes one available seed each
+(eight groups, four quarters, two semis, the newcomers' and the open final,
+three races apiece, plus the nine qualifier seeds); a pool out of fresh seeds
+lends its latest consumed one.
 
 The event itself must already exist, and its modes and stages must match the
 real season's, reproduced below; its dates are rewritten, its showcases left
@@ -32,7 +32,7 @@ event under another slug instead.
 Usage:
     cd server && uv run python ../tools/simulate_event.py qualifier --slug sim-season
     cd server && uv run python ../tools/simulate_event.py semi_a_live --viewer alice
-    cd server && uv run python ../tools/simulate_event.py quarter_c_live
+    cd server && uv run python ../tools/simulate_event.py group_c_live
     cd server && uv run python ../tools/simulate_event.py final_done --slug season-one
 
 With --viewer, that runner gets a seed of every card state (done, DNF,
@@ -84,6 +84,7 @@ from speedfog_racing.services.event_service import (  # noqa: E402
     compute_ladder,
     compute_qualified,
     compute_stage_results,
+    resolve_withdrawn,
 )
 
 RNG_SEED = 7
@@ -115,17 +116,26 @@ ENDS = D("2026-11-01T23:00")
 MATCH_POOLS = ["standard", "boss_rush", "uwyg_major"]
 # key: (evening, pools, dated in the config), in the config's stage order. The
 # pools are the ones each race's seed is drawn from, in race order; the race is
-# named after the stage's own mode label. Quarters and semis are scheduled with
-# their players: the config leaves their date out and their races carry it, so
-# their evenings here are one plausible calendar between the cut and the final.
+# named after the stage's own mode label. Groups, quarters and semis are
+# scheduled with their players: the config leaves their date out and their
+# races carry it, so their evenings here are one plausible calendar between
+# the cut and the final.
 STAGES: dict[str, tuple[datetime, list[str], bool]] = {
     "newcomers": (D("2026-10-11T19:00"), ["standard", "sprint", "boss_rush"], True),
-    "quarter_a": (D("2026-10-12T19:00"), MATCH_POOLS, False),
-    "quarter_b": (D("2026-10-13T19:00"), MATCH_POOLS, False),
-    "quarter_c": (D("2026-10-14T19:00"), MATCH_POOLS, False),
-    "quarter_d": (D("2026-10-17T19:00"), MATCH_POOLS, False),
-    "semi_a": (D("2026-10-22T19:00"), MATCH_POOLS, False),
-    "semi_b": (D("2026-10-25T19:00"), MATCH_POOLS, False),
+    "group_a": (D("2026-10-10T19:00"), MATCH_POOLS, False),
+    "group_b": (D("2026-10-12T19:00"), MATCH_POOLS, False),
+    "group_c": (D("2026-10-13T19:00"), MATCH_POOLS, False),
+    "group_d": (D("2026-10-14T19:00"), MATCH_POOLS, False),
+    "group_e": (D("2026-10-15T19:00"), MATCH_POOLS, False),
+    "group_f": (D("2026-10-16T19:00"), MATCH_POOLS, False),
+    "group_g": (D("2026-10-17T19:00"), MATCH_POOLS, False),
+    "group_h": (D("2026-10-18T19:00"), MATCH_POOLS, False),
+    "quarter_a": (D("2026-10-19T19:00"), MATCH_POOLS, False),
+    "quarter_b": (D("2026-10-20T19:00"), MATCH_POOLS, False),
+    "quarter_c": (D("2026-10-22T19:00"), MATCH_POOLS, False),
+    "quarter_d": (D("2026-10-24T19:00"), MATCH_POOLS, False),
+    "semi_a": (D("2026-10-27T19:00"), MATCH_POOLS, False),
+    "semi_b": (D("2026-10-30T19:00"), MATCH_POOLS, False),
     # Hardcore, UWYG Boss Rush, Halloween: the last two have no pool yet, so
     # their seeds come from the closest pools that exist.
     "final": (
@@ -171,14 +181,18 @@ SCENARIOS: dict[str, datetime | tuple[str, str]] = {
     "qualifier": D("2026-09-27T15:00"),
     # The qualifier closed, no race attached yet: the newcomers' final, dated
     # in the config, is the next evening.
-    "cut": D("2026-10-09T12:00"),
+    "cut": D("2026-10-08T12:00"),
     "newcomers_live": ("live", "newcomers"),
-    # The newcomers' final played, Quarters A and B attached, A tonight.
+    # The newcomers' final and Group A played, Group B tonight.
     "newcomers_done": D("2026-10-12T08:00"),
-    # Quarters A and B played, C live, D not scheduled yet.
+    # Groups A and B played, C live, the others scheduled.
+    "group_c_live": ("live", "group_c"),
+    # Every group played, Quarter A tonight.
+    "groups_done": D("2026-10-19T08:00"),
+    # Quarters A and B played, C live, D scheduled.
     "quarter_c_live": ("live", "quarter_c"),
     # Every quarter played, no semi scheduled.
-    "quarters_done": D("2026-10-18T15:00"),
+    "quarters_done": D("2026-10-25T12:00"),
     "semi_a_live": ("live", "semi_a"),
     "final_live": ("live", "final"),
     "final_done": D("2026-11-01T22:30"),
@@ -499,7 +513,7 @@ async def pick_seed(db, pool: str) -> Seed:
     if seed is not None:
         seed.status = SeedStatus.CONSUMED
         return seed
-    # A local database rarely holds thirty-three fresh seeds: two simulated races
+    # A local database rarely holds fifty-seven fresh seeds: two simulated races
     # may share a pack, which nothing on the event page can tell.
     seed = (
         await db.execute(
@@ -586,7 +600,7 @@ async def pick_roster(
                     not_excluded,
                 )
                 .order_by(finished_count.c.n.desc())
-                .limit(40)
+                .limit(50)
             )
         )
         .scalars()
@@ -611,18 +625,22 @@ async def pick_roster(
         .scalars()
         .all()
     )
-    if len(veterans) < 26 or len(newcomers) < 9:
+    if len(veterans) < 36 or len(newcomers) < 14:
         raise SystemExit(
             f"not enough users to build a roster: {len(veterans)} veterans, "
-            f"{len(newcomers)} newcomers (need 26 and 9)"
+            f"{len(newcomers)} newcomers (need 36 and 14)"
         )
-    vets = rng.sample(veterans[:34], 26)
+    vets = rng.sample(veterans[:44], 36)
     casters = [u for u in veterans if u not in vets][:2]
-    news = rng.sample(newcomers, 9)
+    # Fourteen newcomers rather than the round's nine seats: several rank inside
+    # the top 32 (seeded into a group like any other runner) or get skipped a
+    # mode by the partial-attendance roll above, and the newcomers' final still
+    # needs enough of them left standing after the last group seed.
+    news = rng.sample(newcomers, 14)
     runners = [Runner(viewer, 0.93, False)] if viewer else []
-    runners += [Runner(u, rng.uniform(0.78, 1.32), False) for u in vets[:24]]
+    runners += [Runner(u, rng.uniform(0.78, 1.32), False) for u in vets[:34]]
     runners += [Runner(u, rng.uniform(1.04, 1.4), True) for u in news]
-    runners[-1].skill = 0.9  # one newcomer strong enough to be seeded into a quarter
+    runners[-1].skill = 0.9  # one newcomer strong enough to be seeded into a group
     return runners, casters
 
 
@@ -783,7 +801,12 @@ async def simulate(
             for n in range(1, SEEDS_PER_MODE + 1)
         ]
         ladder = compute_ladder(MODES, final_qual)
-        groups = compute_qualified(ladder, config, newcomer_flags)
+        groups = compute_qualified(
+            ladder,
+            config,
+            newcomer_flags,
+            resolve_withdrawn(config.withdrawn, users_by_id),
+        )
         fields: dict[str, list[User]] = {}
         for key in STAGES:
             stage_cfg = config.stage(key)

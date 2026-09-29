@@ -3,8 +3,8 @@
 A co-branded tournament run on the platform: one week of qualifying on dedicated
 week-long seeds, then playoff evenings, all on one page, `/events/[slug]`. The
 first instance is SpeedFog x Ignite Season One (qualifier 23 September to 8
-October 2026; quarters and semis scheduled with their players, the final on
-25 October).
+October 2026; a round of 32 in eight groups, quarters and semis scheduled with
+their players, the final on 25 October).
 
 ## Model
 
@@ -564,25 +564,26 @@ final incomplete shows no plate.
 simulated season and projects it at the state named by the stage, shifting
 every date so that state is the current one: the announcement, the open
 qualifier, the cut with no race attached, the newcomers' final live and
-played, Quarter C live beside two played quarters and an unscheduled one,
-the quarters over with no semi scheduled, Semi A live, and the final live and
-finished. The event must already exist, and its modes and stages must match
-Season One's real configuration, which the tool reproduces (its showcases
-stay empty). It writes fabricated participations onto real user rows,
-detaches every race it does not manage from the event, and consumes an
-available seed for each of the thirty-three races it creates (a pool out of
-fresh seeds lends its latest consumed one), so it refuses a database that is
-not on this machine. On a database restored from production, the real event
-carries the real qualifier runs, which a run would wipe: the tool refuses an
-event holding a run with mod activity (unless `--force`), so copy the event
-under another slug and pass `--slug`.
+played, Group C live beside two played groups, every group played, Quarter C
+live beside two played quarters, the quarters over with no semi scheduled,
+Semi A live, and the final live and finished. The event must already exist,
+and its modes and stages must match Season One's real configuration, which
+the tool reproduces (its showcases stay empty). It writes fabricated
+participations onto real user rows, detaches every race it does not manage
+from the event, and consumes an available seed for each of the fifty-seven
+races it creates (a pool out of fresh seeds lends its latest consumed one),
+so it refuses a database that is not on this machine. On a database restored
+from production, the real event carries the real qualifier runs, which a run
+would wipe: the tool refuses an event holding a run with mod activity
+(unless `--force`), so copy the event under another slug and pass `--slug`.
 `--viewer <twitch username>` gives that runner a seed of every card state.
 `--exclude <twitch username>` (repeatable) keeps that user out of the roster,
 runners, casters and organizer alike, so a real account can join a qualifier
 seed by hand and see the field as a newcomer would, until the next run of the
 tool clears the participants again.
 The states before the cut also sign up the viewer and a dozen runners, so the
-ladder's signup rows and the upcoming card's avatar row show.
+ladder's signup rows and the upcoming card's avatar row show. A withdrawal
+listed in the event's `withdrawn` is honoured when the tool draws the groups.
 
 ## Home page and navbar
 
