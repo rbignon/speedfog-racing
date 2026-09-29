@@ -413,6 +413,50 @@ async def test_detail_seeds_the_quarters_and_names_what_the_later_rounds_wait_on
     ]
 
 
+async def _ranked_runners(db: AsyncSession, event: Event, count: int, status: RaceStatus):
+    """``count`` runners who finished one seed per mode, runner1 fastest."""
+    orga = await _user(db, "orga", UserRole.ORGANIZER)
+    std = await _race(
+        db, orga, await _seed(db, "standard", "s1"), event, "qualifier:standard:1", status
+    )
+    boss = await _race(
+        db, orga, await _seed(db, "boss_rush", "b1"), event, "qualifier:boss_rush:1", status
+    )
+    for i in range(count):
+        runner = await _user(db, f"runner{i + 1}")
+        await _entry(db, std, runner, ParticipantStatus.FINISHED, 1_000_000 + i * 100_000)
+        await _entry(db, boss, runner, ParticipantStatus.FINISHED, 1_000_000 + i * 100_000)
+
+
+@pytest.mark.asyncio
+async def test_detail_calls_up_the_next_runner_for_a_withdrawn_seed(test_client, async_session):
+    async with async_session() as db:
+        event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
+        await _ranked_runners(db, event, 5, RaceStatus.RUNNING)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    # Semi B seats seeds 2 and 3; runner2 withdrew, so the first runner after
+    # the largest seed (4) takes the seat.
+    assert [(f["label"], f["user"]["twitch_username"]) for f in stages["semi_b"]["field"]] == [
+        ("Seed 5", "runner5"),
+        ("Seed 3", "runner3"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_detail_reads_no_runner_once_the_ladder_is_final(test_client, async_session):
+    async with async_session() as db:
+        event = await _event(db, config={**CONFIG, "phase_override": "cut"})
+        await _ranked_runners(db, event, 3, RaceStatus.FINISHED)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    assert [f["label"] for f in stages["semi_a"]["field"]] == ["Seed 1", "No runner"]
+
+
 @pytest.mark.asyncio
 async def test_detail_ladder_is_provisional_during_qualifier(test_client, world):
     async with test_client as client:

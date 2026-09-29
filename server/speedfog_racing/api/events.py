@@ -51,7 +51,6 @@ from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MAX_PLAYER_PREVIEWS,
     MIN_UPCOMING_PLAYERS,
-    UNDECIDED,
     Slot,
     StageResult,
     announce_date,
@@ -69,9 +68,11 @@ from speedfog_racing.services.event_service import (
     newcomer_flags,
     next_stage_key,
     resolve_stages,
+    resolve_withdrawn,
     score_race,
     showcase_field,
     signature_weapon,
+    slot_label,
 )
 
 router = APIRouter()
@@ -256,8 +257,10 @@ async def get_event(
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
     finished_before = await count_finished_before(db, set(users), announce_date(event, config))
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-    qualified = compute_qualified(ladder, config, newcomers)
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
+    qualified = compute_qualified(
+        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final
+    )
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties
     # between two RUNNING stage races resolve deterministically.
@@ -331,10 +334,7 @@ async def get_event(
                 for slot in fed_field(stage, config, results)
             ]
         return [
-            EventFieldSlotResponse(
-                user=user_of(slot.user_id),
-                label=f"Seed {slot.seed}" if slot.seed is not None else UNDECIDED,
-            )
+            EventFieldSlotResponse(user=user_of(slot.user_id), label=slot_label(slot))
             for slot in qualified.get(stage_key, [])
         ]
 

@@ -32,6 +32,7 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     Seed,
+    User,
     compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import (
@@ -300,6 +301,9 @@ def newcomer_flags(
 
 # Display label of a slot nobody holds yet, next to "Seed 4" and "Top 2 of Semi B".
 UNDECIDED = "TBD"
+# Display label of a seat nobody can hold any more: the ladder is final and no
+# runner is left on it to call up.
+NO_RUNNER = "No runner"
 
 
 @dataclass(frozen=True)
@@ -309,28 +313,72 @@ class QualifiedSlot:
     note: str | None
 
 
+def resolve_withdrawn(names: Sequence[str], users: Mapping[UUID, User]) -> list[UUID]:
+    """The ids behind ``names``, in their order, matched case-insensitively.
+
+    A name matching none of ``users`` is skipped: a runner off the ladder holds
+    no seat and can be nobody's replacement.
+    """
+    by_name = {user.twitch_username.lower(): user_id for user_id, user in users.items()}
+    return [user_id for name in names if (user_id := by_name.get(name.strip().lower())) is not None]
+
+
 def compute_qualified(
-    ladder: list[LadderEntry], config: EventConfig, newcomers: dict[UUID, bool]
+    ladder: list[LadderEntry],
+    config: EventConfig,
+    newcomers: dict[UUID, bool],
+    withdrawn: Sequence[UUID] = (),
+    ladder_final: bool = False,
 ) -> dict[str, list[QualifiedSlot]]:
-    """Seeded stages take ladder positions; newcomers come after the largest seed."""
+    """Seeded stages take ladder positions; newcomers come after the last position used.
+
+    ``withdrawn`` are the runners who gave up their place, in the order they did.
+    Replayed in that order, a withdrawal vacates the seat its runner holds (a seed
+    or an earlier replacement) and hands it to the first runner ranked after the
+    largest seed who is neither called up nor withdrawn so far; the withdrawal of
+    a runner holding no seat only keeps them from being called up. A replacement
+    once called up therefore stays put whatever is declared after. A seat nobody
+    can fill reads ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER``
+    once it is final.
+    """
     ranked = [e for e in ladder if e.rank is not None]
+    empty = NO_RUNNER if ladder_final else UNDECIDED
+    seeded = [s for s in config.stages if s.seeds is not None]
+    last_seed = max((seed for s in seeded for seed in s.seeds or []), default=0)
     groups: dict[str, list[QualifiedSlot]] = {}
-    last_seed = 0
-    for stage in config.stages:
-        if stage.seeds is None:
-            continue
+    # Who holds which seat: (stage key, index in its seeds).
+    seat_of: dict[UUID, tuple[str, int]] = {}
+    for stage in seeded:
         slots: list[QualifiedSlot] = []
-        for seed in stage.seeds or []:
+        for i, seed in enumerate(stage.seeds or []):
             entry = ranked[seed - 1] if seed - 1 < len(ranked) else None
-            slots.append(
-                QualifiedSlot(
-                    seed=seed,
-                    user_id=entry.user_id if entry else None,
-                    note=None if entry else UNDECIDED,
-                )
-            )
-            last_seed = max(last_seed, seed)
+            if entry is None:
+                slots.append(QualifiedSlot(seed=seed, user_id=None, note=empty))
+                continue
+            slots.append(QualifiedSlot(seed=seed, user_id=entry.user_id, note=None))
+            seat_of[entry.user_id] = (stage.key, i)
         groups[stage.key] = slots
+    # The bench: every runner ranked after the largest seed, by ladder position.
+    bench = list(enumerate(ranked[last_seed:], start=last_seed + 1))
+    gone: set[UUID] = set()
+    furthest = last_seed
+    for user_id in withdrawn:
+        gone.add(user_id)
+        seat = seat_of.pop(user_id, None)
+        if seat is None:
+            continue
+        key, i = seat
+        called = next(
+            ((pos, e) for pos, e in bench if e.user_id not in gone and e.user_id not in seat_of),
+            None,
+        )
+        if called is None:
+            groups[key][i] = QualifiedSlot(seed=None, user_id=None, note=empty)
+            continue
+        pos, entry = called
+        groups[key][i] = QualifiedSlot(seed=pos, user_id=entry.user_id, note=None)
+        seat_of[entry.user_id] = (key, i)
+        furthest = max(furthest, pos)
     for stage in config.stages:
         if stage.kind != "newcomers":
             continue
@@ -339,12 +387,25 @@ def compute_qualified(
             # unreachable for a validated EventConfig, kept as a type-narrowing guard.
             continue
         size = stage.size
-        picks = [e for e in ranked[last_seed:] if newcomers.get(e.user_id, False)][:size]
+        picks = [
+            e
+            for e in ranked[furthest:]
+            if newcomers.get(e.user_id, False) and e.user_id not in gone
+        ][:size]
         slots = [QualifiedSlot(seed=e.rank, user_id=e.user_id, note=None) for e in picks]
         while len(slots) < size:
-            slots.append(QualifiedSlot(seed=None, user_id=None, note=UNDECIDED))
+            slots.append(QualifiedSlot(seed=None, user_id=None, note=empty))
         groups[stage.key] = slots
     return groups
+
+
+def slot_label(slot: QualifiedSlot) -> str:
+    """A qualified seat's field label: "Seed N", else its note."""
+    if slot.note == NO_RUNNER:
+        return NO_RUNNER
+    if slot.seed is not None:
+        return f"Seed {slot.seed}"
+    return slot.note or UNDECIDED
 
 
 # --- stages -----------------------------------------------------------------

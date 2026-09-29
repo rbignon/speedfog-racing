@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.schemas import EventConfig
 from speedfog_racing.services.event_service import (
+    NO_RUNNER,
     UNDECIDED,
     Slot,
     StageEntry,
@@ -29,8 +30,10 @@ from speedfog_racing.services.event_service import (
     parse_slot,
     race_moment,
     resolve_stages,
+    resolve_withdrawn,
     score_race,
     signature_weapon,
+    slot_label,
     stage_dates,
     validate_slot,
 )
@@ -793,6 +796,84 @@ def test_quarters_seed_from_the_ladder_and_newcomers_draw_after_seed_16():
     # u[3] is a newcomer but seeded 4th (Quarter B): the newcomers' final
     # draws from position 17 on.
     assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
+
+
+def test_a_withdrawal_hands_the_seat_to_the_first_runner_after_the_seeds():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
+    # Seed 16 sits in Quarter A: the 17th runner takes the seat, under their own position.
+    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[16]]
+    assert slot_label(groups["quarter_a"][3]) == "Seed 17"
+
+
+def test_withdrawals_fill_their_seats_in_declared_order():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1]])
+    assert groups["quarter_a"][3].user_id == u[16]
+    # Seed 2 (Quarter C) withdrew second: the next runner on the bench.
+    assert groups["quarter_c"][0].user_id == u[17]
+    assert groups["quarter_c"][0].seed == 18
+
+
+def test_a_replacement_who_withdraws_frees_the_seat_and_the_others_stay_put():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1], u[16]])
+    # u[16] was called up for seed 16, then withdrew: the 19th runner takes that seat,
+    # and seed 2's replacement (the 18th) does not move.
+    assert groups["quarter_a"][3].user_id == u[18]
+    assert groups["quarter_c"][0].user_id == u[17]
+
+
+def test_a_withdrawn_runner_off_the_seeds_is_never_called_up_nor_a_newcomer():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    newcomers = {u[16]: True, u[18]: True, u[19]: True}
+    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16], u[15]])
+    # u[16] gave up before anyone was called: seed 16's seat goes to the 18th runner.
+    assert groups["quarter_a"][3].user_id == u[17]
+    assert [s.user_id for s in groups["newcomers"]] == [u[18], u[19]]
+
+
+def test_the_newcomers_draw_after_the_furthest_runner_called_up():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    newcomers = {u[16]: True, u[17]: True, u[18]: True, u[19]: True}
+    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]])
+    # u[16], a newcomer, was called up into Quarter A: the newcomers' final starts after them.
+    assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
+
+
+def test_a_seat_nobody_can_fill_reads_tbd_then_no_runner():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(16)]
+    provisional = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
+    seat = provisional["quarter_a"][3]
+    assert (seat.seed, seat.user_id, seat.note) == (None, None, UNDECIDED)
+    final = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], ladder_final=True)
+    assert slot_label(final["quarter_a"][3]) == NO_RUNNER
+    assert [s.note for s in final["newcomers"]] == [NO_RUNNER, NO_RUNNER]
+
+
+def test_a_seat_beyond_a_short_ladder_keeps_its_seed_until_the_ladder_is_final():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(15)]
+    provisional = compute_qualified(_ladder_of(*u), cfg, {})
+    assert slot_label(provisional["quarter_a"][3]) == "Seed 16"
+    final = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True)
+    assert slot_label(final["quarter_a"][3]) == NO_RUNNER
+
+
+def test_withdrawn_names_resolve_case_insensitively_in_declared_order():
+    a, b = uuid4(), uuid4()
+    users = {
+        a: SimpleNamespace(twitch_username="Ana"),
+        b: SimpleNamespace(twitch_username="bob"),
+    }
+    # "nobody" is not among the users (a signup without a run, a typo): skipped.
+    assert resolve_withdrawn([" BOB ", "ana", "nobody"], users) == [b, a]
 
 
 def test_three_rounds_feed_each_other():

@@ -217,8 +217,21 @@ counted mode (`signed_up` counts them, `entered` does not); from the cut on
 they leave it. Seeding reads only ranked entries, so a signup never resolves
 a seed or a newcomers' slot.
 
-Qualified groups map each seeded stage's `seeds` to ladder positions; the newcomers'
-group takes the first ranked newcomers positioned after the last seed.
+Qualified groups map each seeded stage's `seeds` to ladder positions. The
+runners ranked after the largest seed form the bench. The config's
+`withdrawn` names are replayed in their order: a withdrawal of a runner
+holding a seat (a seed, or an earlier replacement) vacates it and hands it to
+the first bench runner neither called up nor withdrawn so far, shown under
+their own position ("Seed 33"); a withdrawal of a bench runner only keeps
+them from being called up. A replacement once called up stays put whatever
+is declared after, and only seeded stages call anyone up: a runner who gives
+up a fed stage leaves it one short. The newcomers' group takes the first
+ranked newcomers positioned after the last seed or the furthest runner
+called up, withdrawn ones skipped. A seat nobody can fill reads "TBD" while
+the ladder is provisional and "No runner" once it is final; a seat past the
+end of a provisional ladder keeps its "Seed N" placeholder. The ladder
+itself is unchanged by a withdrawal, and a stage that has raced shows its
+results, so a late edit of the list changes nothing it already displays.
 
 ### Playoff scoring
 
@@ -385,7 +398,11 @@ count there. See `daily_points` in
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
-5. A showcase (see "Showcases" above) runs the same way: add it to the
+5. A qualified runner withdraws before their group plays: add their Twitch
+   username at the end of the config's `withdrawn` list and save; the page
+   hands the seat to the next runner on the ladder, whom the organizer tells.
+   If that runner declines too, add them as well.
+6. A showcase (see "Showcases" above) runs the same way: add it to the
    config's `showcases`, create its races with the chosen runners and the
    casters, named after its label like a stage's ("Ignite Showcase - Race 1 -
    Standard"), and attach them to `<showcase>:<n>`. Its field is read off its

@@ -24,7 +24,6 @@ from speedfog_racing.schemas import EVENT_PHASES, EventConfig
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MIN_UPCOMING_PLAYERS,
-    UNDECIDED,
     compute_ladder,
     compute_qualified,
     current_stage_key,
@@ -33,6 +32,8 @@ from speedfog_racing.services.event_service import (
     newcomer_flags,
     next_stage_key,
     resolve_stages,
+    resolve_withdrawn,
+    slot_label,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 
@@ -493,7 +494,10 @@ def summarize_event(
         signed_up = []
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-    qualified = compute_qualified(ladder, config, newcomers)
+    ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
+    qualified = compute_qualified(
+        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final
+    )
 
     # The ladder already runs best first, then the runners it could not rank;
     # everyone else joined a race without ever scoring and closes the row.
@@ -545,10 +549,7 @@ def summarize_event(
             ]
         else:
             field = [
-                EventOgSlot(
-                    user_of(slot.user_id),
-                    f"Seed {slot.seed}" if slot.seed is not None else UNDECIDED,
-                )
+                EventOgSlot(user_of(slot.user_id), slot_label(slot))
                 for slot in qualified.get(stage.key, [])
             ]
     else:
