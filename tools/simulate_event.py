@@ -632,7 +632,7 @@ async def pick_roster(
         )
     vets = rng.sample(veterans[:44], 36)
     casters = [u for u in veterans if u not in vets][:2]
-    # Fourteen newcomers rather than the round's nine seats: several rank inside
+    # Fourteen newcomers rather than nine: several rank inside
     # the top 32 (seeded into a group like any other runner) or get skipped a
     # mode by the partial-attendance roll above, and the newcomers' final still
     # needs enough of them left standing after the last group seed.
