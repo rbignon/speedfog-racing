@@ -395,3 +395,85 @@ def test_a_showcase_date_stays_out_of_the_bracket_order():
     naive = dict(SHOWCASE, date="2026-11-01T19:00:00")
     with pytest.raises(ValidationError, match="date must be timezone-aware"):
         EventConfig.model_validate(_config(showcases=[naive]))
+
+
+def _round_of_32_stages() -> list[dict[str, object]]:
+    """Eight snake-seeded groups of four into quarters, semis and the final."""
+    groups = [
+        ("a", [1, 16, 17, 32]),
+        ("b", [8, 9, 24, 25]),
+        ("c", [4, 13, 20, 29]),
+        ("d", [5, 12, 21, 28]),
+        ("e", [2, 15, 18, 31]),
+        ("f", [7, 10, 23, 26]),
+        ("g", [3, 14, 19, 30]),
+        ("h", [6, 11, 22, 27]),
+    ]
+    stages: list[dict[str, object]] = [
+        {
+            "key": f"group_{x}",
+            "label": f"Group {x.upper()}",
+            "kind": "round",
+            "races": 3,
+            "seeds": seeds,
+            "advance": 2,
+        }
+        for x, seeds in groups
+    ]
+    stages += [
+        {
+            "key": f"quarter_{q}",
+            "label": f"Quarter {q.upper()}",
+            "kind": "quarter",
+            "races": 3,
+            "from": [f"group_{a}", f"group_{b}"],
+            "advance": 2,
+        }
+        for q, (a, b) in zip("abcd", [("a", "b"), ("c", "d"), ("e", "f"), ("g", "h")])
+    ]
+    stages += [
+        {
+            "key": "semi_a",
+            "label": "Semi A",
+            "kind": "semi",
+            "races": 3,
+            "from": ["quarter_a", "quarter_b"],
+            "advance": 2,
+        },
+        {
+            "key": "semi_b",
+            "label": "Semi B",
+            "kind": "semi",
+            "races": 3,
+            "from": ["quarter_c", "quarter_d"],
+            "advance": 2,
+        },
+        {
+            "key": "final",
+            "label": "Final",
+            "kind": "final",
+            "date": "2026-11-01T19:00:00Z",
+            "races": 3,
+            "from": ["semi_a", "semi_b"],
+        },
+    ]
+    return stages
+
+
+def test_a_round_of_32_feeds_quarters_semis_and_the_final():
+    cfg = EventConfig.model_validate(_config(stages=_round_of_32_stages()))
+    quarter_a, final = cfg.stage("quarter_a"), cfg.stage("final")
+    assert quarter_a is not None and final is not None
+    # Two groups send two runners each; two semis send two each.
+    assert cfg.field_size(quarter_a) == 4
+    assert cfg.field_size(final) == 4
+
+
+def test_withdrawn_names_must_be_unique_whatever_their_case():
+    with pytest.raises(ValidationError, match="withdrawn"):
+        EventConfig.model_validate(_config(withdrawn=["Ana", " ana"]))
+
+
+def test_withdrawn_names_must_not_be_blank():
+    with pytest.raises(ValidationError, match="withdrawn"):
+        EventConfig.model_validate(_config(withdrawn=["  "]))

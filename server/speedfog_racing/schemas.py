@@ -977,7 +977,7 @@ class EventStage(BaseModel):
 
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
-    kind: Literal["quarter", "semi", "newcomers", "final"]
+    kind: Literal["round", "quarter", "semi", "newcomers", "final"]
     date: datetime | None = None
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
@@ -1046,6 +1046,10 @@ class EventConfig(BaseModel):
     facts: list[EventFact] | None = Field(default=None, max_length=8)
     phase_override: str | None = None
     announced_at: datetime | None = None
+    # Twitch usernames of qualified runners who gave up their place, in the
+    # order they did: a seeded stage hands each vacated seat to the next runner
+    # on the ladder (see compute_qualified).
+    withdrawn: list[str] = Field(default_factory=list, max_length=64)
 
     @model_validator(mode="after")
     def _check_structure(self) -> "EventConfig":
@@ -1120,6 +1124,11 @@ class EventConfig(BaseModel):
             raise ValueError(f"phase_override must be one of {EVENT_PHASES}")
         if self.announced_at is not None and self.announced_at.tzinfo is None:
             raise ValueError("announced_at must be timezone-aware")
+        names = [name.strip().lower() for name in self.withdrawn]
+        if any(not name for name in names):
+            raise ValueError("withdrawn names must not be blank")
+        if len(set(names)) != len(names):
+            raise ValueError("withdrawn names must be unique")
         return self
 
     def mode_keys(self) -> list[str]:

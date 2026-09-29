@@ -17,30 +17,33 @@ computed on each request by `services/event_service.py`.
 
 ### Config
 
-| field                    | meaning                                                                        |
-| ------------------------ | ------------------------------------------------------------------------------ |
-| `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                  |
-| `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                    |
-| `stages`                 | ordered playoff stages, see below                                              |
-| `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)              |
-| `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)        |
-| `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)            |
-| `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)             |
-| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10) |
-| `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)             |
-| `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)         |
-| `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)          |
+| field                    | meaning                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------- |
+| `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                      |
+| `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                        |
+| `stages`                 | ordered playoff stages, see below                                                  |
+| `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)                  |
+| `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)            |
+| `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)                |
+| `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)                 |
+| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10)     |
+| `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)                 |
+| `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)             |
+| `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)              |
+| `withdrawn`              | qualified runners who gave up their place, Twitch usernames (see Qualified groups) |
 
-A stage: `key`, `label`, `kind` (`quarter`, `semi`, `newcomers`, `final`),
-`date` (optional: see below), `races` (per evening), `modes` (display labels,
-not pool keys: one chip per race in the bracket boxes and qualified groups,
-linking to the race page once a race is attached, and the name of a race
-placeholder), and where its runners come from: `seeds` (ladder positions) or
-`from` (earlier stages it takes runners from), or `size` for the newcomers'
-final. `advance` sits on the stage that sends runners on: how many of its
-runners go to the stage naming it in `from` (the top 2 of each quarter, the
-top 2 of each semi). The kind only matters for display, except `final` (its
-winner is the champion) and `newcomers` (its own draw).
+A stage: `key`, `label`, `kind` (`round`, `quarter`, `semi`, `newcomers`,
+`final`), `date` (optional: see below), `races` (per evening), `modes`
+(display labels, not pool keys: one chip per race in the bracket boxes and
+qualified groups, linking to the race page once a race is attached, and the
+name of a race placeholder), and where its runners come from: `seeds`
+(ladder positions) or `from` (earlier stages it takes runners from), or
+`size` for the newcomers' final. `advance` sits on the stage that sends
+runners on: how many of its runners go to the stage naming it in `from` (the
+top 2 of each group of a round, of each quarter, of each semi). The kind
+only matters for display, except `final` (its winner is the champion) and
+`newcomers` (its own draw). `round` is a seeded round played before the
+quarters; the format paragraph names it after its seats ("round of 32").
 
 A stage without a `date` is scheduled with its players: its date is the
 earliest of its attached races' `scheduled_at` (or `started_at` for a private
@@ -61,11 +64,13 @@ reused across stages (not just within one), seeds that do not cover the
 ladder from 1 without a gap (the newcomers' group draws from the ladder
 positions after the largest seed used by any stage, so a gap would exclude
 those positions from every playoff group at once), a `phase_override`
-outside the five phases, a `newcomers` stage without `announced_at`, and a
-naive (timezone-less) `announced_at` or stage `date`. `starts_at`,
-`qualifier_ends_at` and `ends_at` on the upsert request are rejected the same
-way when naive, and so is an `announced_at` at or after `starts_at`: the
-qualifier's own runs would otherwise count towards the newcomer cut.
+outside the five phases, a `newcomers` stage without `announced_at`, a blank
+or repeated `withdrawn` name (case-insensitive), and a naive (timezone-less)
+`announced_at` or stage `date`. `starts_at`, `qualifier_ends_at` and
+`ends_at` on the upsert request are rejected the same way when naive, and so
+is an `announced_at` at or after `starts_at`: the qualifier's own runs would
+otherwise count towards the newcomer cut. The admin upsert also refuses a
+`withdrawn` name that matches no user's Twitch username.
 
 One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of

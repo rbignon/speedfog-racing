@@ -545,3 +545,21 @@ async def test_a_showcase_slot_takes_any_field_and_keeps_its_races(
 
         dropped = await client.post("/api/admin/events", json=DOC, headers=ADMIN)
         assert dropped.status_code == 422 and "showcase:1" in dropped.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_refuses_a_withdrawn_name_that_matches_no_user(test_client, users):
+    doc = dict(DOC, config=dict(DOC["config"], withdrawn=["ORGA", "ghost"]))
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 422
+    assert "ghost" in response.text
+    assert "ORGA" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_takes_withdrawn_names_whatever_their_case(test_client, users):
+    doc = dict(DOC, config=dict(DOC["config"], withdrawn=[" ORGA "]))
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 200, response.text

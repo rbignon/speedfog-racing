@@ -1182,6 +1182,25 @@ async def admin_upsert_event(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"config.modes keys must be pool names, unknown: {unknown}",
         )
+    if request.config.withdrawn:
+        wanted = {name.strip().lower() for name in request.config.withdrawn}
+        known = set(
+            (
+                await db.execute(
+                    select(func.lower(User.twitch_username)).where(
+                        func.lower(User.twitch_username).in_(wanted)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        unmatched = [n for n in request.config.withdrawn if n.strip().lower() not in known]
+        if unmatched:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail=f"config.withdrawn names must be Twitch usernames, unknown: {unmatched}",
+            )
     stmt = select(Event).where(Event.slug == request.slug).options(selectinload(Event.races))
     event = (await db.execute(stmt)).scalar_one_or_none()
     if event is not None:

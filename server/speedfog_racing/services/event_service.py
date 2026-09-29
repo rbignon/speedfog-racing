@@ -569,7 +569,9 @@ class TimelineStop:
     key: str
     label: str
     date: datetime
-    kind: Literal["announce", "open", "cut", "playoffs", "quarter", "semi", "newcomers", "final"]
+    kind: Literal[
+        "announce", "open", "cut", "playoffs", "round", "quarter", "semi", "newcomers", "final"
+    ]
 
 
 def announce_date(event: Event, config: EventConfig) -> datetime:
