@@ -2,16 +2,22 @@
 
 import json
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
-# Set test environment variables BEFORE importing app modules
-os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+# Set test environment variables BEFORE importing app modules. The database
+# lives in a directory of this run's own: two runs in the same checkout
+# (parallel sessions) must not share it, since each run's teardown deletes it.
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///" + os.path.join(
+    tempfile.mkdtemp(prefix="speedfog_test_"), "test.db"
+)
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ.setdefault("COUNTDOWN_SECONDS", "0")
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, make_url
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -40,8 +46,9 @@ def _seed_default_pool(target, connection, **kw):  # type: ignore[no-untyped-def
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
-# Sync engine for test setup (SQLite)
-SYNC_DATABASE_URL = "sqlite:///./test.db"
+# Sync engine for test setup (SQLite), on the app's own file
+TEST_DB_PATH = make_url(os.environ["DATABASE_URL"]).database
+SYNC_DATABASE_URL = f"sqlite:///{TEST_DB_PATH}"
 
 sync_engine = create_engine(
     SYNC_DATABASE_URL,
@@ -79,9 +86,7 @@ def setup_test_db():
     Base.metadata.create_all(bind=sync_engine)
     yield
     Base.metadata.drop_all(bind=sync_engine)
-    # Clean up test.db file
-    if os.path.exists("./test.db"):
-        os.remove("./test.db")
+    shutil.rmtree(os.path.dirname(TEST_DB_PATH), ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

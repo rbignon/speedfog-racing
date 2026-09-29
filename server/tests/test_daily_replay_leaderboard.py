@@ -22,8 +22,6 @@ races.
 from __future__ import annotations
 
 import asyncio
-import os
-import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -51,27 +49,21 @@ from speedfog_racing.websocket.race.manager import manager
 
 from .test_integration import ModTestClient
 
-# A unique sqlite file isolates this module from other integration tests so a
-# fixture failure in one suite cannot leak rows into another.
-_DB_PATH = os.path.join(tempfile.gettempdir(), "speedfog_daily_replay_lb_test.db")
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
 # Modeled on ``tests/test_integration.py::integration_db`` and
-# ``integration_client``: file-backed sqlite (so the WS handler and the test
-# share the same DB) plus the global ``manager.rooms`` reset between tests.
+# ``integration_client``: file-backed sqlite in the test's own ``tmp_path`` (so
+# the WS handler and the test share the same DB, and no other test does) plus
+# the global ``manager.rooms`` reset between tests.
 @pytest.fixture(scope="function")
-def daily_db() -> Any:
+def daily_db(tmp_path: Any) -> Any:
     import speedfog_racing.database as db_module
     import speedfog_racing.main as main_module
 
-    if os.path.exists(_DB_PATH):
-        os.remove(_DB_PATH)
-
     test_engine = create_async_engine(
-        f"sqlite+aiosqlite:///{_DB_PATH}",
+        f"sqlite+aiosqlite:///{tmp_path}/daily_replay.db",
         echo=False,
         poolclass=NullPool,
     )
@@ -98,8 +90,6 @@ def daily_db() -> Any:
         db_module.async_session_maker = original_session_maker
         main_module.async_session_maker = original_session_maker  # type: ignore[attr-defined]
         asyncio.run(test_engine.dispose())
-        if os.path.exists(_DB_PATH):
-            os.remove(_DB_PATH)
 
 
 @pytest.fixture(scope="function")

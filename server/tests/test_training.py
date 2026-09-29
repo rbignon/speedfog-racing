@@ -1,7 +1,6 @@
 """Tests for training mode."""
 
 import asyncio
-import os
 import tempfile
 import time
 import uuid
@@ -36,22 +35,16 @@ from speedfog_racing.services.training_service import (
     get_training_seed,
 )
 
-# Use a unique test database file for training tests
-TRAINING_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_training_test.db")
-
 
 @pytest.fixture(scope="function")
-def async_session():
+def async_session(tmp_path):
     """Set up a fresh async database for training tests.
 
     Patches the database module so API routes and WS handlers use the same DB.
     Yields an async_sessionmaker.
     """
-    if os.path.exists(TRAINING_TEST_DB):
-        os.remove(TRAINING_TEST_DB)
-
     test_engine = create_async_engine(
-        f"sqlite+aiosqlite:///{TRAINING_TEST_DB}",
+        f"sqlite+aiosqlite:///{tmp_path}/training.db",
         echo=False,
         poolclass=NullPool,
     )
@@ -80,8 +73,6 @@ def async_session():
         main_module.async_session_maker = original_session_maker
 
         asyncio.run(test_engine.dispose())
-        if os.path.exists(TRAINING_TEST_DB):
-            os.remove(TRAINING_TEST_DB)
 
 
 async def _create_tables(engine):

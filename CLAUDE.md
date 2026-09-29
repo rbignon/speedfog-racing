@@ -104,6 +104,7 @@ Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui ove
 ## Testing Notes
 
 - Backend tests use SQLite via aiosqlite (no PostgreSQL setup needed). Fixtures in `server/tests/conftest.py`.
+- Test databases never use a fixed path, so parallel runs in the same checkout do not collide: the app's lives in a temp directory of the run's own (`conftest.py`), and a file-backed one in a fixture goes in pytest's `tmp_path`.
 - Frontend tests use Vitest, located in `web/src/lib/__tests__/`.
 - pytest is configured with `asyncio_mode = "auto"` and 30s timeout per test.
 

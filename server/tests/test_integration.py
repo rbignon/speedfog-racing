@@ -2,7 +2,6 @@
 
 import io
 import json
-import os
 import tempfile
 import time
 import uuid
@@ -32,10 +31,6 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.websocket.race.manager import manager
-
-# Use a unique test database file for integration tests (cross-platform)
-INTEGRATION_TEST_DB = os.path.join(tempfile.gettempdir(), "speedfog_integration_test.db")
-
 
 # =============================================================================
 # Helper Classes
@@ -155,7 +150,7 @@ class ModTestClient:
 
 
 @pytest.fixture(scope="function")
-def integration_db():
+def integration_db(tmp_path):
     """Set up a fresh database for integration tests.
 
     This fixture patches the database module to use a file-based SQLite database,
@@ -166,15 +161,11 @@ def integration_db():
     import speedfog_racing.database as db_module
     import speedfog_racing.main as main_module
 
-    # Clean up any existing test db
-    if os.path.exists(INTEGRATION_TEST_DB):
-        os.remove(INTEGRATION_TEST_DB)
-
     # Create new engine and session maker for tests
     # NullPool: each session creates/closes its own connection, no pool
     # cleanup issues when the TestClient's event loop shuts down.
     test_engine = create_async_engine(
-        f"sqlite+aiosqlite:///{INTEGRATION_TEST_DB}",
+        f"sqlite+aiosqlite:///{tmp_path}/integration.db",
         echo=False,
         poolclass=NullPool,
     )
@@ -210,10 +201,7 @@ def integration_db():
         db_module.async_session_maker = original_session_maker
         main_module.async_session_maker = original_session_maker
 
-        # Clean up
         asyncio.run(test_engine.dispose())
-        if os.path.exists(INTEGRATION_TEST_DB):
-            os.remove(INTEGRATION_TEST_DB)
 
 
 @pytest.fixture
