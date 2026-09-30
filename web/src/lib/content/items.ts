@@ -58,7 +58,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "beginner",
     title: "Dead-end boss arenas",
     short:
-      "When you arrive in **Academy of Raya Lucaria after Red Wolf**, **Leyndell** or **Ashen Leyndell**, do not **drop down into the boss arena** you can reach from there: beating that boss gets you nothing, and **no fog gate** leads out of the arena. Leave through one of the zone's **exit fog gates** instead.",
+      "When you arrive in any **Academy of Raya Lucaria** zone, in **Leyndell** or in **Ashen Leyndell**, do not **drop down into a boss arena** you can reach from there: beating that boss gets you nothing, and **no fog gate** leads out of the arena. Leave through one of the zone's **exit fog gates** instead.",
   },
   {
     id: "marika-stakes",
@@ -315,7 +315,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     level: "advanced",
     title: "Academy abduction height",
     short:
-      "At the **Academy of Raya Lucaria**, getting **abducted at the bottom of the elevator** only works if you drop into the void **less than 30 meters above the ground**, lower than in the Item Randomizer.",
+      "At the **Academy of Raya Lucaria**, getting **abducted at the bottom of the elevator** only works if you drop into the void **less than 30 meters above the ground**, instead of 100 meters in the Item Randomizer.",
   },
   {
     id: "dragon-temple-lift-reset",
