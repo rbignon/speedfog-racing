@@ -35,8 +35,8 @@ export interface ContentItem {
   level?: TipLevel;
   /** Only for kind "game_change". */
   category?: GameChangeCategory;
-  /** Fine-grained zone id from the seed graph's zones list (e.g. academy_rooftops); required for skips, optional zone-scoping for tips. */
-  zoneId?: string;
+  /** Fine-grained zone ids from the seed graph's zones list (e.g. academy_rooftops) the item is about: it matches a cluster when any of them belongs to the cluster's zone composition. A zone that only belongs to boss clusters has no zone sheet, so it matches nothing there. Required for skips, optional for tips and game changes. */
+  zoneIds?: string[];
   /** Only for kind "skip", where it is required. */
   difficulty?: SkipDifficulty;
   video?: ContentVideo;

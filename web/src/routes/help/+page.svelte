@@ -11,11 +11,9 @@
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
 
-  // General page: mode-specific tips stay in the race and solo tickers, and
-  // zone-scoped ones in their zone sheet.
-  const generalTips = CONTENT_ITEMS.filter(
-    (i) => i.kind === "tip" && !i.pools && i.zoneId === undefined,
-  );
+  // General page: mode-specific tips stay in the race and solo tickers.
+  // Zone-scoped tips are listed here too; their zone sheet only repeats them.
+  const generalTips = CONTENT_ITEMS.filter((i) => i.kind === "tip" && !i.pools);
   const beginnerTips = generalTips.filter((i) => i.level === "beginner");
   const advancedTips = generalTips.filter((i) => i.level === "advanced");
 

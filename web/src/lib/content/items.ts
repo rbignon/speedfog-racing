@@ -40,6 +40,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "radahn-grace",
     kind: "tip",
     level: "beginner",
+    zoneIds: ["caelid_radahn"],
     title: "The Radahn grace",
     short:
       "After defeating **Radahn**, activate the **grace in his arena** before leaving, or you will not be able to progress to the next zone.",
@@ -48,6 +49,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "maliketh-grace",
     kind: "tip",
     level: "beginner",
+    zoneIds: ["farumazula_maliketh"],
     title: "The Maliketh grace",
     short:
       "After defeating **Maliketh**, a **grace appears in his arena**. You can **fast travel** back to it later to backtrack, or use it to **take the post-fight warp again**.",
@@ -56,6 +58,11 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "dead-end-boss-arenas",
     kind: "tip",
     level: "beginner",
+    zoneIds: [
+      "academy_courtyard",
+      "leyndell_bedchamber",
+      "leyndell2_bedchamber",
+    ],
     title: "Dead-end boss arenas",
     short:
       "When you arrive in any **Academy of Raya Lucaria** zone, in **Leyndell** or in **Ashen Leyndell**, do not **drop down into a boss arena** you can reach from there: beating that boss gets you nothing, and **no fog gate** leads out of the arena. Leave through one of the zone's **exit fog gates** instead.",
@@ -199,6 +206,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "gaol-keys",
     kind: "tip",
     level: "advanced",
+    zoneIds: ["charo_gaol"],
     title: "Lamenter's Gaol keys",
     short:
       "**Lamenter's Gaol** is split by two locked doors, and you start with **both gaol keys** in your inventory. There is no key to hunt in the cells: open each door on sight and walk the dungeon straight through to its **exit fog gate**.",
@@ -207,7 +215,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     id: "fia-champions-fortissax",
     kind: "tip",
     level: "advanced",
-    zoneId: "deeproot_boss",
+    zoneIds: ["deeproot_boss"],
     title: "Fortissax is a decoy",
     short:
       "In the **Fia's Champions** arena, **Fortissax** can be waiting near the entrance, but it is not the boss you need: push on to the **far end of the arena** for the real fight.",
@@ -286,6 +294,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     kind: "game_change",
     category: "traversal",
     level: "advanced",
+    zoneIds: ["sewer", "stormveil", "belurat", "ensis"],
     title: "Pre-opened gates",
     short:
       "Barred gates that would block the route are **already open**, including the **Leyndell sewer grates**, a **Stormveil gate**, the **Belurat main gate** and the **Castle Ensis gate**.",
@@ -313,6 +322,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     kind: "game_change",
     category: "traversal",
     level: "advanced",
+    zoneIds: ["academy"],
     title: "Academy abduction height",
     short:
       "At the **Academy of Raya Lucaria**, getting **abducted at the bottom of the elevator** only works if you drop into the void **less than 30 meters above the ground**, instead of 100 meters in the Item Randomizer.",
@@ -322,6 +332,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     kind: "game_change",
     category: "traversal",
     level: "advanced",
+    zoneIds: ["farumazula_lift"],
     title: "Dragon Temple elevator",
     short:
       "In **Farum Azula - Dragon Temple Lift**, you arrive at the **bottom of an elevator**. If you send it up without riding it, there is **no lever** to call it back: fast travel back and take the **fog gate that led you here** again to bring it down.",
@@ -331,6 +342,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     kind: "game_change",
     category: "traversal",
     level: "advanced",
+    zoneIds: ["reprimand"],
     title: "Fort of Reprimand spiritspring",
     short:
       "When the **Fort of Reprimand** is in the seed, the **spiritspring in the ravine** behind **Edredd's chapel** is removed: it would let you jump past the fort's fog gates.",
@@ -342,6 +354,12 @@ export const CONTENT_ITEMS: ContentItem[] = [
     kind: "game_change",
     category: "combat",
     level: "advanced",
+    zoneIds: [
+      "deeproot_boss",
+      "ainsel_boss",
+      "siofra_boss",
+      "siofra_nokron_boss",
+    ],
     title: "Torrent in boss arenas",
     short:
       "**Torrent** can be summoned in arenas where the base game forbids him: **Fia's Champions**, **Astel**, **Ancestor Spirit** and **Regal Ancestor Spirit**.",
@@ -435,7 +453,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "farum-dragon-template-lift-skip",
     kind: "skip",
-    zoneId: "farumazula_lift",
+    zoneIds: ["farumazula_lift"],
     difficulty: 2,
     title: "Dragon Temple Lift",
     short: "Fast way to Godskin Duo gate",
@@ -446,7 +464,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "academy-abducted-skip",
     kind: "skip",
-    zoneId: "academy",
+    zoneIds: ["academy"],
     difficulty: 3,
     title: "Academy abducted",
     short: "Easy skip to get abducted",
@@ -457,7 +475,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "unsightly-catacombs-skip",
     kind: "skip",
-    zoneId: "altus_catacombs",
+    zoneIds: ["altus_catacombs"],
     difficulty: 1,
     title: "Unsightly catacombs skip",
     short: "Fast way to go to the lever",
@@ -468,7 +486,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "mohg-sewer-skip",
     kind: "skip",
-    zoneId: "sewer",
+    zoneIds: ["sewer"],
     difficulty: 2,
     title: "Mohg Sewer Skip",
     short: "Skip to go to the elevator quickly",
@@ -479,7 +497,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "academy-rooftops-skip",
     kind: "skip",
-    zoneId: "academy_rooftops",
+    zoneIds: ["academy_rooftops"],
     difficulty: 1,
     title: "Academy Rooftops Redwolf Skip",
     short: "Going fast to Redwolf from Academy Rooftops",
@@ -490,7 +508,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "gaol-cave-lever-skip",
     kind: "skip",
-    zoneId: "caelid_gaolcave",
+    zoneIds: ["caelid_gaolcave"],
     difficulty: 2,
     title: "Gaol Cave lever skip",
     short: "Fast access to the lever",
@@ -501,7 +519,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "darklight-skip",
     kind: "skip",
-    zoneId: "scadualtus_catacombs",
+    zoneIds: ["scadualtus_catacombs"],
     difficulty: 4,
     title: "Darklight Catacombs skip",
     short: "",
@@ -512,7 +530,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "academy-front-skip",
     kind: "skip",
-    zoneId: "academy_entrance",
+    zoneIds: ["academy_entrance"],
     difficulty: 3,
     title: "Academy Front Gate Skip",
     short: "",
@@ -523,7 +541,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "volcano-manor-cage-skip",
     kind: "skip",
-    zoneId: "volcano_town",
+    zoneIds: ["volcano_town"],
     difficulty: 3,
     title: "Volcano Manor Cage Skip",
     short: "Arriving after abduction",
@@ -534,7 +552,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "volcano-manor-traversal-skip",
     kind: "skip",
-    zoneId: "volcano_town",
+    zoneIds: ["volcano_town"],
     difficulty: 4,
     title: "Volcano Manor Double Skips",
     short: "Coming from the manor",
@@ -545,7 +563,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "castle-morne-skip",
     kind: "skip",
-    zoneId: "peninsula_morne",
+    zoneIds: ["peninsula_morne"],
     difficulty: 4,
     title: "Castle Morne Skips",
     short: "Run through with skips",
@@ -556,7 +574,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "raya-tunnel-skip",
     kind: "skip",
-    zoneId: "liurnia_tunnel",
+    zoneIds: ["liurnia_tunnel"],
     difficulty: 5,
     title: "Raya Crystal Tunnel Skip",
     short: "Skip to elevator",
@@ -567,7 +585,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "scorpion-catacombs-skip",
     kind: "skip",
-    zoneId: "rauhbase_catacombs",
+    zoneIds: ["rauhbase_catacombs"],
     difficulty: 4,
     title: "Scorpion River Catacombs Skip",
     short: "Skip the first part",
@@ -578,7 +596,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "leyndell-skip",
     kind: "skip",
-    zoneId: "leyndell",
+    zoneIds: ["leyndell"],
     difficulty: 3,
     title: "Leyndell Skip",
     short: "3 versions of the skip, from fastest to easier",
@@ -589,7 +607,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "sage-cave-skip",
     kind: "skip",
-    zoneId: "altus_sagescave",
+    zoneIds: ["altus_sagescave"],
     difficulty: 5,
     title: "Sage's Cave Skip",
     short: "Hard",
@@ -600,7 +618,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "specimen-storehouse-skip",
     kind: "skip",
-    zoneId: "storehouse",
+    zoneIds: ["storehouse"],
     difficulty: 3,
     title: "Hand skip",
     short: "",
@@ -611,7 +629,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "rauh-east-tree-skip",
     kind: "skip",
-    zoneId: "rauhruins_east",
+    zoneIds: ["rauhruins_east"],
     difficulty: 4,
     title: "Tree skip",
     short: "",
@@ -622,7 +640,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "farum-bird-skip",
     kind: "skip",
-    zoneId: "farumazula",
+    zoneIds: ["farumazula"],
     difficulty: 3,
     title: "Bird skip",
     short: "",
@@ -633,7 +651,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "sellia-tunnel-skip",
     kind: "skip",
-    zoneId: "caelid_selliatunnel",
+    zoneIds: ["caelid_selliatunnel"],
     difficulty: 2,
     title: "Sellia Crystal Tunnel skip",
     short: "",
@@ -644,7 +662,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "dragon-pit-skip",
     kind: "skip",
-    zoneId: "gravesite_dragonpit",
+    zoneIds: ["gravesite_dragonpit"],
     difficulty: 4,
     title: "Dragon's Pit skip",
     short: "",
@@ -655,7 +673,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "nokron-skip",
     kind: "skip",
-    zoneId: "siofra_nokron",
+    zoneIds: ["siofra_nokron"],
     difficulty: 3,
     title: "Skip to teleporter",
     short:
@@ -667,7 +685,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "shaded-castle-skip",
     kind: "skip",
-    zoneId: "altus_shaded",
+    zoneIds: ["altus_shaded"],
     difficulty: 1,
     title: "Backwards Fast Route",
     short: "",
@@ -678,7 +696,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "quick-crystal-tunnel-skip",
     kind: "skip",
-    zoneId: "liurnia_tunnel",
+    zoneIds: ["liurnia_tunnel"],
     difficulty: 4,
     title: "Quick Crystal Tunnel Skip",
     short: "",
@@ -689,7 +707,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "rauhbase-forge-skip",
     kind: "skip",
-    zoneId: "rauhbase_forge",
+    zoneIds: ["rauhbase_forge"],
     difficulty: 2,
     title: "Pipe Jump Skip",
     short: "",
@@ -700,7 +718,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "nokron-hard-skip",
     kind: "skip",
-    zoneId: "siofra_nokron",
+    zoneIds: ["siofra_nokron"],
     difficulty: 5,
     title: "Fingerslayer Blade Skip",
     short: "",
@@ -711,7 +729,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "darklight-punch-skip",
     kind: "skip",
-    zoneId: "scadualtus_catacombs",
+    zoneIds: ["scadualtus_catacombs"],
     difficulty: 4,
     title: "Punch Version",
     short: "",
@@ -722,7 +740,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "belurat-rooftop-skip",
     kind: "skip",
-    zoneId: "belurat",
+    zoneIds: ["belurat"],
     difficulty: 3,
     title: "Rooftop Skip (bottom to top)",
     short: "",
@@ -733,7 +751,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "belurat-tree-skip",
     kind: "skip",
-    zoneId: "belurat",
+    zoneIds: ["belurat"],
     difficulty: 4,
     title: "Tree Skip (bottom to top)",
     short: "you don't have to rely on Door enemy rng",
@@ -744,7 +762,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "caria-backwards",
     kind: "skip",
-    zoneId: "liurnia_manor",
+    zoneIds: ["liurnia_manor"],
     difficulty: 1,
     title: "Backwards Route",
     short: "",
@@ -755,7 +773,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "ruined-forge-skip",
     kind: "skip",
-    zoneId: "gravesite_forge",
+    zoneIds: ["gravesite_forge"],
     difficulty: 1,
     title: "Starfall Past skip",
     short: "Skip pulling the lever twice",
@@ -766,7 +784,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
   {
     id: "gaius-to-entrance-skip",
     kind: "skip",
-    zoneId: "storehouse_back",
+    zoneIds: ["storehouse_back"],
     difficulty: 1,
     title: "From Gaius gate dropping down to Shadow Keep entrance",
     short: "",

@@ -2,7 +2,11 @@
   import { fetchZoneDetail, type ZoneDetailResponse } from "$lib/api";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import VideoLink from "$lib/components/VideoLink.svelte";
-  import { skipsForZones, zoneTipsForZones } from "$lib/content/zones";
+  import {
+    gameChangesForZones,
+    skipsForZones,
+    zoneTipsForZones,
+  } from "$lib/content/zones";
 
   interface Props {
     nodeId: string;
@@ -61,6 +65,7 @@
   let effectiveZones = $derived(zones ?? detail?.zones ?? []);
   let skips = $derived(skipsForZones(effectiveZones));
   let tips = $derived(zoneTipsForZones(effectiveZones));
+  let gameChanges = $derived(gameChangesForZones(effectiveZones));
 
   function typeBadgeClass(type: string): string {
     if (type === "legacy_dungeon") return "type-badge-legacy";
@@ -202,6 +207,29 @@
           </li>
         {/each}
       </ul>
+    </div>
+  {/if}
+
+  {#if gameChanges.length > 0}
+    <div class="section">
+      <h2>Game Changes</h2>
+      <ul class="tips-list">
+        {#each gameChanges as change (change.id)}
+          <li>
+            <strong>{change.title}</strong>:
+            <EmphasisText text={change.short} />
+          </li>
+        {/each}
+      </ul>
+      <div class="see-all">
+        <a
+          href="/game-changes"
+          class="see-all-link"
+          target="_blank"
+          rel="noopener noreferrer"
+          >All game changes <span aria-hidden="true">&rarr;</span></a
+        >
+      </div>
     </div>
   {/if}
 
@@ -409,6 +437,23 @@
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
     line-height: 1.5;
+  }
+
+  .see-all {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 0.6rem;
+  }
+
+  .see-all-link {
+    color: var(--color-text-secondary);
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+    transition: color 0.15s ease;
+  }
+
+  .see-all-link:hover {
+    color: var(--color-purple);
   }
 
   .sheet-footer {

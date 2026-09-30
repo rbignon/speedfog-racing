@@ -35,16 +35,17 @@ export function isExperiencedPlayer(
 }
 
 /**
- * Orders catalog items for the ticker: kind "skip" items and zone-scoped
- * items are never eligible (they belong to the zone codex, not the
- * pre-race/training rotation, and naming a zone before the race would hint
- * that it is in the seed), pool-specific items are dropped unless the pool
- * matches (and then float to the top), and recently seen items sink. Level
- * targets the rotation at the player: a newcomer gets beginner items first
- * and advanced ones after, an experienced player never gets beginner items
- * at all (the rotation loops over advanced ones instead of repeating what
- * they already know). Within a score tier the order is random, so two
- * players (or two visits) do not scroll the same sequence.
+ * Orders catalog items for the ticker: kind "skip" items are never eligible
+ * (they belong to the zone codex), pool-specific items are dropped unless
+ * the pool matches (and then float to the top), and recently seen items
+ * sink. Zone-scoped tips and game changes rotate like any other item: the
+ * ticker is where a player learns them, the zone sheet only repeats them
+ * where they apply. Level targets the rotation at the player: a newcomer
+ * gets beginner items first and advanced ones after, an experienced player
+ * never gets beginner items at all (the rotation loops over advanced ones
+ * instead of repeating what they already know). Within a score tier the
+ * order is random, so two players (or two visits) do not scroll the same
+ * sequence.
  */
 export function orderTickerItems(
   items: ContentItem[],
@@ -57,7 +58,6 @@ export function orderTickerItems(
   const shuffled = items.filter(
     (item) =>
       item.kind !== "skip" &&
-      item.zoneId === undefined &&
       !(ctx.experienced && item.level === "beginner") &&
       (!item.pools || (!!ctx.poolName && item.pools.includes(ctx.poolName))),
   );

@@ -113,13 +113,23 @@ describe("orderTickerItems", () => {
     expect(ordered.map((i) => i.id)).toEqual(["adv", "beg"]);
   });
 
-  it("never rotates zone-scoped tips (they belong to the zone sheet)", () => {
-    const items = [item("a"), item("zoned", { zoneId: "deeproot_boss" })];
+  it("rotates zone-scoped tips and game changes like any other item (the zone sheet only repeats them)", () => {
+    const items = [
+      item("a"),
+      item("zoned-tip", { zoneIds: ["deeproot_boss"] }),
+      item("zoned-change", {
+        kind: "game_change",
+        category: "traversal",
+        zoneIds: ["academy"],
+      }),
+    ];
     const ordered = orderTickerItems(items, {
       poolName: null,
       seenIds: new Set(),
     });
-    expect(ordered.map((i) => i.id)).toEqual(["a"]);
+    expect(new Set(ordered.map((i) => i.id))).toEqual(
+      new Set(["a", "zoned-tip", "zoned-change"]),
+    );
   });
 
   it("drops a pool-tagged beginner item for an experienced player even in that pool", () => {
@@ -158,7 +168,7 @@ describe("orderTickerItems", () => {
       {
         id: "skip1",
         kind: "skip" as const,
-        zoneId: "stormveil",
+        zoneIds: ["stormveil"],
         title: "skip1",
         short: "skip1",
       },
@@ -176,7 +186,7 @@ describe("orderTickerItems", () => {
       {
         id: "skip1",
         kind: "skip" as const,
-        zoneId: "stormveil",
+        zoneIds: ["stormveil"],
         title: "skip1",
         short: "skip1",
         pools: ["hardcore"],
