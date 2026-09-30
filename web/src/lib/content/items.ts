@@ -45,6 +45,22 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "After defeating **Radahn**, activate the **grace in his arena** before leaving, or you will not be able to progress to the next zone.",
   },
   {
+    id: "maliketh-grace",
+    kind: "tip",
+    level: "beginner",
+    title: "The Maliketh grace",
+    short:
+      "After defeating **Maliketh**, a **grace appears in his arena**. You can **fast travel** back to it later to backtrack, or use it to **take the post-fight warp again**.",
+  },
+  {
+    id: "dead-end-boss-arenas",
+    kind: "tip",
+    level: "beginner",
+    title: "Dead-end boss arenas",
+    short:
+      "When you arrive in **Academy of Raya Lucaria after Red Wolf**, **Leyndell** or **Ashen Leyndell**, do not **drop down into the boss arena** you can reach from there: beating that boss gets you nothing, and **no fog gate** leads out of the arena. Leave through one of the zone's **exit fog gates** instead.",
+  },
+  {
     id: "marika-stakes",
     kind: "tip",
     level: "beginner",
@@ -291,6 +307,33 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Bloodstains at fog gates",
     short:
       "**Bloodstains** can appear on the ground in front of a fog gate: the more racers died in the zone beyond, the **more blood** you will see.",
+  },
+  {
+    id: "academy-abduction-height",
+    kind: "game_change",
+    category: "traversal",
+    level: "advanced",
+    title: "Academy abduction height",
+    short:
+      "At the **Academy of Raya Lucaria**, getting **abducted at the bottom of the elevator** only works if you drop into the void **less than 30 meters above the ground**, lower than in the Item Randomizer.",
+  },
+  {
+    id: "dragon-temple-lift-reset",
+    kind: "game_change",
+    category: "traversal",
+    level: "advanced",
+    title: "Dragon Temple elevator",
+    short:
+      "In **Farum Azula - Dragon Temple Lift**, you arrive at the **bottom of an elevator**. If you send it up without riding it, there is **no lever** to call it back: fast travel back and take the **fog gate that led you here** again to bring it down.",
+  },
+  {
+    id: "reprimand-spiritspring",
+    kind: "game_change",
+    category: "traversal",
+    level: "advanced",
+    title: "Fort of Reprimand spiritspring",
+    short:
+      "When the **Fort of Reprimand** is in the seed, the **spiritspring in the ravine** behind **Edredd's chapel** is removed: it would let you jump past the fort's fog gates.",
   },
   //
   // ---------- Game changes: combat ----------
