@@ -74,6 +74,19 @@ auto-memory by project path, so a new folder starts with an empty memory.
   `--mcp-config`) keeps them out, if the session was not started in safe
   mode.
 
+The launch in use keeps safe mode and the usual tools:
+
+```
+cd ~/src/speedfog-audit/2026-09-30
+claude -p "Your task is described in BRIEF.md in this folder. Read it, then carry it out completely." \
+    --safe-mode --permission-mode auto
+```
+
+Checked on 2026-09-30: a session started this way has no auto-memory index and
+no `CLAUDE.md` content, and its working directory is the bundle. A one-line
+prompt asking the session what its context holds is a cheap check before each
+run.
+
 The analyst follows `BRIEF.md` and writes `REPORT.md` in the bundle, with its
 scripts in `scripts/`.
 

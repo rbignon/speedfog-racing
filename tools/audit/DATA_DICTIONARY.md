@@ -165,18 +165,33 @@ platform works at the time of the export:
 ## Changes over time
 
 The history spans several versions of the mod and of the seed generator. Each
-seed's pack carries the mod of its time; `seeds.created_at` tells when a seed
-was generated, and so with which settings. Changes that affect the data:
+seed's pack carries the mod of its time. `seeds.created_at` is when the server
+registered the seed, shortly after its batch was generated, so it bounds the
+generation date from above and tells, roughly, with which settings the seed
+was made. Changes that affect the data, as of the export:
 
-| date       | change                                                                                        |
-| ---------- | --------------------------------------------------------------------------------------------- |
-| 2026-05-28 | weapons start being tracked; quit-outs become allowed by the rules                            |
-| 2026-07-26 | quit-out penalty                                                                              |
-| 2026-08-01 | equipped weapons are upgraded automatically to the seed's level                               |
-| 2026-08-10 | `deathless` race option                                                                       |
-| 2026-08-12 | framerate-independent IGT, and IGT frozen during black loading fades                          |
-| 2026-08-29 | poison, blood and occult weapons tracked (earlier, they were silently missing from `weapons`) |
-| 2026-09-18 | in most pools, bosses no longer drop weapons (seeds generated from then on)                   |
+| date       | change                                                                                                                         |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-05-28 | weapons start being tracked; quit-outs become allowed by the rules                                                             |
+| 2026-06-21 | bosses drop a much wider choice of weapons, in every pool                                                                      |
+| 2026-07-26 | quit-out penalty                                                                                                               |
+| 2026-07-30 | every pool except the UWYG ones (`uwyg_rush`, later `uwyg_major`) goes back to a narrower, curated choice of boss weapon drops |
+| 2026-08-01 | equipped weapons are upgraded automatically to the seed's level                                                                |
+| 2026-08-10 | `deathless` race option                                                                                                        |
+| 2026-08-12 | framerate-independent IGT, and IGT frozen during black loading fades                                                           |
+| 2026-08-29 | poison, blood and occult weapons tracked (earlier, they were silently missing from `weapons`)                                  |
+| 2026-09-18 | bosses no longer drop weapons in part of the pools (see below)                                                                 |
+
+Since 2026-09-18 (fully from about 11:30 UTC that day; seeds generated
+earlier that morning could still get a few), seeds generated in `standard`,
+`sprint` and the pools built on them (`boss_rush`, `boss_shuffle`,
+`linear_route`, `tarnished`, and their training versions) have no weapons
+among boss drops. The other pools (`chill`, `expedition`, `hardcore` and its
+variants, `uwyg_rush`, `uwyg_major`, and their training versions) still drop
+weapons from bosses. In every pool, weapons can still come from items found in
+the world and from ordinary enemies' drops. What counts is when the seed was
+generated, not the race's date: a race can run on a seed generated earlier.
+These settings were set for the season-one event and can change again.
 
 ## Files
 
@@ -279,7 +294,8 @@ format), and `is_target` (created at or after `since`).
 ### seeds.jsonl
 
 `id`, `seed_number`, `pool_name`, `total_layers`, `difficulty_score`,
-`status`, `created_at` (generation), `graph_is_full`, `graph`.
+`status`, `created_at` (when the server registered the seed, see Changes over
+time), `graph_is_full`, `graph`.
 
 For the seeds of races under review, `graph` is the full seed graph:
 
