@@ -381,7 +381,8 @@ count there. See `daily_points` in
    `starts_at` in the database, never forward (a `started_at` still ahead reads
    as a countdown); the edit is not broadcast, so a connected mod keeps the old
    deadline until it reconnects. During the week that follows: nothing. To void
-   a broken seed, detach it.
+   a broken seed, detach it. At the cut, the runs can be audited for cheating
+   before the qualified groups are announced (see [RUN_AUDIT.md](RUN_AUDIT.md)).
 4. Once a match is agreed with its players: create the stage's public races
    (four slots, a duration cap) with their `scheduled_at`, add the qualified
    runners and the casters, attach to `<stage>:<n>`. The earliest of the

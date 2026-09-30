@@ -7,6 +7,9 @@ on:
       - "server/**"
       # Checked, and driven by server/tests/test_qualifier.py
       - "tools/qualifier.py"
+      # Checked, and driven by server/tests/test_audit_extract.py
+      - "tools/audit_extract.py"
+      - "tools/audit/**"
       - ".github/workflows/ci-server.yml"
   pull_request:
     branches: [master]
@@ -14,6 +17,9 @@ on:
       - "server/**"
       # Checked, and driven by server/tests/test_qualifier.py
       - "tools/qualifier.py"
+      # Checked, and driven by server/tests/test_audit_extract.py
+      - "tools/audit_extract.py"
+      - "tools/audit/**"
       - ".github/workflows/ci-server.yml"
   workflow_dispatch:
 
@@ -37,14 +43,14 @@ jobs:
         run: uv sync --all-extras
 
       - name: Lint
-        run: uv run ruff check . ../tools/qualifier.py
+        run: uv run ruff check . ../tools/qualifier.py ../tools/audit_extract.py
 
       # Not tools/: the pre-commit hook formats it with ruff's defaults.
       - name: Format check
         run: uv run ruff format --check .
 
       - name: Type check
-        run: uv run mypy speedfog_racing/ ../tools/qualifier.py
+        run: uv run mypy speedfog_racing/ ../tools/qualifier.py ../tools/audit_extract.py
 
       - name: Run tests
         run: uv run pytest -q
