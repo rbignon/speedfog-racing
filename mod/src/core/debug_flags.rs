@@ -21,7 +21,7 @@ pub struct DebugFlag {
 
 /// The watched bytes. A flag's bit in a mask is its index in this table.
 /// Bytes not listed here (+0x0, +0x8, +0x11) are ignored. Keep the names in
-/// sync with `DEBUG_FLAG_NAMES` in
+/// sync with `DEBUG_FLAG_LABELS` in
 /// `server/speedfog_racing/services/debug_flags.py` and the labels in
 /// `web/src/lib/debugFlags.ts`.
 pub const DEBUG_FLAGS: &[DebugFlag] = &[

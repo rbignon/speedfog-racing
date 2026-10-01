@@ -125,7 +125,7 @@ When `DISCORD_TRAINING_WEBHOOK_URL` is set, a notification is posted when a play
 
 ### Cheat Detections (Webhook)
 
-When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag names. See `docs/CHEAT_DETECTION.md`.
+When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag labels ("One shot", "Infinite stamina"...). See `docs/CHEAT_DETECTION.md`.
 
 ### Scheduled Events (Bot)
 

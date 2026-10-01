@@ -33,8 +33,9 @@ saved, reset by a game restart. The retail game never sets them.
 | +0x12  | `infinite_aow_fp`      | Infinite FP for Ashes of War     |
 
 The table lives in `mod/src/core/debug_flags.rs`; the server
-(`server/speedfog_racing/services/debug_flags.py`) and the web labels
-(`web/src/lib/debugFlags.ts`) mirror the wire names.
+(`DEBUG_FLAG_LABELS` in `server/speedfog_racing/services/debug_flags.py`, used
+by the Discord alert) and the web (`web/src/lib/debugFlags.ts`) mirror the
+wire names and carry the same human-readable labels.
 
 ## Flow
 

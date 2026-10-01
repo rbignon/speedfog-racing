@@ -1721,6 +1721,8 @@ export interface CheatDetection {
   race_name: string;
   user: User;
   debug_flags: DebugFlags;
+  // Display name of every zone named in debug_flags (node id fallback).
+  zone_names: Record<string, string>;
   last_detected_at: string;
 }
 

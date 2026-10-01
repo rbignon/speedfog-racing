@@ -74,6 +74,7 @@ from speedfog_racing.services.event_service import (
     parse_slot,
     validate_slot,
 )
+from speedfog_racing.services.layer_service import get_display_name_for_node
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
@@ -838,6 +839,9 @@ class CheatDetectionResponse(BaseModel):
     race_name: str
     user: UserResponse
     debug_flags: dict[str, dict[str, Any]]
+    # Display name of every zone named in debug_flags, from the race's seed
+    # (falls back to the node id).
+    zone_names: dict[str, str]
     last_detected_at: str
 
 
@@ -851,13 +855,18 @@ async def list_cheat_detections(
     result = await db.execute(
         select(Participant)
         .where(Participant.debug_flags.is_not(None))
-        .options(selectinload(Participant.user), selectinload(Participant.race))
+        .options(
+            selectinload(Participant.user),
+            selectinload(Participant.race).selectinload(Race.seed),
+        )
     )
     rows: list[CheatDetectionResponse] = []
     for p in result.scalars().all():
         flags = p.debug_flags
         if not flags:
             continue
+        graph_json = p.race.seed.graph_json if p.race.seed else None
+        node_ids = {f.get("node_id") for f in flags.values()}
         rows.append(
             CheatDetectionResponse(
                 participant_id=p.id,
@@ -865,6 +874,11 @@ async def list_cheat_detections(
                 race_name=p.race.name,
                 user=user_response(p.user),
                 debug_flags=flags,
+                zone_names={
+                    node_id: get_display_name_for_node(node_id, graph_json)
+                    for node_id in node_ids
+                    if isinstance(node_id, str)
+                },
                 # All detected_at values are UTC isoformat strings, so string
                 # order is time order.
                 last_detected_at=max(str(f["detected_at"]) for f in flags.values()),

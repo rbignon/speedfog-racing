@@ -1920,7 +1920,11 @@
                   <td class="mono"
                     >{first ? formatDetectionIgt(first.igtMs) : "-"}</td
                   >
-                  <td class="mono">{first?.nodeId ?? "-"}</td>
+                  <td
+                    >{first?.nodeId
+                      ? (d.zone_names[first.nodeId] ?? first.nodeId)
+                      : "-"}</td
+                  >
                   <td class="date-cell">{formatDate(d.last_detected_at)}</td>
                 </tr>
               {/each}

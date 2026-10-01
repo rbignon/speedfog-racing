@@ -21,7 +21,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.debug_flags import merge_debug_flags
+from speedfog_racing.services.debug_flags import debug_flag_label, merge_debug_flags
 from speedfog_racing.websocket.race.manager import RaceRoom, SpectatorConnection
 from speedfog_racing.websocket.schemas import ParticipantInfo
 from speedfog_racing.websocket.training.mod import TrainingModHandler
@@ -103,7 +103,9 @@ async def test_admin_discord_embed_names_runner_flags_and_place() -> None:
     embed = mock_send.call_args[0][0]
     assert "Some\\_Runner" in embed["title"]  # markdown-escaped
     values = {f["name"]: f["value"] for f in embed["fields"]}
-    assert values["Flags"] == "`one_shot`, `infinite_stamina`"
+    for name in ("one_shot", "infinite_stamina"):
+        assert debug_flag_label(name) in values["Flags"]
+    assert "one_shot" not in values["Flags"], "labels, not wire names"
     assert values["IGT"] == "1:23"  # _format_igt drops the hour under one hour
     assert values["Zone"] == "Stormveil Castle"
 
@@ -170,7 +172,14 @@ async def df_users(df_session) -> dict[str, User]:
         return users
 
 
-async def _flagged_race(df_session, df_users, *, detected: dict[str, str | None]) -> uuid.UUID:
+async def _flagged_race(
+    df_session,
+    df_users,
+    *,
+    detected: dict[str, str | None],
+    nodes: dict[str, dict[str, str]] | None = None,
+    node_ids: dict[str, str | None] | None = None,
+) -> uuid.UUID:
     """A running race organized by "organizer" where each user key in
     ``detected`` participates; a non-None value is that participant's
     detection time."""
@@ -178,7 +187,7 @@ async def _flagged_race(df_session, df_users, *, detected: dict[str, str | None]
         seed = Seed(
             seed_number=f"df_{uuid.uuid4().hex[:8]}",
             pool_name="standard",
-            graph_json={"total_layers": 5, "nodes": {}},
+            graph_json={"total_layers": 5, "nodes": nodes or {}},
             total_layers=5,
             folder_path="/test/df",
             status=SeedStatus.CONSUMED,
@@ -198,7 +207,13 @@ async def _flagged_race(df_session, df_users, *, detected: dict[str, str | None]
             flags = (
                 None
                 if detected_at is None
-                else {"one_shot": {**FLAGS["one_shot"], "detected_at": detected_at}}
+                else {
+                    "one_shot": {
+                        **FLAGS["one_shot"],
+                        "detected_at": detected_at,
+                        "node_id": (node_ids or {}).get(key, FLAGS["one_shot"]["node_id"]),
+                    }
+                }
             )
             db.add(
                 Participant(
@@ -272,6 +287,44 @@ async def test_cheat_detections_capped(df_client, df_session, df_users, monkeypa
             headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
         )
     assert [d["user"]["twitch_username"] for d in resp.json()] == ["other_df"]
+
+
+async def test_cheat_detections_name_the_zones(df_client, df_session, df_users):
+    await _flagged_race(
+        df_session,
+        df_users,
+        detected={"flagged": "2026-09-01T10:00:00+00:00"},
+        nodes={"node_a": {"display_name": "Stormveil Castle"}},
+    )
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()[0]["zone_names"] == {"node_a": "Stormveil Castle"}
+
+
+async def test_cheat_detections_zone_names_skip_missing_nodes_and_fall_back(
+    df_client, df_session, df_users
+):
+    # A race reset clears current_zone, so a detection recorded right after it
+    # has no node; a node absent from the seed graph keeps its id.
+    await _flagged_race(
+        df_session,
+        df_users,
+        detected={"flagged": "2026-09-01T10:00:00+00:00", "other": "2026-09-02T10:00:00+00:00"},
+        nodes={"node_a": {"display_name": "Stormveil Castle"}},
+        node_ids={"flagged": None, "other": "node_x"},
+    )
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    by_user = {d["user"]["twitch_username"]: d["zone_names"] for d in resp.json()}
+    assert by_user == {"flagged_df": {}, "other_df": {"node_x": "node_x"}}
 
 
 async def test_cheat_detections_requires_admin(df_client, df_users):

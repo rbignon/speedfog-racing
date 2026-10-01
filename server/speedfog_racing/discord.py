@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from speedfog_racing.config import settings
+from speedfog_racing.services.debug_flags import debug_flag_label
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.twitch_live import twitch_live_service
 
@@ -638,7 +639,11 @@ async def notify_debug_flags_detected(
             {"name": "Race", "value": _escape_discord_md(race_name), "inline": True},
             {"name": "IGT", "value": _format_igt(igt_ms), "inline": True},
             {"name": "Zone", "value": _escape_discord_md(zone_name), "inline": True},
-            {"name": "Flags", "value": ", ".join(f"`{f}`" for f in flags), "inline": False},
+            {
+                "name": "Flags",
+                "value": ", ".join(debug_flag_label(f) for f in flags),
+                "inline": False,
+            },
         ],
     }
     await _send_admin_webhook(embed)

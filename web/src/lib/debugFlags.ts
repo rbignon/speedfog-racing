@@ -5,7 +5,8 @@
  */
 import type { DebugFlags, Participant } from "$lib/api";
 
-// Keep in sync with DEBUG_FLAGS in mod/src/core/debug_flags.rs.
+// Keep in sync with DEBUG_FLAGS in mod/src/core/debug_flags.rs and
+// DEBUG_FLAG_LABELS in server/speedfog_racing/services/debug_flags.py.
 const LABELS: Record<string, string> = {
   player_no_death: "Player no death",
   torrent_no_death: "Torrent no death",

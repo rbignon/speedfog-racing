@@ -10,28 +10,28 @@ See docs/CHEAT_DETECTION.md.
 from datetime import datetime
 from typing import Any
 
-# Wire names, one per watched byte. Keep in sync with DEBUG_FLAGS in
-# mod/src/core/debug_flags.rs and the labels in web/src/lib/debugFlags.ts.
-DEBUG_FLAG_NAMES = frozenset(
-    {
-        "player_no_death",
-        "torrent_no_death",
-        "one_shot",
-        "infinite_consumables",
-        "infinite_stamina",
-        "infinite_fp",
-        "infinite_arrows",
-        "hidden",
-        "silent",
-        "all_no_death",
-        "all_no_damage",
-        "all_no_hit",
-        "all_no_attack",
-        "all_no_move",
-        "all_no_ai",
-        "infinite_aow_fp",
-    }
-)
+# Wire name -> human-readable label, one per watched byte. Keep in sync
+# with DEBUG_FLAGS in mod/src/core/debug_flags.rs and the labels in
+# web/src/lib/debugFlags.ts.
+DEBUG_FLAG_LABELS: dict[str, str] = {
+    "player_no_death": "Player no death",
+    "torrent_no_death": "Torrent no death",
+    "one_shot": "One shot",
+    "infinite_consumables": "Infinite consumables",
+    "infinite_stamina": "Infinite stamina",
+    "infinite_fp": "Infinite FP",
+    "infinite_arrows": "Infinite arrows",
+    "hidden": "Hidden",
+    "silent": "Silent",
+    "all_no_death": "No death (all)",
+    "all_no_damage": "No damage (all)",
+    "all_no_hit": "No hit (all)",
+    "all_no_attack": "No attack (all)",
+    "all_no_move": "No move (all)",
+    "all_no_ai": "AI off (all)",
+    "infinite_aow_fp": "Infinite FP (Ashes of War)",
+}
+DEBUG_FLAG_NAMES = frozenset(DEBUG_FLAG_LABELS)
 
 # A report names each flag at most once. The cap leaves room for flags a
 # newer mod knows and this server does not; anything longer is malformed.
@@ -74,6 +74,11 @@ def merge_debug_flags(
 
 # Race roles that may see a race's detections (see services.chat_access.race_role).
 _STAFF_ROLES = frozenset({"organizer", "admin"})
+
+
+def debug_flag_label(name: str) -> str:
+    """Human-readable label of a wire flag name (the name itself if unknown)."""
+    return DEBUG_FLAG_LABELS.get(name, name)
 
 
 def can_see_debug_flags(role: str | None) -> bool:
