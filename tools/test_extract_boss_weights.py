@@ -9,10 +9,10 @@ import pytest
 from extract_boss_weights import (
     apply_weights,
     attribute,
+    band_weights,
     boss_clears,
     fit_effects,
     rounded_weights,
-    shrunk_weights,
 )
 
 NODES = {
@@ -100,7 +100,12 @@ def test_fit_recovers_planted_boss_ratio() -> None:
         for b in boss
         for t in tier
     ]
-    mu, eff = fit_effects(_rows(spec), max_iter=100, tol=1e-12)
+    mu, eff = fit_effects(
+        _rows(spec),
+        factors=("arena", "boss", "tier", "user", "pool"),
+        max_iter=100,
+        tol=1e-12,
+    )
     ratio = math.exp(eff["boss"]["b2"] - eff["boss"]["b1"])
     assert ratio == pytest.approx(3.0, rel=1e-6)
 
@@ -110,26 +115,70 @@ def test_fit_normalizes_the_tier_a_boss_was_met_at() -> None:
     tier = {1: 1.0, 2: 2.0, 3: 4.0}
     spec = [(a, "low", t, tier[t]) for a in ("a1", "a2") for t in (1, 2)]
     spec += [(a, "high", t, tier[t]) for a in ("a1", "a2") for t in (2, 3)]
-    mu, eff = fit_effects(_rows(spec), max_iter=100, tol=1e-12)
+    mu, eff = fit_effects(
+        _rows(spec),
+        factors=("arena", "boss", "tier", "user", "pool"),
+        max_iter=100,
+        tol=1e-12,
+    )
     assert eff["boss"]["high"] == pytest.approx(eff["boss"]["low"], abs=1e-6)
 
 
-def test_shrunk_weights_pull_thin_samples_toward_the_pool() -> None:
-    rows = []
-    for boss, effect, n in (
-        ("m1", 0.0, 50),
-        ("m2", 0.0, 50),
-        ("m3", 0.0, 50),
-        ("thin", 1.0, 1),
-        ("thick", 1.0, 200),
-    ):
-        for i in range(n):
-            rows.append({"y": effect + (-0.3, 0.0, 0.3)[i % 3], "boss": boss})
-    effects = {"boss": {"m1": 0.0, "m2": 0.0, "m3": 0.0, "thin": 1.0, "thick": 1.0}}
-    weights = shrunk_weights(rows, 0.0, effects, ["m1", "m2", "m3", "thin", "thick"])
-    assert weights["thin"][0] < weights["thick"][0]
-    assert weights["thick"][0] == pytest.approx(math.e, rel=0.02)
-    assert weights["thin"][1] == 1
+NOISE = (-0.1, 0.0, 0.1)
+SHIFT = {"early": 0.0, "mid": 0.3, "late": 0.6}  # common to the pool
+
+
+def _band_rows(spec):
+    """spec: {boss: {band: (effect, n)}} -> rows and the matching effects."""
+    rows, effects = [], {"bossband": {}}
+    for boss, bands in spec.items():
+        for band, (effect, n) in bands.items():
+            effects["bossband"][(boss, band)] = effect
+            rows += [
+                {"y": effect + NOISE[i % 3], "bossband": (boss, band)} for i in range(n)
+            ]
+    return rows, effects
+
+
+def _follows(rel, n=40):
+    """A boss whose relative effect is ``rel`` in every band."""
+    return {band: (SHIFT[band] + rel, n) for band in SHIFT}
+
+
+def test_band_weights_remove_the_common_band_shift() -> None:
+    spec = {f"avg{i}": _follows(0.0) for i in range(4)}
+    spec["flat"] = _follows(0.0)
+    spec["light"] = _follows(-1.0)
+    spec["steep"] = {"early": (0.0, 40), "mid": (0.3, 40), "late": (1.2, 40)}
+    rows, effects = _band_rows(spec)
+    weights = band_weights(rows, 0.0, effects, list(spec))
+    flat, light, steep = weights["flat"][0], weights["light"][0], weights["steep"][0]
+    assert flat["early"] == pytest.approx(flat["late"])
+    assert light["early"] == pytest.approx(light["late"])
+    assert light["early"] < flat["early"]
+    assert steep["late"] > 1.5 * steep["mid"]
+    assert steep["early"] == pytest.approx(steep["mid"])
+
+
+def test_band_weights_ignore_thin_bands() -> None:
+    spec = {f"avg{i}": _follows(0.0) for i in range(4)}
+    spec["spiky"] = {"early": (0.0, 40), "mid": (0.3, 40), "late": (2.6, 5)}
+    rows, effects = _band_rows(spec)
+    spiky = band_weights(rows, 0.0, effects, list(spec), min_samples=20)["spiky"][0]
+    assert spiky["late"] < 1.2 * spiky["mid"]
+
+
+def test_rounded_weights_give_thin_bosses_each_band_median() -> None:
+    weights = {
+        "a": ({"early": 0.54, "mid": 0.6, "late": 0.7}, 100),
+        "b": ({"early": 1.5, "mid": 1.6, "late": 1.7}, 100),
+        "c": ({"early": 2.5, "mid": 2.6, "late": 0.01}, 100),
+        "thin": ({"early": 9.0, "mid": 9.0, "late": 9.0}, 3),
+    }
+    out = rounded_weights(weights, min_samples=20)
+    assert out["thin"] == ({"early": 1.5, "mid": 1.6, "late": 0.7}, True)
+    assert out["a"] == ({"early": 0.5, "mid": 0.6, "late": 0.7}, False)
+    assert out["c"][0]["late"] == 0.1  # boss.weight must stay > 0
 
 
 TAGS_TEXT = (
@@ -140,11 +189,7 @@ TAGS_TEXT = (
                 "boss": {"size": 1, "exclude_from_pool": False},
                 "region": 1,
             },
-            "2000": {
-                "name": "B",
-                "boss": {"size": 2, "exclude_from_pool": True},
-                "region": 2,
-            },
+            "2000": {"name": "B", "boss": {"size": 2, "weight": 1.0}, "region": 2},
         },
         indent=2,
     )
@@ -156,29 +201,16 @@ def test_apply_weights_round_trips_untouched_text() -> None:
     assert apply_weights(TAGS_TEXT, {}) == TAGS_TEXT
 
 
-def test_apply_weights_only_sets_the_weight_field() -> None:
-    out = json.loads(apply_weights(TAGS_TEXT, {1000: 1.3}))
+def test_apply_weights_writes_band_objects_only() -> None:
+    bands = {"early": 0.3, "mid": 0.2, "late": 0.2}
+    out = json.loads(apply_weights(TAGS_TEXT, {1000: bands, 2000: bands}))
     before = json.loads(TAGS_TEXT)
-    assert out["1000"]["boss"].pop("weight") == 1.3
+    assert out["1000"]["boss"].pop("weight") == bands
+    assert out["2000"]["boss"].pop("weight") == bands
+    before["2000"]["boss"].pop("weight")
     assert out == before
 
 
 def test_apply_weights_rejects_unknown_entities() -> None:
     with pytest.raises(KeyError):
-        apply_weights(TAGS_TEXT, {3000: 1.0})
-
-
-def test_rounded_weights_give_thin_bosses_the_job_median() -> None:
-    """A handful of clears must neither block nor be blocked by the spread."""
-    weights = {
-        "a": (0.64, 120),
-        "b": (1.36, 80),
-        "c": (2.0, 40),
-        "thin": (0.4, 3),
-        "tiny": (0.01, 50),
-    }
-    out = rounded_weights(weights, min_samples=20)
-    assert out["thin"] == (1.0, True)  # median of 0.01, 0.64, 1.36, 2.0
-    assert out["a"] == (0.6, False)
-    assert out["b"] == (1.4, False)
-    assert out["tiny"] == (0.1, False)  # boss.weight must stay > 0
+        apply_weights(TAGS_TEXT, {3000: {"early": 1.0, "mid": 1.0, "late": 1.0}})

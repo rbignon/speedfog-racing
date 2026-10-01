@@ -3,10 +3,12 @@
 A boss node's clear time mixes the arena (approach, exit), the boss fight,
 the scaling tier, the player and the pool's power curve. Boss randomization
 decorrelates bosses from arenas, so a robust additive fit of the log clear
-time (arena + boss + tier + user + pool, multi-factor median polish)
-isolates the boss. Each factor is centered on its observation-weighted
-median, so a weight is the median node time for that boss under typical
-arena, tier, player and pool: comparable across bosses, indicative in
+time (arena + boss-by-band + tier + user + pool, multi-factor median
+polish; bands from speedfog's weight_band) isolates the boss. Each factor is centered on its observation-weighted
+median, so a band weight is the median node time for that boss in that
+band under typical arena, player and pool, with the band's common shift
+removed (minutes at a mid-run tier): only the boss's own tier sensitivity
+varies across bands. Weights compare bosses; they are indicative in
 absolute terms. Clears follow tools/extract_zone_times.py (time summed over
 every visit, kept when the last visit cleared the node). Bosses are
 attributed from the seed's enemy_assignments, else from a randomized_bosses
@@ -35,7 +37,11 @@ import asyncpg
 from extract_zone_times import DB_URL, _SPEEDFOG_DATA, _compute_outcome
 
 sys.path.insert(0, str(_SPEEDFOG_DATA.parent))
-from speedfog.boss_arena_constraints import load_tags  # noqa: E402
+from speedfog.boss_arena_constraints import (  # noqa: E402
+    WEIGHT_BANDS,
+    load_tags,
+    weight_band,
+)
 from speedfog.clusters import load_clusters  # noqa: E402
 from speedfog.enemy_data import (  # noqa: E402
     parse_boss_extra_names,
@@ -52,7 +58,7 @@ CLUSTERS_PATH = _SPEEDFOG_DATA / "clusters.json"
 # Node type -> speedfog pool kind. final_boss nodes are single-node layers,
 # too few to calibrate; their bosses are measured as randomized majors.
 BOSS_JOBS = {"boss_arena": "minor", "major_boss": "major"}
-FACTORS = ("arena", "boss", "tier", "user", "pool")
+FACTORS = ("arena", "bossband", "tier", "user", "pool")
 # Tiers above this are rare; pooling them keeps their factor estimable.
 TIER_CAP = 24
 # Bosses measured on fewer clears get the job's median weight: an estimate
@@ -169,62 +175,104 @@ def fit_effects(
     return mu, {f: dict(e) for f, e in effects.items()}
 
 
-def shrunk_weights(
+def band_weights(
     rows: Sequence[Mapping[str, Any]],
     mu: float,
     effects: Mapping[str, Mapping[Any, float]],
     pool: Iterable[Any],
-) -> dict[Any, tuple[float, int]]:
-    """``{boss: (minutes, n)}`` for the pool bosses seen in ``rows``.
+    min_samples: int = MIN_SAMPLES,
+) -> dict[Any, tuple[dict[str, float], int]]:
+    """``{boss: ({band: minutes}, n)}`` for the pool bosses seen in ``rows``.
 
-    Boss effects are shrunk toward the pool median by ``n / (n + k)``, with
-    ``k = sigma^2 / tau^2`` (per-observation residual variance over the
-    between-boss variance, both robust).
+    Each band's common shift (the observation-weighted median boss-band
+    effect) is removed and the mid band's added back, so a weight reads as
+    minutes at a mid-run tier and only the boss's own tier sensitivity
+    varies across bands. The boss's overall relative effect is shrunk toward
+    the pool median by ``n / (n + k)``, each band toward that overall by
+    ``n_band / (n_band + k)``; a band with fewer than ``min_samples`` rows
+    takes the overall value. ``k = sigma^2 / tau^2`` as in a single-weight
+    fit (robust residual variance over between-boss variance).
     """
+    bossband = effects["bossband"]
+    shift = {
+        band: statistics.median(
+            bossband[r["bossband"]] for r in rows if r["bossband"][1] == band
+        )
+        for band in WEIGHT_BANDS
+        if any(r["bossband"][1] == band for r in rows)
+    }
     residuals = [r["y"] - mu - sum(effects[f][r[f]] for f in effects) for r in rows]
     mid = statistics.median(residuals)
     sigma2 = (1.4826 * statistics.median(abs(x - mid) for x in residuals)) ** 2
-    n = Counter(r["boss"] for r in rows)
+    n_band = Counter(r["bossband"] for r in rows)
+    n = Counter(r["bossband"][0] for r in rows)
     seen = [b for b in pool if n[b] > 0]
     if not seen:
         return {}
-    b = {e: effects["boss"][e] for e in seen}
-    center = statistics.median(b.values())
+    rel = {
+        b: {
+            band: bossband[(b, band)] - shift[band]
+            for band in WEIGHT_BANDS
+            if n_band[(b, band)] > 0
+        }
+        for b in seen
+    }
+    overall = {
+        b: sum(rel[b][band] * n_band[(b, band)] for band in rel[b]) / n[b] for b in seen
+    }
+    center = statistics.median(overall.values())
     tau2 = max(
         1e-6,
-        statistics.pvariance(b.values()) - statistics.mean(sigma2 / n[e] for e in seen),
+        statistics.pvariance(overall.values())
+        - statistics.mean(sigma2 / n[b] for b in seen),
     )
     k = sigma2 / tau2
-    return {
-        e: (math.exp(mu + center + (b[e] - center) * n[e] / (n[e] + k)), n[e])
-        for e in seen
-    }
-
-
-def rounded_weights(
-    weights: Mapping[Any, tuple[float, int]],
-    min_samples: int = MIN_SAMPLES,
-) -> dict[Any, tuple[float, bool]]:
-    """``{boss: (weight, thin)}`` rounded to 0.1 minute (at least 0.1).
-
-    A thin boss (fewer than ``min_samples`` clears) gets the median of the
-    well-measured ones instead of its own estimate.
-    """
-    solid = [minutes for minutes, n in weights.values() if n >= min_samples]
-    fallback = statistics.median(solid) if solid else None
-    out: dict[Any, tuple[float, bool]] = {}
-    for boss, (minutes, n) in weights.items():
-        thin = n < min_samples
-        value = fallback if thin and fallback is not None else minutes
-        out[boss] = (max(0.1, round(value, 1)), thin)
+    ref = mu + shift.get("mid", 0.0)
+    out: dict[Any, tuple[dict[str, float], int]] = {}
+    for b in seen:
+        base = center + (overall[b] - center) * n[b] / (n[b] + k)
+        minutes = {}
+        for band in WEIGHT_BANDS:
+            nb = n_band[(b, band)]
+            dev = 0.0
+            if nb >= min_samples:
+                dev = (rel[b][band] - overall[b]) * nb / (nb + k)
+            minutes[band] = math.exp(ref + base + dev)
+        out[b] = (minutes, n[b])
     return out
 
 
-def apply_weights(tags_text: str, weights: Mapping[int, float]) -> str:
-    """Set ``boss.weight`` for ``weights``; everything else round-trips."""
+def rounded_weights(
+    weights: Mapping[Any, tuple[Mapping[str, float], int]],
+    min_samples: int = MIN_SAMPLES,
+) -> dict[Any, tuple[dict[str, float], bool]]:
+    """``{boss: ({band: weight}, thin)}`` rounded to 0.1 minute (at least 0.1).
+
+    A thin boss (fewer than ``min_samples`` clears) gets, in each band, the
+    median of the well-measured bosses instead of its own estimate.
+    """
+    solid = [minutes for minutes, n in weights.values() if n >= min_samples]
+    medians = (
+        {band: statistics.median(m[band] for m in solid) for band in WEIGHT_BANDS}
+        if solid
+        else None
+    )
+    out: dict[Any, tuple[dict[str, float], bool]] = {}
+    for boss, (minutes, n) in weights.items():
+        thin = n < min_samples
+        source = medians if thin and medians is not None else minutes
+        out[boss] = (
+            {band: max(0.1, round(source[band], 1)) for band in WEIGHT_BANDS},
+            thin,
+        )
+    return out
+
+
+def apply_weights(tags_text: str, weights: Mapping[int, Mapping[str, float]]) -> str:
+    """Set ``boss.weight`` (band objects) for ``weights``; everything else round-trips."""
     data = json.loads(tags_text)
     for eid, weight in weights.items():
-        data[str(eid)]["boss"]["weight"] = weight
+        data[str(eid)]["boss"]["weight"] = dict(weight)
     return json.dumps(data, indent=2) + "\n"
 
 
@@ -275,6 +323,7 @@ async def load_rows() -> dict[str, list[dict[str, Any]]]:
                     "y": math.log(clear.minutes),
                     "arena": resolve_entity_id(node["defeat_flag"]),
                     "boss": boss,
+                    "bossband": (boss, weight_band(node.get("tier") or 0)),
                     "tier": min(node.get("tier") or 0, TIER_CAP),
                     "user": p["uid"],
                     "pool": pool,
@@ -318,28 +367,34 @@ async def main() -> None:
 
     tags = load_tags(TAGS_PATH)
     rows = await load_rows()
-    suggested: dict[int, float] = {}
+    suggested: dict[int, dict[str, float]] = {}
     for job, pool in current_pools().items():
         job_rows = rows.get(job, [])
         if not job_rows:
             print(f"== {job}: no data")
             continue
         mu, effects = fit_effects(job_rows)
-        weights = shrunk_weights(job_rows, mu, effects, pool)
+        weights = band_weights(job_rows, mu, effects, pool)
         print(
             f"== {job}: {len(job_rows)} clears, {len(weights)}/{len(pool)} pool "
             f"bosses measured, typical node {math.exp(mu):.2f} min"
         )
-        print(f"{'boss':45} {'current':>7} {'suggest':>7} {'n':>5}")
+        print(f"{'boss':45} {'current e/m/l':>15} {'suggested e/m/l':>15} {'n':>5}")
         final = rounded_weights(weights)
-        for eid, (weight, thin) in sorted(final.items(), key=lambda x: -x[1][0]):
-            suggested[eid] = weight
-            current = tags[eid].boss.weight
-            n = weights[eid][1]
-            flag = "  *" if abs(weight - current) >= 0.2 else ""
-            if thin:
-                flag += f"  (thin, n<{MIN_SAMPLES}: job median)"
-            print(f"{tags[eid].name[:45]:45} {current:7.1f} {weight:7.1f} {n:5d}{flag}")
+        for eid, (bands, thin) in sorted(
+            final.items(), key=lambda x: -max(x[1][0].values())
+        ):
+            suggested[eid] = bands
+            current = dict(zip(WEIGHT_BANDS, tags[eid].boss.weights, strict=True))
+            moved = max(abs(bands[b] - current[b]) for b in WEIGHT_BANDS) >= 0.2
+            flag = ("  *" if moved else "") + (
+                f"  (thin, n<{MIN_SAMPLES}: band medians)" if thin else ""
+            )
+            cur = "/".join(f"{current[b]:.1f}" for b in WEIGHT_BANDS)
+            sug = "/".join(f"{bands[b]:.1f}" for b in WEIGHT_BANDS)
+            print(
+                f"{tags[eid].name[:45]:45} {cur:>15} {sug:>15} {weights[eid][1]:5d}{flag}"
+            )
         missing = [tags[e].name for e in pool if e not in weights]
         if missing:
             print(f"   no data (weight left as is): {', '.join(missing)}")

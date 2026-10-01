@@ -255,8 +255,10 @@ Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), w
 branches) from the same clears as the zone calibration: time summed over
 every visit, kept when the last visit cleared the node. Minor (`boss_arena`)
 and major (`major_boss`) nodes are fitted separately with a robust additive
-model of the log clear time (arena + boss + tier + player + pool), so a
-weight compares bosses rather than the conditions they were met in. Run it
+model of the log clear time (arena + boss per scaling band + tier + player +
+pool); each band's common shift is removed, so the early/mid/late weights
+compare bosses rather than the conditions they were met in, and only a
+boss's own sensitivity to scaling varies across bands. Run it
 from `server/`; `--write` updates the weights in the sibling speedfog
 checkout.
 
