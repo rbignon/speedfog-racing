@@ -246,7 +246,10 @@ def rounded_weights(
     weights: Mapping[Any, tuple[Mapping[str, float], int]],
     min_samples: int = MIN_SAMPLES,
 ) -> dict[Any, tuple[dict[str, float], bool]]:
-    """``{boss: ({band: weight}, thin)}`` rounded to 0.1 minute (at least 0.1).
+    """``{boss: ({band: weight}, thin)}`` rounded to 0.01 minute (at least 0.01).
+
+    Two decimals keep ties rare: the extremes rule counts every boss tied at
+    its cut, so a coarse grid would inflate the extreme sets.
 
     A thin boss (fewer than ``min_samples`` clears) gets, in each band, the
     median of the well-measured bosses instead of its own estimate.
@@ -262,7 +265,7 @@ def rounded_weights(
         thin = n < min_samples
         source = medians if thin and medians is not None else minutes
         out[boss] = (
-            {band: max(0.1, round(source[band], 1)) for band in WEIGHT_BANDS},
+            {band: max(0.01, round(source[band], 2)) for band in WEIGHT_BANDS},
             thin,
         )
     return out
@@ -379,7 +382,7 @@ async def main() -> None:
             f"== {job}: {len(job_rows)} clears, {len(weights)}/{len(pool)} pool "
             f"bosses measured, typical node {math.exp(mu):.2f} min"
         )
-        print(f"{'boss':45} {'current e/m/l':>15} {'suggested e/m/l':>15} {'n':>5}")
+        print(f"{'boss':45} {'current e/m/l':>16} {'suggested e/m/l':>16} {'n':>5}")
         final = rounded_weights(weights)
         for eid, (bands, thin) in sorted(
             final.items(), key=lambda x: -max(x[1][0].values())
@@ -390,10 +393,10 @@ async def main() -> None:
             flag = ("  *" if moved else "") + (
                 f"  (thin, n<{MIN_SAMPLES}: band medians)" if thin else ""
             )
-            cur = "/".join(f"{current[b]:.1f}" for b in WEIGHT_BANDS)
-            sug = "/".join(f"{bands[b]:.1f}" for b in WEIGHT_BANDS)
+            cur = "/".join(f"{current[b]:.2f}" for b in WEIGHT_BANDS)
+            sug = "/".join(f"{bands[b]:.2f}" for b in WEIGHT_BANDS)
             print(
-                f"{tags[eid].name[:45]:45} {cur:>15} {sug:>15} {weights[eid][1]:5d}{flag}"
+                f"{tags[eid].name[:45]:45} {cur:>16} {sug:>16} {weights[eid][1]:5d}{flag}"
             )
         missing = [tags[e].name for e in pool if e not in weights]
         if missing:

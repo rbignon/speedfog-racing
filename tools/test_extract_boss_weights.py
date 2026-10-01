@@ -172,13 +172,13 @@ def test_rounded_weights_give_thin_bosses_each_band_median() -> None:
     weights = {
         "a": ({"early": 0.54, "mid": 0.6, "late": 0.7}, 100),
         "b": ({"early": 1.5, "mid": 1.6, "late": 1.7}, 100),
-        "c": ({"early": 2.5, "mid": 2.6, "late": 0.01}, 100),
+        "c": ({"early": 2.5, "mid": 2.6, "late": 0.001}, 100),
         "thin": ({"early": 9.0, "mid": 9.0, "late": 9.0}, 3),
     }
     out = rounded_weights(weights, min_samples=20)
     assert out["thin"] == ({"early": 1.5, "mid": 1.6, "late": 0.7}, True)
-    assert out["a"] == ({"early": 0.5, "mid": 0.6, "late": 0.7}, False)
-    assert out["c"][0]["late"] == 0.1  # boss.weight must stay > 0
+    assert out["a"] == ({"early": 0.54, "mid": 0.6, "late": 0.7}, False)
+    assert out["c"][0]["late"] == 0.01  # boss.weight must stay > 0
 
 
 TAGS_TEXT = (
