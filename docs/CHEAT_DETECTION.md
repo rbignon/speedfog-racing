@@ -84,12 +84,17 @@ it finishes, and the same people can cancel it from the same dialog.
   race counts them as a DNF on 0 points that never wins a tie-break.
 - In a running race, the remaining runners may now all be done, which
   finishes the race. In a finished race, the race win and daily rewards are
-  granted again from the new standings, so the new winner gets them, and the
-  race traits are recomputed. Rewards the disqualified runner already got
+  granted again from the new standings, so the new winner gets them (the
+  transient weekly daily badges only move for the latest closed week), and
+  the race traits are recomputed. Rewards the disqualified runner already got
   are not taken back automatically: admins revoke them by hand.
 - A race reset or a daily reroll keeps the disqualification. Cancelling it
   restores the previous status and the run, or, if the race restarted in the
-  meantime, lets the runner start over like everyone else.
+  meantime, lets the runner start over like everyone else. In a race that
+  finished in the meantime, a run that was still going comes back abandoned.
+- In the in-game replay leaderboard of a daily or an event qualifier, a
+  disqualified runner's ghost reads DQ at the bottom, never as a live
+  runner.
 - A disqualified or flagged participation cannot be left or removed, so the
   record stays for review.
 
