@@ -138,23 +138,29 @@ from speedfog_racing.models import (  # noqa: E402
 )
 from speedfog_racing.services.analytics_service import compute_analytics  # noqa: E402
 
+# Injected "now" for the analytics_data tests: mid-month and mid-week, so the
+# fixture's hours-ago timestamps never fall into the previous month or week.
+NOW = datetime(2026, 7, 16, 12, 0, tzinfo=UTC)
+
 
 @pytest.fixture
 async def analytics_data(async_session):
-    """Create deterministic test data for analytics tests.
+    """Create deterministic test data for analytics tests, dated from NOW.
+
+    Rows sit hours or days before NOW, so callers must pass ``now=NOW`` to
+    ``compute_analytics`` for the windowed metrics to see them.
 
     - 3 users: user1 (Europe/Paris, active), user2 (America/New_York, active),
       user3 (Asia/Tokyo, last_seen > 30 days ago)
     - 1 consumed seed
-    - 1 finished race with 2 participants (started_at = a few hours ago, this week)
-    - 2 training sessions: 1 finished, 1 abandoned (created this week)
+    - 1 finished race with 2 participants (started 3h before NOW, in its week)
+    - 2 training sessions: 1 finished, 1 abandoned (created 2h before NOW)
     """
-    now = datetime.now(tz=UTC)
+    now = NOW
 
     async with async_session() as db:
-        # Users — created_at must be in the current ISO week so that the
-        # weekly test assertions hold regardless of which day of the month
-        # or week the test runs on.
+        # Users: created_at falls in NOW's ISO week and month, as the weekly
+        # and KPI assertions expect.
         user1 = User(
             twitch_id="tz_user1",
             twitch_username="tzuser1",
@@ -257,7 +263,7 @@ async def analytics_data(async_session):
 async def test_compute_analytics_kpis(analytics_data, async_session):
     """KPI values must match fixture data."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     kpis = result["kpis"]
     # 3 users created by fixture (plus 2 from existing regular_user / admin_user fixtures
@@ -277,7 +283,7 @@ async def test_compute_analytics_kpis(analytics_data, async_session):
 async def test_compute_analytics_timezones(analytics_data, async_session):
     """Timezone list must be sorted west (negative offset) to east (positive offset)."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     timezones = result["timezones"]
     # All 3 timezones present
@@ -302,7 +308,7 @@ async def test_compute_analytics_timezones(analytics_data, async_session):
 async def test_compute_analytics_weekly(analytics_data, async_session):
     """Weekly arrays must have 12 entries and current week must have correct counts."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     weekly = result["weekly"]
     assert len(weekly["weeks"]) == 12
@@ -331,7 +337,7 @@ async def test_compute_analytics_weekly(analytics_data, async_session):
 async def test_compute_analytics_heatmaps(analytics_data, async_session):
     """Heatmap grids must be 12 rows x 7 cols and contain fixture race/solo data."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     heatmaps = result["heatmaps"]
     race_grid = heatmaps["race_players"]
@@ -344,7 +350,7 @@ async def test_compute_analytics_heatmaps(analytics_data, async_session):
     for row in solo_grid:
         assert len(row) == 7
 
-    # The fixture race started 3h ago and training sessions created 2h ago.
+    # The fixture race started 3h before NOW and training sessions 2h before.
     # Total grid values should be non-zero (race has 2 participants, solo has 2 sessions).
     total_race = sum(cell for row in race_grid for cell in row)
     total_solo = sum(cell for row in solo_grid for cell in row)
@@ -405,7 +411,7 @@ async def test_analytics_endpoint_returns_401_without_auth(test_client):
 async def test_compute_analytics_pool_usage_from_fixture(analytics_data, async_session):
     """pool_usage should aggregate race participations and eligible training sessions."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     pool_usage = result["pool_usage"]
     assert len(pool_usage) == 1
@@ -503,7 +509,7 @@ async def test_compute_analytics_pool_usage_merges_training_prefix(async_session
 async def test_compute_analytics_top_organizers_from_fixture(analytics_data, async_session):
     """Top organizers should list user1 (1 finished race, avg 2.0 participants)."""
     async with async_session() as db:
-        result = await compute_analytics(db)
+        result = await compute_analytics(db, now=NOW)
 
     top = result["top_organizers"]
     assert len(top) == 1

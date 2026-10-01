@@ -59,13 +59,14 @@ def _build_week_list(now: datetime, count: int = 12) -> list[tuple[int, int]]:
     return list(reversed(weeks))
 
 
-async def compute_analytics(db: AsyncSession) -> dict[str, Any]:
+async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) -> dict[str, Any]:
     """Compute all dashboard analytics data from the database.
 
     Returns a dict with keys: kpis, weekly, heatmaps, timezones.
     Uses Python-side aggregation to stay compatible with SQLite (test) and PostgreSQL (prod).
+    ``now`` is injectable for tests.
     """
-    now = datetime.now(tz=UTC)
+    now = now or datetime.now(tz=UTC)
     first_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     cutoff_30d = now - timedelta(days=30)
     # Weekly and heatmap sections look back 12 ISO weeks; use 13 weeks as
