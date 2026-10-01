@@ -115,7 +115,7 @@ def guests(race: dict[str, Any]) -> int:
     show there, which holds for the few participants a race in setup has.
     """
     organizer = race["organizer"]["id"]
-    listed = sum(p["id"] == organizer for p in race["participant_previews"])
+    listed = sum(1 for p in race["participant_previews"] if p["id"] == organizer)
     return int(race["participant_count"]) - listed
 
 
