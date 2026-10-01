@@ -294,7 +294,7 @@
                     {/if}
                   {/if}
                 </span>
-              {:else}
+              {:else if !isDisqualified}
                 <span class="status-text">{participant.status}</span>
               {/if}
             </span>
@@ -615,7 +615,7 @@
     font-style: italic;
   }
 
-  .dq-label {
+  .zone.dq-label {
     color: var(--color-danger);
   }
 

@@ -12,6 +12,7 @@
   import { auth } from "$lib/stores/auth.svelte";
   import ConfirmModal from "./ConfirmModal.svelte";
   import DropdownMenu from "./DropdownMenu.svelte";
+  import DisqualifyModal from "./DisqualifyModal.svelte";
 
   interface Props {
     race: RaceDetail;
@@ -247,9 +248,15 @@
     return "Open";
   });
 
+  let showDisqualify = $state(false);
+
   let dropdownItems = $derived.by(() => {
     const items = [];
     if (raceStatus === "running" || raceStatus === "finished") {
+      items.push({
+        label: "Disqualify a runner...",
+        onclick: () => (showDisqualify = true),
+      });
       items.push({ label: "Reset Race", danger: true, onclick: handleReset });
     }
     items.push({
@@ -436,6 +443,16 @@
       {/if}
 
       <DropdownMenu items={dropdownItems} />
+      {#if showDisqualify}
+        <DisqualifyModal
+          {race}
+          onDone={(r) => {
+            showDisqualify = false;
+            onRaceUpdated(r);
+          }}
+          onClose={() => (showDisqualify = false)}
+        />
+      {/if}
     </div>
   </div>
 </div>

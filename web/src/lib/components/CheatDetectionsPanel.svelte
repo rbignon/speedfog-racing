@@ -8,9 +8,21 @@
     detections: Record<string, DebugFlags>;
     participants: WsParticipant[];
     zoneNames?: Map<string, string> | null;
+    // Opens the disqualification flow for a flagged runner, with a
+    // suggested reason built from the detected flags.
+    onDisqualify?: (participantId: string, suggestedReason: string) => void;
   }
 
-  let { detections, participants, zoneNames = null }: Props = $props();
+  let {
+    detections,
+    participants,
+    zoneNames = null,
+    onDisqualify,
+  }: Props = $props();
+
+  function isDisqualified(id: string): boolean {
+    return participants.some((p) => p.id === id && p.status === "disqualified");
+  }
 
   let rows = $derived(detectionRows(detections));
 
@@ -32,6 +44,17 @@
       {#each rows as row (row.participantId)}
         <li>
           <span class="runner">{runnerName(row.participantId)}</span>
+          {#if onDisqualify && !isDisqualified(row.participantId)}
+            <button
+              type="button"
+              class="btn btn-danger disqualify"
+              onclick={() =>
+                onDisqualify(
+                  row.participantId,
+                  `Cheat tool detected: ${row.flags.map((f) => f.label).join(", ")}`,
+                )}>Disqualify</button
+            >
+          {/if}
           <ul class="flags">
             {#each row.flags as flag (flag.name)}
               <li>
@@ -74,6 +97,12 @@
 
   .runner {
     font-weight: 600;
+  }
+
+  .disqualify {
+    margin-left: 0.75rem;
+    padding: 0.1rem 0.5rem;
+    font-size: var(--font-size-xs);
   }
 
   .flags li {

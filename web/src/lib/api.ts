@@ -926,6 +926,39 @@ export async function joinRace(raceId: string): Promise<Participant> {
 }
 
 /**
+ * Disqualify a participant (race organizer or admin).
+ */
+export async function disqualifyParticipant(
+  raceId: string,
+  participantId: string,
+  reason: string,
+): Promise<RaceDetail> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/participants/${participantId}/disqualify`,
+    {
+      method: "POST",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  );
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
+ * Cancel a disqualification (race organizer or admin).
+ */
+export async function cancelDisqualification(
+  raceId: string,
+  participantId: string,
+): Promise<RaceDetail> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/participants/${participantId}/disqualify`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  return handleResponse<RaceDetail>(response);
+}
+
+/**
  * Self-remove from a race during setup.
  */
 export async function leaveRace(raceId: string): Promise<void> {

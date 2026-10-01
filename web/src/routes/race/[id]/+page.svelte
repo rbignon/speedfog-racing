@@ -16,6 +16,7 @@
   import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
   import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
+  import DisqualifyModal from "$lib/components/DisqualifyModal.svelte";
   import { mergeDebugFlags } from "$lib/debugFlags";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
@@ -375,6 +376,16 @@
       : {},
   );
   let flaggedIds = $derived(Object.keys(debugFlags));
+  // Disqualification reasons this viewer may see (the REST response only
+  // carries them for the runner, the organizer and admins).
+  let disqualificationReasons = $derived(
+    Object.fromEntries(
+      initialRace.participants
+        .filter((p) => p.disqualification_reason)
+        .map((p) => [p.id, p.disqualification_reason as string]),
+    ),
+  );
+  let disqualifyTarget = $state<{ id: string; reason: string } | null>(null);
   let isCaster = $derived(
     auth.user
       ? initialRace.casters.some((c) => c.user.id === auth.user?.id)
@@ -960,6 +971,7 @@
             deathless={liveDeathless}
             provisionalPoints={isEventQualifier && raceStatus !== "finished"}
             {flaggedIds}
+            {disqualificationReasons}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
@@ -1127,6 +1139,11 @@
     </aside>
 
     <main class="main-content">
+      {#if myParticipant?.disqualification_reason}
+        <p class="dq-notice" role="alert">
+          You were disqualified: {myParticipant.disqualification_reason}
+        </p>
+      {/if}
       <div class="race-header-wrapper">
         <header class="race-header">
           <div class="race-title">
@@ -1340,7 +1357,20 @@
           detections={debugFlags}
           participants={raceStore.participants}
           {zoneNames}
+          onDisqualify={(id, reason) => (disqualifyTarget = { id, reason })}
         />
+        {#if disqualifyTarget}
+          <DisqualifyModal
+            race={initialRace}
+            preselectedId={disqualifyTarget.id}
+            suggestedReason={disqualifyTarget.reason}
+            onDone={(r) => {
+              disqualifyTarget = null;
+              initialRace = r;
+            }}
+            onClose={() => (disqualifyTarget = null)}
+          />
+        {/if}
       {/if}
 
       {#if liveSeed?.graph_json && raceStatus === "finished"}
@@ -1847,6 +1877,13 @@
 
   /* The header stacks on its own width, not the viewport's: the sidebar and
      the chat panel both eat into it. */
+  .dq-notice {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--color-danger);
+    color: var(--color-danger);
+  }
+
   .race-header-wrapper {
     container: race-header / inline-size;
   }
