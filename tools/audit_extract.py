@@ -371,6 +371,7 @@ async def export(
                     Participant.last_igt_change_at,
                     Participant.zone_history,
                     Participant.layer_entry_igts,
+                    Participant.debug_flags,
                 ).order_by(Participant.created_at)
             )
             async for row in stream.mappings():

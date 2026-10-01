@@ -235,20 +235,21 @@ These settings were set for the season-one event and can change again.
 
 One participation of one user in one race.
 
-| field                      | meaning                                                                                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `race_id`, `user_id` | identity                                                                                                                   |
-| `status`                   | `registered`, `ready`, `playing`, `finished`, `abandoned`                                                                  |
-| `created_at`               | when the user joined (self-join, invitation accepted, added by the organizer, or race creation for an organizer who races) |
-| `finished_at`              | server time the finish was recorded                                                                                        |
-| `igt_ms`                   | highest IGT reported; the final IGT for a finished run                                                                     |
-| `death_count`              | the game's death counter as last reported; it can go down after a backup restore, unlike the per-entry `deaths`            |
-| `current_layer`            | deepest layer reached (never decreases); set to the seed's `total_layers` on finish                                        |
-| `current_zone`             | last known node                                                                                                            |
-| `last_igt_change_at`       | server time of the last IGT change                                                                                         |
-| `layer_entry_igts`         | `{layer: IGT at first entry}`                                                                                              |
-| `zone_history`             | the run, see below                                                                                                         |
-| `is_target`                | the race is under review                                                                                                   |
+| field                      | meaning                                                                                                                                                                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`, `race_id`, `user_id` | identity                                                                                                                                                                                                                             |
+| `status`                   | `registered`, `ready`, `playing`, `finished`, `abandoned`                                                                                                                                                                            |
+| `created_at`               | when the user joined (self-join, invitation accepted, added by the organizer, or race creation for an organizer who races)                                                                                                           |
+| `finished_at`              | server time the finish was recorded                                                                                                                                                                                                  |
+| `igt_ms`                   | highest IGT reported; the final IGT for a finished run                                                                                                                                                                               |
+| `death_count`              | the game's death counter as last reported; it can go down after a backup restore, unlike the per-entry `deaths`                                                                                                                      |
+| `current_layer`            | deepest layer reached (never decreases); set to the seed's `total_layers` on finish                                                                                                                                                  |
+| `current_zone`             | last known node                                                                                                                                                                                                                      |
+| `last_igt_change_at`       | server time of the last IGT change                                                                                                                                                                                                   |
+| `layer_entry_igts`         | `{layer: IGT at first entry}`                                                                                                                                                                                                        |
+| `zone_history`             | the run, see below                                                                                                                                                                                                                   |
+| `debug_flags`              | game debug flags (the practice tool and TarnishedTool switches: one shot, no death, infinite stamina...) the mod read as on during the race: `{name: {igt_ms, node_id, detected_at}}`, the first observation of each; null when none |
+| `is_target`                | the race is under review                                                                                                                                                                                                             |
 
 ### zone_history entries
 
