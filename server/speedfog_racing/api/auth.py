@@ -111,6 +111,9 @@ class UserPublicResponse(BaseModel):
     race_count: int
     daily_count: int
     training_count: int
+    # This response only ever describes the caller: their own ban, if any.
+    banned_at: datetime | None = None
+    ban_reason: str | None = None
 
 
 class UserResponse(BaseModel):
@@ -296,6 +299,8 @@ async def get_me(
         race_count=played.race_count,
         daily_count=played.daily_count,
         training_count=played.training_count,
+        banned_at=user.banned_at,
+        ban_reason=user.ban_reason,
     )
 
 

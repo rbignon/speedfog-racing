@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api.helpers import race_response
-from speedfog_racing.auth import get_current_user, get_current_user_optional
+from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     Event,
@@ -483,7 +483,7 @@ async def _joinable_event(db: AsyncSession, slug: str) -> Event:
 async def sign_up(
     slug: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> None:
     """Say you are in: the ladder lists you before you run. Idempotent."""
     event = await _joinable_event(db, slug)

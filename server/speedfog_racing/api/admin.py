@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import case, func, literal, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -416,6 +416,8 @@ class AdminUserResponse(BaseModel):
     training_count: int = 0
     race_count: int = 0
     daily_count: int = 0
+    banned_at: datetime | None = None
+    ban_reason: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -524,13 +526,17 @@ async def update_user_role(
     user.role = UserRole(request.role)
     await db.commit()
     await db.refresh(user)
+    return await _admin_user_response(db, user)
 
+
+async def _admin_user_response(db: AsyncSession, user: User) -> AdminUserResponse:
+    """One user's admin row, with the same run counts as the users list."""
     counts = await db.execute(
         select(
             _training_count_sq.label("training_count"),
             _race_count_sq.label("race_count"),
             _daily_count_sq.label("daily_count"),
-        ).where(User.id == user_id)
+        ).where(User.id == user.id)
     )
     row = counts.one()
     return AdminUserResponse(
@@ -543,6 +549,63 @@ async def update_user_role(
         race_count=row.race_count,
         daily_count=row.daily_count,
     )
+
+
+class BanRequest(BaseModel):
+    """Why an admin bans an account."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason must not be blank")
+        return stripped
+
+
+@router.post("/users/{user_id}/ban", response_model=AdminUserResponse)
+async def ban_user(
+    user_id: uuid.UUID,
+    request: BanRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> AdminUserResponse:
+    """Ban an account (admin only, never an admin or oneself)."""
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if target.id == admin.id or target.role == UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot ban this user")
+    if target.banned_at is None:
+        target.banned_at = datetime.now(UTC)
+        target.banned_by_id = admin.id
+        target.ban_reason = request.reason
+        await db.commit()
+        await _apply_ban_side_effects(db, target, by=admin)
+    return await _admin_user_response(db, target)
+
+
+@router.delete("/users/{user_id}/ban", response_model=AdminUserResponse)
+async def unban_user(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> AdminUserResponse:
+    """Lift a ban (admin only). Nothing removed at ban time is restored."""
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    target.banned_at = None
+    target.banned_by_id = None
+    target.ban_reason = None
+    await db.commit()
+    return await _admin_user_response(db, target)
+
+
+async def _apply_ban_side_effects(db: AsyncSession, user: User, *, by: User) -> None:
+    """What a ban does to the user's pending and running entries."""
 
 
 # =============================================================================

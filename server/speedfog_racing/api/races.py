@@ -27,6 +27,7 @@ from speedfog_racing.auth import (
     get_current_user,
     get_current_user_optional,
     get_user_by_twitch_username,
+    require_not_banned,
 )
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
@@ -293,7 +294,7 @@ async def _transition_status(
 async def create_race(
     request: CreateRaceRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> RaceResponse:
     """Create a new race with a seed from the specified pool."""
     if user.role not in {UserRole.ORGANIZER, UserRole.ADMIN}:
@@ -782,6 +783,8 @@ async def add_participant(
 
     # Check if user exists
     target_user = await get_user_by_twitch_username(db, request.twitch_username)
+    if target_user is not None and target_user.banned_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This user is banned")
 
     if target_user:
         # Check if already a participant (DB query to avoid TOCTOU)
@@ -1186,6 +1189,8 @@ async def add_caster(
 
     # Resolve target user
     target_user = await get_user_by_twitch_username(db, request.twitch_username)
+    if target_user is not None and target_user.banned_at is not None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This user is banned")
     if not target_user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -1271,7 +1276,7 @@ async def remove_caster(
 async def join_race(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
     _sentry: None = Depends(sentry_race_context),
 ) -> ParticipantResponse:
     """Self-register as a participant in an open-registration race."""
@@ -1464,7 +1469,7 @@ async def leave_race(
 async def cast_join(
     race_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
     _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
     """Self-register as a caster for a race."""

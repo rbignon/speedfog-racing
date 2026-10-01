@@ -14,13 +14,13 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Authentication
 
-| Method | Endpoint             | Auth   | Description                                                                                                           |
-| ------ | -------------------- | ------ | --------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`, must match an allowed origin, else the configured default is used)         |
-| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?code=` (ephemeral)                                                                   |
-| POST   | `/api/auth/exchange` | -      | Exchange auth code for API token                                                                                      |
-| GET    | `/api/auth/me`       | Bearer | Get current user info (public, no `api_token`) with played-run counts (`race_count`, `daily_count`, `training_count`) |
-| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)                                                                            |
+| Method | Endpoint             | Auth   | Description                                                                                                                                                                                      |
+| ------ | -------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/auth/twitch`   | -      | Redirect to Twitch OAuth (`?redirect_url`, must match an allowed origin, else the configured default is used)                                                                                    |
+| GET    | `/api/auth/callback` | -      | OAuth callback, redirects with `?code=` (ephemeral)                                                                                                                                              |
+| POST   | `/api/auth/exchange` | -      | Exchange auth code for API token                                                                                                                                                                 |
+| GET    | `/api/auth/me`       | Bearer | Get current user info (public, no `api_token`) with played-run counts (`race_count`, `daily_count`, `training_count`) and the caller's own ban (`banned_at`, `ban_reason`, null when not banned) |
+| POST   | `/api/auth/logout`   | Bearer | Regenerate API token (invalidates session)                                                                                                                                                       |
 
 ### Races
 
@@ -96,17 +96,19 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 
 ### Admin
 
-| Method | Endpoint                      | Auth           | Description                                                                                                                |
-| ------ | ----------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/admin/seeds/scan`       | Bearer (admin) | Rescan seed pool (`{ pool_name? }`)                                                                                        |
-| GET    | `/api/admin/seeds/stats`      | Bearer (admin) | Pool statistics                                                                                                            |
-| POST   | `/api/admin/seeds/discard`    | Bearer (admin) | Discard seeds from pool                                                                                                    |
-| GET    | `/api/admin/pools`            | Bearer (admin) | List pools (incl. disabled) with seed counts                                                                               |
-| PATCH  | `/api/admin/pools/{name}`     | Bearer (admin) | Toggle `enabled` flag (`{ enabled: bool }`)                                                                                |
-| GET    | `/api/admin/users`            | Bearer (admin) | List all users                                                                                                             |
-| PATCH  | `/api/admin/users/{user_id}`  | Bearer (admin) | Update user role                                                                                                           |
-| GET    | `/api/admin/activity`         | Bearer (admin) | Admin activity timeline                                                                                                    |
-| GET    | `/api/admin/cheat-detections` | Bearer (admin) | Participants with cheat detections, most recent first (max 100); `zone_names` maps each detection zone to its display name |
+| Method | Endpoint                         | Auth           | Description                                                                                                                |
+| ------ | -------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/admin/seeds/scan`          | Bearer (admin) | Rescan seed pool (`{ pool_name? }`)                                                                                        |
+| GET    | `/api/admin/seeds/stats`         | Bearer (admin) | Pool statistics                                                                                                            |
+| POST   | `/api/admin/seeds/discard`       | Bearer (admin) | Discard seeds from pool                                                                                                    |
+| GET    | `/api/admin/pools`               | Bearer (admin) | List pools (incl. disabled) with seed counts                                                                               |
+| PATCH  | `/api/admin/pools/{name}`        | Bearer (admin) | Toggle `enabled` flag (`{ enabled: bool }`)                                                                                |
+| GET    | `/api/admin/users`               | Bearer (admin) | List all users                                                                                                             |
+| PATCH  | `/api/admin/users/{user_id}`     | Bearer (admin) | Update user role                                                                                                           |
+| POST   | `/api/admin/users/{user_id}/ban` | Bearer (admin) | Ban an account, body `{reason}` (never an admin or oneself); applies the ban side effects                                  |
+| DELETE | `/api/admin/users/{user_id}/ban` | Bearer (admin) | Lift a ban (nothing removed at ban time is restored)                                                                       |
+| GET    | `/api/admin/activity`            | Bearer (admin) | Admin activity timeline                                                                                                    |
+| GET    | `/api/admin/cheat-detections`    | Bearer (admin) | Participants with cheat detections, most recent first (max 100); `zone_names` maps each detection zone to its display name |
 
 ---
 
@@ -355,7 +357,7 @@ Authentication successful. Contains initial race state.
 
 #### `auth_error`
 
-Authentication failed. Connection is closed with code 4003.
+Authentication failed. Connection is closed with code 4003. A banned account gets the message "Your account is banned" (race and training mods alike).
 
 ```json
 {

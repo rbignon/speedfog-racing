@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
@@ -111,6 +112,10 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
             if session.status != TrainingSessionStatus.ACTIVE:
                 await self._send_auth_error("Solo session is not active")
+                return False
+
+            if session.user.banned_at is not None:
+                await self._send_auth_error(BAN_MESSAGE)
                 return False
 
             self._user_id = session.user_id

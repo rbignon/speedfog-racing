@@ -141,6 +141,13 @@ class User(Base):
         Integer, nullable=False, default=0, server_default="0"
     )
     daily_last_qualifying_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Ban by an admin (see services/sanctions_service.py): blocks the
+    # competitive and social entry points, never the role or past results.
+    banned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    banned_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=True
+    )
+    ban_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")

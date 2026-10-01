@@ -283,6 +283,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
                 role = race_role(race, user_obj)
                 if role is not None:
                     self._conn.role = role
+                self._conn.banned = user_obj.banned_at is not None
 
                 participant = next((p for p in race.participants if p.user_id == user_id), None)
                 if participant:
@@ -359,6 +360,8 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
     async def _handle_chat(self, msg: dict[str, Any]) -> None:
         if self._chat_info is None:
             return  # Not authenticated
+        if self._conn.banned:
+            return
 
         try:
             chat_msg = SendChatMessage.model_validate(msg)
@@ -468,7 +471,7 @@ class RaceSpectatorHandler(BaseSpectatorHandler):
         Invalid payloads and unknown targets are silently ignored, like
         every other chat message.
         """
-        if self._conn.user_id is None:
+        if self._conn.user_id is None or self._conn.banned:
             return
 
         try:

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.api.helpers import late_join_window_open, participant_response
-from speedfog_racing.auth import get_current_user
+from speedfog_racing.auth import require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Invite, Participant, Race, RaceStatus, User
 from speedfog_racing.schemas import (
@@ -60,7 +60,7 @@ async def get_invite_info(
 async def accept_invite(
     token: str,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> AcceptInviteResponse:
     """Accept an invite and become a participant.
 

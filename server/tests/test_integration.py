@@ -1246,6 +1246,27 @@ def test_disqualified_runner_cannot_finish_or_report(
     assert row.igt_ms == igt_before, "nothing recorded after the disqualification"
 
 
+def test_banned_player_mod_is_refused(integration_client, race_with_participants, integration_db):
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    player = race_with_participants["players"][0]["user"]
+
+    async def ban() -> None:
+        async with integration_db() as db:
+            user = await db.get(User, player.id)
+            user.banned_at = datetime.now(UTC)
+            user.ban_reason = "x"
+            await db.commit()
+
+    asyncio.run(ban())
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        resp = mod0.auth(drain=False)
+    assert resp["type"] == "auth_error"
+    assert resp["message"] == "Your account is banned"
+
+
 def test_stale_save_rejected_on_status_update(
     integration_client, race_with_participants, integration_db
 ):

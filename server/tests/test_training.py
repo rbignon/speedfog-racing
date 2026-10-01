@@ -860,6 +860,25 @@ def training_session_data(async_session, training_user, training_seed):
     return asyncio.run(_setup())
 
 
+def test_training_mod_refuses_banned_user(
+    training_ws_client, training_session_data, async_session, training_user
+):
+    async def ban() -> None:
+        async with async_session() as db:
+            user = await db.get(User, training_user.id)
+            user.banned_at = datetime.now(UTC)
+            user.ban_reason = "x"
+            await db.commit()
+
+    asyncio.run(ban())
+    sid = training_session_data["session_id"]
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": training_session_data["mod_token"]})
+        resp = ws.receive_json()
+    assert resp["type"] == "auth_error"
+    assert resp["message"] == "Your account is banned"
+
+
 def test_training_mod_websocket_auth(training_ws_client, training_session_data):
     """Training mod WS: auth → auth_ok with seed info."""
     sid = training_session_data["session_id"]

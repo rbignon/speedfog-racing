@@ -448,3 +448,75 @@ async def test_under_review_participation_cannot_leave_or_be_removed(
     assert leave.status_code == 400, leave.text
     assert leave.json()["detail"] == "This participation is under review"
     assert remove.status_code == 400, remove.text
+
+
+async def _ban(sx_session, user: User, by: User, reason: str = "Repeat cheating") -> None:
+    async with sx_session() as db:
+        target = await db.get(User, user.id)
+        target.banned_at = datetime.now(UTC)
+        target.banned_by_id = by.id
+        target.ban_reason = reason
+        await db.commit()
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/api/races", {"name": "x"}),
+        ("/api/races/{race_id}/join", None),
+        ("/api/races/{race_id}/cast-join", None),
+        ("/api/invite/not-a-token/accept", None),
+        ("/api/training", {"pool_name": "standard"}),
+        ("/api/events/no-such-event/signup", None),
+    ],
+)
+async def test_banned_user_is_refused_at_every_entry_point(
+    sx_client, sx_session, sx_users, path, body
+):
+    race_id, _ = await _race(sx_session, sx_users, status=RaceStatus.SETUP, runners={})
+    await _ban(sx_session, sx_users["cheater"], sx_users["admin"])
+    async with sx_client as client:
+        resp = await client.post(
+            path.format(race_id=race_id),
+            headers=_auth(sx_users["cheater"]),
+            **({"json": body} if body is not None else {}),
+        )
+    assert resp.status_code == 403, resp.text
+    assert resp.json()["detail"] == "Your account is banned"
+
+
+async def test_organizer_cannot_add_a_banned_user(sx_client, sx_session, sx_users):
+    race_id, _ = await _race(sx_session, sx_users, status=RaceStatus.SETUP, runners={})
+    await _ban(sx_session, sx_users["cheater"], sx_users["admin"])
+    async with sx_client as client:
+        resp = await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "cheater_sx"},
+            headers=_auth(sx_users["organizer"]),
+        )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"] == "This user is banned"
+
+
+async def test_ban_endpoints_are_admin_only_and_spare_admins(sx_client, sx_users):
+    async with sx_client as client:
+        url = f"/api/admin/users/{sx_users['cheater'].id}/ban"
+        by_org = await client.post(url, json={"reason": "x"}, headers=_auth(sx_users["organizer"]))
+        on_admin = await client.post(
+            f"/api/admin/users/{sx_users['admin'].id}/ban",
+            json={"reason": "x"},
+            headers=_auth(sx_users["admin"]),
+        )
+        ok = await client.post(
+            url, json={"reason": "Repeat cheating"}, headers=_auth(sx_users["admin"])
+        )
+        me = await client.get("/api/auth/me", headers=_auth(sx_users["cheater"]))
+        unban = await client.delete(url, headers=_auth(sx_users["admin"]))
+        me_after = await client.get("/api/auth/me", headers=_auth(sx_users["cheater"]))
+    assert by_org.status_code == 403
+    assert on_admin.status_code == 400
+    assert ok.status_code == 200, ok.text
+    assert ok.json()["ban_reason"] == "Repeat cheating"
+    assert me.json()["ban_reason"] == "Repeat cheating" and me.json()["banned_at"]
+    assert unban.status_code == 200
+    assert me_after.json()["banned_at"] is None

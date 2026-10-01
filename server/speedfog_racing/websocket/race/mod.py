@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
 from speedfog_racing.discord import (
     fire_debug_flags_notification,
@@ -276,6 +277,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     participant.user_id,
                 )
                 await self._send_auth_error("Race has already finished")
+                return False
+
+            if participant.user.banned_at is not None:
+                await self._send_auth_error(BAN_MESSAGE)
                 return False
 
             self._participant_id = participant.id

@@ -228,6 +228,16 @@ async def get_current_user_optional(
     return await get_user_by_token(db, credentials.credentials)
 
 
+BAN_MESSAGE = "Your account is banned"
+
+
+async def require_not_banned(user: User = Depends(get_current_user)) -> User:
+    """Dependency for competitive and social actions: refuses a banned account."""
+    if user.banned_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=BAN_MESSAGE)
+    return user
+
+
 async def require_admin(
     user: User = Depends(get_current_user),
 ) -> User:

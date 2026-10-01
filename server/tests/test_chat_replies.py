@@ -300,3 +300,23 @@ async def test_history_caps_at_most_recent_messages(session_maker):
     assert len(history.messages) == MAX_CHAT_HISTORY_MESSAGES
     assert history.messages[0].message == f"msg-{total - MAX_CHAT_HISTORY_MESSAGES:03d}"
     assert history.messages[-1].message == f"msg-{total - 1:03d}"
+
+
+@pytest.mark.asyncio
+async def test_banned_spectator_chat_is_dropped(session_maker):
+    race_id, _organizer_id, player_id = await _seed_race(session_maker)
+    handler, listener = _handler_with_room(session_maker, race_id, player_id)
+    handler._conn.banned = True
+    try:
+        await handler._handle_chat({"type": "chat", "channel": "participants", "message": "spam"})
+    finally:
+        manager.rooms.pop(race_id, None)
+
+    assert _sent_chat_messages(listener) == []
+    async with session_maker() as db:
+        rows = (
+            (await db.execute(select(ChatMessage).where(ChatMessage.message == "spam")))
+            .scalars()
+            .all()
+        )
+        assert rows == []

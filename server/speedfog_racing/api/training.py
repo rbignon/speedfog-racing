@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import parse_enum_csv, user_response
-from speedfog_racing.auth import get_current_user, get_current_user_optional
+from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
@@ -139,7 +139,7 @@ async def create_session(
     request: Request,
     body: CreateTrainingRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> TrainingSessionDetailResponse:
     """Create a new training session."""
     # SAFETY: TOCTOU race window exists (SELECT then INSERT without partial

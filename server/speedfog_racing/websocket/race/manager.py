@@ -66,6 +66,8 @@ class SpectatorConnection:
     # ``None`` for non-participants. Populated at auth and refreshed when
     # the participant transitions (race start, finish, abandon).
     participant_status: ParticipantStatus | None = None
+    # Set at auth and by a ban: a banned viewer may watch but not chat.
+    banned: bool = False
     # Unique id for O(1) removal from RaceRoom.spectators dict.
     connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
