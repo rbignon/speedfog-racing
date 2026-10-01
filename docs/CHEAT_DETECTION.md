@@ -39,8 +39,10 @@ The table lives in `mod/src/core/debug_flags.rs`; the server
 ## Flow
 
 1. **Mod.** While racing (not in training, after the countdown, before the
-   local finish, on the race save), the mod reads the 19 bytes at most every
-   100 ms (one `ReadProcessMemory` call). It keeps the flags seen since the
+   local finish or abandon, on a save the server accepts), the mod reads the
+   19 bytes at most every 100 ms (one `ReadProcessMemory` call). When the
+   server rejects the save (fresh save required, wrong save), the flags seen
+   so far are dropped: they belong to a save that is not the race run. It keeps the flags seen since the
    race start and sends their names in every `status_update`
    (`debug_flags`, protocol 1.5). While a flag is on, the overlay shows a red
    "CHEAT TOOL DETECTED / Reported to the race organizer" banner; it never
@@ -76,7 +78,10 @@ There is no automatic sanction: the organizer decides.
 ## Live checklist (Windows)
 
 1. Run a full normal race. `speedfog_racing.log` shows `[RACE] Debug flags:
-0x0` at the start and never another value.
+0x0` at the start and never another value. Make sure the run goes
+   through the Chapel of Anticipation start, at least one boss warp, and
+   casts Unseen Form and Assassin's Approach (retail stealth effects, next
+   to the watched `hidden` and `silent` bytes).
 2. In a test race, toggle each watched option in the practice tool, then in
    TarnishedTool. Each one shows the banner within a fraction of a second,
    the "Flagged" chip and the panel on the organizer's race page, a Discord
@@ -84,5 +89,7 @@ There is no automatic sanction: the organizer decides.
    off removes the banner; the detection stays.
 3. Toggle an option during the countdown and before the start: no banner;
    still on after the countdown: banner and detection at the start IGT.
-4. In a Tracy capture (`docs/MOD_PROFILING.md`), `read_debug_flags` costs a
+4. In a deathless race, die (the server abandons you), then toggle an
+   option: no banner, no detection.
+5. In a Tracy capture (`docs/MOD_PROFILING.md`), `read_debug_flags` costs a
    few microseconds and runs about 10 times per second.

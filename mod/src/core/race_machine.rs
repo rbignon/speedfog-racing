@@ -503,10 +503,15 @@ impl RaceMachine {
             && !self.wrong_save
     }
 
-    /// Whether the debug-flag read may run: racing for real (not training),
-    /// after the countdown, before the local finish, on the race save.
+    /// Whether the debug-flag read may run: racing for real (not training,
+    /// not abandoned), after the countdown, before the local finish, on a
+    /// save the server accepts (no local wrong save, no blocking server
+    /// condition). Outside it the server ignores the reports anyway.
     fn debug_flags_gate_open(&self, now: Instant) -> bool {
-        !self.training && self.freeze_gate_open(now)
+        !self.training
+            && !self.am_i_abandoned()
+            && self.freeze_gate_open(now)
+            && self.get_blocking_condition(now).is_none()
     }
 
     fn is_deathless(&self) -> bool {
@@ -1522,6 +1527,12 @@ impl RaceMachine {
             }
         } else {
             self.debug_flags_last = None;
+            // The server rejects the updates of this save (fresh save
+            // required, wrong save): whatever was seen belongs to a save that
+            // is not the race run, so it must not reach the next accepted one.
+            if self.get_blocking_condition(now).is_some() {
+                self.debug_flags_seen = 0;
+            }
         }
 
         // Everything below needs a live connection (ready, replays, status updates).
@@ -3983,5 +3994,64 @@ mod tests {
             _ => None,
         });
         assert_eq!(sent, Some(debug_bit("one_shot")));
+    }
+
+    #[test]
+    fn no_banner_or_report_after_the_runner_abandons() {
+        // The server ignores an abandoned runner's updates: a banner saying
+        // "reported" would be false (e.g. exploring with a tool after a
+        // deathless death).
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.race_state.participants[0].status = ParticipantStatus::Abandoned;
+        let t1 = now + ms(100);
+        assert!(
+            !m.pre_tick(t1, true, true).debug_flags,
+            "no read once abandoned"
+        );
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        assert!(!m.cheat_warning_active(t1));
+        assert_eq!(m.debug_flags_seen, 0);
+    }
+
+    #[test]
+    fn flags_seen_on_a_save_the_server_rejects_are_not_reported() {
+        // Async race: the runner practises with a tool on an old save, the
+        // server refuses it (fresh save required), the runner starts a clean
+        // New Game with the tool off. Nothing from the old save is reported.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(500_000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        let t2 = t1 + ms(900);
+        m.handle_message(
+            coded_error("Please start a New Game", ConditionKind::FreshSaveRequired),
+            t2,
+        );
+        let t3 = t2 + ms(100);
+        assert!(
+            !m.pre_tick(t3, true, true).debug_flags,
+            "no read while the server blocks"
+        );
+        m.tick(
+            tick_in(snap_flags(500_100, debug_bit("one_shot")), true, None),
+            t3,
+        );
+        assert_eq!(
+            m.debug_flags_seen, 0,
+            "the rejected save's flags are dropped"
+        );
+
+        // New Game, tool off: once the condition lapses, reads resume, clean.
+        let t4 = t2 + secs(4);
+        assert!(m.pre_tick(t4, true, true).debug_flags);
+        m.tick(tick_in(snap_flags(1000, 0), true, None), t4);
+        assert_eq!(m.debug_flags_seen, 0);
     }
 }
