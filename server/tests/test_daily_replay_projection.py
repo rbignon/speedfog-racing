@@ -246,3 +246,23 @@ def test_layer_takes_max_over_visited_nodes_handles_backtracks() -> None:
     assert projected is not None
     assert projected.current_zone == "fog_a"
     assert projected.current_layer == 2
+
+
+def test_disqualified_never_projects_as_a_live_runner() -> None:
+    # Whatever the viewer's IGT, a disqualified ghost reads DQ, never as a
+    # runner still racing (nor as the leader whose gaps the others chase).
+    graph = _graph({"start": 0, "fog_a": 1, "fog_b": 2})
+    p = _participant(
+        status=ParticipantStatus.DISQUALIFIED,
+        igt_ms=400_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 100_000},
+            {"node_id": "fog_b", "igt_ms": 400_000},
+        ],
+    )
+
+    for viewer_igt in (200_000, 900_000):
+        projected = project_participant_at(p, viewer_igt_ms=viewer_igt, graph_json=graph)
+        assert projected is not None
+        assert projected.status == ParticipantStatus.DISQUALIFIED

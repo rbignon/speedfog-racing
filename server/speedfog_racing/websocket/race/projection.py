@@ -91,7 +91,12 @@ def project_participant_at(
     real_status = participant.status
     real_final_igt = int(participant.igt_ms or 0)
 
-    if real_status == ParticipantStatus.FINISHED and real_final_igt <= viewer_igt_ms:
+    if real_status == ParticipantStatus.DISQUALIFIED:
+        # Out of the results at every IGT: ranks with the DQ rows, never as a
+        # live runner or a leader to chase.
+        proj_status = ParticipantStatus.DISQUALIFIED
+        proj_igt = min(viewer_igt_ms, full_last_igt)
+    elif real_status == ParticipantStatus.FINISHED and real_final_igt <= viewer_igt_ms:
         proj_status = ParticipantStatus.FINISHED
         proj_igt = real_final_igt
     elif real_status == ParticipantStatus.ABANDONED and full_last_igt <= viewer_igt_ms:
