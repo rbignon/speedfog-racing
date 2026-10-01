@@ -4,6 +4,7 @@ pub mod aob;
 pub mod color;
 pub mod constants;
 pub mod countdown;
+pub mod debug_flags;
 pub mod flag_buffer;
 pub mod format;
 pub mod igt_fix;
