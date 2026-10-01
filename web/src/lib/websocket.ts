@@ -2,7 +2,7 @@
  * WebSocket client with automatic reconnection for SpeedFog Racing.
  */
 
-import { getStoredToken } from "$lib/api";
+import { getStoredToken, type DebugFlags } from "$lib/api";
 import type { ZoneHistoryEntry } from "$lib/zone-history";
 
 // =============================================================================
@@ -116,6 +116,12 @@ export interface ZoneHistoryMessage {
   history: ZoneHistoryEntry[];
 }
 
+export interface DebugFlagsDetectedMessage {
+  type: "debug_flags_detected";
+  participant_id: string;
+  debug_flags: DebugFlags;
+}
+
 export interface ChatReplyContext {
   id: string;
   username: string;
@@ -182,6 +188,7 @@ export type ServerMessage =
   | RaceInfoUpdateMessage
   | SpectatorCountMessage
   | ZoneHistoryMessage
+  | DebugFlagsDetectedMessage
   | ChatMessage
   | ChatHistoryMessage
   | ChatReactionUpdateMessage
@@ -195,6 +202,7 @@ const VALID_SERVER_MESSAGE_TYPES = new Set([
   "race_info_update",
   "spectator_count",
   "zone_history",
+  "debug_flags_detected",
   "chat_message",
   "chat_history",
   "chat_reaction_update",
@@ -223,6 +231,7 @@ export interface RaceWebSocketOptions {
   onRaceInfoUpdate?: (msg: RaceInfoUpdateMessage) => void;
   onSpectatorCount?: (msg: SpectatorCountMessage) => void;
   onZoneHistory?: (msg: ZoneHistoryMessage) => void;
+  onDebugFlagsDetected?: (msg: DebugFlagsDetectedMessage) => void;
   onChatMessage?: (msg: ChatMessage) => void;
   onChatHistory?: (msg: ChatHistoryMessage) => void;
   onChatReactionUpdate?: (msg: ChatReactionUpdateMessage) => void;
@@ -397,6 +406,9 @@ export class RaceWebSocket {
         break;
       case "zone_history":
         this.options.onZoneHistory?.(msg);
+        break;
+      case "debug_flags_detected":
+        this.options.onDebugFlagsDetected?.(msg);
         break;
       case "chat_message":
         this.options.onChatMessage?.(msg);

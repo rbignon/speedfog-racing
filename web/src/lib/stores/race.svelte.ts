@@ -13,6 +13,7 @@ import {
   type WsRaceInfo,
   type WsSeedInfo,
 } from "$lib/websocket";
+import type { DebugFlags } from "$lib/api";
 import { preserveZoneHistory } from "$lib/zone-history";
 import { computeGap } from "$lib/gap";
 import { createDelayQueue, type DelayQueue } from "$lib/cast/delay";
@@ -75,6 +76,9 @@ class RaceStore {
   // current daily; other surfaces ignore it.
   dailyStreakUpdate = $state<DailyStreakUpdateMessage | null>(null);
   spectatorCount = $state(0);
+  // Cheat detections pushed live to the race staff (debug_flags_detected):
+  // participant id -> full map. The page merges it over the REST snapshot.
+  debugFlags = $state<Record<string, DebugFlags>>({});
   connected = $state(false);
   loading = $state(true);
   wsError = $state<{ code: number; reason: string } | null>(null);
@@ -149,6 +153,7 @@ class RaceStore {
     this.chatMessagesPublic = [];
     this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
+    this.debugFlags = {};
     this.connected = false;
     this.loading = true;
     this.wsError = null;
@@ -233,6 +238,14 @@ class RaceStore {
           };
           if (!this.delayQueue) return apply();
           this.delayQueue.push(apply);
+        },
+
+        onDebugFlagsDetected: (msg) => {
+          // A staff alert, not cast data: applied at once, never delayed.
+          this.debugFlags = {
+            ...this.debugFlags,
+            [msg.participant_id]: msg.debug_flags,
+          };
         },
 
         onZoneHistory: (msg) => {
@@ -370,6 +383,7 @@ class RaceStore {
     this.chatHistoryVersion = 0;
     this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
+    this.debugFlags = {};
     this.connected = false;
     this.loading = true;
     this.wsError = null;

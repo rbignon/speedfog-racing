@@ -91,6 +91,16 @@ export type ParticipantStatus =
   | "finished"
   | "abandoned";
 
+/** First observation of a game debug flag (cheat detection). */
+export interface DebugFlagObservation {
+  igt_ms: number;
+  node_id: string | null;
+  detected_at: string;
+}
+
+/** Wire flag name -> first observation. */
+export type DebugFlags = Record<string, DebugFlagObservation>;
+
 export interface Participant {
   id: string;
   user: User;
@@ -100,6 +110,8 @@ export interface Participant {
   death_count: number;
   color_index: number;
   daily_points?: number | null;
+  // Cheat detections, filled only for the race organizer and admins.
+  debug_flags?: DebugFlags | null;
 }
 
 export interface Caster {
@@ -1701,6 +1713,25 @@ export async function fetchReportedSeeds(): Promise<ReportedSeed[]> {
     headers: getAuthHeaders(),
   });
   return handleResponse<ReportedSeed[]>(response);
+}
+
+export interface CheatDetection {
+  participant_id: string;
+  race_id: string;
+  race_name: string;
+  user: User;
+  debug_flags: DebugFlags;
+  last_detected_at: string;
+}
+
+/**
+ * Fetch participants with cheat detections, most recent first (admin only).
+ */
+export async function fetchCheatDetections(): Promise<CheatDetection[]> {
+  const response = await fetch(`${API_BASE}/admin/cheat-detections`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<CheatDetection[]>(response);
 }
 
 /**
