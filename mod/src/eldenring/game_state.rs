@@ -200,6 +200,7 @@ impl GameState {
     /// plugin freezes the clock. Zone reveals treat it as a loading proxy
     /// bounded by a defensive timeout (see `RaceMachine`);
     /// `is_world_clock_stopped` is the boolean view.
+    #[cfg(debug_assertions)]
     pub fn read_loading_byte(&self) -> Option<u8> {
         profile_span!("read_loading_byte");
         self.loading_screen_ptr.read()
@@ -221,6 +222,7 @@ impl GameState {
     /// chain (callers fall back to the legacy world-clock proxy). Thin
     /// wrapper over `read_screen_signals`; off the per-frame hot path (debug
     /// panel only), so the redundant screen-state read it implies is fine.
+    #[cfg(debug_assertions)]
     pub fn is_screen_in_game(&self) -> Option<bool> {
         profile_span!("is_screen_in_game");
         self.read_screen_signals().0
@@ -232,6 +234,7 @@ impl GameState {
     /// simply not fading (or not in game); `None` when the screen-state
     /// signal itself is unavailable. Thin wrapper over `read_screen_signals`;
     /// off the per-frame hot path (debug panel only).
+    #[cfg(debug_assertions)]
     pub fn is_blackscreen_active(&self) -> Option<bool> {
         profile_span!("is_blackscreen_active");
         self.read_screen_signals().1

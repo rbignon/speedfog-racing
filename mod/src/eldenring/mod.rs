@@ -10,6 +10,7 @@ mod event_flags;
 mod game_state;
 pub mod igt_hook;
 pub mod item_spawner;
+#[cfg(debug_assertions)]
 pub mod quitout;
 mod scan;
 pub mod sp_effect_apply;

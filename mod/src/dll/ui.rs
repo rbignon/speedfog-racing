@@ -20,9 +20,11 @@ use crate::profile_span;
 
 use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
+#[cfg(debug_assertions)]
+use super::tracker::FlagReadResult;
 use super::tracker::{
-    ExitRow, ExitsRenderCache, FlagReadResult, LeaderboardRowCache, OverlayFonts, RaceTracker,
-    RenderBuffers, EMBEDDED_FONT_DISPLAY, EMBEDDED_FONT_MONO, EMBEDDED_FONT_SYMBOLS,
+    ExitRow, ExitsRenderCache, LeaderboardRowCache, OverlayFonts, RaceTracker, RenderBuffers,
+    EMBEDDED_FONT_DISPLAY, EMBEDDED_FONT_MONO, EMBEDDED_FONT_SYMBOLS,
     LEADERBOARD_REFRESH_INTERVAL_MS, MAX_CONSECUTIVE_UPDATE_PANICS,
 };
 use super::websocket::ConnectionStatus;
@@ -280,9 +282,12 @@ impl RaceTracker {
                         self.render_leaderboard(ui, max_width, &mut bufs);
                     }
                     self.render_status_message(ui);
-                    if self.show_debug {
-                        ui.separator();
-                        self.render_debug(ui);
+                    #[cfg(debug_assertions)]
+                    {
+                        if self.show_debug {
+                            ui.separator();
+                            self.render_debug(ui);
+                        }
                     }
                 });
         }
@@ -1304,6 +1309,7 @@ impl RaceTracker {
         }
     }
 
+    #[cfg(debug_assertions)]
     fn render_debug(&self, ui: &hudhook::imgui::Ui) {
         // Raw data dump: mono throughout
         let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));

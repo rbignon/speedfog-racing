@@ -1,4 +1,5 @@
-//! Return-to-title bit reader, debug-overlay telemetry only.
+//! Return-to-title bit reader, debug-overlay telemetry only (compiled in
+//! debug builds, like the overlay itself).
 //!
 //! Reads the `return_title_requested` flag: bit 11 of
 //! `CSLuaEventProxy.control_flags`, set by `RegistReturnTitle`. Live testing

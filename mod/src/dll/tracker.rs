@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
@@ -24,7 +24,8 @@ use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
 use super::websocket::RaceWebSocketClient;
 
-const DEBUG_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+#[cfg(debug_assertions)]
+const DEBUG_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 /// Consecutive update() panics before tracking latches off (~5 s at 60 FPS).
 pub(crate) const MAX_CONSECUTIVE_UPDATE_PANICS: u32 = 300;
 pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
@@ -63,6 +64,7 @@ impl Default for RenderBuffers {
 }
 
 /// Result of reading a single flag for debug display
+#[cfg(debug_assertions)]
 #[derive(Clone, Copy)]
 pub enum FlagReadResult {
     /// Memory read failed
@@ -73,7 +75,9 @@ pub enum FlagReadResult {
     Set,
 }
 
-/// Debug overlay info
+/// Debug overlay info. The debug overlay only exists in debug builds: a
+/// release build has neither the panel nor its `toggle_debug` hotkey.
+#[cfg(debug_assertions)]
 pub struct DebugInfo {
     pub last_sent: Option<String>,
     pub last_received: Option<String>,
@@ -95,6 +99,7 @@ pub struct DebugInfo {
     pub quit_out_bit: Option<bool>,
 }
 
+#[cfg(debug_assertions)]
 impl Default for DebugInfo {
     fn default() -> Self {
         Self {
@@ -240,6 +245,7 @@ pub struct RaceTracker {
 
     // UI state
     pub(crate) show_ui: bool,
+    #[cfg(debug_assertions)]
     pub(crate) show_debug: bool,
     pub(crate) show_leaderboard: bool,
     /// Hard latch: a durably-broken update loop; rendering and updates stop
@@ -273,7 +279,9 @@ pub struct RaceTracker {
     phantom_skin_name: Option<String>,
 
     // Throttled debug snapshot to avoid expensive flag reads every frame.
+    #[cfg(debug_assertions)]
     debug_info: DebugInfo,
+    #[cfg(debug_assertions)]
     last_debug_refresh: Option<Instant>,
 
     // Cached leaderboard layout invalidated by participant/status changes.
@@ -326,9 +334,11 @@ impl RaceTracker {
             }
         }
 
-        // Warm the quit-out AOB scan and install the IGT truncation-fix
-        // hook off the frame path: both walk the whole module image.
+        // Warm the quit-out AOB scan (debug builds only) and install the IGT
+        // truncation-fix hook off the frame path: both walk the whole module
+        // image.
         std::thread::spawn(|| {
+            #[cfg(debug_assertions)]
             let _ = crate::eldenring::quitout::is_available();
             crate::eldenring::igt_hook::install();
         });
@@ -381,6 +391,7 @@ impl RaceTracker {
                 Instant::now(),
             ),
             show_ui: true,
+            #[cfg(debug_assertions)]
             show_debug: false,
             show_leaderboard: true,
             tracking_disabled: false,
@@ -392,7 +403,9 @@ impl RaceTracker {
             phantom_skin_thread: None,
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
             phantom_skin_name: None,
+            #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
+            #[cfg(debug_assertions)]
             last_debug_refresh: None,
             leaderboard_cache: LeaderboardCache::default(),
             exits_cache: ExitsRenderCache::default(),
@@ -420,11 +433,14 @@ impl RaceTracker {
             }
         }
 
-        // Check toggle_debug hotkey
-        if let Some(ref hotkey) = self.config.keybindings.toggle_debug {
-            if hotkey.is_just_pressed(ui) {
-                self.show_debug = !self.show_debug;
-                info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
+        // Check toggle_debug hotkey (debug builds only)
+        #[cfg(debug_assertions)]
+        {
+            if let Some(ref hotkey) = self.config.keybindings.toggle_debug {
+                if hotkey.is_just_pressed(ui) {
+                    self.show_debug = !self.show_debug;
+                    info!(show_debug = self.show_debug, "[HOTKEY] Toggle debug");
+                }
             }
         }
 
@@ -559,12 +575,15 @@ impl RaceTracker {
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
 
-        if self.show_debug
-            && self
-                .last_debug_refresh
-                .is_none_or(|t| t.elapsed() >= DEBUG_REFRESH_INTERVAL)
+        #[cfg(debug_assertions)]
         {
-            self.refresh_debug_info();
+            if self.show_debug
+                && self
+                    .last_debug_refresh
+                    .is_none_or(|t| t.elapsed() >= DEBUG_REFRESH_INTERVAL)
+            {
+                self.refresh_debug_info();
+            }
         }
 
         // One-time flag reader diagnostic (first connected frame with event_ids).
@@ -869,10 +888,12 @@ impl RaceTracker {
         self.machine.get_waiting_line(Instant::now())
     }
 
+    #[cfg(debug_assertions)]
     pub fn debug_info(&self) -> &DebugInfo {
         &self.debug_info
     }
 
+    #[cfg(debug_assertions)]
     fn refresh_debug_info(&mut self) {
         let flag_reader_status = self.event_flag_reader.diagnose();
         let flag_reader_ok = matches!(flag_reader_status, FlagReaderStatus::Ok { .. });

@@ -30,6 +30,7 @@ pub(crate) fn module_base_and_size() -> Option<(usize, usize)> {
 }
 
 /// Address of the first match of `pattern` in `[base, base+size)`, or `None`.
+#[cfg(debug_assertions)] // no release-build caller yet
 pub(crate) fn scan_pattern(base: usize, size: usize, pattern: &[Option<u8>]) -> Option<usize> {
     if size == 0 {
         return None;

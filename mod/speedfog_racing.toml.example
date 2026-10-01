@@ -26,7 +26,7 @@ font_size = 16
 # Hotkeys only respond while the game window has focus.
 # Key to toggle UI visibility (set to "none" to disable)
 toggle_ui = "f9"
-# Key to toggle debug section (set to "none" to disable)
+# Key to toggle debug section (debug builds only; release builds ignore it)
 toggle_debug = "none"
 # Key to toggle leaderboard visibility (set to "none" to disable)
 toggle_leaderboard = "f10"

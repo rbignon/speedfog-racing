@@ -183,7 +183,9 @@ pub struct KeyBindings {
         serialize_with = "serialize_optional_hotkey"
     )]
     pub toggle_ui: Option<Hotkey>,
-    /// Toggle debug overlay section (default: none)
+    /// Toggle debug overlay section (default: none). Debug builds only: a
+    /// release build ignores the key, as it has no debug overlay.
+    #[cfg(debug_assertions)]
     #[serde(
         default = "default_toggle_debug",
         deserialize_with = "deserialize_optional_hotkey",
@@ -203,6 +205,7 @@ fn default_toggle_ui() -> Option<Hotkey> {
     Some(Hotkey::default()) // F9
 }
 
+#[cfg(debug_assertions)]
 fn default_toggle_debug() -> Option<Hotkey> {
     None
 }
@@ -215,6 +218,7 @@ impl Default for KeyBindings {
     fn default() -> Self {
         Self {
             toggle_ui: default_toggle_ui(),
+            #[cfg(debug_assertions)]
             toggle_debug: default_toggle_debug(),
             toggle_leaderboard: default_toggle_leaderboard(),
         }
