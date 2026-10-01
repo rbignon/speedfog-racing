@@ -21,6 +21,19 @@ def get_layer_for_node(node_id: str, graph_json: dict[str, Any]) -> int:
     return 0
 
 
+def get_display_name_for_node(node_id: str | None, graph_json: dict[str, Any] | None) -> str:
+    """Display name of a node, falling back to its id (or "unknown zone")."""
+    if not node_id:
+        return "unknown zone"
+    nodes: dict[str, Any] = (graph_json or {}).get("nodes", {})
+    node_data = nodes.get(node_id)
+    if isinstance(node_data, dict):
+        name = node_data.get("display_name")
+        if isinstance(name, str) and name:
+            return name
+    return node_id
+
+
 def get_start_node(graph_json: dict[str, Any]) -> str | None:
     """Find the start node (type == "start") in graph_json.
 

@@ -450,6 +450,18 @@ class ZoneHistoryMessage(BaseModel):
     history: list[dict[str, object]]
 
 
+class DebugFlagsDetectedMessage(BaseModel):
+    """A participant's game debug flags (cheat detection), full current map.
+
+    Sent only to the race's organizer and admins when new flags are
+    recorded. Clients replace their copy for this participant.
+    """
+
+    type: Literal["debug_flags_detected"] = "debug_flags_detected"
+    participant_id: str
+    debug_flags: dict[str, dict[str, Any]]
+
+
 class ExitInfo(BaseModel):
     """Exit info for zone_update message.
 

@@ -591,3 +591,77 @@ async def send_training_live_notification(
 
     # Record cooldown on success
     _training_notif_cooldowns[user.id] = time.monotonic()
+
+
+# ---------------------------------------------------------------------------
+# Admin alerts (private channel)
+# ---------------------------------------------------------------------------
+
+
+async def _send_admin_webhook(embed: dict[str, object]) -> None:
+    """Send an embed to the private admin Discord webhook. No-op if not configured."""
+    webhook_url = settings.discord_admin_webhook_url
+    if not webhook_url:
+        return
+
+    payload: dict[str, object] = {"embeds": [embed]}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(webhook_url, json=payload)
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After", "unknown")
+                logger.warning(
+                    "Discord admin webhook rate limited, retry after %s seconds",
+                    retry_after,
+                )
+            elif response.status_code >= 400:
+                logger.warning("Discord admin webhook failed with status %d", response.status_code)
+    except Exception as e:
+        logger.warning("Discord admin webhook error: %s", e)
+
+
+async def notify_debug_flags_detected(
+    *,
+    race_name: str,
+    race_id: str,
+    player_name: str,
+    flags: list[str],
+    igt_ms: int,
+    zone_name: str,
+) -> None:
+    """Alert the admin channel that a runner's mod saw game debug flags."""
+    embed: dict[str, object] = {
+        "title": f"🚩 Cheat tool detected: {_escape_discord_md(player_name)}",
+        "url": _race_url(race_id),
+        "color": 0xDC6A51,
+        "fields": [
+            {"name": "Race", "value": _escape_discord_md(race_name), "inline": True},
+            {"name": "IGT", "value": _format_igt(igt_ms), "inline": True},
+            {"name": "Zone", "value": _escape_discord_md(zone_name), "inline": True},
+            {"name": "Flags", "value": ", ".join(f"`{f}`" for f in flags), "inline": False},
+        ],
+    }
+    await _send_admin_webhook(embed)
+
+
+def fire_debug_flags_notification(
+    *,
+    race_name: str,
+    race_id: str,
+    player_name: str,
+    flags: list[str],
+    igt_ms: int,
+    zone_name: str,
+) -> None:
+    """Fire-and-forget wrapper around ``notify_debug_flags_detected``."""
+    task = asyncio.create_task(
+        notify_debug_flags_detected(
+            race_name=race_name,
+            race_id=race_id,
+            player_name=player_name,
+            flags=flags,
+            igt_ms=igt_ms,
+            zone_name=zone_name,
+        )
+    )
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

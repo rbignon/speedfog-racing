@@ -16,6 +16,7 @@ from speedfog_racing.services.chat_access import (
     can_read_participants_chat,
     can_read_public_chat,
 )
+from speedfog_racing.services.debug_flags import can_see_debug_flags
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.handler import close_evicted
@@ -25,6 +26,7 @@ from speedfog_racing.websocket.race.projection import (
 )
 from speedfog_racing.websocket.schemas import (
     DailyStreakUpdateMessage,
+    DebugFlagsDetectedMessage,
     LeaderboardUpdateMessage,
     NameTemplatePayload,
     ParticipantInfo,
@@ -173,6 +175,24 @@ class RaceRoom:
         in lockstep with the helpers used at history load and send.
         """
         snapshot = [c for c in self.spectators.values() if can_read_participants_chat(role=c.role)]
+        if not snapshot:
+            return
+        failed: list[SpectatorConnection] = []
+
+        async def _send(conn: SpectatorConnection) -> None:
+            try:
+                await asyncio.wait_for(conn.websocket.send_text(message), timeout=SEND_TIMEOUT)
+            except Exception:
+                failed.append(conn)
+
+        await asyncio.gather(*(_send(c) for c in snapshot))
+        for conn in failed:
+            if self.spectators.pop(conn.connection_id, None) is not None:
+                close_evicted(conn.websocket)
+
+    async def broadcast_to_race_staff(self, message: str) -> None:
+        """Broadcast to the race's organizer and admins only (cheat detections)."""
+        snapshot = [c for c in self.spectators.values() if can_see_debug_flags(c.role)]
         if not snapshot:
             return
         failed: list[SpectatorConnection] = []
@@ -620,6 +640,21 @@ class ConnectionManager:
             history=history,
         )
         await room.broadcast_to_spectators(message.model_dump_json())
+
+    async def broadcast_debug_flags(
+        self,
+        race_id: uuid.UUID,
+        participant_id: uuid.UUID,
+        debug_flags: dict[str, dict[str, Any]],
+    ) -> None:
+        """Push a participant's debug-flag detections to the race staff."""
+        room = self.get_room(race_id)
+        if not room:
+            return
+        message = DebugFlagsDetectedMessage(
+            participant_id=str(participant_id), debug_flags=debug_flags
+        )
+        await room.broadcast_to_race_staff(message.model_dump_json())
 
 
 def build_leader_splits(

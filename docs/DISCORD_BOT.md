@@ -90,6 +90,7 @@ MALENIA_API_BASE=https://events.malenia.win/api
 | ------------------------------ | --------------- | ------------------------------------------------------------------- |
 | `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                     |
 | `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel) |
+| `DISCORD_ADMIN_WEBHOOK_URL`    | Notifications   | Webhook URL for cheat detections (private admin channel)            |
 | `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                     |
 | `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                              |
 | `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                 |
@@ -121,6 +122,10 @@ When `DISCORD_WEBHOOK_URL` is set, race lifecycle events post embeds:
 ### Solo/Training Live Notifications (Webhook)
 
 When `DISCORD_TRAINING_WEBHOOK_URL` is set, a notification is posted when a player starts a solo training session while **live on Twitch**. The embed includes the player name, pool, Twitch stream link, and spectator page link. A 30-minute per-user cooldown prevents spam.
+
+### Cheat Detections (Webhook)
+
+When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag names. See `docs/CHEAT_DETECTION.md`.
 
 ### Scheduled Events (Bot)
 

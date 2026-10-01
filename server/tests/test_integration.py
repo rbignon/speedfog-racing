@@ -1141,6 +1141,9 @@ def test_status_update_records_debug_flags_first_observation(
             igt_ms=2000, death_count=0, debug_flags=["one_shot", "infinite_stamina"]
         )
         time.sleep(0.5)
+    # Let the closed mod connection finish its disconnect before the reset
+    # closes the room under it.
+    time.sleep(0.5)
 
     flags = _player0_row(integration_db, race_with_participants).debug_flags
     assert flags is not None
@@ -1185,6 +1188,35 @@ def test_rejected_status_update_records_no_debug_flags(
         assert mod.receive()["type"] == "error"
 
     assert _player0_row(integration_db, race_with_participants).debug_flags is None
+
+
+def test_new_debug_flags_alert_staff_once_per_batch(
+    integration_client, race_with_participants, integration_db, monkeypatch
+):
+    from unittest.mock import AsyncMock, MagicMock
+
+    import speedfog_racing.websocket.race.mod as race_mod
+
+    fire = MagicMock()
+    broadcast = AsyncMock()
+    monkeypatch.setattr(race_mod, "fire_debug_flags_notification", fire, raising=False)
+    monkeypatch.setattr(manager, "broadcast_debug_flags", broadcast, raising=False)
+
+    race_id = race_with_participants["race_id"]
+    _start_race_with_player0(integration_client, race_with_participants)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        for igt, flags in (
+            (1000, ["one_shot"]),
+            (2000, ["one_shot", "infinite_stamina"]),
+            (3000, ["one_shot", "infinite_stamina"]),
+        ):
+            mod0.send_status_update(igt_ms=igt, death_count=0, debug_flags=flags)
+            time.sleep(0.5)
+
+    assert [c.kwargs["flags"] for c in fire.call_args_list] == [["one_shot"], ["infinite_stamina"]]
+    assert broadcast.await_count == 2
 
 
 def test_stale_save_rejected_on_status_update(

@@ -70,3 +70,12 @@ def merge_debug_flags(
     for name in added:
         merged[name] = {"igt_ms": igt_ms, "node_id": node_id, "detected_at": now.isoformat()}
     return merged, added
+
+
+# Race roles that may see a race's detections (see services.chat_access.race_role).
+_STAFF_ROLES = frozenset({"organizer", "admin"})
+
+
+def can_see_debug_flags(role: str | None) -> bool:
+    """True when a race role may see the race's cheat detections."""
+    return role in _STAFF_ROLES

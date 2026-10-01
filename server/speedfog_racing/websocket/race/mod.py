@@ -14,7 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.config import settings
-from speedfog_racing.discord import fire_race_finished_notifications
+from speedfog_racing.discord import (
+    fire_debug_flags_notification,
+    fire_race_finished_notifications,
+)
 from speedfog_racing.models import (
     Caster,
     ChatChannel,
@@ -35,6 +38,7 @@ from speedfog_racing.services.event_service import start_playoff_cutoff
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
+    get_display_name_for_node,
     get_layer_for_node,
     get_start_node,
 )
@@ -534,6 +538,25 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         if added:
             entity.debug_flags = merged
         return added
+
+    async def _on_debug_flags_recorded(self, entity: Participant, added: list[str]) -> None:
+        flags = entity.debug_flags or {}
+        logger.warning(
+            "Debug flags detected: race=%s participant=%s flags=%s",
+            entity.race_id,
+            entity.id,
+            ",".join(added),
+        )
+        await manager.broadcast_debug_flags(entity.race_id, entity.id, flags)
+        first = flags[added[0]]
+        fire_debug_flags_notification(
+            race_name=entity.race.name,
+            race_id=str(entity.race_id),
+            player_name=entity.user.twitch_display_name or entity.user.twitch_username,
+            flags=added,
+            igt_ms=first["igt_ms"],
+            zone_name=get_display_name_for_node(first.get("node_id"), self._get_graph_json(entity)),
+        )
 
     # ------------------------------------------------------------------
     # Finish event (called AFTER DB session closed by base class)

@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     # Discord integration (optional)
     discord_webhook_url: str | None = None
     discord_training_webhook_url: str | None = None
+    discord_admin_webhook_url: str | None = None
     base_url: str = "https://speedfog.racing"
 
     # Discord bot (optional, enables scheduled events + runner role)

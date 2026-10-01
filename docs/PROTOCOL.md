@@ -818,6 +818,26 @@ Full `zone_history` snapshot for a single participant. Broadcast to spectators o
 
 Clients replace their local `zone_history[participant_id]` with the payload. Sending the full list is self-healing: a client that missed an earlier message still ends up with the correct state on the next emission (no per-entry upsert or sequence tracking needed).
 
+#### `debug_flags_detected`
+
+A participant's game debug flags (cheat detection). Sent only to spectator connections whose race role is `organizer` or `admin`, when the server records flags it had not seen before for that participant.
+
+```json
+{
+  "type": "debug_flags_detected",
+  "participant_id": "uuid",
+  "debug_flags": {
+    "one_shot": {
+      "igt_ms": 83000,
+      "node_id": "node_a",
+      "detected_at": "2026-10-01T20:14:05+00:00"
+    }
+  }
+}
+```
+
+Clients replace their copy of the participant's map with the payload. The initial state comes from `GET /api/races/{id}` (`participants[].debug_flags`, organizer and admins only).
+
 #### `daily_streak_update`
 
 Unicast to a single user on a daily race when their daily streak state changes. Emitted on the qualification crossing (the participant's `zone_history` length just reached 2) and on the explicit-abandon trigger (the player gave up on the current daily without having qualified, so the close-day branch fired immediately). Routed to **every** connection of `user_id` on the race room: their mod connection plus all open spectator tabs. Never broadcast to other spectators; never sent on non-daily races.
