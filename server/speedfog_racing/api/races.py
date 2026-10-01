@@ -161,6 +161,9 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
     points_map = leaderboard_points(race)
     for proj in participants_list:
         proj.daily_points = points_map.get(proj.id)
+    if is_organizer:
+        for proj, participant in zip(participants_list, race.participants, strict=True):
+            proj.debug_flags = participant.debug_flags
     return RaceDetailResponse(
         id=race.id,
         name=race.name,

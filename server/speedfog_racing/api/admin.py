@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, ValidationError
@@ -56,6 +56,7 @@ from speedfog_racing.schemas import (
     RaceParticipantActivity,
     RaceResponse,
     TrainingActivity,
+    UserResponse,
 )
 from speedfog_racing.services import (
     discard_pool,
@@ -820,6 +821,57 @@ async def list_inflight_races(
     result = await db.execute(query)
     races = list(result.scalars().all())
     return RaceListResponse(races=[race_response(r) for r in races])
+
+
+# =============================================================================
+# Cheat detections
+# =============================================================================
+
+CHEAT_DETECTIONS_LIMIT = 100
+
+
+class CheatDetectionResponse(BaseModel):
+    """A race participant whose mod reported game debug flags."""
+
+    participant_id: uuid.UUID
+    race_id: uuid.UUID
+    race_name: str
+    user: UserResponse
+    debug_flags: dict[str, dict[str, Any]]
+    last_detected_at: str
+
+
+@router.get("/cheat-detections", response_model=list[CheatDetectionResponse])
+async def list_cheat_detections(
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> list[CheatDetectionResponse]:
+    """Participants with debug flags detected, most recent first (capped).
+    Requires admin role."""
+    result = await db.execute(
+        select(Participant)
+        .where(Participant.debug_flags.is_not(None))
+        .options(selectinload(Participant.user), selectinload(Participant.race))
+    )
+    rows: list[CheatDetectionResponse] = []
+    for p in result.scalars().all():
+        flags = p.debug_flags
+        if not flags:
+            continue
+        rows.append(
+            CheatDetectionResponse(
+                participant_id=p.id,
+                race_id=p.race_id,
+                race_name=p.race.name,
+                user=user_response(p.user),
+                debug_flags=flags,
+                # All detected_at values are UTC isoformat strings, so string
+                # order is time order.
+                last_detected_at=max(str(f["detected_at"]) for f in flags.values()),
+            )
+        )
+    rows.sort(key=lambda r: r.last_detected_at, reverse=True)
+    return rows[:CHEAT_DETECTIONS_LIMIT]
 
 
 # =============================================================================

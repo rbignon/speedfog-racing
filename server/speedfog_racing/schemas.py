@@ -361,6 +361,9 @@ class ParticipantResponse(BaseModel):
     death_count: int
     color_index: int = 0
     daily_points: int | None = None
+    # Game debug flags (cheat detection), filled only for the race organizer
+    # and admins; null for everyone else.
+    debug_flags: dict[str, dict[str, Any]] | None = None
 
 
 class CasterResponse(BaseModel):

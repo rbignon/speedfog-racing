@@ -5,10 +5,25 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.database import Base, get_db
 from speedfog_racing.discord import notify_debug_flags_detected
+from speedfog_racing.main import app
+from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 from speedfog_racing.services.debug_flags import merge_debug_flags
 from speedfog_racing.websocket.race.manager import RaceRoom, SpectatorConnection
+from speedfog_racing.websocket.schemas import ParticipantInfo
 from speedfog_racing.websocket.training.mod import TrainingModHandler
 
 NOW = datetime(2026, 10, 1, 20, 0, tzinfo=UTC)
@@ -103,3 +118,166 @@ async def test_admin_webhook_is_a_noop_without_url() -> None:
         mock_settings.discord_admin_webhook_url = None
         await _send_admin_webhook({"title": "x"})
     mock_client.assert_not_called()
+
+
+FLAGS = {
+    "one_shot": {"igt_ms": 83000, "node_id": "node_a", "detected_at": "2026-10-01T20:00:00+00:00"}
+}
+
+
+@pytest.fixture
+async def df_session():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    await engine.dispose()
+
+
+@pytest.fixture
+def df_client(df_session):
+    async def override_get_db():
+        async with df_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def df_users(df_session) -> dict[str, User]:
+    roles = {
+        "organizer": UserRole.ORGANIZER,
+        "admin": UserRole.ADMIN,
+        "flagged": UserRole.USER,
+        "other": UserRole.USER,
+    }
+    async with df_session() as db:
+        users = {
+            key: User(
+                twitch_id=f"df_{key}",
+                twitch_username=f"{key}_df",
+                api_token=f"df_{key}_token",
+                role=role,
+            )
+            for key, role in roles.items()
+        }
+        db.add_all(users.values())
+        await db.commit()
+        for user in users.values():
+            await db.refresh(user)
+        return users
+
+
+async def _flagged_race(df_session, df_users, *, detected: dict[str, str | None]) -> uuid.UUID:
+    """A running race organized by "organizer" where each user key in
+    ``detected`` participates; a non-None value is that participant's
+    detection time."""
+    async with df_session() as db:
+        seed = Seed(
+            seed_number=f"df_{uuid.uuid4().hex[:8]}",
+            pool_name="standard",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/df",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Flag race",
+            organizer_id=df_users["organizer"].id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        for key, detected_at in detected.items():
+            flags = (
+                None
+                if detected_at is None
+                else {"one_shot": {**FLAGS["one_shot"], "detected_at": detected_at}}
+            )
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=df_users[key].id,
+                    status=ParticipantStatus.PLAYING,
+                    debug_flags=flags,
+                )
+            )
+        await db.commit()
+        return race.id
+
+
+async def test_race_detail_exposes_debug_flags_to_staff_only(df_client, df_session, df_users):
+    race_id = await _flagged_race(
+        df_session, df_users, detected={"flagged": FLAGS["one_shot"]["detected_at"], "other": None}
+    )
+    visible = {"organizer": True, "admin": True, "flagged": False, "other": False, None: False}
+    async with df_client as client:
+        for who, can_see in visible.items():
+            headers = {"Authorization": f"Bearer {df_users[who].api_token}"} if who else {}
+            resp = await client.get(f"/api/races/{race_id}", headers=headers)
+            assert resp.status_code == 200, resp.text
+            row = next(
+                p
+                for p in resp.json()["participants"]
+                if p["user"]["twitch_username"] == "flagged_df"
+            )
+            assert (row["debug_flags"] is not None) == can_see, who
+
+
+def test_public_participant_info_never_carries_debug_flags() -> None:
+    # leaderboard_update, player_update and race_state are public.
+    assert "debug_flags" not in ParticipantInfo.model_fields
+
+
+async def test_cheat_detections_most_recent_first(df_client, df_session, df_users):
+    await _flagged_race(
+        df_session,
+        df_users,
+        detected={
+            "flagged": "2026-09-01T10:00:00+00:00",
+            "other": "2026-09-02T10:00:00+00:00",
+            "admin": None,
+        },
+    )
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert [d["user"]["twitch_username"] for d in data] == ["other_df", "flagged_df"]
+    assert data[0]["race_name"] == "Flag race"
+    assert data[0]["last_detected_at"] == "2026-09-02T10:00:00+00:00"
+
+
+async def test_cheat_detections_capped(df_client, df_session, df_users, monkeypatch):
+    from speedfog_racing.api import admin as admin_api
+
+    monkeypatch.setattr(admin_api, "CHEAT_DETECTIONS_LIMIT", 1, raising=False)
+    await _flagged_race(
+        df_session,
+        df_users,
+        detected={"flagged": "2026-09-01T10:00:00+00:00", "other": "2026-09-02T10:00:00+00:00"},
+    )
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
+        )
+    assert [d["user"]["twitch_username"] for d in resp.json()] == ["other_df"]
+
+
+async def test_cheat_detections_requires_admin(df_client, df_users):
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['organizer'].api_token}"},
+        )
+    assert resp.status_code == 403
