@@ -15,6 +15,8 @@
   import WatchLive from "$lib/components/WatchLive.svelte";
   import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
+  import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
+  import { mergeDebugFlags } from "$lib/debugFlags";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import RaceStats from "$lib/components/RaceStats.svelte";
   import RaceHighlights from "$lib/components/RaceHighlights.svelte";
@@ -366,6 +368,13 @@
   }
 
   let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
+  // Cheat detections (staff only): REST snapshot plus live updates.
+  let debugFlags = $derived(
+    isOrganizer || auth.isAdmin
+      ? mergeDebugFlags(initialRace.participants, raceStore.debugFlags)
+      : {},
+  );
+  let flaggedIds = $derived(Object.keys(debugFlags));
   let isCaster = $derived(
     auth.user
       ? initialRace.casters.some((c) => c.user.id === auth.user?.id)
@@ -951,6 +960,7 @@
             {showRunDetails}
             deathless={liveDeathless}
             provisionalPoints={isEventQualifier && raceStatus !== "finished"}
+            {flaggedIds}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
@@ -1326,6 +1336,11 @@
           {raceStatus}
           onRaceUpdated={handleRaceUpdated}
           onDeleteRace={handleDeleteRace}
+        />
+        <CheatDetectionsPanel
+          detections={debugFlags}
+          participants={raceStore.participants}
+          {zoneNames}
         />
       {/if}
 

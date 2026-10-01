@@ -25,6 +25,10 @@
     // The rows' points can still move (an open event qualifier scores its
     // settled runs as they settle): shown in gold instead of green.
     provisionalPoints?: boolean;
+    // Cheat detection: ids of runners whose mod reported game debug flags.
+    // Each gets a "Flagged" chip. Only the race page passes it, and only to
+    // the race organizer and admins.
+    flaggedIds?: string[];
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -38,6 +42,7 @@
     showRunDetails = false,
     deathless = false,
     provisionalPoints = false,
+    flaggedIds = [],
     selectedIds,
     onToggle,
     onClearSelection,
@@ -197,6 +202,11 @@
                   small
                   onclick={(e) => e.stopPropagation()}
                 />
+              {/if}
+              {#if flaggedIds.includes(participant.id)}
+                <span class="chip flagged-chip" title="Cheat tool detected"
+                  >Flagged</span
+                >
               {/if}
               {#if participant.daily_points != null}
                 <!-- The server scores only settled runs (a closed daily's
@@ -593,6 +603,12 @@
   .empty {
     color: var(--color-text-disabled);
     font-style: italic;
+  }
+
+  .flagged-chip {
+    border-color: var(--color-danger);
+    color: var(--color-danger);
+    padding: 0.05rem 0.4rem;
   }
 
   .participant-badge {
