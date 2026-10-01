@@ -213,7 +213,7 @@ Branching inside the handler:
 | ------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Allowed status      | `SETUP`                                   | `RUNNING`                                                                                                                                                                                                                   |
 | Permission          | `_require_organizer` (organizer or admin) | Same. Organizer is the system user, so in practice only admins.                                                                                                                                                             |
-| Participant reset   | n/a (no participants yet)                 | All participants reset to `REGISTERED` (`current_zone`, `current_layer`, `igt_ms`, `death_count`, `finished_at`, `zone_history`, `last_igt_change_at` cleared; `layer_entry_igts` set to `{}`).                             |
+| Participant reset   | n/a (no participants yet)                 | All participants except disqualified ones reset to `REGISTERED` (`current_zone`, `current_layer`, `igt_ms`, `death_count`, `finished_at`, `zone_history`, `last_igt_change_at` cleared; `layer_entry_igts` set to `{}`).    |
 | `seeds_released_at` | unchanged (gated until release)           | Set to `now()` so participants can re-download immediately.                                                                                                                                                                 |
 | Public chat message | "Seed has been rerolled"                  | "Seed has been rerolled. All previous runs are invalidated."                                                                                                                                                                |
 | Streak rollback     | n/a                                       | Every user whose streak state references this `daily_date` (qualifiers and abandon-trigger freeze-consumers) has their streak re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark. |
@@ -270,6 +270,7 @@ The `today` cell uses the standard neutral border with a soft gold outer glow an
 | `IN PROGRESS`                 | orange                   | `registered` / `ready` / `playing`.                                          |
 | `✓` + `placement/total · IGT` | green text on muted grey | `finished`. Split layout: check-mark badge on the left, score on the right.  |
 | `ABANDONED`                   | muted grey               | Abandoned, or signed up but never played.                                    |
+| `DISQUALIFIED`                | muted grey               | `disqualified` (see the "Sanctions" section of `CHEAT_DETECTION.md`).        |
 | `❄️ Freeze`                   | blue                     | Past day with `freeze_protected = true` (see [Daily Streak](#daily-streak)). |
 | `✓ DNF · {igt}`               | green (`dnf` variant)    | Past day where viewer abandoned with `qualifies = true`.                     |
 
@@ -463,6 +464,8 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 ## Weekly Points
 
 Closed dailies score qualified participants with `points(r, n) = round(100 * (n - r + 1) / n)`, where `n` is the number of qualified participants in the daily (`zone_history` length >= 2) and `r` is the participant's rank in the intra-daily ordering (FINISHED by `igt_ms` ascending, then qualified ABANDONED by `current_layer` descending then `igt_ms` ascending, sport-standard ties). The abandoned ordering mirrors `sort_leaderboard`, so the points never contradict the rank shown in the live and results leaderboard: a deeper run always outscores a shallower one, regardless of how many zones each logged.
+
+A disqualified participant (see the "Sanctions" section of [CHEAT_DETECTION.md](CHEAT_DETECTION.md)) is neither counted in `n` nor ranked, so the others score as if they had not run. A disqualification after the daily closed changes the points on the next computation, and the daily win and weekly champion rewards are granted again from the new standings.
 
 The result is bounded so that only the 1st place ever reaches 100 (every other rank is capped at 99) and every qualified runner scores at least 1. The cap and floor only bite on very large fields (n >= ~200), where rounding would otherwise let rank 2 tie the winner or push the tail to 0; below that they are inert and the raw formula stands. The 100-point maximum makes a perfect week read as 700.
 

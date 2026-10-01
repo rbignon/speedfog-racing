@@ -188,8 +188,10 @@ to first, proportional down the field, unfinished runs ranked by depth
 reached then time, floor of 1, over runs with at least two zone entries. Only
 settled runs (finished or abandoned) score: a seed stays open for days, so a
 run in progress neither enters the ladder nor moves the other runners' points
-until it ends; the seed card's `my_result` scores the same field. Playoff
-races score differently, see Playoff scoring below. Ladder: best
+until it ends; the seed card's `my_result` scores the same field. A
+disqualified runner (see the "Sanctions" section of `CHEAT_DETECTION.md`)
+leaves the field: no points, and the others score as if they had not run.
+Playoff races score differently, see Playoff scoring below. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
 ranked; ties on the summed in-game time of the counted seeds. Newcomers have
 fewer than `newcomer_threshold` finished races started before the
@@ -245,8 +247,10 @@ the race's end score: `playoff_points` by in-game time, equal times sharing a
 rank, the table's last value for every finisher past it (a showcase can field
 more runners than the table has entries). Every other runner of the race is a
 DNF on 0 points: an abandoned run, a run cut off at the race's end, a runner
-who never started, and, while the race runs, a run still in progress, so the
-bracket moves at the finish line only. The table must be positive and never
+who never started, a disqualified runner, and, while the race runs, a run
+still in progress, so the bracket moves at the finish line only. A
+disqualified runner also counts no depth in the tie-break below, so it never
+ranks ahead of another runner on it. The table must be positive and never
 rise down the ranks, so a finish always outscores a DNF.
 
 The cutoff: when a race's first runner finishes, the server gives the race a

@@ -26,7 +26,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 **RUNNING → FINISHED** (four paths)
 
-1. **Auto-finish**: when all participants reach `FINISHED` or `ABANDONED`, `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below). When `late_join_window_minutes` is set and the window is still open, the transition is deferred so a late-joiner can still register even if the currently-registered field has all finished; the hard-close loop performs the deferred close once the window has elapsed (see [Late-join Window & Race Duration](#late-join-window--race-duration)).
+1. **Auto-finish**: when all participants reach a terminal status (`FINISHED`, `ABANDONED` or `DISQUALIFIED`), `check_race_auto_finish()` transitions the race. Uses optimistic locking (see below). When `late_join_window_minutes` is set and the window is still open, the transition is deferred so a late-joiner can still register even if the currently-registered field has all finished; the hard-close loop performs the deferred close once the window has elapsed (see [Late-join Window & Race Duration](#late-join-window--race-duration)).
 2. **Force-finish**: `POST /races/{id}/finish` (organizer). Same optimistic lock mechanism.
 3. **Inactivity monitor**: when the last active participant is auto-abandoned (30 min stale IGT, or 30 min no-show on races without `race_duration_minutes`), the monitor calls `check_race_auto_finish()`. Daily-seed races (`Race.daily_date IS NOT NULL`) are skipped: the asynchronous 24h window makes inactivity-based abandonment misleading.
 
@@ -40,8 +40,9 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 - Closes all WebSocket connections first (`manager.close_room(code=1000)`).
 - Transitions status via `_transition_status()` with optimistic lock. Clears `started_at` (but NOT `seeds_released_at`, as seed packs remain downloadable).
-- Resets all participants via ORM loop: `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None, layer_entry_igts={}, last_igt_change_at=None`. The last two are cleared so the re-run starts with clean leaderboard-gap and inactivity state (leaving them stale would keep the previous run's per-layer entry IGTs and activity timestamp).
+- Resets all participants except disqualified ones via ORM loop (`reset_participant_progress`): `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None, layer_entry_igts={}, last_igt_change_at=None`. The last two are cleared so the re-run starts with clean leaderboard-gap and inactivity state (leaving them stale would keep the previous run's per-layer entry IGTs and activity timestamp).
 - When the race was **FINISHED**, resetting it does not reopen or re-score anything: the same participant reset above (`status=REGISTERED`, progress cleared) is the whole story, since there is no per-race rating ledger left to revert. Trait scores self-correct on the next finish (they recompute from live participant state), but permanent victory rewards already granted during the voided run (e.g. `silver-aura`, finish-milestone badges) are one-time souvenirs and are **not** rolled back.
+- A disqualified participant keeps its status and run data through the reset (a daily reroll does the same): the disqualification stands until the race staff cancel it. Cheat detections (`debug_flags`) are kept as they are for every participant.
 - Mod clients detect the close and reconnect automatically.
 
 ### Optimistic Locking
@@ -104,15 +105,18 @@ server-recorded value and shows it in red.
 REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
      │           │          │
      └───────────┴──────────┴──→ ABANDONED
+
+any status, race RUNNING or FINISHED ──→ DISQUALIFIED ──→ status before (cancel)
 ```
 
-| Status     | Description                                               |
-| ---------- | --------------------------------------------------------- |
-| REGISTERED | Signed up for the race                                    |
-| READY      | Mod connected and ready signal sent                       |
-| PLAYING    | Currently racing (IGT ticking)                            |
-| FINISHED   | Completed the race (boss kill)                            |
-| ABANDONED  | Left the race (inactivity, no-show, or voluntary abandon) |
+| Status       | Description                                               |
+| ------------ | --------------------------------------------------------- |
+| REGISTERED   | Signed up for the race                                    |
+| READY        | Mod connected and ready signal sent                       |
+| PLAYING      | Currently racing (IGT ticking)                            |
+| FINISHED     | Completed the race (boss kill)                            |
+| ABANDONED    | Left the race (inactivity, no-show, or voluntary abandon) |
+| DISQUALIFIED | Removed from the results by the race staff                |
 
 ### Transitions
 
@@ -141,9 +145,15 @@ REGISTERED ──→ READY ──→ PLAYING ──→ FINISHED
 4. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
 5. **Deathless elimination** (PLAYING): on a race with `deathless` set, the first positive death-count delta seen by the `status_update` handler transitions the participant to `ABANDONED` (`handle_deathless_death`). Triggers auto-finish check.
 
+**Any status → DISQUALIFIED**: `POST /races/{id}/participants/{pid}/disqualify` with a required reason, by the race organizer or an admin (on a daily, whose organizer is the system account, admins only), while the race is RUNNING or FINISHED. The participant's status is saved in `status_before_disqualification` and the run data is kept as it is. A ban does the same to the user's participations in running races, with the reason "Account banned". In a running race the auto-finish check runs; in a finished race the win rewards go to the new winner. See the "Sanctions" section of `CHEAT_DETECTION.md` for the effects on results.
+
+**DISQUALIFIED → status before**: `DELETE` on the same path, by the same people. The saved status comes back with the run as it was. When the race was restarted after the disqualification (reset or daily reroll: the race is in SETUP, or its `started_at` is later than `disqualified_at`), the saved status belongs to an attempt that no longer exists, so the participant starts over as REGISTERED with its progress cleared.
+
+A participant who is disqualified or has a cheat detection can neither leave the race nor be removed from it ("This participation is under review"), so the record stays for the staff.
+
 ### Terminal States
 
-`FINISHED` and `ABANDONED` are terminal. Once a participant reaches either state:
+`FINISHED`, `ABANDONED` and `DISQUALIFIED` are terminal (`TERMINAL_PARTICIPANT_STATUSES`); only a cancelled disqualification leaves one. Once a participant reaches a terminal state:
 
 - All incoming `status_update`, `event_flag`, `zone_query`, and `finished` messages are silently dropped.
 - The server does not update `igt_ms` or `death_count`; data is frozen.
@@ -203,13 +213,14 @@ Simpler than race mode:
 
 Participants are sorted for display using a stable sort with composite key:
 
-| Priority | Status       | Sort key                           |
-| -------- | ------------ | ---------------------------------- |
-| 0        | `finished`   | `igt_ms` ascending (fastest first) |
-| 1        | `playing`    | `-current_layer` then `igt_ms`     |
-| 2        | `ready`      | Arrival order preserved            |
-| 3        | `registered` | Arrival order preserved            |
-| 4        | `abandoned`  | `-current_layer` then `igt_ms`     |
+| Priority | Status         | Sort key                           |
+| -------- | -------------- | ---------------------------------- |
+| 0        | `finished`     | `igt_ms` ascending (fastest first) |
+| 1        | `playing`      | `-current_layer` then `igt_ms`     |
+| 2        | `ready`        | Arrival order preserved            |
+| 3        | `registered`   | Arrival order preserved            |
+| 4        | `abandoned`    | `-current_layer` then `igt_ms`     |
+| 5        | `disqualified` | Arrival order preserved            |
 
 ---
 

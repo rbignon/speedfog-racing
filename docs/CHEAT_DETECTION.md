@@ -59,7 +59,61 @@ wire names and carry the same human-readable labels.
    "Cheat detections" panel, to the organizer and admins only. /admin lists
    every detection in the Races tab (`GET /api/admin/cheat-detections`).
 
-There is no automatic sanction: the organizer decides.
+There is no automatic sanction: the race staff decide (see Sanctions).
+
+## Sanctions
+
+Two manual tools, for a detection or for anything else the staff find (an
+audit after the race, a report).
+
+**Disqualification** (one runner, one race). The race organizer or an admin
+(on a daily, whose organizer is the system account, admins only) picks
+"Disqualify a runner..." in the race controls, or "Disqualify" next to a
+runner in the "Cheat detections" panel, which suggests a reason naming what
+was detected. A reason is required. It works while the race runs and after
+it finishes, and the same people can cancel it from the same dialog.
+
+- The runner gets the terminal `disqualified` status (see
+  `RACE_LIFECYCLE.md`) and stays at the bottom of the standings with a
+  public "DQ" tag. The reason is shown to the runner (race page, and a
+  "DISQUALIFIED" notice in the overlay of a runner still in game), the
+  organizer and admins only.
+- A disqualified run has no time, placement, points or rewards and is left
+  out of the stats. Daily points and the event qualifier ladder leave the
+  runner out, so the others score as if they had not run; an event playoff
+  race counts them as a DNF on 0 points that never wins a tie-break.
+- In a running race, the remaining runners may now all be done, which
+  finishes the race. In a finished race, the race win and daily rewards are
+  granted again from the new standings, so the new winner gets them, and the
+  race traits are recomputed. Rewards the disqualified runner already got
+  are not taken back automatically: admins revoke them by hand.
+- A race reset or a daily reroll keeps the disqualification. Cancelling it
+  restores the previous status and the run, or, if the race restarted in the
+  meantime, lets the runner start over like everyone else.
+- A disqualified or flagged participation cannot be left or removed, so the
+  record stays for review.
+
+**Ban** (one account). An admin bans from the /admin Users tab ("Ban...",
+with a reason shown to the user) and lifts it with "Unban". Admins cannot be
+banned. The ban is an attribute of the account (`banned_at`, `ban_reason`):
+the role and past results stay as they are, and nothing public shows it.
+
+- It blocks creating, joining and casting races, accepting invitations,
+  being added to a race, training, event signups, chat messages and
+  reactions, and mod connections (race and training). Signing in, browsing,
+  the profile, settings and feedback stay open, and a banner tells the user
+  why the rest refuses them.
+- At ban time: entries in races not started yet are removed, unless under
+  review (a detection or a disqualification); entries in running races are
+  disqualified with the reason "Account banned" and their mod connection is
+  closed; pending invitations and signups to events still open are removed;
+  active training sessions end as if abandoned by hand.
+- Lifting the ban restores the access only: removed entries and
+  disqualifications stay (a disqualification is cancelled from its race
+  page).
+
+Every disqualification, cancellation, ban and unban is posted to the admin
+Discord channel.
 
 ## Not detected
 
