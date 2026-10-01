@@ -865,3 +865,19 @@ def test_build_podium():
     assert result[0]["name"] == "First"
     assert result[1]["name"] == "Second"
     assert result[2]["name"] == "Third"
+
+
+def test_tests_never_reach_the_real_discord_or_calendar() -> None:
+    # Settings reads the developer's .env, which can hold the real webhooks:
+    # a test that forgets to stub a notification must post nowhere.
+    # Names only in the failure, never the secret values.
+    from speedfog_racing.config import settings
+
+    names = (
+        "discord_webhook_url",
+        "discord_training_webhook_url",
+        "discord_admin_webhook_url",
+        "discord_bot_token",
+        "malenia_api_token",
+    )
+    assert [name for name in names if getattr(settings, name) is not None] == []

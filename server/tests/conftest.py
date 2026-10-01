@@ -97,6 +97,23 @@ def _reset_rate_limiter():
 
 
 @pytest.fixture(autouse=True)
+def _no_outbound_notifications(monkeypatch):
+    """Settings reads the developer's .env, which can hold the real Discord
+    webhooks and calendar token: blank them, so a test that does not stub a
+    notification posts nowhere. Tests that exercise a sender set their own."""
+    from speedfog_racing.config import settings
+
+    for name in (
+        "discord_webhook_url",
+        "discord_training_webhook_url",
+        "discord_admin_webhook_url",
+        "discord_bot_token",
+        "malenia_api_token",
+    ):
+        monkeypatch.setattr(settings, name, None)
+
+
+@pytest.fixture(autouse=True)
 def _clear_stats_cache():
     """Clear the public stats TTL cache between tests to avoid cross-test pollution."""
     from speedfog_racing.api.stats import _refresh_tasks, _stats_cache, _stats_cache_locks
