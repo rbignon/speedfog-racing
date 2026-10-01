@@ -439,15 +439,6 @@
     }
   });
 
-  // Debug: force full DAG view even as participant (call __debugDagFull() in console)
-  let forceFullDag = $state(false);
-  if (typeof window !== "undefined") {
-    (window as any).__debugDagFull = (on?: boolean) => {
-      forceFullDag = on ?? !forceFullDag;
-      return forceFullDag ? "Full map enabled" : "Progressive map restored";
-    };
-  }
-
   function formatDate(dateStr: string): string {
     return new Date(dateStr).toLocaleString();
   }
@@ -654,14 +645,12 @@
   // Spoiler gate for in-race competitor info (current zone, deaths, weapon
   // loadout). Hidden when I'm still racing (so the leaderboard does not leak
   // others' progress to me) or when the late-join / private-DAG rules apply
-  // to a spectator. The forceFullDag toggle and the finished state both
-  // re-open visibility.
+  // to a spectator. Finishing re-opens visibility.
   let showRunDetails = $derived(
     !(
       raceStatus === "running" &&
       myWsParticipantId &&
-      !myParticipantFinished &&
-      !forceFullDag
+      !myParticipantFinished
     ) && !dagHiddenByRunningRules,
   );
 
@@ -670,8 +659,7 @@
       (raceStatus === "running" ||
         raceStatus === "finished" ||
         !!myWsParticipantId ||
-        isOrganizer ||
-        forceFullDag),
+        isOrganizer),
   );
 
   let dagHidden = $derived(
@@ -738,11 +726,7 @@
         (raceStatus === "running" && registrationOpenWindow)),
   );
 
-  // forceFullDag is the console escape hatch: when it asks for the map, the
-  // CTA steps out of the slot.
-  let showJoinCta = $derived(
-    (canJoin || canRejoin || canJoinAfterLogin) && !forceFullDag,
-  );
+  let showJoinCta = $derived(canJoin || canRejoin || canJoinAfterLogin);
 
   // "Join race" reads wrong once the race is under way: a late joiner starts
   // immediately.
@@ -1286,7 +1270,7 @@
               <p class="dag-note">{dagHiddenReason}</p>
             </div>
           {:else if liveSeed?.graph_json && raceStatus === "running"}
-            {#if myWsParticipantId && !myParticipantFinished && !forceFullDag}
+            {#if myWsParticipantId && !myParticipantFinished}
               <MetroDagProgressive
                 graphJson={liveSeed.graph_json}
                 participants={raceStore.participants}
@@ -1323,14 +1307,14 @@
                 myParticipantId={myWsParticipantId}
               />
             {/if}
-          {:else if liveSeed?.graph_json && myWsParticipantId && !forceFullDag}
+          {:else if liveSeed?.graph_json && myWsParticipantId}
             <MetroDagProgressive
               graphJson={liveSeed.graph_json}
               participants={raceStore.participants}
               myParticipantId={myWsParticipantId}
               onzonecodex={showChatSidebar ? openZoneCodex : undefined}
             />
-          {:else if liveSeed?.graph_json && (isOrganizer || forceFullDag)}
+          {:else if liveSeed?.graph_json && isOrganizer}
             <MetroDag graphJson={liveSeed.graph_json} />
           {/if}
         </div>
