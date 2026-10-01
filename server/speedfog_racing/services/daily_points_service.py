@@ -121,7 +121,9 @@ def daily_points_for_race(race: Race) -> dict[UUID, int]:
             current_layer=p.current_layer,
         )
         for p in race.participants
-        if len(p.zone_history or []) >= 2
+        # A disqualified runner leaves the field entirely: no points, and the
+        # others score as if they had never run.
+        if len(p.zone_history or []) >= 2 and p.status != ParticipantStatus.DISQUALIFIED
     ]
     return compute_daily_points(qualified)
 
@@ -212,7 +214,7 @@ async def compute_weekly_leaderboard(
     for race in races:
         qualified: list[QualifiedParticipant] = []
         for p in race.participants:
-            if _zone_history_len(p) < 2:
+            if _zone_history_len(p) < 2 or p.status == ParticipantStatus.DISQUALIFIED:
                 continue
             qualified.append(
                 QualifiedParticipant(

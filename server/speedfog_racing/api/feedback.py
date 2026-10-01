@@ -13,10 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.auth import get_current_user
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
     Feedback,
     FeedbackSource,
     Participant,
-    ParticipantStatus,
     User,
 )
 from speedfog_racing.schemas import FeedbackCreate, FeedbackResponse
@@ -61,7 +61,7 @@ async def create_feedback(
         .select_from(Participant)
         .where(
             Participant.user_id == user.id,
-            Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
+            Participant.status.in_(TERMINAL_PARTICIPANT_STATUSES),
         )
     )
 

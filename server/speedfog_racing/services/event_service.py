@@ -149,6 +149,7 @@ def score_race(race: Race, *, settled_only: bool = False) -> dict[UUID, RaceScor
         )
         for p in race.participants
         if len(p.zone_history or []) >= 2
+        and p.status != ParticipantStatus.DISQUALIFIED
         and (
             not settled_only
             or p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)

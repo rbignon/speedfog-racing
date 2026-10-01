@@ -88,11 +88,16 @@ from speedfog_racing.services.calendar_sync import (
 from speedfog_racing.services.event_service import leaderboard_points
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
-from speedfog_racing.services.sanctions_service import cancel_disqualification, disqualify
+from speedfog_racing.services.sanctions_service import (
+    cancel_disqualification,
+    disqualify,
+    reset_participant_progress,
+)
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
+from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 from speedfog_racing.websocket import (
     broadcast_race_info_update,
     broadcast_race_start,
@@ -938,6 +943,12 @@ async def remove_participant(
             detail="Participant not found",
         )
 
+    if participant.status == ParticipantStatus.DISQUALIFIED or participant.debug_flags:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This participation is under review",
+        )
+
     display = participant.user.twitch_display_name or participant.user.twitch_username
     removed_username = participant.user.twitch_username
     await db.delete(participant)
@@ -1088,6 +1099,21 @@ async def after_disqualification_change(
             if room:
                 await room.broadcast_chat_public(fin_public_json, race)
             fire_race_finished_notifications(race)
+    elif race.status == RaceStatus.FINISHED:
+        # Results changed after the finish: grants are first-time-only, so
+        # re-running them rewards the new winner(s) without touching the
+        # rewards already given to anyone.
+        from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
+
+        rewards_svc = RewardsService(db)
+        await rewards_svc.grant_race_win_rewards(race)
+        if race.daily_date is not None:
+            await rewards_svc.grant_daily_win_rewards(race.daily_date)
+            week_starting = race.daily_date - timedelta(days=race.daily_date.weekday())
+            await rewards_svc.refresh_weekly_daily_rewards(week_starting)
+        await db.commit()
+        task = asyncio.create_task(recompute_traits_for_race_async(race.id))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
 
 @router.delete("/{race_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -1396,6 +1422,12 @@ async def leave_race(
             detail="You are not a participant in this race",
         )
 
+    if participant.status == ParticipantStatus.DISQUALIFIED or participant.debug_flags:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This participation is under review",
+        )
+
     # Organizer cannot leave their own race
     if user.id == race.organizer_id:
         raise HTTPException(
@@ -1688,17 +1720,11 @@ async def reroll_seed(
 
     if is_daily:
         for p in race.participants:
-            p.status = ParticipantStatus.REGISTERED
-            p.current_zone = None
-            p.current_layer = 0
-            p.igt_ms = 0
-            p.death_count = 0
-            p.finished_at = None
-            p.zone_history = None
-            p.last_igt_change_at = None
-            # Empty dict, not None: ``layer_entry_igts`` is NOT NULL with a
-            # ``{}`` server_default; sort_leaderboard reads it for gap math.
-            p.layer_entry_igts = {}
+            if p.status == ParticipantStatus.DISQUALIFIED:
+                # A disqualification is history, not progress: it survives a
+                # restart until the race staff cancel it.
+                continue
+            reset_participant_progress(p)
 
         # Re-derive streak state for any user who had qualified for this
         # daily before the reroll: their qualifying zone_history has just
@@ -1827,20 +1853,11 @@ async def reset_race(
     )
 
     for p in race.participants:
-        p.status = ParticipantStatus.REGISTERED
-        p.current_zone = None
-        p.current_layer = 0
-        p.igt_ms = 0
-        p.death_count = 0
-        p.finished_at = None
-        p.zone_history = None
-        # Also clear the derived progress markers: layer_entry_igts feeds
-        # leaderboard gap math (first-write-wins per layer) and
-        # last_igt_change_at drives inactivity auto-abandon. Mirrors the
-        # daily reroll reset. Empty dict, not None: layer_entry_igts is
-        # NOT NULL with a {} server_default.
-        p.layer_entry_igts = {}
-        p.last_igt_change_at = None
+        if p.status == ParticipantStatus.DISQUALIFIED:
+            # A disqualification is history, not progress: it survives a
+            # restart until the race staff cancel it.
+            continue
+        reset_participant_progress(p)
 
     # A playoff race's deadline comes from its first finisher (the playoff
     # cutoff): the replay's first finisher sets a fresh one.

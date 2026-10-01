@@ -20,6 +20,9 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.services.chat_access import is_active_participant_status
+from speedfog_racing.services.daily_points_service import daily_points_for_race
+from speedfog_racing.services.event_service import score_race
 from speedfog_racing.websocket.race.manager import sort_leaderboard
 from speedfog_racing.websocket.schemas import ParticipantInfo
 
@@ -293,3 +296,155 @@ async def test_admin_discord_hears_of_disqualification_and_cancel(
         await client.delete(url, headers=_auth(sx_users["admin"]))
     assert [c.kwargs["cancelled"] for c in fire.call_args_list] == [False, True]
     assert fire.call_args_list[0].kwargs["reason"] == REASON
+
+
+def _scored_race(statuses: list[ParticipantStatus], *, daily: bool = True) -> Race:
+    race = Race(
+        id=uuid.uuid4(),
+        name="d",
+        status=RaceStatus.FINISHED,
+        daily_date=datetime.now(UTC).date() if daily else None,
+    )
+    race.participants = [
+        Participant(
+            id=uuid.uuid4(),
+            user_id=uuid.uuid4(),
+            status=s,
+            igt_ms=1000 * (i + 1),
+            current_layer=3,
+            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+        )
+        for i, s in enumerate(statuses)
+    ]
+    return race
+
+
+def test_disqualified_runner_leaves_the_daily_field() -> None:
+    with_dq = _scored_race(
+        [ParticipantStatus.DISQUALIFIED, ParticipantStatus.FINISHED, ParticipantStatus.FINISHED]
+    )
+    without = _scored_race([ParticipantStatus.FINISHED, ParticipantStatus.FINISHED])
+    points = daily_points_for_race(with_dq)
+    assert with_dq.participants[0].id not in points
+    assert sorted(points.values()) == sorted(daily_points_for_race(without).values())
+
+
+@pytest.mark.parametrize("settled_only", [False, True])
+def test_disqualified_runner_leaves_the_qualifier_field(settled_only: bool) -> None:
+    with_dq = _scored_race(
+        [ParticipantStatus.DISQUALIFIED, ParticipantStatus.FINISHED, ParticipantStatus.FINISHED],
+        daily=False,
+    )
+    without = _scored_race([ParticipantStatus.FINISHED, ParticipantStatus.FINISHED], daily=False)
+    scores = score_race(with_dq, settled_only=settled_only)
+    assert with_dq.participants[0].user_id not in scores
+    assert sorted(s.points for s in scores.values()) == sorted(
+        s.points for s in score_race(without, settled_only=settled_only).values()
+    )
+
+
+def test_disqualified_is_not_an_active_participant() -> None:
+    assert not is_active_participant_status(ParticipantStatus.DISQUALIFIED)
+
+
+async def test_new_winner_gets_the_race_win_after_a_disqualification(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+    from speedfog_racing.rewards.service import RewardsService
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    granted: list[uuid.UUID] = []
+
+    async def fake_grant(self, user_id, skin_id, reason=None):  # noqa: ANN001
+        granted.append(user_id)
+
+    monkeypatch.setattr(RewardsService, "grant_phantom_skin", fake_grant)
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        status=RaceStatus.FINISHED,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.FINISHED},
+    )
+    async with sx_session() as db:
+        other = await db.get(Participant, ids["other"])
+        other.igt_ms = 90_000
+        race = await db.get(Race, race_id)
+        race.is_public = True
+        await db.commit()
+    async with sx_client as client:
+        await client.post(
+            _dq_url(race_id, ids["cheater"]),
+            json={"reason": REASON},
+            headers=_auth(sx_users["admin"]),
+        )
+    assert granted == [sx_users["other"].id]
+
+
+async def test_reset_keeps_a_disqualification(sx_client, sx_session, sx_users, monkeypatch):
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(sx_session, sx_users)
+    async with sx_client as client:
+        await client.post(
+            _dq_url(race_id, ids["cheater"]),
+            json={"reason": REASON},
+            headers=_auth(sx_users["admin"]),
+        )
+        resp = await client.post(
+            f"/api/races/{race_id}/reset", headers=_auth(sx_users["organizer"])
+        )
+        assert resp.status_code == 200, resp.text
+        detail = (
+            await client.get(f"/api/races/{race_id}", headers=_auth(sx_users["admin"]))
+        ).json()
+    statuses = {p["id"]: p["status"] for p in detail["participants"]}
+    assert statuses[str(ids["cheater"])] == "disqualified"
+    assert statuses[str(ids["other"])] == "registered"
+
+
+async def test_cancel_after_a_reset_starts_the_runner_over(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.PLAYING},
+    )
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        await client.post(f"/api/races/{race_id}/reset", headers=_auth(sx_users["organizer"]))
+        resp = await client.delete(url, headers=_auth(sx_users["admin"]))
+    assert resp.status_code == 200, resp.text
+    row = next(p for p in resp.json()["participants"] if p["id"] == str(ids["cheater"]))
+    assert row["status"] == "registered"
+    assert row["igt_ms"] == 0
+
+
+async def test_under_review_participation_cannot_leave_or_be_removed(
+    sx_client, sx_session, sx_users
+):
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        status=RaceStatus.SETUP,
+        runners={"cheater": ParticipantStatus.REGISTERED, "other": ParticipantStatus.REGISTERED},
+    )
+    async with sx_session() as db:
+        p = await db.get(Participant, ids["cheater"])
+        p.debug_flags = {"one_shot": {"igt_ms": 1, "node_id": None, "detected_at": "x"}}
+        await db.commit()
+    async with sx_client as client:
+        leave = await client.post(f"/api/races/{race_id}/leave", headers=_auth(sx_users["cheater"]))
+        remove = await client.delete(
+            f"/api/races/{race_id}/participants/{ids['cheater']}",
+            headers=_auth(sx_users["organizer"]),
+        )
+    assert leave.status_code == 400, leave.text
+    assert leave.json()["detail"] == "This participation is under review"
+    assert remove.status_code == 400, remove.text

@@ -19,6 +19,7 @@ from datetime import datetime
 from uuid import UUID
 
 from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
     ParticipantStatus,
     Race,
     RaceStatus,
@@ -59,7 +60,7 @@ def is_active_participant_status(status: ParticipantStatus | None) -> bool:
     """
     if status is None:
         return False
-    return status not in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
+    return status not in TERMINAL_PARTICIPANT_STATUSES
 
 
 def registration_open_window(race: Race, now: datetime) -> bool:
