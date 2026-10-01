@@ -163,10 +163,46 @@
     buildDirectedAdjacency(layout.edges),
   );
 
+  // The participants the paths, trails and death marks are drawn from. Those
+  // only move when a runner's zone history, current zone, color or name does,
+  // or the order changes (it assigns the parallel slots): while none did, this
+  // hands back the previous array, so an IGT tick does not re-walk every path.
+  // Typed down to the compared fields: reading another one from these
+  // participants means comparing it too.
+  type PathInput = Pick<
+    WsParticipant,
+    | "id"
+    | "zone_history"
+    | "current_zone"
+    | "color_index"
+    | "twitch_display_name"
+    | "twitch_username"
+  >;
+  let pathSnapshot: PathInput[] = [];
+  let pathParticipants: PathInput[] = $derived.by(() => {
+    const prev = pathSnapshot;
+    const unchanged =
+      participants.length === prev.length &&
+      participants.every((p, i) => {
+        const q = prev[i];
+        return (
+          q.id === p.id &&
+          q.zone_history === p.zone_history &&
+          q.current_zone === p.current_zone &&
+          q.color_index === p.color_index &&
+          q.twitch_display_name === p.twitch_display_name &&
+          q.twitch_username === p.twitch_username
+        );
+      });
+    if (unchanged) return prev;
+    pathSnapshot = participants;
+    return participants;
+  });
+
   // Per-participant visited set (node_ids seen in zone_history + current_zone).
   let visitedByParticipant: Map<string, Set<string>> = $derived.by(() => {
     const map = new Map<string, Set<string>>();
-    for (const p of participants) {
+    for (const p of pathParticipants) {
       const set = new Set<string>();
       if (p.zone_history) {
         for (const entry of p.zone_history) set.add(entry.node_id);
@@ -192,7 +228,7 @@
     // Step 1: Deduplicate and expand node paths for each participant
     const expandedMap = new Map<string, string[]>();
 
-    for (const p of participants) {
+    for (const p of pathParticipants) {
       if (!p.zone_history || p.zone_history.length === 0) continue;
 
       const deduped: string[] = [];
@@ -253,7 +289,7 @@
     // Step 4: Build offset waypoints for each player
     const paths: PlayerPath[] = [];
 
-    for (const p of participants) {
+    for (const p of pathParticipants) {
       const expanded = expandedMap.get(p.id);
       if (!expanded) continue;
 
@@ -309,7 +345,7 @@
   // Compute which nodes had deaths, respecting player selection
   let nodesWithDeaths: Set<string> = $derived.by(() => {
     const result = new Set<string>();
-    for (const p of participants) {
+    for (const p of pathParticipants) {
       if (!p.zone_history) continue;
       // If players are selected, only count their deaths
       if (hasHighlight && !highlightIds!.has(p.id)) continue;
@@ -497,7 +533,7 @@
     const OPACITY_LEVELS = fullPathOpacity ? [1, 0.5, 0.2] : [0.8, 0.4, 0.15];
     const result: TrailingSegment[] = [];
 
-    for (const p of participants) {
+    for (const p of pathParticipants) {
       if (!p.zone_history || p.zone_history.length < 2) continue;
       const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length];
       const visited = visitedByParticipant.get(p.id) ?? new Set<string>();

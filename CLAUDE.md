@@ -95,6 +95,14 @@ Rust DLL entry point in `lib.rs`. `dll/` has the main loop (`mod.rs`), ImGui ove
 - Memory reads from the game process are expensive: route them through `FrameSnapshot` so the same value is read at most once per frame.
 - Use `profile_span!` around any new non-trivial block so Tracy can confirm the cost. If a change is plausibly a hotspot, validate with Tracy (see `docs/MOD_PROFILING.md`) before merging.
 
+### Live page perf (web)
+
+`raceStore` (`web/src/lib/stores/race.svelte.ts`) feeds every live surface (race, daily, overlays, cast) and receives a `player_update` about every second per playing runner, so a 90-player daily delivers several messages per second, each touching one runner. A message must cost O(changed runner), not O(field):
+
+- `participants` is `$state.raw` and only ever replaced wholesale: never mutate a participant in place, and don't make it deep `$state` again (proxy reads dominated the profile).
+- `raceStore.leaderboard` hands back the previous row object for a runner whose participant and gap are unchanged, and `leaderboard_update` keeps the unchanged participants' objects (`reuseIfUnchanged`). Key `{#each}` blocks by participant id so untouched rows skip the update.
+- A derived that aggregates over the whole field recomputes on every tick unless it narrows its input first: see `pathParticipants` in `MetroDagFull.svelte`, which only changes when a zone history, current zone, color, name or the order does.
+
 ## Code Style
 
 - **Python**: ruff (line-length 100, rules E/F/I/UP), mypy strict, async/await for all I/O

@@ -35,6 +35,35 @@ export function preserveDailyPoints<T extends { daily_points?: number | null }>(
   return { ...incoming, daily_points: previous };
 }
 
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || !a || !b) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every(
+    (key) =>
+      Object.hasOwn(b, key) &&
+      sameJson(
+        (a as Record<string, unknown>)[key],
+        (b as Record<string, unknown>)[key],
+      ),
+  );
+}
+
+/**
+ * `previous` when `incoming` holds the same JSON value, `incoming` otherwise.
+ * leaderboard_update re-sends the whole field on each layer crossing: keeping
+ * the unchanged participants' objects lets everything keyed on them
+ * (leaderboard rows, DAG paths) skip the update.
+ */
+export function reuseIfUnchanged<T extends object>(
+  incoming: T,
+  previous: T | undefined,
+): T {
+  return previous && sameJson(incoming, previous) ? previous : incoming;
+}
+
 /**
  * Replace the reactions of the message a chat_reaction_update targets.
  * Svelte 5 $state arrays are deeply reactive, so mutating the found
@@ -52,7 +81,7 @@ export function applyChatReactionUpdate(
 class RaceStore {
   race = $state<WsRaceInfo | null>(null);
   seed = $state<WsSeedInfo | null>(null);
-  participants = $state<WsParticipant[]>([]);
+  participants = $state.raw<WsParticipant[]>([]);
   // Inputs for the live gap recomputation, captured from leaderboard_update
   // (the only message that carries them). leaderSplits is the leader's
   // per-layer entry IGTs; layerEntryIgts maps participant id -> its own layer
@@ -89,11 +118,22 @@ class RaceStore {
   private finishCheckTimer: ReturnType<typeof setTimeout> | null = null;
   private delayQueue: DelayQueue | null = null;
 
+  // The rows the previous `leaderboard` run built, by participant id, with the
+  // participant each was built from.
+  private leaderboardRows = new Map<
+    string,
+    { source: WsParticipant; row: WsParticipant }
+  >();
+
   // Render in the server's order (the server is the single source of ranking
   // truth, identical to the in-game mod) and attach each player's live gap to
   // the rank-0 leader. Re-sorting client-side would diverge from the mod and,
   // because the playing tie-break would key on the ever-changing total IGT,
   // make near-tied rows flicker every tick. The leader carries no gap.
+  //
+  // A row whose participant object and gap are both unchanged is handed out
+  // again as is: a tick moves one runner, so only that runner's row re-renders
+  // in a keyed list, not the whole field.
   leaderboard = $derived.by(() => {
     const ps = this.participants;
     if (ps.length === 0) return ps;
@@ -102,9 +142,9 @@ class RaceStore {
     const leader = ps[0];
     const leaderIgtMs = leader.igt_ms;
     const leaderFinished = leader.status === "finished";
-    return ps.map((p, i) => ({
-      ...p,
-      gap_ms: splits
+    const previous = this.leaderboardRows;
+    const rows = ps.map((p, i) => {
+      const gap_ms = splits
         ? computeGap({
             status: p.status,
             igtMs: p.igt_ms,
@@ -115,8 +155,16 @@ class RaceStore {
             leaderIgtMs,
             leaderFinished,
           })
-        : null,
-    }));
+        : null;
+      const prev = previous.get(p.id);
+      return prev && prev.source === p && prev.row.gap_ms === gap_ms
+        ? prev.row
+        : { ...p, gap_ms };
+    });
+    this.leaderboardRows = new Map(
+      ps.map((p, i) => [p.id, { source: p, row: rows[i] }]),
+    );
+    return rows;
   });
 
   /**
@@ -202,9 +250,12 @@ class RaceStore {
             const prevById = new Map(this.participants.map((p) => [p.id, p]));
             this.participants = msg.participants.map((p) => {
               const prev = prevById.get(p.id);
-              return preserveDailyPoints(
-                preserveZoneHistory(p, prev?.zone_history),
-                prev?.daily_points,
+              return reuseIfUnchanged(
+                preserveDailyPoints(
+                  preserveZoneHistory(p, prev?.zone_history),
+                  prev?.daily_points,
+                ),
+                prev,
               );
             });
             // Capture the gap inputs this message uniquely carries. The full
@@ -375,6 +426,7 @@ class RaceStore {
     this.race = null;
     this.seed = null;
     this.participants = [];
+    this.leaderboardRows = new Map();
     this.leaderSplits = null;
     this.layerEntryIgts = {};
     this.pendingInvites = null;
