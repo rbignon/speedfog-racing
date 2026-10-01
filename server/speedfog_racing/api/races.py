@@ -86,6 +86,7 @@ from speedfog_racing.services.calendar_sync import (
     remove_calendar_participant,
     update_calendar_events,
 )
+from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.event_service import leaderboard_points
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
@@ -1054,13 +1055,21 @@ async def cancel_participant_disqualification(
     _require_organizer(race, user)
     participant = await _load_participant_in_race(db, race_id, participant_id)
     disqualified_at = participant.disqualified_at
+    # A reset sends the race back to SETUP and moves started_at on the next
+    # start; a daily reroll keeps it running and releases the new seed.
     race_restarted = race.status == RaceStatus.SETUP or (
         disqualified_at is not None
-        and race.started_at is not None
-        and race.started_at > disqualified_at
+        and any(
+            moment is not None and moment > disqualified_at
+            for moment in (race.started_at, race.seeds_released_at)
+        )
     )
     try:
-        cancel_disqualification(participant, race_restarted=race_restarted)
+        cancel_disqualification(
+            participant,
+            race_restarted=race_restarted,
+            race_finished=race.status == RaceStatus.FINISHED,
+        )
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Not disqualified"
@@ -1124,7 +1133,11 @@ async def after_disqualification_change(
         if race.daily_date is not None:
             await rewards_svc.grant_daily_win_rewards(race.daily_date)
             week_starting = race.daily_date - timedelta(days=race.daily_date.weekday())
-            await rewards_svc.refresh_weekly_daily_rewards(week_starting)
+            today = daily_date_for(datetime.now(UTC))
+            last_closed_week = today - timedelta(days=today.weekday() + 7)
+            await rewards_svc.refresh_weekly_daily_rewards(
+                week_starting, transient=week_starting == last_closed_week
+            )
         await db.commit()
         task = asyncio.create_task(recompute_traits_for_race_async(race.id))
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

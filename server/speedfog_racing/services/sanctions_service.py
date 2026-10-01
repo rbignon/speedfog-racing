@@ -11,7 +11,11 @@ See docs/CHEAT_DETECTION.md ("Sanctions").
 import uuid
 from datetime import datetime
 
-from speedfog_racing.models import Participant, ParticipantStatus
+from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
+    Participant,
+    ParticipantStatus,
+)
 
 
 def disqualify(participant: Participant, *, by_id: uuid.UUID, reason: str, now: datetime) -> None:
@@ -39,19 +43,27 @@ def reset_participant_progress(participant: Participant) -> None:
     participant.layer_entry_igts = {}
 
 
-def cancel_disqualification(participant: Participant, *, race_restarted: bool) -> None:
+def cancel_disqualification(
+    participant: Participant, *, race_restarted: bool, race_finished: bool
+) -> None:
     """Undo a disqualification.
 
-    ``race_restarted``: the race went back to SETUP (reset, reroll) after the
+    ``race_restarted``: the race restarted (reset, daily reroll) after the
     disqualification, so the saved status belongs to an attempt that no
     longer exists; the participant then starts over like everyone else.
+    ``race_finished``: the race is over (the disqualification may have ended
+    it), so a run that was still going ends as abandoned, as the race's
+    finish would have recorded it.
     """
     if participant.status != ParticipantStatus.DISQUALIFIED:
         raise ValueError("not disqualified")
-    if race_restarted or participant.status_before_disqualification is None:
+    saved = participant.status_before_disqualification
+    if race_restarted or saved is None:
         reset_participant_progress(participant)
+    elif race_finished and saved not in TERMINAL_PARTICIPANT_STATUSES:
+        participant.status = ParticipantStatus.ABANDONED
     else:
-        participant.status = participant.status_before_disqualification
+        participant.status = saved
     participant.status_before_disqualification = None
     participant.disqualified_at = None
     participant.disqualified_by_id = None

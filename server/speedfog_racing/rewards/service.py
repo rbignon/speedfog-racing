@@ -473,7 +473,7 @@ class RewardsService:
                 )
 
     async def refresh_weekly_daily_rewards(
-        self, week_starting: date, reason: str | None = None
+        self, week_starting: date, reason: str | None = None, *, transient: bool = True
     ) -> None:
         """Sync the two weekly daily-seed badges for the given week.
 
@@ -481,6 +481,10 @@ class RewardsService:
           the user(s) with the highest total points across the week's closed dailies.
         - weekly_daily_winner (transient): every user who ranked 1st on at least
           one closed daily that week (broader; no skin).
+
+        The transient badges belong to the latest closed week only: pass
+        ``transient=False`` for an older week, whose holders have moved on, to
+        grant its champions the permanent rewards without touching them.
 
         Selection criteria live in services.daily_points_service
         (compute_weekly_winners and compute_weekly_daily_winners).
@@ -495,10 +499,13 @@ class RewardsService:
             # Current or future week; not yet decided. Defensive no-op.
             return
         champion_ids = {w.user.id for w in champions}
-        await self.sync_transient_holders("weekly_daily_champion", champion_ids, reason=reason)
+        if transient:
+            await self.sync_transient_holders("weekly_daily_champion", champion_ids, reason=reason)
         for uid in champion_ids:
             await self.grant_phantom_skin(uid, "gold-aura", reason="weekly daily champion")
             await self.grant_name_template(uid, "daily_crown", reason="weekly daily champion")
+        if not transient:
+            return
 
         daily_winners = await compute_weekly_daily_winners(self.session, week_starting)
         await self.sync_transient_holders(

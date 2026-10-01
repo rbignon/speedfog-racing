@@ -387,6 +387,96 @@ async def test_new_winner_gets_the_race_win_after_a_disqualification(
     assert granted == [sx_users["other"].id]
 
 
+async def _closed_daily(sx_session, sx_users, *, weeks_back: int) -> tuple[uuid.UUID, uuid.UUID]:
+    """A finished daily, ``weeks_back`` weeks before this one, won by "cheater"
+    ahead of "other"; returns the race id and the cheater's participant id."""
+    from speedfog_racing.services.daily_seed_loop import daily_date_for
+
+    today = daily_date_for(datetime.now(UTC))
+    day = today - timedelta(days=today.weekday() + 7 * weeks_back - 2)
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        status=RaceStatus.FINISHED,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.FINISHED},
+    )
+    async with sx_session() as db:
+        race = await db.get(Race, race_id)
+        race.daily_date = day
+        for key, igt in (("cheater", 60_000), ("other", 90_000)):
+            p = await db.get(Participant, ids[key])
+            p.igt_ms = igt
+            p.zone_history = [{"node_id": "a", "igt_ms": 0}, {"node_id": "b", "igt_ms": igt}]
+        await db.commit()
+    return race_id, ids["cheater"]
+
+
+async def _weekly_holders(sx_session, badge_id: str) -> set[uuid.UUID]:
+    from speedfog_racing.models import BadgeGrant
+
+    async with sx_session() as db:
+        rows = await db.execute(
+            select(BadgeGrant.user_id).where(
+                BadgeGrant.badge_id == badge_id, BadgeGrant.revoked_at.is_(None)
+            )
+        )
+        return set(rows.scalars().all())
+
+
+async def test_disqualification_in_an_old_week_keeps_this_week_s_badge_holders(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    # The weekly badges belong to last week's champions; an audit of a daily
+    # weeks older must not hand them back to that old week's field.
+    import speedfog_racing.api.races as races_api
+    from speedfog_racing.models import PhantomSkinUnlock
+    from speedfog_racing.rewards.service import RewardsService
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    holder = sx_users["organizer"].id
+    async with sx_session() as db:
+        svc = RewardsService(db)
+        await svc.sync_transient_holders("weekly_daily_champion", {holder})
+        await svc.sync_transient_holders("weekly_daily_winner", {holder})
+        await db.commit()
+    race_id, cheater = await _closed_daily(sx_session, sx_users, weeks_back=3)
+    async with sx_client as client:
+        resp = await client.post(
+            _dq_url(race_id, cheater), json={"reason": REASON}, headers=_auth(sx_users["admin"])
+        )
+    assert resp.status_code == 200, resp.text
+    assert await _weekly_holders(sx_session, "weekly_daily_champion") == {holder}
+    assert await _weekly_holders(sx_session, "weekly_daily_winner") == {holder}
+    # The old week's new champion still gets the permanent reward.
+    async with sx_session() as db:
+        skins = await db.execute(
+            select(PhantomSkinUnlock.skin_id).where(
+                PhantomSkinUnlock.user_id == sx_users["other"].id
+            )
+        )
+        assert "gold-aura" in set(skins.scalars().all())
+
+
+async def test_disqualification_in_last_week_moves_the_weekly_badges(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+    from speedfog_racing.rewards.service import RewardsService
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, cheater = await _closed_daily(sx_session, sx_users, weeks_back=1)
+    async with sx_session() as db:
+        await RewardsService(db).sync_transient_holders(
+            "weekly_daily_champion", {sx_users["cheater"].id}
+        )
+        await db.commit()
+    async with sx_client as client:
+        await client.post(
+            _dq_url(race_id, cheater), json={"reason": REASON}, headers=_auth(sx_users["admin"])
+        )
+    assert await _weekly_holders(sx_session, "weekly_daily_champion") == {sx_users["other"].id}
+
+
 async def test_reset_keeps_a_disqualification(sx_client, sx_session, sx_users, monkeypatch):
     import speedfog_racing.api.races as races_api
 
@@ -430,6 +520,69 @@ async def test_cancel_after_a_reset_starts_the_runner_over(
     row = next(p for p in resp.json()["participants"] if p["id"] == str(ids["cheater"]))
     assert row["status"] == "registered"
     assert row["igt_ms"] == 0
+
+
+async def test_cancel_after_a_daily_reroll_starts_the_runner_over(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    # A reroll keeps the daily running and its start time: the saved FINISHED
+    # belongs to the old seed and must not come back on the new one.
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        daily=True,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.PLAYING},
+    )
+    async with sx_session() as db:
+        db.add(
+            Seed(
+                seed_number="sx_reroll",
+                pool_name="standard",
+                graph_json={"total_layers": 5, "nodes": {}},
+                total_layers=5,
+                folder_path="/test/sx_reroll",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        await db.commit()
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        reroll = await client.post(
+            f"/api/races/{race_id}/reroll-seed", headers=_auth(sx_users["admin"])
+        )
+        assert reroll.status_code == 200, reroll.text
+        resp = await client.delete(url, headers=_auth(sx_users["admin"]))
+    assert resp.status_code == 200, resp.text
+    row = next(p for p in resp.json()["participants"] if p["id"] == str(ids["cheater"]))
+    assert (row["status"], row["igt_ms"]) == ("registered", 0)
+
+
+async def test_cancel_in_a_finished_race_never_leaves_a_runner_playing(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    # Disqualifying the last runner still out finished the race: the run they
+    # were on is over, so the cancel gives them back an abandon, not a live run.
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_race_finished_notifications", MagicMock())
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        runners={"cheater": ParticipantStatus.PLAYING, "other": ParticipantStatus.FINISHED},
+    )
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        resp = await client.delete(url, headers=_auth(sx_users["admin"]))
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "finished"
+    row = next(p for p in resp.json()["participants"] if p["id"] == str(ids["cheater"]))
+    assert (row["status"], row["igt_ms"]) == ("abandoned", 30_000)
 
 
 async def test_under_review_participation_cannot_leave_or_be_removed(
