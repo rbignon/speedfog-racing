@@ -4,7 +4,7 @@ from datetime import UTC, date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from speedfog_racing.models import (
     FeedbackSource,
@@ -364,6 +364,23 @@ class ParticipantResponse(BaseModel):
     # Game debug flags (cheat detection), filled only for the race organizer
     # and admins; null for everyone else.
     debug_flags: dict[str, dict[str, Any]] | None = None
+    # Disqualification reason, filled only for the participant themselves,
+    # the race organizer and admins; null for everyone else.
+    disqualification_reason: str | None = None
+
+
+class DisqualifyRequest(BaseModel):
+    """Why the race staff disqualify a participant."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason must not be blank")
+        return stripped
 
 
 class CasterResponse(BaseModel):

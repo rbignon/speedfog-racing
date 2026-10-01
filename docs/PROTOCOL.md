@@ -24,27 +24,29 @@ Reference document for API endpoints and WebSocket messages.
 
 ### Races
 
-| Method | Endpoint                              | Auth             | Description                                                                                                                             |
-| ------ | ------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/races`                          | -                | List races (`?status=setup,running,...`). Excludes Daily Seeds (`daily_date IS NULL`).                                                  |
-| POST   | `/api/races`                          | Bearer           | Create race (status: SETUP)                                                                                                             |
-| GET    | `/api/races/{id}`                     | -                | Race details with participants and casters; `participants[].debug_flags` (cheat detections) is filled for the organizer and admins only |
-| PATCH  | `/api/races/{id}`                     | Bearer           | Update race settings (organizer, SETUP only)                                                                                            |
-| POST   | `/api/races/{id}/participants`        | Bearer           | Add participant (organizer only)                                                                                                        |
-| DELETE | `/api/races/{id}/participants/{pid}`  | Bearer           | Remove participant (organizer, SETUP only)                                                                                              |
-| POST   | `/api/races/{id}/casters`             | Bearer           | Add caster (organizer only)                                                                                                             |
-| DELETE | `/api/races/{id}/casters/{cid}`       | Bearer           | Remove caster (organizer only)                                                                                                          |
-| DELETE | `/api/races/{id}/invites/{invite_id}` | Bearer           | Revoke invite (organizer, SETUP only)                                                                                                   |
-| POST   | `/api/races/{id}/join`                | Bearer           | Self-join open-registration race (SETUP only)                                                                                           |
-| POST   | `/api/races/{id}/leave`               | Bearer           | Leave race (SETUP only)                                                                                                                 |
-| POST   | `/api/races/{id}/release-seeds`       | Bearer           | Release seeds for download (organizer, SETUP)                                                                                           |
-| POST   | `/api/races/{id}/reroll-seed`         | Bearer           | Reroll the seed (organizer, SETUP, seeds not released). For Daily Seeds, accepts RUNNING and resets every participant.                  |
-| POST   | `/api/races/{id}/start`               | Bearer           | Start race: SETUP → RUNNING (organizer)                                                                                                 |
-| POST   | `/api/races/{id}/reset`               | Bearer           | Reset race: RUNNING → SETUP (organizer)                                                                                                 |
-| POST   | `/api/races/{id}/finish`              | Bearer           | Force-finish race: RUNNING → FINISHED (organizer)                                                                                       |
-| DELETE | `/api/races/{id}`                     | Bearer           | Delete race (organizer, SETUP only)                                                                                                     |
-| GET    | `/api/races/{id}/seed-pack-ticket`    | Bearer           | Mint a short-lived download ticket for own seed pack (same gating as the download)                                                      |
-| GET    | `/api/races/{id}/my-seed-pack`        | Bearer or ticket | Download own seed pack (requires seeds released)                                                                                        |
+| Method | Endpoint                                        | Auth             | Description                                                                                                                                                                                                                |
+| ------ | ----------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/races`                                    | -                | List races (`?status=setup,running,...`). Excludes Daily Seeds (`daily_date IS NULL`).                                                                                                                                     |
+| POST   | `/api/races`                                    | Bearer           | Create race (status: SETUP)                                                                                                                                                                                                |
+| GET    | `/api/races/{id}`                               | -                | Race details with participants and casters; `participants[].debug_flags` (cheat detections) is filled for the organizer and admins only, `participants[].disqualification_reason` for the runner, the organizer and admins |
+| PATCH  | `/api/races/{id}`                               | Bearer           | Update race settings (organizer, SETUP only)                                                                                                                                                                               |
+| POST   | `/api/races/{id}/participants`                  | Bearer           | Add participant (organizer only)                                                                                                                                                                                           |
+| DELETE | `/api/races/{id}/participants/{pid}`            | Bearer           | Remove participant (organizer, SETUP only)                                                                                                                                                                                 |
+| POST   | `/api/races/{id}/participants/{pid}/disqualify` | Bearer           | Disqualify a participant (organizer or admin, RUNNING or FINISHED race), body `{reason}` (1 to 500 characters)                                                                                                             |
+| DELETE | `/api/races/{id}/participants/{pid}/disqualify` | Bearer           | Cancel a disqualification (organizer or admin); restores the previous status, or a fresh entry if the race was restarted since                                                                                             |
+| POST   | `/api/races/{id}/casters`                       | Bearer           | Add caster (organizer only)                                                                                                                                                                                                |
+| DELETE | `/api/races/{id}/casters/{cid}`                 | Bearer           | Remove caster (organizer only)                                                                                                                                                                                             |
+| DELETE | `/api/races/{id}/invites/{invite_id}`           | Bearer           | Revoke invite (organizer, SETUP only)                                                                                                                                                                                      |
+| POST   | `/api/races/{id}/join`                          | Bearer           | Self-join open-registration race (SETUP only)                                                                                                                                                                              |
+| POST   | `/api/races/{id}/leave`                         | Bearer           | Leave race (SETUP only)                                                                                                                                                                                                    |
+| POST   | `/api/races/{id}/release-seeds`                 | Bearer           | Release seeds for download (organizer, SETUP)                                                                                                                                                                              |
+| POST   | `/api/races/{id}/reroll-seed`                   | Bearer           | Reroll the seed (organizer, SETUP, seeds not released). For Daily Seeds, accepts RUNNING and resets every participant.                                                                                                     |
+| POST   | `/api/races/{id}/start`                         | Bearer           | Start race: SETUP → RUNNING (organizer)                                                                                                                                                                                    |
+| POST   | `/api/races/{id}/reset`                         | Bearer           | Reset race: RUNNING → SETUP (organizer)                                                                                                                                                                                    |
+| POST   | `/api/races/{id}/finish`                        | Bearer           | Force-finish race: RUNNING → FINISHED (organizer)                                                                                                                                                                          |
+| DELETE | `/api/races/{id}`                               | Bearer           | Delete race (organizer, SETUP only)                                                                                                                                                                                        |
+| GET    | `/api/races/{id}/seed-pack-ticket`              | Bearer           | Mint a short-lived download ticket for own seed pack (same gating as the download)                                                                                                                                         |
+| GET    | `/api/races/{id}/my-seed-pack`                  | Bearer or ticket | Download own seed pack (requires seeds released)                                                                                                                                                                           |
 
 Without `limit`, a `GET /api/races` listing that can include finished races (no `status`, or one containing `finished`) is capped at 100 rows (`offset` then applies as well); `total` and `has_more` report the truncation. Active-only listings (`setup`, `running`) stay complete.
 
@@ -1075,7 +1077,9 @@ Live web UI updates during training. Accepts both authenticated and anonymous sp
 
 ### Participant Status
 
-`registered` → `ready` → `playing` → `finished` | `abandoned`
+`registered` → `ready` → `playing` → `finished` | `abandoned` | `disqualified`
+
+`disqualified` is set by the race organizer or an admin at any point of a running or finished race. It is terminal and ranked last; the runner gets no result, points or rewards from the race.
 
 ### ParticipantInfo
 

@@ -53,6 +53,13 @@ class ParticipantStatus(enum.Enum):
     PLAYING = "playing"  # Currently racing
     FINISHED = "finished"  # Completed the race
     ABANDONED = "abandoned"  # Left the race
+    DISQUALIFIED = "disqualified"  # Removed from the results by the race staff
+
+
+# Statuses after which a participant takes no further part in the race.
+TERMINAL_PARTICIPANT_STATUSES = frozenset(
+    {ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED, ParticipantStatus.DISQUALIFIED}
+)
 
 
 class SeedStatus(enum.Enum):
@@ -137,7 +144,9 @@ class User(Base):
 
     # Relationships
     organized_races: Mapped[list["Race"]] = relationship(back_populates="organizer")
-    participations: Mapped[list["Participant"]] = relationship(back_populates="user")
+    participations: Mapped[list["Participant"]] = relationship(
+        back_populates="user", foreign_keys="Participant.user_id"
+    )
     caster_roles: Mapped[list["Caster"]] = relationship(back_populates="user")
 
 
@@ -437,6 +446,17 @@ class Participant(Base):
     debug_flags: Mapped[dict[str, dict[str, Any]] | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )
+    # Disqualification by the race staff (see services/sanctions_service.py).
+    # The run data stays untouched; status_before_disqualification is what a
+    # cancellation restores.
+    disqualified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    disqualified_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=True
+    )
+    disqualification_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    status_before_disqualification: Mapped[ParticipantStatus | None] = mapped_column(
+        Enum(ParticipantStatus), nullable=True
+    )
     # Used by inactivity_monitor to scope the no-show timeout per-participant
     # (late-joiners must not be abandoned based on Race.started_at alone).
     created_at: Mapped[datetime] = mapped_column(
@@ -445,7 +465,7 @@ class Participant(Base):
 
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
-    user: Mapped["User"] = relationship(back_populates="participations")
+    user: Mapped["User"] = relationship(back_populates="participations", foreign_keys=[user_id])
 
 
 class DailyStreakFreeze(Base):

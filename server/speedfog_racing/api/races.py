@@ -57,6 +57,7 @@ from speedfog_racing.schemas import (
     AddParticipantResponse,
     CasterResponse,
     CreateRaceRequest,
+    DisqualifyRequest,
     DownloadTicketResponse,
     InviteResponse,
     ParticipantResponse,
@@ -86,6 +87,7 @@ from speedfog_racing.services.calendar_sync import (
 from speedfog_racing.services.event_service import leaderboard_points
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
+from speedfog_racing.services.sanctions_service import cancel_disqualification, disqualify
 from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
@@ -161,9 +163,11 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
     points_map = leaderboard_points(race)
     for proj in participants_list:
         proj.daily_points = points_map.get(proj.id)
-    if is_organizer:
-        for proj, participant in zip(participants_list, race.participants, strict=True):
+    for proj, participant in zip(participants_list, race.participants, strict=True):
+        if is_organizer:
             proj.debug_flags = participant.debug_flags
+        if is_organizer or (user is not None and participant.user_id == user.id):
+            proj.disqualification_reason = participant.disqualification_reason
     return RaceDetailResponse(
         id=race.id,
         name=race.name,
@@ -953,6 +957,101 @@ async def remove_participant(
 
     # Broadcast updated state to spectators and mods
     race = await _get_race_or_404(db, race_id, load_participants=True)
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(
+        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+    )
+    await broadcast_race_state_update(race_id, race)
+
+
+async def _load_participant_in_race(
+    db: AsyncSession, race_id: UUID, participant_id: UUID
+) -> Participant:
+    participant = (
+        await db.execute(
+            select(Participant)
+            .where(Participant.id == participant_id, Participant.race_id == race_id)
+            .options(selectinload(Participant.user))
+        )
+    ).scalar_one_or_none()
+    if participant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+    return participant
+
+
+@router.post(
+    "/{race_id}/participants/{participant_id}/disqualify", response_model=RaceDetailResponse
+)
+async def disqualify_participant(
+    race_id: UUID,
+    participant_id: UUID,
+    request: DisqualifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
+) -> RaceDetailResponse:
+    """Disqualify a participant (race organizer or admin, running or finished race)."""
+    race = await _get_race_or_404(db, race_id)
+    _require_organizer(race, user)
+    if race.status not in (RaceStatus.RUNNING, RaceStatus.FINISHED):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only a running or finished race can have disqualifications",
+        )
+    participant = await _load_participant_in_race(db, race_id, participant_id)
+    try:
+        disqualify(participant, by_id=user.id, reason=request.reason, now=datetime.now(UTC))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
+        ) from None
+    await db.commit()
+    await after_disqualification_change(db, race_id, participant, by=user, cancelled=False)
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
+
+
+@router.delete(
+    "/{race_id}/participants/{participant_id}/disqualify", response_model=RaceDetailResponse
+)
+async def cancel_participant_disqualification(
+    race_id: UUID,
+    participant_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+    _sentry: None = Depends(sentry_race_context),
+) -> RaceDetailResponse:
+    """Cancel a disqualification (race organizer or admin)."""
+    race = await _get_race_or_404(db, race_id)
+    _require_organizer(race, user)
+    participant = await _load_participant_in_race(db, race_id, participant_id)
+    disqualified_at = participant.disqualified_at
+    race_restarted = race.status == RaceStatus.SETUP or (
+        disqualified_at is not None
+        and race.started_at is not None
+        and race.started_at > disqualified_at
+    )
+    try:
+        cancel_disqualification(participant, race_restarted=race_restarted)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Not disqualified"
+        ) from None
+    await db.commit()
+    await after_disqualification_change(db, race_id, participant, by=user, cancelled=True)
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, load_invites=True
+    )
+    return _race_detail_response(race, user=user)
+
+
+async def after_disqualification_change(
+    db: AsyncSession, race_id: UUID, participant: Participant, *, by: User, cancelled: bool
+) -> None:
+    """Post-commit effects of a disqualification or its cancellation."""
+    race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
         race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
