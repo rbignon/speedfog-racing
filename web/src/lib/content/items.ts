@@ -55,6 +55,15 @@ export const CONTENT_ITEMS: ContentItem[] = [
       "After defeating **Maliketh**, a **grace appears in his arena**. You can **fast travel** back to it later to backtrack, or use it to **take the post-fight warp again**.",
   },
   {
+    id: "morgott-grace",
+    kind: "tip",
+    level: "beginner",
+    zoneIds: ["leyndell_throne"],
+    title: "The Morgott grace",
+    short:
+      "After defeating **Morgott**, **sit at the grace in his arena** and **talk to Melina**, or you will not be able to leave the arena.",
+  },
+  {
     id: "dead-end-boss-arenas",
     kind: "tip",
     level: "beginner",
