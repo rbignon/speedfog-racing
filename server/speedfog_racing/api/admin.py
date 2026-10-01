@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
 from pydantic import BaseModel, Field, ValidationError, field_validator
-from sqlalchemy import case, func, literal, select, union_all
+from sqlalchemy import case, delete, func, literal, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -17,21 +17,28 @@ from speedfog_racing.api.helpers import (
     race_response,
     user_response,
 )
-from speedfog_racing.auth import require_admin
+from speedfog_racing.api.races import after_disqualification_change, remove_participation
+from speedfog_racing.auth import BAN_MESSAGE, require_admin
 from speedfog_racing.database import get_db
+from speedfog_racing.discord import fire_ban_notification
 from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
     Caster,
     DailySeedSchedule,
     Event,
+    EventSignup,
     Feedback,
     FeedbackSource,
+    Invite,
     Participant,
+    ParticipantStatus,
     Pool,
     Race,
     RaceStatus,
     Seed,
     SeedStatus,
     TrainingSession,
+    TrainingSessionStatus,
     User,
     UserRole,
 )
@@ -71,11 +78,13 @@ from speedfog_racing.services.event_service import (
     compute_phase,
     event_window,
     first_config_date,
+    is_event_joinable,
     parse_slot,
     validate_slot,
 )
 from speedfog_racing.services.layer_service import get_display_name_for_node
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.sanctions_service import disqualify
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
@@ -584,6 +593,12 @@ async def ban_user(
         target.ban_reason = request.reason
         await db.commit()
         await _apply_ban_side_effects(db, target, by=admin)
+        fire_ban_notification(
+            player_name=target.twitch_display_name or target.twitch_username,
+            reason=target.ban_reason,
+            by_name=admin.twitch_display_name or admin.twitch_username,
+            lifted=False,
+        )
     return await _admin_user_response(db, target)
 
 
@@ -591,21 +606,107 @@ async def ban_user(
 async def unban_user(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _admin: User = Depends(require_admin),
+    admin: User = Depends(require_admin),
 ) -> AdminUserResponse:
     """Lift a ban (admin only). Nothing removed at ban time is restored."""
     target = await db.get(User, user_id)
     if target is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    was_banned = target.banned_at is not None
     target.banned_at = None
     target.banned_by_id = None
     target.ban_reason = None
     await db.commit()
+    if was_banned:
+        fire_ban_notification(
+            player_name=target.twitch_display_name or target.twitch_username,
+            reason=None,
+            by_name=admin.twitch_display_name or admin.twitch_username,
+            lifted=True,
+        )
     return await _admin_user_response(db, target)
 
 
 async def _apply_ban_side_effects(db: AsyncSession, user: User, *, by: User) -> None:
-    """What a ban does to the user's pending and running entries."""
+    """What a ban does to the user's pending and running entries.
+
+    Races not started: the entry is removed, unless it is under review
+    (detections or a disqualification), which stays as evidence. Races in
+    progress: the entry is disqualified. Pending invitations, signups to
+    events still open and active training sessions go; open mod connections
+    are closed and open spectator connections lose the chat.
+    """
+    now = datetime.now(UTC)
+    participations = (
+        (
+            await db.execute(
+                select(Participant)
+                .where(Participant.user_id == user.id)
+                .options(selectinload(Participant.race), selectinload(Participant.user))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for participant in participations:
+        race = participant.race
+        if race.status == RaceStatus.SETUP:
+            if participant.debug_flags or participant.status == ParticipantStatus.DISQUALIFIED:
+                continue
+            await remove_participation(db, race, participant)
+        elif (
+            race.status == RaceStatus.RUNNING
+            and participant.status not in TERMINAL_PARTICIPANT_STATUSES
+        ):
+            disqualify(participant, by_id=by.id, reason="Account banned", now=now)
+            await db.commit()
+            await after_disqualification_change(db, race.id, participant, by=by, cancelled=False)
+            await race_manager.close_mod(race.id, participant.id, code=4003, reason=BAN_MESSAGE)
+
+    await db.execute(
+        delete(Invite).where(
+            func.lower(Invite.twitch_username) == user.twitch_username.lower(),
+            Invite.accepted.is_(False),
+        )
+    )
+    signups = (
+        (
+            await db.execute(
+                select(EventSignup)
+                .where(EventSignup.user_id == user.id)
+                .options(selectinload(EventSignup.event))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for signup in signups:
+        if is_event_joinable(signup.event, now):
+            await db.delete(signup)
+    sessions = (
+        (
+            await db.execute(
+                select(TrainingSession).where(
+                    TrainingSession.user_id == user.id,
+                    TrainingSession.status == TrainingSessionStatus.ACTIVE,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for session in sessions:
+        # Same rule as abandoning a session by hand.
+        session.status = (
+            TrainingSessionStatus.ABANDONED
+            if session.zone_history
+            else TrainingSessionStatus.CANCELLED
+        )
+        session.finished_at = now
+    await db.commit()
+    for session in sessions:
+        await training_manager.close_mod(session.id, code=4003, reason=BAN_MESSAGE)
+    race_manager.mark_user_banned(user.id)
 
 
 # =============================================================================

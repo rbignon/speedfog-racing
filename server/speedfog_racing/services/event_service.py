@@ -998,3 +998,21 @@ async def start_playoff_cutoff(db: AsyncSession, race: Race, finisher: Participa
         return False
     race.race_duration_minutes = minutes
     return True
+
+
+def is_event_joinable(event: Event, now: datetime) -> bool:
+    """Whether runners can still join ``event`` (sign up, enter a qualifier)."""
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
+    config = EventConfig.model_validate(event.config)
+    # Whether the last stage is complete only tells playoffs from finished,
+    # neither of which can be joined, so the stage races are not needed here.
+    phase = compute_phase(
+        now=now,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        first_stage_at=first_config_date(config),
+        last_stage_complete=False,
+        override=config.phase_override,
+    )
+    return phase in JOINABLE_PHASES

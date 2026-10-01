@@ -1,22 +1,28 @@
 """Sanctions: disqualification and ban."""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Event,
+    EventSignup,
+    Invite,
     Participant,
     ParticipantStatus,
     Race,
     RaceStatus,
     Seed,
     SeedStatus,
+    TrainingSession,
+    TrainingSessionStatus,
     User,
     UserRole,
 )
@@ -520,3 +526,90 @@ async def test_ban_endpoints_are_admin_only_and_spare_admins(sx_client, sx_users
     assert me.json()["ban_reason"] == "Repeat cheating" and me.json()["banned_at"]
     assert unban.status_code == 200
     assert me_after.json()["banned_at"] is None
+
+
+async def test_ban_side_effects(sx_client, sx_session, sx_users, monkeypatch):
+    import speedfog_racing.api.admin as admin_api
+    import speedfog_racing.api.races as races_api
+    from tests.test_events_api import CONFIG
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    monkeypatch.setattr(admin_api, "fire_ban_notification", MagicMock(), raising=False)
+    setup_id, setup_ids = await _race(
+        sx_session,
+        sx_users,
+        status=RaceStatus.SETUP,
+        runners={"cheater": ParticipantStatus.REGISTERED},
+    )
+    _review_id, review_ids = await _race(
+        sx_session,
+        sx_users,
+        status=RaceStatus.SETUP,
+        runners={"cheater": ParticipantStatus.REGISTERED},
+    )
+    _running_id, running_ids = await _race(sx_session, sx_users)
+    now = datetime.now(UTC)
+    async with sx_session() as db:
+        p = await db.get(Participant, review_ids["cheater"])
+        p.debug_flags = {"one_shot": {"igt_ms": 1, "node_id": None, "detected_at": "x"}}
+        db.add(Invite(race_id=setup_id, twitch_username="Cheater_SX"))
+        event = Event(
+            slug="open-event",
+            name="Open",
+            partner_name="P",
+            starts_at=now - timedelta(days=1),
+            qualifier_ends_at=now + timedelta(days=6),
+            ends_at=now + timedelta(days=20),
+            newcomer_threshold=5,
+            config=CONFIG,
+        )
+        db.add(event)
+        await db.flush()
+        db.add(EventSignup(event_id=event.id, user_id=sx_users["cheater"].id))
+        seed = (await db.execute(select(Seed))).scalars().first()
+        session = TrainingSession(
+            user_id=sx_users["cheater"].id,
+            seed_id=seed.id,
+            status=TrainingSessionStatus.ACTIVE,
+        )
+        db.add(session)
+        await db.commit()
+        session_id = session.id
+    async with sx_client as client:
+        resp = await client.post(
+            f"/api/admin/users/{sx_users['cheater'].id}/ban",
+            json={"reason": "Repeat cheating"},
+            headers=_auth(sx_users["admin"]),
+        )
+    assert resp.status_code == 200, resp.text
+    async with sx_session() as db:
+        assert await db.get(Participant, setup_ids["cheater"]) is None
+        kept = await db.get(Participant, review_ids["cheater"])
+        assert kept is not None and kept.status == ParticipantStatus.REGISTERED
+        dq = await db.get(Participant, running_ids["cheater"])
+        assert dq.status == ParticipantStatus.DISQUALIFIED
+        assert dq.disqualification_reason == "Account banned"
+        assert (await db.execute(select(Invite))).scalars().all() == []
+        assert (await db.execute(select(EventSignup))).scalars().all() == []
+        training = await db.get(TrainingSession, session_id)
+        assert training.status == TrainingSessionStatus.CANCELLED
+        assert training.finished_at is not None
+
+
+def test_banned_spectator_stops_chatting_at_once() -> None:
+    from unittest.mock import AsyncMock
+
+    from speedfog_racing.websocket.race.manager import (
+        ConnectionManager,
+        RaceRoom,
+        SpectatorConnection,
+    )
+
+    mgr = ConnectionManager()
+    race_id, user_id = uuid.uuid4(), uuid.uuid4()
+    conn = SpectatorConnection(websocket=AsyncMock(), user_id=user_id)
+    other = SpectatorConnection(websocket=AsyncMock(), user_id=uuid.uuid4())
+    mgr.rooms[race_id] = RaceRoom(race_id=race_id)
+    mgr.rooms[race_id].spectators = {conn.connection_id: conn, other.connection_id: other}
+    mgr.mark_user_banned(user_id)
+    assert conn.banned and not other.banned

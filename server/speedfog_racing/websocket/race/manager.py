@@ -358,6 +358,26 @@ class ConnectionManager:
         logger.info(f"Spectator connected: race={race_id}")
         await self._broadcast_spectator_count(room)
 
+    async def close_mod(
+        self, race_id: uuid.UUID, participant_id: uuid.UUID, *, code: int, reason: str
+    ) -> None:
+        """Close a participant's mod connection, if any (e.g. the account got banned)."""
+        room = self.get_room(race_id)
+        conn = room.mods.get(participant_id) if room else None
+        if conn is None:
+            return
+        try:
+            await conn.websocket.close(code=code, reason=reason)
+        except Exception:
+            pass
+
+    def mark_user_banned(self, user_id: uuid.UUID) -> None:
+        """Flag every open spectator connection of ``user_id`` as banned (no chat)."""
+        for room in self.rooms.values():
+            for conn in room.spectators.values():
+                if conn.user_id == user_id:
+                    conn.banned = True
+
     async def disconnect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Remove a spectator connection."""
         room = self.get_room(race_id)

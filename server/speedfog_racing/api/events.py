@@ -56,13 +56,12 @@ from speedfog_racing.services.event_service import (
     announce_date,
     build_timeline,
     compute_ladder,
-    compute_phase,
     compute_qualified,
     count_finished_before,
     current_stage_key,
     event_window,
     fed_field,
-    first_config_date,
+    is_event_joinable,
     load_event,
     load_featured_events,
     newcomer_flags,
@@ -458,20 +457,7 @@ async def _joinable_event(db: AsyncSession, slug: str) -> Event:
     event = (await db.execute(select(Event).where(Event.slug == slug))).scalar_one_or_none()
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    starts_at, qualifier_ends_at, ends_at = event_window(event)
-    config = EventConfig.model_validate(event.config)
-    # Whether the last stage is complete only tells playoffs from finished,
-    # neither of which can be joined, so the stage races are not loaded here.
-    phase = compute_phase(
-        now=datetime.now(UTC),
-        starts_at=starts_at,
-        qualifier_ends_at=qualifier_ends_at,
-        ends_at=ends_at,
-        first_stage_at=first_config_date(config),
-        last_stage_complete=False,
-        override=config.phase_override,
-    )
-    if phase not in JOINABLE_PHASES:
+    if not is_event_joinable(event, datetime.now(UTC)):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The event can no longer be joined",

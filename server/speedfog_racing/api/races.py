@@ -952,6 +952,17 @@ async def remove_participant(
             detail="This participation is under review",
         )
 
+    await remove_participation(db, race, participant)
+
+
+async def remove_participation(db: AsyncSession, race: Race, participant: Participant) -> None:
+    """Delete a participation and tell the race (chat, Malenia, broadcasts).
+
+    Requires ``participant.user`` loaded. Callers have already decided the
+    removal is allowed.
+    """
+    race_id = race.id
+    participant_id = participant.id
     display = participant.user.twitch_display_name or participant.user.twitch_username
     removed_username = participant.user.twitch_username
     await db.delete(participant)

@@ -719,3 +719,39 @@ def fire_disqualification_notification(
         )
     )
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+async def notify_ban(
+    *,
+    player_name: str,
+    reason: str | None,
+    by_name: str,
+    lifted: bool,
+) -> None:
+    """Alert the admin channel that an admin banned an account (or lifted it)."""
+    title = "Unbanned" if lifted else "Banned"
+    fields: list[dict[str, object]] = [
+        {"name": "By", "value": _escape_discord_md(by_name), "inline": True},
+    ]
+    if reason:
+        fields.append({"name": "Reason", "value": _escape_discord_md(reason), "inline": False})
+    embed: dict[str, object] = {
+        "title": f"{title}: {_escape_discord_md(player_name)}",
+        "color": 0x8A8F98 if lifted else 0xDC6A51,
+        "fields": fields,
+    }
+    await _send_admin_webhook(embed)
+
+
+def fire_ban_notification(
+    *,
+    player_name: str,
+    reason: str | None,
+    by_name: str,
+    lifted: bool,
+) -> None:
+    """Fire-and-forget wrapper around ``notify_ban``."""
+    task = asyncio.create_task(
+        notify_ban(player_name=player_name, reason=reason, by_name=by_name, lifted=lifted)
+    )
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

@@ -161,6 +161,16 @@ class TrainingConnectionManager:
             if room.mod is None and not room.spectators:
                 del self.rooms[session_id]
 
+    async def close_mod(self, session_id: uuid.UUID, *, code: int, reason: str) -> None:
+        """Close a session's mod connection, if any (e.g. the account got banned)."""
+        room = self.get_room(session_id)
+        if room is None or room.mod is None:
+            return
+        try:
+            await room.mod.websocket.close(code=code, reason=reason)
+        except Exception:
+            pass
+
     def is_mod_connected(self, session_id: uuid.UUID) -> bool:
         room = self.rooms.get(session_id)
         return room is not None and room.mod is not None
