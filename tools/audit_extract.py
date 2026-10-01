@@ -284,6 +284,8 @@ async def export(
                         User.last_seen,
                         User.timezone,
                         User.locale,
+                        User.banned_at,
+                        User.ban_reason,
                     )
                 )
             ).mappings()
@@ -299,7 +301,12 @@ async def export(
                 user_row["twitch_id"] = u["twitch_id"]
             else:
                 user_row["twitch_id_rank"] = ranks[u["id"]]
-            user_row |= {"timezone": u["timezone"], "locale": u["locale"]}
+            user_row |= {
+                "timezone": u["timezone"],
+                "locale": u["locale"],
+                "banned_at": u["banned_at"],
+                "ban_reason": scrub(u["ban_reason"]),
+            }
             user_row["name"] = aliases.get(u["id"], u["twitch_username"])
             if real_names:
                 user_row["display_name"] = u["twitch_display_name"]
@@ -372,10 +379,22 @@ async def export(
                     Participant.zone_history,
                     Participant.layer_entry_igts,
                     Participant.debug_flags,
+                    Participant.disqualified_at,
+                    Participant.disqualification_reason,
+                    Participant.status_before_disqualification,
                 ).order_by(Participant.created_at)
             )
             async for row in stream.mappings():
-                write_row(handle, {**row, "is_target": row["race_id"] in target_races})
+                write_row(
+                    handle,
+                    {
+                        **row,
+                        "disqualification_reason": scrub(
+                            row["disqualification_reason"]
+                        ),
+                        "is_target": row["race_id"] in target_races,
+                    },
+                )
                 n += 1
             counts["participants.jsonl"] = n
 

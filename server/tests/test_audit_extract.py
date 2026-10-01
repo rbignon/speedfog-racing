@@ -88,6 +88,8 @@ async def _populate(maker: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
             twitch_display_name="Bobby",
             api_token="api-token-bob",
             created_at=datetime(2026, 9, 24, tzinfo=UTC),
+            banned_at=datetime(2026, 9, 26, tzinfo=UTC),
+            ban_reason="Same tool as Alice",
         )
         daily = User(
             twitch_id="1",
@@ -157,7 +159,15 @@ async def _populate(maker: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
                     zone_history=history,
                 ),
                 Participant(race_id=races["qual"].id, user_id=alice.id, mod_token="mod-token-2"),
-                Participant(race_id=races["new"].id, user_id=bob.id, mod_token="mod-token-3"),
+                Participant(
+                    race_id=races["new"].id,
+                    user_id=bob.id,
+                    mod_token="mod-token-3",
+                    status=ParticipantStatus.DISQUALIFIED,
+                    disqualified_at=datetime(2026, 9, 26, tzinfo=UTC),
+                    disqualification_reason="No death, see alice's run",
+                    status_before_disqualification=ParticipantStatus.PLAYING,
+                ),
                 TrainingSession(
                     user_id=alice.id,
                     seed_id=seeds["solo"].id,
@@ -281,6 +291,10 @@ async def test_free_text_names_are_replaced_whole_words_only(maker, tmp_path):
     ]
     names = {r["name"] for r in _rows(bundle, "races.jsonl")}
     assert "player_0002's Tuesday race" in names
+    bob = next(u for u in _rows(bundle, "users.jsonl") if u["name"] == "player_0002")
+    assert bob["ban_reason"] == "Same tool as player_0001"
+    dq = next(p for p in _rows(bundle, "participants.jsonl") if p["status"] == "disqualified")
+    assert dq["disqualification_reason"] == "No death, see player_0001's run"
     config = _rows(bundle, "events.jsonl")[0]["config"]
     assert config["withdrawn"] == ["player_0002"]
     assert config["rules"] == ["Ask player_0001"]
