@@ -183,6 +183,9 @@ pub struct FrameSnapshot {
     /// Blackscreen fade while in game (SoulSplitter's IsBlackscreenActive).
     /// `None` follows `screen_in_game`.
     pub blackscreen: Option<bool>,
+    /// Watched debug flags that are on (`core::debug_flags` mask). `None` =
+    /// not read this frame or unreadable.
+    pub debug_flags: Option<u32>,
 }
 
 // =============================================================================
@@ -201,6 +204,8 @@ pub struct FrameNeeds {
     /// freeze, or while a zone reveal is pending).
     pub blackscreen: bool,
     pub poll_flags: bool,
+    /// Read the game's debug-flag bytes (cheat detection, 10 Hz while racing).
+    pub debug_flags: bool,
 }
 
 /// Inputs to one tick, gathered by the shell.
@@ -350,6 +355,13 @@ pub struct RaceMachine {
     /// One-shot latch for the deathless "You died" banner; reset on
     /// `RaceStart`.
     pub deathless_banner_shown: bool,
+    /// Watched debug flags seen since the race start (cumulative mask, see
+    /// `core::debug_flags`); reported with every status_update.
+    pub debug_flags_seen: u32,
+    /// Last debug-flag mask read while racing; `None` while the read gate is
+    /// closed. Drives the cheat banner and the change log.
+    pub debug_flags_last: Option<u32>,
+    pub last_debug_flags_poll: Instant,
     /// Seed mismatch: config seed_id doesn't match server seed_id
     pub seed_mismatch: bool,
     /// Last auth error message from server (see dll handler ordering guarantee)
@@ -416,6 +428,9 @@ impl RaceMachine {
             last_good_at: None,
             last_seen_death_count: None,
             deathless_banner_shown: false,
+            debug_flags_seen: 0,
+            debug_flags_last: None,
+            last_debug_flags_poll: now,
             seed_mismatch: false,
             last_auth_error: None,
             permanent_error: None,
@@ -486,6 +501,12 @@ impl RaceMachine {
             && !self.wrong_save
     }
 
+    /// Whether the debug-flag read may run: racing for real (not training),
+    /// after the countdown, before the local finish, on the race save.
+    fn debug_flags_gate_open(&self, now: Instant) -> bool {
+        !self.training && self.freeze_gate_open(now)
+    }
+
     fn is_deathless(&self) -> bool {
         self.race_state
             .race
@@ -540,6 +561,16 @@ impl RaceMachine {
             .as_ref()
             .filter(|c| c.kind.is_blocking())
             .filter(|c| now.duration_since(c.last_seen) < SERVER_CONDITION_TTL)
+    }
+
+    /// Cheat banner: a watched debug flag is on right now. The other red
+    /// banners (permanent server error, coded blocking condition, local
+    /// wrong save) take precedence.
+    pub fn cheat_warning_active(&self, now: Instant) -> bool {
+        self.debug_flags_last.is_some_and(|mask| mask != 0)
+            && self.permanent_error.is_none()
+            && self.get_blocking_condition(now).is_none()
+            && !self.wrong_save
     }
 
     /// Calm amber waiting line: locally derived when the machine knows
@@ -744,6 +775,8 @@ impl RaceMachine {
                 // A quit-out requested before the start is not a race quit-out.
                 self.pending_quit_out = false;
                 self.deathless_banner_shown = false;
+                self.debug_flags_seen = 0;
+                self.debug_flags_last = None;
                 // Without this, the IGT-regression arming would fire on the
                 // first in-race load after a pre-start quit-out (the reloaded
                 // save's IGT sits below the last pre-start observation).
@@ -1033,6 +1066,8 @@ impl RaceMachine {
             poll_flags: !self.wrong_save
                 && !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
+            debug_flags: self.debug_flags_gate_open(now)
+                && now.duration_since(self.last_debug_flags_poll) >= Duration::from_millis(100),
         }
     }
 
@@ -1465,6 +1500,26 @@ impl RaceMachine {
                 }
             }
             self.last_seen_death_count = Some(deaths);
+        }
+
+        // Cheat detection: the game's debug-flag bytes, read at 10 Hz while
+        // racing. The mask is cumulative since the race start, so a short
+        // toggle between two status updates is still reported; the banner
+        // follows the latest read. Closing the gate (finish, wrong save,
+        // race end) drops the banner.
+        if self.debug_flags_gate_open(now) {
+            if now.duration_since(self.last_debug_flags_poll) >= Duration::from_millis(100) {
+                self.last_debug_flags_poll = now;
+                if let Some(mask) = self.frame_snapshot.debug_flags {
+                    if self.debug_flags_last != Some(mask) {
+                        info!("[RACE] Debug flags: {mask:#x}");
+                    }
+                    self.debug_flags_seen |= mask;
+                    self.debug_flags_last = Some(mask);
+                }
+            }
+        } else {
+            self.debug_flags_last = None;
         }
 
         // Everything below needs a live connection (ready, replays, status updates).
@@ -3056,6 +3111,7 @@ mod tests {
             loading_screen: Some(false),
             screen_in_game: Some(true),
             blackscreen: Some(blackscreen),
+            debug_flags: None,
         }
     }
 
@@ -3765,5 +3821,145 @@ mod tests {
         m.tick(tick_in(snap(Some(1_000), true), true, None), now);
         assert_eq!(m.get_status(now), None);
         assert_eq!(m.get_waiting_line(now), Some("Race has not started yet"));
+    }
+
+    // ------------------------------------------------------------------
+    // Cheat detection (game debug flags)
+    // ------------------------------------------------------------------
+
+    fn debug_bit(name: &str) -> u32 {
+        1 << crate::core::debug_flags::DEBUG_FLAGS
+            .iter()
+            .position(|f| f.name == name)
+            .unwrap()
+    }
+
+    /// In-world snapshot carrying a debug-flag read.
+    fn snap_flags(igt: u32, mask: u32) -> FrameSnapshot {
+        FrameSnapshot {
+            debug_flags: Some(mask),
+            ..snap(Some(igt), true)
+        }
+    }
+
+    #[test]
+    fn debug_flags_read_requested_at_10hz_while_racing() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        assert!(
+            !m.pre_tick(now, true, true).debug_flags,
+            "100 ms not elapsed yet"
+        );
+        let t1 = now + ms(100);
+        assert!(m.pre_tick(t1, true, true).debug_flags);
+        m.tick(tick_in(snap_flags(1000, 0), true, None), t1);
+        assert!(!m.pre_tick(t1 + ms(50), true, true).debug_flags);
+        assert!(m.pre_tick(t1 + ms(100), true, true).debug_flags);
+    }
+
+    #[test]
+    fn debug_flags_not_read_in_training() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), true, now);
+        m.handle_message(auth_ok("running", &[100, 200, 900], Some(900)), now);
+        assert!(!m.pre_tick(now + secs(1), true, true).debug_flags);
+    }
+
+    #[test]
+    fn debug_flags_not_read_before_start_or_during_countdown() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+        assert!(!m.pre_tick(now + secs(1), true, true).debug_flags, "setup");
+
+        m.handle_message(MachineMessage::RaceStart(10), now + secs(1));
+        assert!(
+            !m.pre_tick(now + secs(5), true, true).debug_flags,
+            "countdown"
+        );
+        assert!(m.pre_tick(now + secs(12), true, true).debug_flags, "racing");
+    }
+
+    #[test]
+    fn debug_flags_accumulate_and_banner_follows_latest_read() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        assert!(m.cheat_warning_active(t1));
+
+        let t2 = t1 + ms(100);
+        m.tick(tick_in(snap_flags(1100, 0), true, None), t2);
+        assert!(
+            !m.cheat_warning_active(t2),
+            "the banner follows the latest read"
+        );
+        assert_eq!(
+            m.debug_flags_seen,
+            debug_bit("one_shot"),
+            "the report keeps it"
+        );
+
+        let t3 = t2 + ms(100);
+        m.tick(
+            tick_in(snap_flags(1200, debug_bit("infinite_stamina")), true, None),
+            t3,
+        );
+        assert_eq!(
+            m.debug_flags_seen,
+            debug_bit("one_shot") | debug_bit("infinite_stamina")
+        );
+    }
+
+    #[test]
+    fn banner_drops_when_the_runner_finishes_with_a_flag_still_on() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        assert!(m.cheat_warning_active(t1));
+
+        m.race_state.participants[0].status = ParticipantStatus::Finished;
+        let t2 = t1 + ms(100);
+        assert!(
+            !m.pre_tick(t2, true, true).debug_flags,
+            "no read after the finish"
+        );
+        m.tick(tick_in(snap(Some(2000), true), true, None), t2);
+        assert!(!m.cheat_warning_active(t2), "no stale banner");
+    }
+
+    #[test]
+    fn debug_flags_reset_on_race_start() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        // A reset race starts again: the earlier attempt's flags are not this run's.
+        m.handle_message(MachineMessage::RaceStart(0), t1 + secs(1));
+        assert_eq!(m.debug_flags_seen, 0);
+        assert!(!m.cheat_warning_active(t1 + secs(1)));
+    }
+
+    #[test]
+    fn cheat_banner_yields_to_other_red_banners() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        m.permanent_error = Some("Race deleted".to_string());
+        assert!(!m.cheat_warning_active(t1));
     }
 }
