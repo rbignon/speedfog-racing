@@ -81,6 +81,10 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
 
+    @property
+    def log_ref(self) -> str:
+        return f"training={self._session_id}"
+
     def _configure_sentry_scope(self) -> None:
         super()._configure_sentry_scope()
         if self._user_id:

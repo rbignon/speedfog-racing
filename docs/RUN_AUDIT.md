@@ -95,3 +95,27 @@ scripts in `scripts/`.
 The report names players by pseudonym. The identities file maps them back to
 Twitch accounts. Then check the leads against what the data cannot show:
 VODs, and the server logs for rejected messages and reload detections.
+
+Mod connection log lines (`journalctl -u speedfog-racing` on the server)
+carry `race=<race id> participant=<participant id>` for a race and
+`training=<session id>` for a solo session, so grepping a participant id keeps
+one player's lines. Lines written before authentication (mod version, auth
+timeout or rejection) name only the race; the `Mod connected: race=...,
+participant=...` line links a connection to its player. `event_flag` and
+`zone_query` lines carry the `message_id` and the IGT, which ties each one to
+its `zone_history` entry. A resolved or unresolved zone query also gives the
+`grace` the mod reported (a grace warp) and the `map_id`. A quit-out reload
+gives neither, since the server keeps the current zone.
+
+Gaps in the `message_id` sequence are normal. The mod numbers fog traversals
+and zone queries with one counter, and only messages that changed the
+recorded zone leave a `zone_history` entry. A zone query that resolves to the
+zone the player is already in, or to no zone, leaves a log line only. Some
+gaps leave no line at all: a zone query or flag from a player who is not
+playing, a zone query outside a running race, a message sent before the run's
+first status update, the second flag of a shared entrance, and an id the mod
+drops when it resends an undelivered flag under a new one.
+
+Lines in the older format name only the race and carry no `message_id`. A
+player's `event_flag` lines there are found through their `igt_ms`. Their
+`zone_query` lines carry no IGT and can only be matched by time.

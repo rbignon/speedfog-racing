@@ -17,7 +17,7 @@ from speedfog_racing.websocket.race.manager import (
     participant_to_info,
     sort_leaderboard,
 )
-from speedfog_racing.websocket.race.mod import aggregate_death_counts
+from speedfog_racing.websocket.race.mod import RaceModHandler, aggregate_death_counts
 from speedfog_racing.websocket.schemas import (
     AuthErrorMessage,
     AuthOkMessage,
@@ -1875,3 +1875,21 @@ class TestPhantomSkinResolution:
         )
         data = json.loads(seed.model_dump_json())
         assert data["phantom_skins"]["gold-aura"]["speffects"] == [1450700]
+
+
+class TestModLogRef:
+    """Every mod of a race shares the race id, so log lines must also name the
+    participant, or an audit cannot tell whose message a line records."""
+
+    def test_participants_of_one_race_get_distinct_log_refs(self):
+        race_id = uuid.uuid4()
+        handlers = []
+        for _ in range(2):
+            handler = RaceModHandler(MagicMock(), race_id, MagicMock())
+            handler._participant_id = uuid.uuid4()
+            handlers.append(handler)
+
+        assert handlers[0].log_ref != handlers[1].log_ref
+        for handler in handlers:
+            assert str(handler._participant_id) in handler.log_ref
+            assert str(race_id) in handler.log_ref

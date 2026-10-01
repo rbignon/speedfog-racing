@@ -387,6 +387,16 @@ class BaseHandler(ABC):
         # Subclasses populate in __init__: msg_type -> async handler(msg)
         self._message_handlers: dict[str, Callable[..., Any]] = {}
 
+    @property
+    def log_ref(self) -> str:
+        """Identify this connection in log lines, as ``key=value`` pairs.
+
+        Several connections can share one entity (every mod of a race
+        shares the race id), so a subclass whose entity does not pin down
+        a single player overrides this to name the player too.
+        """
+        return f"entity={self.entity_id}"
+
     async def run(self) -> None:
         await self.websocket.accept()
         try:
@@ -404,9 +414,9 @@ class BaseHandler(ABC):
                 except asyncio.CancelledError:
                     pass
         except WebSocketDisconnect:
-            logger.info("%s disconnected: %s", type(self).__name__, self.entity_id)
+            logger.info("%s disconnected: %s", type(self).__name__, self.log_ref)
         except Exception:
-            logger.exception("%s error: %s", type(self).__name__, self.entity_id)
+            logger.exception("%s error: %s", type(self).__name__, self.log_ref)
             sentry_sdk.capture_exception()
         finally:
             if self._connected:
@@ -417,7 +427,7 @@ class BaseHandler(ABC):
         while True:
             raw = await self.websocket.receive_text()
             if not rate_limiter.check():
-                logger.warning("Rate limit exceeded: %s", self.entity_id)
+                logger.warning("Rate limit exceeded: %s", self.log_ref)
                 await self.websocket.close(code=4008, reason="Rate limit exceeded")
                 return
             try:
@@ -440,7 +450,9 @@ class BaseHandler(ABC):
                 )
             await handler(msg)
         else:
-            logger.warning("%s: unknown message type: %s", type(self).__name__, msg_type)
+            logger.warning(
+                "%s: unknown message type: %s %s", type(self).__name__, msg_type, self.log_ref
+            )
 
     @abstractmethod
     async def _initialize(self) -> bool: ...
@@ -501,7 +513,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 self.websocket.receive_text(), timeout=MOD_AUTH_TIMEOUT
             )
         except TimeoutError:
-            logger.warning("Mod auth timeout: %s", self.entity_id)
+            logger.warning("Mod auth timeout: %s", self.log_ref)
             await self.websocket.close(code=4001, reason="Auth timeout")
             return False
 
@@ -526,7 +538,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         if compat.reject_reason is not None:
             logger.info(
                 "Mod rejected (version): %s, protocol=%s, version=%s",
-                self.entity_id,
+                self.log_ref,
                 self.mod_protocol_version or "absent",
                 self.mod_version or "unknown",
             )
@@ -534,7 +546,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             return False
         logger.info(
             "Mod version: %s, protocol=%s, version=%s",
-            self.entity_id,
+            self.log_ref,
             self.mod_protocol_version or "absent",
             self.mod_version or "unknown",
         )
@@ -615,14 +627,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     self.websocket.send_text(json.dumps(msg)), timeout=SEND_TIMEOUT
                 )
                 logger.info(
-                    "zone_update sent: node_id=%s entity=%s",
+                    "zone_update sent: node_id=%s %s",
                     node_id,
-                    self.entity_id,
+                    self.log_ref,
                 )
             except Exception:
                 logger.warning(
-                    "Failed to send zone_update: entity=%s, node=%s",
-                    self.entity_id,
+                    "Failed to send zone_update: %s node=%s",
+                    self.log_ref,
                     node_id,
                 )
 
@@ -652,7 +664,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if not entity.zone_history and igt_ms_val > MAX_FRESH_IGT_MS:
                 logger.warning(
                     "Rejected stale save: %s igt_ms=%d",
-                    self.entity_id,
+                    self.log_ref,
                     igt_ms_val,
                 )
                 await self._send_condition(ErrorCode.FRESH_SAVE_REQUIRED)
@@ -666,7 +678,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if not self._igt_plausible(entity, igt_ms_val):
                 logger.warning(
                     "Rejected implausible IGT (wrong save?): %s reported=%d recorded=%d",
-                    self.entity_id,
+                    self.log_ref,
                     igt_ms_val,
                     entity.igt_ms,
                 )
@@ -679,7 +691,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if igt_ms_val + IGT_ROLLBACK_LOG_MS <= entity.igt_ms:
                 logger.info(
                     "IGT rollback accepted (backup restore?): %s reported=%d recorded=%d",
-                    self.entity_id,
+                    self.log_ref,
                     igt_ms_val,
                     entity.igt_ms,
                 )
@@ -708,7 +720,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     logger.warning(
                         "Negative death delta %d for %s (stored=%d, received=%d)",
                         delta,
-                        self.entity_id,
+                        self.log_ref,
                         entity.death_count,
                         new_death_count,
                     )
@@ -792,11 +804,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if not self._igt_plausible(entity, igt):
                 logger.warning(
                     "Ignored event_flag on implausible IGT (wrong save?): "
-                    "%s flag_id=%d igt_ms=%d recorded=%d",
-                    self.entity_id,
+                    "%s flag_id=%d igt_ms=%d recorded=%d message_id=%s",
+                    self.log_ref,
                     flag_id,
                     igt,
                     entity.igt_ms,
+                    message_id,
                 )
                 if message_id is not None:
                     await self._send_event_flag_ack(message_id)
@@ -808,10 +821,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # Check finish event first
             if flag_id == finish_event:
                 logger.info(
-                    "event_flag: flag_id=%d finished=true igt_ms=%d entity=%s",
+                    "event_flag: flag_id=%d finished=true igt_ms=%d message_id=%s %s",
                     flag_id,
                     igt,
-                    self.entity_id,
+                    message_id,
+                    self.log_ref,
                 )
 
                 self._on_igt_change(entity, igt)
@@ -825,7 +839,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 # Resolve flag_id to node_id
                 node_id = event_map.get(str(flag_id))
                 if node_id is None:
-                    logger.warning("Unknown event flag %d from %s", flag_id, self.entity_id)
+                    logger.warning("Unknown event flag %d from %s", flag_id, self.log_ref)
                     if message_id is not None:
                         await self._send_event_flag_ack(message_id)
                     return
@@ -852,7 +866,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     return
 
                 if len(old_history) >= MAX_ZONE_HISTORY:
-                    logger.warning("zone_history cap reached for %s", self.entity_id)
+                    logger.warning("zone_history cap reached for %s", self.log_ref)
                     if message_id is not None:
                         await self._send_event_flag_ack(message_id)
                     return
@@ -862,13 +876,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     last_nid, last_layer, new_layer, bridges = jump
                     logger.warning(
                         "zone_history layer jump: %s(L%d) -> %s(L%d) "
-                        "missing_bridge=%s entity=%s igt=%d message_id=%s",
+                        "missing_bridge=%s %s igt=%d message_id=%s",
                         last_nid,
                         last_layer,
                         node_id,
                         new_layer,
                         ",".join(bridges) if bridges else "none",
-                        self.entity_id,
+                        self.log_ref,
                         igt,
                         message_id,
                     )
@@ -888,12 +902,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 entity.zone_history = [*old_history, new_entry]
 
                 logger.info(
-                    "event_flag: flag_id=%d node_id=%s igt_ms=%d first_visit=%s entity=%s",
+                    "event_flag: flag_id=%d node_id=%s igt_ms=%d first_visit=%s message_id=%s %s",
                     flag_id,
                     node_id,
                     igt,
                     is_first_visit,
-                    self.entity_id,
+                    message_id,
+                    self.log_ref,
                 )
 
                 self._on_zone_entered(entity, node_id, seed_graph, igt)
@@ -963,9 +978,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # no judgment).
             if zq.igt_ms is not None and not self._igt_plausible(entity, zq.igt_ms):
                 logger.warning(
-                    "Ignored zone_query on implausible IGT (wrong save?): %s igt_ms=%d",
-                    self.entity_id,
+                    "Ignored zone_query on implausible IGT (wrong save?): "
+                    "%s igt_ms=%d message_id=%s",
+                    self.log_ref,
                     zq.igt_ms,
+                    message_id,
                 )
                 if message_id is not None:
                     await self._send_zone_query_ack(message_id)
@@ -983,9 +1000,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 # the reported position for a quit-out (trust_position below).
                 node_id = entity.current_zone
                 logger.info(
-                    "zone_query: quit-out detected, resuming node_id=%s for %s",
+                    "zone_query: quit-out detected, resuming node_id=%s igt_ms=%s message_id=%s %s",
                     node_id,
-                    self.entity_id,
+                    zq.igt_ms,
+                    message_id,
+                    self.log_ref,
                 )
             else:
                 result = resolve_zone_query(
@@ -1000,24 +1019,29 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 )
                 node_id = result.node_id
                 if node_id is None:
-                    logger.debug(
-                        "zone_query: unresolved (grace=%s, map=%s) for %s",
+                    logger.info(
+                        "zone_query: unresolved grace=%s map_id=%s igt_ms=%s message_id=%s %s",
                         zq.grace_entity_id,
                         zq.map_id,
-                        self.entity_id,
+                        zq.igt_ms,
+                        message_id,
+                        self.log_ref,
                     )
                     if message_id is not None:
                         await self._send_zone_query_ack(message_id)
                     return
 
                 logger.info(
-                    "zone_query: node_id=%s strategy=%s candidates=%s grace=%s map_id=%s entity=%s",
+                    "zone_query: node_id=%s strategy=%s candidates=%s grace=%s map_id=%s "
+                    "igt_ms=%s message_id=%s %s",
                     node_id,
                     result.strategy,
                     ",".join(result.candidates) if result.candidates else "-",
                     zq.grace_entity_id,
                     zq.map_id,
-                    self.entity_id,
+                    zq.igt_ms,
+                    message_id,
+                    self.log_ref,
                 )
 
                 # Fast travel (Strategy 1 grace lookup) bypasses the history
@@ -1032,10 +1056,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 ):
                     logger.warning(
                         "zone_query resolved to unvisited node via grace: "
-                        "node=%s grace_entity_id=%s entity=%s message_id=%s",
+                        "node=%s grace_entity_id=%s %s message_id=%s",
                         node_id,
                         zq.grace_entity_id,
-                        self.entity_id,
+                        self.log_ref,
                         message_id,
                     )
 
@@ -1043,10 +1067,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
             # (death/teleport/quit-out, no event flag fired)
             if node_id != entity.current_zone:
                 logger.info(
-                    "zone_query backtrack: %s -> %s for %s",
+                    "zone_query backtrack: %s -> %s message_id=%s %s",
                     entity.current_zone,
                     node_id,
-                    self.entity_id,
+                    message_id,
+                    self.log_ref,
                 )
                 igt = zq.igt_ms if zq.igt_ms is not None else entity.igt_ms
                 old_history = entity.zone_history or []
@@ -1057,7 +1082,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 ):
                     pass  # Dedup: already persisted, skip to zone_update
                 elif len(old_history) >= MAX_ZONE_HISTORY:
-                    logger.warning("zone_history cap reached for %s", self.entity_id)
+                    logger.warning("zone_history cap reached for %s", self.log_ref)
                 else:
                     is_first_visit = not any(
                         entry.get("node_id") == node_id for entry in old_history

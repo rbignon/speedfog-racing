@@ -227,6 +227,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         # Detached participant from auth phase, used by _on_authenticated
         self._auth_participant: Participant | None = None
 
+    @property
+    def log_ref(self) -> str:
+        # Every mod of a race shares the race id: name the participant once
+        # authentication has identified it.
+        if self._participant_id is None:
+            return f"race={self._race_id}"
+        return f"race={self._race_id} participant={self._participant_id}"
+
     def _configure_sentry_scope(self) -> None:
         super()._configure_sentry_scope()
         if self._participant_id:
@@ -377,7 +385,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     project_ghosts=participant.race.projects_ghosts,
                 )
         except Exception:
-            logger.warning("Failed to broadcast connect: race=%s", self._race_id)
+            logger.warning("Failed to broadcast connect: %s", self.log_ref)
 
     async def _on_disconnect(self) -> None:
         assert self._participant_id is not None
@@ -393,7 +401,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                         project_ghosts=race.projects_ghosts,
                     )
         except Exception:
-            logger.warning("Failed to broadcast disconnect: race=%s", self._race_id)
+            logger.warning("Failed to broadcast disconnect: %s", self.log_ref)
 
     # ------------------------------------------------------------------
     # Entity loading
@@ -420,8 +428,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
     async def _validate_for_status_update(self, entity: Participant) -> bool:
         if entity.race.status != RaceStatus.RUNNING:
             logger.warning(
-                "Rejected status_update: race=%s status=%s",
-                entity.race_id,
+                "Rejected status_update: %s status=%s",
+                self.log_ref,
                 entity.race.status.value,
             )
             await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
@@ -443,8 +451,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         # error for user feedback.
         if entity.race.status != RaceStatus.RUNNING:
             logger.warning(
-                "Rejected event_flag: race=%s status=%s",
-                entity.race_id,
+                "Rejected event_flag: message_id=%s %s status=%s",
+                message_id,
+                self.log_ref,
                 entity.race.status.value,
             )
             if message_id is not None:
@@ -454,8 +463,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         if _is_countdown_active(entity.race):
             logger.warning(
-                "Rejected event_flag during countdown: race=%s",
-                entity.race_id,
+                "Rejected event_flag during countdown: message_id=%s %s",
+                message_id,
+                self.log_ref,
             )
             if message_id is not None:
                 await self._send_event_flag_ack(message_id)
@@ -878,8 +888,9 @@ async def handle_finished(
         )
         if participant.race.status != RaceStatus.RUNNING or past_cutoff:
             logger.warning(
-                "Rejected finished: race=%s status=%s past_cutoff=%s",
+                "Rejected finished: race=%s participant=%s status=%s past_cutoff=%s",
                 participant.race_id,
+                participant.id,
                 participant.race.status.value,
                 past_cutoff,
             )
