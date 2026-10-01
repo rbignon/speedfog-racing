@@ -30,6 +30,7 @@ from speedfog_racing.services.daily_streak_service import (
     apply_qualification_to_user,
     qualifies_for_streak,
 )
+from speedfog_racing.services.debug_flags import merge_debug_flags
 from speedfog_racing.services.event_service import start_playoff_cutoff
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
@@ -521,6 +522,18 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
     def _wall_reference(self, entity: Participant) -> datetime | None:
         return entity.last_igt_change_at
+
+    def _record_debug_flags(self, entity: Participant, reported: Any, igt_ms: int) -> list[str]:
+        merged, added = merge_debug_flags(
+            entity.debug_flags,
+            reported,
+            igt_ms=igt_ms,
+            node_id=entity.current_zone,
+            now=datetime.now(UTC),
+        )
+        if added:
+            entity.debug_flags = merged
+        return added
 
     # ------------------------------------------------------------------
     # Finish event (called AFTER DB session closed by base class)

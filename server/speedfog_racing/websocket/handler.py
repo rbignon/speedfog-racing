@@ -749,7 +749,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     entity.zone_history = new_history
                     history_changed = True
 
+            new_debug_flags = self._record_debug_flags(entity, msg.get("debug_flags"), igt_ms_val)
+
             await db.commit()
+
+        if new_debug_flags:
+            await self._on_debug_flags_recorded(entity, new_debug_flags)
 
         await self._broadcast_after_status_update(
             entity,
@@ -1211,6 +1216,16 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
     def _on_first_init(self, entity: T, start_node: str) -> None:
         """Hook called on first zone initialization. Override for READY->PLAYING (race)."""
+
+    def _record_debug_flags(self, entity: T, reported: Any, igt_ms: int) -> list[str]:
+        """Store the game debug flags reported with a status_update and
+        return the names seen for the first time. Override to record them
+        (race); training sessions ignore them."""
+        return []
+
+    async def _on_debug_flags_recorded(self, entity: T, added: list[str]) -> None:
+        """Called after the commit when ``_record_debug_flags`` stored new
+        flags. Override to alert (race)."""
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the

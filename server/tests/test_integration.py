@@ -67,6 +67,7 @@ class ModTestClient:
         igt_ms: int,
         death_count: int,
         weapons: list[int | None] | None = None,
+        debug_flags: object = None,
     ) -> None:
         """Send periodic status update."""
         payload: dict[str, Any] = {
@@ -76,6 +77,8 @@ class ModTestClient:
         }
         if weapons is not None:
             payload["weapons"] = weapons
+        if debug_flags is not None:
+            payload["debug_flags"] = debug_flags
         self.ws.send_json(payload)
 
     def send_event_flag(self, flag_id: int, igt_ms: int, *, message_id: int | None = None) -> None:
@@ -1089,6 +1092,99 @@ def test_status_update_weapons_dual_preserves_mod_order(
 # =============================================================================
 # Scenario 3c: Stale Save Rejected on Status Update
 # =============================================================================
+
+
+def _start_race_with_player0(integration_client, race_with_participants) -> None:
+    """Ready player 0 and start the race (the weapons tests' preamble)."""
+    race_id = race_with_participants["race_id"]
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {race_with_participants['organizer'].api_token}"},
+    )
+    assert response.status_code == 200
+
+
+def _player0_row(integration_db, race_with_participants) -> Participant:
+    import asyncio
+
+    async def load() -> Participant:
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_with_participants["race_id"]),
+                    Participant.user_id == race_with_participants["players"][0]["user"].id,
+                )
+            )
+            return result.scalar_one()
+
+    return asyncio.run(load())
+
+
+def test_status_update_records_debug_flags_first_observation(
+    integration_client, race_with_participants, integration_db
+):
+    """Each flag keeps its first observation; a race reset keeps them all."""
+    race_id = race_with_participants["race_id"]
+    _start_race_with_player0(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0, debug_flags=["one_shot"])
+        time.sleep(0.5)
+        mod0.send_status_update(
+            igt_ms=2000, death_count=0, debug_flags=["one_shot", "infinite_stamina"]
+        )
+        time.sleep(0.5)
+
+    flags = _player0_row(integration_db, race_with_participants).debug_flags
+    assert flags is not None
+    assert flags["one_shot"]["igt_ms"] == 1000
+    assert flags["one_shot"]["node_id"] == "start_node"
+    assert flags["infinite_stamina"]["igt_ms"] == 2000
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/reset",
+        headers={"Authorization": f"Bearer {race_with_participants['organizer'].api_token}"},
+    )
+    assert response.status_code == 200
+    assert _player0_row(integration_db, race_with_participants).debug_flags == flags
+
+
+def test_status_update_malformed_debug_flags_still_records_igt(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _start_race_with_player0(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0, debug_flags="one_shot")
+        time.sleep(0.5)
+
+    row = _player0_row(integration_db, race_with_participants)
+    assert row.igt_ms == 1000
+    assert row.debug_flags is None
+
+
+def test_rejected_status_update_records_no_debug_flags(
+    integration_client, race_with_participants, integration_db
+):
+    """Race not started: the update is rejected and nothing is recorded."""
+    race_id = race_with_participants["race_id"]
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+        mod = ModTestClient(ws, race_with_participants["players"][0]["mod_token"])
+        assert mod.auth()["type"] == "auth_ok"
+        mod.send_status_update(igt_ms=5000, death_count=0, debug_flags=["one_shot"])
+        assert mod.receive()["type"] == "error"
+
+    assert _player0_row(integration_db, race_with_participants).debug_flags is None
 
 
 def test_stale_save_rejected_on_status_update(

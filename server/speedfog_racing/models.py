@@ -431,6 +431,12 @@ class Participant(Base):
     layer_entry_igts: Mapped[dict[str, int]] = mapped_column(
         JSON, nullable=False, default=dict, server_default="{}"
     )
+    # Game debug flags (cheat tools) the mod saw during the race: wire name ->
+    # first observation {"igt_ms", "node_id", "detected_at"}. Never cleared by
+    # a race reset or a reroll: detections are history, not progress.
+    debug_flags: Mapped[dict[str, dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
     # Used by inactivity_monitor to scope the no-show timeout per-participant
     # (late-joiners must not be abandoned based on Race.started_at alone).
     created_at: Mapped[datetime] = mapped_column(
