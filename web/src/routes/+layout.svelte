@@ -15,6 +15,7 @@
   import NavUserSearch from "$lib/components/NavUserSearch.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import AnnouncementBanner from "$lib/components/AnnouncementBanner.svelte";
+  import BannedBanner from "$lib/components/BannedBanner.svelte";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
 
   let { children } = $props();
@@ -277,6 +278,7 @@
       text={appUpdate.announcement}
       url={appUpdate.announcementUrl}
     />
+    <BannedBanner />
 
     <div class="content">
       {@render children()}

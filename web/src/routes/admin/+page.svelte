@@ -5,6 +5,8 @@
   import {
     fetchAdminUsers,
     updateAdminUserRole,
+    banUser,
+    unbanUser,
     fetchAdminPools,
     setAdminPoolEnabled,
     adminDiscardPool,
@@ -41,6 +43,7 @@
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
+  import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import { detectionRows } from "$lib/debugFlags";
   // The page's own formatIgt shows "--:--" at 0 ms; a detection at the
   // start must read 0:00.
@@ -121,6 +124,10 @@
   let adminPools: AdminPool[] = $state([]);
   let seedsLoading = $state(false);
   let actionLoading = $state<Record<string, boolean>>({});
+  let banTarget = $state<AdminUser | null>(null);
+  let banReason = $state("");
+  let banLoading = $state(false);
+  let banError = $state<string | null>(null);
 
   let activity: ActivityTimeline | null = $state(null);
   let activityLoading = $state(false);
@@ -731,6 +738,49 @@
     }
   }
 
+  function replaceUser(updated: AdminUser) {
+    const idx = users.findIndex((u) => u.id === updated.id);
+    if (idx !== -1) {
+      users[idx] = updated;
+    }
+  }
+
+  function openBan(user: AdminUser) {
+    banTarget = user;
+    banReason = "";
+    banError = null;
+  }
+
+  async function confirmBan() {
+    if (!banTarget) return;
+    if (!banReason.trim()) {
+      banError = "A reason is required.";
+      return;
+    }
+    banLoading = true;
+    banError = null;
+    try {
+      replaceUser(await banUser(banTarget.id, banReason.trim()));
+      banTarget = null;
+    } catch (e) {
+      banError = e instanceof Error ? e.message : "Ban failed.";
+    } finally {
+      banLoading = false;
+    }
+  }
+
+  async function handleUnban(user: AdminUser) {
+    actionLoading = { ...actionLoading, [`unban_${user.id}`]: true };
+    try {
+      replaceUser(await unbanUser(user.id));
+      error = null;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Unban failed.";
+    } finally {
+      actionLoading = { ...actionLoading, [`unban_${user.id}`]: false };
+    }
+  }
+
   async function handleDiscard(poolName: string) {
     if (
       !confirm(
@@ -1168,17 +1218,35 @@
                   </a>
                 </td>
                 <td>
-                  {#if user.role === "admin"}
-                    <span class="chip">admin</span>
-                  {:else}
-                    <select
-                      value={user.role}
-                      onchange={(e) => changeRole(user, e.currentTarget.value)}
-                    >
-                      <option value="user">user</option>
-                      <option value="organizer">organizer</option>
-                    </select>
-                  {/if}
+                  <div class="role-cell">
+                    {#if user.role === "admin"}
+                      <span class="chip">admin</span>
+                    {:else}
+                      <select
+                        value={user.role}
+                        onchange={(e) =>
+                          changeRole(user, e.currentTarget.value)}
+                      >
+                        <option value="user">user</option>
+                        <option value="organizer">organizer</option>
+                      </select>
+                    {/if}
+                    {#if user.banned_at}
+                      <span class="chip banned" title={user.ban_reason}
+                        >Banned</span
+                      >
+                      <button
+                        class="action-btn"
+                        disabled={actionLoading[`unban_${user.id}`]}
+                        onclick={() => handleUnban(user)}>Unban</button
+                      >
+                    {:else if user.role !== "admin"}
+                      <button
+                        class="action-btn remove"
+                        onclick={() => openBan(user)}>Ban...</button
+                      >
+                    {/if}
+                  </div>
                 </td>
                 <td class="num-cell">{user.training_count}</td>
                 <td class="num-cell">{user.race_count}</td>
@@ -1190,6 +1258,23 @@
           </tbody>
         </table>
       </div>
+    {/if}
+    {#if banTarget}
+      <ConfirmModal
+        title="Ban {banTarget.twitch_display_name || banTarget.twitch_username}"
+        message="They can still sign in and browse, but can no longer race, train, join events or chat. They are disqualified from their running races and removed from the ones not started yet."
+        confirmLabel="Ban"
+        danger
+        loading={banLoading}
+        error={banError}
+        onConfirm={confirmBan}
+        onCancel={() => (banTarget = null)}
+      >
+        <label class="ban-reason">
+          <span>Reason (shown to them)</span>
+          <textarea bind:value={banReason} maxlength="500" rows="3"></textarea>
+        </label>
+      </ConfirmModal>
     {/if}
   {:else if activeTab === "seeds"}
     {#if seedsLoading || reportedLoading}
@@ -2371,6 +2456,30 @@
   .action-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .role-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .chip.banned {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+  }
+
+  .ban-reason {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin-bottom: 0.75rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .ban-reason textarea {
+    font: inherit;
   }
 
   .action-btn.discard,

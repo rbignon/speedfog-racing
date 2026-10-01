@@ -37,6 +37,9 @@ export interface AuthUser extends User {
   race_count: number;
   daily_count: number;
   training_count: number;
+  /** Ban state (absent on a user object cached by an older build). */
+  banned_at?: string | null;
+  ban_reason?: string | null;
 }
 
 export type RaceStatus = "setup" | "running" | "finished";
@@ -1354,6 +1357,8 @@ export interface AdminUser {
   training_count: number;
   race_count: number;
   daily_count: number;
+  banned_at: string | null;
+  ban_reason: string | null;
 }
 
 // User profile
@@ -1525,6 +1530,32 @@ export async function updateAdminUserRole(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ role }),
+  });
+  return handleResponse<AdminUser>(response);
+}
+
+/**
+ * Ban a user with a reason shown to them (admin only).
+ */
+export async function banUser(
+  userId: string,
+  reason: string,
+): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/admin/users/${userId}/ban`, {
+    method: "POST",
+    headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  return handleResponse<AdminUser>(response);
+}
+
+/**
+ * Lift a user's ban (admin only).
+ */
+export async function unbanUser(userId: string): Promise<AdminUser> {
+  const response = await fetch(`${API_BASE}/admin/users/${userId}/ban`, {
+    method: "DELETE",
+    headers: getAuthHeaders(),
   });
   return handleResponse<AdminUser>(response);
 }
