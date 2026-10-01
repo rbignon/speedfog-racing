@@ -670,3 +670,52 @@ def fire_debug_flags_notification(
         )
     )
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+async def notify_disqualification(
+    *,
+    race_name: str,
+    race_id: str,
+    player_name: str,
+    reason: str | None,
+    by_name: str,
+    cancelled: bool,
+) -> None:
+    """Alert the admin channel that the race staff disqualified a runner (or undid it)."""
+    title = "Disqualification cancelled" if cancelled else "Disqualified"
+    fields: list[dict[str, object]] = [
+        {"name": "Race", "value": _escape_discord_md(race_name), "inline": True},
+        {"name": "By", "value": _escape_discord_md(by_name), "inline": True},
+    ]
+    if reason:
+        fields.append({"name": "Reason", "value": _escape_discord_md(reason), "inline": False})
+    embed: dict[str, object] = {
+        "title": f"{title}: {_escape_discord_md(player_name)}",
+        "url": _race_url(race_id),
+        "color": 0x8A8F98 if cancelled else 0xDC6A51,
+        "fields": fields,
+    }
+    await _send_admin_webhook(embed)
+
+
+def fire_disqualification_notification(
+    *,
+    race_name: str,
+    race_id: str,
+    player_name: str,
+    reason: str | None,
+    by_name: str,
+    cancelled: bool,
+) -> None:
+    """Fire-and-forget wrapper around ``notify_disqualification``."""
+    task = asyncio.create_task(
+        notify_disqualification(
+            race_name=race_name,
+            race_id=race_id,
+            player_name=player_name,
+            reason=reason,
+            by_name=by_name,
+            cancelled=cancelled,
+        )
+    )
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

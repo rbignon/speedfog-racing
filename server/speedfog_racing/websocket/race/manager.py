@@ -827,7 +827,8 @@ def sort_leaderboard(
     2. Playing players by layer (highest first), then layer entry IGT (lowest first)
     3. Ready players
     4. Registered players
-    5. Abandoned (DNF) players last, sorted by layer (highest first), then IGT (lowest first)
+    5. Abandoned (DNF) players, sorted by layer (highest first), then IGT (lowest first)
+    6. Disqualified players last
     """
     status_priority = {
         "finished": 0,
@@ -835,6 +836,7 @@ def sort_leaderboard(
         "ready": 2,
         "registered": 3,
         "abandoned": 4,
+        "disqualified": 5,
     }
 
     # Pre-compute layer entry IGTs for all participants (shared with caller).

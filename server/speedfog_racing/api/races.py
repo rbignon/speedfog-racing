@@ -31,6 +31,7 @@ from speedfog_racing.auth import (
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.discord import (
+    fire_disqualification_notification,
     fire_race_finished_notifications,
     notify_race_created,
     notify_race_started,
@@ -1052,11 +1053,41 @@ async def after_disqualification_change(
 ) -> None:
     """Post-commit effects of a disqualification or its cancellation."""
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    display = participant.user.twitch_display_name or participant.user.twitch_username
+    room = manager.get_room(race_id)
+    if room:
+        # Terminal again (or no longer): public chat access follows the status.
+        room.set_participant_status(participant.user_id, participant.status)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
         race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
     )
     await broadcast_race_state_update(race_id, race)
+    fire_disqualification_notification(
+        race_name=race.name,
+        race_id=str(race_id),
+        player_name=display,
+        reason=None if cancelled else participant.disqualification_reason,
+        by_name=by.twitch_display_name or by.twitch_username,
+        cancelled=cancelled,
+    )
+    if race.status == RaceStatus.RUNNING and not cancelled:
+        if await check_race_auto_finish(db, race):
+            finished_msg = (
+                "The daily seed is over."
+                if race.daily_date is not None
+                else "The race has finished."
+            )
+            fin_public_json = await persist_system_chat(
+                db, race_id, ChatChannel.PUBLIC, finished_msg
+            )
+            await db.commit()
+            race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+            await broadcast_race_state_update(race_id, race)
+            await manager.broadcast_race_status(race_id, "finished")
+            if room:
+                await room.broadcast_chat_public(fin_public_json, race)
+            fire_race_finished_notifications(race)
 
 
 @router.delete("/{race_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)

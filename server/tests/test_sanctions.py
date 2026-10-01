@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from unittest.mock import MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -19,6 +20,8 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.websocket.race.manager import sort_leaderboard
+from speedfog_racing.websocket.schemas import ParticipantInfo
 
 REASON = "Cheat tool detected: One shot"
 
@@ -230,3 +233,63 @@ async def test_reason_visible_to_the_runner_and_staff_only(sx_client, sx_session
             row = next(p for p in resp.json()["participants"] if p["id"] == str(ids["cheater"]))
             assert row["status"] == "disqualified", who
             assert (row["disqualification_reason"] == REASON) == sees, who
+
+
+def test_disqualified_rank_after_abandoned() -> None:
+    def p(status: ParticipantStatus, layer: int) -> Participant:
+        return Participant(
+            id=uuid.uuid4(),
+            status=status,
+            current_layer=layer,
+            igt_ms=1000,
+            zone_history=None,
+            layer_entry_igts={},
+        )
+
+    dq = p(ParticipantStatus.DISQUALIFIED, 5)
+    dnf = p(ParticipantStatus.ABANDONED, 1)
+    done = p(ParticipantStatus.FINISHED, 5)
+    ordered, _ = sort_leaderboard([dq, dnf, done])
+    assert ordered == [done, dnf, dq]
+
+
+def test_participant_info_has_no_reason() -> None:
+    # WebSocket participant data is public.
+    assert not any("reason" in name for name in ParticipantInfo.model_fields)
+
+
+async def test_disqualifying_the_last_runner_out_finishes_the_race(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_race_finished_notifications", MagicMock())
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock(), raising=False)
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        runners={"cheater": ParticipantStatus.PLAYING, "other": ParticipantStatus.FINISHED},
+    )
+    async with sx_client as client:
+        resp = await client.post(
+            _dq_url(race_id, ids["cheater"]),
+            json={"reason": REASON},
+            headers=_auth(sx_users["admin"]),
+        )
+    assert resp.json()["status"] == "finished"
+
+
+async def test_admin_discord_hears_of_disqualification_and_cancel(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+
+    fire = MagicMock()
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", fire, raising=False)
+    race_id, ids = await _race(sx_session, sx_users)
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        await client.delete(url, headers=_auth(sx_users["admin"]))
+    assert [c.kwargs["cancelled"] for c in fire.call_args_list] == [False, True]
+    assert fire.call_args_list[0].kwargs["reason"] == REASON

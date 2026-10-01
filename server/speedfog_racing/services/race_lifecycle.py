@@ -7,7 +7,13 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.models import ChatChannel, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
+    ChatChannel,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+)
 
 # `rewards.service` imports back into `services.stats_service`; importing it at
 # module top would re-enter `services/__init__.py` mid-load and crash anything
@@ -19,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
-    """Transition race to FINISHED if all participants are FINISHED or ABANDONED.
+    """Transition race to FINISHED once every participant is in a terminal status.
 
     Uses optimistic locking (version column) to handle concurrent updates.
     Returns True if the race was transitioned.
@@ -31,10 +37,7 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
 
     Requires: race.participants must be eagerly loaded.
     """
-    all_done = all(
-        p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
-        for p in race.participants
-    )
+    all_done = all(p.status in TERMINAL_PARTICIPANT_STATUSES for p in race.participants)
     if not all_done:
         return False
 

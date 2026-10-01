@@ -19,6 +19,7 @@ from speedfog_racing.discord import (
     fire_race_finished_notifications,
 )
 from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
     Caster,
     ChatChannel,
     Participant,
@@ -440,7 +441,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
 
-        if entity.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED):
+        if entity.status in TERMINAL_PARTICIPANT_STATUSES:
             return False  # Silently drop: IGT is frozen
 
         if _is_countdown_active(entity.race):
@@ -944,8 +945,8 @@ async def handle_finished(
                 pass
             return
 
-        if participant.status == ParticipantStatus.FINISHED:
-            return  # Already finished (idempotency guard)
+        if participant.status in TERMINAL_PARTICIPANT_STATUSES:
+            return  # Already finished, abandoned or disqualified
 
         participant.status = ParticipantStatus.FINISHED
         finished_igt = clamp_igt(msg.get("igt_ms"))

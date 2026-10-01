@@ -1219,6 +1219,33 @@ def test_new_debug_flags_alert_staff_once_per_batch(
     assert broadcast.await_count == 2
 
 
+def test_disqualified_runner_cannot_finish_or_report(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    _start_race_with_player0(integration_client, race_with_participants)
+    row = _player0_row(integration_db, race_with_participants)
+    igt_before = row.igt_ms
+    resp = integration_client.post(
+        f"/api/races/{race_id}/participants/{row.id}/disqualify",
+        json={"reason": "Cheat tool detected"},
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert resp.status_code == 200, resp.text
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, race_with_participants["players"][0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=5000, death_count=0)
+        mod0.send_finished(igt_ms=6000)
+        time.sleep(0.5)
+
+    row = _player0_row(integration_db, race_with_participants)
+    assert row.status == ParticipantStatus.DISQUALIFIED
+    assert row.igt_ms == igt_before, "nothing recorded after the disqualification"
+
+
 def test_stale_save_rejected_on_status_update(
     integration_client, race_with_participants, integration_db
 ):

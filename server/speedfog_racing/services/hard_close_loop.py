@@ -9,7 +9,13 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.models import Caster, Participant, ParticipantStatus, Race, RaceStatus
+from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
+    Caster,
+    Participant,
+    Race,
+    RaceStatus,
+)
 from speedfog_racing.services.race_lifecycle import finalize_race
 
 logger = logging.getLogger(__name__)
@@ -152,10 +158,7 @@ async def close_late_join_done_races(
             if race is None or race.status != RaceStatus.RUNNING:
                 continue
 
-            all_done = all(
-                p.status in (ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED)
-                for p in race.participants
-            )
+            all_done = all(p.status in TERMINAL_PARTICIPANT_STATUSES for p in race.participants)
             if not all_done:
                 continue
 
