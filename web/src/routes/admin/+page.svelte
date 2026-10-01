@@ -13,6 +13,7 @@
     fetchAdminRaces,
     deleteRace,
     adminRecalculateStats,
+    fetchCheatDetections,
     fetchReportedSeeds,
     resolveReportedSeed,
     fetchAdminAnalytics,
@@ -26,6 +27,7 @@
     type AdminPool,
     type Race,
     type ActivityTimeline,
+    type CheatDetection,
     type ReportedSeed,
     type AdminAnalytics,
     type AdminFeedbackItem,
@@ -38,6 +40,11 @@
   import { formatPoolName } from "$lib/utils/format";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
+  import UserLink from "$lib/components/UserLink.svelte";
+  import { detectionRows } from "$lib/debugFlags";
+  // The page's own formatIgt shows "--:--" at 0 ms; a detection at the
+  // start must read 0:00.
+  import { formatIgt as formatDetectionIgt } from "$lib/dag/popupData";
   import { Chart, registerables } from "chart.js";
   Chart.register(...registerables);
 
@@ -131,6 +138,9 @@
 
   let reportedSeeds: ReportedSeed[] = $state([]);
   let reportedLoading = $state(false);
+
+  let cheatDetections: CheatDetection[] = $state([]);
+  let cheatLoading = $state(false);
 
   let analytics: AdminAnalytics | null = $state(null);
   let analyticsLoading = $state(false);
@@ -481,6 +491,7 @@
     if (tab === "races") {
       if (!eventsLoaded) loadEvents();
       loadInflightRaces();
+      loadCheatDetections();
     }
     if (tab === "feedback" && !feedbackLoaded) {
       loadFeedback();
@@ -600,6 +611,18 @@
       error = e instanceof Error ? e.message : "Failed to load reported seeds.";
     } finally {
       reportedLoading = false;
+    }
+  }
+
+  async function loadCheatDetections() {
+    cheatLoading = true;
+    try {
+      cheatDetections = await fetchCheatDetections();
+    } catch (e) {
+      error =
+        e instanceof Error ? e.message : "Failed to load cheat detections.";
+    } finally {
+      cheatLoading = false;
     }
   }
 
@@ -1863,6 +1886,51 @@
       {/if}
     {/if}
   {:else if activeTab === "races"}
+    <div class="reported-section">
+      <SectionTitle>Cheat Detections</SectionTitle>
+      {#if cheatLoading && cheatDetections.length === 0}
+        <p class="loading">Loading detections...</p>
+      {:else if cheatDetections.length > 0}
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Player</th>
+                <th>Race</th>
+                <th>Flags</th>
+                <th>IGT</th>
+                <th>Zone</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each cheatDetections as d (d.participant_id)}
+                {@const flags =
+                  detectionRows({ [d.participant_id]: d.debug_flags })[0]
+                    ?.flags ?? []}
+                {@const first = flags[0]}
+                <tr>
+                  <td><UserLink user={d.user} /></td>
+                  <td>
+                    <a href="/race/{d.race_id}" class="username-link"
+                      >{d.race_name}</a
+                    >
+                  </td>
+                  <td>{flags.map((f) => f.label).join(", ")}</td>
+                  <td class="mono"
+                    >{first ? formatDetectionIgt(first.igtMs) : "-"}</td
+                  >
+                  <td class="mono">{first?.nodeId ?? "-"}</td>
+                  <td class="date-cell">{formatDate(d.last_detected_at)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {:else}
+        <p class="empty">No cheat detections.</p>
+      {/if}
+    </div>
     {#if racesLoading && !racesLoaded}
       <p class="loading">Loading races...</p>
     {:else if inflightRaces.length === 0}
