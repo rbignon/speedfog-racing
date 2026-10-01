@@ -188,6 +188,15 @@
   let myParticipant = $derived(
     currentUserParticipant(initialRace, auth.user?.id),
   );
+  // Disqualification reasons this viewer may see (the REST response only
+  // carries them for the runner and admins).
+  let disqualificationReasons = $derived(
+    Object.fromEntries(
+      initialRace.participants
+        .filter((p) => p.disqualification_reason)
+        .map((p) => [p.id, p.disqualification_reason as string]),
+    ),
+  );
   let myWsParticipant = $derived(
     raceStore.participants.find((p) => p.id === myParticipant?.id) ?? null,
   );
@@ -573,6 +582,7 @@
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
             deathless={initialRace.deathless}
+            {disqualificationReasons}
           />
         {:else if weekLeaderboardData}
           <!-- Stale-while-revalidate: keep the current week visible while a
@@ -630,6 +640,11 @@
     </aside>
 
     <main class="main-content">
+      {#if myParticipant?.disqualification_reason}
+        <p class="dq-notice" role="alert">
+          You were disqualified: {myParticipant.disqualification_reason}
+        </p>
+      {/if}
       <div class="daily-header-wrapper">
         <header class="daily-header">
           <div class="daily-title">
@@ -1064,6 +1079,13 @@
     gap: 1.5rem;
     overflow-y: auto;
     min-width: 0;
+  }
+
+  .dq-notice {
+    margin: 0;
+    padding: 0.75rem 1rem;
+    border-left: 3px solid var(--color-danger);
+    color: var(--color-danger);
   }
 
   /* The header stacks on its own width, not the viewport's: the sidebar and
