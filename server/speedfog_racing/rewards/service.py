@@ -454,12 +454,17 @@ class RewardsService:
 
         Requires ``race.participants`` to be eagerly loaded. Conditions: race is
         public, not a daily, and at least 2 participants actually raced
-        (``igt_ms > 0``). Winner = FINISHED participant(s) with the lowest
-        ``igt_ms``. Idempotent through the first-time-only grant.
+        (``igt_ms > 0``), a disqualified one not counting. Winner = FINISHED
+        participant(s) with the lowest ``igt_ms``. Idempotent through the
+        first-time-only grant.
         """
         if not race.is_public or race.daily_date is not None:
             return
-        racers = [p for p in race.participants if p.igt_ms > 0]
+        racers = [
+            p
+            for p in race.participants
+            if p.igt_ms > 0 and p.status != ParticipantStatus.DISQUALIFIED
+        ]
         if len(racers) < 2:
             return
         finishers = [p for p in racers if p.status == ParticipantStatus.FINISHED]

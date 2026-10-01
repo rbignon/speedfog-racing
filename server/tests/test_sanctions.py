@@ -366,15 +366,23 @@ async def test_new_winner_gets_the_race_win_after_a_disqualification(
         granted.append(user_id)
 
     monkeypatch.setattr(RewardsService, "grant_phantom_skin", fake_grant)
+    # Three finishers: once the cheater is out, two racers are left, enough
+    # for the race-win reward.
     race_id, ids = await _race(
         sx_session,
         sx_users,
         status=RaceStatus.FINISHED,
-        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.FINISHED},
+        runners={
+            "cheater": ParticipantStatus.FINISHED,
+            "other": ParticipantStatus.FINISHED,
+            "organizer": ParticipantStatus.FINISHED,
+        },
     )
     async with sx_session() as db:
         other = await db.get(Participant, ids["other"])
         other.igt_ms = 90_000
+        organizer = await db.get(Participant, ids["organizer"])
+        organizer.igt_ms = 120_000
         race = await db.get(Race, race_id)
         race.is_public = True
         await db.commit()

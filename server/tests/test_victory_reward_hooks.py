@@ -106,6 +106,28 @@ async def test_race_win_grants_silver_to_winner_only(async_session):
         assert await _skin_holders(db, "silver-aura") == {winner.id}
 
 
+async def test_race_win_needs_two_racers_besides_the_disqualified(async_session):
+    # A disqualified runner never ran as far as the results go: a 1v1 whose
+    # opponent is disqualified is a solo run and wins no aura.
+    async with async_session() as db:
+        a, cheater, org = _user(1), _user(2), _user(99)
+        db.add_all([a, cheater, org])
+        await db.flush()
+        race = await _make_race(db, org)
+        db.add_all(
+            [
+                _participant(race, a, status=ParticipantStatus.FINISHED, igt_ms=2000),
+                _participant(race, cheater, status=ParticipantStatus.DISQUALIFIED, igt_ms=1000),
+            ]
+        )
+        await db.commit()
+        race = (await db.execute(select(Race).where(Race.id == race.id))).scalar_one()
+        await db.refresh(race, ["participants"])
+        await RewardsService(db).grant_race_win_rewards(race)
+        await db.commit()
+        assert await _skin_holders(db, "silver-aura") == set()
+
+
 async def test_race_win_skips_daily_private_and_solo(async_session):
     async with async_session() as db:
         a, org = _user(1), _user(99)
