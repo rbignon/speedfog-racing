@@ -448,8 +448,10 @@ def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, PlayoffSco
     a rank, the table's last value for every finisher past it. Every other
     runner of the race, a run still in progress included, is a DNF on 0 points
     whose tie-break time is the winner's plus the cutoff (or the slowest
-    finisher's, if slower), however early the run stopped. A race nobody has
-    finished, one still in setup included, lists nobody.
+    finisher's, if slower), however early the run stopped. A disqualified
+    runner is such a DNF with no depth either, so the tie-break never puts
+    them ahead of anyone. A race nobody has finished, one still in setup
+    included, lists nobody.
     """
     _, ends_at = compute_late_join_deadlines(race)
     finishers = sorted(
@@ -482,7 +484,8 @@ def score_playoff_race(race: Race, config: EventConfig) -> dict[UUID, PlayoffSco
         finishers[0].igt_ms + config.playoff_cutoff_minutes * 60_000, finishers[-1].igt_ms
     )
     for p in race.participants:
-        scores.setdefault(p.user_id, PlayoffScore(0, dnf_igt, p.current_layer))
+        depth = 0 if p.status == ParticipantStatus.DISQUALIFIED else p.current_layer
+        scores.setdefault(p.user_id, PlayoffScore(0, dnf_igt, depth))
     return scores
 
 

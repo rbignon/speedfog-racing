@@ -648,6 +648,24 @@ def test_playoff_runners_tied_on_points_and_time_rank_by_depth_reached():
     assert [e.user_id for e in entries] == [winner, deep, shallow]
 
 
+def test_a_disqualified_playoff_runner_never_wins_the_depth_tie_break():
+    # Disqualified deep in the run: no points, like any DNF, and the depth they
+    # reached cannot put them ahead of a runner who simply did not finish.
+    cfg = _config()
+    stage = cfg.stage("newcomers")
+    winner, cheater, dnf = uuid4(), UUID(int=1), UUID(int=2)
+    race = _race(
+        [
+            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
+            _participant(cheater, ParticipantStatus.DISQUALIFIED, 45 * MIN, layer=7),
+            _participant(dnf, ParticipantStatus.ABANDONED, 45 * MIN, layer=3),
+        ]
+    )
+    entries = compute_stage_results(stage, [race], 0, cfg).entries
+    assert [e.user_id for e in entries] == [winner, dnf, cheater]
+    assert entries[-1].points == 0
+
+
 def test_a_full_playoff_tie_keeps_one_order_whatever_the_rows_order():
     cfg = _config()
     stage = cfg.stage("newcomers")
