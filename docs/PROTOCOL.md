@@ -115,7 +115,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.5**. It is defined in
+release numbers. Current: **1.6**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -127,6 +127,7 @@ Bump rules:
 
 Version history:
 
+- **1.6** - disqualification: participant status `disqualified` (terminal, ranked last), set by the race organizer or an admin. The mod shows a "DISQUALIFIED" line to the runner concerned and "DQ" in the leaderboard; older mods read it as an unknown status and keep working.
 - **1.5** - cheat detection: optional `debug_flags` list on `status_update` (wire names of the game debug flags seen since the race start, omitted when empty). The server records the first observation of each flag and alerts the race organizer and admins; see `docs/CHEAT_DETECTION.md`.
 - **1.4** - deathless race option: `deathless` boolean on the `race` object (RaceInfo), default false. When true, the server abandons a participant on their first in-race death; the mod shows a local death banner and a "DEATHLESS" overlay tag.
 - **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` (race reset, non-permanent), `4001` (race deleted, permanent).

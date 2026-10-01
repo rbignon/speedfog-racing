@@ -539,10 +539,18 @@ impl RaceMachine {
             .unwrap_or(false)
     }
 
-    /// Check if the local player has abandoned; mirrors `am_i_finished`.
+    /// Whether the local player is out of the race (abandoned or
+    /// disqualified); mirrors `am_i_finished`.
     pub fn am_i_abandoned(&self) -> bool {
         self.my_participant()
-            .map(|p| p.status == ParticipantStatus::Abandoned)
+            .map(|p| p.status.is_out())
+            .unwrap_or(false)
+    }
+
+    /// Whether the race staff disqualified the local player.
+    pub fn am_i_disqualified(&self) -> bool {
+        self.my_participant()
+            .map(|p| p.status == ParticipantStatus::Disqualified)
             .unwrap_or(false)
     }
 
@@ -4053,5 +4061,18 @@ mod tests {
         assert!(m.pre_tick(t4, true, true).debug_flags);
         m.tick(tick_in(snap_flags(1000, 0), true, None), t4);
         assert_eq!(m.debug_flags_seen, 0);
+    }
+
+    #[test]
+    fn disqualified_runner_is_out_like_an_abandon() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.race_state.participants[0].status = ParticipantStatus::Disqualified;
+        assert!(m.am_i_disqualified());
+        assert!(
+            m.am_i_abandoned(),
+            "out of the race: same gates as an abandon"
+        );
+        assert!(!m.pre_tick(now + ms(100), true, true).debug_flags);
     }
 }

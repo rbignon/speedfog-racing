@@ -273,6 +273,7 @@ impl RaceTracker {
                     self.render_wrong_save_warning(ui);
                     self.render_server_blocking_warning(ui);
                     self.render_cheat_warning(ui);
+                    self.render_disqualified_notice(ui);
                     self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
@@ -509,6 +510,20 @@ impl RaceTracker {
         }
     }
 
+    /// Danger notice once the race staff disqualified the local player. The
+    /// reason stays on the race page: WebSocket data is public.
+    fn render_disqualified_notice(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
+        if self.machine.am_i_disqualified() {
+            let danger = self.cached_colors.danger;
+            ui.text_colored(danger, "DISQUALIFIED");
+            ui.text_colored(danger, "See the race page");
+        }
+    }
+
     /// Danger banner while a watched game debug flag is on during the race.
     /// Deliberately generic: it never names what was detected.
     fn render_cheat_warning(&self, ui: &hudhook::imgui::Ui) {
@@ -608,9 +623,7 @@ impl RaceTracker {
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
         let race_status = self.race_info().map(|r| r.status);
-        let i_abandoned = self
-            .my_participant()
-            .is_some_and(|p| p.status == ParticipantStatus::Abandoned);
+        let i_abandoned = self.my_participant().is_some_and(|p| p.status.is_out());
 
         let right_color = match race_status {
             Some(RaceStatus::Setup) => {
@@ -994,7 +1007,7 @@ impl RaceTracker {
         };
         // Local player keeps the charter purple unless abandoned; abandoned
         // stays greyed so the row reads as inactive even when it's mine.
-        let color = if is_self && p.status != ParticipantStatus::Abandoned {
+        let color = if is_self && !p.status.is_out() {
             c.purple
         } else {
             base_color
@@ -1002,7 +1015,7 @@ impl RaceTracker {
 
         // Local player gets a translucent purple fill across the row. Drawn
         // before the text so subsequent ui.text_colored calls render on top.
-        if is_self && p.status != ParticipantStatus::Abandoned {
+        if is_self && !p.status.is_out() {
             let dl = ui.get_window_draw_list();
             let [sx, sy] = ui.cursor_screen_pos();
             let row_h = ui.text_line_height_with_spacing();

@@ -53,6 +53,7 @@ pub fn write_participant_right_text(
             write!(buf, "{}/{}", display, total_layers).ok();
         }
         ParticipantStatus::Abandoned if deathless && death_count > 0 => buf.push_str("dead"),
+        ParticipantStatus::Disqualified => buf.push_str("DQ"),
         _ => buf.push_str(status.as_str()),
     }
 }
@@ -615,5 +616,20 @@ mod tests {
     fn test_seed_not_stale_when_server_unknown() {
         // No server seed_id in the payload: leave the player alone.
         assert!(!is_seed_stale("pack-abc", None));
+    }
+
+    #[test]
+    fn disqualified_runner_reads_dq() {
+        let mut buf = String::new();
+        write_participant_right_text(
+            &mut buf,
+            ParticipantStatus::Disqualified,
+            3,
+            5,
+            60_000,
+            false,
+            0,
+        );
+        assert_eq!(buf, "DQ");
     }
 }

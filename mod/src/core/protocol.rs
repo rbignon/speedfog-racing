@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.5";
+pub const PROTOCOL_VERSION: &str = "1.6";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -151,6 +151,7 @@ pub enum ParticipantStatus {
     Playing,
     Finished,
     Abandoned,
+    Disqualified,
     #[serde(other)]
     Unknown,
 }
@@ -163,8 +164,18 @@ impl ParticipantStatus {
             ParticipantStatus::Playing => "playing",
             ParticipantStatus::Finished => "finished",
             ParticipantStatus::Abandoned => "abandoned",
+            ParticipantStatus::Disqualified => "disqualified",
             ParticipantStatus::Unknown => "unknown",
         }
+    }
+
+    /// Out of the race without a finish: abandoned or disqualified. Both
+    /// freeze the runner's IGT on the server and end their race.
+    pub fn is_out(&self) -> bool {
+        matches!(
+            self,
+            ParticipantStatus::Abandoned | ParticipantStatus::Disqualified
+        )
     }
 }
 
@@ -435,7 +446,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.5""#));
+        assert!(json.contains(r#""protocol_version":"1.6""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
@@ -1544,5 +1555,15 @@ mod tests {
         };
         let json = serde_json::to_string(&flagged).unwrap();
         assert!(json.contains(r#""debug_flags":["one_shot"]"#), "{json}");
+    }
+
+    #[test]
+    fn disqualified_status_deserializes() {
+        let s: ParticipantStatus = serde_json::from_str(r#""disqualified""#).unwrap();
+        assert_eq!(s, ParticipantStatus::Disqualified);
+        assert!(s.is_out());
+        let unknown: ParticipantStatus = serde_json::from_str(r#""a_future_status""#).unwrap();
+        assert_eq!(unknown, ParticipantStatus::Unknown);
+        assert!(!ParticipantStatus::Finished.is_out());
     }
 }
