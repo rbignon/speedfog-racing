@@ -105,6 +105,17 @@ describe("computePublicAccess", () => {
         ),
       ).toBe("readable");
     });
+
+    it("readable for disqualified participant", () => {
+      expect(
+        computePublicAccess(
+          inputs({
+            ...base,
+            participantStatus: "disqualified",
+          }),
+        ),
+      ).toBe("readable");
+    });
   });
 
   describe("RUNNING with late-join closed", () => {

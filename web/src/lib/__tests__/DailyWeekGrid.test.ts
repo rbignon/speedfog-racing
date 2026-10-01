@@ -805,6 +805,27 @@ describe("cellStrip", () => {
     });
   });
 
+  it("labels a disqualified run, even a qualifying one", () => {
+    for (const state of ["past", "today"] as const) {
+      const day = makeDay({
+        state,
+        my_result: {
+          status: "disqualified",
+          placement: null,
+          total_starters: 4,
+          igt_ms: 60000,
+          death_count: 0,
+          qualifies: true,
+        },
+      });
+      expect(cellStrip(day, null)).toEqual({
+        kind: "label",
+        text: "Disqualified",
+        variant: "abandoned",
+      });
+    }
+  });
+
   it("returns dnf strip on past day where viewer abandoned with qualifies", () => {
     const day = makeDay({
       state: "past",

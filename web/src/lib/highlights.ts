@@ -902,7 +902,11 @@ export function computeHighlights(
   graphJson: Record<string, unknown>,
 ): Highlight[] {
   const eligible = participants.filter(
-    (p) => p.zone_history && p.zone_history.length > 0,
+    (p) =>
+      p.zone_history &&
+      p.zone_history.length > 0 &&
+      // A disqualified run earns no highlight.
+      p.status !== "disqualified",
   );
   if (eligible.length < 2) return [];
 

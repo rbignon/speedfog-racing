@@ -89,7 +89,8 @@ export type ParticipantStatus =
   | "ready"
   | "playing"
   | "finished"
-  | "abandoned";
+  | "abandoned"
+  | "disqualified";
 
 /** First observation of a game debug flag (cheat detection). */
 export interface DebugFlagObservation {
@@ -112,6 +113,8 @@ export interface Participant {
   daily_points?: number | null;
   // Cheat detections, filled only for the race organizer and admins.
   debug_flags?: DebugFlags | null;
+  // Disqualification reason, for the runner, the organizer and admins only.
+  disqualification_reason?: string | null;
 }
 
 export interface Caster {

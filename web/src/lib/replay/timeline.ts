@@ -1,3 +1,4 @@
+import { isOutOfRace } from "$lib/format";
 import type { WsParticipant } from "$lib/websocket";
 import type {
   ReplayParticipant,
@@ -87,7 +88,7 @@ export function buildReplayParticipants(
         zoneVisits,
         totalIgt: p.igt_ms,
         finished: p.status === "finished",
-        abandoned: p.status === "abandoned",
+        abandoned: isOutOfRace(p.status),
         finalBossNodeId,
       };
     });

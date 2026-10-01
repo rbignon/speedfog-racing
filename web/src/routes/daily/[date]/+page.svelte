@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOutOfRace } from "$lib/format";
   import { untrack } from "svelte";
   import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte";
@@ -194,7 +195,8 @@
     myWsParticipant?.status ?? myParticipant?.status ?? null,
   );
   let myParticipantFinished = $derived(
-    myParticipantStatus === "finished" || myParticipantStatus === "abandoned",
+    myParticipantStatus === "finished" ||
+      isOutOfRace(myParticipantStatus ?? ""),
   );
   // The daily has no organizer/caster surface, so participants access is
   // purely "do you have a participant row?" plus the admin override.
@@ -231,8 +233,7 @@
     const ws = myWsParticipant;
     const played =
       ws != null &&
-      (ws.status === "finished" ||
-        (ws.status === "abandoned" && ws.igt_ms > 0));
+      (ws.status === "finished" || (isOutOfRace(ws.status) && ws.igt_ms > 0));
     if (showFeedback || feedbackShown) return;
     if (!auth.user) return;
     if (auth.user.feedback_prompted_at) return;
@@ -244,7 +245,7 @@
   let canShowFullDag = $derived(
     dailyEnded ||
       myParticipantStatus === "finished" ||
-      myParticipantStatus === "abandoned",
+      isOutOfRace(myParticipantStatus ?? ""),
   );
   let canShowProgressiveDag = $derived(
     myParticipantStatus === "registered" ||

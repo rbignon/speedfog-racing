@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOutOfRace } from "$lib/format";
   import { onMount, untrack } from "svelte";
   import type { DailyWeekDay, DailyWeekResponse } from "$lib/api";
   import { fetchDailyWeek } from "$lib/api";
@@ -149,7 +150,7 @@
     if (myDone(day)) return "wl-done";
     if (day.state === "today") {
       const r = day.my_result;
-      return r && r.status !== "abandoned" ? "wl-playing" : "wl-today";
+      return r && !isOutOfRace(r.status) ? "wl-playing" : "wl-today";
     }
     if (day.state === "past") return "wl-closed";
     return "wl-future";

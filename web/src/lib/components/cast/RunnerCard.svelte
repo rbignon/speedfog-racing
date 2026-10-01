@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOutOfRace } from "$lib/format";
   import type { Rect } from "$lib/cast/layout";
   import type { WsParticipant } from "$lib/websocket";
   import { PLAYER_COLORS } from "$lib/dag/constants";
@@ -153,8 +154,8 @@
         class="cv"
         class:ahead={participant.gap_ms != null && participant.gap_ms < 0}
         class:behind={participant.gap_ms != null && participant.gap_ms > 0}
-        class:dnf={participant.status === "abandoned"}
-        >{#if participant.status === "abandoned"}DNF{:else if participant.gap_ms != null}{formatGap(
+        class:dnf={isOutOfRace(participant.status)}
+        >{#if participant.status === "disqualified"}DQ{:else if participant.status === "abandoned"}DNF{:else if participant.gap_ms != null}{formatGap(
             participant.gap_ms,
           )}{/if}</span
       >

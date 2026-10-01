@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isFrogTitle } from "$lib/format";
+import { isFrogTitle, isOutOfRace, statusLabel } from "$lib/format";
 
 describe("isFrogTitle", () => {
   it("matches the substring regardless of case", () => {
@@ -20,5 +20,18 @@ describe("isFrogTitle", () => {
 
   it("does not match an empty title", () => {
     expect(isFrogTitle("")).toBe(false);
+  });
+});
+
+describe("disqualified status", () => {
+  it("labels a disqualification", () => {
+    expect(statusLabel("disqualified")).toBe("Disqualified");
+  });
+
+  it("counts abandoned and disqualified runners as out of the race", () => {
+    expect(isOutOfRace("abandoned")).toBe(true);
+    expect(isOutOfRace("disqualified")).toBe(true);
+    expect(isOutOfRace("finished")).toBe(false);
+    expect(isOutOfRace("playing")).toBe(false);
   });
 });

@@ -8,6 +8,7 @@
  * access matrix in the "Chat System" section of `docs/PROTOCOL.md`.
  */
 
+import { isOutOfRace } from "$lib/format";
 import type { ParticipantStatus, RaceStatus } from "$lib/api";
 
 export type PublicAccess = "locked" | "readable";
@@ -30,7 +31,7 @@ export interface PublicAccessInputs {
 
 function isActiveParticipant(status: ParticipantStatus | null): boolean {
   if (status === null) return false;
-  return status !== "finished" && status !== "abandoned";
+  return status !== "finished" && !isOutOfRace(status);
 }
 
 function registrationOpenWindow(

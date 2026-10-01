@@ -29,6 +29,9 @@
     // Each gets a "Flagged" chip. Only the race page passes it, and only to
     // the race organizer and admins.
     flaggedIds?: string[];
+    // Disqualification reasons the viewer may see, by participant id; shown
+    // as the DQ tag's tooltip.
+    disqualificationReasons?: Record<string, string>;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -43,6 +46,7 @@
     deathless = false,
     provisionalPoints = false,
     flaggedIds = [],
+    disqualificationReasons = {},
     selectedIds,
     onToggle,
     onClearSelection,
@@ -126,6 +130,7 @@
         {@const badge = rewards.lookupBadge(participant.equipped_badge_id)}
         {@const isPlaying = participant.status === "playing"}
         {@const isAbandoned = participant.status === "abandoned"}
+        {@const isDisqualified = participant.status === "disqualified"}
         {@const isDead =
           isAbandoned && deathless && participant.death_count > 0}
         {@const isFinished = participant.status === "finished"}
@@ -231,7 +236,12 @@
                 <span class="finish-icon">✓</span>
               {/if}
             </div>
-            {#if isAbandoned}
+            {#if isDisqualified}
+              <span
+                class="zone abandoned-label dq-label"
+                title={disqualificationReasons[participant.id] ?? ""}>DQ</span
+              >
+            {:else if isAbandoned}
               <span class="zone abandoned-label">
                 <span>{isDead ? "Dead" : "DNF"}</span>
                 {#if totalLayers}
@@ -603,6 +613,10 @@
   .empty {
     color: var(--color-text-disabled);
     font-style: italic;
+  }
+
+  .dq-label {
+    color: var(--color-danger);
   }
 
   .flagged-chip {

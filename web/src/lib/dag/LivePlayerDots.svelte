@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isOutOfRace } from "$lib/format";
   import { untrack } from "svelte";
   import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import type { WsParticipant } from "$lib/websocket";
@@ -214,7 +215,7 @@
         continue;
       }
 
-      if (p.status === "abandoned" && p.current_zone) {
+      if (isOutOfRace(p.status) && p.current_zone) {
         const node = nodeMap.get(p.current_zone);
         if (node) {
           result.push({
@@ -370,7 +371,7 @@
           opacity: 1,
         };
       } else if (
-        (p.status === "abandoned" ||
+        (isOutOfRace(p.status) ||
           p.status === "playing" ||
           p.status === "ready") &&
         p.current_zone
@@ -382,7 +383,7 @@
           x: node.x,
           spotX: node.x,
           y: node.y,
-          opacity: p.status === "abandoned" ? 0.35 : 1,
+          opacity: isOutOfRace(p.status) ? 0.35 : 1,
         };
       } else {
         continue;

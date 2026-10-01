@@ -122,6 +122,8 @@
           {#if participant.death_count > 0}
             <span class="deaths">{participant.death_count}</span>
           {/if}
+        {:else if participant.status === "disqualified"}
+          <span class="dnf">DQ</span>
         {:else if participant.status === "abandoned"}
           <span class="dnf"
             >{deathless && participant.death_count > 0 ? "DEAD" : "DNF"}</span

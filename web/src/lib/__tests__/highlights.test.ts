@@ -337,6 +337,34 @@ describe("speed highlights", () => {
     expect(speedDemon!.playerIds).toContain("alice");
   });
 
+  it("never highlights a disqualified runner", () => {
+    const players = [
+      participant("alice", {
+        color_index: 0,
+        igt_ms: 300000,
+        status: "disqualified",
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 10000 },
+          { node_id: "zone_b", igt_ms: 30000 },
+          { node_id: "zone_c", igt_ms: 100000 },
+        ],
+      }),
+      participant("bob", {
+        color_index: 1,
+        igt_ms: 350000,
+        zone_history: [
+          { node_id: "start", igt_ms: 0 },
+          { node_id: "zone_a", igt_ms: 15000 },
+          { node_id: "zone_b", igt_ms: 90000 },
+          { node_id: "zone_c", igt_ms: 200000 },
+        ],
+      }),
+    ];
+    const highlights = computeHighlights(players, graph);
+    expect(highlights.some((h) => h.playerIds.includes("alice"))).toBe(false);
+  });
+
   it("Speed Demon: ignores backed zones", () => {
     // Alice "blitzes" zone_a but actually backed out, should not count
     const graph2 = graphJson({

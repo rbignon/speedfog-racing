@@ -31,7 +31,7 @@
     computePublicAccess,
     computePublicLockedReason,
   } from "$lib/public-chat-access";
-  import { isFrogTitle } from "$lib/format";
+  import { isFrogTitle, isOutOfRace } from "$lib/format";
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
   import CastSetup from "$lib/components/cast/CastSetup.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
@@ -401,7 +401,7 @@
   let myWsParticipantId = $derived(myWsParticipant?.id ?? null);
   let myParticipantFinished = $derived(
     myWsParticipant?.status === "finished" ||
-      myWsParticipant?.status === "abandoned",
+      isOutOfRace(myWsParticipant?.status ?? ""),
   );
 
   let hasParticipantsAccess = $derived(
@@ -437,8 +437,7 @@
     const ws = myWsParticipant;
     const played =
       ws != null &&
-      (ws.status === "finished" ||
-        (ws.status === "abandoned" && ws.igt_ms > 0));
+      (ws.status === "finished" || (isOutOfRace(ws.status) && ws.igt_ms > 0));
     if (showFeedback || feedbackShown) return;
     if (!auth.user) return;
     if (auth.user.feedback_prompted_at) return;

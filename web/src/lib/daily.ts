@@ -196,6 +196,8 @@ export function cellStrip(
     }
     if (r.status === "finished")
       return { kind: "finished", score: finishedScore(day) };
+    if (r.status === "disqualified")
+      return { kind: "label", text: "Disqualified", variant: "abandoned" };
     if (r.status === "abandoned" && r.qualifies) {
       return {
         kind: "dnf",
@@ -212,6 +214,8 @@ export function cellStrip(
     if (!r) return null;
     if (r.status === "finished")
       return { kind: "finished", score: finishedScore(day) };
+    if (r.status === "disqualified")
+      return { kind: "label", text: "Disqualified", variant: "abandoned" };
     if (r.status === "abandoned" && r.qualifies) {
       return {
         kind: "dnf",

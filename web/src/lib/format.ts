@@ -16,9 +16,16 @@ export function statusLabel(s: string): string {
       return "Active";
     case "abandoned":
       return "Abandoned";
+    case "disqualified":
+      return "Disqualified";
     case "cancelled":
       return "Cancelled";
     default:
       return s;
   }
+}
+
+/** Out of the race without a finish: abandoned or disqualified. */
+export function isOutOfRace(status: string): boolean {
+  return status === "abandoned" || status === "disqualified";
 }
