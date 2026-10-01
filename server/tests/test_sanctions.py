@@ -1,8 +1,8 @@
 """Sanctions: disqualification and ban."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock
+from datetime import UTC, date, datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -93,7 +93,10 @@ async def _race(
     daily: bool = False,
 ) -> tuple[uuid.UUID, dict[str, uuid.UUID]]:
     """A race organized by "organizer" with the given runners; returns the
-    race id and participant ids by user key."""
+    race id and participant ids by user key. A daily gets today's rotation
+    date, which is still yesterday's calendar date before 08:00 UTC."""
+    from speedfog_racing.services.daily_seed_loop import daily_date_for
+
     runners = runners or {
         "cheater": ParticipantStatus.PLAYING,
         "other": ParticipantStatus.PLAYING,
@@ -115,7 +118,7 @@ async def _race(
             seed_id=seed.id,
             status=status,
             started_at=None if status == RaceStatus.SETUP else datetime.now(UTC),
-            daily_date=datetime.now(UTC).date() if daily else None,
+            daily_date=daily_date_for(datetime.now(UTC)) if daily else None,
         )
         db.add(race)
         await db.flush()
@@ -483,6 +486,127 @@ async def test_disqualification_in_last_week_moves_the_weekly_badges(
             _dq_url(race_id, cheater), json={"reason": REASON}, headers=_auth(sx_users["admin"])
         )
     assert await _weekly_holders(sx_session, "weekly_daily_champion") == {sx_users["other"].id}
+
+
+async def test_a_disqualified_daily_loses_its_streak_credit_until_cancelled(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        daily=True,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.PLAYING},
+    )
+    async with sx_session() as db:
+        p = await db.get(Participant, ids["cheater"])
+        p.zone_history = [{"node_id": "a", "igt_ms": 0}, {"node_id": "b", "igt_ms": 60_000}]
+        race = await db.get(Race, race_id)
+        # Credited live when the run reached its second zone.
+        cheater = await db.get(User, sx_users["cheater"].id)
+        cheater.daily_current_streak = 1
+        cheater.daily_best_streak = 1
+        cheater.daily_last_qualifying_date = race.daily_date
+        await db.commit()
+
+    async def streak() -> int:
+        async with sx_session() as db:
+            user = await db.get(User, sx_users["cheater"].id)
+            return user.daily_current_streak
+
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        assert await streak() == 0
+        await client.delete(url, headers=_auth(sx_users["admin"]))
+        assert await streak() == 1
+
+
+async def test_a_daily_run_that_never_qualified_leaves_the_streak_alone(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    # No streak credit at stake: the DQ and its cancel must not re-derive the
+    # streak, which would wipe freeze rows an admin inserted by hand.
+    import speedfog_racing.api.races as races_api
+    from speedfog_racing.models import DailyStreakFreeze
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    race_id, ids = await _race(sx_session, sx_users, daily=True)
+    vacation = date(2026, 1, 5)
+    async with sx_session() as db:
+        db.add(DailyStreakFreeze(user_id=sx_users["cheater"].id, daily_date=vacation))
+        await db.commit()
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        await client.delete(url, headers=_auth(sx_users["admin"]))
+    async with sx_session() as db:
+        rows = await db.execute(
+            select(DailyStreakFreeze.daily_date).where(
+                DailyStreakFreeze.user_id == sx_users["cheater"].id
+            )
+        )
+        assert list(rows.scalars().all()) == [vacation]
+
+
+async def test_a_cancel_that_restores_a_14_day_streak_grants_its_reward(
+    sx_client, sx_session, sx_users, monkeypatch
+):
+    import speedfog_racing.api.races as races_api
+    from speedfog_racing.models import PhantomSkinUnlock
+    from speedfog_racing.services.daily_seed_loop import daily_date_for
+    from speedfog_racing.services.daily_streak_service import backfill_user
+
+    monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
+    push = AsyncMock()
+    monkeypatch.setattr(races_api.manager, "send_daily_streak_update_to_user", push)
+    qualified = [{"node_id": "a", "igt_ms": 0}, {"node_id": "b", "igt_ms": 60_000}]
+    race_id, ids = await _race(
+        sx_session,
+        sx_users,
+        daily=True,
+        runners={"cheater": ParticipantStatus.FINISHED, "other": ParticipantStatus.PLAYING},
+    )
+    today = daily_date_for(datetime.now(UTC))
+    async with sx_session() as db:
+        # Thirteen qualified days before today's run: today makes fourteen.
+        for back in range(1, 14):
+            past = Race(
+                name="Past daily",
+                organizer_id=sx_users["organizer"].id,
+                status=RaceStatus.FINISHED,
+                daily_date=today - timedelta(days=back),
+            )
+            db.add(past)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=past.id,
+                    user_id=sx_users["cheater"].id,
+                    status=ParticipantStatus.FINISHED,
+                    zone_history=qualified,
+                )
+            )
+        p = await db.get(Participant, ids["cheater"])
+        p.zone_history = qualified
+        await db.commit()
+        await backfill_user(db, sx_users["cheater"].id)
+        await db.commit()
+    async with sx_client as client:
+        url = _dq_url(race_id, ids["cheater"])
+        await client.post(url, json={"reason": REASON}, headers=_auth(sx_users["admin"]))
+        await client.delete(url, headers=_auth(sx_users["admin"]))
+    async with sx_session() as db:
+        skins = await db.execute(
+            select(PhantomSkinUnlock.skin_id).where(
+                PhantomSkinUnlock.user_id == sx_users["cheater"].id
+            )
+        )
+        assert "molten-aura" in set(skins.scalars().all())
+    # The runner's open pages hear of the streak both times.
+    assert [c.kwargs["best"] for c in push.call_args_list] == [13, 14]
 
 
 async def test_reset_keeps_a_disqualification(sx_client, sx_session, sx_users, monkeypatch):

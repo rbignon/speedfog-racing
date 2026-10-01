@@ -6,8 +6,8 @@ Two surfaces:
   immutable ``StreakState`` dataclass. Easy to unit-test, no DB dependency.
 - Persistence helpers that read the live ``User`` and ``Participant`` rows,
   apply the algorithm, write back. Triggered by event_flag (Update A), the
-  daily-creation tick (Update B), reroll, and the backfill in the Alembic
-  migration.
+  daily-creation tick (Update B), an abandon, a reroll, a disqualification
+  or its cancellation, and the backfill in the Alembic migration.
 """
 
 from __future__ import annotations
@@ -180,9 +180,10 @@ async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None =
 
     Walks chronologically from the user's earliest daily participation up
     to ``today - 1``, deriving qualification from ``qualifies_for_streak``
-    per day. Today itself counts only if the user already qualified for it
-    (mirrors the live trigger). Untouched days inside the window are
-    misses, evaluated by ``apply_close_day``.
+    per day; a disqualified participation earns no credit. Today itself
+    counts only if the user already qualified for it (mirrors the live
+    trigger). Untouched days inside the window are misses, evaluated by
+    ``apply_close_day``.
 
     ``today`` defaults to ``daily_date_for(datetime.now(UTC))``; pass an
     explicit value in tests to pin wall-clock semantics.
@@ -190,12 +191,12 @@ async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None =
     Idempotent: prior ``daily_streak_freezes`` rows for the user are wiped
     before re-emission, and the four user columns are overwritten.
     """
-    from speedfog_racing.models import Participant, Race
+    from speedfog_racing.models import Participant, ParticipantStatus, Race
     from speedfog_racing.services.daily_seed_loop import daily_date_for
 
     rows = (
         await db.execute(
-            select(Race.daily_date, Participant.zone_history)
+            select(Race.daily_date, Participant.zone_history, Participant.status)
             .join(Participant, Participant.race_id == Race.id)
             .where(Participant.user_id == user_id)
             .where(Race.daily_date.is_not(None))
@@ -204,8 +205,10 @@ async def backfill_user(db: AsyncSession, user_id: UUID, *, today: date | None =
     ).all()
 
     qualified_by_date: dict[date, bool] = {}
-    for daily_date_value, zone_history in rows:
-        is_qualified = qualifies_for_streak(zone_history)
+    for daily_date_value, zone_history, status in rows:
+        is_qualified = (
+            qualifies_for_streak(zone_history) and status != ParticipantStatus.DISQUALIFIED
+        )
         qualified_by_date[daily_date_value] = (
             qualified_by_date.get(daily_date_value, False) or is_qualified
         )

@@ -375,12 +375,13 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 
 ## Daily Streak
 
-A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in four places:
+A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in five places:
 
 - **Real time** when a participant first crosses `len(zone_history) >= 2` on a daily race, unicasting `daily_streak_update` over WS (see [PROTOCOL.md](PROTOCOL.md#daily_streak_update)).
 - **On explicit abandon** of a daily race without having qualified, `apply_close_day_to_user` runs inside the abandon handler and applies the same close-day branch (freeze or break) immediately, so the UI reflects the outcome without waiting for the rotation. The unique `(race_id, user_id)` constraint forbids re-joining, so there's no recovery window to protect.
 - **At the 08:00 UTC daily-creation tick**, `apply_close_day_for_all_users` walks every user with an active streak who did not qualify yesterday and either consumes a freeze (writes a `daily_streak_freezes` row) or breaks the streak. The `NOT EXISTS` guard on `daily_streak_freezes` naturally skips users already settled by the abandon path.
 - **On reroll**, every user whose streak state references the rerolled `daily_date` has their streak re-derived via `rollback_streak_for_reroll`. Two categories are picked up: participants who had qualified (`daily_last_qualifying_date == race.daily_date`) and participants who had consumed a freeze for this date via the abandon trigger. `best_streak` is preserved as a high water mark.
+- **On a disqualification or its cancellation** of a daily runner whose run had qualified, `after_disqualification_change` re-derives their streak with `backfill_user`: a disqualified participation earns no credit, so the day becomes a miss (a freeze or a break), and a cancel counts it again. Unlike the reroll rollback, `best_streak` is re-derived rather than kept as a high water mark, on purpose: a streak built on a disqualified run must not stay on record. The same handler checks the streak reward (a cancel can bring `best_streak` back to the threshold) and unicasts `daily_streak_update`. A run that never qualified has no credit at stake, so its DQ or cancel leaves the streak alone.
 
 A migration-time backfill (`_backfill_streaks` inside the Alembic migration) replays each historical user's participation chronologically through the same algorithm so the rollout doesn't reset existing players' streak state.
 
@@ -391,7 +392,7 @@ Four columns on `users`, added by Alembic revision `b28f8a846049`:
 | Column                       | Type               | Notes                                                                                                    |
 | ---------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `daily_current_streak`       | `int`, default `0` | Current consecutive qualifying days. Reset to 0 on a missed day with no freeze available.                |
-| `daily_best_streak`          | `int`, default `0` | High water mark; never decreases.                                                                        |
+| `daily_best_streak`          | `int`, default `0` | High water mark; never decreases, except when a disqualification re-derives it (see above).              |
 | `daily_freeze_count`         | `int`, default `0` | Available freezes, in `[0, 2]`.                                                                          |
 | `daily_last_qualifying_date` | `date`, nullable   | Most recent `daily_date` the user qualified for. Drives the idempotency guard and the close-tick filter. |
 
@@ -430,14 +431,14 @@ ON CONFLICT DO NOTHING;
 Two caveats:
 
 - **Display.** `cellStrip` short-circuits on `freeze_protected` ahead of its `today` branch, so every covered day renders the `❄️ Freeze` strip and suppresses the `PLAY NOW` / `KEEP STREAK` call to action on that cell. Do not cover a day the user may still play. The marking is viewer-scoped (`freeze_dates` is filtered on the viewer's own `user_id`), so nobody else sees those cells as frozen.
-- **Reroll after the return.** `_persist_state` deletes _all_ of a user's `daily_streak_freezes` rows before re-emitting the ones its own walk derived, with no date filter. The absence is safe while it lasts, since `rollback_streak_for_reroll` only picks up users present in `race.participants`. But once the user plays again, a reroll of a daily they participated in routes them through `backfill_user`, which wipes the pre-inserted rows and re-walks the whole history treating each uncovered absence day as a miss. That reroll handler is the only production caller of `backfill_user`. Re-run the insert if it happens.
+- **Reroll after the return.** `_persist_state` deletes _all_ of a user's `daily_streak_freezes` rows before re-emitting the ones its own walk derived, with no date filter. The absence is safe while it lasts, since `rollback_streak_for_reroll` only picks up users present in `race.participants`. But once the user plays again, a reroll of a daily they participated in routes them through `backfill_user`, which wipes the pre-inserted rows and re-walks the whole history treating each uncovered absence day as a miss. The reroll handler and a disqualification on a daily (or its cancellation) are the only production callers of `backfill_user`. Re-run the insert if it happens.
 
 ### Streak rules
 
-- Qualification is derived (never persisted as a flag): `len(zone_history) >= 2` on the participant row.
+- Qualification is derived (never persisted as a flag): `len(zone_history) >= 2` on the participant row. A disqualified participation earns no credit (see the disqualification trigger above).
 - A qualifying day increments `current_streak`. The freeze-grant check fires on every multiple of 7 independently: if `freeze_count < 2`, one freeze is granted; otherwise nothing happens that day, but a later multiple after a freeze is consumed can grant one. There is no deferred-grant bookkeeping.
 - A missed day either consumes one freeze (streak preserved, `daily_streak_freezes` row written) or, when `freeze_count == 0`, breaks the streak to 0. `daily_last_qualifying_date` is left untouched on a break so the field always reflects the user's last qualifying participation, never a break event.
-- `best_streak` is rewritten to `max(best_streak, current_streak)` on each qualification, and never decreases otherwise (including on rollback after a reroll, where the prior value is restored as a high water mark).
+- `best_streak` is rewritten to `max(best_streak, current_streak)` on each qualification, and never decreases otherwise (including on rollback after a reroll, where the prior value is restored as a high water mark), except on purpose when a disqualification re-derives the streak without the disqualified day.
 - Re-applying qualification for the same daily date is a no-op: the evaluator short-circuits when `daily_last_qualifying_date >= D`.
 - First-ever qualification: `current_streak` goes `0 -> 1`, `best_streak` goes `0 -> 1`, no freeze granted (`1 % 7 != 0`).
 

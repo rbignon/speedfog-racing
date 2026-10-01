@@ -79,9 +79,11 @@ it finishes, and the same people can cancel it from the same dialog.
   "DISQUALIFIED" notice in the overlay of a runner still in game), the
   organizer and admins only.
 - A disqualified run has no time, placement, points or rewards and is left
-  out of the stats. Daily points and the event qualifier ladder leave the
-  runner out, so the others score as if they had not run; an event playoff
-  race counts them as a DNF on 0 points that never wins a tie-break.
+  out of the stats. A disqualified daily earns no streak credit either: the
+  runner's streak is recomputed without it, and again on a cancel. Daily
+  points and the event qualifier ladder leave the runner out, so the others
+  score as if they had not run; an event playoff race counts them as a DNF on
+  0 points that never wins a tie-break.
 - In a running race, the remaining runners may now all be done, which
   finishes the race. In a finished race, the race win and daily rewards are
   granted again from the new standings, so the new winner gets them (the
@@ -112,7 +114,10 @@ the role and past results stay as they are, and nothing public shows it.
   review (a detection or a disqualification); entries in running races are
   disqualified with the reason "Account banned" and their mod connection is
   closed; pending invitations and signups to events still open are removed;
-  active training sessions end as if abandoned by hand.
+  active training sessions end as if abandoned by hand. An event bracket is
+  not touched: to call up the next runner in place of a banned qualified
+  runner, an admin adds them to the event's `withdrawn` list (see
+  "Qualified groups" in `EVENTS.md`), as for any withdrawal.
 - Lifting the ban restores the access only: removed entries and
   disqualifications stay (a disqualification is cancelled from its race
   page).

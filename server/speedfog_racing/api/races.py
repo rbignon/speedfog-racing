@@ -1086,7 +1086,30 @@ async def after_disqualification_change(
     db: AsyncSession, race_id: UUID, participant: Participant, *, by: User, cancelled: bool
 ) -> None:
     """Post-commit effects of a disqualification or its cancellation."""
+    from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
+    from speedfog_racing.services.daily_streak_service import (
+        backfill_user,
+        qualifies_for_streak,
+    )
+
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    if race.daily_date is not None and qualifies_for_streak(participant.zone_history):
+        # A disqualified daily earns no streak credit: re-derive the runner's
+        # streak without it (or with it again after a cancel). A run that never
+        # qualified has no credit at stake, so its streak is left alone.
+        await backfill_user(db, participant.user_id)
+        # A cancel can bring the best streak back up to the reward threshold.
+        await RewardsService(db).check_daily_streak_eligibility(participant.user_id)
+        await db.commit()
+        runner = await db.get(User, participant.user_id)
+        if runner is not None:
+            await manager.send_daily_streak_update_to_user(
+                race_id,
+                runner.id,
+                current=runner.daily_current_streak,
+                best=runner.daily_best_streak,
+                freeze_count=runner.daily_freeze_count,
+            )
     display = participant.user.twitch_display_name or participant.user.twitch_username
     room = manager.get_room(race_id)
     if room:
@@ -1126,8 +1149,6 @@ async def after_disqualification_change(
         # Results changed after the finish: grants are first-time-only, so
         # re-running them rewards the new winner(s) without touching the
         # rewards already given to anyone.
-        from speedfog_racing.rewards.service import RewardsService  # noqa: PLC0415
-
         rewards_svc = RewardsService(db)
         await rewards_svc.grant_race_win_rewards(race)
         if race.daily_date is not None:

@@ -173,6 +173,58 @@ async def test_backfill_computes_streak_from_participations(streak_async_session
 
 
 @pytest.mark.asyncio
+async def test_backfill_counts_a_disqualified_daily_as_a_miss(streak_async_session) -> None:
+    """Three dailies in a row, the middle one disqualified: it earns no
+    credit, so with no freeze in stock the streak breaks there."""
+    from speedfog_racing.models import (
+        Participant,
+        ParticipantStatus,
+        Race,
+        RaceStatus,
+        User,
+    )
+    from speedfog_racing.services.daily_streak_service import backfill_user
+
+    async with streak_async_session() as db:
+        user = User(twitch_id="bfdq", twitch_username="bfdq")
+        db.add(user)
+        await db.flush()
+        for i in range(1, 4):
+            d = date(2026, 1, i)
+            race = Race(
+                name=f"Daily Seed - {d.isoformat()}",
+                organizer_id=user.id,
+                daily_date=d,
+                exclude_from_stats=True,
+                status=RaceStatus.FINISHED,
+            )
+            db.add(race)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    status=(
+                        ParticipantStatus.DISQUALIFIED if i == 2 else ParticipantStatus.FINISHED
+                    ),
+                    zone_history=[
+                        {"node_id": "start", "igt_ms": 0, "type": "fog"},
+                        {"node_id": "n2", "igt_ms": 1000, "type": "fog"},
+                    ],
+                )
+            )
+        await db.commit()
+
+        await backfill_user(db, user.id, today=date(2026, 1, 4))
+        await db.commit()
+        await db.refresh(user)
+
+        assert user.daily_current_streak == 1
+        assert user.daily_best_streak == 1
+        assert user.daily_last_qualifying_date == date(2026, 1, 3)
+
+
+@pytest.mark.asyncio
 async def test_backfill_long_gap_after_history_breaks_streak(
     streak_async_session,
 ) -> None:
