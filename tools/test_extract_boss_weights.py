@@ -168,6 +168,26 @@ def test_band_weights_ignore_thin_bands() -> None:
     assert spiky["late"] < 1.2 * spiky["mid"]
 
 
+def test_band_weights_shrink_band_deviations_by_their_own_spread() -> None:
+    """Bosses differ a lot, their band deviations barely: a lone spike shrinks."""
+    noise = (-0.3, 0.0, 0.3)
+    rows, effects = [], {"bossband": {}}
+    spec = {
+        f"b{i}": {band: (SHIFT[band] - 1 + 2 * i / 19, 40) for band in SHIFT}
+        for i in range(20)
+    }
+    spec["x"] = {"early": (0.0, 40), "mid": (0.3, 40), "late": (1.2, 25)}
+    for boss, bands in spec.items():
+        for band, (effect, n) in bands.items():
+            effects["bossband"][(boss, band)] = effect
+            rows += [
+                {"y": effect + noise[i % 3], "bossband": (boss, band)} for i in range(n)
+            ]
+    x = band_weights(rows, 0.0, effects, list(spec), min_samples=20)["x"][0]
+    # Raw late deviation over mid: 0.6 in log; keep well under 60% of it.
+    assert x["late"] / x["mid"] < math.exp(0.6 * 0.6)
+
+
 def test_rounded_weights_give_thin_bosses_each_band_median() -> None:
     weights = {
         "a": ({"early": 0.54, "mid": 0.6, "late": 0.7}, 100),

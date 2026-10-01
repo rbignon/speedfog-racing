@@ -189,9 +189,12 @@ def band_weights(
     minutes at a mid-run tier and only the boss's own tier sensitivity
     varies across bands. The boss's overall relative effect is shrunk toward
     the pool median by ``n / (n + k)``, each band toward that overall by
-    ``n_band / (n_band + k)``; a band with fewer than ``min_samples`` rows
-    takes the overall value. ``k = sigma^2 / tau^2`` as in a single-weight
-    fit (robust residual variance over between-boss variance).
+    ``n_band / (n_band + k_band)``; a band with fewer than ``min_samples``
+    rows takes the overall value. ``k = sigma^2 / tau^2`` (robust residual
+    variance over between-boss variance) and ``k_band = sigma^2 /
+    tau_band^2``, with ``tau_band^2`` the spread of band deviations across
+    bosses: it is much smaller than the between-boss spread, so a band
+    deviation measured on few clears is shrunk much harder than a boss.
     """
     bossband = effects["bossband"]
     shift = {
@@ -227,6 +230,20 @@ def band_weights(
         - statistics.mean(sigma2 / n[b] for b in seen),
     )
     k = sigma2 / tau2
+    devs = [
+        (rel[b][band] - overall[b], n_band[(b, band)])
+        for b in seen
+        for band in rel[b]
+        if n_band[(b, band)] >= min_samples
+    ]
+    k_band = k
+    if len(devs) > 1:
+        tau2_band = max(
+            1e-6,
+            statistics.pvariance(d for d, _ in devs)
+            - statistics.mean(sigma2 / nb for _, nb in devs),
+        )
+        k_band = sigma2 / tau2_band
     ref = mu + shift.get("mid", 0.0)
     out: dict[Any, tuple[dict[str, float], int]] = {}
     for b in seen:
@@ -236,7 +253,7 @@ def band_weights(
             nb = n_band[(b, band)]
             dev = 0.0
             if nb >= min_samples:
-                dev = (rel[b][band] - overall[b]) * nb / (nb + k)
+                dev = (rel[b][band] - overall[b]) * nb / (nb + k_band)
             minutes[band] = math.exp(ref + base + dev)
         out[b] = (minutes, n[b])
     return out
