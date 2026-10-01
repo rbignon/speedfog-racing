@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.4"
+PROTOCOL_VERSION = "1.5"
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -55,6 +55,10 @@ class StatusUpdateMessage(BaseModel):
     # None per slot means empty hand, two-handed mask on the inactive side, or loading
     # screen. Field-level None means an older mod build that doesn't report weapons.
     weapons: tuple[int | None, int | None] | None = None
+    # Wire names of the game debug flags the mod saw since the race start
+    # (cheat detection, see services/debug_flags.py). Omitted when empty and
+    # by pre-1.5 mods.
+    debug_flags: list[str] | None = None
 
 
 class EventFlagMessage(BaseModel):

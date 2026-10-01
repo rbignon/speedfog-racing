@@ -110,7 +110,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.4**. It is defined in
+release numbers. Current: **1.5**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -122,6 +122,7 @@ Bump rules:
 
 Version history:
 
+- **1.5** - cheat detection: optional `debug_flags` list on `status_update` (wire names of the game debug flags seen since the race start, omitted when empty). The server records the first observation of each flag and alerts the race organizer and admins; see `docs/CHEAT_DETECTION.md`.
 - **1.4** - deathless race option: `deathless` boolean on the `race` object (RaceInfo), default false. When true, the server abandons a participant on their first in-race death; the mod shows a local death banner and a "DEATHLESS" overlay tag.
 - **1.3** - error codes and TTL display semantics: `code` field on `error` messages (optional, absent on legacy errors); five codes with display categories (blocking: `wrong_save`, `fresh_save_required`; waiting: `race_not_running`, `countdown`, `session_inactive`). Server re-sends the error on every rejected message while the condition holds (~1s); mod displays coded conditions for 3 seconds after receipt. Close codes expanded with `4008` (rate limit), `1000` (race reset, non-permanent), `4001` (race deleted, permanent).
 - **1.2** - quit-out penalty and tracking: `quit_out` boolean field on `zone_query` (optional, omitted when false); `quit_out_penalty_ms` integer field on `race` (default 2000, 0 disables). See the [`auth_ok`](#auth_ok) note for when the mod applies the penalty.
@@ -198,11 +199,14 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
   "type": "status_update",
   "igt_ms": 123456,
   "death_count": 5,
-  "weapons": [null, 2000025]
+  "weapons": [null, 2000025],
+  "debug_flags": ["one_shot"]
 }
 ```
 
 `weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches) and writes the surviving raw IDs onto the current `zone_history` entry as `weapons`. A tick that resolves to `[null, null]` after filtering (loading screen, unreadable memory, empty hands, or all-filtered types) is skipped: the last meaningful weapons captured for the current zone are preserved.
+
+`debug_flags` lists the wire names of the game debug flags (practice tool / TarnishedTool switches such as `one_shot` or `player_no_death`) the mod read as on since the race start. It is cumulative, so a flag switched off again is still reported; omitted when empty and by pre-1.5 mods. Unknown names and malformed values are ignored without rejecting the update. The server keeps the first observation of each flag on the participant (`igt_ms`, `node_id`, `detected_at`); training sessions ignore the field. See `docs/CHEAT_DETECTION.md`.
 
 #### `event_flag`
 

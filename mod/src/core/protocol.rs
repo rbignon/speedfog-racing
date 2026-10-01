@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.4";
+pub const PROTOCOL_VERSION: &str = "1.5";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -37,10 +37,15 @@ pub enum ClientMessage {
     /// `weapons` is `[left_hand, right_hand]` raw EquipParamWeapon runtime IDs
     /// (row + upgrade level). Per slot, `None` means empty hand, two-handed mask,
     /// loading screen, or unreadable memory.
+    ///
+    /// `debug_flags` lists the wire names (`core::debug_flags`) of the game
+    /// debug flags seen since the race start; omitted when empty.
     StatusUpdate {
         igt_ms: u32,
         death_count: u32,
         weapons: [Option<i32>; 2],
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        debug_flags: Vec<String>,
     },
     /// EMEVD event flag triggered (fog gate traversal or boss kill)
     EventFlag {
@@ -430,7 +435,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.4""#));
+        assert!(json.contains(r#""protocol_version":"1.5""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
@@ -440,6 +445,7 @@ mod tests {
             igt_ms: 123456,
             death_count: 5,
             weapons: [Some(2000025), None],
+            debug_flags: vec![],
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"status_update""#));
@@ -1517,5 +1523,26 @@ mod tests {
             serde_json::from_str(r#"{"id":"r1","name":"x","status":"running","deathless":true}"#)
                 .unwrap();
         assert!(race.deathless);
+    }
+
+    #[test]
+    fn test_status_update_debug_flags_wire_shape() {
+        let clean = ClientMessage::StatusUpdate {
+            igt_ms: 1,
+            death_count: 0,
+            weapons: [None, None],
+            debug_flags: vec![],
+        };
+        let json = serde_json::to_string(&clean).unwrap();
+        assert!(!json.contains("debug_flags"), "omitted when empty: {json}");
+
+        let flagged = ClientMessage::StatusUpdate {
+            igt_ms: 1,
+            death_count: 0,
+            weapons: [None, None],
+            debug_flags: vec!["one_shot".to_string()],
+        };
+        let json = serde_json::to_string(&flagged).unwrap();
+        assert!(json.contains(r#""debug_flags":["one_shot"]"#), "{json}");
     }
 }

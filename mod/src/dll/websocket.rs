@@ -32,6 +32,8 @@ pub enum OutgoingMessage {
         igt_ms: u32,
         death_count: u32,
         weapons: [Option<i32>; 2],
+        /// Cumulative debug-flag mask, turned into wire names on this thread.
+        debug_flags: u32,
     },
     EventFlag {
         flag_id: u32,
@@ -147,12 +149,19 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_status_update(&self, igt_ms: u32, death_count: u32, weapons: [Option<i32>; 2]) {
+    pub fn send_status_update(
+        &self,
+        igt_ms: u32,
+        death_count: u32,
+        weapons: [Option<i32>; 2],
+        debug_flags: u32,
+    ) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::StatusUpdate {
                 igt_ms,
                 death_count,
                 weapons,
+                debug_flags,
             }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
@@ -511,11 +520,13 @@ fn message_loop(
                 igt_ms,
                 death_count,
                 weapons,
+                debug_flags,
             }) => {
                 let msg = ClientMessage::StatusUpdate {
                     igt_ms,
                     death_count,
                     weapons,
+                    debug_flags: crate::core::debug_flags::names(debug_flags),
                 };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket

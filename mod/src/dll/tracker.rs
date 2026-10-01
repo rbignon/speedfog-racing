@@ -476,6 +476,11 @@ impl RaceTracker {
                     .flatten(),
                 screen_in_game,
                 blackscreen,
+                debug_flags: needs
+                    .debug_flags
+                    .then(|| self.game_state.read_debug_flags())
+                    .flatten()
+                    .map(|bytes| crate::core::debug_flags::mask_from_bytes(&bytes)),
             }
         };
 
@@ -651,9 +656,10 @@ impl RaceTracker {
                     igt_ms,
                     death_count,
                     weapons,
+                    debug_flags,
                 } => {
                     self.ws_client
-                        .send_status_update(igt_ms, death_count, weapons);
+                        .send_status_update(igt_ms, death_count, weapons, debug_flags);
                 }
                 Effect::SendEventFlag {
                     flag_id,
@@ -851,6 +857,11 @@ impl RaceTracker {
         self.machine
             .get_blocking_condition(Instant::now())
             .map(|condition| condition.message.as_str())
+    }
+
+    /// Whether the generic cheat banner shows (see `RaceMachine::cheat_warning_active`).
+    pub fn cheat_warning_active(&self) -> bool {
+        self.machine.cheat_warning_active(Instant::now())
     }
 
     /// Get the calm waiting-line message, if any.

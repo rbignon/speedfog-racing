@@ -23,6 +23,7 @@ use crate::core::constants::{
     GAMEDATAMAN_IGT_OFFSET, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET, INVALID_MAP_ID,
     MENUMAN_BLACKSCREEN_FLAGS_OFFSET, SCREEN_STATE_IN_GAME, UNARMED_WEAPON_ID,
 };
+use crate::core::debug_flags::DEBUG_FLAGS_LEN;
 use crate::core::map_utils::format_map_id;
 use crate::core::types::PlayerPosition;
 use crate::profile_span;
@@ -67,6 +68,9 @@ pub struct GameState {
     screen_state_ptr: Option<PointerChain<i32>>,
     /// CSMenuManImp fade flag word (`is_blackscreen_active`).
     blackscreen_flags_ptr: PointerChain<i32>,
+    /// ChrDbgFlags: the game's debug-menu switch bytes, read as one block
+    /// for cheat detection (see `core::debug_flags`).
+    debug_flags_ptr: PointerChain<[u8; DEBUG_FLAGS_LEN]>,
 }
 
 impl GameState {
@@ -138,6 +142,10 @@ impl GameState {
             ],
         ];
 
+        // Static array, no pointer to follow: one ReadProcessMemory call.
+        let debug_flags_ptr =
+            PointerChain::<[u8; DEBUG_FLAGS_LEN]>::new(&[pointers.base_addresses.chr_dbg_flags]);
+
         Self {
             pointers,
             play_region_id_ptr,
@@ -149,6 +157,7 @@ impl GameState {
             igt_write_ptr,
             screen_state_ptr,
             blackscreen_flags_ptr,
+            debug_flags_ptr,
         }
     }
 
@@ -163,6 +172,12 @@ impl GameState {
     pub fn read_deaths(&self) -> Option<u32> {
         profile_span!("read_deaths");
         self.death_count_ptr.read()
+    }
+
+    /// Read the watched debug-flag bytes (cheat detection).
+    pub fn read_debug_flags(&self) -> Option<[u8; DEBUG_FLAGS_LEN]> {
+        profile_span!("read_debug_flags");
+        self.debug_flags_ptr.read()
     }
 
     /// Read the in-game time from game memory

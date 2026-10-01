@@ -236,6 +236,8 @@ pub enum Effect {
         igt_ms: u32,
         death_count: u32,
         weapons: [Option<i32>; 2],
+        /// Cumulative debug-flag mask since the race start.
+        debug_flags: u32,
     },
     SendEventFlag {
         flag_id: u32,
@@ -1597,6 +1599,7 @@ impl RaceMachine {
                 igt_ms,
                 death_count: deaths,
                 weapons: input.weapons,
+                debug_flags: self.debug_flags_seen,
             });
             self.last_status_update = now;
         }
@@ -3961,5 +3964,24 @@ mod tests {
         );
         m.permanent_error = Some("Race deleted".to_string());
         assert!(!m.cheat_warning_active(t1));
+    }
+
+    #[test]
+    fn status_update_carries_flags_seen_since_start() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        let t1 = now + ms(100);
+        m.tick(
+            tick_in(snap_flags(1000, debug_bit("one_shot")), true, None),
+            t1,
+        );
+        // Off again before the next status update: still reported.
+        let t2 = now + secs(1);
+        let effects = m.tick(tick_in(snap_flags(1900, 0), true, None), t2);
+        let sent = effects.iter().find_map(|e| match e {
+            Effect::SendStatusUpdate { debug_flags, .. } => Some(*debug_flags),
+            _ => None,
+        });
+        assert_eq!(sent, Some(debug_bit("one_shot")));
     }
 }

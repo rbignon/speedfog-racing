@@ -270,6 +270,7 @@ impl RaceTracker {
                     self.render_seed_mismatch_warning(ui);
                     self.render_wrong_save_warning(ui);
                     self.render_server_blocking_warning(ui);
+                    self.render_cheat_warning(ui);
                     self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
@@ -500,6 +501,20 @@ impl RaceTracker {
         if let Some(message) = self.get_blocking_condition_message() {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, message);
+        }
+    }
+
+    /// Danger banner while a watched game debug flag is on during the race.
+    /// Deliberately generic: it never names what was detected.
+    fn render_cheat_warning(&self, ui: &hudhook::imgui::Ui) {
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
+        if self.cheat_warning_active() {
+            let danger = self.cached_colors.danger;
+            ui.text_colored(danger, "CHEAT TOOL DETECTED");
+            ui.text_colored(danger, "Reported to the race organizer");
         }
     }
 
