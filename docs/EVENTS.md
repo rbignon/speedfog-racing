@@ -185,7 +185,8 @@ card shows the current stage, else the next one.
 
 A qualifier seed scores with the daily formula (`compute_daily_points`): 100
 to first, proportional down the field, unfinished runs ranked by depth
-reached then time, floor of 1, over runs with at least two zone entries. Only
+reached then by their first arrival on that layer (however long the run went
+on before abandoning), floor of 1, over runs with at least two zone entries. Only
 settled runs (finished or abandoned) score: a seed stays open for days, so a
 run in progress neither enters the ladder nor moves the other runners' points
 until it ends; the seed card's `my_result` scores the same field. A
@@ -193,7 +194,11 @@ disqualified runner (see the "Sanctions" section of `CHEAT_DETECTION.md`)
 leaves the field: no points, and the others score as if they had not run.
 Playoff races score differently, see Playoff scoring below. Ladder: best
 seed per mode, summed over the modes; a score in every mode is required to be
-ranked; ties on the summed in-game time of the counted seeds. Newcomers have
+ranked; ties go to the runner with more counted seeds finished, then to the
+lower summed in-game time of the counted seeds, a DNF's being the time it
+ranks on (its arrival on its deepest layer), not its final IGT, which the seed
+card still shows. Between two seeds of a mode scoring the same points, the
+finished one is counted, then the faster. Newcomers have
 fewer than `newcomer_threshold` finished races started before the
 announcement (the timeline's `announce` stop), not the opening: what a player
 had played when they learnt of the event is what counts, so practising during

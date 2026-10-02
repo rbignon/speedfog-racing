@@ -213,14 +213,16 @@ Simpler than race mode:
 
 Participants are sorted for display using a stable sort with composite key:
 
-| Priority | Status         | Sort key                           |
-| -------- | -------------- | ---------------------------------- |
-| 0        | `finished`     | `igt_ms` ascending (fastest first) |
-| 1        | `playing`      | `-current_layer` then `igt_ms`     |
-| 2        | `ready`        | Arrival order preserved            |
-| 3        | `registered`   | Arrival order preserved            |
-| 4        | `abandoned`    | `-current_layer` then `igt_ms`     |
-| 5        | `disqualified` | Arrival order preserved            |
+| Priority | Status         | Sort key                              |
+| -------- | -------------- | ------------------------------------- |
+| 0        | `finished`     | `igt_ms` ascending (fastest first)    |
+| 1        | `playing`      | `-current_layer` then layer entry IGT |
+| 2        | `ready`        | Arrival order preserved               |
+| 3        | `registered`   | Arrival order preserved               |
+| 4        | `abandoned`    | `-current_layer` then layer entry IGT |
+| 5        | `disqualified` | Arrival order preserved               |
+
+The layer entry IGT is the first arrival on `current_layer` (the deepest layer reached), so a DNF who played on there before abandoning keeps its place. See "Leaderboard Sorting" in `PROTOCOL.md`.
 
 ---
 

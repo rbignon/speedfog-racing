@@ -235,17 +235,19 @@ LiveSplit-style gap computation. The gap is fixed (entry delta) while the player
 | Status = `playing`, last layer, leader finished, exceeded  | entry delta + overshoot (uses `leader_igt_ms` as exit) |
 | Status = `playing`, leader still on same layer             | `player_layer_entry_igt - leader_splits[layer]`        |
 | Status = `playing`, no split for layer                     | `None`                                                 |
+| Status = `abandoned`                                       | `player_layer_entry_igt - leader_splits[layer]`        |
+| Status = `abandoned`, no split for layer or start layer    | `None`                                                 |
 | Other statuses                                             | `None`                                                 |
 
-"Within budget" means the player's time in the layer hasn't exceeded the leader's time in the same layer. On the last layer, when the leader has finished, `leader_igt_ms` is used as the leader's exit time (since no `leader_splits[layer + 1]` exists).
+"Within budget" means the player's time in the layer hasn't exceeded the leader's time in the same layer. A DNF never gets the overshoot: it ranks on its arrival on its deepest layer, and its gap shows that arrival. On the last layer, when the leader has finished, `leader_igt_ms` is used as the leader's exit time (since no `leader_splits[layer + 1]` exists).
 
 ### Leaderboard Sorting
 
-Players on the same layer are sorted by layer entry IGT (who arrived first), not total IGT. This ensures the true leader on a layer is the one who reached it first, regardless of their current total IGT. When `graph_json` is not available, the sort falls back to total IGT.
+Players on the same layer are sorted by layer entry IGT (who arrived first), not total IGT. This ensures the true leader on a layer is the one who reached it first, regardless of their current total IGT. DNFs (`abandoned`) on the same deepest layer follow the same rule, so a runner who reached it first and kept trying is not passed by one who arrived later but quit sooner. The entry IGT comes from the per-layer cache (`layer_entry_igts`), then, given `graph_json`, from a `zone_history` scan; with neither, the sort falls back to total IGT.
 
 ### Client-Side Gap Computation (Mod)
 
-For playing players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
+For playing and abandoned players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
 When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish.
 

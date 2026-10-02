@@ -1165,7 +1165,8 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 2. **Playing**: by `current_layer` descending (furthest first), then layer entry IGT ascending
 3. **Ready**
 4. **Registered**
-5. **Abandoned**
+5. **Abandoned**: like Playing, by `current_layer` descending, then layer entry IGT ascending (the first arrival on the deepest layer, whatever the branch), so playing on before abandoning never costs a place
+6. **Disqualified**
 
 Both the in-game mod and the web frontend render participants in this server-provided order; neither re-sorts. The server is the single source of ranking truth, which keeps the two displays consistent and avoids the tie-break flicker a client-side re-sort on the ever-changing total `igt_ms` would cause for near-tied playing rows.
 
@@ -1205,7 +1206,8 @@ Computed during `broadcast_leaderboard` for web spectators:
 - **Playing (exceeded budget):** `igt_ms - leader_splits[current_layer + 1]`, gap grows once the player exceeds the leader's exit IGT for that layer
 - **Playing (leader on same layer):** entry delta only (no exit split available)
 - **Finished:** `igt_ms - leader_igt_ms`, direct time delta
-- **Ready / Registered / Abandoned:** `null`
+- **Abandoned:** `player_layer_entry_igt - leader_splits[current_layer]`, the entry delta only: a DNF ranks on its arrival on its deepest layer, so the time it spent there before abandoning never adds an overshoot (`null` when the leader has no split for that layer, or on the start layer, which everyone enters at 0)
+- **Ready / Registered / Disqualified:** `null`
 
 #### Client-side (mod and web)
 
@@ -1213,7 +1215,7 @@ The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_sp
 
 The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port of the mod/server formula), driven by the race store from the retained `leader_splits` + each participant's `layer_entry_igt` + live `igt_ms`. It has no local-memory IGT, so it uses the server snapshot `igt_ms` for every player including the viewer; gaps refresh on each `leaderboard_update` / `player_update` tick.
 
-`race_state` carries no `leader_splits` / `layer_entry_igt`, so the spectator endpoint unicasts a `leaderboard_update` immediately after the initial `race_state` (`send_leaderboard_state`); a freshly connected web client therefore has the gap inputs at once instead of waiting for the next layer-crossing broadcast. This mirrors the mod, whose own connection triggers a room-wide leaderboard broadcast. Because `leader_splits` is rebuilt from the leader's `zone_history`, it is also populated for finished races, so the leaderboard shows each finisher's delta to the winner. Only a pre-race leaderboard (no leader yet) has no gap.
+`race_state` carries no `leader_splits` / `layer_entry_igt`, so the spectator endpoint unicasts a `leaderboard_update` immediately after the initial `race_state` (`send_leaderboard_state`); a freshly connected web client therefore has the gap inputs at once instead of waiting for the next layer-crossing broadcast. This mirrors the mod, whose own connection triggers a room-wide leaderboard broadcast. Because `leader_splits` is rebuilt from the leader's `zone_history`, it is also populated for finished races, so the leaderboard shows each finisher's delta to the winner. When every runner is out (none finished, playing or waiting to start), the first DNF leads, so the other DNFs' gaps show what orders them. Only a pre-race leaderboard (no leader yet) has no gap.
 
 #### Color coding
 
