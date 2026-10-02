@@ -70,6 +70,8 @@ S2_STRONG_MIN_REFS = 50
 S2_MEDIUM_RATIO = 0.85
 S2_STRONG_RATIO = 0.75
 S2_LOOSE_MIN_REFS = 30
+# S4 save_restore
+S4_DODGE_MS = 60_000
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -640,3 +642,114 @@ def s1_deaths_stop(
             )
         ]
     return []
+
+
+def daily_points(rank: int, n: int) -> int:
+    """The qualifier formula: 100 to first, proportional down the field, never below 1."""
+    value = round(100 * (n - rank + 1) / n)
+    if rank != 1:
+        value = min(value, 99)
+    return max(1, value)
+
+
+def rank_effect(
+    run: Run, bundle: Bundle, lower_ms: int, upper_ms: int
+) -> dict[str, Any]:
+    """A finished race run's rank, then with the erased time's bounds added back."""
+    # The official field: other disqualified runs are out of it.
+    race_runs = [
+        r
+        for r in bundle.race_runs(run.race_id or "")
+        if r.id == run.id or not r.disqualified
+    ]
+    others = [r.igt_ms for r in race_runs if r.status == "finished" and r.id != run.id]
+
+    def rank(igt: int) -> int:
+        return 1 + sum(1 for x in others if x < igt)
+
+    effect: dict[str, Any] = {
+        "rank": rank(run.igt_ms),
+        "rank_with_lower": rank(run.igt_ms + lower_ms),
+        "rank_with_upper": rank(run.igt_ms + upper_ms),
+        "finishers": len(others) + 1,
+    }
+    race = bundle.races.get(run.race_id or "", {})
+    if str(race.get("event_slot") or "").startswith("qualifier:"):
+        n = sum(
+            1
+            for r in race_runs
+            if len(r.history) >= 2 and r.status in ("finished", "abandoned")
+        )
+        n = max(n, effect["finishers"])
+        for key in ("", "_with_lower", "_with_upper"):
+            effect[f"points{key}"] = daily_points(effect[f"rank{key}"], n)
+    return effect
+
+
+def s4_save_restore(run: Run, bundle: Bundle) -> list[Finding]:
+    """Game restarts that bring the in-game time back down: erased time and its effect."""
+    history = run.history
+    processes = split_processes(history)
+    findings: list[Finding] = []
+    for k in range(1, len(processes)):
+        before = [i for p in processes[:k] for i in p.entries]
+        first = next(
+            (
+                i
+                for i in processes[k].entries
+                if history[i].get("message_id") is not None
+            ),
+            None,
+        )
+        prev_first = next(
+            (
+                i
+                for i in processes[k - 1].entries
+                if history[i].get("message_id") is not None
+            ),
+            None,
+        )
+        if first is None or prev_first is None or not before:
+            continue
+        reached = max(int(history[i]["igt_ms"]) for i in before)
+        resumed = int(history[first]["igt_ms"])
+        if resumed >= reached:
+            continue
+        lower = reached - resumed
+        gap_ms = processes[k].launch_ms - processes[k - 1].launch_ms
+        upper = max(
+            lower,
+            round(int(history[prev_first]["igt_ms"]) + IGT_SCALE * gap_ms - resumed),
+        )
+        evidence: dict[str, Any] = {
+            "reached_s": round(reached / 1000, 1),
+            "resumed_s": round(resumed / 1000, 1),
+            "erased_min_s": round(lower / 1000, 1),
+            "erased_max_s": round(upper / 1000, 1),
+            "restart_after_s": round(gap_ms / 1000),
+        }
+        strength = "info"
+        if run.kind == "race" and run.status == "finished":
+            effect = rank_effect(run, bundle, lower, upper)
+            evidence["effect"] = effect
+            if effect["rank_with_lower"] != effect["rank"]:
+                strength = "medium"
+        if lower < S4_DODGE_MS:
+            strength = "weak"
+            evidence["note"] = (
+                "a restart instead of a quit-out skips the quit-out penalty"
+            )
+        findings.append(
+            Finding(
+                signature="save_restore",
+                strength=strength,
+                title=(
+                    f"game restarted, in-game time back from {reached / 1000:.0f} s "
+                    f"to {resumed / 1000:.0f} s"
+                ),
+                run=run,
+                evidence=evidence,
+                entry_index=first,
+            )
+        )
+    return findings

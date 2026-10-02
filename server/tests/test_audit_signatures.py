@@ -411,3 +411,81 @@ def test_death_ratios_use_the_players_other_runs():
     # The player's three other runs had no death at all: their ratio is 0.
     assert ratios["subject"] == 0.0
     assert ratios["o0"] == 1.0  # fewer than 3 other runs: neutral
+
+
+# --- S4 save_restore ---------------------------------------------------------
+
+LAUNCH = 1_790_289_383_715
+
+
+def _restored(drop_back_to_s: float, igt_s: float = 2297) -> Any:
+    """Reached 237 s, the game restarts 638 s later, and resumes at ``drop_back_to_s``."""
+    history = [
+        e("start", 0, "spawn"),
+        e("a", 32, mid=LAUNCH + 1),
+        e("b", 141, mid=LAUNCH + 2),
+        e("c", 237, mid=LAUNCH + 3),
+        e("b", drop_back_to_s, "backtrack", mid=LAUNCH + 638_000),
+        e("c", 300, mid=LAUNCH + 638_001),
+    ]
+    return make_run(history, rid="restorer", user="restorer", igt_s=igt_s)
+
+
+def _race(subject: Any, other_igts: list[float], slot: str = "") -> Any:
+    others = [
+        make_run([e("start", 0, "spawn")], rid=f"o{i}", user=f"o{i}", igt_s=s)
+        for i, s in enumerate(other_igts)
+    ]
+    races = {"r1": {"id": "r1", "event_slot": slot or None, "is_target": True}}
+    return make_bundle([subject, *others], {}, races=races)
+
+
+def test_s4_measures_the_erased_time_and_its_effect():
+    run = _restored(141.6)
+    (finding,) = sig.s4_save_restore(run, _race(run, [2400]))
+    assert finding.strength == "info"  # the lower bound alone keeps rank 1
+    assert finding.evidence["erased_min_s"] == 95.4
+    assert finding.evidence["erased_max_s"] == 502.9  # 32 + 0.96 x 638 - 141.6
+    assert finding.evidence["effect"]["rank"] == 1
+    assert finding.evidence["effect"]["rank_with_upper"] == 2
+
+
+def test_s4_is_medium_when_the_lower_bound_changes_the_rank():
+    run = _restored(141.6)
+    (finding,) = sig.s4_save_restore(run, _race(run, [2350]))
+    assert finding.strength == "medium"
+
+
+def test_s4_qualifier_points():
+    run = _restored(141.6)
+    (finding,) = sig.s4_save_restore(run, _race(run, [2350, 3000], slot="qualifier:boss_rush:2"))
+    effect = finding.evidence["effect"]
+    # Three qualified runs: rank 1 scores 100, rank 2 scores 67.
+    assert (effect["points"], effect["points_with_lower"]) == (100, 67)
+
+
+def test_s4_small_drop_is_a_dodged_quit_out_penalty():
+    run = _restored(207)  # 30 s under the 237 s reached
+    (finding,) = sig.s4_save_restore(run, _race(run, [2400]))
+    assert finding.strength == "weak"
+
+
+def test_s4_ignores_restarts_that_keep_the_time_and_runs_without_ids():
+    history = [
+        e("start", 0, "spawn"),
+        e("a", 30, mid=LAUNCH + 1),
+        e("b", 60, mid=LAUNCH + 900_000),
+    ]
+    run = make_run(history)
+    assert sig.s4_save_restore(run, _race(run, [])) == []
+    old = make_run([e("start", 0, "spawn"), e("a", 30), e("b", 10, "backtrack")])
+    assert sig.s4_save_restore(old, _race(old, [])) == []
+
+
+def test_s4_rank_leaves_other_disqualified_runs_out():
+    run = _restored(141.6)
+    bundle = _race(run, [2350])
+    bundle.runs[1].disqualified = True  # off the official field
+    (finding,) = sig.s4_save_restore(run, bundle)
+    effect = finding.evidence["effect"]
+    assert (effect["rank_with_lower"], effect["finishers"]) == (1, 1)
