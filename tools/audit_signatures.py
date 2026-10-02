@@ -35,7 +35,8 @@ Usage:
 from __future__ import annotations
 
 import json
-from collections import defaultdict
+from bisect import bisect_left
+from collections import Counter, defaultdict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -52,6 +53,13 @@ MAJOR_TYPES = frozenset({"major_boss", "final_boss"})
 STRENGTHS = ("strong", "medium", "weak", "info")
 # The only node fields the signatures read: graphs are reduced to them on load.
 GRAPH_NODE_KEYS = ("type", "layer", "boss_name", "entrances", "exits")
+
+# S2 impossible_traversal
+S2_MIN_REFS = 20
+S2_STRONG_MIN_REFS = 50
+S2_MEDIUM_RATIO = 0.85
+S2_STRONG_RATIO = 0.75
+S2_LOOSE_MIN_REFS = 30
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -368,3 +376,141 @@ def check_out_prefix(prefix: Path, bundle: Path, repo_root: Path = REPO_ROOT) ->
         if prefix == root or root in prefix.parents:
             raise SystemExit(f"refusing {prefix}: it is inside {what}")
     return prefix
+
+
+@dataclass
+class SampleSet:
+    """One measure over many runs, for leave-one-out lookups (a run never meets itself)."""
+
+    values: list[int] = field(default_factory=list)
+    by_owner: dict[str, list[int]] = field(default_factory=dict)
+    total: int = 0
+
+    def add(self, value: int, owner: str) -> None:
+        self.values.append(value)
+        self.by_owner.setdefault(owner, []).append(value)
+        self.total += value
+
+    def freeze(self) -> None:
+        self.values.sort()
+
+    def count(self, owner: str) -> int:
+        return len(self.values) - len(self.by_owner.get(owner, ()))
+
+    def smallest(self, owner: str, k: int = 2) -> list[int]:
+        skip = Counter(self.by_owner.get(owner, ()))
+        out: list[int] = []
+        for value in self.values:
+            if skip[value]:
+                skip[value] -= 1
+                continue
+            out.append(value)
+            if len(out) == k:
+                break
+        return out
+
+    def below(self, value: int, owner: str) -> int:
+        """How many values of other runs are strictly below ``value``."""
+        own = sum(1 for v in self.by_owner.get(owner, ()) if v < value)
+        return bisect_left(self.values, value) - own
+
+    def mean(self, owner: str) -> float | None:
+        n = self.count(owner)
+        if n <= 0:
+            return None
+        return (self.total - sum(self.by_owner.get(owner, ()))) / n
+
+
+def _tables() -> dict[tuple[Any, ...], SampleSet]:
+    return defaultdict(SampleSet)
+
+
+@dataclass
+class References:
+    gate: dict[tuple[Any, ...], SampleSet] = field(default_factory=_tables)
+    boss: dict[tuple[Any, ...], SampleSet] = field(default_factory=_tables)
+    node_deaths: dict[tuple[Any, ...], SampleSet] = field(default_factory=_tables)
+    type_deaths: dict[tuple[Any, ...], SampleSet] = field(default_factory=_tables)
+
+    def freeze(self) -> None:
+        for table in (self.gate, self.boss, self.node_deaths, self.type_deaths):
+            for samples in table.values():
+                samples.freeze()
+
+
+def node_deaths(run: Run) -> dict[str, int]:
+    """Deaths per node the run visited (0 for a node it survived)."""
+    out: dict[str, int] = {}
+    for entry in run.history:
+        node = str(entry["node_id"])
+        out[node] = out.get(node, 0) + int(entry.get("deaths") or 0)
+    return out
+
+
+def build_references(bundle: Bundle) -> References:
+    """Every run's clean traversal times and per-node deaths, by gate key and by boss."""
+    refs = References()
+    for run in bundle.runs:
+        graph = bundle.graph(run)
+        pool = bundle.pool(run)
+        for traversal in clean_traversals(run, graph):
+            if traversal.gate_key is not None:
+                refs.gate[traversal.gate_key].add(traversal.ms, run.id)
+            if graph.kind(traversal.node) in BOSS_TYPES:
+                refs.boss[traversal.boss_key].add(traversal.ms, run.id)
+        for node, deaths in node_deaths(run).items():
+            if node not in graph.nodes:
+                continue
+            refs.node_deaths[(node, graph.boss(node))].add(deaths, run.id)
+            refs.type_deaths[(pool, graph.kind(node))].add(deaths, run.id)
+    refs.freeze()
+    return refs
+
+
+def s2_impossible_traversal(run: Run, graph: Graph, refs: References) -> list[Finding]:
+    """Clean traversals far under the fastest of the other runs through the same gates."""
+    findings: list[Finding] = []
+    for traversal in clean_traversals(run, graph):
+        reference = "same gates and boss"
+        samples = refs.gate.get(traversal.gate_key) if traversal.gate_key else None
+        if samples is None or samples.count(run.id) < S2_MIN_REFS:
+            loose = refs.boss.get(traversal.boss_key)
+            if (
+                graph.kind(traversal.node) not in BOSS_TYPES
+                or loose is None
+                or loose.count(run.id) < S2_LOOSE_MIN_REFS
+            ):
+                continue
+            samples, reference = loose, "same boss, any gates (loose reference)"
+        n = samples.count(run.id)
+        best = samples.smallest(run.id, 2)
+        ratio = traversal.ms / best[0]
+        if ratio >= S2_MEDIUM_RATIO:
+            continue
+        strong = ratio < S2_STRONG_RATIO and n >= S2_STRONG_MIN_REFS
+        findings.append(
+            Finding(
+                signature="impossible_traversal",
+                strength="strong" if strong else "medium",
+                title=(
+                    f"{traversal.node} cleared in {traversal.ms / 1000:.1f} s, "
+                    f"{ratio:.2f} x the fastest of {n} other runs"
+                ),
+                run=run,
+                evidence={
+                    "node": traversal.node,
+                    "boss": traversal.boss,
+                    "came_from": traversal.came_from,
+                    "exit": traversal.exit_to,
+                    "time_s": round(traversal.ms / 1000, 1),
+                    "floor_s": round(best[0] / 1000, 1),
+                    "second_s": round(best[1] / 1000, 1) if len(best) > 1 else None,
+                    "ratio": round(ratio, 2),
+                    "references": n,
+                    "faster_runs": samples.below(traversal.ms, run.id),
+                    "reference": reference,
+                },
+                entry_index=traversal.index,
+            )
+        )
+    return findings

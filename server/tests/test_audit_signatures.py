@@ -253,3 +253,98 @@ def test_a_disqualified_run_is_audited_on_what_it_did(tmp_path):
     # The reviewer sees the case is already handled.
     finding = sig.Finding(signature="x", strength="info", title="t", run=run)
     assert finding.evidence["disqualified"] is True
+
+
+# --- S2 impossible_traversal ------------------------------------------------
+
+TUNNEL = chain("start", "a", "tunnel", "c")
+
+
+def _tunnel_run(rid: str, tunnel_s: float, came: str = "a") -> Any:
+    history = [e("start", 0, "spawn"), e(came, 10), e("tunnel", 20), e("c", 20 + tunnel_s)]
+    return make_run(history, rid=rid, user=rid, status="abandoned")
+
+
+def _s2(subject: Any, others: list[Any], graph: Any = TUNNEL) -> list[Any]:
+    bundle = make_bundle([subject, *others], {"s1": graph})
+    refs = sig.build_references(bundle)
+    return [
+        f
+        for f in sig.s2_impossible_traversal(subject, graph, refs)
+        if f.evidence["node"] == "tunnel"
+    ]
+
+
+def test_s2_flags_a_traversal_far_under_the_gate_floor():
+    others = [_tunnel_run(f"o{i}", 70 + i) for i in range(25)]
+    (finding,) = _s2(_tunnel_run("cheat", 44), others)
+    assert finding.strength == "medium"  # under 0.75 x floor, but fewer than 50 references
+    assert finding.evidence["floor_s"] == 70.0 and finding.evidence["ratio"] == 0.63
+    assert finding.evidence["references"] == 25 and finding.evidence["faster_runs"] == 0
+
+
+def test_s2_strong_with_enough_references():
+    others = [_tunnel_run(f"o{i}", 70 + i % 10) for i in range(60)]
+    (finding,) = _s2(_tunnel_run("cheat", 44), others)
+    assert finding.strength == "strong"
+
+
+def test_s2_needs_twenty_references_and_ignores_other_gates():
+    few = [_tunnel_run(f"o{i}", 70) for i in range(19)]
+    assert _s2(_tunnel_run("cheat", 44), few) == []
+    # Fast runs through another entrance are not compared (different gate key).
+    graph = chain("start", "a", "tunnel", "c")
+    graph.nodes["tunnel"]["entrances"].append({"text": "side door", "from": "start"})
+    graph.succ["start"].add("tunnel")
+    side = [
+        make_run(
+            [e("start", 0, "spawn"), e("tunnel", 10), e("c", 10 + 30)],
+            rid=f"s{i}",
+            user=f"s{i}",
+            status="abandoned",
+        )
+        for i in range(30)
+    ]
+    normal = [_tunnel_run(f"o{i}", 70) for i in range(25)]
+    (finding,) = _s2(_tunnel_run("cheat", 44), side + normal, graph)
+    assert finding.evidence["floor_s"] == 70.0
+
+
+def test_s2_never_compares_a_run_with_itself():
+    # The subject's own time is in the tables; the floor must come from the others.
+    others = [_tunnel_run(f"o{i}", 50) for i in range(25)]
+    assert _s2(_tunnel_run("same", 50), others) == []
+
+
+def test_s2_boss_falls_back_to_a_loose_reference():
+    graph = chain("start", "a", "boss", "c", bosses={"boss": "Radahn"})
+    runs = [
+        make_run(
+            [e("start", 0, "spawn"), e("a", 5), e("boss", 10), e("c", 10 + 90)],
+            rid=f"o{i}",
+            user=f"o{i}",
+            status="abandoned",
+        )
+        for i in range(30)
+    ]
+    # Each reference came in through a different gate: no gate key has 20 samples.
+    for i, run in enumerate(runs):
+        graph.nodes["boss"]["entrances"].append({"text": f"door {i}", "from": f"x{i}"})
+        run.history[1]["node_id"] = f"x{i}"
+        graph.succ.setdefault(f"x{i}", set()).add("boss")
+        graph.nodes[f"x{i}"] = {"type": "boss_arena", "layer": 1}
+    subject = make_run(
+        [e("start", 0, "spawn"), e("a", 5), e("boss", 10), e("c", 40)], rid="fast", user="fast"
+    )
+    bundle = make_bundle([subject, *runs], {"s1": graph})
+    refs = sig.build_references(bundle)
+    (finding,) = [
+        f for f in sig.s2_impossible_traversal(subject, graph, refs) if f.evidence["node"] == "boss"
+    ]
+    assert finding.evidence["reference"].startswith("same boss, any gates")
+
+
+def test_s2_without_a_graph_finds_nothing():
+    run = _tunnel_run("cheat", 44)
+    bundle = make_bundle([run], {})
+    assert sig.s2_impossible_traversal(run, bundle.graph(run), sig.build_references(bundle)) == []
