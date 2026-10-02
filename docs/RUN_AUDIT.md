@@ -119,21 +119,41 @@ S3 then times the runner's entry into the zone by its `event_flag` line, on
 the server clock, and lists a warp that several runners in the zone could
 have made instead of attributing it.
 
-| signature                 | what it flags                                                                                      | strength                                               |
-| ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| S1 `deaths_stop`          | 2+ deaths in a node, then no death over 10+ layers and 3+ major bosses, against expected deaths    | strong p < 0.001, medium p < 0.01                      |
-| S2 `impossible_traversal` | a first, clean traversal under the fastest other run through the same gates against the same boss  | medium < 0.85 x floor, strong < 0.75 x (50+)           |
-| S3 `grace_warp`           | (logs) a grace warp to an unvisited node, or into the node entered less than 120 s before          | strong, medium                                         |
-| S4 `save_restore`         | a game restart that brings the in-game time back down, with the erased time and its rank effect    | medium if the rank changes, else info; weak under 60 s |
-| S5 `layer_jump`           | a fog skipping layers (sequence break or lost messages), a position change into an unvisited node  | medium or weak; strong or medium                       |
-| S6 `fresh_account`        | an account created around the race, at most 2 runs, top-quarter finish                             | weak (context)                                         |
-| S7 `platform`             | playoff cutoff never applied, organizer racing their own event, in-game time faster than the clock | medium, info, strong                                   |
-| S8 `debug_flags`          | cheat-tool flags reported by the mod                                                               | strong                                                 |
+| signature                 | what it flags                                                                                      | strength                                                                                        |
+| ------------------------- | -------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| S1 `deaths_stop`          | 2+ deaths in a node, then no death over 10+ layers and 3+ major bosses, against expected deaths    | strong p < 0.001 with the tail's major bosses at the 20th percentile or faster, medium p < 0.01 |
+| S2 `impossible_traversal` | a first, clean traversal under the fastest other run through the same gates against the same boss  | medium < 0.85 x floor, strong < 0.75 x (50+)                                                    |
+| S3 `grace_warp`           | (logs) a grace warp to an unvisited node, or into the node entered less than 120 s before          | strong; medium, info at the node's most used in-zone grace shared with others                   |
+| S4 `save_restore`         | a game restart that brings the in-game time back down, with the erased time and its rank effect    | medium if the rank changes, else info; weak under 60 s                                          |
+| S5 `layer_jump`           | a fog skipping layers (sequence break or lost messages), a position change into an unvisited node  | medium or weak; strong or medium                                                                |
+| S6 `fresh_account`        | an account created around the race, at most 2 runs, top-quarter finish                             | weak (context)                                                                                  |
+| S7 `platform`             | playoff cutoff never applied, organizer racing their own event, in-game time faster than the clock | medium, info, strong                                                                            |
+| S8 `debug_flags`          | cheat-tool flags reported by the mod                                                               | strong                                                                                          |
 
-The report ends with base rates: how many history runs fire each signature,
-which tells how much a finding is worth. Both reports use the same
-pseudonyms: read the analyst's findings next to the signatures, a lead
-present in both first.
+A deathless tail at an ordinary pace is what a good run looks like, so S1 is
+strong only when the major bosses after the struggle also fall fast, against
+the same bosses in other runs. With fewer than 10 such clears to compare, the
+pace is unknown and the finding stays medium; a no-death cheat played at an
+ordinary pace reads medium too.
+
+In-zone grace queries in a node mostly name one and the same grace for every
+runner. S3 turns an in-zone warp into info when another runner warps to that
+grace in that node too, and no other grace of the node draws more runners
+there. Disqualified runs vouch for no grace. The count spans every race and
+seed where the node appears, and ignores which entrance the runner came
+through: a node whose entrances each have their own nearby grace keeps the
+less used one at medium. One honest runner warping to the same grace hides a
+warp at info when no grace of the node draws more runners, and two cheaters on
+one grace hide each other in a node where nobody else warps.
+
+The report lists the players with strong findings in several signatures
+first, then by their number of strong findings, then of medium ones. Within a
+strength, findings come by signature (a cheat tool or a warp first, then
+timings no other run reaches, then erased time, then context), each gravest
+first: lowest S1 probability, lowest S2 ratio, largest S4 erased time. It
+ends with base rates: how many history runs fire each signature, which tells
+how much a finding is worth. Both reports use the same pseudonyms: read the
+analyst's findings next to the signatures, a lead present in both first.
 
 ## 4. Read the report
 

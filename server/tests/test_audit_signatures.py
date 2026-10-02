@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import itertools
 import json
 import sys
 from datetime import UTC, datetime, timedelta
@@ -387,6 +388,19 @@ def _field(n: int = 20) -> list[Any]:
     return runs
 
 
+def _pace(step_s: float, n: int = 12) -> list[Any]:
+    """Deathless runs clearing every node in ``step_s``: the major bosses' reference pace."""
+    return [
+        make_run(
+            [e("start", 0, "spawn")]
+            + [e(node, step_s * k) for k, node in enumerate(S1_NAMES[1:], start=1)],
+            rid=f"pace{i}",
+            user=f"pace{i}",
+        )
+        for i in range(n)
+    ]
+
+
 def _s1(subject: Any, others: list[Any], ratio: float = 1.0) -> list[Any]:
     bundle = make_bundle([subject, *others], {"s1": S1_GRAPH})
     refs = sig.build_references(bundle)
@@ -394,12 +408,30 @@ def _s1(subject: Any, others: list[Any], ratio: float = 1.0) -> list[Any]:
 
 
 def test_s1_flags_a_death_loop_followed_by_no_death_at_all():
-    (finding,) = _s1(make_run(_s1_history(3), rid="cheat"), _field())
+    # The tail's major bosses fall in 30 s where every reference run took 60 s.
+    (finding,) = _s1(make_run(_s1_history(3), rid="cheat"), _field() + _pace(60))
     assert finding.strength == "strong"
+    assert finding.evidence["major_pct_after"] == 0.0
     assert finding.evidence["struggle_node"] == "first"
     assert finding.evidence["struggle_deaths"] == 3
     assert finding.evidence["tail_major_bosses"] == 6  # five majors and the final boss
     assert finding.evidence["p_zero"] < 0.001
+
+
+def test_s1_deathless_tail_at_an_ordinary_pace_is_medium():
+    # No death after the struggle, but the bosses fall no faster than usual:
+    # a good run looks like this too.
+    (finding,) = _s1(make_run(_s1_history(3), rid="steady"), _field() + _pace(20))
+    assert finding.strength == "medium"
+    assert finding.evidence["major_pct_after"] == 100.0
+
+
+def test_s1_without_a_pace_reference_is_medium():
+    # Too few other runs cleared the tail's major bosses to tell the pace.
+    (finding,) = _s1(make_run(_s1_history(3), rid="unknown"), _field())
+    assert finding.evidence["p_zero"] < sig.S1_STRONG_P
+    assert finding.evidence["major_pct_after"] is None
+    assert finding.strength == "medium"
 
 
 def test_s1_ignores_runs_without_a_struggle_or_with_tail_deaths():
@@ -698,8 +730,8 @@ LOGS = """\
 2026-10-02T18:02:30+0000 host uvicorn[1]: 2026-10-02 18:02:30,100 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 race=r1 participant=p1 message_id=9
 2026-09-28 12:27:20,000 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 entity=r2 message_id=1790598300003
 2026-09-28 12:28:50,000 - speedfog_racing.websocket.handler - INFO - event_flag: flag_id=1 node_id=c igt_ms=270000 first_visit=True entity=r2
-2026-09-28 12:29:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
-2026-09-28 12:40:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
+2026-09-28 12:29:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012955 map_id=m11 entity=r2
+2026-09-28 12:40:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012955 map_id=m11 entity=r2
 2026-09-28 12:40:01,000 - speedfog_racing.websocket.handler - INFO - zone_query backtrack: b -> c for r2
 2026-09-28 12:41:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 training=t1
 2026-09-28 12:42:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=map candidates=- grace=None map_id=m11 igt_ms=1 message_id=2 race=r1 participant=p1
@@ -768,6 +800,68 @@ def test_s3_findings_and_attribution(tmp_path):
         ("strong", "p2", "message id"),
     ]
     assert unattributed == []  # nobody is in c at 12:40 any more
+
+
+def _in_zone_warps(
+    warps: dict[str, tuple[str, str]], disqualified: tuple[str, ...] = ()
+) -> dict[str, tuple[str, Any]]:
+    """S3 on runs (id: user, grace) that each warp inside c 20 s after entering it."""
+    graph = chain("start", "l1", "b", "c", "l4", "l5")
+    runs = []
+    for rid, (user, _) in warps.items():
+        run = make_run(
+            [e("start", 0, "spawn"), e("b", 10, mid=5), e("c", 20, mid=6)],
+            rid=rid,
+            user=user,
+            race="r1",
+        )
+        run.disqualified = rid in disqualified
+        runs.append(run)
+    users = {user: {"name": f"name_{user}"} for user, _ in warps.values()}
+    bundle = make_bundle(runs, {"s1": graph}, races={"r1": {"id": "r1"}}, users=users)
+    lines = [
+        sig.LogLine(T0, "grace_query", "r1", rid, "c", grace, 40000, 7)
+        for rid, (_, grace) in warps.items()
+    ]
+    findings, _ = sig.s3_grace_warp(lines, bundle)
+    return {f.run.id: (f.strength, f.evidence.get("shared_with")) for f in findings}
+
+
+def test_s3_a_grace_other_runners_also_warp_to_is_info():
+    got = _in_zone_warps(
+        {"p0": ("u0", "A"), "p1": ("u1", "A"), "p2": ("u2", "A"), "p3": ("u3", "B")}
+    )
+    # Runners warping to the same grace there make it the zone's usual grace;
+    # the grace nobody else warps to stands out.
+    assert got == {
+        "p0": ("info", ["name_u1", "name_u2"]),
+        "p1": ("info", ["name_u0", "name_u2"]),
+        "p2": ("info", ["name_u0", "name_u1"]),
+        "p3": ("medium", None),
+    }
+
+
+def test_s3_runners_sharing_a_rarer_grace_than_the_usual_one_stay_medium():
+    # Two runners on a grace the node's usual one outnumbers do not cover each other.
+    got = _in_zone_warps(
+        {
+            "p0": ("u0", "A"),
+            "p1": ("u1", "A"),
+            "p2": ("u2", "A"),
+            "p3": ("u3", "D"),
+            "p4": ("u4", "D"),
+        }
+    )
+    assert got["p3"] == got["p4"] == ("medium", None)
+
+
+def test_s3_a_disqualified_run_or_the_same_runner_does_not_vouch_for_a_grace():
+    got = _in_zone_warps(
+        {"p0": ("u0", "B"), "p1": ("u1", "B"), "p2": ("u2", "C"), "p3": ("u2", "C")},
+        disqualified=("p1",),
+    )
+    assert got["p0"] == ("medium", None)
+    assert got["p2"] == got["p3"] == ("medium", None)
 
 
 def test_s3_late_warp_inside_the_zone_is_not_flagged(tmp_path):
@@ -1042,6 +1136,71 @@ def test_main_writes_both_reports_for_the_targets(tmp_path):
     assert "player_0001 (alice)" in markdown and "## Base rates" in markdown
     # The thresholds in force head the report.
     assert f"S2_STRONG_RATIO={sig.S2_STRONG_RATIO}" in markdown
+
+
+def test_findings_come_by_strength_then_gravest_first_within_a_signature():
+    def finding(signature: str, strength: str = "strong", **evidence: Any) -> Any:
+        return sig.Finding(signature, strength, "t", evidence=evidence)
+
+    findings = [
+        finding("deaths_stop", "medium", p_zero=1e-12),
+        finding("deaths_stop", p_zero=1e-4),
+        finding("save_restore", erased_min_s=100.0),
+        finding("impossible_traversal", ratio=0.7),
+        finding("deaths_stop", p_zero=1e-9),
+        finding("save_restore", erased_min_s=500.0),
+        finding("impossible_traversal", ratio=0.4),
+    ]
+    ordered = sig.order_findings(findings)
+    # A medium finding never outranks a strong one, however grave.
+    assert [f.strength for f in ordered][-1] == "medium"
+    strong = ordered[:-1]
+    # Severities come in different units: each signature's findings stay together.
+    assert len(list(itertools.groupby(f.signature for f in strong))) == 3
+    for name, key, gravest_first in (
+        ("deaths_stop", "p_zero", [1e-9, 1e-4]),
+        ("impossible_traversal", "ratio", [0.4, 0.7]),
+        ("save_restore", "erased_min_s", [500.0, 100.0]),
+    ):
+        assert [f.evidence[key] for f in strong if f.signature == name] == gravest_first
+
+
+def test_report_lists_players_with_several_strong_signatures_first():
+    def rendered(player: str, signature: str, strength: str) -> dict[str, Any]:
+        return {
+            "signature": signature,
+            "strength": strength,
+            "title": "t",
+            "players": [{"user_id": player, "pseudonym": player, "name": None}],
+            "races": [],
+            "run": None,
+            "evidence": {},
+            "window": None,
+        }
+
+    findings = [
+        rendered("one_strong", "deaths_stop", "strong"),
+        *[rendered("three_strong", "deaths_stop", "strong") for _ in range(3)],
+        rendered("two_strong", "deaths_stop", "strong"),
+        rendered("two_strong", "impossible_traversal", "strong"),
+        rendered("many_medium", "grace_warp", "medium"),
+        rendered("info_only", "fresh_account", "info"),
+    ]
+    meta = {
+        "bundle": "b",
+        "latest_activity": None,
+        "scope": "targets",
+        "logs": [],
+        "logs_period": None,
+        "thresholds": {},
+    }
+    markdown = sig.render_markdown(meta, findings, {}, [])
+    table = markdown.split("## Findings")[0]
+    order = ["two_strong", "three_strong", "one_strong", "many_medium", "info_only"]
+    # Strong findings in two signatures outweigh three in one.
+    assert sorted(order, key=table.index) == order
+    assert "| two_strong | strong | 2 | 0 |" in table
+    assert "| info_only | info | 0 | 0 |" in table
 
 
 def test_main_player_scope_lists_history_runs(tmp_path):

@@ -57,6 +57,18 @@ PROCESS_GAP = 50_000  # message ids of one game process sit closer than this
 BOSS_TYPES = frozenset({"major_boss", "boss_arena", "final_boss"})
 MAJOR_TYPES = frozenset({"major_boss", "final_boss"})
 STRENGTHS = ("strong", "medium", "weak", "info")
+# Within a strength, findings group by signature: a cheat tool or a warp first,
+# then timings no other run reaches, then erased time, then context.
+SIGNATURE_ORDER = (
+    "debug_flags",
+    "grace_warp",
+    "layer_jump",
+    "impossible_traversal",
+    "deaths_stop",
+    "save_restore",
+    "platform",
+    "fresh_account",
+)
 # The only node fields the signatures read: graphs are reduced to them on load.
 GRAPH_NODE_KEYS = ("type", "layer", "boss_name", "entrances", "exits")
 # participants.created_at (the join time) was added on 2026-04-26, stamping
@@ -71,6 +83,10 @@ S1_MIN_RATE_VISITS = 10
 S1_MIN_HISTORY_RUNS = 3
 S1_STRONG_P = 0.001
 S1_MEDIUM_P = 0.01
+# A deathless tail is strong only when its major bosses also fall fast: the
+# median percentile of their clears, against the same boss elsewhere, at most
+# this. At an ordinary pace, a deathless tail is what a good run looks like.
+S1_FAST_PCT = 20.0
 # S2 impossible_traversal
 S2_MIN_REFS = 20
 S2_STRONG_MIN_REFS = 50
@@ -647,10 +663,12 @@ def s1_deaths_stop(
             return []  # the earliest qualifying struggle decides
         after = last[node] + 1
         spent = int(history[after]["igt_ms"]) - int(history[first[node]]["igt_ms"])
+        pct_after = _major_percentile(run, graph, refs, after, len(history))
+        fast = pct_after is not None and pct_after <= S1_FAST_PCT
         return [
             Finding(
                 signature="deaths_stop",
-                strength="strong" if p_zero < S1_STRONG_P else "medium",
+                strength="strong" if p_zero < S1_STRONG_P and fast else "medium",
                 title=(
                     f"{deaths[node]} deaths in {node}, then none over {len(layers)} layers "
                     f"where {lam:.1f} were expected"
@@ -667,9 +685,7 @@ def s1_deaths_stop(
                     "player_ratio": round(ratio, 2),
                     "p_zero": float(f"{p_zero:.2g}"),
                     "major_pct_before": _major_percentile(run, graph, refs, 0, after),
-                    "major_pct_after": _major_percentile(
-                        run, graph, refs, after, len(history)
-                    ),
+                    "major_pct_after": pct_after,
                 },
                 entry_index=first[node],
             )
@@ -1328,6 +1344,35 @@ def _warp(
     )
 
 
+def _share_graces(findings: list[Finding], bundle: Bundle) -> None:
+    """Turn in-zone warps to the grace runners usually warp to in that node into info.
+
+    Runners' in-zone grace queries in a node mostly name one and the same
+    grace, whatever brings it about. A warp stays medium when no other runner
+    warps to its grace there, or when another grace of the node draws more
+    runners. Disqualified runs vouch for no grace.
+    """
+    inside = [
+        (f, f.run)
+        for f in findings
+        if f.run is not None and f.evidence["since_entry_s"] is not None
+    ]
+    users: dict[Any, dict[Any, set[str]]] = defaultdict(lambda: defaultdict(set))
+    for finding, run in inside:
+        if not run.disqualified:
+            users[finding.evidence["node"]][finding.evidence["grace"]].add(run.user_id)
+    for finding, run in inside:
+        graces = users[finding.evidence["node"]]
+        others = graces.get(finding.evidence["grace"], set()) - {run.user_id}
+        if others and len(graces[finding.evidence["grace"]]) == max(
+            len(u) for u in graces.values()
+        ):
+            finding.strength = "info"
+            finding.evidence["shared_with"] = sorted(
+                str(bundle.users.get(u, {}).get("name") or u) for u in others
+            )
+
+
 def s3_grace_warp(
     lines: list[LogLine], bundle: Bundle
 ) -> tuple[list[Finding], list[dict[str, Any]]]:
@@ -1400,6 +1445,7 @@ def s3_grace_warp(
             findings.append(_warp(only, line, "medium", title, "server clock", since_s))
         else:
             unattributed.append({"line": line, "candidates": [r.id for r, _ in stays]})
+    _share_graces(findings, bundle)
     return findings, unattributed
 
 
@@ -1425,6 +1471,31 @@ def evaluate(
     findings += s7_platform(bundle)
     grace, unattributed = s3_grace_warp(lines, bundle)
     return findings + grace, unattributed
+
+
+def severity(finding: Finding) -> float:
+    """How grave a finding is against others of its signature: lower is graver."""
+    evidence = finding.evidence
+    if finding.signature == "deaths_stop":
+        return float(evidence.get("p_zero", 1.0))
+    if finding.signature == "impossible_traversal":
+        return float(evidence.get("ratio", 1.0))
+    if finding.signature == "save_restore":
+        return -float(evidence.get("erased_min_s", 0.0))
+    return 1.0
+
+
+def order_findings(findings: list[Finding]) -> list[Finding]:
+    """Strongest first, then by signature, then gravest first."""
+    return sorted(
+        findings,
+        key=lambda f: (
+            STRENGTHS.index(f.strength),
+            SIGNATURE_ORDER.index(f.signature),
+            severity(f),
+            f.players[:1],
+        ),
+    )
 
 
 def is_target(finding: Finding, bundle: Bundle) -> bool:
@@ -1553,21 +1624,35 @@ def render_markdown(
         "",
         "## Players",
         "",
-        "| player | strongest | signatures |",
-        "| ------ | --------- | ---------- |",
+        "Players with strong findings in several signatures first; strong and medium",
+        "count the findings of each strength.",
+        "",
+        "| player | strongest | strong | medium | signatures |",
+        "| ------ | --------- | ------ | ------ | ---------- |",
     ]
     by_player: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for finding in findings:
         key = _label(finding["players"][0]) if finding["players"] else "(platform)"
         by_player[key].append(finding)
-    order = sorted(
-        by_player,
-        key=lambda k: min(STRENGTHS.index(f["strength"]) for f in by_player[k]),
-    )
-    for key in order:
-        strongest = min(by_player[key], key=lambda f: STRENGTHS.index(f["strength"]))
-        names = ", ".join(sorted({f["signature"] for f in by_player[key]}))
-        lines.append(f"| {key} | {strongest['strength']} | {names} |")
+
+    def weight(items: list[dict[str, Any]]) -> tuple[int, int, int, int]:
+        strong = [f for f in items if f["strength"] == "strong"]
+        medium = [f for f in items if f["strength"] == "medium"]
+        return (
+            -len({f["signature"] for f in strong}),
+            -len(strong),
+            -len({f["signature"] for f in medium}),
+            -len(medium),
+        )
+
+    # Stable: within equal weights, the order of the gravest finding stands.
+    for key in sorted(by_player, key=lambda k: weight(by_player[k])):
+        items = by_player[key]
+        strongest = min(items, key=lambda f: STRENGTHS.index(f["strength"]))["strength"]
+        strong = sum(1 for f in items if f["strength"] == "strong")
+        medium = sum(1 for f in items if f["strength"] == "medium")
+        names = ", ".join(sorted({f["signature"] for f in items}))
+        lines.append(f"| {key} | {strongest} | {strong} | {medium} | {names} |")
     lines += ["", "## Findings", ""]
     for finding in findings:
         who = ", ".join(_label(p) for p in finding["players"]) or "(platform)"
@@ -1650,9 +1735,8 @@ def main(argv: list[str] | None = None) -> int:
 
     findings, unattributed = evaluate(bundle, lines)
     rates = base_rates(findings, bundle)
-    selected = [f for f in findings if in_scope(f, scope, bundle, player_id)]
-    selected.sort(
-        key=lambda f: (STRENGTHS.index(f.strength), f.signature, f.players[:1])
+    selected = order_findings(
+        [f for f in findings if in_scope(f, scope, bundle, player_id)]
     )
     times = log_times(lines)
     rendered = [_finding_json(f, bundle, identities, times) for f in selected]
