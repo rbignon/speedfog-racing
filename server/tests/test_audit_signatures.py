@@ -417,14 +417,22 @@ def test_s1_player_ratio_lowers_the_expectation():
     assert _s1(make_run(_s1_history(3), rid="careful"), _field(), ratio=0.05) == []
 
 
-def test_death_ratios_use_the_players_other_runs():
-    runs = [make_run(_s1_history(0), rid=f"mine{i}", user="me") for i in range(3)]
+def test_death_ratios_use_the_players_history_runs():
+    runs = [make_run(_s1_history(0), rid=f"old{i}", user="me", target=False) for i in range(3)]
     subject = make_run(_s1_history(3), rid="subject", user="me")
     bundle = make_bundle([subject, *runs, *_field()], {"s1": S1_GRAPH})
     ratios = sig.death_ratios(bundle, sig.build_references(bundle))
-    # The player's three other runs had no death at all: their ratio is 0.
+    # The player's three history runs had no death at all: their ratio is 0.
     assert ratios["subject"] == 0.0
-    assert ratios["o0"] == 1.0  # fewer than 3 other runs: neutral
+    assert ratios["o0"] == 1.0  # fewer than 3 history runs: neutral
+
+
+def test_death_ratios_leave_the_players_other_runs_under_review_out():
+    # Those may be cheated too: they must not lower the player's expectation.
+    runs = [make_run(_s1_history(0), rid=f"new{i}", user="me") for i in range(3)]
+    subject = make_run(_s1_history(3), rid="subject", user="me")
+    bundle = make_bundle([subject, *runs, *_field()], {"s1": S1_GRAPH})
+    assert sig.death_ratios(bundle, sig.build_references(bundle))["subject"] == 1.0
 
 
 # --- S4 save_restore ---------------------------------------------------------

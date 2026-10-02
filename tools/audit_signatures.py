@@ -565,19 +565,28 @@ def expected_deaths(
 
 
 def death_ratios(bundle: Bundle, refs: References) -> dict[str, float]:
-    """Per run, the player's actual over expected deaths on their other runs (1 if too few)."""
-    per_user: dict[str, list[tuple[str, int, float]]] = defaultdict(list)
+    """Per run, the player's actual over expected deaths on their history runs (1 if too few).
+
+    Runs under review are left out: they may be cheated too.
+    """
+    per_user: dict[str, list[tuple[str, int, float, bool]]] = defaultdict(list)
     for run in bundle.runs:
         if not run.history:
             continue
         graph, pool = bundle.graph(run), bundle.pool(run)
         deaths = node_deaths(run)
         expected = sum(expected_deaths(n, graph, refs, run.id, pool) for n in deaths)
-        per_user[run.user_id].append((run.id, sum(deaths.values()), expected))
+        per_user[run.user_id].append(
+            (run.id, sum(deaths.values()), expected, run.is_target)
+        )
     ratios: dict[str, float] = {}
     for runs in per_user.values():
-        for run_id, _, _ in runs:
-            others = [(a, x) for rid, a, x in runs if rid != run_id and x > 0]
+        for run_id, _, _, _ in runs:
+            others = [
+                (a, x)
+                for rid, a, x, target in runs
+                if rid != run_id and x > 0 and not target
+            ]
             if len(others) < S1_MIN_HISTORY_RUNS:
                 ratios[run_id] = 1.0
                 continue
