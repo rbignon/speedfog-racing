@@ -757,6 +757,32 @@ def test_s3_late_warp_inside_the_zone_is_not_flagged(tmp_path):
     assert ("medium", "p1") not in {(f.strength, f.run.id) for f in findings}
 
 
+def test_s3_warp_back_to_another_visited_node_is_not_inside_it():
+    # The server logs the zone query, then records the warp as a backtrack
+    # with the same in-game time and message id.
+    run = make_run(
+        [
+            e("start", 0, "spawn"),
+            e("a", 10, mid=5),
+            e("b", 60, mid=6),
+            e("a", 100, "backtrack", mid=7),
+        ]
+    )
+    line = sig.LogLine(
+        at=T0,
+        kind="grace_query",
+        race_id="r1",
+        participant_id="p1",
+        node="a",
+        grace="1",
+        igt_ms=100_000,
+        message_id=7,
+    )
+    bundle = make_bundle([run], {"s1": chain("start", "a", "b")}, races={"r1": {"id": "r1"}})
+    findings, _ = sig.s3_grace_warp([line], bundle)
+    assert findings == []
+
+
 def test_estimate_time_prefers_the_logs():
     bundle = _s3_bundle()
     run = bundle.runs[1]

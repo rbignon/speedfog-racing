@@ -1184,9 +1184,18 @@ def _run_by_message(bundle: Bundle, race_id: str, message_id: int | None) -> Run
     return None
 
 
-def _entered_at(run: Run, node: str, igt_ms: int) -> int | None:
-    """IGT of the entry into ``node`` if the runner is in it at ``igt_ms``."""
-    before = [entry for entry in run.history if int(entry["igt_ms"]) <= igt_ms]
+def _entered_at(run: Run, node: str, igt_ms: int, message_id: int | None) -> int | None:
+    """IGT of the entry into ``node`` if the runner was in it when the query came.
+
+    A query that moved the runner is recorded as an entry carrying its message
+    id: that entry and the ones after it are not where the runner was.
+    """
+    before: list[dict[str, Any]] = []
+    for entry in run.history:
+        if message_id is not None and entry.get("message_id") == message_id:
+            break
+        if int(entry["igt_ms"]) <= igt_ms:
+            before.append(entry)
     if not before or before[-1]["node_id"] != node:
         return None
     for entry in reversed(before):
@@ -1266,7 +1275,7 @@ def s3_grace_warp(
             findings.append(_warp(run, line, "strong", title, attribution))
             continue
         if run is not None and line.igt_ms is not None:
-            entered = _entered_at(run, line.node or "", line.igt_ms)
+            entered = _entered_at(run, line.node or "", line.igt_ms, line.message_id)
             if entered is None or line.igt_ms - entered >= S3_RECENT_ENTRY_MS:
                 continue
             since = (line.igt_ms - entered) / 1000
