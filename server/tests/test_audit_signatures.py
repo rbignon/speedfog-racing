@@ -233,6 +233,21 @@ def test_load_bundle_reads_runs_and_reduces_graphs(tmp_path):
     assert bundle.graphs["s1"].nodes == {"a": {"type": "start", "layer": 0, "exits": []}}
 
 
+def test_a_join_time_stamped_by_the_migration_is_unknown(tmp_path):
+    row = {"race_id": "r1", "user_id": "u1", "status": "finished", "zone_history": []}
+    root = write_bundle(
+        tmp_path / "bundle",
+        races=[{"id": "r1", "seed_id": "s1"}],
+        participants=[
+            # Older participants got the instant the created_at column was added.
+            {**row, "id": "old", "created_at": "2026-04-26T18:30:24.285100+00:00"},
+            {**row, "id": "new", "created_at": "2026-04-26T18:40:00+00:00"},
+        ],
+    )
+    old, new = sig.load_bundle(root).runs
+    assert (old.created_at, new.created_at) == (None, datetime(2026, 4, 26, 18, 40, tzinfo=UTC))
+
+
 def test_a_disqualified_run_is_audited_on_what_it_did(tmp_path):
     root = write_bundle(
         tmp_path / "bundle",

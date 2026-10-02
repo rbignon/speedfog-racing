@@ -58,6 +58,9 @@ MAJOR_TYPES = frozenset({"major_boss", "final_boss"})
 STRENGTHS = ("strong", "medium", "weak", "info")
 # The only node fields the signatures read: graphs are reduced to them on load.
 GRAPH_NODE_KEYS = ("type", "layer", "boss_name", "entrances", "exits")
+# participants.created_at (the join time) was added on 2026-04-26, stamping
+# every older participant with that instant (production): their join is unknown.
+JOINS_UNKNOWN_UNTIL = datetime(2026, 4, 26, 18, 30, 24, 285100, tzinfo=UTC)
 
 # S1 deaths_stop
 S1_MIN_STRUGGLE_DEATHS = 2
@@ -226,6 +229,7 @@ def load_bundle(path: Path) -> Bundle:
     runs: list[Run] = []
     for row in read_jsonl(data / "participants.jsonl"):
         race = races.get(str(row["race_id"]), {})
+        joined = parse_time(row.get("created_at"))
         # A disqualified run is audited on what it did, not on the sanction.
         disqualified = row["status"] == "disqualified"
         status = row.get("status_before_disqualification") if disqualified else None
@@ -237,7 +241,7 @@ def load_bundle(path: Path) -> Bundle:
                 race_id=str(row["race_id"]),
                 seed_id=race.get("seed_id"),
                 status=str(status or row["status"]),
-                created_at=parse_time(row.get("created_at")),
+                created_at=joined if joined and joined > JOINS_UNKNOWN_UNTIL else None,
                 finished_at=parse_time(row.get("finished_at")),
                 last_igt_change_at=parse_time(row.get("last_igt_change_at")),
                 igt_ms=int(row.get("igt_ms") or 0),
