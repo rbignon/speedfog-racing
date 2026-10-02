@@ -36,12 +36,13 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import statistics
 from bisect import bisect_left
 from collections import Counter, defaultdict
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -70,6 +71,10 @@ S2_STRONG_MIN_REFS = 50
 S2_MEDIUM_RATIO = 0.85
 S2_STRONG_RATIO = 0.75
 S2_LOOSE_MIN_REFS = 30
+# S3 grace_warp
+S3_RECENT_ENTRY_MS = 120_000
+S3_BACKTRACK_WINDOW_S = 2
+S3_CANDIDATE_SLACK = timedelta(minutes=5)
 # S4 save_restore
 S4_DODGE_MS = 60_000
 # S5 layer_jump
@@ -1000,3 +1005,275 @@ def s8_debug_flags(run: Run) -> list[Finding]:
             )
         )
     return findings
+
+
+@dataclass(frozen=True)
+class LogLine:
+    at: datetime
+    kind: str  # "grace_query", "unvisited", "backtrack" or "event_flag"
+    race_id: str
+    participant_id: str | None
+    node: str | None
+    grace: str | None
+    igt_ms: int | None
+    message_id: int | None
+
+
+JOURNAL_ISO = re.compile(
+    r"^(?P<iso>\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:[.,]\d+)?(?:Z|[+-]\d\d:?\d\d))\s"
+)
+PY_RECORD = re.compile(
+    r"(?P<ts>\d{4}-\d\d-\d\d \d\d:\d\d:\d\d),\d{3} - speedfog_racing\.websocket\.handler"
+    r" - [A-Z]+ - (?P<msg>.*?)\s*$"
+)
+# Since 2026-10-01 mod lines end with "race=R participant=P" ("race=R" before auth);
+# before, with "entity=R" (the race). Solo sessions use "training=T" and never match.
+_REF = r"(?:race=(?P<race>\S+)(?: participant=(?P<participant>\S+))?|entity=(?P<entity>\S+))"
+GRACE_QUERY = re.compile(
+    r"^zone_query: node_id=(?P<node>\S+) strategy=(?P<strategy>\S+) candidates=\S+"
+    r" grace=(?P<grace>\S+) map_id=\S+(?: igt_ms=(?P<igt>\S+) message_id=(?P<mid>\S+))? "
+    + _REF
+    + "$"
+)
+UNVISITED = re.compile(
+    r"^zone_query resolved to unvisited node via grace: node=(?P<node>\S+)"
+    r" grace_entity_id=(?P<grace>\S+) " + _REF + r" message_id=(?P<mid>\S+)$"
+)
+BACKTRACK = re.compile(
+    r"^zone_query backtrack: \S+ -> (?P<node>\S+)(?: message_id=(?P<mid>\S+))?"
+    r" (?:for (?P<old>\S+)|" + _REF + ")$"
+)
+EVENT_FLAG = re.compile(r"^event_flag: .*?message_id=(?P<mid>\d+) " + _REF + "$")
+LOG_PATTERNS = (
+    ("grace_query", GRACE_QUERY),
+    ("unvisited", UNVISITED),
+    ("backtrack", BACKTRACK),
+    ("event_flag", EVENT_FLAG),
+)
+
+
+def _int(value: str | None) -> int | None:
+    return int(value) if value and value.lstrip("-").isdigit() else None
+
+
+def _iso(value: str) -> datetime:
+    value = value.replace(",", ".").replace("Z", "+00:00")
+    if re.search(r"[+-]\d{4}$", value):
+        value = f"{value[:-2]}:{value[-2:]}"
+    return datetime.fromisoformat(value)
+
+
+def _parse_message(message: str, at: datetime) -> LogLine | None:
+    for kind, pattern in LOG_PATTERNS:
+        match = pattern.match(message)
+        if match is None:
+            continue
+        groups = match.groupdict()
+        race = groups.get("race") or groups.get("entity") or groups.get("old")
+        if not race:
+            return None
+        if kind == "grace_query" and (
+            groups.get("strategy") != "grace" or _int(groups.get("grace")) is None
+        ):
+            return None  # only warps through the grace menu carry a grace
+        return LogLine(
+            at=at,
+            kind=kind,
+            race_id=race,
+            participant_id=groups.get("participant"),
+            node=groups.get("node"),
+            grace=groups.get("grace"),
+            igt_ms=_int(groups.get("igt")),
+            message_id=_int(groups.get("mid")),
+        )
+    return None
+
+
+def parse_logs(paths: Iterable[Path], utc_offset_hours: float = 0.0) -> list[LogLine]:
+    """The server's mod log lines that the signatures read, oldest first."""
+    offset = timezone(timedelta(hours=utc_offset_hours))
+    lines: list[LogLine] = []
+    for path in paths:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            for raw in handle:
+                record = PY_RECORD.search(raw)
+                if record is None:
+                    continue
+                journal = JOURNAL_ISO.match(raw)
+                if journal:
+                    at = _iso(journal["iso"])
+                else:
+                    at = datetime.fromisoformat(record["ts"]).replace(tzinfo=offset)
+                parsed = _parse_message(record["msg"], at.astimezone(UTC))
+                if parsed is not None:
+                    lines.append(parsed)
+    lines.sort(key=lambda line: line.at)
+    return lines
+
+
+def log_times(lines: Iterable[LogLine]) -> dict[tuple[str, int], datetime]:
+    """Server time of each (race, message id) the logs name."""
+    return {
+        (line.race_id, line.message_id): line.at
+        for line in lines
+        if line.message_id is not None
+    }
+
+
+def estimate_time(
+    run: Run, index: int, times: Mapping[tuple[str, int], datetime]
+) -> tuple[datetime | None, str]:
+    """When an entry happened: from the logs, else from the game's launch on the player's clock."""
+    entry = run.history[index]
+    mid = entry.get("message_id")
+    if run.race_id and mid is not None and (run.race_id, int(mid)) in times:
+        return times[(run.race_id, int(mid))], "server log"
+    for process in split_processes(run.history):
+        if index not in process.entries:
+            continue
+        first = next(
+            (
+                i
+                for i in process.entries
+                if run.history[i].get("message_id") is not None
+            ),
+            None,
+        )
+        if first is None:
+            break
+        since_first = (
+            int(entry["igt_ms"]) - int(run.history[first]["igt_ms"])
+        ) / IGT_SCALE
+        launch = datetime.fromtimestamp(process.launch_ms / 1000, UTC)
+        return launch + timedelta(
+            milliseconds=since_first
+        ), "estimate from the player's clock"
+    return None, "unknown"
+
+
+def _run_by_message(bundle: Bundle, race_id: str, message_id: int | None) -> Run | None:
+    if message_id is None:
+        return None
+    runs = bundle.race_runs(race_id)
+    for run in runs:
+        if any(entry.get("message_id") == message_id for entry in run.history):
+            return run
+    for run in runs:
+        for process in split_processes(run.history):
+            ids = [
+                int(run.history[i]["message_id"])
+                for i in process.entries
+                if run.history[i].get("message_id") is not None
+            ]
+            if ids and min(ids) <= message_id <= max(ids) + PROCESS_GAP:
+                return run
+    return None
+
+
+def _entered_at(run: Run, node: str, igt_ms: int) -> int | None:
+    """IGT of the entry into ``node`` if the runner is in it at ``igt_ms``."""
+    before = [entry for entry in run.history if int(entry["igt_ms"]) <= igt_ms]
+    if not before or before[-1]["node_id"] != node:
+        return None
+    for entry in reversed(before):
+        if entry["node_id"] == node and entry_type(entry) in ("fog", "spawn"):
+            return int(entry["igt_ms"])
+    return None
+
+
+def _maybe_in(run: Run, line: LogLine) -> bool:
+    """Whether the run's estimated stay in the line's node covers the line's time."""
+    history = run.history
+    for index, entry in enumerate(history):
+        if entry["node_id"] != line.node:
+            continue
+        start, _ = estimate_time(run, index, {})
+        if start is None:
+            continue
+        stop = (
+            estimate_time(run, index + 1, {})[0]
+            if index + 1 < len(history)
+            else run.end
+        )
+        stop = stop or start
+        if start - S3_CANDIDATE_SLACK <= line.at <= stop + S3_CANDIDATE_SLACK:
+            return True
+    return False
+
+
+def _warp(
+    run: Run, line: LogLine, strength: str, title: str, attribution: str
+) -> Finding:
+    return Finding(
+        signature="grace_warp",
+        strength=strength,
+        title=title,
+        run=run,
+        evidence={
+            "log_time": line.at.isoformat(),
+            "node": line.node,
+            "grace": line.grace,
+            "igt_s": round(line.igt_ms / 1000, 1) if line.igt_ms is not None else None,
+            "message_id": line.message_id,
+            "attribution": attribution,
+        },
+    )
+
+
+def s3_grace_warp(
+    lines: list[LogLine], bundle: Bundle
+) -> tuple[list[Finding], list[dict[str, Any]]]:
+    """Warps through the grace menu that a legitimate run cannot make (race runs only)."""
+    participants = {run.id: run for run in bundle.runs if run.kind == "race"}
+    backtracks: dict[str, list[datetime]] = defaultdict(list)
+    for line in lines:
+        if line.kind == "backtrack":
+            backtracks[line.race_id].append(line.at)
+    findings: list[Finding] = []
+    unattributed: list[dict[str, Any]] = []
+    for line in lines:
+        if line.race_id not in bundle.races or line.kind not in (
+            "unvisited",
+            "grace_query",
+        ):
+            continue
+        run = participants.get(line.participant_id or "")
+        if line.kind == "unvisited":
+            attribution = "participant"
+            if run is None:
+                run, attribution = (
+                    _run_by_message(bundle, line.race_id, line.message_id),
+                    "message id",
+                )
+            if run is None:
+                unattributed.append({"line": line, "candidates": []})
+                continue
+            title = f"warp to {line.node}, never visited, through grace {line.grace}"
+            findings.append(_warp(run, line, "strong", title, attribution))
+            continue
+        if run is not None and line.igt_ms is not None:
+            entered = _entered_at(run, line.node or "", line.igt_ms)
+            if entered is None or line.igt_ms - entered >= S3_RECENT_ENTRY_MS:
+                continue
+            since = (line.igt_ms - entered) / 1000
+            title = f"warp inside {line.node}, {since:.0f} s after entering it"
+            findings.append(_warp(run, line, "medium", title, "participant"))
+            continue
+        # Old format: no participant and no in-game time. A warp to another node is
+        # followed by its backtrack line (and seen by S5); keep the in-zone ones.
+        if any(
+            0 <= (at - line.at).total_seconds() <= S3_BACKTRACK_WINDOW_S
+            for at in backtracks[line.race_id]
+        ):
+            continue
+        candidates = [r for r in bundle.race_runs(line.race_id) if _maybe_in(r, line)]
+        if len(candidates) == 1:
+            title = f"warp inside {line.node} (attributed by estimated time)"
+            findings.append(
+                _warp(candidates[0], line, "medium", title, "estimated time")
+            )
+        else:
+            unattributed.append(
+                {"line": line, "candidates": [r.id for r in candidates]}
+            )
+    return findings, unattributed

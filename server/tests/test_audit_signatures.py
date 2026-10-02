@@ -644,3 +644,100 @@ def test_s6_rank_leaves_other_disqualified_runs_out():
     bundle.runs[1].disqualified = True
     (finding,) = sig.s6_fresh_account(subject, bundle, {"new": 1})
     assert (finding.evidence["rank"], finding.evidence["finishers"]) == (1, 7)
+
+
+# --- logs and S3 grace_warp ---------------------------------------------------
+
+LOGS = """\
+2026-10-02T18:01:58+0000 host uvicorn[1]: 2026-10-02 18:01:58,100 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 igt_ms=40000 message_id=7 race=r1 participant=p1
+2026-10-02T18:02:30+0000 host uvicorn[1]: 2026-10-02 18:02:30,100 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 race=r1 participant=p1 message_id=9
+2026-09-28 12:27:20,000 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 entity=r2 message_id=1790598300003
+2026-09-28 12:29:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
+2026-09-28 12:40:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
+2026-09-28 12:40:01,000 - speedfog_racing.websocket.handler - INFO - zone_query backtrack: b -> c for r2
+2026-09-28 12:41:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 training=t1
+2026-09-28 12:42:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=map candidates=- grace=None map_id=m11 igt_ms=1 message_id=2 race=r1 participant=p1
+garbage line
+2026-09-28 12:43:00,000 - speedfog_racing.other - INFO - zone_query: node_id=c strategy=grace
+"""  # noqa: E501 (server log lines, verbatim)
+
+
+def test_parse_logs_reads_both_formats_and_skips_the_rest(tmp_path):
+    path = tmp_path / "server.log"
+    path.write_text(LOGS)
+    lines = sig.parse_logs([path], utc_offset_hours=2)
+    kinds = [(line.kind, line.race_id, line.participant_id) for line in lines]
+    assert kinds == [
+        ("unvisited", "r2", None),
+        ("grace_query", "r2", None),
+        ("grace_query", "r2", None),
+        ("backtrack", "r2", None),
+        ("grace_query", "r1", "p1"),
+        ("unvisited", "r1", "p1"),
+    ]
+    # Journal ISO prefix wins; otherwise the Python timestamp with the given offset.
+    assert lines[-1].at == datetime(2026, 10, 2, 18, 2, 30, tzinfo=UTC)
+    assert lines[0].at == datetime(2026, 9, 28, 10, 27, 20, tzinfo=UTC)
+    assert (lines[-2].igt_ms, lines[-2].message_id) == (40000, 7)
+
+
+OLD_LAUNCH = int(datetime(2026, 9, 28, 12, 25, tzinfo=UTC).timestamp() * 1000)
+assert OLD_LAUNCH == 1_790_598_300_000  # the message ids in LOGS derive from it
+
+
+def _s3_bundle() -> Any:
+    graph = chain("start", "l1", "b", "c", "l4", "l5")
+    new = make_run(
+        [e("start", 0, "spawn"), e("b", 10, mid=5), e("c", 20, mid=6)],
+        rid="p1",
+        user="u1",
+        race="r1",
+    )
+    # In c from IGT 270 s, which the player's clock puts at 12:29:10 UTC
+    # (launch 12:25:00 + (270 - 30) / 0.96 s); the 12:29:00 log line falls inside.
+    old = make_run(
+        [
+            e("start", 0, "spawn"),
+            e("b", 30, mid=OLD_LAUNCH + 1),
+            e("c", 270, mid=OLD_LAUNCH + 2),
+            e("l5", 280, "backtrack", mid=OLD_LAUNCH + 3),
+        ],
+        rid="p2",
+        user="u2",
+        race="r2",
+    )
+    races = {"r1": {"id": "r1"}, "r2": {"id": "r2"}}
+    return make_bundle([new, old], {"s1": graph}, races=races)
+
+
+def test_s3_findings_and_attribution(tmp_path):
+    path = tmp_path / "server.log"
+    path.write_text(LOGS)
+    findings, unattributed = sig.s3_grace_warp(sig.parse_logs([path]), _s3_bundle())
+    got = sorted((f.strength, f.run.id, f.evidence.get("attribution")) for f in findings)
+    assert got == [
+        ("medium", "p1", "participant"),  # warp in c, 20 s after entering it
+        ("medium", "p2", "estimated time"),  # old format, single candidate by time
+        ("strong", "p1", "participant"),
+        ("strong", "p2", "message id"),
+    ]
+    assert unattributed == []  # the 12:40 line is followed by a backtrack: a warp elsewhere
+
+
+def test_s3_late_warp_inside_the_zone_is_not_flagged(tmp_path):
+    late = LOGS.replace("igt_ms=40000", "igt_ms=200000")
+    path = tmp_path / "server.log"
+    path.write_text(late)
+    findings, _ = sig.s3_grace_warp(sig.parse_logs([path]), _s3_bundle())
+    assert ("medium", "p1") not in {(f.strength, f.run.id) for f in findings}
+
+
+def test_estimate_time_prefers_the_logs():
+    bundle = _s3_bundle()
+    run = bundle.runs[1]
+    at, source = sig.estimate_time(run, 2, {})
+    # The first message id (launch + 1 ms) stands for the launch.
+    assert source.startswith("estimate")
+    assert at == datetime(2026, 9, 28, 12, 29, 10, 1000, tzinfo=UTC)
+    at, source = sig.estimate_time(run, 2, {("r2", run.history[2]["message_id"]): T0})
+    assert (at, source) == (T0, "server log")
