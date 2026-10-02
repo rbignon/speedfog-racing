@@ -117,7 +117,7 @@ journalctl -u speedfog-racing --since "2026-09-23 08:00" --until "2026-10-08 08:
 | signature                 | what it flags                                                                                      | strength                                               |
 | ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | S1 `deaths_stop`          | 2+ deaths in a node, then no death over 10+ layers and 3+ major bosses, against expected deaths    | strong p < 0.001, medium p < 0.01                      |
-| S2 `impossible_traversal` | a clean traversal under the fastest other run through the same gates against the same boss         | medium < 0.85 x floor, strong < 0.75 x (50+)           |
+| S2 `impossible_traversal` | a first, clean traversal under the fastest other run through the same gates against the same boss  | medium < 0.85 x floor, strong < 0.75 x (50+)           |
 | S3 `grace_warp`           | (logs) a grace warp to an unvisited node, or into the node entered less than 120 s before          | strong, medium                                         |
 | S4 `save_restore`         | a game restart that brings the in-game time back down, with the erased time and its rank effect    | medium if the rank changes, else info; weak under 60 s |
 | S5 `layer_jump`           | a fog skipping layers (sequence break or lost messages), a position change into an unvisited node  | medium or weak; strong or medium                       |

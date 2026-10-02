@@ -177,6 +177,7 @@ was made. Changes that affect the data, as of the export:
 
 | date       | change                                                                                                                         |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-04-26 | participants' `created_at` appears: older participants carry the instant the field was added (18:30 UTC), not their join time  |
 | 2026-05-28 | weapons start being tracked; quit-outs become allowed by the rules                                                             |
 | 2026-06-21 | bosses drop a much wider choice of weapons, in every pool                                                                      |
 | 2026-07-26 | quit-out penalty                                                                                                               |

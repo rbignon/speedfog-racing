@@ -13,8 +13,9 @@ Signatures (thresholds are the constants below):
     S1 deaths_stop           a death loop (2+ deaths in a node), then no death
                              at all over a long tail, against the deaths
                              expected there
-    S2 impossible_traversal  a clean traversal faster than every other run
-                             through the same gates against the same boss
+    S2 impossible_traversal  a node's first clean traversal, faster than every
+                             other run through the same gates against the same
+                             boss
     S3 grace_warp            (logs) a warp through the grace menu to an
                              unvisited node, or into the node just entered
     S4 save_restore          a game restart that brings the in-game time back
