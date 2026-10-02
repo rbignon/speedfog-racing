@@ -72,5 +72,7 @@ dlc = true
 item_preset = true
 allcraft = true
 
-[plugin.summer]
-enabled = false
+[plugin.halloween]
+enabled = true
+ambushes = false
+greeters = false
