@@ -47,7 +47,21 @@ def _graph(tag: str) -> dict[str, Any]:
     return {
         "total_layers": 2,
         "nodes": {
-            f"start_{tag}": {"type": "start", "layer": 0, "tier": 1, "exits": [{"to": f"b_{tag}"}]},
+            f"start_{tag}": {
+                "type": "start",
+                "layer": 0,
+                "tier": 1,
+                "exits": [
+                    {
+                        "fog_id": "AEG099_001_9000",
+                        "text": f"out of start_{tag}",
+                        "from": f"start_{tag}",
+                        "from_text": "Start",
+                        "to": f"b_{tag}",
+                    }
+                ],
+                "entrances": [],
+            },
             f"b_{tag}": {
                 "type": "final_boss",
                 "layer": 1,
@@ -55,6 +69,14 @@ def _graph(tag: str) -> dict[str, Any]:
                 "display_name": "Vanilla boss",
                 "boss_name": f"Boss {tag}",
                 "exits": [],
+                "entrances": [
+                    {
+                        "text": f"into b_{tag}",
+                        "from": f"start_{tag}",
+                        "to": f"b_{tag}",
+                        "to_text": "B",
+                    }
+                ],
             },
         },
         "edges": [{"from": f"start_{tag}", "to": f"b_{tag}"}],
@@ -316,7 +338,19 @@ async def test_target_seeds_keep_their_whole_graph(maker, tmp_path):
         graph = seeds[tag]["graph"]
         assert seeds[tag]["graph_is_full"] is False
         assert "event_map" not in graph
-        assert graph["nodes"][f"start_{tag}"] == {"type": "start", "layer": 0, "tier": 1}
+        assert graph["nodes"][f"start_{tag}"] == {
+            "type": "start",
+            "layer": 0,
+            "tier": 1,
+            "exits": [
+                {"fog_id": "AEG099_001_9000", "text": f"out of start_{tag}", "to": f"b_{tag}"}
+            ],
+            "entrances": [],
+        }
+        # Gates let traversals be compared gate to gate across seeds.
+        assert graph["nodes"][f"b_{tag}"]["entrances"] == [
+            {"text": f"into b_{tag}", "from": f"start_{tag}"}
+        ]
         # Bosses are randomized per seed: the compact graph keeps the real one.
         assert graph["nodes"][f"b_{tag}"]["boss_name"] == f"Boss {tag}"
         assert graph["edges"] == [{"from": f"start_{tag}", "to": f"b_{tag}"}]

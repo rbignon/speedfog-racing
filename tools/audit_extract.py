@@ -70,9 +70,9 @@ WEAPONS_JSON = REPO_ROOT / "server" / "data" / "weapons.json"
 IDENTITIES_DIR = Path.home() / ".speedfog-audit"
 
 # Node fields kept for the seeds of history runs: enough to place a zone in
-# its layer, know what kind of zone it is, and which boss stands there (bosses
-# are randomized per seed; display_name is the vanilla label). Target seeds
-# keep their whole graph.
+# its layer, know what kind of zone it is, which boss stands there (bosses
+# are randomized per seed; display_name is the vanilla label), and through
+# which gates a run came in and went out. Target seeds keep their whole graph.
 COMPACT_NODE_KEYS = (
     "type",
     "layer",
@@ -173,7 +173,17 @@ def compact_graph(graph: Mapping[str, Any] | None) -> dict[str, Any] | None:
     return {
         "total_layers": graph.get("total_layers"),
         "nodes": {
-            node_id: {k: node[k] for k in COMPACT_NODE_KEYS if k in node}
+            node_id: {
+                **{k: node[k] for k in COMPACT_NODE_KEYS if k in node},
+                "exits": [
+                    {k: gate.get(k) for k in ("fog_id", "text", "to")}
+                    for gate in node.get("exits") or []
+                ],
+                "entrances": [
+                    {k: gate.get(k) for k in ("text", "from")}
+                    for gate in node.get("entrances") or []
+                ],
+            }
             for node_id, node in nodes.items()
         },
         "edges": [{"from": e["from"], "to": e["to"]} for e in graph.get("edges") or []],

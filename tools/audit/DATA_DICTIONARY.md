@@ -113,16 +113,21 @@ platform works at the time of the export:
 - **Web race page, as transmitted.** Every browser that opens a race page,
   logged in or not, racing or not, receives the full seed graph and every
   participant's zone history over the page's WebSocket. The hiding above is
-  done by the page itself, and the page exposes a console helper
-  (`__debugDagFull()`) that displays the full map. Anyone with the page open
-  can therefore know the whole graph and the other runners' paths and times.
+  done by the page itself. Until the deploy that followed 2026-10-01, the page
+  also exposed a console helper (`__debugDagFull()`) that displayed the full
+  map; the data itself still reaches every browser after it. Anyone with the
+  page open can therefore know the whole graph and the other runners' paths
+  and times.
 - **In game.** The overlay leaderboard shows each runner's status, layer, IGT
   and deaths. On a synchronous race, the mod receives every runner's live
   state, current zone included. On an asynchronous race, it receives the other
   runners "projected" to the viewer's own IGT: each appears where their own
   run was when their IGT matched the viewer's. Zones appear only in the mod's
   debug panel, which lists every participant's current zone; its hotkey is
-  unset by default and can be set in the mod's local config file.
+  unset by default and can be set in the mod's local config file. From the
+  first mod release after 2026-10-01 the panel exists only in debug builds,
+  but a seed pack carries the mod of its generation, so seeds generated
+  before that release keep it.
 - **Chat.** Each race has two channels. `participants` is readable by users
   with a role in the race (participant, organizer, caster) and by admins.
   `public` is closed during `setup` and for active racers; it opens to a
@@ -326,7 +331,8 @@ except in the pools whose graphs carry a `class_loadout`.
 
 For the other seeds (history races and all solo sessions), `graph` keeps only
 the structure: `total_layers`, `nodes` (`type`, `layer`, `tier`,
-`display_name`, `zones`, `boss_name`, `randomized_bosses`), `edges`,
+`display_name`, `zones`, `boss_name`, `randomized_bosses`, and the gates:
+`exits` as `{fog_id, text, to}`, `entrances` as `{text, from}`), `edges`,
 `care_package`, `weapon_upgrade`.
 
 ### Other files
