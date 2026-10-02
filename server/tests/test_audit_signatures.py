@@ -740,8 +740,7 @@ def _s3_bundle() -> Any:
         user="u1",
         race="r1",
     )
-    # In c from IGT 270 s, which the player's clock puts at 12:29:10 UTC
-    # (launch 12:25:00 + (270 - 30) / 0.96 s); the 12:29:00 log line falls inside.
+    # In c from IGT 270 s: its entry line (12:28:50) puts the 12:29:00 warp 10 s later.
     old = make_run(
         [
             e("start", 0, "spawn"),
@@ -768,7 +767,7 @@ def test_s3_findings_and_attribution(tmp_path):
         ("strong", "p1", "participant"),
         ("strong", "p2", "message id"),
     ]
-    assert unattributed == []  # the 12:40 line is followed by a backtrack: a warp elsewhere
+    assert unattributed == []  # nobody is in c at 12:40 any more
 
 
 def test_s3_late_warp_inside_the_zone_is_not_flagged(tmp_path):
@@ -839,6 +838,104 @@ def test_s3_old_format_lists_a_line_several_runs_could_have_made():
     ]
     findings, unattributed = sig.s3_grace_warp(lines, _zone_bundle(one, two))
     assert findings == [] and unattributed[0]["candidates"] == ["p1", "p2"]
+
+
+def test_s3_old_format_counts_a_runner_who_warped_back_into_the_zone():
+    # p1 arrived 30 s before the warp; p2 came back into the zone by a warp
+    # long ago (no entry line of its own) and could have made it as well.
+    one = make_run([e("start", 0, "spawn"), e("a", 100), e("b", 900)], rid="p1", race="r2")
+    two = make_run(
+        [e("start", 0, "spawn"), e("a", 10), e("b", 60), e("a", 70, "backtrack"), e("b", 900)],
+        rid="p2",
+        user="u2",
+        race="r2",
+    )
+    lines = [
+        _old(T0 - timedelta(minutes=10), "event_flag", "a", 10_000),
+        _old(T0 - timedelta(minutes=9), "event_flag", "b", 60_000),
+        _old(T0, "event_flag", "a", 100_000),
+        _old(T0 + timedelta(seconds=30), "grace_query", "a"),
+    ]
+    findings, unattributed = sig.s3_grace_warp(lines, _zone_bundle(one, two))
+    assert findings == [] and unattributed[0]["candidates"] == ["p1", "p2"]
+
+
+def test_s3_old_format_times_a_warp_back_by_its_own_line():
+    # p2's in-game time puts its warp back into the zone before p1's warp;
+    # its backtrack line says it came 10 s after: p1 was alone there.
+    one = make_run([e("start", 0, "spawn"), e("a", 100), e("b", 900)], rid="p1", race="r2")
+    two = make_run(
+        [e("start", 0, "spawn"), e("a", 10), e("b", 60), e("a", 70, "backtrack"), e("b", 900)],
+        rid="p2",
+        user="u2",
+        race="r2",
+    )
+    lines = [
+        _old(T0 - timedelta(minutes=10), "event_flag", "a", 10_000),
+        _old(T0 - timedelta(seconds=20), "event_flag", "b", 60_000),
+        _old(T0, "event_flag", "a", 100_000),
+        _old(T0 + timedelta(seconds=30), "grace_query", "a"),
+        sig.LogLine(
+            T0 + timedelta(seconds=40), "backtrack", "r2", None, "a", None, None, None, "b"
+        ),
+    ]
+    (finding,), _ = sig.s3_grace_warp(lines, _zone_bundle(one, two))
+    assert finding.run.id == "p1"
+
+
+def test_s3_old_format_counts_only_the_runners_in_the_zone_at_the_time():
+    left = make_run([e("start", 0, "spawn"), e("a", 100), e("b", 1000)], rid="gone", race="r2")
+    stays = make_run([e("start", 0, "spawn"), e("a", 50), e("b", 2000)], rid="in", race="r2")
+    later = make_run([e("start", 0, "spawn"), e("a", 70), e("b", 3000)], rid="later", race="r2")
+    lines = [
+        _old(T0, "event_flag", "a", 100_000),
+        _old(T0 + timedelta(seconds=5), "event_flag", "a", 50_000),
+        _old(T0 + timedelta(seconds=10), "event_flag", "b", 1_000_000),  # left by its own line
+        _old(T0 + timedelta(seconds=30), "grace_query", "a"),
+        _old(T0 + timedelta(seconds=60), "event_flag", "a", 70_000),  # arrived after the warp
+    ]
+    (finding,), unattributed = sig.s3_grace_warp(lines, _zone_bundle(left, stays, later))
+    assert (finding.run.id, finding.evidence["since_entry_s"], unattributed) == ("in", 25, [])
+
+
+def test_s3_old_format_keeps_a_runner_whose_in_game_time_went_back():
+    # A restart brought the IGT back: when the runner left the zone is unknown.
+    run = make_run(
+        [e("start", 0, "spawn"), e("a", 500), e("start", 400, "backtrack"), e("a", 600)],
+        rid="p2",
+        race="r2",
+    )
+    lines = [
+        _old(T0, "event_flag", "a", 500_000),
+        _old(T0 + timedelta(seconds=86), "grace_query", "a"),
+    ]
+    (finding,), _ = sig.s3_grace_warp(lines, _zone_bundle(run))
+    assert finding.evidence["since_entry_s"] == 86
+
+
+def test_s3_old_format_skips_a_warp_to_another_node():
+    run = make_run([e("start", 0, "spawn"), e("a", 10), e("b", 900)], rid="p2", race="r2")
+    lines = [
+        _old(T0, "event_flag", "a", 10_000),
+        _old(T0 + timedelta(seconds=30), "grace_query", "a"),
+        _old(T0 + timedelta(seconds=31), "backtrack", "b"),  # where the warp led
+    ]
+    assert sig.s3_grace_warp(lines, _zone_bundle(run)) == ([], [])
+
+
+def test_s3_warp_from_the_start_is_no_arrival():
+    run = make_run([e("start", 0, "spawn"), e("a", 500)], rid="p2", race="r2")
+    line = sig.LogLine(T0, "grace_query", "r2", "p2", "start", "9", 3000, None)
+    assert sig.s3_grace_warp([line], _zone_bundle(run)) == ([], [])
+
+
+def test_s3_line_naming_a_runner_outside_the_bundle_is_skipped():
+    run = make_run([e("start", 0, "spawn"), e("a", 10), e("b", 900)], rid="p2", race="r2")
+    lines = [
+        _old(T0, "event_flag", "a", 10_000),
+        sig.LogLine(T0 + timedelta(seconds=30), "grace_query", "r2", "p9", "a", "9", 130_000, 5),
+    ]
+    assert sig.s3_grace_warp(lines, _zone_bundle(run)) == ([], [])
 
 
 def test_estimate_time_prefers_the_logs():
