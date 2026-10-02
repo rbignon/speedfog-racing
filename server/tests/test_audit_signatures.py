@@ -348,3 +348,66 @@ def test_s2_without_a_graph_finds_nothing():
     run = _tunnel_run("cheat", 44)
     bundle = make_bundle([run], {})
     assert sig.s2_impossible_traversal(run, bundle.graph(run), sig.build_references(bundle)) == []
+
+
+# --- S1 deaths_stop ----------------------------------------------------------
+
+S1_NAMES = ["start", "first", *[f"n{i}" for i in range(1, 15)], "final"]
+S1_GRAPH = chain(*S1_NAMES, kinds={f"n{i}": "major_boss" for i in (2, 4, 6, 8, 10)})
+
+
+def _s1_history(struggle_deaths: int, tail_deaths: int = 0) -> list[dict[str, Any]]:
+    history = [e("start", 0, "spawn"), e("first", 10, deaths=struggle_deaths)]
+    for i, node in enumerate(S1_NAMES[2:], start=1):
+        history.append(e(node, 10 + 30 * i, deaths=tail_deaths if node == "n3" else 0))
+    return history
+
+
+def _field(n: int = 20) -> list[Any]:
+    """Other runs dying once in every node: about 15 expected deaths over the tail."""
+    runs = []
+    for i in range(n):
+        history = [e("start", 0, "spawn")]
+        history += [e(node, 10 * k, deaths=1) for k, node in enumerate(S1_NAMES[1:], start=1)]
+        runs.append(make_run(history, rid=f"o{i}", user=f"o{i}"))
+    return runs
+
+
+def _s1(subject: Any, others: list[Any], ratio: float = 1.0) -> list[Any]:
+    bundle = make_bundle([subject, *others], {"s1": S1_GRAPH})
+    refs = sig.build_references(bundle)
+    return sig.s1_deaths_stop(subject, S1_GRAPH, refs, None, ratio)
+
+
+def test_s1_flags_a_death_loop_followed_by_no_death_at_all():
+    (finding,) = _s1(make_run(_s1_history(3), rid="cheat"), _field())
+    assert finding.strength == "strong"
+    assert finding.evidence["struggle_node"] == "first"
+    assert finding.evidence["struggle_deaths"] == 3
+    assert finding.evidence["tail_major_bosses"] == 6  # five majors and the final boss
+    assert finding.evidence["p_zero"] < 0.001
+
+
+def test_s1_ignores_runs_without_a_struggle_or_with_tail_deaths():
+    assert _s1(make_run(_s1_history(0), rid="clean"), _field()) == []
+    assert _s1(make_run(_s1_history(3, tail_deaths=1), rid="human"), _field()) == []
+
+
+def test_s1_needs_a_long_enough_tail():
+    history = _s1_history(0)
+    history[-2]["deaths"] = 3  # the struggle is the last node before the final boss
+    assert _s1(make_run(history, rid="late"), _field()) == []
+
+
+def test_s1_player_ratio_lowers_the_expectation():
+    assert _s1(make_run(_s1_history(3), rid="careful"), _field(), ratio=0.05) == []
+
+
+def test_death_ratios_use_the_players_other_runs():
+    runs = [make_run(_s1_history(0), rid=f"mine{i}", user="me") for i in range(3)]
+    subject = make_run(_s1_history(3), rid="subject", user="me")
+    bundle = make_bundle([subject, *runs, *_field()], {"s1": S1_GRAPH})
+    ratios = sig.death_ratios(bundle, sig.build_references(bundle))
+    # The player's three other runs had no death at all: their ratio is 0.
+    assert ratios["subject"] == 0.0
+    assert ratios["o0"] == 1.0  # fewer than 3 other runs: neutral

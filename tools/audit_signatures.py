@@ -35,6 +35,8 @@ Usage:
 from __future__ import annotations
 
 import json
+import math
+import statistics
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterator, Mapping
@@ -54,6 +56,14 @@ STRENGTHS = ("strong", "medium", "weak", "info")
 # The only node fields the signatures read: graphs are reduced to them on load.
 GRAPH_NODE_KEYS = ("type", "layer", "boss_name", "entrances", "exits")
 
+# S1 deaths_stop
+S1_MIN_STRUGGLE_DEATHS = 2
+S1_MIN_TAIL_LAYERS = 10
+S1_MIN_TAIL_MAJORS = 3
+S1_MIN_RATE_VISITS = 10
+S1_MIN_HISTORY_RUNS = 3
+S1_STRONG_P = 0.001
+S1_MEDIUM_P = 0.01
 # S2 impossible_traversal
 S2_MIN_REFS = 20
 S2_STRONG_MIN_REFS = 50
@@ -514,3 +524,119 @@ def s2_impossible_traversal(run: Run, graph: Graph, refs: References) -> list[Fi
             )
         )
     return findings
+
+
+def expected_deaths(
+    node: str, graph: Graph, refs: References, run_id: str, pool: str | None
+) -> float:
+    """Mean deaths per visit of a node's boss key, else of its type in its pool."""
+    for samples in (
+        refs.node_deaths.get((node, graph.boss(node))),
+        refs.type_deaths.get((pool, graph.kind(node))),
+    ):
+        if samples is not None and samples.count(run_id) >= S1_MIN_RATE_VISITS:
+            return samples.mean(run_id) or 0.0
+    return 0.0
+
+
+def death_ratios(bundle: Bundle, refs: References) -> dict[str, float]:
+    """Per run, the player's actual over expected deaths on their other runs (1 if too few)."""
+    per_user: dict[str, list[tuple[str, int, float]]] = defaultdict(list)
+    for run in bundle.runs:
+        if not run.history:
+            continue
+        graph, pool = bundle.graph(run), bundle.pool(run)
+        deaths = node_deaths(run)
+        expected = sum(expected_deaths(n, graph, refs, run.id, pool) for n in deaths)
+        per_user[run.user_id].append((run.id, sum(deaths.values()), expected))
+    ratios: dict[str, float] = {}
+    for runs in per_user.values():
+        for run_id, _, _ in runs:
+            others = [(a, x) for rid, a, x in runs if rid != run_id and x > 0]
+            if len(others) < S1_MIN_HISTORY_RUNS:
+                ratios[run_id] = 1.0
+                continue
+            ratios[run_id] = sum(a for a, _ in others) / sum(x for _, x in others)
+    return ratios
+
+
+def _major_percentile(
+    run: Run, graph: Graph, refs: References, start: int, stop: int
+) -> float | None:
+    """Median percentile of the run's clean major-boss clears between two entry indexes."""
+    values: list[float] = []
+    for traversal in clean_traversals(run, graph):
+        if (
+            not start <= traversal.index < stop
+            or graph.kind(traversal.node) not in MAJOR_TYPES
+        ):
+            continue
+        samples = refs.boss.get(traversal.boss_key)
+        if samples is None or samples.count(run.id) < S1_MIN_RATE_VISITS:
+            continue
+        values.append(100 * samples.below(traversal.ms, run.id) / samples.count(run.id))
+    return round(statistics.median(values), 1) if values else None
+
+
+def s1_deaths_stop(
+    run: Run, graph: Graph, refs: References, pool: str | None, ratio: float
+) -> list[Finding]:
+    """A death loop, then a long tail without a single death, against what was expected."""
+    history = run.history
+    deaths = node_deaths(run)
+    first: dict[str, int] = {}
+    last: dict[str, int] = {}
+    for index, entry in enumerate(history):
+        first.setdefault(str(entry["node_id"]), index)
+        last[str(entry["node_id"])] = index
+    for node in first:  # in order of first visit
+        if deaths.get(node, 0) < S1_MIN_STRUGGLE_DEATHS:
+            continue
+        tail = history[last[node] + 1 :]
+        if any(entry.get("deaths") for entry in tail):
+            continue
+        tail_nodes = list(
+            dict.fromkeys(
+                str(x["node_id"]) for x in tail if entry_type(x) != "backtrack"
+            )
+        )
+        layers = {graph.layer(n) for n in tail_nodes} - {None}
+        majors = [n for n in tail_nodes if graph.kind(n) in MAJOR_TYPES]
+        if len(layers) < S1_MIN_TAIL_LAYERS or len(majors) < S1_MIN_TAIL_MAJORS:
+            continue
+        lam = ratio * sum(
+            expected_deaths(n, graph, refs, run.id, pool) for n in tail_nodes
+        )
+        p_zero = math.exp(-lam)
+        if p_zero >= S1_MEDIUM_P:
+            return []  # the earliest qualifying struggle decides
+        after = last[node] + 1
+        spent = int(history[after]["igt_ms"]) - int(history[first[node]]["igt_ms"])
+        return [
+            Finding(
+                signature="deaths_stop",
+                strength="strong" if p_zero < S1_STRONG_P else "medium",
+                title=(
+                    f"{deaths[node]} deaths in {node}, then none over {len(layers)} layers "
+                    f"where {lam:.1f} were expected"
+                ),
+                run=run,
+                evidence={
+                    "struggle_node": node,
+                    "struggle_boss": graph.boss(node),
+                    "struggle_deaths": deaths[node],
+                    "struggle_s": round(spent / 1000, 1),
+                    "tail_layers": len(layers),
+                    "tail_major_bosses": len(majors),
+                    "expected_deaths": round(lam, 2),
+                    "player_ratio": round(ratio, 2),
+                    "p_zero": float(f"{p_zero:.2g}"),
+                    "major_pct_before": _major_percentile(run, graph, refs, 0, after),
+                    "major_pct_after": _major_percentile(
+                        run, graph, refs, after, len(history)
+                    ),
+                },
+                entry_index=first[node],
+            )
+        ]
+    return []
