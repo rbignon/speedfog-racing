@@ -80,7 +80,6 @@ S2_LOOSE_MIN_REFS = 30
 # S3 grace_warp
 S3_RECENT_ENTRY_MS = 120_000
 S3_BACKTRACK_WINDOW_S = 2
-S3_CANDIDATE_SLACK = timedelta(minutes=5)
 # S4 save_restore
 S4_DODGE_MS = 60_000
 # S5 layer_jump
@@ -1069,7 +1068,11 @@ BACKTRACK = re.compile(
     r"^zone_query backtrack: \S+ -> (?P<node>\S+)(?: message_id=(?P<mid>\S+))?"
     r" (?:for (?P<old>\S+)|" + _REF + ")$"
 )
-EVENT_FLAG = re.compile(r"^event_flag: .*?message_id=(?P<mid>\d+) " + _REF + "$")
+# A fog entry (node_id) or the finish; only the newer lines carry a message id.
+EVENT_FLAG = re.compile(
+    r"^event_flag: flag_id=\d+ (?:node_id=(?P<node>\S+)|finished=true) igt_ms=(?P<igt>\d+)"
+    r"(?: first_visit=\S+)?(?: message_id=(?P<mid>\S+))? " + _REF + "$"
+)
 LOG_PATTERNS = (
     ("grace_query", GRACE_QUERY),
     ("unvisited", UNVISITED),
@@ -1216,28 +1219,50 @@ def _entered_at(run: Run, node: str, igt_ms: int, message_id: int | None) -> int
     return None
 
 
-def _maybe_in(run: Run, line: LogLine) -> bool:
-    """Whether the run's estimated stay in the line's node covers the line's time."""
+def entry_times(lines: Iterable[LogLine]) -> dict[tuple[str, str, int], datetime]:
+    """Server time of each fog entry the logs show, by (race, node, in-game time)."""
+    return {
+        (line.race_id, line.node, line.igt_ms): line.at
+        for line in lines
+        if line.kind == "event_flag" and line.node and line.igt_ms is not None
+    }
+
+
+def _entered_on_server(
+    run: Run, line: LogLine, entries: Mapping[tuple[str, str, int], datetime]
+) -> datetime | None:
+    """Server time the run entered the line's node, if it was still there at the line's time.
+
+    The entry is timed by its event_flag line; the next entry by its own line,
+    else by the in-game time spent since the entry.
+    """
     history = run.history
     for index, entry in enumerate(history):
-        if entry["node_id"] != line.node:
+        if entry["node_id"] != line.node or entry_type(entry) != "fog":
             continue
-        start, _ = estimate_time(run, index, {})
-        if start is None:
+        entered = entries.get((line.race_id, str(line.node), int(entry["igt_ms"])))
+        if entered is None or entered > line.at:
             continue
-        stop = (
-            estimate_time(run, index + 1, {})[0]
-            if index + 1 < len(history)
-            else run.end
-        )
-        stop = stop or start
-        if start - S3_CANDIDATE_SLACK <= line.at <= stop + S3_CANDIDATE_SLACK:
-            return True
-    return False
+        left = run.end
+        if index + 1 < len(history):
+            following = history[index + 1]
+            key = (line.race_id, str(following["node_id"]), int(following["igt_ms"]))
+            spent_s = (
+                (int(following["igt_ms"]) - int(entry["igt_ms"])) / 1000 / IGT_SCALE
+            )
+            left = entries.get(key) or entered + timedelta(seconds=spent_s)
+        if left is None or line.at < left:
+            return entered
+    return None
 
 
 def _warp(
-    run: Run, line: LogLine, strength: str, title: str, attribution: str
+    run: Run,
+    line: LogLine,
+    strength: str,
+    title: str,
+    attribution: str,
+    since_s: float | None = None,
 ) -> Finding:
     return Finding(
         signature="grace_warp",
@@ -1250,6 +1275,7 @@ def _warp(
             "grace": line.grace,
             "igt_s": round(line.igt_ms / 1000, 1) if line.igt_ms is not None else None,
             "message_id": line.message_id,
+            "since_entry_s": round(since_s) if since_s is not None else None,
             "attribution": attribution,
         },
     )
@@ -1264,6 +1290,8 @@ def s3_grace_warp(
     for line in lines:
         if line.kind == "backtrack":
             backtracks[line.race_id].append(line.at)
+    entries = entry_times(lines)
+    recent = timedelta(milliseconds=S3_RECENT_ENTRY_MS / IGT_SCALE)
     findings: list[Finding] = []
     unattributed: list[dict[str, Any]] = []
     for line in lines:
@@ -1292,7 +1320,7 @@ def s3_grace_warp(
                 continue
             since = (line.igt_ms - entered) / 1000
             title = f"warp inside {line.node}, {since:.0f} s after entering it"
-            findings.append(_warp(run, line, "medium", title, "participant"))
+            findings.append(_warp(run, line, "medium", title, "participant", since))
             continue
         # Old format: no participant and no in-game time. A warp to another node is
         # followed by its backtrack line (and seen by S5); keep the in-zone ones.
@@ -1301,16 +1329,21 @@ def s3_grace_warp(
             for at in backtracks[line.race_id]
         ):
             continue
-        candidates = [r for r in bundle.race_runs(line.race_id) if _maybe_in(r, line)]
-        if len(candidates) == 1:
-            title = f"warp inside {line.node} (attributed by estimated time)"
-            findings.append(
-                _warp(candidates[0], line, "medium", title, "estimated time")
-            )
+        # Who was in that node then, timed on the server clock by the entry lines.
+        stays = [
+            (r, arrived)
+            for r in bundle.race_runs(line.race_id)
+            if (arrived := _entered_on_server(r, line, entries)) is not None
+        ]
+        if not any(line.at - arrived < recent for _, arrived in stays):
+            continue
+        if len(stays) == 1:
+            run, arrived = stays[0]
+            since = (line.at - arrived).total_seconds()
+            title = f"warp inside {line.node}, {since:.0f} s after entering it (server clock)"
+            findings.append(_warp(run, line, "medium", title, "server clock", since))
         else:
-            unattributed.append(
-                {"line": line, "candidates": [r.id for r in candidates]}
-            )
+            unattributed.append({"line": line, "candidates": [r.id for r, _ in stays]})
     return findings, unattributed
 
 

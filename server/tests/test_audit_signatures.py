@@ -697,6 +697,7 @@ LOGS = """\
 2026-10-02T18:01:58+0000 host uvicorn[1]: 2026-10-02 18:01:58,100 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 igt_ms=40000 message_id=7 race=r1 participant=p1
 2026-10-02T18:02:30+0000 host uvicorn[1]: 2026-10-02 18:02:30,100 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 race=r1 participant=p1 message_id=9
 2026-09-28 12:27:20,000 - speedfog_racing.websocket.handler - WARNING - zone_query resolved to unvisited node via grace: node=l5 grace_entity_id=35002953 entity=r2 message_id=1790598300003
+2026-09-28 12:28:50,000 - speedfog_racing.websocket.handler - INFO - event_flag: flag_id=1 node_id=c igt_ms=270000 first_visit=True entity=r2
 2026-09-28 12:29:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
 2026-09-28 12:40:00,000 - speedfog_racing.websocket.handler - INFO - zone_query: node_id=c strategy=grace candidates=- grace=21012954 map_id=m11 entity=r2
 2026-09-28 12:40:01,000 - speedfog_racing.websocket.handler - INFO - zone_query backtrack: b -> c for r2
@@ -714,6 +715,7 @@ def test_parse_logs_reads_both_formats_and_skips_the_rest(tmp_path):
     kinds = [(line.kind, line.race_id, line.participant_id) for line in lines]
     assert kinds == [
         ("unvisited", "r2", None),
+        ("event_flag", "r2", None),
         ("grace_query", "r2", None),
         ("grace_query", "r2", None),
         ("backtrack", "r2", None),
@@ -745,7 +747,7 @@ def _s3_bundle() -> Any:
             e("start", 0, "spawn"),
             e("b", 30, mid=OLD_LAUNCH + 1),
             e("c", 270, mid=OLD_LAUNCH + 2),
-            e("l5", 280, "backtrack", mid=OLD_LAUNCH + 3),
+            e("l5", 300, "backtrack", mid=OLD_LAUNCH + 3),
         ],
         rid="p2",
         user="u2",
@@ -762,7 +764,7 @@ def test_s3_findings_and_attribution(tmp_path):
     got = sorted((f.strength, f.run.id, f.evidence.get("attribution")) for f in findings)
     assert got == [
         ("medium", "p1", "participant"),  # warp in c, 20 s after entering it
-        ("medium", "p2", "estimated time"),  # old format, single candidate by time
+        ("medium", "p2", "server clock"),  # old format: 10 s after its entry line
         ("strong", "p1", "participant"),
         ("strong", "p2", "message id"),
     ]
@@ -801,6 +803,42 @@ def test_s3_warp_back_to_another_visited_node_is_not_inside_it():
     bundle = make_bundle([run], {"s1": chain("start", "a", "b")}, races={"r1": {"id": "r1"}})
     findings, _ = sig.s3_grace_warp([line], bundle)
     assert findings == []
+
+
+def _old(at: datetime, kind: str, node: str, igt_ms: int | None = None) -> Any:
+    """A log line in the format without participant (nor IGT on zone queries)."""
+    grace = "9" if kind == "grace_query" else None
+    return sig.LogLine(at, kind, "r2", None, node, grace, igt_ms, None)
+
+
+def _zone_bundle(*runs: Any) -> Any:
+    return make_bundle(list(runs), {"s1": chain("start", "a", "b")}, races={"r2": {"id": "r2"}})
+
+
+def test_s3_old_format_times_the_entry_on_the_server_clock():
+    run = make_run([e("start", 0, "spawn"), e("a", 10), e("b", 600)], rid="p2", race="r2")
+    entry = _old(T0, "event_flag", "a", 10_000)
+    late = _old(T0 + timedelta(minutes=3), "grace_query", "a")
+    assert sig.s3_grace_warp([entry, late], _zone_bundle(run)) == ([], [])
+    early = _old(T0 + timedelta(seconds=40), "grace_query", "a")
+    (finding,), _ = sig.s3_grace_warp([entry, early], _zone_bundle(run))
+    assert (finding.strength, finding.evidence["since_entry_s"]) == ("medium", 40)
+
+
+def test_s3_old_format_lists_a_line_several_runs_could_have_made():
+    one = make_run(
+        [e("start", 0, "spawn"), e("a", 10), e("b", 600)], rid="p1", user="u1", race="r2"
+    )
+    two = make_run(
+        [e("start", 0, "spawn"), e("a", 20), e("b", 900)], rid="p2", user="u2", race="r2"
+    )
+    lines = [
+        _old(T0, "event_flag", "a", 10_000),
+        _old(T0 + timedelta(seconds=5), "event_flag", "a", 20_000),
+        _old(T0 + timedelta(seconds=30), "grace_query", "a"),
+    ]
+    findings, unattributed = sig.s3_grace_warp(lines, _zone_bundle(one, two))
+    assert findings == [] and unattributed[0]["candidates"] == ["p1", "p2"]
 
 
 def test_estimate_time_prefers_the_logs():

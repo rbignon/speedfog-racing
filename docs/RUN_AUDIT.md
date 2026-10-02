@@ -114,6 +114,11 @@ journalctl -u speedfog-racing --since "2026-09-23 08:00" --until "2026-10-08 08:
   -o short-iso > qualifier.log
 ```
 
+Zone query lines in the older format name neither the player nor the IGT.
+S3 then times the runner's entry into the zone by its `event_flag` line, on
+the server clock, and lists a warp that several runners in the zone could
+have made instead of attributing it.
+
 | signature                 | what it flags                                                                                      | strength                                               |
 | ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | S1 `deaths_stop`          | 2+ deaths in a node, then no death over 10+ layers and 3+ major bosses, against expected deaths    | strong p < 0.001, medium p < 0.01                      |
