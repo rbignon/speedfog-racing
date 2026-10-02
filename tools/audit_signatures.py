@@ -887,6 +887,10 @@ def s7_igt_vs_wall(run: Run) -> list[Finding]:
     end = run.end
     if run.created_at is None or end is None or run.igt_ms <= 0:
         return []
+    # A join time after the end is not one: participants that predate their
+    # created_at column (2026-04-26) carry the migration's time instead.
+    if run.created_at > end:
+        return []
     wall_s = (end - run.created_at).total_seconds()
     needed_s = run.igt_ms / 1000 / IGT_SCALE
     if needed_s <= wall_s + S7_WALL_SLACK_S:

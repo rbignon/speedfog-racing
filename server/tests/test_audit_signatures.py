@@ -631,6 +631,17 @@ def test_s7_in_game_time_faster_than_the_server_clock():
     assert sig.s7_igt_vs_wall(fine) == []
 
 
+def test_s7_skips_a_join_time_after_the_end():
+    # Participants older than their created_at column carry the migration's time.
+    backfilled = make_run(
+        [e("start", 0, "spawn")],
+        igt_s=1200,
+        created=T0 + timedelta(days=30),
+        finished=T0 + timedelta(minutes=25),
+    )
+    assert sig.s7_igt_vs_wall(backfilled) == []
+
+
 def test_s8_debug_flags():
     run = make_run([], flags={"one_shot": {"igt_ms": 83000, "node_id": "stormveil"}})
     (finding,) = sig.s8_debug_flags(run)
