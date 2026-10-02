@@ -24,10 +24,32 @@ describe("computeGap", () => {
     expect(computeGap({ ...base, isLeader: true })).toBeNull();
   });
 
-  it("returns null for pre-race / abandoned statuses", () => {
-    for (const status of ["registered", "ready", "abandoned"]) {
+  it("returns null for pre-race and disqualified statuses", () => {
+    for (const status of ["registered", "ready", "disqualified"]) {
       expect(computeGap({ ...base, status })).toBeNull();
     }
+  });
+
+  it("gives a DNF its layer entry delta, never an overshoot", () => {
+    // Stayed 200s on layer 1 before abandoning, far past the leader's 60s:
+    // the gap is still its arrival against the leader's, the time it ranks on.
+    expect(computeGap({ ...base, status: "abandoned", igtMs: 265_000 })).toBe(
+      5_000,
+    );
+    // A layer the leader never reached has no split to compare against.
+    expect(
+      computeGap({ ...base, status: "abandoned", currentLayer: 3 }),
+    ).toBeNull();
+    // Everyone enters the start layer at 0: a DNF still there has no gap.
+    expect(
+      computeGap({
+        ...base,
+        status: "abandoned",
+        currentLayer: 0,
+        layerEntryIgt: 0,
+        leaderSplits: { 0: 0, ...base.leaderSplits },
+      }),
+    ).toBeNull();
   });
 
   it("uses raw IGT delta for finished players (behind and ahead)", () => {

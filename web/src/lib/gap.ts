@@ -27,7 +27,9 @@ export interface GapInput {
 
 /**
  * Gap to the leader in ms (negative = ahead), or null when it is undefined:
- * the leader itself, a non-playing/non-finished status, or missing split data.
+ * the leader itself, a pre-race or disqualified status, or missing split data.
+ * A DNF's gap is its arrival on its deepest layer against the leader's, the
+ * time it ranks on.
  */
 export function computeGap(input: GapInput): number | null {
   const {
@@ -43,11 +45,14 @@ export function computeGap(input: GapInput): number | null {
 
   if (isLeader) return null;
   if (status === "finished") return igtMs - leaderIgtMs;
-  if (status !== "playing") return null;
+  if (status !== "playing" && status !== "abandoned") return null;
 
   const leaderEntry = leaderSplits[currentLayer];
   if (leaderEntry === undefined || layerEntryIgt === null) return null;
   const entryDelta = layerEntryIgt - leaderEntry;
+  // Never the time spent there before abandoning, which would contradict its
+  // rank. Everyone enters the start layer at 0, so a DNF still there has no gap.
+  if (status === "abandoned") return currentLayer > 0 ? entryDelta : null;
 
   // Leader's exit from this layer = leader's entry on the next layer.
   let leaderExit = leaderSplits[currentLayer + 1];
