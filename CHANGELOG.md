@@ -2,6 +2,32 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.29.0] - 2026-10-02
+
+### Seeds
+
+- **Halloween theme**, available in English and French (thanks to @Mikshul for most of the boss names)
+- **Fairer boss draws**: when bosses are randomized, one of the quickest bosses and one of the longest can no longer share a layer (e.g. Soldier of Godrick never meets Commander O'Neil past the early game). Boss lengths are calibrated from race clear times, separately for the early, mid and late game, since some bosses take much longer at high scaling than others
+- **Dragonlord Placidusax, Scadutree Avatar, Metyr and Bayle are back** among the final bosses they were removed from in 1.28.0, but Placidusax, Metyr and Bayle come up less often than before
+- Four DLC NPC bosses (**Dancer of Ranah**, **Knight of the Solitary Gaol**, **Rakshasa** and **Red Bear**) are no longer drawn to replace other bosses
+- Large bosses no longer land in the small arenas of the **Mad Pumpkin Heads** (Waypoint Ruins, Caelem Ruins) and the **Royal Revenant** (Kingsrealm Ruins)
+- **Miranda's arena** and the **Fell Twins' arena** are no longer picked as zones
+- Fix: dying in the arena of the **Ancestor Spirit** (Siofra River) or the **Regal Ancestor Spirit** (Nokron) could respawn you outside it, past its fog gate. You now respawn at the arena's fog gate.
+
+### Speedfog × Ignite Season One
+
+- Fix: **DNF ranking**. Runners who abandoned on the same deepest layer were ranked by when they gave up, so the longer you kept trying, the lower you ranked. They now rank by when they first reached that layer
+
+### Races
+
+- Add a **Cheat tool detection**: reports to the race organizer, who sees the flagged runner on the race page, and to the admins
+- **Disqualifications and bans**: the race organizer (the admins on dailies) can disqualify a runner
+- **Late join** now defaults to a 30-minute window when creating a race (was 10)
+
+### Casting
+
+- New **OBS caster scenes** for broadcasts: **Quad** (four POVs), **Focus** (one runner), **Metro** (the live map) and **Talk** (an event evening's standings, showcase matches included). The race's casters set them up from a **Cast Setup** panel on the race page, with position guides and a delay to stay in sync with the stream's video
+
 ## [1.28.0] - 2026-09-18
 
 ### Speedfog × Ignite Season One
