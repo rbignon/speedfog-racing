@@ -905,7 +905,8 @@ def test_main_writes_both_reports_for_the_targets(tmp_path):
     assert report["base_rates"]["layer_jump"]["medium"] == {"history": 1, "target": 1}
     markdown = (tmp_path / "out" / "sig.md").read_text()
     assert "player_0001 (alice)" in markdown and "## Base rates" in markdown
-    assert "S2_STRONG_RATIO=0.75" in markdown  # the thresholds in force head the report
+    # The thresholds in force head the report.
+    assert f"S2_STRONG_RATIO={sig.S2_STRONG_RATIO}" in markdown
 
 
 def test_main_player_scope_lists_history_runs(tmp_path):
