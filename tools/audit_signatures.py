@@ -41,7 +41,7 @@ from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,14 @@ S2_STRONG_RATIO = 0.75
 S2_LOOSE_MIN_REFS = 30
 # S4 save_restore
 S4_DODGE_MS = 60_000
+# S5 layer_jump
+S5_REAL_JUMP_MAX_GAP = 3
+# S6 fresh_account
+S6_MAX_ACCOUNT_AGE = timedelta(hours=2)
+S6_MAX_RUNS = 2
+# S7 platform
+S7_DEFAULT_CUTOFF = 10
+S7_WALL_SLACK_S = 60
 
 
 def parse_time(value: Any) -> datetime | None:
@@ -750,6 +758,245 @@ def s4_save_restore(run: Run, bundle: Bundle) -> list[Finding]:
                 run=run,
                 evidence=evidence,
                 entry_index=first,
+            )
+        )
+    return findings
+
+
+def s5_layer_jump(run: Run, graph: Graph) -> list[Finding]:
+    """Fog entries that skip layers, and position changes into nodes never visited."""
+    history = run.history
+    findings: list[Finding] = []
+    visited: set[str] = set()
+    deepest = -1
+    previous_fog: int | None = None
+    for index, entry in enumerate(history):
+        node = str(entry["node_id"])
+        layer = graph.layer(node)
+        kind = entry_type(entry)
+        if kind == "backtrack" and node not in visited and layer is not None:
+            findings.append(
+                Finding(
+                    signature="layer_jump",
+                    strength="strong" if layer > deepest + 1 else "medium",
+                    title=f"position changed into {node} (layer {layer}), never visited",
+                    run=run,
+                    evidence={
+                        "kind": "unvisited_position",
+                        "node": node,
+                        "layer": layer,
+                        "deepest_before": deepest,
+                        "igt_s": round(int(entry["igt_ms"]) / 1000, 1),
+                    },
+                    entry_index=index,
+                )
+            )
+        elif kind == "fog" and previous_fog is not None and layer is not None:
+            before = history[previous_fog]
+            before_layer = graph.layer(str(before["node_id"]))
+            if before_layer is not None and layer - before_layer > 1:
+                a, b = before.get("message_id"), entry.get("message_id")
+                gap = int(b) - int(a) if a is not None and b is not None else None
+                real = gap is not None and 0 <= gap <= S5_REAL_JUMP_MAX_GAP
+                findings.append(
+                    Finding(
+                        signature="layer_jump",
+                        strength="medium" if real else "weak",
+                        title=(
+                            f"from layer {before_layer} to layer {layer} in one fog "
+                            f"({'sequence break' if real else 'messages lost'})"
+                        ),
+                        run=run,
+                        evidence={
+                            "kind": "sequence_break" if real else "lost_messages",
+                            "from_node": str(before["node_id"]),
+                            "to_node": node,
+                            "from_layer": before_layer,
+                            "to_layer": layer,
+                            "spent_s": round(
+                                (int(entry["igt_ms"]) - int(before["igt_ms"])) / 1000, 1
+                            ),
+                            "message_gap": gap,
+                        },
+                        entry_index=index,
+                    )
+                )
+        if kind in ("fog", "spawn"):
+            previous_fog = index
+        visited.add(node)
+        if layer is not None:
+            deepest = max(deepest, layer)
+    return findings
+
+
+def _finisher_rank(run: Run, bundle: Bundle) -> tuple[int, int]:
+    """The run's rank among its race's finishers, other disqualified runs left out."""
+    finishers = [
+        r.igt_ms
+        for r in bundle.race_runs(run.race_id or "")
+        if r.status == "finished" and (r.id == run.id or not r.disqualified)
+    ]
+    return 1 + sum(1 for x in finishers if x < run.igt_ms), len(finishers)
+
+
+def s6_fresh_account(
+    run: Run, bundle: Bundle, run_counts: Mapping[str, int]
+) -> list[Finding]:
+    """A brand new account (made around the race) with a top-quarter finish."""
+    if run.kind != "race" or run.status != "finished" or run.created_at is None:
+        return []
+    created = parse_time(bundle.users.get(run.user_id, {}).get("created_at"))
+    started = parse_time(bundle.races.get(run.race_id or "", {}).get("started_at"))
+    if created is None:
+        return []
+    fresh = created >= run.created_at - S6_MAX_ACCOUNT_AGE or (
+        started is not None and created >= started
+    )
+    if not fresh or run_counts.get(run.user_id, 0) > S6_MAX_RUNS:
+        return []
+    rank, finishers = _finisher_rank(run, bundle)
+    if rank > math.ceil(finishers / 4):
+        return []
+    return [
+        Finding(
+            signature="fresh_account",
+            strength="weak",
+            title=f"account created around the race, {rank} of {finishers}",
+            run=run,
+            evidence={
+                "account_created": created.isoformat(),
+                "joined": run.created_at.isoformat(),
+                "race_started": started.isoformat() if started else None,
+                "runs_in_all": run_counts.get(run.user_id, 0),
+                "rank": rank,
+                "finishers": finishers,
+            },
+        )
+    ]
+
+
+def s7_igt_vs_wall(run: Run) -> list[Finding]:
+    """In-game time that outran the server clock between joining and the last IGT change."""
+    end = run.end
+    if run.created_at is None or end is None or run.igt_ms <= 0:
+        return []
+    wall_s = (end - run.created_at).total_seconds()
+    needed_s = run.igt_ms / 1000 / IGT_SCALE
+    if needed_s <= wall_s + S7_WALL_SLACK_S:
+        return []
+    return [
+        Finding(
+            signature="platform",
+            strength="strong",
+            title="in-game time faster than the server clock",
+            run=run,
+            evidence={
+                "kind": "igt_faster_than_wall",
+                "igt_s": round(run.igt_ms / 1000, 1),
+                "wall_s": round(wall_s, 1),
+                "real_time_needed_s": round(needed_s, 1),
+            },
+        )
+    ]
+
+
+def s7_platform(bundle: Bundle) -> list[Finding]:
+    """Race-level checks: playoff cutoffs never applied, organizers racing their own event."""
+    findings: list[Finding] = []
+    for race_id, race in bundle.races.items():
+        slot = str(race.get("event_slot") or "")
+        started = parse_time(race.get("started_at"))
+        if (
+            not slot
+            or slot.startswith("qualifier:")
+            or race.get("race_duration_minutes")
+        ):
+            continue
+        finishers = [r for r in bundle.race_runs(race_id) if r.status == "finished"]
+        finishers = [r for r in finishers if r.finished_at is not None]
+        if started is None or not finishers:
+            continue
+        first = min(r.finished_at for r in finishers if r.finished_at is not None)
+        event = bundle.events.get(str(race.get("event_id") or ""), {})
+        cutoff = int(
+            (event.get("config") or {}).get("playoff_cutoff_minutes", S7_DEFAULT_CUTOFF)
+        )
+        minutes = math.ceil((first - started).total_seconds() / 60) + cutoff
+        deadline = started + timedelta(minutes=minutes)
+        late = [
+            r
+            for r in finishers
+            if r.finished_at is not None and r.finished_at > deadline
+        ]
+        findings.append(
+            Finding(
+                signature="platform",
+                strength="medium",
+                title=f"playoff cutoff never applied in {race.get('name')}",
+                races=[race_id],
+                players=[r.user_id for r in late],
+                evidence={
+                    "kind": "cutoff_missing",
+                    "deadline": deadline.isoformat(),
+                    "late_finishers": [
+                        {
+                            "user_id": r.user_id,
+                            "finished_at": r.finished_at.isoformat()
+                            if r.finished_at
+                            else None,
+                            "late_by_s": round(
+                                (r.finished_at - deadline).total_seconds()
+                            )
+                            if r.finished_at
+                            else None,
+                        }
+                        for r in late
+                    ],
+                },
+            )
+        )
+    organizing: dict[tuple[str, str], list[tuple[str, str]]] = defaultdict(list)
+    for race_id, race in bundle.races.items():
+        if not race.get("event_id"):
+            continue
+        for run in bundle.race_runs(race_id):
+            if run.user_id == race.get("organizer_id"):
+                organizing[(str(race["event_id"]), run.user_id)].append(
+                    (race_id, run.status)
+                )
+    for (event_id, user_id), items in organizing.items():
+        findings.append(
+            Finding(
+                signature="platform",
+                strength="info",
+                title=f"organizer racing {len(items)} races of the event they organize",
+                races=[race_id for race_id, _ in items],
+                players=[user_id],
+                evidence={
+                    "kind": "organizer_racing",
+                    "event_id": event_id,
+                    "races": [
+                        {"race": bundle.races[r].get("name"), "status": s}
+                        for r, s in items
+                    ],
+                },
+            )
+        )
+    return findings
+
+
+def s8_debug_flags(run: Run) -> list[Finding]:
+    """Cheat-tool flags the mod reported (first observation of each)."""
+    findings: list[Finding] = []
+    for name, info in sorted((run.debug_flags or {}).items()):
+        detail = info if isinstance(info, Mapping) else {}
+        findings.append(
+            Finding(
+                signature="debug_flags",
+                strength="strong",
+                title=f"cheat-tool flag {name}",
+                run=run,
+                evidence={"flag": name, **detail},
             )
         )
     return findings

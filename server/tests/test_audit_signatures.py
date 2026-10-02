@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -489,3 +489,158 @@ def test_s4_rank_leaves_other_disqualified_runs_out():
     (finding,) = sig.s4_save_restore(run, bundle)
     effect = finding.evidence["effect"]
     assert (effect["rank_with_lower"], effect["finishers"]) == (1, 1)
+
+
+# --- S5 layer_jump ------------------------------------------------------------
+
+JUMP = chain("start", "l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8")
+
+
+def test_s5_real_jump_versus_lost_messages():
+    jump = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("l7", 160, mid=2)])
+    (finding,) = sig.s5_layer_jump(jump, JUMP)
+    assert (finding.strength, finding.evidence["message_gap"]) == ("medium", 1)
+    lost = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("l7", 900, mid=29)])
+    (finding,) = sig.s5_layer_jump(lost, JUMP)
+    assert finding.strength == "weak"
+
+
+def test_s5_backtrack_into_a_node_never_visited():
+    far = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("l5", 40, "backtrack", mid=2)])
+    (finding,) = sig.s5_layer_jump(far, JUMP)
+    assert finding.strength == "strong"  # beyond the deepest layer reached plus one
+    near = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("l2", 40, "backtrack", mid=2)])
+    (finding,) = sig.s5_layer_jump(near, JUMP)
+    assert finding.strength == "medium"
+    respawn = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("start", 40, "backtrack")])
+    assert sig.s5_layer_jump(respawn, JUMP) == []
+
+
+# --- S6 fresh_account ---------------------------------------------------------
+
+
+def _s6_bundle(account_created: datetime, runs_of_user: int = 1) -> tuple[Any, Any]:
+    subject = make_run(
+        [e("start", 0, "spawn")],
+        rid="new",
+        user="new",
+        igt_s=1618,
+        created=T0 + timedelta(minutes=3),
+    )
+    others = [
+        make_run([e("start", 0, "spawn")], rid=f"o{i}", user=f"o{i}", igt_s=1600 + 60 * i)
+        for i in range(7)
+    ]
+    extra = [make_run([], rid=f"x{i}", user="new", race="r2") for i in range(runs_of_user - 1)]
+    users = {"new": {"id": "new", "created_at": account_created.isoformat()}}
+    races = {"r1": {"id": "r1", "started_at": T0.isoformat()}}
+    bundle = make_bundle([subject, *others, *extra], {}, users=users, races=races)
+    return subject, bundle
+
+
+def test_s6_new_account_with_a_strong_result():
+    subject, bundle = _s6_bundle(T0 + timedelta(minutes=2))
+    counts = {"new": 1}
+    (finding,) = sig.s6_fresh_account(subject, bundle, counts)
+    assert finding.strength == "weak" and finding.evidence["rank"] == 2
+
+
+def test_s6_old_account_or_many_runs_is_not_fresh():
+    subject, bundle = _s6_bundle(T0 - timedelta(days=30))
+    assert sig.s6_fresh_account(subject, bundle, {"new": 1}) == []
+    subject, bundle = _s6_bundle(T0 + timedelta(minutes=2), runs_of_user=3)
+    assert sig.s6_fresh_account(subject, bundle, {"new": 3}) == []
+
+
+# --- S7 platform and S8 debug_flags -------------------------------------------
+
+
+def test_s7_cutoff_never_applied():
+    start = T0
+    runs = [
+        make_run(
+            [e("start", 0, "spawn")],
+            rid="first",
+            user="u1",
+            race="sc3",
+            finished=start + timedelta(minutes=39, seconds=53),
+        ),
+        make_run(
+            [e("start", 0, "spawn")],
+            rid="ok",
+            user="u2",
+            race="sc3",
+            finished=start + timedelta(minutes=48),
+        ),
+        make_run(
+            [e("start", 0, "spawn")],
+            rid="late",
+            user="u3",
+            race="sc3",
+            finished=start + timedelta(minutes=59, seconds=44),
+        ),
+    ]
+    races = {
+        "sc3": {
+            "id": "sc3",
+            "name": "Showcase 3",
+            "event_id": "ev",
+            "event_slot": "showcase:3",
+            "race_duration_minutes": None,
+            "started_at": start.isoformat(),
+            "organizer_id": "org",
+            "is_target": True,
+        }
+    }
+    events = {"ev": {"id": "ev", "config": {"playoff_cutoff_minutes": 10}}}
+    findings = sig.s7_platform(make_bundle(runs, {}, races=races, events=events))
+    (cutoff,) = [f for f in findings if f.evidence.get("kind") == "cutoff_missing"]
+    assert cutoff.strength == "medium" and cutoff.players == ["u3"]
+    assert cutoff.evidence["deadline"] == (start + timedelta(minutes=50)).isoformat()
+
+
+def test_s7_organizer_racing_their_event():
+    runs = [
+        make_run([e("start", 0, "spawn")], rid=f"p{i}", user="org", race=f"q{i}") for i in range(2)
+    ]
+    races = {
+        f"q{i}": {
+            "id": f"q{i}",
+            "name": f"Q{i}",
+            "event_id": "ev",
+            "organizer_id": "org",
+            "event_slot": f"qualifier:standard:{i}",
+            "is_target": True,
+        }
+        for i in range(2)
+    }
+    findings = sig.s7_platform(make_bundle(runs, {}, races=races, events={"ev": {"id": "ev"}}))
+    (finding,) = [f for f in findings if f.evidence.get("kind") == "organizer_racing"]
+    assert finding.strength == "info" and sorted(finding.races) == ["q0", "q1"]
+
+
+def test_s7_in_game_time_faster_than_the_server_clock():
+    fast = make_run(
+        [e("start", 0, "spawn")], igt_s=1200, created=T0, finished=T0 + timedelta(minutes=15)
+    )
+    (finding,) = sig.s7_igt_vs_wall(fast)
+    assert finding.strength == "strong"
+    fine = make_run(
+        [e("start", 0, "spawn")], igt_s=1200, created=T0, finished=T0 + timedelta(minutes=25)
+    )
+    assert sig.s7_igt_vs_wall(fine) == []
+
+
+def test_s8_debug_flags():
+    run = make_run([], flags={"one_shot": {"igt_ms": 83000, "node_id": "stormveil"}})
+    (finding,) = sig.s8_debug_flags(run)
+    assert finding.strength == "strong" and finding.evidence["flag"] == "one_shot"
+    assert sig.s8_debug_flags(make_run([])) == []
+
+
+def test_s6_rank_leaves_other_disqualified_runs_out():
+    subject, bundle = _s6_bundle(T0 + timedelta(minutes=2))
+    # 1618 s ranks 2nd behind o0 (1600 s): with o0 disqualified it ranks 1st.
+    bundle.runs[1].disqualified = True
+    (finding,) = sig.s6_fresh_account(subject, bundle, {"new": 1})
+    assert (finding.evidence["rank"], finding.evidence["finishers"]) == (1, 7)
