@@ -90,7 +90,47 @@ run.
 The analyst follows `BRIEF.md` and writes `REPORT.md` in the bundle, with its
 scripts in `scripts/`.
 
-## 3. Read the report
+## 3. Check the known signatures
+
+`tools/audit_signatures.py` runs the patterns we already know over the same
+bundle, deterministically, so they are never missed whatever the analyst
+finds:
+
+```
+python3 tools/audit_signatures.py --bundle ~/src/speedfog-audit/2026-09-30 \
+  --logs qualifier.log --identities ~/.speedfog-audit/2026-09-30.identities.json
+```
+
+It writes `~/.speedfog-audit/<bundle>.signatures.md` and `.json` (never inside
+the bundle). `--scope all` lists every run instead of the targets;
+`--player NAME` (pseudonym or Twitch login) lists every run of one player, to
+re-check the history of a confirmed cheater.
+
+The logs are optional and only feed S3. Export them on the server over the
+review window:
+
+```
+journalctl -u speedfog-racing --since "2026-09-23 08:00" --until "2026-10-08 08:00" \
+  -o short-iso > qualifier.log
+```
+
+| signature                 | what it flags                                                                                      | strength                                               |
+| ------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| S1 `deaths_stop`          | 2+ deaths in a node, then no death over 10+ layers and 3+ major bosses, against expected deaths    | strong p < 0.001, medium p < 0.01                      |
+| S2 `impossible_traversal` | a clean traversal under the fastest other run through the same gates against the same boss         | medium < 0.85 x floor, strong < 0.75 x (50+)           |
+| S3 `grace_warp`           | (logs) a grace warp to an unvisited node, or into the node entered less than 120 s before          | strong, medium                                         |
+| S4 `save_restore`         | a game restart that brings the in-game time back down, with the erased time and its rank effect    | medium if the rank changes, else info; weak under 60 s |
+| S5 `layer_jump`           | a fog skipping layers (sequence break or lost messages), a position change into an unvisited node  | medium or weak; strong or medium                       |
+| S6 `fresh_account`        | an account created around the race, at most 2 runs, top-quarter finish                             | weak (context)                                         |
+| S7 `platform`             | playoff cutoff never applied, organizer racing their own event, in-game time faster than the clock | medium, info, strong                                   |
+| S8 `debug_flags`          | cheat-tool flags reported by the mod                                                               | strong                                                 |
+
+The report ends with base rates: how many history runs fire each signature,
+which tells how much a finding is worth. Both reports use the same
+pseudonyms: read the analyst's findings next to the signatures, a lead
+present in both first.
+
+## 4. Read the report
 
 The report names players by pseudonym. The identities file maps them back to
 Twitch accounts. Then check the leads against what the data cannot show:
