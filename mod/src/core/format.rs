@@ -85,7 +85,9 @@ pub fn format_gap_into(buf: &mut String, ms: i32) {
 
 /// Compute LiveSplit-style gap for a single participant.
 ///
-/// Returns `None` for leader, non-playing statuses, or missing splits.
+/// Returns `None` for the leader, pre-race and disqualified statuses, or
+/// missing splits. A DNF's gap is its arrival on its deepest layer against the
+/// leader's, the time it ranks on.
 /// Uses the caller's `igt_ms` (local IGT for self, server snapshot for others).
 // The eight parameters are all distinct gap-calc inputs; bundling them into a
 // struct would not read more clearly than the positional arguments here.
@@ -105,6 +107,14 @@ pub fn compute_gap(
     }
     match status {
         ParticipantStatus::Finished => Some(igt_ms - leader_igt_ms),
+        // Never the time spent there before abandoning, which would
+        // contradict its rank. Everyone enters the start layer at 0, so a DNF
+        // still there has no gap.
+        ParticipantStatus::Abandoned if current_layer == 0 => None,
+        ParticipantStatus::Abandoned => {
+            let leader_entry = leader_splits.get(&current_layer)?;
+            Some(layer_entry_igt? - leader_entry)
+        }
         ParticipantStatus::Playing => {
             let leader_entry = leader_splits.get(&current_layer)?;
             let player_entry = layer_entry_igt?;
@@ -338,6 +348,48 @@ mod tests {
             false,
         );
         assert_eq!(gap, None);
+    }
+
+    #[test]
+    fn test_compute_gap_abandoned_is_layer_entry_delta() {
+        let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000), (3, 120000)]);
+        // Entered layer 2 at 80000 (leader 75000) and stayed 220 s, far past
+        // the leader's 45 s budget: a DNF ranks on its arrival, so no overshoot.
+        let gap = compute_gap(
+            300000,
+            2,
+            Some(80000),
+            &splits,
+            false,
+            ParticipantStatus::Abandoned,
+            120000,
+            true,
+        );
+        assert_eq!(gap, Some(5000));
+        // A layer the leader never reached has no split to compare against.
+        let deeper = compute_gap(
+            300000,
+            4,
+            Some(200000),
+            &splits,
+            false,
+            ParticipantStatus::Abandoned,
+            120000,
+            true,
+        );
+        assert_eq!(deeper, None);
+        // Everyone enters the start layer at 0: a DNF still there has no gap.
+        let start_layer = compute_gap(
+            60000,
+            0,
+            Some(0),
+            &splits,
+            false,
+            ParticipantStatus::Abandoned,
+            120000,
+            true,
+        );
+        assert_eq!(start_layer, None);
     }
 
     #[test]
