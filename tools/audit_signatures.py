@@ -330,19 +330,22 @@ class Traversal:
 
 
 def clean_traversals(run: Run, graph: Graph) -> list[Traversal]:
-    """Entries into a node with no death there, directly followed by a fog into a successor.
+    """First entries into a node, with no death there, directly followed by a fog into a successor.
 
-    The final node of a finished run counts until the finish. The gate key
-    names the entrance used (from the node of the entry just before, so a
-    re-entry after a respawn counts from where the runner respawned) and the
-    exit taken.
+    A re-entry is left out: its boss may be dead already and its route known,
+    so it is not comparable with a first visit. The final node of a finished
+    run counts until the finish. The gate key names the entrance used (from
+    the node of the entry just before) and the exit taken.
     """
     history = run.history
     out: list[Traversal] = []
+    seen: set[str] = set()
     for index, entry in enumerate(history):
-        if entry_type(entry) not in ("fog", "spawn") or entry.get("deaths"):
-            continue
         node = str(entry["node_id"])
+        visited = node in seen
+        seen.add(node)
+        if visited or entry_type(entry) not in ("fog", "spawn") or entry.get("deaths"):
+            continue
         if index + 1 < len(history):
             following = history[index + 1]
             if entry_type(following) != "fog" or following[

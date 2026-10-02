@@ -156,7 +156,7 @@ def test_clean_traversals_rules():
         e("a", 10, mid=1),
         e("b", 30, mid=2, deaths=1),  # died there: not clean
         e("a", 40, "backtrack", mid=3),  # respawned in a
-        e("b", 50, mid=4),  # re-entry, counted from where the runner respawned
+        e("b", 50, mid=4),  # re-entry: its boss may be dead already, not comparable
         e("c", 70, mid=5),
     ]
     run = make_run(history, igt_s=100)
@@ -164,7 +164,6 @@ def test_clean_traversals_rules():
     assert got == [
         (0, "start", "a", 10_000, None),  # no gate into the start
         (1, "a", "b", 20_000, ("a", None, "into a", "out of a")),
-        (4, "b", "c", 20_000, ("b", None, "into b", "out of b")),
         (5, "c", "finish", 30_000, ("c", None, "into c", "finish")),
     ]
 
