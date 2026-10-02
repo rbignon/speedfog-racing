@@ -126,7 +126,10 @@ class RaceScore:
     user_id: UUID
     points: int
     rank: int
+    # The time the run played, as the seed card shows it.
     igt_ms: int
+    # The time it ranks on: a DNF's first arrival on its deepest layer.
+    ranking_igt_ms: int
     status: ParticipantStatus
     provisional: bool
 
@@ -146,6 +149,7 @@ def score_race(race: Race, *, settled_only: bool = False) -> dict[UUID, RaceScor
             status=p.status,
             igt_ms=p.igt_ms,
             current_layer=p.current_layer,
+            layer_entry_igt=(p.layer_entry_igts or {}).get(str(p.current_layer)),
         )
         for p in race.participants
         if len(p.zone_history or []) >= 2
@@ -168,6 +172,7 @@ def score_race(race: Race, *, settled_only: bool = False) -> dict[UUID, RaceScor
             points=points[qp.participant_id],
             rank=rank,
             igt_ms=qp.igt_ms,
+            ranking_igt_ms=qp.ranking_igt_ms,
             status=qp.status,
             provisional=provisional,
         )
@@ -199,6 +204,8 @@ class LadderEntry:
     modes_scored: int
     total: int | None
     partial: int
+    # Counted seeds the runner finished, the first tie-break after points.
+    finished_seeds: int
     igt_total: int
     provisional: bool
     rank: int | None = None
@@ -215,8 +222,8 @@ def compute_ladder(
     ones without a scoring run close the list, without rank, score or counted
     mode. A signed-up runner who scored is already listed through their run.
     """
-    # user -> mode -> (points, igt_ms, provisional, slot)
-    best: dict[UUID, dict[str, tuple[int, int, bool, str]]] = {}
+    # user -> mode -> (points, finished, ranking igt_ms, provisional, slot)
+    best: dict[UUID, dict[str, tuple[int, bool, int, bool, str]]] = {}
     for slot, race in qualifier_races:
         if slot.kind != "qualifier" or slot.key not in modes:
             continue
@@ -225,11 +232,20 @@ def compute_ladder(
         for user_id, score in score_race(race, settled_only=True).items():
             per_mode = best.setdefault(user_id, {})
             current = per_mode.get(slot.key)
-            candidate = (score.points, score.igt_ms, score.provisional, str(slot))
-            if (
-                current is None
-                or candidate[0] > current[0]
-                or (candidate[0] == current[0] and candidate[1] < current[1])
+            finished = score.status == ParticipantStatus.FINISHED
+            candidate = (
+                score.points,
+                finished,
+                score.ranking_igt_ms,
+                score.provisional,
+                str(slot),
+            )
+            # More points, then a finish over a DNF, then the lower time: the
+            # order the ladder itself breaks ties in.
+            if current is None or (candidate[0], candidate[1], -candidate[2]) > (
+                current[0],
+                current[1],
+                -current[2],
             ):
                 per_mode[slot.key] = candidate
 
@@ -242,23 +258,28 @@ def compute_ladder(
             LadderEntry(
                 user_id=user_id,
                 mode_points={m: (per_mode[m][0] if m in per_mode else None) for m in modes},
-                counted_slots={m: per_mode[m][3] for m in modes if m in per_mode},
+                counted_slots={m: per_mode[m][4] for m in modes if m in per_mode},
                 modes_scored=len(scored),
                 total=partial if ranked else None,
                 partial=partial,
-                igt_total=sum(s[1] for s in scored),
-                provisional=any(s[2] for s in scored),
+                finished_seeds=sum(s[1] for s in scored),
+                igt_total=sum(s[2] for s in scored),
+                provisional=any(s[3] for s in scored),
             )
         )
 
+    # Ties on points go to the runner with more counted seeds finished, then to
+    # the lower summed time (a DNF's being its arrival on its deepest layer).
     ranked_entries = sorted(
-        (e for e in entries if e.total is not None), key=lambda e: (-(e.total or 0), e.igt_total)
+        (e for e in entries if e.total is not None),
+        key=lambda e: (-(e.total or 0), -e.finished_seeds, e.igt_total),
     )
     rank = 0
     for i, entry in enumerate(ranked_entries):
         previous = ranked_entries[i - 1] if i else None
-        if previous is None or (entry.total, entry.igt_total) != (
+        if previous is None or (entry.total, entry.finished_seeds, entry.igt_total) != (
             previous.total,
+            previous.finished_seeds,
             previous.igt_total,
         ):
             rank = i + 1
@@ -280,6 +301,7 @@ def compute_ladder(
                 modes_scored=0,
                 total=None,
                 partial=0,
+                finished_seeds=0,
                 igt_total=0,
                 provisional=False,
             )

@@ -53,13 +53,28 @@ class QualifiedParticipant:
     status: ParticipantStatus
     igt_ms: int
     current_layer: int
+    # IGT of the first arrival on current_layer, None when unrecorded.
+    layer_entry_igt: int | None
+
+    @property
+    def ranking_igt_ms(self) -> int:
+        """The time the run ranks on within its group.
+
+        A finish ranks on its final IGT. A run that did not finish ranks on its
+        first arrival on its deepest layer, so playing on there before
+        abandoning never costs it a place; its final IGT stands in when that
+        arrival is unrecorded.
+        """
+        if self.status == ParticipantStatus.FINISHED or self.layer_entry_igt is None:
+            return self.igt_ms
+        return self.layer_entry_igt
 
 
 def rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
     """Sort key for intra-daily ranking.
 
     FINISHED first (sorted by igt_ms ascending), then ABANDONED (sorted by
-    current_layer descending, igt_ms ascending as tie-break).
+    current_layer descending, then by the first arrival on that layer).
 
     This mirrors `websocket.race.manager.sort_leaderboard`, the ordering shown
     to players in the live and results leaderboard. Scoring must not diverge
@@ -69,8 +84,8 @@ def rank_key(qp: QualifiedParticipant) -> tuple[int, int, int]:
     if qp.status == ParticipantStatus.FINISHED:
         return (0, qp.igt_ms, 0)
     # Abandoned: deeper current_layer is better -> negate for ascending sort.
-    # Within the same layer, lower igt_ms (reached it faster) ranks higher.
-    return (1, -qp.current_layer, qp.igt_ms)
+    # Within the same layer, the earlier arrival on it ranks higher.
+    return (1, -qp.current_layer, qp.ranking_igt_ms)
 
 
 def compute_daily_points(
@@ -107,8 +122,8 @@ def daily_points_for_race(race: Race) -> dict[UUID, int]:
     """Map participant_id -> points for a race, empty unless it is a closed daily.
 
     Single source of the "only FINISHED dailies are scored" gate, shared by the
-    REST race-detail builder and the WebSocket race_state broadcast so neither
-    has to re-derive the qualified projection.
+    REST race-detail builder, the WebSocket race_state broadcast and the weekly
+    aggregation so none has to re-derive the qualified projection.
     """
     if race.daily_date is None or race.status != RaceStatus.FINISHED:
         return {}
@@ -119,6 +134,7 @@ def daily_points_for_race(race: Race) -> dict[UUID, int]:
             status=p.status,
             igt_ms=p.igt_ms,
             current_layer=p.current_layer,
+            layer_entry_igt=(p.layer_entry_igts or {}).get(str(p.current_layer)),
         )
         for p in race.participants
         # A disqualified runner leaves the field entirely: no points, and the
@@ -129,11 +145,6 @@ def daily_points_for_race(race: Race) -> dict[UUID, int]:
 
 
 # --- weekly aggregation ----------------------------------------------------
-
-
-def _zone_history_len(participant: Participant) -> int:
-    history = participant.zone_history or []
-    return len(history)
 
 
 def _aggregate_weapon_combos(
@@ -212,20 +223,7 @@ async def compute_weekly_leaderboard(
     per_user_object: dict[UUID, User] = {}
 
     for race in races:
-        qualified: list[QualifiedParticipant] = []
-        for p in race.participants:
-            if _zone_history_len(p) < 2 or p.status == ParticipantStatus.DISQUALIFIED:
-                continue
-            qualified.append(
-                QualifiedParticipant(
-                    participant_id=p.id,
-                    user_id=p.user_id,
-                    status=p.status,
-                    igt_ms=p.igt_ms,
-                    current_layer=p.current_layer,
-                )
-            )
-        points = compute_daily_points(qualified)
+        points = daily_points_for_race(race)
         for p in race.participants:
             pts = points.get(p.id)
             if pts is None:

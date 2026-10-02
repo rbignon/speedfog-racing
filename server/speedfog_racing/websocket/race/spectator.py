@@ -702,7 +702,7 @@ def build_race_state_payload(
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
-    sorted_participants, _ = sort_leaderboard(race.participants)
+    sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
     points_map = leaderboard_points(race)
     participant_infos: list[ParticipantInfo] = [
         participant_to_info(

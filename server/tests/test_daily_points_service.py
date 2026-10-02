@@ -43,6 +43,7 @@ def _qp(
     status: ParticipantStatus,
     igt_ms: int,
     current_layer: int = 0,
+    layer_entry_igt: int | None = None,
 ) -> QualifiedParticipant:
     return QualifiedParticipant(
         participant_id=uuid4(),
@@ -50,6 +51,7 @@ def _qp(
         status=status,
         igt_ms=igt_ms,
         current_layer=current_layer,
+        layer_entry_igt=layer_entry_igt,
     )
 
 
@@ -97,18 +99,35 @@ def test_finished_then_abandoned_ordering():
     assert points[earlier_abandon.participant_id] == 33  # round(100 * 1/3) = 33
 
 
-def test_abandoned_ranked_by_layer_then_igt():
-    # Mirrors sort_leaderboard: deeper current_layer first, then faster igt.
-    deep_slow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=1200, current_layer=20)
-    # same layer as deep_slow, reached it faster -> ranks above it
-    deep_fast = _qp(status=ParticipantStatus.ABANDONED, igt_ms=800, current_layer=20)
-    # shallower layer -> last, regardless of its (lower) igt
-    shallow = _qp(status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=12)
-    points = compute_daily_points([deep_slow, deep_fast, shallow])
-    # n = 3. Ranks: deep_fast=1, deep_slow=2, shallow=3.
-    assert points[deep_fast.participant_id] == 100
-    assert points[deep_slow.participant_id] == 67
+def test_abandoned_ranked_by_layer_then_layer_arrival():
+    # Mirrors sort_leaderboard: deeper current_layer first, then the earlier
+    # arrival on it, however long each run kept trying before abandoning.
+    persistent = _qp(
+        status=ParticipantStatus.ABANDONED, igt_ms=5000, current_layer=20, layer_entry_igt=800
+    )
+    # same layer, arrived later but quit sooner -> ranks below persistent
+    quitter = _qp(
+        status=ParticipantStatus.ABANDONED, igt_ms=1200, current_layer=20, layer_entry_igt=1000
+    )
+    # shallower layer -> last, regardless of its (lower) times
+    shallow = _qp(
+        status=ParticipantStatus.ABANDONED, igt_ms=500, current_layer=12, layer_entry_igt=300
+    )
+    points = compute_daily_points([quitter, persistent, shallow])
+    # n = 3. Ranks: persistent=1, quitter=2, shallow=3.
+    assert points[persistent.participant_id] == 100
+    assert points[quitter.participant_id] == 67
     assert points[shallow.participant_id] == 33
+
+
+def test_abandoned_without_layer_arrival_ranks_on_final_igt():
+    known = _qp(
+        status=ParticipantStatus.ABANDONED, igt_ms=5000, current_layer=20, layer_entry_igt=900
+    )
+    unknown = _qp(status=ParticipantStatus.ABANDONED, igt_ms=800, current_layer=20)
+    points = compute_daily_points([known, unknown])
+    assert points[unknown.participant_id] == 100
+    assert points[known.participant_id] == 50
 
 
 def test_deeper_layer_outranks_longer_history():
@@ -192,6 +211,7 @@ async def _make_participant(
     zone_history: list[dict],  # type: ignore[type-arg]
     death_count: int = 0,
     current_layer: int = 0,
+    layer_entry_igts: dict[str, int] | None = None,
 ) -> Participant:
     p = Participant(
         race_id=race.id,
@@ -201,6 +221,7 @@ async def _make_participant(
         zone_history=zone_history,
         death_count=death_count,
         current_layer=current_layer,
+        layer_entry_igts=layer_entry_igts or {},
     )
     db.add(p)
     await db.flush()
@@ -288,6 +309,41 @@ async def test_daily_points_for_race_ranks_abandoned_by_layer(db_session: AsyncS
     points = daily_points_for_race(await _reload_race(db_session, race.id))
     assert points[d.id] == 100  # rank 1 of n=2: deeper layer
     assert points[s.id] == 50  # rank 2 of n=2: shallower despite longer history
+
+
+async def test_daily_points_for_race_ranks_dnfs_on_layer_arrival(db_session: AsyncSession) -> None:
+    """Two DNFs on the same deepest layer: the one who reached it first wins,
+    even after playing on far longer than the other before abandoning."""
+    organizer = await _make_user(db_session, "dpfr-e-org")
+    early = await _make_user(db_session, "dpfr-e-early")
+    late = await _make_user(db_session, "dpfr-e-late")
+    race = await _make_daily(
+        db_session, organizer=organizer, daily_date=date(2026, 5, 25), status=RaceStatus.FINISHED
+    )
+    e = await _make_participant(
+        db_session,
+        race=race,
+        user=early,
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=15_000_000,
+        current_layer=14,
+        layer_entry_igts={"13": 1_200_000, "14": 1_400_000},
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+    la = await _make_participant(
+        db_session,
+        race=race,
+        user=late,
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=2_000_000,
+        current_layer=14,
+        layer_entry_igts={"13": 1_100_000, "14": 1_600_000},
+        zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+    )
+
+    points = daily_points_for_race(await _reload_race(db_session, race.id))
+    assert points[e.id] == 100
+    assert points[la.id] == 50
 
 
 async def test_daily_points_for_race_empty_while_running(db_session: AsyncSession) -> None:

@@ -748,6 +748,47 @@ class TestConnectionManager:
         assert runner_info["gap_ms"] == 30000
 
     @pytest.mark.asyncio
+    async def test_send_leaderboard_state_all_dnf_field_gaps_on_layer_arrival(self):
+        """With no finisher and nobody still playing, the first DNF leads: the
+        other DNFs get a gap to its arrival on their layer, which explains an
+        order their final IGTs alone would contradict."""
+        from speedfog_racing.websocket.race.spectator import send_leaderboard_state
+
+        graph = {"nodes": {"n0": {"layer": 0}, "n1": {"layer": 1}, "n2": {"layer": 2}}}
+        first = MockParticipant(
+            status=ParticipantStatus.ABANDONED,
+            current_layer=2,
+            igt_ms=900000,
+            layer_entry_igts={"1": 30000, "2": 70000},
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 30000},
+                {"node_id": "n2", "igt_ms": 70000},
+            ],
+        )
+        second = MockParticipant(
+            status=ParticipantStatus.ABANDONED,
+            current_layer=2,
+            igt_ms=100000,
+            layer_entry_igts={"1": 40000, "2": 95000},
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 40000},
+                {"node_id": "n2", "igt_ms": 95000},
+            ],
+        )
+        race = MockRace(seed=MockSeed(graph_json=graph), participants=[second, first])
+
+        spec_ws = AsyncMock()
+        await send_leaderboard_state(spec_ws, race)
+
+        payload = json.loads(spec_ws.send_text.call_args[0][0])
+        assert [p["id"] for p in payload["participants"]] == [str(first.id), str(second.id)]
+        assert payload["leader_splits"] == {"0": 0, "1": 30000, "2": 70000}
+        assert payload["participants"][0]["gap_ms"] is None
+        assert payload["participants"][1]["gap_ms"] == 25000
+
+    @pytest.mark.asyncio
     async def test_broadcast_leaderboard_projects_ghosts_for_playing_mod(self):
         """Async race: a playing mod sees a projected payload, spectator sees real state."""
         from speedfog_racing.websocket.race.manager import ModConnection
@@ -994,8 +1035,38 @@ class TestLeaderboard:
         assert entry_igts[p1.id] == 50000
         assert entry_igts[p2.id] == 60000
 
-    def test_sort_abandoned_by_layer_then_igt(self):
-        """Abandoned (DNF) players sorted by layer (highest first), then IGT."""
+    def test_sort_abandoned_by_layer_then_layer_entry_igt(self):
+        """A DNF ranks on its first arrival on its deepest layer, not on when it
+        gave up: the runner who got there first and kept trying stays ahead of
+        one who arrived later but quit sooner. Read from the cache, so no graph
+        is needed."""
+        persistent = MockParticipant(
+            status=ParticipantStatus.ABANDONED,
+            current_layer=5,
+            igt_ms=300000,
+            layer_entry_igts={"4": 40000, "5": 60000},
+        )
+        quitter = MockParticipant(
+            status=ParticipantStatus.ABANDONED,
+            current_layer=5,
+            igt_ms=90000,
+            layer_entry_igts={"4": 50000, "5": 80000},
+        )
+        shallow = MockParticipant(
+            status=ParticipantStatus.ABANDONED,
+            current_layer=2,
+            igt_ms=40000,
+            layer_entry_igts={"2": 20000},
+        )
+
+        sorted_list, entry_igts = sort_leaderboard([shallow, quitter, persistent])
+
+        assert sorted_list == [persistent, quitter, shallow]
+        assert entry_igts[persistent.id] == 60000
+
+    def test_sort_abandoned_without_layer_entry_falls_back_to_igt(self):
+        """A DNF with no recorded layer entry (and no graph to find one) ranks
+        on its final IGT within its layer."""
         p1 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=2, igt_ms=90000)
         p2 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=120000)
         p3 = MockParticipant(status=ParticipantStatus.ABANDONED, current_layer=5, igt_ms=80000)
@@ -1267,19 +1338,44 @@ class TestGapComputation:
         )
         assert gap is None
 
-    def test_compute_gap_abandoned_returns_none(self):
-        """Abandoned (DNF) participants always have gap=None."""
+    def test_compute_gap_abandoned_is_layer_entry_delta(self):
+        """A DNF's gap is its arrival on its layer against the leader's, the
+        time it ranks on: the time spent there before abandoning never adds an
+        overshoot, and a layer the leader never reached has no gap."""
         from speedfog_racing.websocket.race.manager import compute_gap_ms
 
+        leader_splits = {0: 0, 1: 30000, 2: 75000, 3: 120000}
+        # Entered layer 2 at 80000 (leader 75000) and stayed 220 s, far past the
+        # leader's 45 s budget on that layer.
         gap = compute_gap_ms(
             "abandoned",
-            igt_ms=90000,
-            current_layer=3,
+            igt_ms=300000,
+            current_layer=2,
             player_layer_entry_igt=80000,
-            leader_splits={0: 0, 1: 30000, 2: 75000, 3: 120000},
+            leader_splits=leader_splits,
+            leader_igt_ms=120000,
+            leader_finished=True,
+        )
+        assert gap == 5000
+        deeper_than_leader = compute_gap_ms(
+            "abandoned",
+            igt_ms=300000,
+            current_layer=4,
+            player_layer_entry_igt=200000,
+            leader_splits=leader_splits,
             leader_igt_ms=120000,
         )
-        assert gap is None
+        assert deeper_than_leader is None
+        # Everyone enters the start layer at 0: a DNF still there has no gap.
+        start_layer = compute_gap_ms(
+            "abandoned",
+            igt_ms=60000,
+            current_layer=0,
+            player_layer_entry_igt=0,
+            leader_splits=leader_splits,
+            leader_igt_ms=120000,
+        )
+        assert start_layer is None
 
     def test_compute_gap_exceeded_budget_ahead_player(self):
         """P0: Player ahead (negative entry_delta) who exceeds budget."""

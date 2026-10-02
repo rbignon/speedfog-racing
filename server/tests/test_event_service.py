@@ -94,6 +94,7 @@ def _participant(
     igt_ms: int,
     layer: int = 5,
     finished_at: datetime | None = None,
+    layer_entry_igt: int | None = None,
 ):
     # Two zone entries make the run "qualified" for scoring, as on dailies.
     return SimpleNamespace(
@@ -102,6 +103,7 @@ def _participant(
         status=status,
         igt_ms=igt_ms,
         current_layer=layer,
+        layer_entry_igts={} if layer_entry_igt is None else {str(layer): layer_entry_igt},
         zone_history=[{"node_id": "a"}, {"node_id": "b"}],
         finished_at=finished_at,
     )
@@ -167,6 +169,25 @@ def test_score_race_ranks_finishers_then_dnf_and_marks_provisional():
     assert scores[a].rank == 2 and scores[c].rank == 3
     assert scores[c].points >= 1
     assert all(s.provisional for s in scores.values())
+
+
+def test_score_race_ranks_dnfs_on_layer_arrival_and_keeps_their_final_igt():
+    a, b = uuid4(), uuid4()
+    race = _race(
+        [
+            _participant(
+                b, ParticipantStatus.ABANDONED, 2_000_000, layer=9, layer_entry_igt=1_600_000
+            ),
+            _participant(
+                a, ParticipantStatus.ABANDONED, 9_000_000, layer=9, layer_entry_igt=1_400_000
+            ),
+        ]
+    )
+    scores = score_race(race)
+    # a reached layer 9 first: playing on for hours before abandoning costs no rank.
+    assert scores[a].rank == 1 and scores[b].rank == 2
+    # The seed card still shows the time each run actually played.
+    assert scores[a].igt_ms == 9_000_000
 
 
 def test_score_race_ignores_unqualified_runs():
@@ -277,6 +298,95 @@ def test_ladder_breaks_total_ties_on_counted_igt():
     assert [e.total for e in ladder] == [200, 200]
     assert [e.user_id for e in ladder] == [b, a]
     assert ladder[0].rank == 1 and ladder[1].rank == 2
+
+
+def test_ladder_breaks_total_ties_on_a_dnf_s_layer_arrival():
+    a, b, f1, f2 = uuid4(), uuid4(), uuid4(), uuid4()
+    # Each a 2nd-of-2 DNF on its own standard seed and a solo 1st on boss rush:
+    # a played on far longer before abandoning but reached the layer first.
+    std1 = _race(
+        [
+            _participant(f1, ParticipantStatus.FINISHED, 100),
+            _participant(a, ParticipantStatus.ABANDONED, 9000, layer=5, layer_entry_igt=1000),
+        ]
+    )
+    std2 = _race(
+        [
+            _participant(f2, ParticipantStatus.FINISHED, 100),
+            _participant(b, ParticipantStatus.ABANDONED, 2000, layer=5, layer_entry_igt=1500),
+        ]
+    )
+    boss1 = _race([_participant(a, ParticipantStatus.FINISHED, 300)])
+    boss2 = _race([_participant(b, ParticipantStatus.FINISHED, 300)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std1),
+            (parse_slot("qualifier:standard:2"), std2),
+            (parse_slot("qualifier:boss_rush:1"), boss1),
+            (parse_slot("qualifier:boss_rush:2"), boss2),
+        ],
+    )
+    ranked = [e for e in ladder if e.rank is not None]
+    assert [e.total for e in ranked] == [150, 150]
+    assert [e.user_id for e in ranked] == [a, b]
+
+
+def test_ladder_breaks_total_ties_on_finished_seeds_before_time():
+    a, b, f1, f2 = uuid4(), uuid4(), uuid4(), uuid4()
+    # Same points: a finished its standard seed 2nd, b abandoned its own 2nd,
+    # having reached its deepest layer far earlier than a's whole run took.
+    std1 = _race(
+        [
+            _participant(f1, ParticipantStatus.FINISHED, 3_600_000),
+            _participant(a, ParticipantStatus.FINISHED, 7_200_000),
+        ]
+    )
+    std2 = _race(
+        [
+            _participant(f2, ParticipantStatus.FINISHED, 3_600_000),
+            _participant(
+                b, ParticipantStatus.ABANDONED, 10_800_000, layer=9, layer_entry_igt=4_200_000
+            ),
+        ]
+    )
+    boss1 = _race([_participant(a, ParticipantStatus.FINISHED, 1_800_000)])
+    boss2 = _race([_participant(b, ParticipantStatus.FINISHED, 1_800_000)])
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std1),
+            (parse_slot("qualifier:standard:2"), std2),
+            (parse_slot("qualifier:boss_rush:1"), boss1),
+            (parse_slot("qualifier:boss_rush:2"), boss2),
+        ],
+    )
+    ranked = [e for e in ladder if e.rank is not None]
+    assert [e.total for e in ranked] == [150, 150]
+    # Two finished seeds beat one, whatever the times.
+    assert [(e.user_id, e.rank) for e in ranked] == [(a, 1), (b, 2)]
+
+
+def test_ladder_counts_a_finished_seed_over_an_equal_scoring_dnf():
+    a = uuid4()
+    # Alone on each seed, both runs score 100; the DNF reached its layer sooner
+    # than the finish took, but the finish is the seed counted.
+    std1 = _race([_participant(a, ParticipantStatus.FINISHED, 9_000_000)])
+    std2 = _race(
+        [
+            _participant(
+                a, ParticipantStatus.ABANDONED, 2_000_000, layer=5, layer_entry_igt=1_000_000
+            )
+        ]
+    )
+    ladder = compute_ladder(
+        MODES,
+        [
+            (parse_slot("qualifier:standard:1"), std1),
+            (parse_slot("qualifier:standard:2"), std2),
+        ],
+    )
+    assert ladder[0].counted_slots["standard"] == "qualifier:standard:1"
 
 
 def test_ladder_provisional_false_when_the_faster_counted_seed_is_finished():
@@ -447,6 +557,7 @@ def _ladder_of(*users):
             modes_scored=2,
             total=100 - i,
             partial=100 - i,
+            finished_seeds=2,
             igt_total=0,
             provisional=False,
             rank=i + 1,

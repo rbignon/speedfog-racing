@@ -482,6 +482,7 @@ def fake_race(
                 status=st.status,
                 igt_ms=st.igt_ms,
                 current_layer=st.current_layer,
+                layer_entry_igts=st.layer_entry_igts,
                 zone_history=st.zone_history,
                 finished_at=(
                     run.end if st.status == ParticipantStatus.FINISHED else None

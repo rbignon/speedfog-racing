@@ -741,18 +741,25 @@ def compute_gap_ms(
     - While player's IGT is within leader's time budget on the layer: gap = entry delta
     - Once player exceeds leader's exit IGT: gap = entry delta + overshoot
     - On the last layer after leader finishes: use leader's finish IGT as exit time
+    - Abandoned (DNF): entry delta on its deepest layer, the time it ranks on
+      (none on the start layer, which everyone enters at 0)
     """
     if is_leader:
         return None
-    if status not in ("playing", "finished"):
+    if status not in ("playing", "finished", "abandoned"):
         return None
     if status == "finished":
         return igt_ms - leader_igt_ms
-    # Playing: LiveSplit-style split comparison
     leader_entry = leader_splits.get(current_layer)
     if leader_entry is None or player_layer_entry_igt is None:
         return None
     entry_delta = player_layer_entry_igt - leader_entry
+    if status == "abandoned":
+        # Its arrival against the leader's, never the time spent there before
+        # abandoning, which would contradict its rank. Everyone enters the
+        # start layer at 0, so a DNF still there has no gap to show.
+        return entry_delta if current_layer > 0 else None
+    # Playing: LiveSplit-style split comparison
     # Leader's exit = leader's entry on next layer
     leader_exit = leader_splits.get(current_layer + 1)
     if leader_exit is None:
@@ -849,7 +856,8 @@ def sort_leaderboard(
     2. Playing players by layer (highest first), then layer entry IGT (lowest first)
     3. Ready players
     4. Registered players
-    5. Abandoned (DNF) players, sorted by layer (highest first), then IGT (lowest first)
+    5. Abandoned (DNF) players, sorted by layer (highest first), then layer entry IGT
+       (lowest first)
     6. Disqualified players last
     """
     status_priority = {
@@ -863,17 +871,14 @@ def sort_leaderboard(
 
     # Pre-compute layer entry IGTs for all participants (shared with caller).
     # Fast path: read the per-participant cache populated at layer advance.
-    # Fallback: scan zone_history via get_layer_entry_igt for rows migrated
-    # before the cache existed (or when the cache misses for any reason).
+    # Fallback, given a graph: scan zone_history via get_layer_entry_igt for
+    # rows migrated before the cache existed (or when the cache misses).
     entry_igts: dict[uuid.UUID, int | None] = {}
-    if graph_json:
-        for p in participants:
-            key = str(p.current_layer)
-            cached = (p.layer_entry_igts or {}).get(key)
-            if cached is not None:
-                entry_igts[p.id] = cached
-            else:
-                entry_igts[p.id] = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+    for p in participants:
+        entry = (p.layer_entry_igts or {}).get(str(p.current_layer))
+        if entry is None and graph_json:
+            entry = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
+        entry_igts[p.id] = entry
 
     def sort_key(p: Participant | ProjectedParticipant) -> tuple[int, int, int]:
         status = p.status.value
@@ -881,12 +886,12 @@ def sort_leaderboard(
 
         if status == "finished":
             return (priority, p.igt_ms, 0)
-        elif status == "playing":
+        elif status in ("playing", "abandoned"):
+            # A DNF ranks like a run in progress, on its first arrival on its
+            # deepest layer: playing on there before abandoning costs no place.
             raw = entry_igts.get(p.id)
             entry_igt = raw if raw is not None else p.igt_ms
             return (priority, -p.current_layer, entry_igt)
-        elif status == "abandoned":
-            return (priority, -p.current_layer, p.igt_ms)
         else:
             return (priority, 0, 0)
 
@@ -900,14 +905,20 @@ def _build_leader_context(
     """Compute leader splits + leader IGT for gap timing.
 
     Shared by the real-state and projected payload builders so both
-    branches surface gap_ms relative to the same leader semantics.
+    branches surface gap_ms relative to the same leader semantics. When
+    every runner is out (none finished, playing or waiting to start), the
+    first DNF leads, so the other DNFs' gaps show what orders them.
     """
     leader_splits: dict[int, int] = {}
     leader_igt_ms = 0
     has_leader = False
     if graph_json and sorted_participants:
         leader = sorted_participants[0]
-        if leader.status in (ParticipantStatus.PLAYING, ParticipantStatus.FINISHED):
+        if leader.status in (
+            ParticipantStatus.PLAYING,
+            ParticipantStatus.FINISHED,
+            ParticipantStatus.ABANDONED,
+        ):
             has_leader = True
             leader_igt_ms = leader.igt_ms
             leader_splits = build_leader_splits(leader.zone_history, graph_json)

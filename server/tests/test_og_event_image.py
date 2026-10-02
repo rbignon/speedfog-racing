@@ -92,6 +92,7 @@ def _entry(user: SimpleNamespace, igt_ms: int, *, started: bool = True) -> Simpl
         status=ParticipantStatus.FINISHED if started else ParticipantStatus.REGISTERED,
         igt_ms=igt_ms,
         current_layer=4,
+        layer_entry_igts={},
         zone_history=history,
     )
 

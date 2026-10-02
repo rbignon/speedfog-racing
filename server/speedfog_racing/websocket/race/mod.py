@@ -338,7 +338,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         room = manager.get_room(race.id)
         connected_ids = set(room.mods.keys()) if room else set()
         graph = seed.graph_json if seed else None
-        sorted_participants, _ = sort_leaderboard(race.participants)
+        sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
         participant_infos: list[ParticipantInfo] = [
             participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
             for p in sorted_participants
