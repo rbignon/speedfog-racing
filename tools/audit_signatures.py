@@ -34,10 +34,12 @@ Usage:
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 import re
 import statistics
+import sys
 from bisect import bisect_left
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Iterator, Mapping
@@ -1277,3 +1279,300 @@ def s3_grace_warp(
                 {"line": line, "candidates": [r.id for r in candidates]}
             )
     return findings, unattributed
+
+
+def evaluate(
+    bundle: Bundle, lines: list[LogLine]
+) -> tuple[list[Finding], list[dict[str, Any]]]:
+    """Every signature on every run (the base rates need them all), then the race checks."""
+    refs = build_references(bundle)
+    ratios = death_ratios(bundle, refs)
+    counts = Counter(run.user_id for run in bundle.runs)
+    findings: list[Finding] = []
+    for run in bundle.runs:
+        graph = bundle.graph(run)
+        findings += s1_deaths_stop(
+            run, graph, refs, bundle.pool(run), ratios.get(run.id, 1.0)
+        )
+        findings += s2_impossible_traversal(run, graph, refs)
+        findings += s4_save_restore(run, bundle)
+        findings += s5_layer_jump(run, graph)
+        findings += s6_fresh_account(run, bundle, counts)
+        findings += s7_igt_vs_wall(run)
+        findings += s8_debug_flags(run)
+    findings += s7_platform(bundle)
+    grace, unattributed = s3_grace_warp(lines, bundle)
+    return findings + grace, unattributed
+
+
+def is_target(finding: Finding, bundle: Bundle) -> bool:
+    if finding.run is not None:
+        return finding.run.is_target
+    return any(
+        bundle.races.get(race_id, {}).get("is_target") for race_id in finding.races
+    )
+
+
+def in_scope(
+    finding: Finding, scope: str, bundle: Bundle, player_id: str | None
+) -> bool:
+    if scope == "player":
+        return player_id in finding.players
+    return scope == "all" or is_target(finding, bundle)
+
+
+def base_rates(
+    findings: list[Finding], bundle: Bundle
+) -> dict[str, dict[str, dict[str, int]]]:
+    """Distinct runs (or races) firing each signature and strength, history versus targets."""
+    seen: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+    for finding in findings:
+        bucket = "target" if is_target(finding, bundle) else "history"
+        subject = finding.run.id if finding.run else ",".join(finding.races)
+        seen[(finding.signature, finding.strength, bucket)].add(subject)
+    rates: dict[str, dict[str, dict[str, int]]] = {}
+    for (signature, strength, bucket), subjects in seen.items():
+        cell = rates.setdefault(signature, {}).setdefault(
+            strength, {"history": 0, "target": 0}
+        )
+        cell[bucket] = len(subjects)
+    return rates
+
+
+def resolve_player(name: str, bundle: Bundle, identities: Mapping[str, Any]) -> str:
+    """A user id from a pseudonym, or from a real Twitch login through the identities."""
+    alias = name
+    for pseudonym, info in identities.items():
+        if str(info.get("twitch_username", "")).lower() == name.lower():
+            alias = pseudonym
+    for user_id, user in bundle.users.items():
+        if user.get("name") == alias:
+            return user_id
+    raise SystemExit(f"no player named {name!r} in the bundle")
+
+
+def _player(
+    user_id: str, bundle: Bundle, identities: Mapping[str, Any]
+) -> dict[str, Any]:
+    pseudonym = str(bundle.users.get(user_id, {}).get("name") or user_id)
+    real = identities.get(pseudonym, {}).get("twitch_username")
+    return {"user_id": user_id, "pseudonym": pseudonym, "name": real}
+
+
+def _label(player: Mapping[str, Any]) -> str:
+    if player.get("name") and player["name"] != player["pseudonym"]:
+        return f"{player['pseudonym']} ({player['name']})"
+    return str(player["pseudonym"])
+
+
+def _finding_json(
+    finding: Finding,
+    bundle: Bundle,
+    identities: Mapping[str, Any],
+    times: Mapping[tuple[str, int], datetime],
+) -> dict[str, Any]:
+    window: dict[str, Any] | None = None
+    if finding.run is not None and finding.entry_index is not None:
+        at, source = estimate_time(finding.run, finding.entry_index, times)
+        window = {
+            "at": at.isoformat(timespec="seconds") if at else None,
+            "source": source,
+        }
+    run = finding.run
+    return {
+        "signature": finding.signature,
+        "strength": finding.strength,
+        "title": finding.title,
+        "players": [_player(p, bundle, identities) for p in finding.players],
+        "races": [
+            {
+                "id": r,
+                "name": bundle.races.get(r, {}).get("name"),
+                "started_at": bundle.races.get(r, {}).get("started_at"),
+            }
+            for r in finding.races
+        ],
+        "run": {"kind": run.kind, "id": run.id, "race_id": run.race_id}
+        if run
+        else None,
+        "evidence": finding.evidence,
+        "window": window,
+    }
+
+
+def render_json(
+    meta: dict[str, Any],
+    findings: list[dict[str, Any]],
+    rates: dict[str, Any],
+    unattributed: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "meta": meta,
+        "findings": findings,
+        "base_rates": rates,
+        "unattributed": unattributed,
+    }
+
+
+def render_markdown(
+    meta: dict[str, Any],
+    findings: list[dict[str, Any]],
+    rates: dict[str, Any],
+    unattributed: list[dict[str, Any]],
+) -> str:
+    lines = [
+        f"# Known signatures: {meta['bundle']}",
+        "",
+        f"- Data up to: {meta['latest_activity']}",
+        f"- Scope: {meta['scope']}",
+        f"- Logs: {meta['logs'] or 'none (S3 not checked)'}",
+        f"- Logs cover: {meta['logs_period'] or '-'}",
+        f"- Thresholds: {', '.join(f'{k}={v}' for k, v in meta['thresholds'].items())}",
+        "",
+        "## Players",
+        "",
+        "| player | strongest | signatures |",
+        "| ------ | --------- | ---------- |",
+    ]
+    by_player: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for finding in findings:
+        key = _label(finding["players"][0]) if finding["players"] else "(platform)"
+        by_player[key].append(finding)
+    order = sorted(
+        by_player,
+        key=lambda k: min(STRENGTHS.index(f["strength"]) for f in by_player[k]),
+    )
+    for key in order:
+        strongest = min(by_player[key], key=lambda f: STRENGTHS.index(f["strength"]))
+        names = ", ".join(sorted({f["signature"] for f in by_player[key]}))
+        lines.append(f"| {key} | {strongest['strength']} | {names} |")
+    lines += ["", "## Findings", ""]
+    for finding in findings:
+        who = ", ".join(_label(p) for p in finding["players"]) or "(platform)"
+        lines.append(f"### [{finding['strength']}] {finding['signature']}: {who}")
+        lines.append("")
+        lines.append(f"- {finding['title']}")
+        for race in finding["races"]:
+            lines.append(f"- Race: {race['name']} ({race['started_at']}, {race['id']})")
+        if finding["run"]:
+            lines.append(f"- Run: {finding['run']['kind']} {finding['run']['id']}")
+        evidence = "; ".join(f"{k}: {v}" for k, v in finding["evidence"].items())
+        lines.append(f"- Evidence: {evidence}")
+        if finding["window"] and finding["window"]["at"]:
+            window = finding["window"]
+            lines.append(f"- VOD time: around {window['at']} UTC ({window['source']})")
+        lines.append("")
+    lines += [
+        "## Base rates",
+        "",
+        "Distinct runs (or races) firing each signature, over history and over targets.",
+        "",
+        "| signature | strength | history | targets |",
+        "| --------- | -------- | ------- | ------- |",
+    ]
+    for signature in sorted(rates):
+        for strength in STRENGTHS:
+            cell = rates[signature].get(strength)
+            if cell:
+                lines.append(
+                    f"| {signature} | {strength} | {cell['history']} | {cell['target']} |"
+                )
+    if unattributed:
+        lines += ["", "## Unattributed log lines", ""]
+        for row in unattributed:
+            candidates = ", ".join(row["candidates"]) or "none"
+            lines.append(
+                f"- {row['at']} race {row['race_id']}: {row['kind']} {row['node']} "
+                f"grace {row['grace']} (candidates: {candidates})"
+            )
+    return "\n".join(lines) + "\n"
+
+
+def thresholds() -> dict[str, Any]:
+    """The signature constants in force, for the report's header."""
+    return {
+        name: str(value) if isinstance(value, timedelta) else value
+        for name, value in globals().items()
+        if re.fullmatch(r"S\d_[A-Z_]+", name)
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Check an audit bundle against known signatures."
+    )
+    parser.add_argument("--bundle", type=Path, required=True)
+    parser.add_argument("--logs", type=Path, action="append", default=[])
+    parser.add_argument("--logs-utc-offset", type=float, default=0.0)
+    parser.add_argument("--identities", type=Path)
+    scope_group = parser.add_mutually_exclusive_group()
+    scope_group.add_argument("--scope", choices=("targets", "all"), default="targets")
+    scope_group.add_argument("--player")
+    parser.add_argument("--out-prefix", type=Path)
+    args = parser.parse_args(argv)
+
+    bundle_path = args.bundle.expanduser().resolve()
+    prefix = check_out_prefix(
+        args.out_prefix or DEFAULT_OUT_DIR / f"{bundle_path.name}.signatures",
+        bundle_path,
+    )
+    bundle = load_bundle(bundle_path)
+    identities: dict[str, Any] = (
+        json.loads(args.identities.expanduser().read_text(encoding="utf-8"))
+        if args.identities
+        else {}
+    )
+    lines = parse_logs(args.logs, args.logs_utc_offset)
+    player_id = resolve_player(args.player, bundle, identities) if args.player else None
+    scope = "player" if player_id else str(args.scope)
+
+    findings, unattributed = evaluate(bundle, lines)
+    rates = base_rates(findings, bundle)
+    selected = [f for f in findings if in_scope(f, scope, bundle, player_id)]
+    selected.sort(
+        key=lambda f: (STRENGTHS.index(f.strength), f.signature, f.players[:1])
+    )
+    times = log_times(lines)
+    rendered = [_finding_json(f, bundle, identities, times) for f in selected]
+    loose = [
+        {
+            "at": row["line"].at.isoformat(timespec="seconds"),
+            "race_id": row["line"].race_id,
+            "kind": row["line"].kind,
+            "node": row["line"].node,
+            "grace": row["line"].grace,
+            "candidates": row["candidates"],
+        }
+        for row in unattributed
+    ]
+    meta = {
+        "bundle": bundle_path.name,
+        "latest_activity": bundle.manifest.get("latest_activity"),
+        "scope": f"player {args.player}" if player_id else scope,
+        "logs": [str(p) for p in args.logs],
+        "logs_period": (
+            f"{lines[0].at.isoformat(timespec='seconds')} to "
+            f"{lines[-1].at.isoformat(timespec='seconds')}"
+            if lines
+            else None
+        ),
+        "thresholds": thresholds(),
+    }
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path = prefix.with_name(prefix.name + ".md")
+    json_path = prefix.with_name(prefix.name + ".json")
+    markdown_path.write_text(
+        render_markdown(meta, rendered, rates, loose), encoding="utf-8"
+    )
+    json_path.write_text(
+        json.dumps(render_json(meta, rendered, rates, loose), indent=2, default=str)
+        + "\n",
+        encoding="utf-8",
+    )
+    counts = Counter(f.strength for f in selected)
+    print(f"{len(selected)} findings ({dict(counts)}): {markdown_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

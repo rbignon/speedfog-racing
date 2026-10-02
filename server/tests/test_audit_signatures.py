@@ -741,3 +741,120 @@ def test_estimate_time_prefers_the_logs():
     assert at == datetime(2026, 9, 28, 12, 29, 10, 1000, tzinfo=UTC)
     at, source = sig.estimate_time(run, 2, {("r2", run.history[2]["message_id"]): T0})
     assert (at, source) == (T0, "server log")
+
+
+# --- evaluation, report, CLI ---------------------------------------------------
+
+
+def _e2e_bundle(root: Path) -> Path:
+    graph = {
+        "nodes": {
+            name: {"type": kind, "layer": i, "entrances": [], "exits": []}
+            for i, (name, kind) in enumerate(
+                [
+                    ("start", "start"),
+                    ("l1", "boss_arena"),
+                    ("l2", "boss_arena"),
+                    ("l3", "boss_arena"),
+                    ("l4", "boss_arena"),
+                    ("l5", "final_boss"),
+                ]
+            )
+        },
+        "edges": [
+            {"from": a, "to": b}
+            for a, b in [("start", "l1"), ("l1", "l2"), ("l2", "l3"), ("l3", "l4"), ("l4", "l5")]
+        ],
+    }
+    history = [
+        {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+        {"node_id": "l1", "igt_ms": 10000, "type": "fog", "message_id": 1},
+        {"node_id": "l5", "igt_ms": 30000, "type": "fog", "message_id": 2},
+    ]
+    participant = {
+        "race_id": "r1",
+        "status": "finished",
+        "igt_ms": 60000,
+        "created_at": "2026-09-26T12:00:00+00:00",
+        "finished_at": "2026-09-26T12:30:00+00:00",
+    }
+    return write_bundle(
+        root,
+        users=[
+            {"id": "u1", "name": "player_0001", "created_at": "2026-01-01T00:00:00+00:00"},
+            {"id": "u2", "name": "player_0002", "created_at": "2026-01-01T00:00:00+00:00"},
+        ],
+        races=[
+            {
+                "id": "r1",
+                "name": "Race",
+                "seed_id": "s1",
+                "is_target": True,
+                "started_at": "2026-09-26T12:00:00+00:00",
+            },
+            {"id": "r0", "name": "Old", "seed_id": "s1", "is_target": False},
+        ],
+        participants=[
+            {
+                **participant,
+                "id": "p1",
+                "user_id": "u1",
+                "zone_history": history,
+                "is_target": True,
+            },
+            {
+                **participant,
+                "id": "p0",
+                "race_id": "r0",
+                "user_id": "u2",
+                "zone_history": history,
+                "is_target": False,
+            },
+        ],
+        seeds=[{"id": "s1", "pool_name": "standard", "graph": graph}],
+    )
+
+
+def test_main_writes_both_reports_for_the_targets(tmp_path):
+    bundle = _e2e_bundle(tmp_path / "bundle")
+    identities = tmp_path / "ids.json"
+    identities.write_text(json.dumps({"player_0001": {"twitch_username": "alice"}}))
+    prefix = tmp_path / "out" / "sig"
+    assert (
+        sig.main(
+            ["--bundle", str(bundle), "--identities", str(identities), "--out-prefix", str(prefix)]
+        )
+        == 0
+    )
+    report = json.loads((tmp_path / "out" / "sig.json").read_text())
+    jumps = [f for f in report["findings"] if f["signature"] == "layer_jump"]
+    # Only the target race's run is listed; the history run counts in the base rates.
+    assert [f["run"]["id"] for f in jumps] == ["p1"]
+    assert jumps[0]["players"][0]["name"] == "alice"
+    assert report["base_rates"]["layer_jump"]["medium"] == {"history": 1, "target": 1}
+    markdown = (tmp_path / "out" / "sig.md").read_text()
+    assert "player_0001 (alice)" in markdown and "## Base rates" in markdown
+    assert "S2_STRONG_RATIO=0.75" in markdown  # the thresholds in force head the report
+
+
+def test_main_player_scope_lists_history_runs(tmp_path):
+    bundle = _e2e_bundle(tmp_path / "bundle")
+    prefix = tmp_path / "out" / "sig"
+    sig.main(["--bundle", str(bundle), "--player", "player_0002", "--out-prefix", str(prefix)])
+    report = json.loads((tmp_path / "out" / "sig.json").read_text())
+    assert {f["run"]["id"] for f in report["findings"]} == {"p0"}
+
+
+def test_main_refuses_to_write_into_the_bundle(tmp_path):
+    bundle = _e2e_bundle(tmp_path / "bundle")
+    with pytest.raises(SystemExit, match="inside the bundle"):
+        sig.main(["--bundle", str(bundle), "--out-prefix", str(bundle / "sig")])
+
+
+def test_resolve_player_by_pseudonym_or_real_name(tmp_path):
+    bundle = sig.load_bundle(_e2e_bundle(tmp_path / "bundle"))
+    identities = {"player_0002": {"twitch_username": "Bob"}}
+    assert sig.resolve_player("player_0002", bundle, {}) == "u2"
+    assert sig.resolve_player("bob", bundle, identities) == "u2"
+    with pytest.raises(SystemExit, match="no player"):
+        sig.resolve_player("carol", bundle, identities)
