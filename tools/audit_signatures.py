@@ -809,7 +809,10 @@ def s5_layer_jump(run: Run, graph: Graph) -> list[Finding]:
         elif kind == "fog" and previous_fog is not None and layer is not None:
             before = history[previous_fog]
             before_layer = graph.layer(str(before["node_id"]))
-            if before_layer is not None and layer - before_layer > 1:
+            # Coming from a predecessor (a warp or respawn to a deeper grace
+            # already found, then a fog forward) is no jump.
+            adjacent = node in graph.successors(str(history[index - 1]["node_id"]))
+            if before_layer is not None and layer - before_layer > 1 and not adjacent:
                 a, b = before.get("message_id"), entry.get("message_id")
                 gap = int(b) - int(a) if a is not None and b is not None else None
                 real = gap is not None and 0 <= gap <= S5_REAL_JUMP_MAX_GAP

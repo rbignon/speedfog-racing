@@ -519,6 +519,18 @@ def test_s5_real_jump_versus_lost_messages():
     assert finding.strength == "weak"
 
 
+def test_s5_fog_after_a_warp_forward_is_not_a_jump():
+    history = [e("start", 0, "spawn")]
+    history += [e(f"l{i}", 10 * i, mid=i) for i in range(1, 7)]
+    history += [
+        e("l1", 70, "backtrack", mid=7),  # respawn at layer 1
+        e("l2", 80, mid=8),
+        e("l6", 90, "backtrack", mid=9),  # warp to a grace already found at layer 6
+        e("l7", 100, mid=10),  # from layer 6 to 7, not from 2 to 7
+    ]
+    assert sig.s5_layer_jump(make_run(history), JUMP) == []
+
+
 def test_s5_backtrack_into_a_node_never_visited():
     far = make_run([e("start", 0, "spawn"), e("l1", 10, mid=1), e("l5", 40, "backtrack", mid=2)])
     (finding,) = sig.s5_layer_jump(far, JUMP)
