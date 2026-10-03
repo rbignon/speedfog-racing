@@ -43,7 +43,12 @@ not there); its `boss_name` is the boss actually placed in this seed.
 files, the racing mod (a DLL loaded into the game), and a config carrying that
 participant's token. The seed graph itself (`graph.json`) is removed from the
 pack. The run must start from a new save: a participant only becomes `playing`
-when the first IGT their mod reports is at most 60 seconds.
+when the first IGT their mod reports is at most 60 seconds. Within that limit,
+a runner can start playing before `started_at`. A fog crossed while the race
+is still in `setup` is never reported; one crossed during the countdown is
+reported only if the mod reconnects later in the run, and is recorded when it
+arrives. Until the run's next entry, its deaths and weapons go to its `spawn`
+entry.
 
 **The mod** reads game memory. It reports IGT and the game's death counter
 about once per second (`status_update`), reports fog traversals (event flags),

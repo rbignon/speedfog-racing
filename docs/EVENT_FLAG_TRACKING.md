@@ -90,7 +90,7 @@ At the `position_readable` rising edge:
 
 1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral, since boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
 
-2. **Deferred flags exist** → send all deferred `event_flag` messages to server. Each send gets a fresh `message_id` and remains in the mod's in-flight set until `event_flag_ack` arrives.
+2. **Deferred flags exist** → send all deferred `event_flag` messages to server. Each send gets a fresh `message_id` and remains in the mod's in-flight set until `event_flag_ack` arrives. This needs the mod connected, the race running and past its countdown, the player not finished and no wrong save frozen. Otherwise, while the race runs and the player has not finished (countdown, disconnection, wrong save), the deferred flags move to `pending_event_flags`, sent at the next reconnection; when the race is not running (setup, or the race is over) or the player has finished, they are dropped. A fog crossed before the race start therefore normally leaves no trace, since its flag is already cleared in game memory (a connection drop before its loading exit parks it in `pending_event_flags` instead).
 
 3. **No deferred flags** → this is a death/respawn/quit-out/fast-travel:
    - Capture grace entity ID from warp hook (fast travel only).
