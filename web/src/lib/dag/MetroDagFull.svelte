@@ -34,6 +34,19 @@
   } from "./constants";
   import type { DagNode, PositionedNode, RoutedEdge, DagLayout } from "./types";
   import NodePopup from "./NodePopup.svelte";
+  import LayerGapChart, { type ChartLine } from "./LayerGapChart.svelte";
+  import LayerDetailPanel from "./LayerDetailPanel.svelte";
+  import {
+    buildLayerDetail,
+    buildTimelines,
+    computeFieldStats,
+    gapSeries,
+    gateXs,
+    layerColumnXs,
+    pickTimelines,
+    selectionGaps,
+    type RunnerTimeline,
+  } from "$lib/layer-gaps";
   import {
     computeConnections,
     computePlayersAtNode,
@@ -78,6 +91,11 @@
     keepMarkSize?: boolean;
     /** Viewer's participant id; highlights their row in the node popup. */
     myParticipantId?: string | null;
+    /** Under the map, compare the highlighted runners layer by layer (gap
+     * chart and layer detail) once two or more are highlighted. Off by
+     * default so overlays and cast scenes never show it; ignored in follow
+     * mode. */
+    layerGaps?: boolean;
     onzonecodex?: (
       nodeId: string,
       displayName: string,
@@ -105,6 +123,7 @@
     fillContainer = false,
     keepMarkSize = false,
     myParticipantId = null,
+    layerGaps = false,
     onzonecodex,
   }: Props = $props();
 
@@ -197,6 +216,122 @@
     if (unchanged) return prev;
     pathSnapshot = participants;
     return participants;
+  });
+
+  // --- Layer comparison (gap chart and layer detail under the map) ---
+
+  let compareActive = $derived(
+    layerGaps && !follow && (highlightIds?.size ?? 0) >= 2,
+  );
+  let viewZoom = $state(1);
+  let viewPanX = $state(0);
+  let hoverLayer = $state<number | null>(null);
+  let pinnedLayer = $state<number | null>(null);
+  // A pin kept across a seed change (a daily reroll) may point past the new
+  // graph's last layer: show nothing rather than an empty column.
+  let activeLayer = $derived.by(() => {
+    const layer = hoverLayer ?? pinnedLayer;
+    return layer !== null && layer < graph.totalLayers ? layer : null;
+  });
+
+  // The runs the comparison reads. They only move when a runner's zone
+  // history or status does, or a non-playing runner's IGT (a finish time):
+  // while none did, this hands back the previous array, so a live IGT tick
+  // rebuilds no timeline. Typed down to the compared fields.
+  type GapInput = Pick<
+    WsParticipant,
+    "id" | "zone_history" | "status" | "igt_ms"
+  >;
+  let gapSnapshot: GapInput[] = [];
+  let gapParticipants: GapInput[] = $derived.by(() => {
+    const prev = gapSnapshot;
+    const unchanged =
+      participants.length === prev.length &&
+      participants.every((p, i) => {
+        const q = prev[i];
+        return (
+          q.id === p.id &&
+          q.zone_history === p.zone_history &&
+          q.status === p.status &&
+          (p.status === "playing" || q.igt_ms === p.igt_ms)
+        );
+      });
+    if (unchanged) return prev;
+    gapSnapshot = participants;
+    return participants;
+  });
+
+  let nodeLayerMap = $derived(new Map(graph.nodes.map((n) => [n.id, n.layer])));
+  let nodeNames = $derived(
+    new Map(graph.nodes.map((n) => [n.id, n.displayName])),
+  );
+  let timelines: Map<string, RunnerTimeline> = $derived(
+    buildTimelines(gapParticipants, nodeLayerMap, graph.totalLayers),
+  );
+  let fieldStats = $derived(
+    computeFieldStats(
+      gapParticipants.flatMap((p) => {
+        const timeline = timelines.get(p.id);
+        return timeline ? [{ status: p.status, timeline }] : [];
+      }),
+    ),
+  );
+  let selectedTimelines = $derived(
+    pickTimelines(timelines, highlightIds ?? []),
+  );
+  let selectionGapRows = $derived(
+    selectionGaps(selectedTimelines, graph.totalLayers),
+  );
+  let runnerLooks = $derived.by(() => {
+    const statusById = new Map(gapParticipants.map((p) => [p.id, p.status]));
+    return new Map(
+      pathParticipants.map((p) => [
+        p.id,
+        {
+          name: p.twitch_display_name || p.twitch_username,
+          color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
+          status: statusById.get(p.id) ?? "",
+        },
+      ]),
+    );
+  });
+  let chartLines: ChartLine[] = $derived(
+    [...selectedTimelines].flatMap(([id, timeline]) => {
+      const look = runnerLooks.get(id);
+      const gaps = selectionGapRows.get(id);
+      if (!look || !gaps) return [];
+      return [
+        {
+          id,
+          color: look.color,
+          name: look.name,
+          series: gapSeries(timeline, gaps, look.status),
+        },
+      ];
+    }),
+  );
+  let layerXs = $derived(layerColumnXs(layout.nodes, graph.totalLayers));
+  let gates = $derived(gateXs(layerXs));
+  // The only comparison input read on every tick: a playing runner's live
+  // IGT, for its time so far on the shown layer.
+  let detailColumns = $derived.by(() => {
+    if (activeLayer === null) return [];
+    const liveIgt = new Map(
+      participants
+        .filter((p) => highlightIds?.has(p.id))
+        .map((p) => [p.id, p.igt_ms]),
+    );
+    return buildLayerDetail(
+      activeLayer,
+      [...selectedTimelines].map(([id, timeline]) => ({
+        id,
+        timeline,
+        status: runnerLooks.get(id)?.status ?? "",
+        igtMs: liveIgt.get(id) ?? 0,
+      })),
+      selectionGapRows,
+      fieldStats,
+    );
   });
 
   // Per-participant visited set (node_ids seen in zone_history + current_zone).
@@ -631,6 +766,17 @@
     {/each}
   {/each}
 
+  <!-- Layer comparison: the layer shown in the detail panel -->
+  {#if compareActive && activeLayer !== null}
+    <line
+      class="layer-guide"
+      x1={layerXs[activeLayer]}
+      x2={layerXs[activeLayer]}
+      y1="0"
+      y2={layout.height}
+    />
+  {/if}
+
   <!-- Player path polylines or trailing segments -->
   {#if !follow}
     {#each playerPaths as path (path.id)}
@@ -841,6 +987,8 @@
     {:else}
       <ZoomableSvg
         bind:this={zoomableSvg}
+        bind:zoom={viewZoom}
+        bind:panX={viewPanX}
         width={layout.width}
         height={layout.height}
         {transparent}
@@ -849,6 +997,32 @@
       >
         {@render dagContent()}
       </ZoomableSvg>
+      {#if compareActive}
+        <LayerGapChart
+          lines={chartLines}
+          {layerXs}
+          {gates}
+          layoutWidth={layout.width}
+          zoom={viewZoom}
+          panX={viewPanX}
+          {activeLayer}
+          {pinnedLayer}
+          onhover={(layer) => (hoverLayer = layer)}
+          onpin={(layer) => (pinnedLayer = layer)}
+        />
+        <LayerDetailPanel
+          layer={activeLayer}
+          pinned={activeLayer !== null && activeLayer === pinnedLayer}
+          columns={detailColumns}
+          runners={runnerLooks}
+          {nodeNames}
+          onnodeclick={anonymous ? undefined : openPopupForNode}
+        />
+      {:else if layerGaps && !follow && highlightIds?.size === 1}
+        <p class="layer-gap-hint">
+          Select another runner to compare layer by layer
+        </p>
+      {/if}
     {/if}
     {#if popupData}
       <NodePopup
@@ -863,6 +1037,20 @@
 {/if}
 
 <style>
+  .layer-guide {
+    stroke: var(--color-purple);
+    stroke-width: 2;
+    stroke-dasharray: 6 6;
+    opacity: 0.6;
+    pointer-events: none;
+  }
+
+  .layer-gap-hint {
+    margin: 0.5rem 0 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
   .dag-label {
     user-select: none;
     cursor: pointer;

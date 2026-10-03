@@ -1309,6 +1309,7 @@
                 participants={raceStore.leaderboard}
                 {raceStatus}
                 highlightIds={selectedParticipantIds}
+                layerGaps
                 myParticipantId={myWsParticipantId}
                 onzonecodex={showChatSidebar ? openZoneCodex : undefined}
               />
@@ -1320,6 +1321,7 @@
                 participants={raceStore.leaderboard}
                 {raceStatus}
                 highlightIds={selectedParticipantIds}
+                layerGaps
                 focusNodeId={highlightFocusNodeId}
                 myParticipantId={myWsParticipantId}
                 onzonecodex={showChatSidebar ? openZoneCodex : undefined}
