@@ -218,6 +218,8 @@
     return participants;
   });
 
+  let nodeLayers = $derived(parseNodeLayers(graphJson));
+
   // --- Layer comparison (gap chart and layer detail under the map) ---
 
   let compareActive = $derived(
@@ -261,12 +263,11 @@
     return participants;
   });
 
-  let nodeLayerMap = $derived(new Map(graph.nodes.map((n) => [n.id, n.layer])));
   let nodeNames = $derived(
     new Map(graph.nodes.map((n) => [n.id, n.displayName])),
   );
   let timelines: Map<string, RunnerTimeline> = $derived(
-    buildTimelines(gapParticipants, nodeLayerMap, graph.totalLayers),
+    buildTimelines(gapParticipants, nodeLayers, graph.totalLayers),
   );
   let fieldStats = $derived(
     computeFieldStats(
@@ -495,7 +496,6 @@
 
   let exitTexts = $derived(parseExitTexts(graphJson));
   let entranceTexts = $derived(parseEntranceTexts(graphJson));
-  let nodeLayers = $derived(parseNodeLayers(graphJson));
   let raceFinished = $derived(raceStatus === "finished");
 
   // Popup state

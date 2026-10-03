@@ -114,8 +114,14 @@ export function buildRunnerTimeline(
       firstNodeId: entries[start].entry.node_id,
       exitNodeId,
       exitEntryIgt,
-      timeOnLayerMs: leftIgt === null ? null : leftIgt - arrivalIgt,
-      timeThroughNodeMs: leftIgt === null ? null : leftIgt - exitEntryIgt,
+      // A clock that went back (a backup restore) makes a negative time:
+      // unknown, never a record.
+      timeOnLayerMs:
+        leftIgt === null || leftIgt < arrivalIgt ? null : leftIgt - arrivalIgt,
+      timeThroughNodeMs:
+        leftIgt === null || leftIgt < exitEntryIgt
+          ? null
+          : leftIgt - exitEntryIgt,
       deaths,
     };
   }
@@ -363,14 +369,13 @@ export function buildLayerDetail(
     if (visit.timeOnLayerMs !== null) {
       state = "done";
       timeMs = visit.timeOnLayerMs;
-    } else if (layer === timeline.deepestLayer) {
-      if (status === "playing") {
-        state = "live";
-        timeMs = Math.max(0, igtMs - visit.arrivalIgt);
-      } else {
-        state = "out";
-      }
+    } else if (layer === timeline.deepestLayer && status === "playing") {
+      state = "live";
+      timeMs = Math.max(0, igtMs - visit.arrivalIgt);
+    } else if (layer === timeline.deepestLayer && isOutOfRace(status)) {
+      state = "out";
     } else {
+      // Left the layer (or finished) but the history missed when.
       state = "unknown";
     }
 
@@ -390,7 +395,10 @@ export function buildLayerDetail(
             : null,
         deaths: visit.deaths,
         backedOutOf: backedOut ? visit.firstNodeId : null,
-        detourMs: backedOut ? visit.exitEntryIgt - visit.arrivalIgt : null,
+        detourMs:
+          backedOut && visit.exitEntryIgt >= visit.arrivalIgt
+            ? visit.exitEntryIgt - visit.arrivalIgt
+            : null,
       },
     });
   }

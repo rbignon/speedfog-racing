@@ -1,6 +1,6 @@
 <script lang="ts">
   import SkullIcon from "$lib/components/SkullIcon.svelte";
-  import { formatGap } from "$lib/gap";
+  import { formatGapCompact } from "$lib/gap";
   import { formatTime } from "$lib/highlights";
   import type { DetailColumn, DetailRow } from "$lib/layer-gaps";
 
@@ -11,7 +11,8 @@
   }
 
   interface Props {
-    /** The hovered or pinned layer; null shows the hint. */
+    /** The hovered or pinned layer (0-based, shown from 1 like the node
+     * popup's depth); null shows the hint. */
     layer: number | null;
     pinned: boolean;
     columns: DetailColumn[];
@@ -28,7 +29,7 @@
 
   function entryCell(ms: number | null): string {
     if (ms === null) return "-";
-    return ms === 0 ? "lead" : formatGap(ms);
+    return ms === 0 ? "lead" : formatGapCompact(ms);
   }
 
   function timeCell(row: DetailRow): string {
@@ -46,7 +47,7 @@
 
   function vsBestCell(ms: number | null): string {
     if (ms === null) return "";
-    return ms === 0 ? "fastest" : formatGap(ms);
+    return ms === 0 ? "fastest" : formatGapCompact(ms);
   }
 
   function nodeName(nodeId: string): string {
@@ -54,12 +55,12 @@
   }
 </script>
 
-<section class="layer-detail" aria-live="polite">
+<section class="layer-detail">
   {#if layer === null}
     <p class="hint">Hover or tap a layer to compare</p>
   {:else}
     <header class="detail-head">
-      <span class="detail-layer">Layer {layer}</span>
+      <span class="detail-layer">Layer {layer + 1}</span>
       {#if pinned}<span class="pinned-tag">pinned</span>{/if}
     </header>
     {#if columns.length === 0}
@@ -128,9 +129,10 @@
               </div>
               {#if row.backedOutOf}
                 <div class="note">
-                  backed out of {nodeName(row.backedOutOf)} · {formatTime(
-                    row.detourMs ?? 0,
-                  )} detour
+                  backed out of {nodeName(
+                    row.backedOutOf,
+                  )}{#if row.detourMs !== null}
+                    · {formatTime(row.detourMs)} detour{/if}
                 </div>
               {/if}
             {/each}

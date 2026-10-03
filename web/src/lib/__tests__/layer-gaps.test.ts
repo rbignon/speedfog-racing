@@ -625,3 +625,78 @@ describe("croppedLeft", () => {
     expect(croppedLeft(800, 1000)).toBe(0);
   });
 });
+
+describe("rolled-back IGT (a backup restore sets the clock back)", () => {
+  it("leaves no time on a layer whose next arrival reads earlier", () => {
+    const t = timeline([
+      at("start", 0),
+      at("a1", 30_000),
+      at("a2", 25_000),
+      at("boss", 60_000),
+    ]);
+    expect(t.layers[1]).toMatchObject({
+      timeOnLayerMs: null,
+      timeThroughNodeMs: null,
+    });
+    expect(t.layers[2]?.timeOnLayerMs).toBe(35_000);
+  });
+
+  it("never lets a negative time become the field's best", () => {
+    const stats = computeFieldStats([
+      {
+        status: "finished",
+        timeline: timeline([
+          at("start", 0),
+          at("a1", 30_000),
+          at("a2", 25_000),
+          at("boss", 60_000),
+        ]),
+      },
+      {
+        status: "finished",
+        timeline: timeline([
+          at("start", 0),
+          at("a1", 10_000),
+          at("a2", 40_000),
+          at("boss", 60_000),
+        ]),
+      },
+    ]);
+    expect(stats.get("a1")?.samples).toEqual([30_000]);
+  });
+
+  it("names a back-out without a detour time when the clock went back during it", () => {
+    const rolled = {
+      id: "r",
+      status: "finished",
+      igtMs: 100_000,
+      timeline: timeline([
+        at("start", 0),
+        at("a1", 30_000),
+        at("start", 31_000, { type: "backtrack" }),
+        at("b1", 20_000),
+        at("a2", 50_000),
+        at("boss", 60_000),
+      ]),
+    };
+    const [col] = buildLayerDetail(1, [rolled], new Map(), new Map());
+    expect(col.rows[0]).toMatchObject({ backedOutOf: "a1", detourMs: null });
+  });
+});
+
+describe("buildLayerDetail with a finisher missing its last layers", () => {
+  it("shows the deepest recorded layer as unknown, not as a DNF", () => {
+    const finisher = {
+      id: "f",
+      status: "finished",
+      igtMs: 100_000,
+      timeline: timeline(
+        [at("start", 0), at("a1", 10_000), at("a2", 40_000)],
+        "finished",
+        100_000,
+      ),
+    };
+    const [col] = buildLayerDetail(2, [finisher], new Map(), new Map());
+    expect(col.rows[0]).toMatchObject({ state: "unknown", timeMs: null });
+  });
+});

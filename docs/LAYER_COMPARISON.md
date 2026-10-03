@@ -58,10 +58,16 @@ layer and the per-layer view is always defined.
   samples.
 - **Runner state on a layer**: done (left it), live (still on it, playing:
   time so far, no comparison), out (abandoned or disqualified on it: "DNF" or
-  "DQ"), unknown (left it, but the history missed when: "-").
+  "DQ"), unknown (left it or finished, but the history missed when: "-").
+- **Display**: layers are numbered from 1, like the node popup's depth and
+  the leaderboard; gaps use the leaderboard's compact format (`+M:SS` under
+  ten minutes, then `+Mm`, then `+HhMM`).
 - **Inconsistent histories** (a layer first recorded after the next one, or
   missing): that layer is skipped for the runner, the line joins the
   neighbouring points, and the layer before it gets no time.
+- **Rolled-back IGT** (a backup restore sets the clock back): a time that
+  would come out negative is unknown ("-"), never a record, and a back-out
+  whose detour would be negative is named without its duration.
 
 ## Chart
 
@@ -111,4 +117,5 @@ changes when a zone history (its reference, kept across `player_update`), a
 status or a finished runner's IGT changes, so live ticks rebuild no
 timeline and no field stats. The one input read on every tick is a playing
 runner's live IGT, for its time so far in the detail panel. Pan and zoom
-only change one SVG group transform.
+move the lines through one SVG group transform, and only reposition the
+death skulls and axis labels.

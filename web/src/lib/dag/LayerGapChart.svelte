@@ -45,7 +45,8 @@
   }: Props = $props();
 
   const HEIGHT = 200;
-  const TOP = 10;
+  // Room above the leading line for a death skull drawn on it.
+  const TOP = 18;
   const BOTTOM = 22;
   const PLOT_HEIGHT = HEIGHT - TOP - BOTTOM;
   const SKULL_SIZE = 12;
@@ -133,12 +134,12 @@
           role="slider"
           tabindex="0"
           aria-label="Layer comparison"
-          aria-valuemin={0}
-          aria-valuemax={totalLayers - 1}
-          aria-valuenow={activeLayer ?? 0}
+          aria-valuemin={1}
+          aria-valuemax={totalLayers}
+          aria-valuenow={(activeLayer ?? 0) + 1}
           aria-valuetext={activeLayer === null
             ? "No layer selected"
-            : `Layer ${activeLayer}`}
+            : `Layer ${activeLayer + 1}`}
           onpointermove={(e) => onhover(layerAt(e))}
           onpointerleave={() => onhover(null)}
           onclick={onClick}
@@ -220,13 +221,15 @@
               >{tick === 0 ? "lead" : formatGap(tick)}</text
             >
           {/each}
+          <!-- Layers count from 1, like the node popup's depth. The last
+               column's number would run into "Finish". -->
           {#each layerXs as layerX, layer (layer)}
-            {#if layer % 5 === 0}
+            {#if layer === 0 || ((layer + 1) % 5 === 0 && layer < totalLayers - 1)}
               <text
                 class="axis"
                 x={px(layerX)}
                 y={HEIGHT - 6}
-                text-anchor="middle">{layer}</text
+                text-anchor="middle">{layer + 1}</text
               >
             {/if}
           {/each}
