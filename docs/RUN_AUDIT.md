@@ -136,6 +136,13 @@ the same bosses in other runs. With fewer than 10 such clears to compare, the
 pace is unknown and the finding stays medium; a no-death cheat played at an
 ordinary pace reads medium too.
 
+S2 skips the first node a run enters from the start when the start node
+carries deaths, both as a finding and as a reference. Such deaths mean the
+record before the run's first entry is unreliable. One known cause is a fog
+crossed before the race start, which the mod does not report: the recorded
+entry is then a second pass, with the boss already dead. Deaths at the start
+are rare (29 of about 12,700 runs by 2026-10-02, training sessions included).
+
 In-zone grace queries in a node mostly name one and the same grace for every
 runner. S3 turns an in-zone warp into info when another runner warps to that
 grace in that node too, and no other grace of the node draws more runners

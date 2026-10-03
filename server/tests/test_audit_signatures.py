@@ -359,6 +359,40 @@ def test_s2_boss_falls_back_to_a_loose_reference():
     assert finding.evidence["reference"].startswith("same boss, any gates")
 
 
+def _first_node_run(rid: str, a_s: float, spawn_deaths: int = 0) -> Any:
+    """A run through ``a``, the first node out of the start, in ``a_s``, then through ``tunnel``."""
+    history = [
+        e("start", 0, "spawn", deaths=spawn_deaths),
+        e("a", 50),
+        e("tunnel", 50 + a_s),
+        e("c", 80 + a_s),
+    ]
+    return make_run(history, rid=rid, user=rid, status="abandoned")
+
+
+def _s2_first_node(subject: Any, others: list[Any]) -> list[Any]:
+    bundle = make_bundle([subject, *others], {"s1": TUNNEL})
+    refs = sig.build_references(bundle)
+    return [
+        f for f in sig.s2_impossible_traversal(subject, TUNNEL, refs) if f.evidence["node"] == "a"
+    ]
+
+
+def test_s2_skips_the_first_node_after_a_death_at_the_start():
+    # A death at the start makes the record before the run's first entry
+    # unreliable: the run may have been in ``a`` already (a fog crossed before
+    # the race start), and its recorded entry be a second pass.
+    others = [_first_node_run(f"o{i}", 70 + i) for i in range(25)]
+    early = _first_node_run("early", 20, spawn_deaths=1)
+    assert _s2_first_node(early, others) == []
+    assert len(_s2_first_node(_first_node_run("fast", 20), others)) == 1
+    # Only that first entry is set aside: the run's later nodes still count.
+    assert [t.node for t in sig.clean_traversals(early, TUNNEL)] == ["tunnel"]
+    # Nor does that entry become a floor for the other runs.
+    (finding,) = _s2_first_node(_first_node_run("quick", 55), [early, *others])
+    assert finding.evidence["floor_s"] == 70.0
+
+
 def test_s2_without_a_graph_finds_nothing():
     run = _tunnel_run("cheat", 44)
     bundle = make_bundle([run], {})

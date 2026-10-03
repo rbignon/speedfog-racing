@@ -351,9 +351,12 @@ def clean_traversals(run: Run, graph: Graph) -> list[Traversal]:
     """First entries into a node, with no death there, directly followed by a fog into a successor.
 
     A re-entry is left out: its boss may be dead already and its route known,
-    so it is not comparable with a first visit. The final node of a finished
-    run counts until the finish. The gate key names the entrance used (from
-    the node of the entry just before) and the exit taken.
+    so it is not comparable with a first visit. So is an entry out of the start
+    node after deaths there: they mean the record before that entry is
+    unreliable, and the entry may be a second pass (one known cause: a fog
+    crossed before the race start, which the mod drops). The final node of a
+    finished run counts until the finish. The gate key names the entrance used
+    (from the node of the entry just before) and the exit taken.
     """
     history = run.history
     out: list[Traversal] = []
@@ -363,6 +366,13 @@ def clean_traversals(run: Run, graph: Graph) -> list[Traversal]:
         visited = node in seen
         seen.add(node)
         if visited or entry_type(entry) not in ("fog", "spawn") or entry.get("deaths"):
+            continue
+        previous = history[index - 1] if index > 0 else None
+        if (
+            previous is not None
+            and entry_type(previous) == "spawn"
+            and previous.get("deaths")
+        ):
             continue
         if index + 1 < len(history):
             following = history[index + 1]
@@ -384,7 +394,7 @@ def clean_traversals(run: Run, graph: Graph) -> list[Traversal]:
             ms = run.igt_ms - int(entry["igt_ms"])
         if ms <= 0:
             continue
-        came_from = str(history[index - 1]["node_id"]) if index > 0 else None
+        came_from = str(previous["node_id"]) if previous is not None else None
         entrance = graph.entrance_text(node, came_from) if came_from else None
         boss = graph.boss(node)
         gate = (node, boss, entrance, exit_text) if entrance and exit_text else None
