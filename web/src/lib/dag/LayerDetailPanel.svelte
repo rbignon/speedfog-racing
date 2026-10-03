@@ -23,6 +23,9 @@
   let { layer, pinned, columns, runners, nodeNames, onnodeclick }: Props =
     $props();
 
+  /** A fourth node (only on old seeds) wraps to a second row. */
+  const MAX_NODE_COLS = 3;
+
   function entryCell(ms: number | null): string {
     if (ms === null) return "-";
     return ms === 0 ? "lead" : formatGap(ms);
@@ -62,7 +65,12 @@
     {#if columns.length === 0}
       <p class="hint">None of the selected runners reached this layer yet.</p>
     {:else}
-      <div class="columns">
+      <!-- As many columns as nodes, up to three: one or two nodes span the
+           whole width instead of leaving an empty third. -->
+      <div
+        class="columns"
+        style="--node-cols: {Math.min(columns.length, MAX_NODE_COLS)}"
+      >
         {#each columns as column (column.nodeId)}
           <div class="node-col">
             <button
@@ -171,7 +179,7 @@
 
   .columns {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(var(--node-cols, 3), minmax(0, 1fr));
     gap: 0.5rem 1.25rem;
   }
 
@@ -242,10 +250,9 @@
   /* Wide column: one line per runner. */
   @container node-col (min-width: 21rem) {
     .row {
-      grid-template-columns: 9px minmax(
-          0,
-          1fr
-        ) 2.9rem 2.9rem 3.2rem 2.3rem 1.7rem;
+      grid-template-columns:
+        9px minmax(0, 1fr)
+        2.9rem 2.9rem 3.2rem 2.3rem 1.7rem;
       grid-template-areas: "dot name entry time vs field deaths";
       margin-top: 0.2rem;
     }
