@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { buildRunnerTimeline } from "$lib/layer-gaps";
+import {
+  buildLayerDetail,
+  buildRunnerTimeline,
+  computeFieldStats,
+  fieldRank,
+  gapSeries,
+  selectionGaps,
+} from "$lib/layer-gaps";
 import type { ZoneHistoryEntry } from "$lib/zone-history";
 
 // A 4-layer seed: the start (0), two branches on layers 1 and 2, the final
@@ -154,5 +161,385 @@ describe("buildRunnerTimeline", () => {
     const t = timeline(null, "ready", 0);
     expect(t.layers).toEqual([null, null, null, null]);
     expect(t.deepestLayer).toBe(-1);
+  });
+});
+
+describe("selectionGaps", () => {
+  // a enters layers 1 and 3 first, b enters layer 2 and the finish first.
+  const a = timeline(
+    [at("start", 0), at("a1", 10_000), at("a2", 50_000), at("boss", 70_000)],
+    "finished",
+    100_000,
+  );
+  const b = timeline(
+    [at("start", 0), at("b1", 20_000), at("b2", 40_000), at("boss", 75_000)],
+    "finished",
+    95_000,
+  );
+
+  it("measures each layer against whoever of the selection entered it first", () => {
+    const gaps = selectionGaps(
+      new Map([
+        ["a", a],
+        ["b", b],
+      ]),
+      T,
+    );
+    expect(gaps.get("a")).toEqual([0, 0, 10_000, 0, 5_000]);
+    expect(gaps.get("b")).toEqual([0, 10_000, 0, 5_000, 0]);
+  });
+
+  it("leaves a runner out of the layers they have not reached", () => {
+    const c = timeline([at("start", 0), at("a1", 5_000)], "playing", 8_000);
+    const gaps = selectionGaps(
+      new Map([
+        ["a", a],
+        ["b", b],
+        ["c", c],
+      ]),
+      T,
+    );
+    expect(gaps.get("c")).toEqual([0, 0, null, null, null]);
+    expect(gaps.get("a")?.[1]).toBe(5_000);
+    expect(gaps.get("a")?.[2]).toBe(10_000);
+  });
+
+  it("gives a selected runner who has not started no gap at all", () => {
+    const gaps = selectionGaps(
+      new Map([
+        ["a", a],
+        ["d", timeline([], "ready", 0)],
+      ]),
+      T,
+    );
+    expect(gaps.get("d")).toEqual([null, null, null, null, null]);
+    expect(gaps.get("a")).toEqual([0, 0, 0, 0, 0]);
+  });
+});
+
+describe("gapSeries", () => {
+  it("draws a finisher up to the finish and marks deaths on finished layers", () => {
+    const t = timeline(
+      [
+        at("start", 0),
+        at("a1", 10_000, { deaths: 2 }),
+        at("a2", 40_000),
+        at("boss", 70_000),
+      ],
+      "finished",
+      100_000,
+    );
+    const s = gapSeries(t, [0, 0, 6_000, 4_000, 2_000], "finished");
+    expect(s.points.map((p) => p.index)).toEqual([0, 1, 2, 3, 4]);
+    expect(s.deathMarks).toEqual([{ layer: 1, count: 2, midGapMs: 3_000 }]);
+    expect(s.terminus).toBe(false);
+  });
+
+  it("ends a DNF on a terminus at its deepest layer, without its open layer's deaths", () => {
+    const t = timeline(
+      [at("start", 0), at("a1", 10_000), at("a2", 30_000, { deaths: 4 })],
+      "abandoned",
+      90_000,
+    );
+    const s = gapSeries(t, [0, 1_000, 3_000, null, null], "abandoned");
+    expect(s.points.at(-1)).toEqual({ index: 2, gapMs: 3_000 });
+    expect(s.deathMarks).toEqual([]);
+    expect(s.terminus).toBe(true);
+  });
+
+  it("ends a disqualified runner on a terminus too", () => {
+    const t = timeline(
+      [at("start", 0), at("a1", 10_000)],
+      "disqualified",
+      20_000,
+    );
+    expect(
+      gapSeries(t, [0, 0, null, null, null], "disqualified").terminus,
+    ).toBe(true);
+  });
+
+  it("skips a missing layer and keeps drawing past it", () => {
+    const t = timeline(
+      [at("start", 0), at("a2", 30_000), at("boss", 50_000)],
+      "finished",
+      80_000,
+    );
+    const s = gapSeries(t, [0, null, 2_000, 1_000, 0], "finished");
+    expect(s.points.map((p) => p.index)).toEqual([0, 2, 3, 4]);
+  });
+});
+
+describe("computeFieldStats", () => {
+  const run = (
+    history: Parameters<typeof timeline>[0],
+    status = "finished",
+  ) => ({
+    status,
+    timeline: timeline(history, status, 100_000),
+  });
+
+  it("takes each node's best and median over the runners who left through it", () => {
+    const stats = computeFieldStats([
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 20_000),
+        at("boss", 30_000),
+      ]),
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 40_000),
+        at("boss", 50_000),
+      ]),
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 30_000),
+        at("boss", 50_000),
+      ]),
+      run([
+        at("start", 0),
+        at("b1", 10_000),
+        at("b2", 50_000),
+        at("boss", 60_000),
+      ]),
+    ]);
+    expect(stats.get("a1")).toMatchObject({
+      bestMs: 10_000,
+      medianMs: 20_000,
+      count: 3,
+    });
+    expect(stats.get("b1")).toMatchObject({ bestMs: 40_000, count: 1 });
+  });
+
+  it("averages the two middle samples of an even count", () => {
+    const stats = computeFieldStats([
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 20_000),
+        at("boss", 30_000),
+      ]),
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 40_000),
+        at("boss", 50_000),
+      ]),
+    ]);
+    expect(stats.get("a1")?.medianMs).toBe(20_000);
+  });
+
+  it("times a back-out from its entry on the node it left through", () => {
+    const stats = computeFieldStats([
+      run([
+        at("start", 0),
+        at("a1", 10_000),
+        at("start", 25_000, { type: "backtrack" }),
+        at("b1", 30_000),
+        at("a2", 60_000),
+        at("boss", 70_000),
+      ]),
+    ]);
+    expect(stats.get("b1")?.samples).toEqual([30_000]);
+    expect(stats.has("a1")).toBe(false);
+  });
+
+  it("leaves open layers and disqualified runners out of the field", () => {
+    const stats = computeFieldStats([
+      run([at("start", 0), at("a1", 10_000)], "playing"),
+      run(
+        [at("start", 0), at("a1", 5_000), at("a2", 6_000), at("boss", 7_000)],
+        "disqualified",
+      ),
+    ]);
+    expect(stats.has("a1")).toBe(false);
+    expect(stats.get("start")?.samples).toEqual([10_000]);
+  });
+});
+
+describe("fieldRank", () => {
+  it("shares a rank between tied samples", () => {
+    const stats = {
+      bestMs: 10,
+      medianMs: 20,
+      count: 4,
+      samples: [10, 20, 20, 30],
+    };
+    expect([10, 20, 30, 35].map((ms) => fieldRank(stats, ms))).toEqual([
+      1, 2, 4, 5,
+    ]);
+  });
+});
+
+describe("buildLayerDetail", () => {
+  // Layer 1: a and b go straight through a1, c backs out of a1 into b1, d is
+  // still playing on b1. x is a field runner outside the selection.
+  const runs = {
+    a: {
+      status: "finished",
+      igtMs: 100_000,
+      history: [
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 20_000),
+        at("boss", 30_000),
+      ],
+    },
+    b: {
+      status: "finished",
+      igtMs: 100_000,
+      history: [
+        at("start", 0),
+        at("a1", 12_000, { deaths: 1 }),
+        at("a2", 37_000),
+        at("boss", 50_000),
+      ],
+    },
+    c: {
+      status: "finished",
+      igtMs: 100_000,
+      history: [
+        at("start", 0),
+        at("a1", 10_000),
+        at("start", 25_000, { type: "backtrack" }),
+        at("b1", 30_000),
+        at("a2", 60_000),
+        at("boss", 70_000),
+      ],
+    },
+    d: {
+      status: "playing",
+      igtMs: 18_000,
+      history: [at("start", 0), at("b1", 11_000)],
+    },
+  };
+  const runners = Object.entries(runs).map(([id, r]) => ({
+    id,
+    status: r.status,
+    igtMs: r.igtMs,
+    timeline: timeline(r.history, r.status, r.igtMs),
+  }));
+  const gaps = selectionGaps(
+    new Map(runners.map((r) => [r.id, r.timeline])),
+    T,
+  );
+  const field = computeFieldStats([
+    ...runners,
+    {
+      status: "finished",
+      timeline: timeline([
+        at("start", 0),
+        at("b1", 10_000),
+        at("b2", 30_000),
+        at("boss", 40_000),
+      ]),
+    },
+  ]);
+  const columns = buildLayerDetail(1, runners, gaps, field);
+  const row = (id: string) =>
+    columns.flatMap((c) => c.rows).find((r) => r.id === id);
+
+  it("groups runners by the node they left through, fastest node first", () => {
+    expect(columns.map((c) => c.nodeId)).toEqual(["a1", "b1"]);
+    expect(columns[0].rows.map((r) => r.id)).toEqual(["a", "b"]);
+    expect(columns[1].rows.map((r) => r.id)).toEqual(["c", "d"]);
+  });
+
+  it("compares each finished time with the selection's fastest, across branches", () => {
+    expect(row("a")).toMatchObject({
+      state: "done",
+      timeMs: 10_000,
+      vsBestMs: 0,
+    });
+    expect(row("b")).toMatchObject({
+      state: "done",
+      timeMs: 25_000,
+      vsBestMs: 15_000,
+      deaths: 1,
+    });
+    expect(row("c")).toMatchObject({
+      state: "done",
+      timeMs: 50_000,
+      vsBestMs: 40_000,
+    });
+  });
+
+  it("ranks a runner against the field on the node they left through", () => {
+    expect(row("a")?.fieldRank).toBe(1);
+    expect(row("b")?.fieldRank).toBe(2);
+    // c spent 30s in b1 after the detour; x did b1 in 20s.
+    expect(row("c")?.fieldRank).toBe(2);
+    expect(columns[1].field).toMatchObject({ bestMs: 20_000, count: 2 });
+  });
+
+  it("names the node a runner backed out of and the detour", () => {
+    expect(row("c")).toMatchObject({ backedOutOf: "a1", detourMs: 20_000 });
+    expect(row("a")).toMatchObject({ backedOutOf: null, detourMs: null });
+  });
+
+  it("shows a playing runner's time so far on its layer, compared with nobody", () => {
+    expect(row("d")).toMatchObject({
+      state: "live",
+      timeMs: 7_000,
+      vsBestMs: null,
+      fieldRank: null,
+    });
+  });
+
+  it("gives each runner's entry gap to the first of the selection", () => {
+    expect(row("a")?.entryGapMs).toBe(0);
+    expect(row("b")?.entryGapMs).toBe(2_000);
+    expect(row("d")?.entryGapMs).toBe(1_000);
+  });
+
+  it("calls every runner tied on the best time fastest", () => {
+    const twin = { ...runners[0], id: "a-twin" };
+    const [col] = buildLayerDetail(1, [runners[0], twin], gaps, field);
+    expect(col.rows.map((r) => r.vsBestMs)).toEqual([0, 0]);
+  });
+
+  it("marks a runner who left the race on that layer as out", () => {
+    const quit = {
+      id: "q",
+      status: "abandoned",
+      igtMs: 90_000,
+      timeline: timeline(
+        [at("start", 0), at("a1", 10_000)],
+        "abandoned",
+        90_000,
+      ),
+    };
+    const [col] = buildLayerDetail(
+      1,
+      [quit],
+      new Map([["q", [0, 0, null, null, null]]]),
+      field,
+    );
+    expect(col.rows[0]).toMatchObject({
+      state: "out",
+      timeMs: null,
+      vsBestMs: null,
+    });
+  });
+
+  it("shows no time on a layer whose exit the history missed", () => {
+    const holed = {
+      id: "h",
+      status: "finished",
+      igtMs: 90_000,
+      timeline: timeline(
+        [at("start", 0), at("a1", 10_000), at("boss", 50_000)],
+        "finished",
+        90_000,
+      ),
+    };
+    const [col] = buildLayerDetail(1, [holed], new Map(), field);
+    expect(col.rows[0]).toMatchObject({ state: "unknown", timeMs: null });
+  });
+
+  it("lists nobody on a layer no selected runner reached", () => {
+    expect(buildLayerDetail(3, [runners[3]], gaps, field)).toEqual([]);
   });
 });

@@ -11,6 +11,7 @@
  */
 
 import type { ZoneHistoryEntry } from "$lib/zone-history";
+import { isOutOfRace } from "$lib/format";
 
 export interface LayerVisit {
   /** IGT of the first history entry on a node of this layer. */
@@ -161,4 +162,272 @@ export function pickTimelines(
     if (timeline) picked.set(id, timeline);
   }
   return picked;
+}
+
+/** Arrival IGT at a layer; `index === layers.length` is the finish. */
+export function arrivalAt(t: RunnerTimeline, index: number): number | null {
+  if (index === t.layers.length) return t.finishIgt;
+  return t.layers[index]?.arrivalIgt ?? null;
+}
+
+/**
+ * Each runner's gap to the first of the selection to enter each layer,
+ * indexed 0..totalLayers (the last index is the finish). Null where the
+ * runner has no arrival; the first in, ties included, gets 0.
+ */
+export function selectionGaps(
+  timelines: Map<string, RunnerTimeline>,
+  totalLayers: number,
+): Map<string, (number | null)[]> {
+  const gaps = new Map<string, (number | null)[]>();
+  for (const id of timelines.keys()) gaps.set(id, []);
+  for (let index = 0; index <= totalLayers; index++) {
+    let first = Infinity;
+    for (const t of timelines.values()) {
+      const arrival = arrivalAt(t, index);
+      if (arrival !== null && arrival < first) first = arrival;
+    }
+    for (const [id, t] of timelines) {
+      const arrival = arrivalAt(t, index);
+      gaps.get(id)!.push(arrival === null ? null : arrival - first);
+    }
+  }
+  return gaps;
+}
+
+export interface GapSeries {
+  /** Gap at each layer entry (index totalLayers: the finish); a layer the
+   * runner has no arrival on is skipped, so the line joins its neighbours. */
+  points: { index: number; gapMs: number }[];
+  /** Deaths on a finished layer, drawn on its segment: `midGapMs` is the
+   * segment's middle height. An open layer has no segment, so no mark. */
+  deathMarks: { layer: number; count: number; midGapMs: number }[];
+  /** The runner is out of the race: the line ends on a terminus. */
+  terminus: boolean;
+}
+
+export function gapSeries(
+  timeline: RunnerTimeline,
+  gaps: (number | null)[],
+  status: string,
+): GapSeries {
+  const points: GapSeries["points"] = [];
+  gaps.forEach((gapMs, index) => {
+    if (gapMs !== null) points.push({ index, gapMs });
+  });
+  const deathMarks: GapSeries["deathMarks"] = [];
+  timeline.layers.forEach((visit, layer) => {
+    const from = gaps[layer];
+    const to = gaps[layer + 1];
+    if (
+      visit &&
+      visit.deaths > 0 &&
+      visit.timeOnLayerMs !== null &&
+      from != null &&
+      to != null
+    ) {
+      deathMarks.push({
+        layer,
+        count: visit.deaths,
+        midGapMs: (from + to) / 2,
+      });
+    }
+  });
+  return { points, deathMarks, terminus: isOutOfRace(status) };
+}
+
+export interface NodeFieldStats {
+  bestMs: number;
+  medianMs: number;
+  count: number;
+  /** Every runner's time through the node, ascending. */
+  samples: number[];
+}
+
+/**
+ * The field's reference per node: the time through the node of every runner
+ * who left a layer through it. A disqualified run never sets the reference.
+ */
+export function computeFieldStats(
+  runs: Iterable<{ status: string; timeline: RunnerTimeline }>,
+): Map<string, NodeFieldStats> {
+  const byNode = new Map<string, number[]>();
+  for (const { status, timeline } of runs) {
+    if (status === "disqualified") continue;
+    for (const visit of timeline.layers) {
+      if (!visit || visit.timeThroughNodeMs === null) continue;
+      const samples = byNode.get(visit.exitNodeId);
+      if (samples) samples.push(visit.timeThroughNodeMs);
+      else byNode.set(visit.exitNodeId, [visit.timeThroughNodeMs]);
+    }
+  }
+  const stats = new Map<string, NodeFieldStats>();
+  for (const [nodeId, samples] of byNode) {
+    samples.sort((a, b) => a - b);
+    const mid = Math.floor(samples.length / 2);
+    const medianMs =
+      samples.length % 2 === 1
+        ? samples[mid]
+        : (samples[mid - 1] + samples[mid]) / 2;
+    stats.set(nodeId, {
+      bestMs: samples[0],
+      medianMs,
+      count: samples.length,
+      samples,
+    });
+  }
+  return stats;
+}
+
+/** 1 + the number of strictly faster samples: ties share a rank. */
+export function fieldRank(stats: NodeFieldStats, ms: number): number {
+  let faster = 0;
+  for (const sample of stats.samples) {
+    if (sample >= ms) break;
+    faster++;
+  }
+  return faster + 1;
+}
+
+/**
+ * done: the runner left the layer; live: still on it (playing); out: left
+ * the race on it; unknown: left it, but the history missed when.
+ */
+export type DetailState = "done" | "live" | "out" | "unknown";
+
+export interface DetailRow {
+  id: string;
+  state: DetailState;
+  entryGapMs: number | null;
+  /** done: time on the layer; live: time so far; otherwise null. */
+  timeMs: number | null;
+  /** done only: time on the layer minus the selection's shortest. */
+  vsBestMs: number | null;
+  /** done only: rank of the time through the node among the field. */
+  fieldRank: number | null;
+  deaths: number;
+  /** The node first entered, when the runner left through another one. */
+  backedOutOf: string | null;
+  detourMs: number | null;
+}
+
+export interface DetailColumn {
+  nodeId: string;
+  field: NodeFieldStats | null;
+  rows: DetailRow[];
+}
+
+export interface DetailRunner {
+  id: string;
+  status: string;
+  /** Live IGT, for a playing runner's time so far. */
+  igtMs: number;
+  timeline: RunnerTimeline;
+}
+
+const STATE_ORDER: Record<DetailState, number> = {
+  done: 0,
+  live: 1,
+  unknown: 2,
+  out: 3,
+};
+
+function fastestDone(column: DetailColumn): number {
+  let best = Infinity;
+  for (const row of column.rows) {
+    if (row.state === "done" && row.timeMs !== null && row.timeMs < best) {
+      best = row.timeMs;
+    }
+  }
+  return best;
+}
+
+/**
+ * The layer detail: one column per node the runners left the layer
+ * through, the fastest node first, each runner's row in it.
+ */
+export function buildLayerDetail(
+  layer: number,
+  runners: DetailRunner[],
+  gaps: Map<string, (number | null)[]>,
+  field: Map<string, NodeFieldStats>,
+): DetailColumn[] {
+  const rows: { nodeId: string; row: DetailRow }[] = [];
+  for (const { id, status, igtMs, timeline } of runners) {
+    const visit = timeline.layers[layer];
+    if (!visit) continue;
+
+    let state: DetailState;
+    let timeMs: number | null = null;
+    if (visit.timeOnLayerMs !== null) {
+      state = "done";
+      timeMs = visit.timeOnLayerMs;
+    } else if (layer === timeline.deepestLayer) {
+      if (status === "playing") {
+        state = "live";
+        timeMs = Math.max(0, igtMs - visit.arrivalIgt);
+      } else {
+        state = "out";
+      }
+    } else {
+      state = "unknown";
+    }
+
+    const stats = field.get(visit.exitNodeId);
+    const backedOut = visit.exitNodeId !== visit.firstNodeId;
+    rows.push({
+      nodeId: visit.exitNodeId,
+      row: {
+        id,
+        state,
+        entryGapMs: gaps.get(id)?.[layer] ?? null,
+        timeMs,
+        vsBestMs: null,
+        fieldRank:
+          state === "done" && stats && visit.timeThroughNodeMs !== null
+            ? fieldRank(stats, visit.timeThroughNodeMs)
+            : null,
+        deaths: visit.deaths,
+        backedOutOf: backedOut ? visit.firstNodeId : null,
+        detourMs: backedOut ? visit.exitEntryIgt - visit.arrivalIgt : null,
+      },
+    });
+  }
+
+  let best = Infinity;
+  for (const { row } of rows) {
+    if (row.state === "done" && row.timeMs !== null && row.timeMs < best) {
+      best = row.timeMs;
+    }
+  }
+
+  const columns = new Map<string, DetailColumn>();
+  for (const { nodeId, row } of rows) {
+    if (row.state === "done" && row.timeMs !== null) {
+      row.vsBestMs = row.timeMs - best;
+    }
+    let column = columns.get(nodeId);
+    if (!column) {
+      column = { nodeId, field: field.get(nodeId) ?? null, rows: [] };
+      columns.set(nodeId, column);
+    }
+    column.rows.push(row);
+  }
+
+  const result = [...columns.values()];
+  for (const column of result) {
+    column.rows.sort(
+      (a, b) =>
+        STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+        (a.timeMs ?? 0) - (b.timeMs ?? 0) ||
+        a.id.localeCompare(b.id),
+    );
+  }
+  result.sort((a, b) => {
+    const fa = fastestDone(a);
+    const fb = fastestDone(b);
+    if (fa !== fb) return fa < fb ? -1 : 1;
+    return a.nodeId.localeCompare(b.nodeId);
+  });
+  return result;
 }
