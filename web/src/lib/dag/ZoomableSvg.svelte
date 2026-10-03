@@ -8,6 +8,10 @@
     children: import("svelte").Snippet;
     onnodeclick?: (nodeId: string, event: PointerEvent) => void;
     onpanstart?: () => void;
+    /** The current view, bindable so a sibling can follow the map's pan
+     * and zoom (the layer comparison chart does). */
+    zoom?: number;
+    panX?: number;
   }
 
   let {
@@ -19,11 +23,11 @@
     children,
     onnodeclick,
     onpanstart,
+    zoom = $bindable(1),
+    panX = $bindable(0),
   }: Props = $props();
 
   let svgEl: SVGSVGElement | undefined = $state();
-  let zoom = $state(1);
-  let panX = $state(0);
   let panY = $state(0);
   let isDragging = $state(false);
   let isAnimating = $state(false);
