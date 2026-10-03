@@ -5,7 +5,11 @@ import {
   computeFieldStats,
   fieldRank,
   gapSeries,
+  gapTicks,
+  gateXs,
+  layerAtX,
   selectionGaps,
+  stepLayer,
 } from "$lib/layer-gaps";
 import type { ZoneHistoryEntry } from "$lib/zone-history";
 
@@ -541,5 +545,70 @@ describe("buildLayerDetail", () => {
 
   it("lists nobody on a layer no selected runner reached", () => {
     expect(buildLayerDetail(3, [runners[3]], gaps, field)).toEqual([]);
+  });
+});
+
+describe("gateXs", () => {
+  it("puts each layer's entry halfway between columns, even unevenly spaced", () => {
+    expect(gateXs([90, 190, 340])).toEqual([40, 140, 265, 415]);
+  });
+
+  it("falls back to the default column spacing for a single layer", () => {
+    expect(gateXs([90])).toEqual([40, 140]);
+  });
+});
+
+describe("layerAtX", () => {
+  const gates = [40, 140, 265, 415];
+
+  it("finds the column between two gates, the left gate included", () => {
+    expect(layerAtX(40, gates)).toBe(0);
+    expect(layerAtX(139.9, gates)).toBe(0);
+    expect(layerAtX(140, gates)).toBe(1);
+    expect(layerAtX(414, gates)).toBe(2);
+  });
+
+  it("finds no column outside the chart", () => {
+    expect(layerAtX(39, gates)).toBeNull();
+    expect(layerAtX(415, gates)).toBeNull();
+  });
+});
+
+describe("gapTicks", () => {
+  it("keeps a one minute range when nobody is behind", () => {
+    expect(gapTicks(0)).toEqual({ stepMs: 60_000, topMs: 60_000 });
+  });
+
+  it("rounds the top up to a step", () => {
+    expect(gapTicks(61_000)).toEqual({ stepMs: 60_000, topMs: 120_000 });
+    expect(gapTicks(300_000)).toEqual({ stepMs: 60_000, topMs: 300_000 });
+  });
+
+  it("widens the step to keep at most five intervals", () => {
+    expect(gapTicks(301_000)).toEqual({ stepMs: 120_000, topMs: 360_000 });
+    expect(gapTicks(3 * 3_600_000)).toEqual({
+      stepMs: 3_600_000,
+      topMs: 3 * 3_600_000,
+    });
+  });
+
+  it("stays on hour steps past five hours", () => {
+    expect(gapTicks(6 * 3_600_000)).toEqual({
+      stepMs: 3_600_000,
+      topMs: 6 * 3_600_000,
+    });
+  });
+});
+
+describe("stepLayer", () => {
+  it("starts from an end when nothing is pinned", () => {
+    expect(stepLayer(null, 1, 30)).toBe(0);
+    expect(stepLayer(null, -1, 30)).toBe(29);
+  });
+
+  it("stops at the first and last layers", () => {
+    expect(stepLayer(0, -1, 30)).toBe(0);
+    expect(stepLayer(29, 1, 30)).toBe(29);
+    expect(stepLayer(12, 1, 30)).toBe(13);
   });
 });

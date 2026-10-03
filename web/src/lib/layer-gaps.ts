@@ -12,6 +12,7 @@
 
 import type { ZoneHistoryEntry } from "$lib/zone-history";
 import { isOutOfRace } from "$lib/format";
+import { BASE_GAP, NODE_AREA } from "$lib/dag/constants";
 
 export interface LayerVisit {
   /** IGT of the first history entry on a node of this layer. */
@@ -430,4 +431,72 @@ export function buildLayerDetail(
     return a.nodeId.localeCompare(b.nodeId);
   });
   return result;
+}
+
+/** Each layer's column x, read off the positioned map nodes (all the nodes
+ * of a layer share it). */
+export function layerColumnXs(
+  nodes: { layer: number; x: number }[],
+  totalLayers: number,
+): number[] {
+  const xs = new Array<number>(totalLayers).fill(0);
+  for (const node of nodes) {
+    if (node.layer < totalLayers) xs[node.layer] = node.x;
+  }
+  return xs;
+}
+
+/** Distance between two layer columns when there is only one to measure. */
+const DEFAULT_COLUMN_SPACING = BASE_GAP + NODE_AREA;
+
+/**
+ * Where each layer is entered, on the fog gate halfway between its column
+ * and the previous one: gate L is layer L's entry, the last gate is the
+ * finish, half a spacing past the last column. The chart segment between
+ * two gates sits right under the layer's nodes.
+ */
+export function gateXs(layerXs: number[]): number[] {
+  const n = layerXs.length;
+  if (n === 0) return [];
+  const firstHalf =
+    (n > 1 ? layerXs[1] - layerXs[0] : DEFAULT_COLUMN_SPACING) / 2;
+  const lastHalf =
+    (n > 1 ? layerXs[n - 1] - layerXs[n - 2] : DEFAULT_COLUMN_SPACING) / 2;
+  const gates = [layerXs[0] - firstHalf];
+  for (let i = 1; i < n; i++) gates.push((layerXs[i - 1] + layerXs[i]) / 2);
+  gates.push(layerXs[n - 1] + lastHalf);
+  return gates;
+}
+
+/** The layer whose column holds x (between its gate and the next one). */
+export function layerAtX(x: number, gates: number[]): number | null {
+  for (let layer = 0; layer < gates.length - 1; layer++) {
+    if (x >= gates[layer] && x < gates[layer + 1]) return layer;
+  }
+  return null;
+}
+
+const TICK_STEPS_MS = [1, 2, 5, 10, 20, 30, 60].map((m) => m * 60_000);
+const MAX_TICK_INTERVALS = 5;
+
+/** The y axis: the smallest step keeping at most five intervals, the top
+ * rounded up to it, one step minimum. */
+export function gapTicks(maxGapMs: number): { stepMs: number; topMs: number } {
+  const stepMs =
+    TICK_STEPS_MS.find((s) => Math.ceil(maxGapMs / s) <= MAX_TICK_INTERVALS) ??
+    TICK_STEPS_MS[TICK_STEPS_MS.length - 1];
+  return {
+    stepMs,
+    topMs: Math.max(stepMs, Math.ceil(maxGapMs / stepMs) * stepMs),
+  };
+}
+
+/** Moves a pinned layer one column, starting from an end when none is. */
+export function stepLayer(
+  current: number | null,
+  delta: 1 | -1,
+  totalLayers: number,
+): number {
+  if (current === null) return delta > 0 ? 0 : totalLayers - 1;
+  return Math.min(totalLayers - 1, Math.max(0, current + delta));
 }
