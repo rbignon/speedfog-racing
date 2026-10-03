@@ -500,3 +500,10 @@ export function stepLayer(
   if (current === null) return delta > 0 ? 0 : totalLayers - 1;
   return Math.min(totalLayers - 1, Math.max(0, current + delta));
 }
+
+/** How much of the chart's left side its frame cuts: the chart keeps the
+ * map's 600px minimum and is centered, so a narrower frame (a phone) cuts
+ * both sides, and labels pinned to the left must move in by this much. */
+export function croppedLeft(chartWidth: number, frameWidth: number): number {
+  return Math.max(0, (chartWidth - frameWidth) / 2);
+}

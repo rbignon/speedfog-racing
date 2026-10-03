@@ -79,7 +79,9 @@ layer and the per-layer view is always defined.
 - The chart follows the map's horizontal pan and zoom: `ZoomableSvg` exposes
   `zoom` and `panX` as bindable props, and the chart uses the same box (full
   width, 600px minimum, centered, overflow cut on both sides) so one layout
-  unit maps to the same pixels in both, phones included. The chart does not
+  unit maps to the same pixels in both, phones included. Where a phone
+  crops both sides of the chart, the y labels move in to stay on the
+  visible left edge. The chart does not
   capture the mouse wheel, so it never traps the page scroll: zoom on the
   map.
 
@@ -93,7 +95,9 @@ move the pinned layer. A node name in the panel opens the map's node popup.
 ## Detail panel
 
 One column per node the selection left the layer through, the fastest node
-first; three per row, a single column when the panel is narrower than 36rem.
+first: as many columns as nodes up to three (one or two nodes span the whole
+width; a fourth, only possible on old seeds, wraps to a second row), and a
+single column when the panel is narrower than 36rem.
 The widths come from container queries on the panel, not the viewport: with
 the chat open, the main column is far narrower than the screen. A runner row
 fits on one line when its node column is at least 21rem wide, and wraps onto

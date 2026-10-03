@@ -3,6 +3,7 @@ import {
   buildLayerDetail,
   buildRunnerTimeline,
   computeFieldStats,
+  croppedLeft,
   fieldRank,
   gapSeries,
   gapTicks,
@@ -610,5 +611,17 @@ describe("stepLayer", () => {
     expect(stepLayer(0, -1, 30)).toBe(0);
     expect(stepLayer(29, 1, 30)).toBe(29);
     expect(stepLayer(12, 1, 30)).toBe(13);
+  });
+});
+
+describe("croppedLeft", () => {
+  it("measures how much of the chart's left side a narrow frame cuts", () => {
+    // The chart keeps a 600px minimum and is centered in its frame.
+    expect(croppedLeft(600, 400)).toBe(100);
+  });
+
+  it("cuts nothing when the frame holds the whole chart", () => {
+    expect(croppedLeft(800, 800)).toBe(0);
+    expect(croppedLeft(800, 1000)).toBe(0);
   });
 });

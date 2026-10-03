@@ -12,7 +12,7 @@
 <script lang="ts">
   import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import { formatGap } from "$lib/gap";
-  import { gapTicks, layerAtX, stepLayer } from "$lib/layer-gaps";
+  import { croppedLeft, gapTicks, layerAtX, stepLayer } from "$lib/layer-gaps";
 
   interface Props {
     lines: ChartLine[];
@@ -53,6 +53,9 @@
 
   let svgEl: SVGSVGElement | undefined = $state();
   let boxWidth = $state(0);
+  let frameWidth = $state(0);
+  // The y labels stay on the visible left edge when a phone crops the chart.
+  let tickX = $derived(4 + croppedLeft(boxWidth, frameWidth));
   let totalLayers = $derived(layerXs.length);
   // Same width-limited scaling as the map's SVG (its height follows the
   // viewBox aspect), so one layout unit is the same number of pixels in both.
@@ -119,7 +122,7 @@
 
 <div class="gap-chart">
   <div class="chart-title">Gap to the first of the selection, per layer</div>
-  <div class="chart-frame">
+  <div class="chart-frame" bind:clientWidth={frameWidth}>
     <div class="chart-box" bind:clientWidth={boxWidth}>
       {#if boxWidth > 0 && totalLayers > 0}
         <svg
@@ -213,7 +216,7 @@
           {/each}
 
           {#each tickValues as tick (tick)}
-            <text class="tick" x="4" y={y(tick) + (tick === 0 ? 10 : 4)}
+            <text class="tick" x={tickX} y={y(tick) + (tick === 0 ? 10 : 4)}
               >{tick === 0 ? "lead" : formatGap(tick)}</text
             >
           {/each}
