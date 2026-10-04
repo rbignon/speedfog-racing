@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
-import type { EventSummary } from "$lib/api";
+import { clearStoredToken, setStoredToken, type EventSummary } from "$lib/api";
 
 function deferred() {
   let resolve!: (value: unknown) => void;
@@ -15,6 +15,29 @@ function response(events: Partial<EventSummary>[]) {
 describe("featuredEvent store", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearStoredToken();
+    featuredEvent.events = [];
+  });
+
+  it("joins the request in flight instead of sending the same one twice", async () => {
+    // The layout and the home page both refresh on the same page load.
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response([{ slug: "season-one" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    await Promise.all([featuredEvent.refresh(), featuredEvent.refresh()]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(featuredEvent.current?.slug).toBe("season-one");
+  });
+
+  it("sends a new request once the previous one has landed", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(response([{ slug: "season-one" }]));
+    vi.stubGlobal("fetch", fetchMock);
+    await featuredEvent.refresh();
+    await featuredEvent.refresh();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("drops a response overtaken by a later request", async () => {
@@ -30,6 +53,7 @@ describe("featuredEvent store", () => {
         .mockReturnValueOnce(signedIn.promise),
     );
     const first = featuredEvent.refresh();
+    setStoredToken("signed-in");
     const second = featuredEvent.refresh();
     signedIn.resolve(response([{ slug: "season-one", my_signup: true }]));
     await second;

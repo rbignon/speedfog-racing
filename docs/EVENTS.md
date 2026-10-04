@@ -612,7 +612,9 @@ stop) until `FEATURED_TAIL` (seven days) after `ends_at`, whatever the phase.
 While it is, `GET /api/events` lists it as a summary that the home page, the
 dashboard and the navbar read through the `featuredEvent` store, which
 features the first entry: the layout refreshes it whenever the signed-in
-state changes, the two pages on mount. When two events overlap, a finished
+state changes, the two pages on mount. A refresh made while one for the same
+viewer is in flight joins it, so a page load sends a single request. When two
+events overlap, a finished
 season (kept for its champion) yields the head of the list to one still to
 come, so a season announced right after the last final is what the band
 shows; otherwise the earliest season leads.
