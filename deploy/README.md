@@ -112,6 +112,39 @@ To show a banner on every page (game patch warnings, maintenance...), set
 `sudo systemctl restart speedfog-racing`. No deploy needed; open tabs pick it
 up within 15 minutes. Comment the variables out and restart to remove it.
 
+## Event loop monitor
+
+The server is a single uvicorn process on one asyncio event loop: a coroutine
+that computes without awaiting, or a full garbage collection over a large
+heap, freezes every request and WebSocket at once. `services/loop_monitor.py`
+logs both (logger `speedfog_racing.services.loop_monitor`):
+
+- `GC pause: generation=2 duration=870 ms collected=...` (WARNING): one
+  collection took 250 ms or more.
+- `Event loop lag: 910 ms (gc 870 ms)` (WARNING): a 0.1 s probe woke up 250 ms
+  or more late; `gc` is the collection time spent while it waited. When `gc`
+  covers most of the lag, the collector froze the loop (possibly through
+  several pauses, each under the threshold). Otherwise something held the
+  loop or the GIL: a coroutine computing without awaiting, or a long C call
+  in any thread. Profile it with `py-spy record`, which samples all threads.
+  The lag can undercount a freeze by up to the probe interval.
+- An INFO summary every minute, for the whole window: collections per
+  generation, total and longest GC pause, longest lag, slow probes, and the
+  process RSS. A steadily growing `rss` across a day points at a leak.
+
+```text
+Event loop: gc gen0=... gen1=... gen2=... total=... ms max=... ms, lag max=... ms slow=..., rss=... MB
+```
+
+```bash
+sudo journalctl -u speedfog-racing --since "1 hour ago" | grep -E "GC pause|Event loop"
+```
+
+Sampling profilers do not show the collector itself: on Python 3.13, py-spy
+charges a collection to the line right after the allocation that triggered it,
+usually `raw_decode (json/decoder.py)`. Read these logs before concluding that
+JSON decoding is slow.
+
 ## Files
 
 | File                         | Purpose                                                   |

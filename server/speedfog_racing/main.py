@@ -26,6 +26,7 @@ from speedfog_racing.services.daily_seed_loop import daily_seed_loop
 from speedfog_racing.services.hard_close_loop import hard_close_loop
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
+from speedfog_racing.services.loop_monitor import EventLoopMonitor
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
 from speedfog_racing.websocket import (
     handle_mod_websocket,
@@ -68,6 +69,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as e:
         logger.warning(f"i18n loading failed: {e}")
 
+    # Start the event-loop monitor (logs GC pauses and loop lag)
+    loop_monitor_task = asyncio.create_task(EventLoopMonitor().run())
+
     # Start inactivity monitor
     monitor_task = asyncio.create_task(inactivity_monitor_loop(async_session_maker))
 
@@ -106,6 +110,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     daily_seed_task.cancel()
     try:
         await daily_seed_task
+    except asyncio.CancelledError:
+        pass
+    loop_monitor_task.cancel()
+    try:
+        await loop_monitor_task
     except asyncio.CancelledError:
         pass
     logger.info("Shutting down SpeedFog Racing server...")
