@@ -19,7 +19,7 @@ from speedfog_racing.models import Participant, Race, TrainingSession
 
 logger = logging.getLogger(__name__)
 
-OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 18.0}
+OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 20.0}
 CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 
 
@@ -420,7 +420,7 @@ anchor = "top-right"
 #   - Relative path "fonts/custom.ttf": Relative to DLL directory
 #   - Absolute path "C:\\Fonts\\MyFont.ttf": Uses the specified file
 font_path = ""
-# Font size in pixels (18.0 recommended for 1080p, 36.0 for 4K)
+# Font size in pixels (20.0 recommended for 1080p, 40.0 for 4K)
 font_size = {_get_overlay_setting(participant.user.overlay_settings, "font_size")}
 # Background color and opacity
 background_color = "#141414"

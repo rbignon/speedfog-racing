@@ -19,7 +19,7 @@
   let activeTab = $state<Tab>("overlay");
   let locales = $state<LocaleInfo[]>([]);
   let selectedLocale = $state("en");
-  let fontSize = $state(18);
+  let fontSize = $state(20);
   let inventory = $state<MyInventoryDto | null>(null);
   let selectedTemplateId = $state("default");
   let selectedBadgeId = $state<string | null>(null);
@@ -42,7 +42,7 @@
       activeTab = "rewards";
     }
     selectedLocale = auth.user?.locale ?? "en";
-    fontSize = auth.user?.overlay_settings?.font_size ?? 18;
+    fontSize = auth.user?.overlay_settings?.font_size ?? 20;
     const [loadedLocales, loadedInventory] = await Promise.all([
       fetchLocales(),
       fetchMyInventory(),
@@ -160,7 +160,7 @@
             />
             <span class="unit">px</span>
           </div>
-          <span class="hint">8–72 px (default: 18)</span>
+          <span class="hint">8–72 px (default: 20)</span>
         </div>
       </div>
 
