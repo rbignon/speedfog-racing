@@ -3,9 +3,10 @@
 import asyncio
 import logging
 import uuid
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from time import monotonic
 from typing import Any
 
 from fastapi import WebSocket
@@ -39,6 +40,12 @@ from speedfog_racing.websocket.schemas import (
 logger = logging.getLogger(__name__)
 
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
+
+# How long the field loaded for async-race heartbeats is shared (see
+# RaceRoom.ghost_participants). Bounds how stale a ghost's deaths and
+# backtracks can look in a viewer's projection: every progression that
+# broadcasts a leaderboard drops the snapshot right away.
+GHOST_SNAPSHOT_TTL = 5.0  # seconds
 
 
 @dataclass
@@ -81,6 +88,67 @@ class RaceRoom:
     mods: dict[uuid.UUID, ModConnection] = field(default_factory=dict)
     # connection_id -> connection (dict for O(1) add/remove during broadcasts)
     spectators: dict[uuid.UUID, SpectatorConnection] = field(default_factory=dict)
+    # Shared field for async-race heartbeats (see ghost_participants).
+    _ghosts: Sequence[Participant] | None = field(default=None, repr=False, compare=False)
+    _ghosts_expire_at: float = field(default=0.0, repr=False, compare=False)
+    _ghosts_generation: int = field(default=0, repr=False, compare=False)
+    _ghosts_loading: asyncio.Task[Sequence[Participant] | None] | None = field(
+        default=None, repr=False, compare=False
+    )
+
+    async def ghost_participants(
+        self, load: Callable[[], Awaitable[Sequence[Participant] | None]]
+    ) -> Sequence[Participant] | None:
+        """Every participant of the race, shared for ``GHOST_SNAPSHOT_TTL``.
+
+        On races that project ghosts, each playing mod's 1 Hz status_update
+        unicasts a leaderboard projected from the whole field. Loading the
+        field per message decodes every participant's zone_history several
+        times a second; sharing one load across the room's heartbeats keeps
+        that cost per room. Concurrent callers share a single ``load`` (and
+        its error, if it fails); a caller cancelled while waiting leaves it
+        running for the others. The snapshot is read-only: every viewer's
+        projection reads the same objects.
+
+        Returns None when ``load`` does (the race is gone), or when the field
+        was invalidated while it loaded: the leaderboard broadcast behind the
+        invalidation has just sent every mod a fresh projection, and an answer
+        built from the older field would step a ghost back.
+        """
+        if self._ghosts is not None and monotonic() < self._ghosts_expire_at:
+            return self._ghosts
+        if self._ghosts_loading is None:
+            task = asyncio.ensure_future(self._load_ghosts(load))
+            # Waiters re-raise a failure; this only silences it when none is left.
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            self._ghosts_loading = task
+        return await asyncio.shield(self._ghosts_loading)
+
+    async def _load_ghosts(
+        self, load: Callable[[], Awaitable[Sequence[Participant] | None]]
+    ) -> Sequence[Participant] | None:
+        generation = self._ghosts_generation
+        started = monotonic()
+        try:
+            ghosts = await load()
+        finally:
+            if self._ghosts_loading is asyncio.current_task():
+                self._ghosts_loading = None
+        if generation != self._ghosts_generation:
+            return None
+        self._ghosts = ghosts
+        self._ghosts_expire_at = started + GHOST_SNAPSHOT_TTL
+        return ghosts
+
+    def invalidate_ghosts(self) -> None:
+        """Drop the shared field: the next heartbeat reloads it.
+
+        A load in flight is detached: its callers get None, and the next
+        heartbeat starts a fresh load instead of joining it.
+        """
+        self._ghosts = None
+        self._ghosts_generation += 1
+        self._ghosts_loading = None
 
     async def broadcast_to_mods(self, message: str) -> None:
         """Send message to all connected mods concurrently with timeout."""
@@ -442,6 +510,9 @@ class ConnectionManager:
         room = self.get_room(race_id)
         if not room:
             return
+        # A leaderboard broadcast follows a real progression: heartbeats must
+        # not keep projecting from a field loaded before it.
+        room.invalidate_ghosts()
 
         connected_ids = set(room.mods.keys())
         real_payload = build_leaderboard_payload(
@@ -477,19 +548,21 @@ class ConnectionManager:
         self,
         *,
         race_id: uuid.UUID,
-        participant_id: uuid.UUID,
-        participants: list[Participant],
+        viewer: Participant,
+        participants: Sequence[Participant],
         graph_json: dict[str, Any] | None,
     ) -> None:
         """Unicast a projected leaderboard to a single mod (async races).
 
-        No-op when the viewer is not connected or not currently playing.
+        ``viewer`` is the mod's own, up-to-date participant: its row is never
+        projected and replaces the viewer's entry in ``participants``, which
+        may be a shared snapshot loaded a few seconds earlier. No-op when the
+        viewer is not currently playing.
         """
         room = self.get_room(race_id)
         if not room:
             return
-        viewer = next((p for p in participants if p.id == participant_id), None)
-        if viewer is None or viewer.status != ParticipantStatus.PLAYING:
+        if viewer.status != ParticipantStatus.PLAYING:
             return
         connected_ids = set(room.mods.keys())
         payload = _build_projected_payload_for_viewer(
@@ -498,7 +571,7 @@ class ConnectionManager:
             connected_ids=connected_ids,
             graph_json=graph_json,
         )
-        await room.send_to_mod(participant_id, payload)
+        await room.send_to_mod(viewer.id, payload)
 
     async def send_daily_streak_update_to_user(
         self,
@@ -997,7 +1070,7 @@ def build_leaderboard_payload(
 def _build_projected_payload_for_viewer(
     *,
     viewer: Participant,
-    participants: list[Participant],
+    participants: Sequence[Participant],
     connected_ids: set[uuid.UUID],
     graph_json: dict[str, Any] | None,
 ) -> str:

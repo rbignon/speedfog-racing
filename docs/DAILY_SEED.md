@@ -362,6 +362,8 @@ The projected payload is recomputed and unicast on:
 1. Any real progression of any participant (event_flag, finish, abandon, ready, register). The standard `broadcast_leaderboard` path runs, sending the real payload to web spectators and the per-viewer projected payload to each connected mod.
 2. The viewer's own 1Hz `status_update` heartbeat. The viewer's IGT just advanced, so its projection of the rest of the field has shifted; the server unicasts a fresh projected payload back to that single mod, without disturbing the others.
 
+The heartbeat projects the field from a snapshot shared by the whole room (`RaceRoom.ghost_participants`) instead of reloading every participant on each message: with a dozen runners at 1Hz on a 90-player daily, the per-message reload decoded every `zone_history` several times a second. The snapshot lives at most `GHOST_SNAPSHOT_TTL` (5 s), every `broadcast_leaderboard` (trigger 1) drops it, and the viewer's own row always comes from the participant the heartbeat just updated. A ghost's deaths and backtracks (which do not broadcast a leaderboard), and other runners' cosmetics (display name, badge, name template), can therefore show up to 5 s late in another runner's overlay; a ghost's progression never does: a heartbeat whose snapshot was invalidated while it loaded sends nothing, since the broadcast behind the invalidation has just delivered a fresh projection.
+
 There is no periodic server-side tick beyond what the mods themselves drive at 1Hz.
 
 ### Edge cases

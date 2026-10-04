@@ -365,6 +365,48 @@ def test_heartbeat_unicasts_fresh_projection_to_mod(
         assert alpha["status"] == "playing"
 
 
+@pytest.mark.parametrize("kind", ASYNC_KINDS)
+def test_heartbeats_share_one_field_load_and_keep_the_viewer_live(
+    daily_client: TestClient,
+    daily_db: async_sessionmaker[AsyncSession],
+    kind: RaceKind,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Heartbeats within the ghost snapshot TTL reuse one load of the field.
+
+    The viewer's own row still carries the IGT of the heartbeat being
+    answered, not the one the shared snapshot was loaded at.
+    """
+    import speedfog_racing.websocket.race.mod as mod_module
+
+    loads = 0
+    original_load = mod_module._load_race_with_participants
+
+    async def counting_load(db: AsyncSession, race_id: uuid.UUID) -> Race | None:
+        nonlocal loads
+        loads += 1
+        return await original_load(db, race_id)
+
+    monkeypatch.setattr(mod_module, "_load_race_with_participants", counting_load)
+    race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
+
+    with daily_client.websocket_connect(f"/ws/mod/{race_id}") as mod_ws:
+        mod = ModTestClient(mod_ws, b_token)
+        assert mod.auth(drain=False)["type"] == "auth_ok"
+        mod.receive_until_type("leaderboard_update")  # connect broadcast
+        mod.send_status_update(igt_ms=0, death_count=0)  # became_active
+        mod.receive_until_type("leaderboard_update")
+        loads_before = loads
+
+        mod.send_status_update(igt_ms=60_000, death_count=0)
+        mod.receive_until_type("leaderboard_update")
+        mod.send_status_update(igt_ms=61_000, death_count=0)
+        second = mod.receive_until_type("leaderboard_update")
+
+        assert loads - loads_before == 1
+        assert _participant_by_username(second, "bravo")["igt_ms"] == 61_000
+
+
 # ---------------------------------------------------------------------------
 # Test C: regular-race heartbeat does NOT unicast
 # ---------------------------------------------------------------------------

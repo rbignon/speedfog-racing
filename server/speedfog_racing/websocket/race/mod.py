@@ -665,18 +665,24 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         if not entity.race.projects_ghosts:
             return
 
-        async with self.session_maker() as db:
-            race = await _load_race_with_participants(db, entity.race_id)
-            if race is None:
-                return
-            participants = list(race.participants)
+        room = manager.get_room(entity.race_id)
+        if room is None:
+            return
+        participants = await room.ghost_participants(lambda: self._load_field(entity.race_id))
+        if participants is None:
+            return
 
         await manager.send_projected_to_mod(
             race_id=entity.race_id,
-            participant_id=self._participant_id,
+            viewer=entity,
             participants=participants,
             graph_json=self._cached_graph_json,
         )
+
+    async def _load_field(self, race_id: uuid.UUID) -> list[Participant] | None:
+        async with self.session_maker() as db:
+            race = await _load_race_with_participants(db, race_id)
+            return list(race.participants) if race is not None else None
 
     async def _broadcast_after_event_flag(
         self,
