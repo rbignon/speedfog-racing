@@ -126,8 +126,8 @@
               <div class="note">
                 backed out of {nodeName(
                   row.backedOutOf,
-                )}{#if row.detourMs !== null}
-                  · {formatTime(row.detourMs)} detour{/if}
+                )}{#if row.detourMs !== null}:
+                  {formatTime(row.detourMs)} detour{/if}
               </div>
             {/if}
           {/each}
