@@ -1119,6 +1119,46 @@ def test_training_mod_websocket_status_update(
     asyncio.run(_check())
 
 
+def test_training_status_update_reuses_the_graph_decoded_at_auth(
+    training_ws_client, training_session_data
+):
+    """The 1 Hz status_update never re-reads the seed graph (~120 KB of JSON).
+
+    The leaderboard row it broadcasts is still derived from the graph: the
+    tier of the current zone comes from the copy decoded at auth.
+    """
+    from sqlalchemy import event
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+        statements.append(statement)
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": token})
+        ws.receive_json()  # auth_ok
+        ws.receive_json()  # race_start
+
+        event.listen(db_module.engine.sync_engine, "before_cursor_execute", capture)
+        try:
+            ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+            assert ws.receive_json()["type"] == "leaderboard_update"
+            ws.send_json({"type": "status_update", "igt_ms": 2000, "death_count": 0})
+            heartbeat = ws.receive_json()
+        finally:
+            event.remove(db_module.engine.sync_engine, "before_cursor_execute", capture)
+
+    assert heartbeat["type"] == "leaderboard_update"
+    row = heartbeat["participants"][0]
+    assert row["igt_ms"] == 2000
+    assert row["current_zone"] == "limgrave_start"
+    assert row["current_layer_tier"] == 1
+    assert statements, "no SQL captured"
+    assert not [s for s in statements if "graph_json" in s]
+
+
 def test_training_mod_websocket_event_flag(
     training_ws_client, training_session_data, async_session
 ):

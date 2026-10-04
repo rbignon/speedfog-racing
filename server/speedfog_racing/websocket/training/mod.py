@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
 from speedfog_racing.discord import send_training_live_notification
-from speedfog_racing.models import TrainingSession, TrainingSessionStatus
+from speedfog_racing.models import Seed, TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_tier_for_node,
@@ -64,6 +64,24 @@ def _load_options() -> list[Any]:
 async def _load_session(db: AsyncSession, session_id: uuid.UUID) -> TrainingSession | None:
     result = await db.execute(
         select(TrainingSession).options(*_load_options()).where(TrainingSession.id == session_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def _load_session_no_graph(db: AsyncSession, session_id: uuid.UUID) -> TrainingSession | None:
+    """Load a session for a caller that already holds its seed graph decoded.
+
+    The seed comes without ``graph_json`` (~120 KB of JSON to decode on every
+    1 Hz status_update otherwise); reading it raises, so pass the cached graph
+    to whatever needs it.
+    """
+    result = await db.execute(
+        select(TrainingSession)
+        .options(
+            selectinload(TrainingSession.user),
+            selectinload(TrainingSession.seed).defer(Seed.graph_json, raiseload=True),
+        )
+        .where(TrainingSession.id == session_id)
     )
     return result.scalar_one_or_none()
 
@@ -268,6 +286,8 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         return await _load_session(db, self._session_id)
 
     async def _load_entity_for_status_update(self, db: AsyncSession) -> TrainingSession | None:
+        if self._cached_graph_json is not None:
+            return await _load_session_no_graph(db, self._session_id)
         return await _load_session(db, self._session_id)
 
     def _get_graph_json(self, entity: TrainingSession) -> dict[str, Any] | None:
@@ -342,7 +362,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         death_delta: int,
         history_changed: bool,
     ) -> None:
-        await _broadcast_participant_update(entity)
+        await _broadcast_participant_update(entity, graph_json=self._get_graph_json(entity))
 
         if history_changed:
             await _broadcast_zone_history(self._session_id, entity.zone_history or [])
@@ -387,6 +407,7 @@ def build_training_participant_info(
     *,
     mod_connected: bool = True,
     include_zone_history: bool = False,
+    graph_json: dict[str, Any] | None = None,
 ) -> ParticipantInfo:
     """Build ParticipantInfo from a training session, computing layer/tier from progress.
 
@@ -394,23 +415,27 @@ def build_training_participant_info(
     leaderboard_update broadcasts). The spectator bootstrap (_send_initial_state)
     passes include_zone_history=True to seed the client's local store; subsequent
     changes arrive as zone_history snapshots.
+
+    ``graph_json`` is the seed's graph when the caller already holds it decoded
+    (the session was then loaded without it); otherwise it is read from the seed.
     """
     seed = session.seed
+    graph = graph_json if graph_json is not None else (seed.graph_json if seed else None)
 
     current_layer = 0
     current_layer_tier: int | None = None
     current_zone = session.current_zone
-    if session.zone_history and seed and seed.graph_json:
+    if session.zone_history and graph:
         for entry in session.zone_history:
             nid = entry.get("node_id")
             if nid:
-                layer = get_layer_for_node(nid, seed.graph_json)
+                layer = get_layer_for_node(nid, graph)
                 if layer > current_layer:
                     current_layer = layer
         if not current_zone:
             current_zone = session.zone_history[-1].get("node_id")
         if current_zone:
-            current_layer_tier = get_tier_for_node(current_zone, seed.graph_json)
+            current_layer_tier = get_tier_for_node(current_zone, graph)
 
     # Finished sessions show total_layers so progress reads N/N
     if session.status == TrainingSessionStatus.FINISHED and seed:
@@ -447,14 +472,19 @@ async def handle_training_mod_websocket(
 
 
 async def _broadcast_participant_update(
-    session: TrainingSession, *, spectator_only: bool = False
+    session: TrainingSession,
+    *,
+    spectator_only: bool = False,
+    graph_json: dict[str, Any] | None = None,
 ) -> None:
     """Send leaderboard_update (single participant) to room connections."""
     room = training_manager.get_room(session.id)
     if not room:
         return
 
-    info = build_training_participant_info(session, mod_connected=room.mod is not None)
+    info = build_training_participant_info(
+        session, mod_connected=room.mod is not None, graph_json=graph_json
+    )
     message = LeaderboardUpdateMessage(participants=[info])
     payload = message.model_dump_json()
     if spectator_only:
