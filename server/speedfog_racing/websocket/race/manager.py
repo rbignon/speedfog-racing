@@ -1069,6 +1069,9 @@ def _build_projected_payload_for_viewer(
     The viewer keeps its real state (already PLAYING by caller contract);
     every other participant is projected to the viewer's IGT so finished
     and concurrent ghosts appear as if running in parallel.
+
+    ``participants`` may be the room's shared snapshot (``ghost_participants``):
+    read-only, never mutate its entries.
     """
     viewer_igt = viewer.igt_ms or 0
     projected_others: list[Participant | ProjectedParticipant] = []

@@ -4,6 +4,11 @@ Used by leaderboard broadcasts on async races (Daily Seeds and event
 qualifier seeds, see ``Race.projects_ghosts``) to render finished and
 concurrent ghosts as if they were racing in parallel with the viewer.
 See the "In-mod replay leaderboard" section of ``docs/DAILY_SEED.md``.
+
+The participants handed to these functions may be a snapshot shared by every
+viewer of the room (``RaceRoom.ghost_participants``): never mutate a
+``Participant`` or its ``zone_history`` here; expose projected values through
+wrappers like ``ProjectedParticipant``.
 """
 
 from __future__ import annotations
