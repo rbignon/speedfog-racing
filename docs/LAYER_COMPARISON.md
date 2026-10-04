@@ -7,6 +7,10 @@ layer columns, and a detail panel for one layer. It answers "where did I
 lose time against this runner, and why": a slower branch, or a slower
 execution of the same zone.
 
+The interface calls a layer a **depth**, numbered from 1 like the node
+popup and the leaderboard; this doc and the code keep the graph's "layer"
+(`graph_json`'s `layer`, 0-based).
+
 ## Where it shows
 
 `MetroDagFull` renders it behind the opt-in `layerGaps` prop, which both
@@ -59,9 +63,8 @@ layer and the per-layer view is always defined.
 - **Runner state on a layer**: done (left it), live (still on it, playing:
   time so far, no comparison), out (abandoned or disqualified on it: "DNF" or
   "DQ"), unknown (left it or finished, but the history missed when: "-").
-- **Display**: layers are numbered from 1, like the node popup's depth and
-  the leaderboard; gaps use the leaderboard's compact format (`+M:SS` under
-  ten minutes, then `+Mm`, then `+HhMM`).
+- **Display**: gaps use the leaderboard's compact format (`+M:SS` under ten
+  minutes, then `+Mm`, then `+HhMM`).
 - **Inconsistent histories** (a layer first recorded after the next one, or
   missing): that layer is skipped for the runner, the line joins the
   neighbouring points, and the layer before it gets no time.
@@ -94,9 +97,19 @@ layer and the per-layer view is always defined.
 ## Interactions
 
 Hovering a column highlights it in fog, draws a fog guide on the map at the
-same layer and fills the detail panel. A click or tap pins the layer; a
-second click or Escape releases it. With the chart focused, Left and Right
-move the pinned layer. A node name in the panel opens the map's node popup.
+same layer and fills the detail panel. The panel stays hidden until the
+first hover of a comparison, then keeps the last hovered layer (with its
+band and map guide) when the pointer leaves the chart, so it never empties
+under the reader and the pointer can reach it (`settleHover`). A click, a
+tap or an arrow key pins a layer, which clears that leftover hover: the
+pointer can then explore other columns, and leaving the chart brings the
+pin back. A second click or Escape releases it, and the released layer
+stays on show (`hoverAfterPin`). Closing the comparison resets both.
+With the chart focused, Left and Right move the pinned layer. Keys go
+through `chartKey`: an Escape that releases a pin stops there, so the
+leaderboard's window-wide Escape (which clears the selection) only answers
+a second press. A node name in
+the panel opens the map's node popup.
 
 ## Detail panel
 

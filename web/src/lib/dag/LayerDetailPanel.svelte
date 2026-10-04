@@ -11,9 +11,9 @@
   }
 
   interface Props {
-    /** The hovered or pinned layer (0-based, shown from 1 like the node
-     * popup's depth); null shows the hint. */
-    layer: number | null;
+    /** The last hovered or the pinned layer, 0-based: shown as a depth
+     * from 1, like the node popup. */
+    layer: number;
     pinned: boolean;
     columns: DetailColumn[];
     runners: Map<string, RunnerLook>;
@@ -56,90 +56,84 @@
 </script>
 
 <section class="layer-detail">
-  {#if layer === null}
-    <p class="hint">Hover or tap a layer to compare</p>
+  <header class="detail-head">
+    <span class="detail-layer">Depth {layer + 1}</span>
+    {#if pinned}<span class="pinned-tag">pinned</span>{/if}
+  </header>
+  {#if columns.length === 0}
+    <p class="hint">None of the selected runners reached this depth yet.</p>
   {:else}
-    <header class="detail-head">
-      <span class="detail-layer">Layer {layer + 1}</span>
-      {#if pinned}<span class="pinned-tag">pinned</span>{/if}
-    </header>
-    {#if columns.length === 0}
-      <p class="hint">None of the selected runners reached this layer yet.</p>
-    {:else}
-      <!-- As many columns as nodes, up to three: one or two nodes span the
-           whole width instead of leaving an empty third. -->
-      <div
-        class="columns"
-        style="--node-cols: {Math.min(columns.length, MAX_NODE_COLS)}"
-      >
-        {#each columns as column (column.nodeId)}
-          <div class="node-col">
-            <button
-              type="button"
-              class="node-name"
-              title={nodeName(column.nodeId)}
-              disabled={!onnodeclick}
-              onclick={() => onnodeclick?.(column.nodeId)}
-              >{nodeName(column.nodeId)}</button
-            >
-            <div class="field">
-              {#if column.field}
-                field best {formatTime(column.field.bestMs)} · median {formatTime(
-                  column.field.medianMs,
-                )} · {column.field.count}
-                {column.field.count === 1 ? "runner" : "runners"}
-              {:else}
-                no complete run through this node yet
-              {/if}
-            </div>
-            <div class="row heads" aria-hidden="true">
-              <span class="c-entry">entry</span>
-              <span class="c-time">time</span>
-              <span class="c-vs">vs best</span>
-              <span class="c-field">field</span>
-            </div>
-            {#each column.rows as row (row.id)}
-              {@const look = runners.get(row.id)}
-              <div class="row">
-                <span
-                  class="dot"
-                  style="background: {look?.color ?? 'transparent'}"
-                ></span>
-                <span class="name">{look?.name ?? ""}</span>
-                <span class="c-entry num muted"
-                  >{entryCell(row.entryGapMs)}</span
-                >
-                <span class="c-time num" class:live={row.state === "live"}
-                  >{timeCell(row)}</span
-                >
-                <span
-                  class="c-vs num"
-                  class:best={row.vsBestMs === 0}
-                  class:worse={row.vsBestMs !== null && row.vsBestMs > 0}
-                  >{vsBestCell(row.vsBestMs)}</span
-                >
-                <span class="c-field num muted"
-                  >{row.fieldRank !== null && column.field
-                    ? `${row.fieldRank}/${column.field.count}`
-                    : ""}</span
-                >
-                <span class="deaths">
-                  {#if row.deaths > 0}<SkullIcon size={10} />{row.deaths}{/if}
-                </span>
-              </div>
-              {#if row.backedOutOf}
-                <div class="note">
-                  backed out of {nodeName(
-                    row.backedOutOf,
-                  )}{#if row.detourMs !== null}
-                    · {formatTime(row.detourMs)} detour{/if}
-                </div>
-              {/if}
-            {/each}
+    <!-- As many columns as nodes, up to three: one or two nodes span the
+         whole width instead of leaving an empty third. -->
+    <div
+      class="columns"
+      style="--node-cols: {Math.min(columns.length, MAX_NODE_COLS)}"
+    >
+      {#each columns as column (column.nodeId)}
+        <div class="node-col">
+          <button
+            type="button"
+            class="node-name"
+            title={nodeName(column.nodeId)}
+            disabled={!onnodeclick}
+            onclick={() => onnodeclick?.(column.nodeId)}
+            >{nodeName(column.nodeId)}</button
+          >
+          <div class="field">
+            {#if column.field}
+              field best {formatTime(column.field.bestMs)} · median {formatTime(
+                column.field.medianMs,
+              )} · {column.field.count}
+              {column.field.count === 1 ? "runner" : "runners"}
+            {:else}
+              no complete run through this node yet
+            {/if}
           </div>
-        {/each}
-      </div>
-    {/if}
+          <div class="row heads" aria-hidden="true">
+            <span class="c-entry">entry</span>
+            <span class="c-time">time</span>
+            <span class="c-vs">vs best</span>
+            <span class="c-field">field</span>
+          </div>
+          {#each column.rows as row (row.id)}
+            {@const look = runners.get(row.id)}
+            <div class="row">
+              <span
+                class="dot"
+                style="background: {look?.color ?? 'transparent'}"
+              ></span>
+              <span class="name">{look?.name ?? ""}</span>
+              <span class="c-entry num muted">{entryCell(row.entryGapMs)}</span>
+              <span class="c-time num" class:live={row.state === "live"}
+                >{timeCell(row)}</span
+              >
+              <span
+                class="c-vs num"
+                class:best={row.vsBestMs === 0}
+                class:worse={row.vsBestMs !== null && row.vsBestMs > 0}
+                >{vsBestCell(row.vsBestMs)}</span
+              >
+              <span class="c-field num muted"
+                >{row.fieldRank !== null && column.field
+                  ? `${row.fieldRank}/${column.field.count}`
+                  : ""}</span
+              >
+              <span class="deaths">
+                {#if row.deaths > 0}<SkullIcon size={10} />{row.deaths}{/if}
+              </span>
+            </div>
+            {#if row.backedOutOf}
+              <div class="note">
+                backed out of {nodeName(
+                  row.backedOutOf,
+                )}{#if row.detourMs !== null}
+                  · {formatTime(row.detourMs)} detour{/if}
+              </div>
+            {/if}
+          {/each}
+        </div>
+      {/each}
+    </div>
   {/if}
 </section>
 
@@ -150,7 +144,7 @@
     padding: 0.6rem 0.75rem;
     background: var(--color-surface);
     border-radius: var(--radius-lg, 8px);
-    /* Reserved so hovering in and out of the chart never moves the page. */
+    /* Steadies the page while hovering across depths with fewer rows. */
     min-height: 8.5rem;
   }
 

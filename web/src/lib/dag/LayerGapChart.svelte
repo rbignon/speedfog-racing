@@ -12,7 +12,7 @@
 <script lang="ts">
   import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import { formatGap } from "$lib/gap";
-  import { croppedLeft, gapTicks, layerAtX, stepLayer } from "$lib/layer-gaps";
+  import { chartKey, croppedLeft, gapTicks, layerAtX } from "$lib/layer-gaps";
 
   interface Props {
     lines: ChartLine[];
@@ -106,23 +106,18 @@
   }
 
   function onKeydown(event: KeyboardEvent) {
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      event.preventDefault();
-      onpin(
-        stepLayer(
-          pinnedLayer ?? activeLayer,
-          event.key === "ArrowRight" ? 1 : -1,
-          totalLayers,
-        ),
-      );
-    } else if (event.key === "Escape" && pinnedLayer !== null) {
-      onpin(null);
-    }
+    const action = chartKey(event.key, pinnedLayer, activeLayer, totalLayers);
+    if (!action) return;
+    // Consumed here: an Escape that releases a pin must not also reach the
+    // leaderboard's window handler, which clears the whole selection.
+    event.preventDefault();
+    event.stopPropagation();
+    onpin(action.pin);
   }
 </script>
 
 <div class="gap-chart">
-  <div class="chart-title">Gap to the first of the selection, per layer</div>
+  <div class="chart-title">Gap to the first of the selection, per depth</div>
   <div class="chart-frame" bind:clientWidth={frameWidth}>
     <div class="chart-box" bind:clientWidth={boxWidth}>
       {#if boxWidth > 0 && totalLayers > 0}
@@ -133,13 +128,13 @@
           viewBox="0 0 {boxWidth} {HEIGHT}"
           role="slider"
           tabindex="0"
-          aria-label="Layer comparison"
+          aria-label="Depth comparison"
           aria-valuemin={1}
           aria-valuemax={totalLayers}
           aria-valuenow={(activeLayer ?? 0) + 1}
           aria-valuetext={activeLayer === null
-            ? "No layer selected"
-            : `Layer ${activeLayer + 1}`}
+            ? "No depth selected"
+            : `Depth ${activeLayer + 1}`}
           onpointermove={(e) => onhover(layerAt(e))}
           onpointerleave={() => onhover(null)}
           onclick={onClick}
@@ -221,7 +216,7 @@
               >{tick === 0 ? "lead" : formatGap(tick)}</text
             >
           {/each}
-          <!-- Layers count from 1, like the node popup's depth. The last
+          <!-- Depths count from 1, like the node popup. The last
                column's number would run into "Finish". -->
           {#each layerXs as layerX, layer (layer)}
             {#if layer === 0 || ((layer + 1) % 5 === 0 && layer < totalLayers - 1)}

@@ -2,14 +2,17 @@ import { describe, it, expect } from "vitest";
 import {
   buildLayerDetail,
   buildRunnerTimeline,
+  chartKey,
   computeFieldStats,
   croppedLeft,
   fieldRank,
   gapSeries,
   gapTicks,
   gateXs,
+  hoverAfterPin,
   layerAtX,
   selectionGaps,
+  settleHover,
   stepLayer,
 } from "$lib/layer-gaps";
 import type { ZoneHistoryEntry } from "$lib/zone-history";
@@ -698,5 +701,55 @@ describe("buildLayerDetail with a finisher missing its last layers", () => {
     };
     const [col] = buildLayerDetail(2, [finisher], new Map(), new Map());
     expect(col.rows[0]).toMatchObject({ state: "unknown", timeMs: null });
+  });
+});
+
+describe("settleHover", () => {
+  it("follows the pointer across the chart", () => {
+    expect(settleHover(12, 7, null)).toBe(12);
+    expect(settleHover(12, 7, 3)).toBe(12);
+  });
+
+  it("keeps the last hovered depth when the pointer leaves the chart", () => {
+    expect(settleHover(null, 7, null)).toBe(7);
+  });
+
+  it("hands the panel back to the pin when the pointer leaves", () => {
+    expect(settleHover(null, 7, 3)).toBeNull();
+  });
+});
+
+describe("hoverAfterPin", () => {
+  it("keeps showing a released pin when the pointer is elsewhere", () => {
+    expect(hoverAfterPin(null, 3, null)).toBe(3);
+  });
+
+  it("lets a new pin show over a depth left on show by an earlier hover", () => {
+    // Hovered 5, left the chart, then pinned 8 with the arrows or a tap.
+    expect(hoverAfterPin(8, null, 5)).toBeNull();
+    expect(hoverAfterPin(8, 3, 5)).toBeNull();
+  });
+
+  it("leaves the hover alone when a pin is released under the pointer", () => {
+    expect(hoverAfterPin(null, 3, 9)).toBe(9);
+  });
+});
+
+describe("chartKey", () => {
+  it("consumes Escape while a depth is pinned, to release it", () => {
+    expect(chartKey("Escape", 6, 6, 30)).toEqual({ pin: null });
+  });
+
+  it("lets Escape through when nothing is pinned, so it clears the selection", () => {
+    expect(chartKey("Escape", null, 12, 30)).toBeNull();
+  });
+
+  it("moves the pin with the arrows, from the shown depth when none is pinned", () => {
+    expect(chartKey("ArrowRight", 6, 6, 30)).toEqual({ pin: 7 });
+    expect(chartKey("ArrowLeft", null, 12, 30)).toEqual({ pin: 11 });
+  });
+
+  it("ignores other keys", () => {
+    expect(chartKey("Enter", 6, 6, 30)).toBeNull();
   });
 });

@@ -515,3 +515,55 @@ export function stepLayer(
 export function croppedLeft(chartWidth: number, frameWidth: number): number {
   return Math.max(0, (chartWidth - frameWidth) / 2);
 }
+
+/**
+ * The hovered layer after a pointer event on the chart (null: the pointer
+ * left it). Leaving keeps the last hovered layer on show, so the detail
+ * panel stays put and the pointer can reach it, unless a pin takes over.
+ */
+export function settleHover(
+  incoming: number | null,
+  current: number | null,
+  pinned: number | null,
+): number | null {
+  if (incoming !== null) return incoming;
+  return pinned !== null ? null : current;
+}
+
+/** The hovered layer once the pin changes. A new pin clears the hover, or
+ * a depth left on show by an earlier hover would hide it; a released pin
+ * stays on show while the pointer is off the chart. */
+export function hoverAfterPin(
+  nextPin: number | null,
+  previousPin: number | null,
+  hover: number | null,
+): number | null {
+  if (nextPin !== null) return null;
+  if (previousPin !== null && hover === null) return previousPin;
+  return hover;
+}
+
+/**
+ * What a key does on the focused chart: the new pin, or null when the chart
+ * leaves the key alone. Escape only belongs to the chart while a layer is
+ * pinned; otherwise it must reach the leaderboard, which clears the
+ * selection on Escape.
+ */
+export function chartKey(
+  key: string,
+  pinnedLayer: number | null,
+  activeLayer: number | null,
+  totalLayers: number,
+): { pin: number | null } | null {
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    return {
+      pin: stepLayer(
+        pinnedLayer ?? activeLayer,
+        key === "ArrowRight" ? 1 : -1,
+        totalLayers,
+      ),
+    };
+  }
+  if (key === "Escape" && pinnedLayer !== null) return { pin: null };
+  return null;
+}

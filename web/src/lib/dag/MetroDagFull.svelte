@@ -43,8 +43,10 @@
     gapSeries,
     gateXs,
     layerColumnXs,
+    hoverAfterPin,
     pickTimelines,
     selectionGaps,
+    settleHover,
     type RunnerTimeline,
   } from "$lib/layer-gaps";
   import {
@@ -229,11 +231,19 @@
   let viewPanX = $state(0);
   let hoverLayer = $state<number | null>(null);
   let pinnedLayer = $state<number | null>(null);
-  // A pin kept across a seed change (a daily reroll) may point past the new
-  // graph's last layer: show nothing rather than an empty column.
+  // A layer kept across a seed change (a daily reroll) may point past the
+  // new graph's last one: it shows nothing rather than an empty column.
   let activeLayer = $derived.by(() => {
-    const layer = hoverLayer ?? pinnedLayer;
-    return layer !== null && layer < graph.totalLayers ? layer : null;
+    const inGraph = (layer: number | null) =>
+      layer !== null && layer < graph.totalLayers ? layer : null;
+    return inGraph(hoverLayer) ?? inGraph(pinnedLayer);
+  });
+  // Each comparison starts with the panel hidden, until its first hover.
+  $effect(() => {
+    if (!compareActive) {
+      hoverLayer = null;
+      pinnedLayer = null;
+    }
   });
 
   // The runs the comparison reads. They only move when a runner's zone
@@ -317,10 +327,17 @@
   // IGT, for its time so far on the shown layer.
   let detailColumns = $derived.by(() => {
     if (activeLayer === null) return [];
+    // The live IGT only matters to a playing runner: with none selected (a
+    // finished race), the panel never reads the ticking participants.
+    const anyPlaying = [...selectedTimelines.keys()].some(
+      (id) => runnerLooks.get(id)?.status === "playing",
+    );
     const liveIgt = new Map(
-      participants
-        .filter((p) => highlightIds?.has(p.id))
-        .map((p) => [p.id, p.igt_ms]),
+      anyPlaying
+        ? participants
+            .filter((p) => highlightIds?.has(p.id))
+            .map((p) => [p.id, p.igt_ms])
+        : [],
     );
     return buildLayerDetail(
       activeLayer,
@@ -1007,20 +1024,27 @@
           panX={viewPanX}
           {activeLayer}
           {pinnedLayer}
-          onhover={(layer) => (hoverLayer = layer)}
-          onpin={(layer) => (pinnedLayer = layer)}
+          onhover={(layer) =>
+            (hoverLayer = settleHover(layer, hoverLayer, pinnedLayer))}
+          onpin={(layer) => {
+            hoverLayer = hoverAfterPin(layer, pinnedLayer, hoverLayer);
+            pinnedLayer = layer;
+          }}
         />
-        <LayerDetailPanel
-          layer={activeLayer}
-          pinned={activeLayer !== null && activeLayer === pinnedLayer}
-          columns={detailColumns}
-          runners={runnerLooks}
-          {nodeNames}
-          onnodeclick={anonymous ? undefined : openPopupForNode}
-        />
+        <!-- Shown from the first hover on, then it keeps the last depth. -->
+        {#if activeLayer !== null}
+          <LayerDetailPanel
+            layer={activeLayer}
+            pinned={activeLayer === pinnedLayer}
+            columns={detailColumns}
+            runners={runnerLooks}
+            {nodeNames}
+            onnodeclick={anonymous ? undefined : openPopupForNode}
+          />
+        {/if}
       {:else if layerGaps && !follow && highlightIds?.size === 1}
         <p class="layer-gap-hint">
-          Select another runner to compare layer by layer
+          Select another runner to compare depth by depth
         </p>
       {/if}
     {/if}
