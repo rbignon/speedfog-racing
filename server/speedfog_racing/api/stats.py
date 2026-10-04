@@ -105,7 +105,10 @@ T = TypeVar("T")
 # an adversarial client varying ``days``. ``_stats_cache_locks`` shares the
 # same unbounded-growth tradeoff: it accumulates one lock per key ever seen,
 # but is acceptable given the same bounded key space rationale.
-STATS_CACHE_TTL = 60.0
+# The aggregations span weeks of races, so minute-level freshness buys
+# nothing, while each refresh of a heavy key decodes thousands of zone
+# histories on the event loop.
+STATS_CACHE_TTL = 900.0
 
 _stats_cache: dict[str, tuple[float, Any]] = {}
 _stats_cache_locks: dict[str, asyncio.Lock] = {}
@@ -803,6 +806,15 @@ async def get_player_profiles(db: AsyncSession = Depends(get_db)) -> PlayerProfi
         return PlayerProfilesResponse(profiles=profiles)
 
     return await _cached("players", _compute, db)
+
+
+def forget_player_profiles() -> None:
+    """Drop the cached player profiles: the next request recomputes them.
+
+    For writers that replace the trait scores wholesale and must not leave the
+    previous profiles on /stats for a whole cache TTL.
+    """
+    _stats_cache.pop("players", None)
 
 
 @router.get("/weapons", response_model=WeaponStatsResponse)

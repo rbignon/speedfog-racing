@@ -28,7 +28,7 @@ Computed by `compute_public_overview` in `services/analytics_service.py`. The wi
 
 Below the KPI cards, the tab shows four teaser cards (deadliest boss, deadliest zone, top weapon combo, most common play style) that reuse the sibling tabs' endpoints client-side and link to the matching tab, plus the activity heatmap.
 
-The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`) sit behind a 60-second, stale-while-revalidate, in-process TTL cache in `api/stats.py`. Cold hits (first computation of a key since process start) are single-flight: concurrent requests compute once instead of each paying the full aggregation cost, and error responses are never cached. Once a key holds a value, requests past its TTL are served the stale value immediately while a background task (at most one per key, with its own DB session) recomputes it, so no request ever waits on a refresh; a failed refresh keeps the stale value and is retried on the next hit past the TTL. The exception is a refresh raising `HTTPException` (the data legitimately no longer resolves, e.g. a zone-detail node aged out of its window): the entry is evicted so the next request surfaces the error instead of stale data.
+The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`) sit behind a 15-minute, stale-while-revalidate, in-process TTL cache in `api/stats.py` (the aggregations span weeks of races, and a refresh of a heavy key decodes thousands of zone histories on the event loop). Cold hits (first computation of a key since process start) are single-flight: concurrent requests compute once instead of each paying the full aggregation cost, and error responses are never cached. Once a key holds a value, requests past its TTL are served the stale value immediately while a background task (at most one per key, with its own DB session) recomputes it, so no request ever waits on a refresh; a failed refresh keeps the stale value and is retried on the next hit past the TTL. The exception is a refresh raising `HTTPException` (the data legitimately no longer resolves, e.g. a zone-detail node aged out of its window): the entry is evicted so the next request surfaces the error instead of stale data.
 
 ---
 
@@ -266,7 +266,7 @@ checkout.
 
 ## Recalculation
 
-`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then rebuilds trait scores in one batched pass over every player who finished, or abandoned with in-game time, a finished race. Races with `exclude_from_stats` set do not select players (a player seen only in excluded races gets no scores). Since each score is computed from the player's full history, this gives the same result as replaying races one by one. This ensures consistency after formula changes or bug fixes.
+`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then rebuilds trait scores in one batched pass over every player who finished, or abandoned with in-game time, a finished race. Races with `exclude_from_stats` set do not select players (a player seen only in excluded races gets no scores). Since each score is computed from the player's full history, this gives the same result as replaying races one by one. This ensures consistency after formula changes or bug fixes. The endpoint then drops the cached player profiles, so `/stats` shows the new traits right away instead of after the cache TTL.
 
 ---
 

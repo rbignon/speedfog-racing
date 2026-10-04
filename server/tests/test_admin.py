@@ -18,6 +18,7 @@ from speedfog_racing.models import (
     DailySeedSchedule,
     Participant,
     ParticipantStatus,
+    PlayerTraitScores,
     Pool,
     Race,
     RaceStatus,
@@ -1519,3 +1520,28 @@ async def test_admin_update_daily_schedule_requires_admin(
             json={"pool_name": "standard"},
         )
         assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_recalculate_stats_refreshes_the_cached_player_profiles(
+    test_client, admin_user, regular_user, monkeypatch
+):
+    """/stats caches the player profiles for minutes: an admin recalculation must
+    not leave the previous ones on the page."""
+    import speedfog_racing.api.admin as admin_module
+
+    async def recalculate(db: AsyncSession) -> None:
+        db.add(PlayerTraitScores(user_id=regular_user.id, dominant_trait="rusher", rusher=80))
+        await db.commit()
+
+    monkeypatch.setattr(admin_module, "recalculate_all_stats", recalculate)
+    async with test_client as client:
+        assert (await client.get("/api/stats/players")).json()["profiles"] == {}
+        response = await client.post(
+            "/api/admin/stats/recalculate",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        profiles = (await client.get("/api/stats/players")).json()["profiles"]
+
+    assert [p["twitch_username"] for p in profiles["rusher"]] == ["regular_user"]

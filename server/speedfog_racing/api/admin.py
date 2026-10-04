@@ -18,6 +18,7 @@ from speedfog_racing.api.helpers import (
     user_response,
 )
 from speedfog_racing.api.races import after_disqualification_change, remove_participation
+from speedfog_racing.api.stats import forget_player_profiles
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.discord import fire_ban_notification
@@ -395,6 +396,7 @@ async def recalculate_stats(
 ) -> dict[str, str]:
     """Refresh seed difficulty scores and replay trait data. Requires admin role."""
     await recalculate_all_stats(db)
+    forget_player_profiles()
     return {"status": "ok"}
 
 
