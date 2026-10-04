@@ -13,6 +13,7 @@ from speedfog_racing.api.stats import (
     _aggregate_zone_stats,
     _load_zone_stats_inputs,
     _resolve_node_display,
+    get_boss_stats,
     get_zone_detail,
     get_zone_index,
     get_zone_stats,
@@ -2805,3 +2806,32 @@ class TestBacktrackRatePerVisit:
         async with async_session() as db:
             panels = await get_zone_stats(pool=None, days=3650, db=db)
         assert all(0 <= e.backtrack_rate <= 1 for e in panels.most_backtracked)
+
+
+class TestZoneFamilySharesOneLoad:
+    async def test_zone_endpoints_and_bosses_decode_the_histories_once(
+        self, async_session, three_races_with_zone_history, monkeypatch
+    ):
+        """A /stats visit hits /zones, /zones/index and /bosses, and the race page
+        opens zone sheets: they must decode the participants' zone histories once
+        per (pool, days) between them, not once each."""
+        import speedfog_racing.api.stats as stats_module
+
+        loads = 0
+        original_load = stats_module._load_zone_stats_inputs
+
+        async def counting_load(pool, days, db):
+            nonlocal loads
+            loads += 1
+            return await original_load(pool, days, db)
+
+        monkeypatch.setattr(stats_module, "_load_zone_stats_inputs", counting_load)
+        async with async_session() as db:
+            await get_zone_stats(pool=None, days=3650, db=db)
+            await get_zone_index(pool=None, days=3650, db=db)
+            await get_zone_detail(node_id="stormveil_c3d4", pool=None, days=3650, db=db)
+            with pytest.raises(HTTPException):
+                await get_zone_detail(node_id="nonexistent_ffff", pool=None, days=3650, db=db)
+            await get_boss_stats(pool=None, days=3650, db=db)
+
+        assert loads == 1

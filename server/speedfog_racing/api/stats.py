@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import median
 from time import monotonic
@@ -89,22 +90,24 @@ async def get_stats_heatmap(
 T = TypeVar("T")
 
 # In-process stale-while-revalidate TTL cache for the public aggregation
-# endpoints. Values are the response models themselves (a few KB each).
+# endpoints. Values are response models (a few KB each), or the responses of
+# the zone endpoints and /bosses built together (``_ZoneFamily``, a few
+# hundred KB).
 # Cold misses are single-flight per key so concurrent first hits compute once
 # instead of stampeding the aggregation; once a key holds a value, requests
 # past its TTL are served the stale value immediately while a background task
 # (at most one per key) recomputes it, so nobody ever waits on a refresh.
 # Entries are only evicted when a refresh raises HTTPException (the data
-# legitimately no longer resolves, e.g. a zone-detail node aged out of its
-# window; serving the stale value forever would mask the 404), so the dict's
-# size is bounded by the number of distinct keys ever requested, not by time.
-# Like the seed projection cache (``services.seed_nodes``), this is fine
-# because the key space is small in practice (a handful of pool names, a
-# capped ``days`` range on real UI calls, a finite zone-codex ``node_id``
-# set); it is not a hard cap against
-# an adversarial client varying ``days``. ``_stats_cache_locks`` shares the
-# same unbounded-growth tradeoff: it accumulates one lock per key ever seen,
-# but is acceptable given the same bounded key space rationale.
+# legitimately no longer resolves; serving the stale value forever would mask
+# the error) or when a writer drops one (``forget_player_profiles``), so the
+# dict's size is bounded by the number of distinct keys ever requested, not by
+# time. Like the seed projection cache
+# (``services.seed_nodes``), this is fine because the key space is small in
+# practice (a handful of pool names, a capped ``days`` range on real UI
+# calls); it is not a hard cap against an adversarial client varying ``days``.
+# ``_stats_cache_locks`` shares the same unbounded-growth tradeoff: it
+# accumulates one lock per key ever seen, but is acceptable given the same
+# bounded key space rationale.
 # The aggregations span weeks of races, so minute-level freshness buys
 # nothing, while each refresh of a heavy key decodes thousands of zone
 # histories on the event loop.
@@ -146,9 +149,8 @@ def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]])
                 value = await compute(db)
             _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
         except HTTPException as exc:
-            # The data legitimately no longer resolves (e.g. a zone-detail
-            # node aged out of the days window): evict so the next request
-            # takes the cold path and surfaces the error to the client
+            # The data legitimately no longer resolves: evict so the next
+            # request takes the cold path and surfaces the error to the client
             # instead of being served the stale value forever. The per-key
             # lock keeps the resulting recompute single-flight.
             _stats_cache.pop(key, None)
@@ -413,6 +415,284 @@ async def _load_zone_stats_inputs(
     return participants, await load_seed_nodes(db, seed_ids)
 
 
+@dataclass(frozen=True)
+class _ZoneFamily:
+    """The responses of the zone endpoints and /bosses for one (pool, days).
+
+    They all read the same participants' zone histories, so one load and one
+    pass build them together. Read-only: every request shares these objects
+    until the next refresh.
+    """
+
+    node_display: dict[str, NodeDisplay]
+    panels: ZoneStatsResponse
+    index: ZoneIndexResponse
+    # Per full display name, the detail of a visited zone, as reported for its
+    # representative node_id (see get_zone_detail).
+    details: dict[str, ZoneDetailResponse]
+    bosses: BossStatsResponse
+
+
+async def _zone_family(pool: str | None, days: int, db: AsyncSession) -> _ZoneFamily:
+    async def _compute(db: AsyncSession) -> _ZoneFamily:
+        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
+        node_display = _resolve_node_display(seeds_by_id)
+        node_data = _aggregate_zone_stats(
+            participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
+        )
+        return _ZoneFamily(
+            node_display=node_display,
+            panels=_zone_panels(node_data),
+            index=_zone_index(node_data),
+            details={name: _zone_detail(data) for name, data in node_data.items()},
+            bosses=_aggregate_boss_stats(participants, seeds_by_id),
+        )
+
+    return await _cached(f"zone_family:{pool}:{days}", _compute, db)
+
+
+def _zone_panels(node_data: dict[str, dict[str, Any]]) -> ZoneStatsResponse:
+    # Deadliest: by avg_deaths_per_visit desc (rate metric, not biased by popularity)
+    deadliest_nodes = sorted(
+        [n for n in node_data.values() if n["visits"] > 0],
+        key=lambda n: n["total_deaths"] / n["visits"],
+        reverse=True,
+    )[:5]
+    deadliest = [
+        ZoneStatEntry(
+            node_id=n["node_id"],
+            display_name=n["short_name"],
+            type=n["type"],
+            total_deaths=n["total_deaths"],
+            avg_deaths_per_visit=round(n["total_deaths"] / n["visits"], 2)
+            if n["visits"] > 0
+            else 0.0,
+        )
+        for n in deadliest_nodes
+    ]
+
+    # Most backtracked: by share of visits ending in a turn-away. Every
+    # counted backtrack is a distinct non-landing entry of the zone, so the
+    # rate is bounded to [0, 1] and visits > 0 whenever backtrack_count > 0.
+    backtracked_nodes = sorted(
+        [n for n in node_data.values() if n["backtrack_count"] > 0],
+        key=lambda n: n["backtrack_count"] / n["visits"],
+        reverse=True,
+    )[:5]
+    most_backtracked = [
+        ZoneBacktrackEntry(
+            node_id=n["node_id"],
+            display_name=n["short_name"],
+            type=n["type"],
+            backtrack_count=n["backtrack_count"],
+            backtrack_rate=round(n["backtrack_count"] / n["visits"], 2),
+        )
+        for n in backtracked_nodes
+    ]
+
+    # Slowest: zones with highest median clear time
+    slowest_nodes = sorted(
+        [n for n in node_data.values() if n["times"]],
+        key=lambda n: median(n["times"]),
+        reverse=True,
+    )[:5]
+    slowest = [
+        ZoneTimeEntry(
+            node_id=n["node_id"],
+            display_name=n["short_name"],
+            type=n["type"],
+            median_time_ms=round(median(n["times"])),
+            players=len(n["times"]),
+        )
+        for n in slowest_nodes
+    ]
+
+    # Fastest: zones with lowest median clear time (min 3 players to avoid outliers)
+    fastest_nodes = sorted(
+        [n for n in node_data.values() if len(n["times"]) >= 3],
+        key=lambda n: median(n["times"]),
+    )[:5]
+    fastest = [
+        ZoneTimeEntry(
+            node_id=n["node_id"],
+            display_name=n["short_name"],
+            type=n["type"],
+            median_time_ms=round(median(n["times"])),
+            players=len(n["times"]),
+        )
+        for n in fastest_nodes
+    ]
+
+    return ZoneStatsResponse(
+        deadliest=deadliest,
+        most_backtracked=most_backtracked,
+        slowest=slowest,
+        fastest=fastest,
+    )
+
+
+def _zone_index(node_data: dict[str, dict[str, Any]]) -> ZoneIndexResponse:
+    zones = [
+        ZoneIndexEntry(
+            node_id=data["node_id"],
+            display_name=data["display_name"],
+            type=data["type"],
+            visits=data["visits"],
+            median_time_ms=round(median(data["times"])) if data["times"] else 0,
+            fastest_time_ms=min(data["times"]) if data["times"] else 0,
+            avg_deaths_per_visit=(
+                round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
+            ),
+            backtrack_rate=(
+                round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
+            ),
+            zones=data["zones"],
+        )
+        for data in node_data.values()
+    ]
+    zones.sort(key=lambda z: z.display_name)
+    return ZoneIndexResponse(zones=zones)
+
+
+def _zone_detail(data: dict[str, Any]) -> ZoneDetailResponse:
+    return ZoneDetailResponse(
+        node_id=data["node_id"],
+        display_name=data["display_name"],
+        type=data["type"],
+        visits=data["visits"],
+        race_count=data["race_count"],
+        median_time_ms=round(median(data["times"])) if data["times"] else None,
+        fastest_time_ms=min(data["times"]) if data["times"] else None,
+        avg_deaths_per_visit=(
+            round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
+        ),
+        zones=data["zones"],
+        backtrack_rate=(
+            round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
+        ),
+    )
+
+
+def _aggregate_boss_stats(
+    participants: Sequence[Any], seeds_by_id: dict[Any, SeedNodes]
+) -> BossStatsResponse:
+    """Boss encounter stats from the participants' zone histories (see /bosses)."""
+    # Per participant, collect boss encounter data.
+    # Boss names are resolved per-seed via NodeDisplay.boss_name (the
+    # node's boss_name when present, else its display_name, pre-stripped).
+    # back_ratio: on a player's LAST visit to a boss, did they backtrack?
+    # avg_deaths / max_deaths: deaths are summed per participant across fight visits,
+    # so a player who fights a boss in 50+40 deaths over two visits is counted once
+    # with 90 deaths, not as two encounters of 50 and 40.
+    # Participants whose only visits are 0-death backtracks (pure transit) are not
+    # counted as encounters at all.
+    player_deaths: dict[str, list[int]] = {}
+    merged_backed: dict[str, list[bool]] = {}
+    merged_times: dict[str, list[int]] = {}
+    merged_type: dict[str, str] = {}
+
+    for participant in participants:
+        history = participant.zone_history or []
+        seed_nodes = seeds_by_id.get(participant.seed_id)
+        if seed_nodes is None:
+            continue
+        nodes = seed_nodes.nodes
+
+        # Collect all visits per boss node_id for this participant
+        visits_by_nid: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        for idx, entry in enumerate(history):
+            nid = entry.get("node_id", "")
+            if not nid or nid not in nodes:
+                continue
+            if nodes[nid].type not in BOSS_NODE_TYPES:
+                continue
+            visits_by_nid.setdefault(nid, []).append((idx, entry))
+
+        for nid, visits in visits_by_nid.items():
+            # Collect deaths from all visits, excluding 0-death backtracks
+            # (those don't represent actual combat)
+            fight_deaths: list[int] = []
+            for visit_idx, visit_entry in visits:
+                deaths = visit_entry.get("deaths", 0)
+                if deaths == 0 and visit_idx + 1 < len(history):
+                    next_nid = history[visit_idx + 1].get("node_id", "")
+                    prev_visited: set[str] = set()
+                    for prev_entry in history[:visit_idx]:
+                        prev_nid = prev_entry.get("node_id", "")
+                        if prev_nid:
+                            prev_visited.add(prev_nid)
+                    if next_nid in prev_visited:
+                        continue  # 0-death backtrack, skip
+                fight_deaths.append(deaths)
+
+            # Player only passed through the boss arena without fighting: skip
+            # entirely so encounters / back_ratio / time aren't inflated.
+            if not fight_deaths:
+                continue
+
+            last_idx, last_entry = visits[-1]
+
+            # back_ratio: did the player backtrack on their last visit?
+            # Check if the node after the last visit was already visited.
+            # An abandon at the boss also counts as a back.
+            backed_last_visit = False
+            if last_idx + 1 < len(history):
+                next_nid = history[last_idx + 1].get("node_id", "")
+                visited_before: set[str] = set()
+                for prev_entry in history[:last_idx]:
+                    prev_nid = prev_entry.get("node_id", "")
+                    if prev_nid:
+                        visited_before.add(prev_nid)
+                backed_last_visit = next_nid in visited_before
+            elif participant.status == ParticipantStatus.ABANDONED:
+                backed_last_visit = True
+
+            # Time: use last visit for time calculation
+            current_igt = last_entry.get("igt_ms", 0) or 0
+            if last_idx + 1 < len(history):
+                next_igt = history[last_idx + 1].get("igt_ms", 0) or 0
+            else:
+                next_igt = participant.igt_ms or 0
+            time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
+
+            # Resolve boss name from this participant's seed
+            boss_name = nodes[nid].boss_name
+            node_type = nodes[nid].type
+
+            player_deaths.setdefault(boss_name, []).append(sum(fight_deaths))
+            merged_backed.setdefault(boss_name, []).append(backed_last_visit)
+            if time_ms is not None:
+                merged_times.setdefault(boss_name, []).append(time_ms)
+            merged_type.setdefault(boss_name, node_type)
+
+    boss_entries = []
+    for display_name, backed_list in merged_backed.items():
+        deaths_per_player = player_deaths.get(display_name, [])
+        times = merged_times.get(display_name, [])
+        total_encounters = len(backed_list)
+        backed_count = sum(backed_list)
+
+        boss_entries.append(
+            BossStatEntry(
+                display_name=display_name,
+                type=merged_type[display_name],
+                encounters=total_encounters,
+                avg_deaths=(
+                    round(sum(deaths_per_player) / len(deaths_per_player), 2)
+                    if deaths_per_player
+                    else 0.0
+                ),
+                max_deaths=max(deaths_per_player) if deaths_per_player else 0,
+                avg_time_ms=round(sum(times) / len(times)) if times else 0,
+                back_ratio=round(backed_count / total_encounters, 2) if total_encounters else 0.0,
+            )
+        )
+
+    boss_entries.sort(key=lambda b: b.avg_deaths, reverse=True)
+
+    return BossStatsResponse(bosses=boss_entries)
+
+
 @router.get("/zones", response_model=ZoneStatsResponse)
 async def get_zone_stats(
     pool: str | None = Query(default=None),
@@ -428,93 +708,7 @@ async def get_zone_stats(
     index/detail endpoints serve the full name instead.
     """
 
-    async def _compute(db: AsyncSession) -> ZoneStatsResponse:
-        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
-
-        node_display = _resolve_node_display(seeds_by_id)
-        node_data = _aggregate_zone_stats(
-            participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
-        )
-
-        # Deadliest: by avg_deaths_per_visit desc (rate metric, not biased by popularity)
-        deadliest_nodes = sorted(
-            [n for n in node_data.values() if n["visits"] > 0],
-            key=lambda n: n["total_deaths"] / n["visits"],
-            reverse=True,
-        )[:5]
-        deadliest = [
-            ZoneStatEntry(
-                node_id=n["node_id"],
-                display_name=n["short_name"],
-                type=n["type"],
-                total_deaths=n["total_deaths"],
-                avg_deaths_per_visit=round(n["total_deaths"] / n["visits"], 2)
-                if n["visits"] > 0
-                else 0.0,
-            )
-            for n in deadliest_nodes
-        ]
-
-        # Most backtracked: by share of visits ending in a turn-away. Every
-        # counted backtrack is a distinct non-landing entry of the zone, so the
-        # rate is bounded to [0, 1] and visits > 0 whenever backtrack_count > 0.
-        backtracked_nodes = sorted(
-            [n for n in node_data.values() if n["backtrack_count"] > 0],
-            key=lambda n: n["backtrack_count"] / n["visits"],
-            reverse=True,
-        )[:5]
-        most_backtracked = [
-            ZoneBacktrackEntry(
-                node_id=n["node_id"],
-                display_name=n["short_name"],
-                type=n["type"],
-                backtrack_count=n["backtrack_count"],
-                backtrack_rate=round(n["backtrack_count"] / n["visits"], 2),
-            )
-            for n in backtracked_nodes
-        ]
-
-        # Slowest: zones with highest median clear time
-        slowest_nodes = sorted(
-            [n for n in node_data.values() if n["times"]],
-            key=lambda n: median(n["times"]),
-            reverse=True,
-        )[:5]
-        slowest = [
-            ZoneTimeEntry(
-                node_id=n["node_id"],
-                display_name=n["short_name"],
-                type=n["type"],
-                median_time_ms=round(median(n["times"])),
-                players=len(n["times"]),
-            )
-            for n in slowest_nodes
-        ]
-
-        # Fastest: zones with lowest median clear time (min 3 players to avoid outliers)
-        fastest_nodes = sorted(
-            [n for n in node_data.values() if len(n["times"]) >= 3],
-            key=lambda n: median(n["times"]),
-        )[:5]
-        fastest = [
-            ZoneTimeEntry(
-                node_id=n["node_id"],
-                display_name=n["short_name"],
-                type=n["type"],
-                median_time_ms=round(median(n["times"])),
-                players=len(n["times"]),
-            )
-            for n in fastest_nodes
-        ]
-
-        return ZoneStatsResponse(
-            deadliest=deadliest,
-            most_backtracked=most_backtracked,
-            slowest=slowest,
-            fastest=fastest,
-        )
-
-    return await _cached(f"zones:{pool}:{days}", _compute, db)
+    return (await _zone_family(pool, days, db)).panels
 
 
 @router.get("/zones/index", response_model=ZoneIndexResponse)
@@ -532,34 +726,7 @@ async def get_zone_index(
     (unlike the top-5 panels on ``/zones``, which use the short one).
     """
 
-    async def _compute(db: AsyncSession) -> ZoneIndexResponse:
-        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
-        node_display = _resolve_node_display(seeds_by_id)
-        node_data = _aggregate_zone_stats(
-            participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
-        )
-        zones = [
-            ZoneIndexEntry(
-                node_id=data["node_id"],
-                display_name=data["display_name"],
-                type=data["type"],
-                visits=data["visits"],
-                median_time_ms=round(median(data["times"])) if data["times"] else 0,
-                fastest_time_ms=min(data["times"]) if data["times"] else 0,
-                avg_deaths_per_visit=(
-                    round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
-                ),
-                backtrack_rate=(
-                    round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
-                ),
-                zones=data["zones"],
-            )
-            for data in node_data.values()
-        ]
-        zones.sort(key=lambda z: z.display_name)
-        return ZoneIndexResponse(zones=zones)
-
-    return await _cached(f"zones_index:{pool}:{days}", _compute, db)
+    return (await _zone_family(pool, days, db)).index
 
 
 @router.get("/zones/{node_id}", response_model=ZoneDetailResponse)
@@ -578,55 +745,32 @@ async def get_zone_detail(
     (same as the index, unlike the top-5 panels on ``/zones``).
     """
 
-    async def _compute(db: AsyncSession) -> ZoneDetailResponse:
-        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
-        node_display = _resolve_node_display(seeds_by_id)
-        info = node_display.get(node_id)
-        if info is None:
-            raise HTTPException(status_code=404, detail="Unknown zone")
-        if info.type not in DUNGEON_NODE_TYPES:
-            raise HTTPException(status_code=404, detail="Not an explorable zone")
-        node_data = _aggregate_zone_stats(
-            participants, seeds_by_id, DUNGEON_NODE_TYPES, node_display
-        )
-        data = node_data.get(info.full_name)
-        if data is None:
-            return ZoneDetailResponse(
-                node_id=node_id,
-                display_name=info.full_name,
-                type=info.type,
-                visits=0,
-                race_count=0,
-                median_time_ms=None,
-                fastest_time_ms=None,
-                avg_deaths_per_visit=0.0,
-                backtrack_rate=0.0,
-                zones=list(info.zones),
-            )
+    family = await _zone_family(pool, days, db)
+    info = family.node_display.get(node_id)
+    if info is None:
+        raise HTTPException(status_code=404, detail="Unknown zone")
+    if info.type not in DUNGEON_NODE_TYPES:
+        raise HTTPException(status_code=404, detail="Not an explorable zone")
+    stats = family.details.get(info.full_name)
+    if stats is None:
         return ZoneDetailResponse(
-            # Echo the requested node_id, not data["node_id"] (the merge's
-            # representative cluster id): a caller requesting a specific
-            # backtrack-merged sibling id must get that same id back, even
-            # though the aggregate itself is shared across the merge group.
-            # Same for zones: info.zones (the requested id's own composition),
-            # not data["zones"] (the merge's union across all siblings).
             node_id=node_id,
-            display_name=data["display_name"],
-            type=data["type"],
-            visits=data["visits"],
-            race_count=data["race_count"],
-            median_time_ms=round(median(data["times"])) if data["times"] else None,
-            fastest_time_ms=min(data["times"]) if data["times"] else None,
-            avg_deaths_per_visit=(
-                round(data["total_deaths"] / data["visits"], 2) if data["visits"] else 0.0
-            ),
+            display_name=info.full_name,
+            type=info.type,
+            visits=0,
+            race_count=0,
+            median_time_ms=None,
+            fastest_time_ms=None,
+            avg_deaths_per_visit=0.0,
+            backtrack_rate=0.0,
             zones=list(info.zones),
-            backtrack_rate=(
-                round(data["backtrack_count"] / data["visits"], 2) if data["visits"] else 0.0
-            ),
         )
-
-    return await _cached(f"zone:{node_id}:{pool}:{days}", _compute, db)
+    # Echo the requested node_id, not the merge's representative cluster id: a
+    # caller requesting a specific backtrack-merged sibling id must get that
+    # same id back, even though the aggregate itself is shared across the
+    # merge group. Same for zones: info.zones (the requested id's own
+    # composition), not the merge's union across all siblings.
+    return stats.model_copy(update={"node_id": node_id, "zones": list(info.zones)})
 
 
 @router.get("/bosses", response_model=BossStatsResponse)
@@ -637,135 +781,12 @@ async def get_boss_stats(
 ) -> BossStatsResponse:
     """Boss encounter stats over races started within the last ``days`` days.
 
-    Shares ``_load_zone_stats_inputs`` with the zone endpoints (narrow
-    participant columns, cached seed projections). Names and types are
-    resolved from each participant's own seed (bosses are randomized per
-    seed), unlike the zone endpoints' most-recent-seed resolution.
+    Computed with the zone endpoints from one load (see ``_zone_family``).
+    Names and types are resolved from each participant's own seed (bosses are
+    randomized per seed), unlike the zone endpoints' most-recent-seed
+    resolution.
     """
-
-    async def _compute(db: AsyncSession) -> BossStatsResponse:
-        participants, seeds_by_id = await _load_zone_stats_inputs(pool, days, db)
-
-        # Per participant, collect boss encounter data.
-        # Boss names are resolved per-seed via NodeDisplay.boss_name (the
-        # node's boss_name when present, else its display_name, pre-stripped).
-        # back_ratio: on a player's LAST visit to a boss, did they backtrack?
-        # avg_deaths / max_deaths: deaths are summed per participant across fight visits,
-        # so a player who fights a boss in 50+40 deaths over two visits is counted once
-        # with 90 deaths, not as two encounters of 50 and 40.
-        # Participants whose only visits are 0-death backtracks (pure transit) are not
-        # counted as encounters at all.
-        player_deaths: dict[str, list[int]] = {}
-        merged_backed: dict[str, list[bool]] = {}
-        merged_times: dict[str, list[int]] = {}
-        merged_type: dict[str, str] = {}
-
-        for participant in participants:
-            history = participant.zone_history or []
-            seed_nodes = seeds_by_id.get(participant.seed_id)
-            if seed_nodes is None:
-                continue
-            nodes = seed_nodes.nodes
-
-            # Collect all visits per boss node_id for this participant
-            visits_by_nid: dict[str, list[tuple[int, dict[str, Any]]]] = {}
-            for idx, entry in enumerate(history):
-                nid = entry.get("node_id", "")
-                if not nid or nid not in nodes:
-                    continue
-                if nodes[nid].type not in BOSS_NODE_TYPES:
-                    continue
-                visits_by_nid.setdefault(nid, []).append((idx, entry))
-
-            for nid, visits in visits_by_nid.items():
-                # Collect deaths from all visits, excluding 0-death backtracks
-                # (those don't represent actual combat)
-                fight_deaths: list[int] = []
-                for visit_idx, visit_entry in visits:
-                    deaths = visit_entry.get("deaths", 0)
-                    if deaths == 0 and visit_idx + 1 < len(history):
-                        next_nid = history[visit_idx + 1].get("node_id", "")
-                        prev_visited: set[str] = set()
-                        for prev_entry in history[:visit_idx]:
-                            prev_nid = prev_entry.get("node_id", "")
-                            if prev_nid:
-                                prev_visited.add(prev_nid)
-                        if next_nid in prev_visited:
-                            continue  # 0-death backtrack, skip
-                    fight_deaths.append(deaths)
-
-                # Player only passed through the boss arena without fighting: skip
-                # entirely so encounters / back_ratio / time aren't inflated.
-                if not fight_deaths:
-                    continue
-
-                last_idx, last_entry = visits[-1]
-
-                # back_ratio: did the player backtrack on their last visit?
-                # Check if the node after the last visit was already visited.
-                # An abandon at the boss also counts as a back.
-                backed_last_visit = False
-                if last_idx + 1 < len(history):
-                    next_nid = history[last_idx + 1].get("node_id", "")
-                    visited_before: set[str] = set()
-                    for prev_entry in history[:last_idx]:
-                        prev_nid = prev_entry.get("node_id", "")
-                        if prev_nid:
-                            visited_before.add(prev_nid)
-                    backed_last_visit = next_nid in visited_before
-                elif participant.status == ParticipantStatus.ABANDONED:
-                    backed_last_visit = True
-
-                # Time: use last visit for time calculation
-                current_igt = last_entry.get("igt_ms", 0) or 0
-                if last_idx + 1 < len(history):
-                    next_igt = history[last_idx + 1].get("igt_ms", 0) or 0
-                else:
-                    next_igt = participant.igt_ms or 0
-                time_ms = (
-                    next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
-                )
-
-                # Resolve boss name from this participant's seed
-                boss_name = nodes[nid].boss_name
-                node_type = nodes[nid].type
-
-                player_deaths.setdefault(boss_name, []).append(sum(fight_deaths))
-                merged_backed.setdefault(boss_name, []).append(backed_last_visit)
-                if time_ms is not None:
-                    merged_times.setdefault(boss_name, []).append(time_ms)
-                merged_type.setdefault(boss_name, node_type)
-
-        boss_entries = []
-        for display_name, backed_list in merged_backed.items():
-            deaths_per_player = player_deaths.get(display_name, [])
-            times = merged_times.get(display_name, [])
-            total_encounters = len(backed_list)
-            backed_count = sum(backed_list)
-
-            boss_entries.append(
-                BossStatEntry(
-                    display_name=display_name,
-                    type=merged_type[display_name],
-                    encounters=total_encounters,
-                    avg_deaths=(
-                        round(sum(deaths_per_player) / len(deaths_per_player), 2)
-                        if deaths_per_player
-                        else 0.0
-                    ),
-                    max_deaths=max(deaths_per_player) if deaths_per_player else 0,
-                    avg_time_ms=round(sum(times) / len(times)) if times else 0,
-                    back_ratio=round(backed_count / total_encounters, 2)
-                    if total_encounters
-                    else 0.0,
-                )
-            )
-
-        boss_entries.sort(key=lambda b: b.avg_deaths, reverse=True)
-
-        return BossStatsResponse(bosses=boss_entries)
-
-    return await _cached(f"bosses:{pool}:{days}", _compute, db)
+    return (await _zone_family(pool, days, db)).bosses
 
 
 @router.get("/players", response_model=PlayerProfilesResponse)
