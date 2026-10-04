@@ -39,6 +39,8 @@ export interface RunnerTimeline {
   deepestLayer: number;
   /** Final IGT, only for a finished runner. */
   finishIgt: number | null;
+  /** The runner's participant status the timeline was built from. */
+  status: string;
 }
 
 export function buildRunnerTimeline(
@@ -82,9 +84,12 @@ export function buildRunnerTimeline(
     if (!placed(layer)) continue;
 
     // The layer's window runs to the next deeper layer's first entry.
-    let end = entries.length;
-    for (const [other, idx] of firstIdx) {
-      if (other > layer && idx > start && idx < end) end = idx;
+    let end = start + 1;
+    while (
+      end < entries.length &&
+      !(entries[end].layer > layer && firstIdx.get(entries[end].layer) === end)
+    ) {
+      end++;
     }
 
     const arrivalIgt = entries[start].entry.igt_ms;
@@ -126,7 +131,7 @@ export function buildRunnerTimeline(
     };
   }
 
-  return { layers, deepestLayer, finishIgt };
+  return { layers, deepestLayer, finishIgt, status };
 }
 
 export interface TimelineRun {
@@ -136,7 +141,24 @@ export interface TimelineRun {
   igt_ms: number;
 }
 
-/** One timeline per run, keyed by participant id. */
+/** Timelines already built, keyed by the zone history they came from: a
+ * runner's history array is only ever replaced, never edited in place. */
+const timelineCache = new WeakMap<
+  ZoneHistoryEntry[],
+  {
+    nodeLayers: Map<string, number>;
+    totalLayers: number;
+    status: string;
+    finishIgt: number | null;
+    timeline: RunnerTimeline;
+  }
+>();
+
+/**
+ * One timeline per run, keyed by participant id. A run whose history,
+ * status and finish time are unchanged gets its previous timeline back, so
+ * one runner's new zone rebuilds that runner's timeline only.
+ */
 export function buildTimelines(
   runs: TimelineRun[],
   nodeLayers: Map<string, number>,
@@ -144,16 +166,37 @@ export function buildTimelines(
 ): Map<string, RunnerTimeline> {
   const map = new Map<string, RunnerTimeline>();
   for (const run of runs) {
-    map.set(
-      run.id,
-      buildRunnerTimeline(
-        run.zone_history,
+    const history = run.zone_history;
+    // A playing runner's live IGT never enters its timeline; a finish does.
+    const finishIgt = run.status === "finished" ? run.igt_ms : null;
+    const hit = history ? timelineCache.get(history) : undefined;
+    if (
+      hit &&
+      hit.nodeLayers === nodeLayers &&
+      hit.totalLayers === totalLayers &&
+      hit.status === run.status &&
+      hit.finishIgt === finishIgt
+    ) {
+      map.set(run.id, hit.timeline);
+      continue;
+    }
+    const timeline = buildRunnerTimeline(
+      history,
+      nodeLayers,
+      totalLayers,
+      run.status,
+      run.igt_ms,
+    );
+    if (history) {
+      timelineCache.set(history, {
         nodeLayers,
         totalLayers,
-        run.status,
-        run.igt_ms,
-      ),
-    );
+        status: run.status,
+        finishIgt,
+        timeline,
+      });
+    }
+    map.set(run.id, timeline);
   }
   return map;
 }
@@ -172,7 +215,7 @@ export function pickTimelines(
 }
 
 /** Arrival IGT at a layer; `index === layers.length` is the finish. */
-export function arrivalAt(t: RunnerTimeline, index: number): number | null {
+function arrivalAt(t: RunnerTimeline, index: number): number | null {
   if (index === t.layers.length) return t.finishIgt;
   return t.layers[index]?.arrivalIgt ?? null;
 }
@@ -216,7 +259,6 @@ export interface GapSeries {
 export function gapSeries(
   timeline: RunnerTimeline,
   gaps: (number | null)[],
-  status: string,
 ): GapSeries {
   const points: GapSeries["points"] = [];
   gaps.forEach((gapMs, index) => {
@@ -240,7 +282,7 @@ export function gapSeries(
       });
     }
   });
-  return { points, deathMarks, terminus: isOutOfRace(status) };
+  return { points, deathMarks, terminus: isOutOfRace(timeline.status) };
 }
 
 export interface NodeFieldStats {
@@ -256,11 +298,11 @@ export interface NodeFieldStats {
  * who left a layer through it. A disqualified run never sets the reference.
  */
 export function computeFieldStats(
-  runs: Iterable<{ status: string; timeline: RunnerTimeline }>,
+  timelines: Iterable<RunnerTimeline>,
 ): Map<string, NodeFieldStats> {
   const byNode = new Map<string, number[]>();
-  for (const { status, timeline } of runs) {
-    if (status === "disqualified") continue;
+  for (const timeline of timelines) {
+    if (timeline.status === "disqualified") continue;
     for (const visit of timeline.layers) {
       if (!visit || visit.timeThroughNodeMs === null) continue;
       const samples = byNode.get(visit.exitNodeId);
@@ -326,7 +368,6 @@ export interface DetailColumn {
 
 export interface DetailRunner {
   id: string;
-  status: string;
   /** Live IGT, for a playing runner's time so far. */
   igtMs: number;
   timeline: RunnerTimeline;
@@ -359,8 +400,8 @@ export function buildLayerDetail(
   gaps: Map<string, (number | null)[]>,
   field: Map<string, NodeFieldStats>,
 ): DetailColumn[] {
-  const rows: { nodeId: string; row: DetailRow }[] = [];
-  for (const { id, status, igtMs, timeline } of runners) {
+  const columns = new Map<string, DetailColumn>();
+  for (const { id, igtMs, timeline } of runners) {
     const visit = timeline.layers[layer];
     if (!visit) continue;
 
@@ -369,62 +410,56 @@ export function buildLayerDetail(
     if (visit.timeOnLayerMs !== null) {
       state = "done";
       timeMs = visit.timeOnLayerMs;
-    } else if (layer === timeline.deepestLayer && status === "playing") {
+    } else if (
+      layer === timeline.deepestLayer &&
+      timeline.status === "playing"
+    ) {
       state = "live";
       timeMs = Math.max(0, igtMs - visit.arrivalIgt);
-    } else if (layer === timeline.deepestLayer && isOutOfRace(status)) {
+    } else if (
+      layer === timeline.deepestLayer &&
+      isOutOfRace(timeline.status)
+    ) {
       state = "out";
     } else {
       // Left the layer (or finished) but the history missed when.
       state = "unknown";
     }
 
-    const stats = field.get(visit.exitNodeId);
+    const stats = field.get(visit.exitNodeId) ?? null;
     const backedOut = visit.exitNodeId !== visit.firstNodeId;
-    rows.push({
-      nodeId: visit.exitNodeId,
-      row: {
-        id,
-        state,
-        entryGapMs: gaps.get(id)?.[layer] ?? null,
-        timeMs,
-        vsBestMs: null,
-        fieldRank:
-          state === "done" && stats && visit.timeThroughNodeMs !== null
-            ? fieldRank(stats, visit.timeThroughNodeMs)
-            : null,
-        deaths: visit.deaths,
-        backedOutOf: backedOut ? visit.firstNodeId : null,
-        detourMs:
-          backedOut && visit.exitEntryIgt >= visit.arrivalIgt
-            ? visit.exitEntryIgt - visit.arrivalIgt
-            : null,
-      },
+    let column = columns.get(visit.exitNodeId);
+    if (!column) {
+      column = { nodeId: visit.exitNodeId, field: stats, rows: [] };
+      columns.set(visit.exitNodeId, column);
+    }
+    column.rows.push({
+      id,
+      state,
+      entryGapMs: gaps.get(id)?.[layer] ?? null,
+      timeMs,
+      vsBestMs: null,
+      fieldRank:
+        state === "done" && stats && visit.timeThroughNodeMs !== null
+          ? fieldRank(stats, visit.timeThroughNodeMs)
+          : null,
+      deaths: visit.deaths,
+      backedOutOf: backedOut ? visit.firstNodeId : null,
+      detourMs:
+        backedOut && visit.exitEntryIgt >= visit.arrivalIgt
+          ? visit.exitEntryIgt - visit.arrivalIgt
+          : null,
     });
   }
 
-  let best = Infinity;
-  for (const { row } of rows) {
-    if (row.state === "done" && row.timeMs !== null && row.timeMs < best) {
-      best = row.timeMs;
-    }
-  }
-
-  const columns = new Map<string, DetailColumn>();
-  for (const { nodeId, row } of rows) {
-    if (row.state === "done" && row.timeMs !== null) {
-      row.vsBestMs = row.timeMs - best;
-    }
-    let column = columns.get(nodeId);
-    if (!column) {
-      column = { nodeId, field: field.get(nodeId) ?? null, rows: [] };
-      columns.set(nodeId, column);
-    }
-    column.rows.push(row);
-  }
-
   const result = [...columns.values()];
+  const best = Math.min(...result.map(fastestDone));
   for (const column of result) {
+    for (const row of column.rows) {
+      if (row.state === "done" && row.timeMs !== null) {
+        row.vsBestMs = row.timeMs - best;
+      }
+    }
     column.rows.sort(
       (a, b) =>
         STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
@@ -439,19 +474,6 @@ export function buildLayerDetail(
     return a.nodeId.localeCompare(b.nodeId);
   });
   return result;
-}
-
-/** Each layer's column x, read off the positioned map nodes (all the nodes
- * of a layer share it). */
-export function layerColumnXs(
-  nodes: { layer: number; x: number }[],
-  totalLayers: number,
-): number[] {
-  const xs = new Array<number>(totalLayers).fill(0);
-  for (const node of nodes) {
-    if (node.layer < totalLayers) xs[node.layer] = node.x;
-  }
-  return xs;
 }
 
 /** Distance between two layer columns when there is only one to measure. */
@@ -509,45 +531,11 @@ export function stepLayer(
   return Math.min(totalLayers - 1, Math.max(0, current + delta));
 }
 
-/** How much of the chart's left side its frame cuts: the chart keeps the
- * map's 600px minimum and is centered, so a narrower frame (a phone) cuts
- * both sides, and labels pinned to the left must move in by this much. */
-export function croppedLeft(chartWidth: number, frameWidth: number): number {
-  return Math.max(0, (chartWidth - frameWidth) / 2);
-}
-
-/**
- * The hovered layer after a pointer event on the chart (null: the pointer
- * left it). Leaving keeps the last hovered layer on show, so the detail
- * panel stays put and the pointer can reach it, unless a pin takes over.
- */
-export function settleHover(
-  incoming: number | null,
-  current: number | null,
-  pinned: number | null,
-): number | null {
-  if (incoming !== null) return incoming;
-  return pinned !== null ? null : current;
-}
-
-/** The hovered layer once the pin changes. A new pin clears the hover, or
- * a depth left on show by an earlier hover would hide it; a released pin
- * stays on show while the pointer is off the chart. */
-export function hoverAfterPin(
-  nextPin: number | null,
-  previousPin: number | null,
-  hover: number | null,
-): number | null {
-  if (nextPin !== null) return null;
-  if (previousPin !== null && hover === null) return previousPin;
-  return hover;
-}
-
 /**
  * What a key does on the focused chart: the new pin, or null when the chart
  * leaves the key alone. Escape only belongs to the chart while a layer is
- * pinned; otherwise it must reach the leaderboard, which clears the
- * selection on Escape.
+ * pinned; otherwise it is left to the page (the leaderboard clears the
+ * selection on an Escape nothing else handled).
  */
 export function chartKey(
   key: string,

@@ -85,31 +85,34 @@ layer and the per-layer view is always defined.
   the charter skull on the layer's segment (count beside it above one). A
   runner out of the race ends on a terminus bar; a playing runner's line
   stops at the entry of its current layer.
-- The chart follows the map's horizontal pan and zoom: `ZoomableSvg` exposes
-  `zoom` and `panX` as bindable props, and the chart uses the same box (full
-  width, 600px minimum, centered, overflow cut on both sides) so one layout
-  unit maps to the same pixels in both, phones included. Where a phone
-  crops both sides of the chart, the y labels move in to stay on the
-  visible left edge. The chart does not
-  capture the mouse wheel, so it never traps the page scroll: zoom on the
-  map.
+- The chart follows the map's horizontal pan and zoom. `ZoomableSvg` binds
+  out its view: `zoom` and `panX`, plus how it renders layout units,
+  `viewScale` (pixels per unit, measured on its own svg) and `viewOriginX`
+  (where content x = 0 sits from its container's left edge, its centered
+  crop included). The chart is exactly as wide as the map's container and
+  places x with these, so it never copies the map's box rules (600px
+  minimum, centering, crop): a phone crops the map, never the chart, whose
+  y labels stay at its left edge. Column x comes from the layout itself
+  (`DagLayout.layerX`). The chart does not capture the mouse wheel, so it
+  never traps the page scroll: zoom on the map.
 
 ## Interactions
 
 Hovering a column highlights it in fog, draws a fog guide on the map at the
-same layer and fills the detail panel. The panel stays hidden until the
-first hover of a comparison, then keeps the last hovered layer (with its
-band and map guide) when the pointer leaves the chart, so it never empties
-under the reader and the pointer can reach it (`settleHover`). A click, a
-tap or an arrow key pins a layer, which clears that leftover hover: the
-pointer can then explore other columns, and leaving the chart brings the
-pin back. A second click or Escape releases it, and the released layer
-stays on show (`hoverAfterPin`). Closing the comparison resets both.
+same layer and fills the detail panel. Two pieces of state drive it in
+`MetroDagFull`: the shown layer and the pinned one. The panel stays hidden
+until the first hover of a comparison; after that, leaving the chart keeps
+the last hovered layer on show (with its band and map guide), so it never
+empties under the reader and the pointer can reach it. A click, a tap or an
+arrow key pins a layer and shows it; the pointer can then explore other
+columns, and leaving the chart brings the pin back. A second click or
+Escape releases it and keeps it on show. Closing the comparison resets both.
 With the chart focused, Left and Right move the pinned layer. Keys go
-through `chartKey`: an Escape that releases a pin stops there, so the
-leaderboard's window-wide Escape (which clears the selection) only answers
-a second press. A node name in
-the panel opens the map's node popup.
+through `chartKey`; the chart calls `preventDefault` on the ones it
+handles, and the leaderboard's window-wide Escape (which clears the
+selection) ignores a prevented event, so releasing a pin takes one press
+and clearing the selection a second. A node name in the panel opens the
+map's node popup.
 
 ## Detail panel
 
@@ -125,10 +128,14 @@ two lines otherwise.
 ## Performance
 
 `raceStore` delivers a `player_update` about every second per playing
-runner. The comparison reads a narrowed copy of the participants that only
-changes when a zone history (its reference, kept across `player_update`), a
-status or a finished runner's IGT changes, so live ticks rebuild no
-timeline and no field stats. The one input read on every tick is a playing
-runner's live IGT, for its time so far in the detail panel. Pan and zoom
-move the lines through one SVG group transform, and only reposition the
-death skulls and axis labels.
+runner. The comparison reads the map's own narrowed copy of the
+participants (`pathParticipants`, which also compares status and a
+non-playing runner's IGT, i.e. a finish time), so live ticks rebuild
+nothing. When it does change,
+`buildTimelines` hands back each runner's previous timeline while that
+runner's history array (replaced, never edited in place), status and finish
+time hold, so one runner's new zone rebuilds one timeline. The panel reads
+the ticking participants only while it shows a playing runner's current
+depth, for that runner's time so far. Pan and zoom move the lines through
+one SVG group transform, and only reposition the death skulls and axis
+labels.

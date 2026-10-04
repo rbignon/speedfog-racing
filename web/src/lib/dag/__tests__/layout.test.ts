@@ -402,6 +402,7 @@ describe("stretchToAspect", () => {
     ],
     width: 3600,
     height: 410 + PADDING,
+    layerX: [90, 190, 290],
   };
 
   it("spreads the rows until the whole graph has the box's shape", () => {

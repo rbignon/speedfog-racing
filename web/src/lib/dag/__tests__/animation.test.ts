@@ -97,6 +97,7 @@ describe("enumerateAllPaths", () => {
       ],
       width: 200,
       height: 100,
+      layerX: [0, 100],
     };
 
     const paths = enumerateAllPaths(layout);
@@ -245,6 +246,7 @@ describe("pathToWaypoints", () => {
       ],
       width: 400,
       height: 100,
+      layerX: [0, 100, 200, 300],
     };
 
     // Player visited a and d, skipping b and c

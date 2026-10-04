@@ -64,6 +64,8 @@ export interface DagLayout {
   edges: RoutedEdge[];
   width: number;
   height: number;
+  /** Each layer's column x, indexed by layer. */
+  layerX: number[];
 }
 
 // =============================================================================

@@ -12,6 +12,11 @@
      * and zoom (the layer comparison chart does). */
     zoom?: number;
     panX?: number;
+    /** Read-only, for that sibling: pixels per content unit as rendered,
+     * and where content x = 0 sits (before the pan) from the container's
+     * left edge, so it never has to copy this box's sizing rules. */
+    viewScale?: number;
+    viewOriginX?: number;
   }
 
   let {
@@ -25,6 +30,8 @@
     onpanstart,
     zoom = $bindable(1),
     panX = $bindable(0),
+    viewScale = $bindable(0),
+    viewOriginX = $bindable(0),
   }: Props = $props();
 
   let svgEl: SVGSVGElement | undefined = $state();
@@ -32,6 +39,24 @@
   let isDragging = $state(false);
   let isAnimating = $state(false);
   let containerWidth = $state(0);
+  let svgWidth = $state(0);
+  let svgHeight = $state(0);
+
+  let containerEl: HTMLDivElement | undefined = $state();
+
+  // Read off the svg's own screen matrix (what screenToSvg inverts), so the
+  // published mapping holds whatever sizes, crops or centers the svg. The
+  // measured sizes only re-run it on a resize.
+  $effect(() => {
+    if (!svgEl || !containerEl || svgWidth === 0 || containerWidth === 0) {
+      viewScale = 0;
+      return;
+    }
+    const ctm = svgEl.getScreenCTM();
+    if (!ctm || svgHeight === 0) return;
+    viewScale = ctm.a;
+    viewOriginX = ctm.e - containerEl.getBoundingClientRect().left;
+  });
 
   // Ensure zoom can always reach 1:1 (SVG px = screen px) for readability
   let effectiveMaxZoom = $derived(
@@ -240,11 +265,14 @@
 <div
   class="zoomable-container"
   class:transparent
+  bind:this={containerEl}
   bind:clientWidth={containerWidth}
 >
   {#if width > 0 && height > 0}
     <svg
       bind:this={svgEl}
+      bind:clientWidth={svgWidth}
+      bind:clientHeight={svgHeight}
       viewBox="0 0 {width} {height}"
       preserveAspectRatio="xMidYMid meet"
       class="zoomable-svg"

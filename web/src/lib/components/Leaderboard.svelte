@@ -114,7 +114,14 @@
 
 <svelte:window
   onkeydown={(e) => {
-    if (e.key === "Escape" && hasSelection && onClearSelection) {
+    // An Escape a widget already handled (e.g. the gap chart releasing a
+    // pinned depth) is not a request to drop the selection.
+    if (
+      e.key === "Escape" &&
+      !e.defaultPrevented &&
+      hasSelection &&
+      onClearSelection
+    ) {
       onClearSelection();
     }
   }}

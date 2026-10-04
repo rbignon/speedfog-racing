@@ -41,12 +41,8 @@
     buildTimelines,
     computeFieldStats,
     gapSeries,
-    gateXs,
-    layerColumnXs,
-    hoverAfterPin,
     pickTimelines,
     selectionGaps,
-    settleHover,
     type RunnerTimeline,
   } from "$lib/layer-gaps";
   import {
@@ -184,12 +180,14 @@
     buildDirectedAdjacency(layout.edges),
   );
 
-  // The participants the paths, trails and death marks are drawn from. Those
-  // only move when a runner's zone history, current zone, color or name does,
-  // or the order changes (it assigns the parallel slots): while none did, this
-  // hands back the previous array, so an IGT tick does not re-walk every path.
-  // Typed down to the compared fields: reading another one from these
-  // participants means comparing it too.
+  // The participants the paths, trails and death marks, and the layer
+  // comparison's timelines, are drawn from. Those only move when a runner's
+  // zone history, current zone, color, name or status does, a non-playing
+  // runner's IGT (a finish time), or the order (it assigns the parallel
+  // slots): while none did, this hands back the previous array, so a live
+  // IGT tick re-walks no path and rebuilds no timeline. Typed down to the
+  // compared fields: reading another one from these participants means
+  // comparing it too. igt_ms is only current for a non-playing runner.
   type PathInput = Pick<
     WsParticipant,
     | "id"
@@ -198,6 +196,8 @@
     | "color_index"
     | "twitch_display_name"
     | "twitch_username"
+    | "status"
+    | "igt_ms"
   >;
   let pathSnapshot: PathInput[] = [];
   let pathParticipants: PathInput[] = $derived.by(() => {
@@ -212,7 +212,9 @@
           q.current_zone === p.current_zone &&
           q.color_index === p.color_index &&
           q.twitch_display_name === p.twitch_display_name &&
-          q.twitch_username === p.twitch_username
+          q.twitch_username === p.twitch_username &&
+          q.status === p.status &&
+          (p.status === "playing" || q.igt_ms === p.igt_ms)
         );
       });
     if (unchanged) return prev;
@@ -229,113 +231,76 @@
   );
   let viewZoom = $state(1);
   let viewPanX = $state(0);
-  let hoverLayer = $state<number | null>(null);
+  let viewScale = $state(0);
+  let viewOriginX = $state(0);
+  // The depth the panel shows: the last hovered one (it stays when the
+  // pointer leaves the chart), or the pinned one.
+  let shownLayer = $state<number | null>(null);
   let pinnedLayer = $state<number | null>(null);
   // A layer kept across a seed change (a daily reroll) may point past the
   // new graph's last one: it shows nothing rather than an empty column.
-  let activeLayer = $derived.by(() => {
-    const inGraph = (layer: number | null) =>
-      layer !== null && layer < graph.totalLayers ? layer : null;
-    return inGraph(hoverLayer) ?? inGraph(pinnedLayer);
-  });
+  let activeLayer = $derived(
+    shownLayer !== null && shownLayer < graph.totalLayers ? shownLayer : null,
+  );
   // Each comparison starts with the panel hidden, until its first hover.
   $effect(() => {
     if (!compareActive) {
-      hoverLayer = null;
+      shownLayer = null;
       pinnedLayer = null;
     }
   });
 
-  // The runs the comparison reads. They only move when a runner's zone
-  // history or status does, or a non-playing runner's IGT (a finish time):
-  // while none did, this hands back the previous array, so a live IGT tick
-  // rebuilds no timeline. Typed down to the compared fields.
-  type GapInput = Pick<
-    WsParticipant,
-    "id" | "zone_history" | "status" | "igt_ms"
-  >;
-  let gapSnapshot: GapInput[] = [];
-  let gapParticipants: GapInput[] = $derived.by(() => {
-    const prev = gapSnapshot;
-    const unchanged =
-      participants.length === prev.length &&
-      participants.every((p, i) => {
-        const q = prev[i];
-        return (
-          q.id === p.id &&
-          q.zone_history === p.zone_history &&
-          q.status === p.status &&
-          (p.status === "playing" || q.igt_ms === p.igt_ms)
-        );
-      });
-    if (unchanged) return prev;
-    gapSnapshot = participants;
-    return participants;
-  });
-
-  let nodeNames = $derived(
-    new Map(graph.nodes.map((n) => [n.id, n.displayName])),
-  );
   let timelines: Map<string, RunnerTimeline> = $derived(
-    buildTimelines(gapParticipants, nodeLayers, graph.totalLayers),
+    buildTimelines(pathParticipants, nodeLayers, graph.totalLayers),
   );
-  let fieldStats = $derived(
-    computeFieldStats(
-      gapParticipants.flatMap((p) => {
-        const timeline = timelines.get(p.id);
-        return timeline ? [{ status: p.status, timeline }] : [];
-      }),
-    ),
-  );
+  let fieldStats = $derived(computeFieldStats(timelines.values()));
   let selectedTimelines = $derived(
     pickTimelines(timelines, highlightIds ?? []),
   );
   let selectionGapRows = $derived(
     selectionGaps(selectedTimelines, graph.totalLayers),
   );
-  let runnerLooks = $derived.by(() => {
-    const statusById = new Map(gapParticipants.map((p) => [p.id, p.status]));
-    return new Map(
+  let runnerLooks = $derived(
+    new Map(
       pathParticipants.map((p) => [
         p.id,
         {
           name: p.twitch_display_name || p.twitch_username,
           color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
-          status: statusById.get(p.id) ?? "",
+          status: p.status,
         },
       ]),
-    );
-  });
-  let chartLines: ChartLine[] = $derived(
-    [...selectedTimelines].flatMap(([id, timeline]) => {
-      const look = runnerLooks.get(id);
-      const gaps = selectionGapRows.get(id);
-      if (!look || !gaps) return [];
-      return [
-        {
-          id,
-          color: look.color,
-          name: look.name,
-          series: gapSeries(timeline, gaps, look.status),
-        },
-      ];
-    }),
+    ),
   );
-  let layerXs = $derived(layerColumnXs(layout.nodes, graph.totalLayers));
-  let gates = $derived(gateXs(layerXs));
+  // Timelines, looks and gaps all come from the same participants, so every
+  // selected id has each of them.
+  let chartLines: ChartLine[] = $derived(
+    [...selectedTimelines].map(([id, timeline]) => ({
+      id,
+      color: runnerLooks.get(id)!.color,
+      name: runnerLooks.get(id)!.name,
+      series: gapSeries(timeline, selectionGapRows.get(id)!),
+    })),
+  );
+  let layerXs = $derived(layout.layerX);
   // The only comparison input read on every tick: a playing runner's live
   // IGT, for its time so far on the shown layer.
   let detailColumns = $derived.by(() => {
     if (activeLayer === null) return [];
-    // The live IGT only matters to a playing runner: with none selected (a
-    // finished race), the panel never reads the ticking participants.
-    const anyPlaying = [...selectedTimelines.keys()].some(
-      (id) => runnerLooks.get(id)?.status === "playing",
+    // The live IGT only feeds a playing runner's row on its current depth:
+    // with no such row shown (a finished race, a past depth), the panel
+    // never reads the ticking participants.
+    const live = new Set(
+      [...selectedTimelines]
+        .filter(
+          ([, t]) => t.status === "playing" && t.deepestLayer === activeLayer,
+        )
+        .map(([id]) => id),
     );
     const liveIgt = new Map(
-      anyPlaying
+      live.size > 0
         ? participants
-            .filter((p) => highlightIds?.has(p.id))
+            .filter((p) => live.has(p.id))
             .map((p) => [p.id, p.igt_ms])
         : [],
     );
@@ -344,7 +309,6 @@
       [...selectedTimelines].map(([id, timeline]) => ({
         id,
         timeline,
-        status: runnerLooks.get(id)?.status ?? "",
         igtMs: liveIgt.get(id) ?? 0,
       })),
       selectionGapRows,
@@ -1006,6 +970,8 @@
         bind:this={zoomableSvg}
         bind:zoom={viewZoom}
         bind:panX={viewPanX}
+        bind:viewScale
+        bind:viewOriginX
         width={layout.width}
         height={layout.height}
         {transparent}
@@ -1018,17 +984,16 @@
         <LayerGapChart
           lines={chartLines}
           {layerXs}
-          {gates}
-          layoutWidth={layout.width}
           zoom={viewZoom}
           panX={viewPanX}
+          {viewScale}
+          {viewOriginX}
           {activeLayer}
           {pinnedLayer}
-          onhover={(layer) =>
-            (hoverLayer = settleHover(layer, hoverLayer, pinnedLayer))}
+          onhover={(layer) => (shownLayer = layer ?? pinnedLayer ?? shownLayer)}
           onpin={(layer) => {
-            hoverLayer = hoverAfterPin(layer, pinnedLayer, hoverLayer);
             pinnedLayer = layer;
+            shownLayer = layer ?? shownLayer;
           }}
         />
         <!-- Shown from the first hover on, then it keeps the last depth. -->
@@ -1038,11 +1003,11 @@
             pinned={activeLayer === pinnedLayer}
             columns={detailColumns}
             runners={runnerLooks}
-            {nodeNames}
+            nodes={nodeMap}
             onnodeclick={anonymous ? undefined : openPopupForNode}
           />
         {/if}
-      {:else if layerGaps && !follow && highlightIds?.size === 1}
+      {:else if layerGaps && highlightIds?.size === 1}
         <p class="layer-gap-hint">
           Select another runner to compare depth by depth
         </p>

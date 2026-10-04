@@ -2,17 +2,15 @@ import { describe, it, expect } from "vitest";
 import {
   buildLayerDetail,
   buildRunnerTimeline,
+  buildTimelines,
   chartKey,
   computeFieldStats,
-  croppedLeft,
   fieldRank,
   gapSeries,
   gapTicks,
   gateXs,
-  hoverAfterPin,
   layerAtX,
   selectionGaps,
-  settleHover,
   stepLayer,
 } from "$lib/layer-gaps";
 import type { ZoneHistoryEntry } from "$lib/zone-history";
@@ -237,7 +235,7 @@ describe("gapSeries", () => {
       "finished",
       100_000,
     );
-    const s = gapSeries(t, [0, 0, 6_000, 4_000, 2_000], "finished");
+    const s = gapSeries(t, [0, 0, 6_000, 4_000, 2_000]);
     expect(s.points.map((p) => p.index)).toEqual([0, 1, 2, 3, 4]);
     expect(s.deathMarks).toEqual([{ layer: 1, count: 2, midGapMs: 3_000 }]);
     expect(s.terminus).toBe(false);
@@ -249,7 +247,7 @@ describe("gapSeries", () => {
       "abandoned",
       90_000,
     );
-    const s = gapSeries(t, [0, 1_000, 3_000, null, null], "abandoned");
+    const s = gapSeries(t, [0, 1_000, 3_000, null, null]);
     expect(s.points.at(-1)).toEqual({ index: 2, gapMs: 3_000 });
     expect(s.deathMarks).toEqual([]);
     expect(s.terminus).toBe(true);
@@ -261,9 +259,7 @@ describe("gapSeries", () => {
       "disqualified",
       20_000,
     );
-    expect(
-      gapSeries(t, [0, 0, null, null, null], "disqualified").terminus,
-    ).toBe(true);
+    expect(gapSeries(t, [0, 0, null, null, null]).terminus).toBe(true);
   });
 
   it("skips a missing layer and keeps drawing past it", () => {
@@ -272,19 +268,14 @@ describe("gapSeries", () => {
       "finished",
       80_000,
     );
-    const s = gapSeries(t, [0, null, 2_000, 1_000, 0], "finished");
+    const s = gapSeries(t, [0, null, 2_000, 1_000, 0]);
     expect(s.points.map((p) => p.index)).toEqual([0, 2, 3, 4]);
   });
 });
 
 describe("computeFieldStats", () => {
-  const run = (
-    history: Parameters<typeof timeline>[0],
-    status = "finished",
-  ) => ({
-    status,
-    timeline: timeline(history, status, 100_000),
-  });
+  const run = (history: Parameters<typeof timeline>[0], status = "finished") =>
+    timeline(history, status, 100_000);
 
   it("takes each node's best and median over the runners who left through it", () => {
     const stats = computeFieldStats([
@@ -434,16 +425,13 @@ describe("buildLayerDetail", () => {
     T,
   );
   const field = computeFieldStats([
-    ...runners,
-    {
-      status: "finished",
-      timeline: timeline([
-        at("start", 0),
-        at("b1", 10_000),
-        at("b2", 30_000),
-        at("boss", 40_000),
-      ]),
-    },
+    ...runners.map((r) => r.timeline),
+    timeline([
+      at("start", 0),
+      at("b1", 10_000),
+      at("b2", 30_000),
+      at("boss", 40_000),
+    ]),
   ]);
   const columns = buildLayerDetail(1, runners, gaps, field);
   const row = (id: string) =>
@@ -617,18 +605,6 @@ describe("stepLayer", () => {
   });
 });
 
-describe("croppedLeft", () => {
-  it("measures how much of the chart's left side a narrow frame cuts", () => {
-    // The chart keeps a 600px minimum and is centered in its frame.
-    expect(croppedLeft(600, 400)).toBe(100);
-  });
-
-  it("cuts nothing when the frame holds the whole chart", () => {
-    expect(croppedLeft(800, 800)).toBe(0);
-    expect(croppedLeft(800, 1000)).toBe(0);
-  });
-});
-
 describe("rolled-back IGT (a backup restore sets the clock back)", () => {
   it("leaves no time on a layer whose next arrival reads earlier", () => {
     const t = timeline([
@@ -646,24 +622,18 @@ describe("rolled-back IGT (a backup restore sets the clock back)", () => {
 
   it("never lets a negative time become the field's best", () => {
     const stats = computeFieldStats([
-      {
-        status: "finished",
-        timeline: timeline([
-          at("start", 0),
-          at("a1", 30_000),
-          at("a2", 25_000),
-          at("boss", 60_000),
-        ]),
-      },
-      {
-        status: "finished",
-        timeline: timeline([
-          at("start", 0),
-          at("a1", 10_000),
-          at("a2", 40_000),
-          at("boss", 60_000),
-        ]),
-      },
+      timeline([
+        at("start", 0),
+        at("a1", 30_000),
+        at("a2", 25_000),
+        at("boss", 60_000),
+      ]),
+      timeline([
+        at("start", 0),
+        at("a1", 10_000),
+        at("a2", 40_000),
+        at("boss", 60_000),
+      ]),
     ]);
     expect(stats.get("a1")?.samples).toEqual([30_000]);
   });
@@ -704,37 +674,6 @@ describe("buildLayerDetail with a finisher missing its last layers", () => {
   });
 });
 
-describe("settleHover", () => {
-  it("follows the pointer across the chart", () => {
-    expect(settleHover(12, 7, null)).toBe(12);
-    expect(settleHover(12, 7, 3)).toBe(12);
-  });
-
-  it("keeps the last hovered depth when the pointer leaves the chart", () => {
-    expect(settleHover(null, 7, null)).toBe(7);
-  });
-
-  it("hands the panel back to the pin when the pointer leaves", () => {
-    expect(settleHover(null, 7, 3)).toBeNull();
-  });
-});
-
-describe("hoverAfterPin", () => {
-  it("keeps showing a released pin when the pointer is elsewhere", () => {
-    expect(hoverAfterPin(null, 3, null)).toBe(3);
-  });
-
-  it("lets a new pin show over a depth left on show by an earlier hover", () => {
-    // Hovered 5, left the chart, then pinned 8 with the arrows or a tap.
-    expect(hoverAfterPin(8, null, 5)).toBeNull();
-    expect(hoverAfterPin(8, 3, 5)).toBeNull();
-  });
-
-  it("leaves the hover alone when a pin is released under the pointer", () => {
-    expect(hoverAfterPin(null, 3, 9)).toBe(9);
-  });
-});
-
 describe("chartKey", () => {
   it("consumes Escape while a depth is pinned, to release it", () => {
     expect(chartKey("Escape", 6, 6, 30)).toEqual({ pin: null });
@@ -751,5 +690,80 @@ describe("chartKey", () => {
 
   it("ignores other keys", () => {
     expect(chartKey("Enter", 6, 6, 30)).toBeNull();
+  });
+});
+
+describe("buildTimelines", () => {
+  const history = [at("start", 0), at("a1", 10_000), at("a2", 30_000)];
+
+  it("hands back a runner's timeline while its history and status hold", () => {
+    const run = {
+      id: "a",
+      zone_history: history,
+      status: "playing",
+      igt_ms: 40_000,
+    };
+    const first = buildTimelines([run], NODE_LAYERS, T).get("a");
+    // A live IGT tick changes nothing the timeline reads.
+    const second = buildTimelines(
+      [{ ...run, igt_ms: 41_000 }],
+      NODE_LAYERS,
+      T,
+    ).get("a");
+    expect(second).toBe(first);
+  });
+
+  it("rebuilds it on a new history or a status change", () => {
+    const run = {
+      id: "a",
+      zone_history: history,
+      status: "playing",
+      igt_ms: 40_000,
+    };
+    const first = buildTimelines([run], NODE_LAYERS, T).get("a");
+    const moved = buildTimelines(
+      [{ ...run, zone_history: [...history, at("boss", 50_000)] }],
+      NODE_LAYERS,
+      T,
+    ).get("a");
+    const quit = buildTimelines(
+      [{ ...run, status: "abandoned" }],
+      NODE_LAYERS,
+      T,
+    ).get("a");
+    expect(moved).not.toBe(first);
+    expect(moved?.deepestLayer).toBe(3);
+    expect(quit).not.toBe(first);
+    expect(quit?.status).toBe("abandoned");
+  });
+
+  it("rebuilds it on a corrected finish time", () => {
+    const done = [...history, at("boss", 50_000)];
+    const run = {
+      id: "a",
+      zone_history: done,
+      status: "finished",
+      igt_ms: 80_000,
+    };
+    const first = buildTimelines([run], NODE_LAYERS, T).get("a");
+    const later = buildTimelines(
+      [{ ...run, igt_ms: 90_000 }],
+      NODE_LAYERS,
+      T,
+    ).get("a");
+    expect(first?.layers[3]?.timeOnLayerMs).toBe(30_000);
+    expect(later?.layers[3]?.timeOnLayerMs).toBe(40_000);
+  });
+
+  it("rebuilds it for a new graph", () => {
+    const run = {
+      id: "a",
+      zone_history: history,
+      status: "playing",
+      igt_ms: 40_000,
+    };
+    const first = buildTimelines([run], NODE_LAYERS, T).get("a");
+    const regraphed = buildTimelines([run], new Map(NODE_LAYERS), T).get("a");
+    expect(regraphed).not.toBe(first);
   });
 });

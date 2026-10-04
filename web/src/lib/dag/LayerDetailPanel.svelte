@@ -17,12 +17,12 @@
     pinned: boolean;
     columns: DetailColumn[];
     runners: Map<string, RunnerLook>;
-    nodeNames: Map<string, string>;
+    /** The map's nodes, for their display names. */
+    nodes: Map<string, { displayName: string }>;
     onnodeclick?: (nodeId: string) => void;
   }
 
-  let { layer, pinned, columns, runners, nodeNames, onnodeclick }: Props =
-    $props();
+  let { layer, pinned, columns, runners, nodes, onnodeclick }: Props = $props();
 
   /** A fourth node (only on old seeds) wraps to a second row. */
   const MAX_NODE_COLS = 3;
@@ -51,7 +51,7 @@
   }
 
   function nodeName(nodeId: string): string {
-    return nodeNames.get(nodeId) ?? nodeId;
+    return nodes.get(nodeId)?.displayName ?? nodeId;
   }
 </script>
 

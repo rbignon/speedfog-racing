@@ -272,7 +272,7 @@ function routeEdge(
  */
 export function computeLayout(graph: DagGraph): DagLayout {
   if (graph.nodes.length === 0) {
-    return { nodes: [], edges: [], width: 0, height: 0 };
+    return { nodes: [], edges: [], width: 0, height: 0, layerX: [] };
   }
 
   const nodesByLayer = groupByLayer(graph.nodes);
@@ -334,6 +334,7 @@ export function computeLayout(graph: DagGraph): DagLayout {
     edges: routedEdges,
     width,
     height,
+    layerX,
   };
 }
 
