@@ -10,7 +10,7 @@ import sentry_sdk
 from fastapi import WebSocket
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import load_only, raiseload, selectinload
 
 from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
@@ -71,15 +71,17 @@ async def _load_session(db: AsyncSession, session_id: uuid.UUID) -> TrainingSess
 async def _load_session_no_graph(db: AsyncSession, session_id: uuid.UUID) -> TrainingSession | None:
     """Load a session for a caller that already holds its seed graph decoded.
 
-    The seed comes without ``graph_json`` (~120 KB of JSON to decode on every
-    1 Hz status_update otherwise); reading it raises, so pass the cached graph
-    to whatever needs it.
+    The seed only brings ``total_layers``: its ``graph_json`` (~120 KB of JSON
+    to decode on every 1 Hz status_update otherwise) and pool raise if read,
+    so pass the cached graph to whatever needs it.
     """
     result = await db.execute(
         select(TrainingSession)
         .options(
             selectinload(TrainingSession.user),
-            selectinload(TrainingSession.seed).defer(Seed.graph_json, raiseload=True),
+            selectinload(TrainingSession.seed).options(
+                load_only(Seed.total_layers, raiseload=True), raiseload(Seed.pool)
+            ),
         )
         .where(TrainingSession.id == session_id)
     )

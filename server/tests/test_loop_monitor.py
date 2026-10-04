@@ -54,7 +54,7 @@ def test_gc_tracker_measures_each_collection_and_keeps_only_slow_pauses() -> Non
 
 def test_gc_tracker_window_only_holds_collections_since_the_last_take() -> None:
     clock = ManualClock()
-    tracker = GcPauseTracker(clock=clock, slow_threshold=0.25)
+    tracker = GcPauseTracker(clock=clock)
     _collect(tracker, clock, 2, 0.5)
     tracker.take_window()
     _collect(tracker, clock, 0, 0.1)
@@ -67,7 +67,7 @@ def test_gc_tracker_window_only_holds_collections_since_the_last_take() -> None:
 
 def test_gc_tracker_ignores_stop_without_start() -> None:
     # Installed mid-collection: the first callback it sees is a "stop".
-    tracker = GcPauseTracker(clock=ManualClock(), slow_threshold=0.25)
+    tracker = GcPauseTracker(clock=ManualClock())
     tracker("stop", {"generation": 1, "collected": 0, "uncollectable": 0})
 
     assert tracker.take_window().counts == {}
@@ -138,9 +138,7 @@ async def test_monitor_logs_slow_gc_pause(caplog: pytest.LogCaptureFixture) -> N
     clock = ManualClock()
     tracker = GcPauseTracker(clock=clock, slow_threshold=0.25)
     _collect(tracker, clock, 2, 0.4, collected=99)
-    monitor = EventLoopMonitor(
-        probe_interval=0.02, summary_interval=3600, slow_threshold=0.25, gc_tracker=tracker
-    )
+    monitor = EventLoopMonitor(probe_interval=0.02, summary_interval=3600, gc_tracker=tracker)
     task = asyncio.create_task(monitor.run())
     with caplog.at_level(logging.INFO, logger="speedfog_racing.services.loop_monitor"):
         await asyncio.sleep(0.1)

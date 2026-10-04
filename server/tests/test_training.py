@@ -1156,7 +1156,7 @@ def test_training_status_update_reuses_the_graph_decoded_at_auth(
     assert row["current_zone"] == "limgrave_start"
     assert row["current_layer_tier"] == 1
     assert statements, "no SQL captured"
-    assert not [s for s in statements if "graph_json" in s]
+    assert not [s for s in statements if "graph_json" in s or "pools" in s]
 
 
 def test_training_mod_websocket_event_flag(

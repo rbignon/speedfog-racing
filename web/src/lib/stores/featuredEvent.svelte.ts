@@ -13,7 +13,7 @@ class FeaturedEventStore {
   events = $state<EventSummary[]>([]);
   private requests = 0;
   /** The request in flight and the token it was sent with. */
-  private inflight: { token: string | null; done: Promise<void> } | null = null;
+  private inFlight: { token: string | null; done: Promise<void> } | null = null;
 
   /** The event to feature: the server lists the one that needs eyes first. */
   get current(): EventSummary | null {
@@ -29,15 +29,11 @@ class FeaturedEventStore {
    */
   refresh(): Promise<void> {
     const token = getStoredToken();
-    if (this.inflight && this.inflight.token === token) {
-      return this.inflight.done;
-    }
-    const entry = { token, done: this.load(++this.requests) };
-    this.inflight = entry;
-    void entry.done.finally(() => {
-      if (this.inflight === entry) this.inflight = null;
-    });
-    return entry.done;
+    if (this.inFlight?.token === token) return this.inFlight.done;
+    // load() awaits before its finally runs, so the entry is set by then.
+    const done = this.load(++this.requests);
+    this.inFlight = { token, done };
+    return done;
   }
 
   private async load(request: number): Promise<void> {
@@ -46,6 +42,8 @@ class FeaturedEventStore {
       if (request === this.requests) this.events = events;
     } catch {
       // Keep the last list: the band is a feature, not a page the viewer asked for.
+    } finally {
+      if (request === this.requests) this.inFlight = null;
     }
   }
 }

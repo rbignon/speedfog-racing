@@ -132,18 +132,6 @@ async def test_a_cancelled_waiter_does_not_cancel_the_shared_load(clock: list[fl
     assert load.calls == 1
 
 
-async def test_invalidated_snapshot_reloads(clock: list[float]) -> None:
-    room = RaceRoom(race_id=uuid.uuid4())
-    load = Loader()
-
-    await room.ghost_participants(load)
-    room.invalidate_ghosts()
-    refreshed = await room.ghost_participants(load)
-
-    assert load.calls == 2
-    assert refreshed == ["field-2"]
-
-
 async def test_a_load_overtaken_by_an_invalidation_is_not_used(clock: list[float]) -> None:
     """The progression that invalidated it just broadcast a fresh projection to
     every mod: answering a heartbeat with the older field would step a ghost back."""

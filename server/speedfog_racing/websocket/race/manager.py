@@ -41,10 +41,7 @@ logger = logging.getLogger(__name__)
 
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 
-# How long the field loaded for async-race heartbeats is shared (see
-# RaceRoom.ghost_participants). Bounds how stale a ghost's deaths and
-# backtracks can look in a viewer's projection: every progression that
-# broadcasts a leaderboard drops the snapshot right away.
+# Used by RaceRoom.ghost_participants; staleness bound in docs/DAILY_SEED.md.
 GHOST_SNAPSHOT_TTL = 5.0  # seconds
 
 
@@ -91,7 +88,6 @@ class RaceRoom:
     # Shared field for async-race heartbeats (see ghost_participants).
     _ghosts: Sequence[Participant] | None = field(default=None, repr=False, compare=False)
     _ghosts_expire_at: float = field(default=0.0, repr=False, compare=False)
-    _ghosts_generation: int = field(default=0, repr=False, compare=False)
     _ghosts_loading: asyncio.Task[Sequence[Participant] | None] | None = field(
         default=None, repr=False, compare=False
     )
@@ -99,21 +95,15 @@ class RaceRoom:
     async def ghost_participants(
         self, load: Callable[[], Awaitable[Sequence[Participant] | None]]
     ) -> Sequence[Participant] | None:
-        """Every participant of the race, shared for ``GHOST_SNAPSHOT_TTL``.
+        """Every participant of the race, shared by the room's heartbeats.
 
-        On races that project ghosts, each playing mod's 1 Hz status_update
-        unicasts a leaderboard projected from the whole field. Loading the
-        field per message decodes every participant's zone_history several
-        times a second; sharing one load across the room's heartbeats keeps
-        that cost per room. Concurrent callers share a single ``load`` (and
-        its error, if it fails); a caller cancelled while waiting leaves it
-        running for the others. The snapshot is read-only: every viewer's
-        projection reads the same objects.
-
-        Returns None when ``load`` does (the race is gone), or when the field
-        was invalidated while it loaded: the leaderboard broadcast behind the
-        invalidation has just sent every mod a fresh projection, and an answer
-        built from the older field would step a ghost back.
+        Concurrent callers share a single ``load`` (and its error, if it
+        fails); a caller cancelled while waiting leaves it running for the
+        others. The snapshot is read-only: every viewer's projection reads the
+        same objects. Returns None when ``load`` does (the race is gone), or
+        when ``invalidate_ghosts`` ran during the load: the broadcast behind it
+        has just sent every mod a fresh projection, and an answer built from
+        the older field would step a ghost back.
         """
         if self._ghosts is not None and monotonic() < self._ghosts_expire_at:
             return self._ghosts
@@ -127,14 +117,15 @@ class RaceRoom:
     async def _load_ghosts(
         self, load: Callable[[], Awaitable[Sequence[Participant] | None]]
     ) -> Sequence[Participant] | None:
-        generation = self._ghosts_generation
         started = monotonic()
+        task = asyncio.current_task()
         try:
             ghosts = await load()
         finally:
-            if self._ghosts_loading is asyncio.current_task():
+            detached = self._ghosts_loading is not task  # invalidate_ghosts() ran
+            if not detached:
                 self._ghosts_loading = None
-        if generation != self._ghosts_generation:
+        if detached:
             return None
         self._ghosts = ghosts
         self._ghosts_expire_at = started + GHOST_SNAPSHOT_TTL
@@ -147,7 +138,6 @@ class RaceRoom:
         heartbeat starts a fresh load instead of joining it.
         """
         self._ghosts = None
-        self._ghosts_generation += 1
         self._ghosts_loading = None
 
     async def broadcast_to_mods(self, message: str) -> None:
