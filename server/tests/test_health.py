@@ -30,3 +30,17 @@ def test_health_announcement_from_settings(client, monkeypatch):
     data = client.get("/health").json()
     assert data["announcement"] == "Mods may break on Friday."
     assert data["announcement_url"] == "/help#faq-game-update"
+
+
+def test_health_is_never_rate_limited(client):
+    """Every page load and tab focus polls /health, and behind a proxy that does
+    not forward the client IP a per-IP limit is one bucket for every visitor."""
+    statuses = {client.get("/health").status_code for _ in range(70)}
+    assert statuses == {200}
+
+
+def test_api_routes_keep_the_default_rate_limit(client):
+    """Control: the default 60/minute limit still applies to the API."""
+    statuses = [client.get("/api/rewards/catalog").status_code for _ in range(61)]
+    assert statuses[:60] == [200] * 60
+    assert statuses[60] == 429

@@ -170,8 +170,13 @@ app.include_router(api_router, prefix="/api")
 
 
 @app.get("/health")
+@limiter.exempt  # type: ignore[untyped-decorator]
 async def health_check() -> dict[str, str | None]:
-    """Health check endpoint; also carries the site-wide announcement, if any."""
+    """Health check endpoint; also carries the site-wide announcement, if any.
+
+    Exempt from the default per-IP limit: every page load and tab focus polls
+    it, and it costs nothing to serve.
+    """
     return {
         "status": "ok",
         "version": __version__,

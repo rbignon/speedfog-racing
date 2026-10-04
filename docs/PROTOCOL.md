@@ -6,9 +6,9 @@ Reference document for API endpoints and WebSocket messages.
 
 ### System
 
-| Method | Endpoint  | Auth | Description                                                          |
-| ------ | --------- | ---- | -------------------------------------------------------------------- |
-| GET    | `/health` | -    | Health check (`{ status, version, announcement, announcement_url }`) |
+| Method | Endpoint  | Auth | Description                                                                                             |
+| ------ | --------- | ---- | ------------------------------------------------------------------------------------------------------- |
+| GET    | `/health` | -    | Health check (`{ status, version, announcement, announcement_url }`), exempt from the per-IP rate limit |
 
 `announcement` and `announcement_url` mirror the `ANNOUNCEMENT` / `ANNOUNCEMENT_URL` settings (null when unset) and feed the site-wide web banner.
 
