@@ -26,7 +26,7 @@ from speedfog_racing.services.daily_seed_loop import daily_seed_loop
 from speedfog_racing.services.hard_close_loop import hard_close_loop
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
-from speedfog_racing.services.loop_monitor import EventLoopMonitor
+from speedfog_racing.services.loop_monitor import EventLoopMonitor, tuned_gc
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
 from speedfog_racing.websocket import (
     handle_mod_websocket,
@@ -88,7 +88,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             twitch_live_poll_loop(async_session_maker, ws_manager=ws_manager)
         )
 
-    yield
+    with tuned_gc(settings.gc_gen0_threshold):
+        yield
 
     # Shutdown
     if twitch_live_task:

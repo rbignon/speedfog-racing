@@ -145,6 +145,18 @@ charges a collection to the line right after the allocation that triggered it,
 usually `raw_decode (json/decoder.py)`. Read these logs before concluding that
 JSON decoding is slow.
 
+The lifespan also tunes the collector for the server's lifetime (`tuned_gc` in
+the same module, logged once at startup as `GC tuned: ...`): what startup
+allocated is frozen out of the collections, and the youngest generation is
+collected every `GC_GEN0_THRESHOLD` net allocations of GC-tracked objects
+(50,000 by default, `0` keeps the interpreter's 2,000), so most objects
+allocated for a single message die before being promoted toward the full
+collections. To judge a threshold, compare the summary lines before and after:
+fewer `gen2` collections and a lower `total` are the goal, but young
+collections get longer (they show in `max` without reaching the WARNING
+threshold), `gen1` should drop too, and `rss` may grow a little since garbage
+lives longer.
+
 ## Files
 
 | File                         | Purpose                                                   |

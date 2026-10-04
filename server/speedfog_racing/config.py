@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # Server
     log_level: str = "INFO"
     log_json: bool = False
+    # Net allocations of GC-tracked objects between two young collections for
+    # the server's lifetime (services/loop_monitor.py, ``tuned_gc``); 0 keeps
+    # the interpreter's defaults.
+    gc_gen0_threshold: int = 50_000
 
     # Sentry
     sentry_dsn: str = ""

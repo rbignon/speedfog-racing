@@ -190,3 +190,38 @@ def test_app_lifespan_runs_the_monitor() -> None:
         assert any(isinstance(cb, GcPauseTracker) for cb in gc.callbacks)
 
     assert not any(isinstance(cb, GcPauseTracker) for cb in gc.callbacks)
+
+
+def test_app_lifespan_tunes_the_collector_and_restores_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """While the server runs, what startup allocated is frozen out of the
+    collections and young collections are rarer; shutdown restores both."""
+    from fastapi.testclient import TestClient
+
+    from speedfog_racing.config import settings
+    from speedfog_racing.main import app
+
+    threshold_before = gc.get_threshold()
+    frozen_before = gc.get_freeze_count()
+    monkeypatch.setattr(settings, "gc_gen0_threshold", threshold_before[0] * 10)
+    with TestClient(app):
+        assert gc.get_freeze_count() > frozen_before
+        assert gc.get_threshold()[0] == threshold_before[0] * 10
+
+    assert gc.get_threshold() == threshold_before
+    assert gc.get_freeze_count() == frozen_before
+
+
+def test_a_zero_threshold_leaves_the_collector_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from speedfog_racing.config import settings
+    from speedfog_racing.main import app
+
+    threshold_before = gc.get_threshold()
+    frozen_before = gc.get_freeze_count()
+    monkeypatch.setattr(settings, "gc_gen0_threshold", 0)
+    with TestClient(app):
+        assert gc.get_threshold() == threshold_before
+        assert gc.get_freeze_count() == frozen_before

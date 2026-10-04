@@ -17,6 +17,8 @@ collection threshold, which hides it. This monitor measures both directly:
 
 The GC callback only records numbers: logging from inside a collection could
 re-enter logging handlers, so the probe logs the slow pauses when it wakes up.
+
+``tuned_gc`` adjusts the collector itself for the server's lifetime.
 """
 
 import asyncio
@@ -24,7 +26,8 @@ import gc
 import logging
 import mmap
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
@@ -32,6 +35,44 @@ logger = logging.getLogger(__name__)
 PROBE_INTERVAL = 0.1  # seconds
 SUMMARY_INTERVAL = 60.0  # seconds
 SLOW_THRESHOLD = 0.25  # seconds
+
+
+@contextmanager
+def tuned_gc(gen0_threshold: int) -> Iterator[None]:
+    """Tune the collector for the server's lifetime, then restore it.
+
+    ``gen0_threshold`` is the number of net allocations of GC-tracked objects
+    between two young collections (0 leaves the collector alone). Objects
+    alive at a young collection are promoted; a full collection is considered
+    every 11 middle collections and runs once the objects promoted since the
+    last one reach 25% of the old generation. A larger threshold lets
+    short-lived objects die unseen and makes full collections rarer, at the
+    cost of longer young collections and of cyclic garbage living longer.
+
+    What startup allocated (modules, routes, models, translations) lives as
+    long as the process: it is frozen, so full collections stop walking it
+    (a frozen object that later becomes cyclic garbage is only reclaimed after
+    the exit). Not re-entrant: the exit unfreezes everything.
+    """
+    if gen0_threshold <= 0:
+        yield
+        return
+    threshold = gc.get_threshold()
+    started = time.perf_counter()
+    gc.collect()
+    gc.freeze()
+    gc.set_threshold(gen0_threshold, *threshold[1:])
+    logger.info(
+        "GC tuned: froze %d objects after a %d ms collection, thresholds %s",
+        gc.get_freeze_count(),
+        round((time.perf_counter() - started) * 1000),
+        gc.get_threshold(),
+    )
+    try:
+        yield
+    finally:
+        gc.set_threshold(*threshold)
+        gc.unfreeze()
 
 
 @dataclass(frozen=True)

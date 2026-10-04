@@ -14,6 +14,9 @@ os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///" + os.path.join(
 )
 os.environ["SECRET_KEY"] = "test-secret-key"
 os.environ.setdefault("COUNTDOWN_SECONDS", "0")
+# Each TestClient lifespan would otherwise run a full collection and freeze the
+# test process's heap; test_loop_monitor turns the tuning on where it checks it.
+os.environ.setdefault("GC_GEN0_THRESHOLD", "0")
 
 import pytest
 from fastapi.testclient import TestClient
