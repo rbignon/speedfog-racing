@@ -385,6 +385,11 @@ def stream_seed_pack_with_config(
 # Config generation (unchanged)
 # =============================================================================
 
+# Both templates below write the same [overlay] table: the font size fallback
+# (OVERLAY_DEFAULTS), the colors and the background opacity equal the mod's own
+# defaults, so every seed renders alike whatever mod version it bundles. Keep in
+# sync with mod/src/dll/config.rs and docs/GRAPHIC_CHARTER.md.
+
 
 def generate_player_config(
     participant: Participant,
@@ -415,7 +420,7 @@ enabled = true
 #   "top-left", "top-right", "bottom-left" or "bottom-right"
 anchor = "top-right"
 # Font to use for the overlay. Can be:
-#   - Empty "" (default): Uses Windows system font (Segoe UI)
+#   - Empty "" (default): Uses the font embedded in the mod
 #   - Filename only "arial.ttf": Looks in C:\\Windows\\Fonts\\ then DLL directory
 #   - Relative path "fonts/custom.ttf": Relative to DLL directory
 #   - Absolute path "C:\\Fonts\\MyFont.ttf": Uses the specified file
@@ -423,14 +428,14 @@ font_path = ""
 # Font size in pixels (20.0 recommended for 1080p, 40.0 for 4K)
 font_size = {_get_overlay_setting(participant.user.overlay_settings, "font_size")}
 # Background color and opacity
-background_color = "#141414"
-background_opacity = 0.3
+background_color = "#0F1923"
+background_opacity = 0.55
 # Text colors
-text_color = "#FFFFFF"
-text_disabled_color = "#808080"
+text_color = "#E8E6E1"
+text_disabled_color = "#96A0AD"
 # Window border
 show_border = false
-border_color = "#404040"
+border_color = "#253550"
 
 [keybindings]
 toggle_ui = "f9"
@@ -454,12 +459,12 @@ enabled = true
 anchor = "top-right"
 font_path = ""
 font_size = {_get_overlay_setting(session.user.overlay_settings, "font_size")}
-background_color = "#141414"
-background_opacity = 0.3
-text_color = "#FFFFFF"
-text_disabled_color = "#808080"
+background_color = "#0F1923"
+background_opacity = 0.55
+text_color = "#E8E6E1"
+text_disabled_color = "#96A0AD"
 show_border = false
-border_color = "#404040"
+border_color = "#253550"
 
 [keybindings]
 toggle_ui = "f9"

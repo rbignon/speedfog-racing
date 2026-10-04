@@ -17,7 +17,7 @@ enabled = true
 anchor = "top-right"
 # Font size in pixels
 font_size = 20
-# Font path. Leave empty to use the bundled Source Sans 3 font.
+# Font path. Leave empty to use the bundled Public Sans font.
 # Set to a TTF path (absolute, relative to the DLL, or just a filename to
 # search in C:\Windows\Fonts) to override.
 # font_path = ""

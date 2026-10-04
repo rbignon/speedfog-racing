@@ -5,6 +5,7 @@ import json
 import os
 import struct
 import tempfile
+import tomllib
 import uuid
 import zipfile
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from speedfog_racing.services.seed_pack_service import (
     OVERLAY_DEFAULTS,
     _iter_cd_entries,
     generate_player_config,
+    generate_training_config,
     stream_seed_pack_with_config,
 )
 
@@ -67,6 +69,15 @@ class MockRace:
     def __post_init__(self) -> None:
         if self.seed_id is None and self.seed is not None:
             self.seed_id = self.seed.id
+
+
+@dataclass
+class MockTrainingSession:
+    """Mock training session for testing."""
+
+    id: uuid.UUID = field(default_factory=uuid.uuid4)
+    mod_token: str = "test_training_token"
+    user: MockUser = field(default_factory=MockUser)
 
 
 # =============================================================================
@@ -154,6 +165,18 @@ def test_generate_player_config_uses_default_font_size(mock_participant, mock_ra
     mock_participant.user.overlay_settings = None
     config = generate_player_config(mock_participant, mock_race)
     assert f"font_size = {OVERLAY_DEFAULTS['font_size']}" in config
+
+
+def test_player_and_training_configs_set_up_the_overlay_alike(mock_participant, mock_race):
+    """The race and training templates are separate strings: they must parse and agree."""
+    mock_participant.user.overlay_settings = {"font_size": 24.0}
+    session = MockTrainingSession(user=mock_participant.user)
+
+    player = tomllib.loads(generate_player_config(mock_participant, mock_race))
+    training = tomllib.loads(generate_training_config(session))
+
+    assert player["overlay"] == training["overlay"]
+    assert player["keybindings"] == training["keybindings"]
 
 
 # =============================================================================

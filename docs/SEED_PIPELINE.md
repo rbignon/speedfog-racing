@@ -173,15 +173,16 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    anchor = "top-right"
    font_path = ""
    font_size = <user's preference or 20.0>
-   background_color = "#141414"
-   background_opacity = 0.3
-   text_color = "#FFFFFF"
-   text_disabled_color = "#808080"
+   background_color = "#0F1923"
+   background_opacity = 0.55
+   text_color = "#E8E6E1"
+   text_disabled_color = "#96A0AD"
    show_border = false
-   border_color = "#404040"
+   border_color = "#253550"
 
    [keybindings]
    toggle_ui = "f9"
+   toggle_leaderboard = "f10"
    ```
 
 4. **Inject config**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, followed by the rewritten central directory and a new EOCD.

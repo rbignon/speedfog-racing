@@ -121,6 +121,10 @@ pub struct OverlaySettings {
 fn default_enabled() -> bool {
     true
 }
+// The server-generated config writes font_size (falling back to this value),
+// background_color, background_opacity, text_color, text_disabled_color and
+// border_color with these same defaults. Keep in sync with
+// server/speedfog_racing/services/seed_pack_service.py.
 fn default_font_size() -> f32 {
     20.0
 }
