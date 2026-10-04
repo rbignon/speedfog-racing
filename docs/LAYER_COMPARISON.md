@@ -125,6 +125,12 @@ the chat open, the main column is far narrower than the screen. A runner row
 fits on one line when its node column is at least 21rem wide, and wraps onto
 two lines otherwise.
 
+A column's header is the node's name, a "Boss:" line listing the boss(es)
+actually fought there when the seed randomizes bosses (the same rule as the
+node popup: shown whenever `randomized_bosses` is set; one line, cut with an
+ellipsis, the full list in its tooltip and in the popup the name opens),
+then the field reference.
+
 ## Performance
 
 `raceStore` delivers a `player_update` about every second per playing

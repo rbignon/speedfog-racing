@@ -18,7 +18,7 @@
     columns: DetailColumn[];
     runners: Map<string, RunnerLook>;
     /** The map's nodes, for their display names. */
-    nodes: Map<string, { displayName: string }>;
+    nodes: Map<string, { displayName: string; randomizedBosses?: string[] }>;
     onnodeclick?: (nodeId: string) => void;
   }
 
@@ -70,6 +70,7 @@
       style="--node-cols: {Math.min(columns.length, MAX_NODE_COLS)}"
     >
       {#each columns as column (column.nodeId)}
+        {@const bosses = nodes.get(column.nodeId)?.randomizedBosses?.join(", ")}
         <div class="node-col">
           <button
             type="button"
@@ -79,6 +80,14 @@
             onclick={() => onnodeclick?.(column.nodeId)}
             >{nodeName(column.nodeId)}</button
           >
+          <!-- Same rule as the node popup: shown when the seed randomizes
+               the boss, every phase listed. -->
+          {#if bosses}
+            <div class="boss" title={bosses}>
+              <span class="boss-label">Boss:</span>
+              {bosses}
+            </div>
+          {/if}
           <div class="field">
             {#if column.field}
               field best {formatTime(column.field.bestMs)} · median {formatTime(
@@ -215,6 +224,22 @@
 
   .node-name:focus-visible {
     outline: 2px solid var(--color-purple);
+  }
+
+  .boss {
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* The node popup's Boss label. */
+  .boss-label {
+    font-family: var(--font-mono);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
   }
 
   .field {
