@@ -172,7 +172,7 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    enabled = true
    anchor = "top-right"
    font_path = ""
-   font_size = <user's preference or 18.0>
+   font_size = <user's preference or 20.0>
    background_color = "#141414"
    background_opacity = 0.3
    text_color = "#FFFFFF"

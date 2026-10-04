@@ -680,8 +680,17 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
         bob = await _user(db, "bob")
         cleo = await _user(db, "cleo")
         duel = {"key": "duel", "label": "Duel", "races": 1}
+        # semi_a was dated yesterday and the other stages lie ahead: no stage is played
+        # today, so only a running race could make one current.
+        starts_at, qualifier_ends_at, ends_at, config = _season(
+            datetime.now(UTC) - timedelta(days=12)
+        )
         event = await _event(
-            db, config={**CONFIG, "phase_override": "playoffs", "showcases": [SHOWCASE, duel]}
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "phase_override": "playoffs", "showcases": [SHOWCASE, duel]},
         )
         semi = await _race(
             db,

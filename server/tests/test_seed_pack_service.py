@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from speedfog_racing.services.seed_pack_service import (
+    OVERLAY_DEFAULTS,
     _iter_cd_entries,
     generate_player_config,
     stream_seed_pack_with_config,
@@ -149,10 +150,10 @@ def test_generate_player_config_uses_user_font_size(mock_participant, mock_race)
 
 
 def test_generate_player_config_uses_default_font_size(mock_participant, mock_race):
-    """Config should use 18.0 default when user has no settings."""
+    """Config should fall back to the default font size when user has no settings."""
     mock_participant.user.overlay_settings = None
     config = generate_player_config(mock_participant, mock_race)
-    assert "font_size = 18.0" in config
+    assert f"font_size = {OVERLAY_DEFAULTS['font_size']}" in config
 
 
 # =============================================================================
