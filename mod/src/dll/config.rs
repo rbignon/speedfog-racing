@@ -71,7 +71,7 @@ pub struct OverlaySettings {
     #[serde(default)]
     pub font_path: String,
 
-    /// Font size in pixels (32.0 recommended for 1080p, 64.0 for 4K)
+    /// Font size in pixels (20.0 recommended for 1080p, 40.0 for 4K)
     #[serde(default = "default_font_size")]
     pub font_size: f32,
 
@@ -122,7 +122,7 @@ fn default_enabled() -> bool {
     true
 }
 fn default_font_size() -> f32 {
-    18.0
+    20.0
 }
 fn default_background_color() -> String {
     "#0F1923".to_string()
