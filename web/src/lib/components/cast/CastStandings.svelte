@@ -87,11 +87,11 @@
 
   // A resolved node name is a whole route label ("Gravesite Plain - Fog
   // Rift Catacombs - Death Knight"), not a short zone name: strip the
-  // region prefix and cap the length, exactly like RunnerCard.zoneLabel and
-  // $lib/cast/splits.ts's own zoneLabel do for the same data (duplicated
-  // rather than shared, this codebase's established way of shortening a
-  // node name). Without it this column overflowed the row, the earlier bug
-  // this same treatment already fixed once.
+  // region prefix (duplicated rather than shared, this codebase's
+  // established way of shortening a node name) and cap the length, a cap
+  // this zone column keeps for its own row budget while the cast cards now
+  // leave the clipping to their CSS. Without it this column overflowed the
+  // row, the earlier bug this same treatment already fixed once.
   const ZONE_LABEL_MAX = 20;
   function zoneLabel(zone: string | null): string {
     if (!zone) return "";

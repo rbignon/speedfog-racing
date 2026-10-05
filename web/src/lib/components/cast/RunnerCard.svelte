@@ -37,9 +37,11 @@
      * fabricating data for a card that has no room for it anyway. */
     splits?: SplitRow[];
     /** What the runner is wielding, already resolved to display names
-     * ("Moonveil + Misericorde"); empty hides the row (catalogue still
-     * loading, or nothing observed yet). No upgrade level on purpose:
-     * competitive modes play at max upgrade, so it would be noise. */
+     * ("Moonveil + Misericorde"); empty hides the line (catalogue still
+     * loading, or nothing observed yet). Only the tall variant renders it:
+     * the quad cards' height budget has no room a weapon line could take
+     * legibly. No upgrade level on purpose: competitive modes play at max
+     * upgrade, so it would be noise. */
     weapons?: string;
   }
 
@@ -99,16 +101,18 @@
     return parts.join(" ");
   }
 
-  // Node id -> short display name, matching Leaderboard.svelte's zoneName
-  // exactly, fallback included: on a broadcast, a raw node id like
+  // Node id -> display name, the same resolution and fallback as
+  // Leaderboard.svelte's zoneName: on a broadcast, a raw node id like
   // "stormveil_godrick_48fd" reaching the screen in the window before
   // graph_json arrives is worse than the line sitting blank for a moment.
+  // A route label is shortened to its last leg, but no character cap: the
+  // CSS ellipsizes at the card's real width, which a count can only guess
+  // (Leaderboard itself still caps at 20 for its narrow overlay column).
   function zoneLabel(zone: string | null): string {
     if (!zone) return "";
     const name = zoneNames?.get(zone);
     if (!name) return "";
-    const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
-    return short.length > 20 ? short.slice(0, 19) + "…" : short;
+    return name.includes(" - ") ? name.split(" - ").pop()! : name;
   }
 
   function formatIgt(ms: number): string {
@@ -147,7 +151,7 @@
       />{/if}</span
   >
   <span class="czone">{zoneLabel(participant.current_zone)}</span>
-  {#if weapons}
+  {#if weapons && variant === "tall"}
     <span class="cweap">{weapons}</span>
   {/if}
   <div class="crows">
@@ -272,7 +276,7 @@
 
   .cname {
     display: inline-block;
-    margin-top: 6px;
+    margin-top: 8px;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 32px;
@@ -288,11 +292,15 @@
     flex-shrink: 0;
   }
 
+  /* One line, clipped by the card's own width: the zone name is cut by
+   * the CSS, not by a character count that would trim names which fit. */
   .czone {
     margin-top: 2px;
     font-size: 17px;
-    line-height: 1.3;
     color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .crows {
@@ -308,7 +316,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 10px;
-    padding-top: 6px;
+    padding-top: 8px;
     border-top: 1px solid var(--color-border);
   }
 
@@ -354,20 +362,22 @@
     color: var(--color-text-secondary);
   }
 
-  /* The wielded combo, under the zone line: a full-width line of its own,
-   * no label, because a labelled stats row leaves a 280px card too little
-   * width for real weapon names. One compact line on the quad cards (the
-   * card's height budget is exactly full), never squeezed by the card's
-   * own flex column; the tall hero card has room for two lines. */
+  /* The hero's wielded combo, under the zone line: a full-width line of
+   * its own, no label, because a labelled stats row leaves the card too
+   * little width for real weapon names. Up to two lines, then ellipsis;
+   * never squeezed by the card's own flex column. Only the tall variant
+   * renders it (see the template). */
   .cweap {
-    margin-top: 2px;
+    margin-top: 4px;
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 17px;
     line-height: 1.3;
     flex-shrink: 0;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
     overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   .rcard.mirror .chead {
@@ -375,8 +385,7 @@
   }
 
   .rcard.mirror .cname,
-  .rcard.mirror .czone,
-  .rcard.mirror .cweap {
+  .rcard.mirror .czone {
     text-align: right;
   }
 
@@ -405,15 +414,6 @@
 
   .rcard.tall .czone {
     font-size: 20px;
-  }
-
-  .rcard.tall .cweap {
-    font-size: 17px;
-    white-space: normal;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
   }
 
   .rcard.tall .crows {

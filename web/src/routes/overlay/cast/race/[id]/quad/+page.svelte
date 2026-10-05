@@ -1,15 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
   import { raceStore } from "$lib/stores/race.svelte";
   import { sceneLayout, quadSeat } from "$lib/cast/layout";
   import { resolveSlots } from "$lib/cast/params";
   import { parseDagGraph } from "$lib/dag";
-  import { formatCombo } from "$lib/weapons";
-  import {
-    getWeaponName,
-    isCatalogueReady,
-    loadCatalogue,
-  } from "$lib/stores/weaponsCatalogue.svelte";
   import CastPlate from "$lib/components/cast/CastPlate.svelte";
   import CastDesk from "$lib/components/cast/CastDesk.svelte";
   import CastPov from "$lib/components/cast/CastPov.svelte";
@@ -49,33 +42,6 @@
         : [],
     ),
   );
-
-  // The wielded combo resolves to names only once the catalogue is in, so
-  // a card never prints the raw "Weapon #..." fallback mid-load; an OBS
-  // scene stays up for hours, so a failed load retries instead of
-  // silencing the line for the whole broadcast.
-  let catalogueReady = $state(false);
-  onMount(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const attempt = () => {
-      loadCatalogue()
-        .catch(() => {})
-        .then(() => {
-          if (isCatalogueReady()) catalogueReady = true;
-          else timer = setTimeout(attempt, 30_000);
-        });
-    };
-    attempt();
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  });
-
-  function weaponsOf(participantId: string): string {
-    if (!catalogueReady) return "";
-    const ids = raceStore.currentWeapons[participantId];
-    return ids ? formatCombo(ids, getWeaponName) : "";
-  }
 </script>
 
 <CastPlate scene="quad" cams={params.cams} guides={params.guides} {seatedSlots}>
@@ -93,7 +59,6 @@
         rect={quadSeat(slot).card}
         variant={quadSeat(slot).mirrored ? "mirror" : "card"}
         leader={ranks.get(participant.id) === 1}
-        weapons={weaponsOf(participant.id)}
       />
     {/if}
   {/each}

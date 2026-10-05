@@ -7,21 +7,19 @@ export interface CastSplit {
 }
 
 const MAX_SPLITS = 3;
-const ZONE_LABEL_MAX = 20;
 
 // A resolved node name is a whole route label ("Gravesite Plain - Belurat
 // Gaol - Demi-Human Swordmaster Onze"), not a short zone name: strip the
-// region prefix and cap the length, exactly like `RunnerCard.zoneLabel` does
-// for the current-zone line on the very same card (also duplicated in
-// Leaderboard.svelte and across web/src/lib/dag/, this codebase's established
-// way of shortening a node name rather than a shared helper). The split list
-// and the current-zone line must agree on what a zone is called, or the
-// panel shows the same runner's location named two different ways at once.
+// region prefix, exactly like `RunnerCard.zoneLabel` does for the
+// current-zone line on the very same card (also duplicated in
+// Leaderboard.svelte and across web/src/lib/dag/, this codebase's
+// established way of shortening a node name rather than a shared helper).
+// No character cap: the split row's own CSS clips at the panel's real
+// width, and the split list and the current-zone line must agree on what a
+// zone is called, or the panel shows the same runner's location named two
+// different ways at once.
 function zoneLabel(name: string): string {
-  const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
-  return short.length > ZONE_LABEL_MAX
-    ? short.slice(0, ZONE_LABEL_MAX - 1) + "…"
-    : short;
+  return name.includes(" - ") ? name.split(" - ").pop()! : name;
 }
 
 /**

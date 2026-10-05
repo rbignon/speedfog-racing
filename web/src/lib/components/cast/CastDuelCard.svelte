@@ -83,12 +83,13 @@
     return parts.join(" ");
   }
 
+  // A route label is shortened to its last leg, but no character cap: the
+  // CSS ellipsizes at the card's real width, which a count can only guess.
   function zoneLabel(zone: string | null): string {
     if (!zone) return "";
     const name = zoneNames?.get(zone);
     if (!name) return "";
-    const short = name.includes(" - ") ? name.split(" - ").pop()! : name;
-    return short.length > 20 ? short.slice(0, 19) + "…" : short;
+    return name.includes(" - ") ? name.split(" - ").pop()! : name;
   }
 
   // Duplicated in every card that shows an IGT (RunnerCard, CastLog, ...),

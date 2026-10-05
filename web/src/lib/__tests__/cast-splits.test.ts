@@ -85,8 +85,9 @@ describe("buildCastSplits", () => {
   it("shortens a region-prefixed name the same way RunnerCard's current-zone line does", () => {
     // Real seed data resolves a node to a whole route label, not a short
     // zone name (docs/superpowers/sdd fix round 1 finding): the region
-    // prefix must be stripped, and a name still over 20 chars truncated with
-    // an ellipsis, exactly like RunnerCard.zoneLabel does for current_zone.
+    // prefix is stripped, and the whole last leg is handed over, like
+    // RunnerCard.zoneLabel does for current_zone: the row's own CSS clips
+    // at the panel's real width, which a character count can only guess.
     const routeNames = new Map([
       ["w", "Caelid - Gael Tunnel - Magma Wyrm"],
       ["x", "Gravesite Plain - Fog Rift Catacombs - Death Knight"],
@@ -102,14 +103,10 @@ describe("buildCastSplits", () => {
       routeNames,
     );
     expect(rows.map((r) => r.zone)).toEqual([
-      "Demi-Human Swordmas…",
+      "Demi-Human Swordmaster Onze",
       "Death Knight",
       "Magma Wyrm",
     ]);
     expect(rows.map((r) => r.durationMs)).toEqual([23_000, 24_000, 54_000]);
-    // No row's zone name is longer than the panel can show on one line.
-    for (const row of rows) {
-      expect(row.zone.length).toBeLessThanOrEqual(20);
-    }
   });
 });

@@ -147,6 +147,49 @@ describe("RunnerCard: name template", () => {
   });
 });
 
+describe("RunnerCard: zone line", () => {
+  it("hands the whole resolved zone name to the CSS instead of pre-cutting it", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({ current_zone: "z1" }),
+        zoneNames: new Map([["z1", "Promised Consort Radahn"]]),
+      },
+    });
+    // The CSS ellipsizes at the card's real width; a JS character cap cut
+    // names that actually fit ("Promised Consort Ra…").
+    expect(container.querySelector(".czone")?.textContent).toBe(
+      "Promised Consort Radahn",
+    );
+  });
+});
+
+describe("RunnerCard: weapons line", () => {
+  it("renders the wielded combo on the tall variant only", () => {
+    const tall = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        variant: "tall" as const,
+        participant: fakeParticipant(),
+        weapons: "Moonveil",
+      },
+    });
+    expect(tall.container.querySelector(".cweap")?.textContent).toBe(
+      "Moonveil",
+    );
+    // The quad cards' height budget has no room a weapon line could take
+    // legibly: the card and mirror variants never render one.
+    const card = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant(),
+        weapons: "Moonveil",
+      },
+    });
+    expect(card.container.querySelector(".cweap")).toBeNull();
+  });
+});
+
 describe("RunnerCard: splits (tall variant)", () => {
   it("renders each split's zone and duration as a plain time, not a signed gap", () => {
     const { container } = render(RunnerCard, {

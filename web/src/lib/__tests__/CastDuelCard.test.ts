@@ -71,4 +71,17 @@ describe("CastDuelCard: states", () => {
     });
     expect(container.querySelector(".dzone")?.textContent).toBe("");
   });
+
+  it("hands the whole resolved zone name to the CSS instead of pre-cutting it", () => {
+    const { container } = render(CastDuelCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({ current_zone: "z1" }),
+        zoneNames: new Map([["z1", "Promised Consort Radahn"]]),
+      },
+    });
+    expect(container.querySelector(".dzone")?.textContent).toBe(
+      "Promised Consort Radahn",
+    );
+  });
 });
