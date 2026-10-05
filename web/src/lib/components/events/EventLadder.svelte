@@ -6,11 +6,14 @@
     ladder,
     modes,
     viewerId,
+    spots = 0,
     emptyLabel = "No runs yet.",
   }: {
     ladder: EventLadder;
     modes: EventMode[];
     viewerId: string | null;
+    /** Ladder positions the playoffs take; 0 hides the qualification cut. */
+    spots?: number;
     /** What an empty ladder says; the page words it by phase. */
     emptyLabel?: string;
   } = $props();
@@ -31,6 +34,29 @@
       );
     }),
   );
+
+  // Qualifying is positional, as seeding is (seed N takes the Nth ranked
+  // entry): the first `spots` ranked rows, so a tie spanning the boundary
+  // still cuts where the seats run out.
+  let qualifying = $derived(
+    new Set(
+      ladder.entries
+        .filter((e) => e.rank !== null)
+        .slice(0, spots)
+        .map((e) => e.user.id),
+    ),
+  );
+
+  // The qualification cut sits under the last visible qualifying row, when a
+  // row follows it.
+  let cutIndex = $derived.by(() => {
+    if (spots <= 0) return -1;
+    let last = -1;
+    rows.forEach((e, i) => {
+      if (qualifying.has(e.user.id)) last = i;
+    });
+    return last >= 0 && last < rows.length - 1 ? last : -1;
+  });
 </script>
 
 <div class="ladder">
@@ -70,10 +96,11 @@
           : "No runner matches your filters."}
       </p>
     {:else}
-      {#each rows as entry (entry.user.id)}
+      {#each rows as entry, i (entry.user.id)}
         <div
           class="row"
           class:me={viewerId !== null && entry.user.id === viewerId}
+          class:above-cut={i === cutIndex}
         >
           <span
             class="rank"
@@ -103,6 +130,11 @@
             >
           {/if}
         </div>
+        {#if i === cutIndex}
+          <div class="cut" role="separator" aria-label="Qualification">
+            Qualification
+          </div>
+        {/if}
       {/each}
     {/if}
   </div>
@@ -194,6 +226,26 @@
   .row.me {
     background: rgba(200, 164, 78, 0.1);
     border-radius: var(--radius-sm);
+  }
+  /* The cut line stands in for the row border it follows. */
+  .row.above-cut {
+    border-bottom-color: transparent;
+  }
+  .cut {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    color: var(--color-success);
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+  }
+  .cut::before,
+  .cut::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid var(--color-success);
   }
   .num {
     text-align: right;

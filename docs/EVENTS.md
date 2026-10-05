@@ -224,6 +224,13 @@ counted mode (`signed_up` counts them, `entered` does not); from the cut on
 they leave it. Seeding reads only ranked entries, so a signup never resolves
 a seed or a newcomers' slot.
 
+The page marks the qualification limit on the ladder with a line under the
+last qualifying row. The cut is the seeded stages' seats summed client-side
+(`playoffsPlan`), which the gapless-seeds rule makes the largest seed, and
+it takes rows positionally like seeding does, so a tie spanning the boundary
+still cuts where the seats run out; the line follows the visible rows when
+filters hide some, and only renders while a row sits below it.
+
 Qualified groups map each seeded stage's `seeds` to ladder positions. The
 runners ranked after the largest seed form the bench. The config's
 `withdrawn` names are replayed in their order: a withdrawal of a runner

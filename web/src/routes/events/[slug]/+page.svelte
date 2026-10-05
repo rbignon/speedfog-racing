@@ -544,6 +544,7 @@
               ladder={detail.ladder}
               modes={detail.modes}
               viewerId={auth.user?.id ?? null}
+              spots={plan.places}
               emptyLabel={detail.phase === "upcoming"
                 ? "Nobody in yet."
                 : "No runs yet."}
@@ -661,6 +662,7 @@
               ladder={detail.ladder}
               modes={detail.modes}
               viewerId={auth.user?.id ?? null}
+              spots={plan.places}
             />
           </div>
         </div>
