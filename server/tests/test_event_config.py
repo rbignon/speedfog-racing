@@ -137,8 +137,25 @@ def test_announced_at_must_be_timezone_aware():
 def test_stage_date_must_be_timezone_aware():
     stages = _config()["stages"]
     stages[0]["date"] = "2026-10-04T19:00:00"
-    with pytest.raises(ValidationError, match="date must be timezone-aware"):
+    with pytest.raises(ValidationError, match="timezone-aware datetime"):
         EventConfig.model_validate(_config(stages=stages))
+
+
+def test_a_stage_date_may_be_a_day_whose_time_is_not_set():
+    stages = _config()["stages"]
+    stages[3]["date"] = "2026-10-25"
+    cfg = EventConfig.model_validate(_config(stages=stages))
+    # Stored as typed, so the admin editor hands the day back unchanged.
+    assert cfg.model_dump(mode="json", by_alias=True)["stages"][3]["date"] == "2026-10-25"
+
+
+def test_a_day_takes_part_in_the_ascending_order():
+    stages = _config()["stages"]
+    stages[1]["date"] = "2026-10-04"  # the day of semi_a, which is at 19:00Z
+    with pytest.raises(ValidationError, match="ascending"):
+        EventConfig.model_validate(_config(stages=stages))
+    stages[1]["date"] = "2026-10-05"
+    EventConfig.model_validate(_config(stages=stages))
 
 
 def test_newcomers_without_size_rejected():
@@ -374,6 +391,13 @@ def test_upsert_reads_the_window_against_the_dated_stages():
     late_cut = dict(doc, qualifier_ends_at="2026-10-19T08:00:00+00:00")  # after the newcomers
     with pytest.raises(ValidationError, match="first dated stage"):
         EventUpsertRequest.model_validate(late_cut)
+    # A day without a time counts from noon UTC.
+    stages[6]["date"] = "2026-10-08"
+    stages[7]["date"] = "2026-10-25"
+    EventUpsertRequest.model_validate(dict(doc, config=_config(stages=stages)))
+    late_end = dict(doc, config=_config(stages=stages), ends_at="2026-10-25T12:00:00+00:00")
+    with pytest.raises(ValidationError, match="last dated stage"):
+        EventUpsertRequest.model_validate(late_end)
 
 
 SHOWCASE = {"key": "showcase", "label": "Ignite Showcase", "races": 3}
@@ -393,8 +417,9 @@ def test_a_showcase_date_stays_out_of_the_bracket_order():
     late = dict(SHOWCASE, date="2026-11-01T19:00:00Z")
     EventConfig.model_validate(_config(showcases=[late, early]))
     naive = dict(SHOWCASE, date="2026-11-01T19:00:00")
-    with pytest.raises(ValidationError, match="date must be timezone-aware"):
+    with pytest.raises(ValidationError, match="timezone-aware datetime"):
         EventConfig.model_validate(_config(showcases=[naive]))
+    EventConfig.model_validate(_config(showcases=[dict(SHOWCASE, date="2026-11-01")]))
 
 
 def _round_of_32_stages() -> list[dict[str, object]]:

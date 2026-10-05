@@ -319,7 +319,8 @@
                 : ""}{#each plan.fixed as stage, i (stage.key)}{#if i > 0},{/if}
                 {#if stage.kind === "final" && (i > 0 || plan.agreed)}then the{/if}
                 {stage.label} on
-                <span class="date">{fmtDay(stage.date)}</span>{!eveningTimes
+                <span class="date">{fmtDay(stage.date)}</span>{!eveningTimes &&
+                stage.time_set
                   ? ` at ${fmtTime(stage.date)}`
                   : ""}{/each}.
               {#if eveningTimes}Playoff evenings start at {eveningTimes.time} in your
@@ -334,7 +335,7 @@
                   ? " on "
                   : ""}{#if newcomersStage.date}<span class="date"
                     >{fmtDay(newcomersStage.date)}</span
-                  >{!eveningTimes
+                  >{!eveningTimes && newcomersStage.time_set
                     ? ` at ${fmtTime(newcomersStage.date)}`
                     : ""}{/if}. You are a newcomer if you had finished fewer
                 than {detail.newcomer_threshold}

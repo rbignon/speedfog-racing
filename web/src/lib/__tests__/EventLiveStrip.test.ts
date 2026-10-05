@@ -49,6 +49,7 @@ function stageWith(overrides: Partial<EventStage> = {}): EventStage {
     kind: "semi",
     date: "2026-10-04T20:00:00Z",
     date_fixed: true,
+    time_set: true,
     from: [],
     races_expected: 3,
     complete: false,

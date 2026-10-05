@@ -35,6 +35,7 @@ from speedfog_racing.services.event_service import (
     signature_weapon,
     slot_label,
     stage_dates,
+    stage_time_set,
     validate_slot,
 )
 from speedfog_racing.services.weapons import WEAPONS
@@ -1117,6 +1118,34 @@ def test_a_stage_date_is_the_config_one_else_its_earliest_race():
     assert dates["quarter_b"] is None
     assert dates["final"] == datetime(2026, 10, 25, 19, tzinfo=UTC)
     assert race_moment(SimpleNamespace(scheduled_at=None, started_at=None)) is None
+
+
+def test_a_config_day_takes_its_time_from_its_earliest_race():
+    raw = _undated_quarters().model_dump(mode="json", by_alias=True)
+    for stage in raw["stages"]:
+        if stage["kind"] in ("newcomers", "final"):
+            stage["date"] = stage["date"][:10]  # the day, its time not set yet
+    cfg = EventConfig.model_validate(raw)
+    evening = datetime(2026, 10, 18, 18, 30, tzinfo=UTC)
+    unscheduled = SimpleNamespace(scheduled_at=None, started_at=None)
+    races = {s.key: [] for s in cfg.stages}
+    races["newcomers"] = [
+        (parse_slot("newcomers:1"), SimpleNamespace(scheduled_at=evening, started_at=None))
+    ]
+    races["final"] = [(parse_slot("final:1"), unscheduled)]
+    dates = stage_dates(cfg.stages, races)
+    assert dates["newcomers"] == evening
+    # Noon UTC stands for the day: the same day for nearly every viewer.
+    assert dates["final"] == datetime(2026, 10, 25, 12, tzinfo=UTC)
+    final, newcomers = cfg.stage("final"), cfg.stage("newcomers")
+    assert final is not None and newcomers is not None
+    assert stage_time_set(newcomers, races["newcomers"]) is True
+    assert stage_time_set(final, races["final"]) is False
+    # The timeline rides on the race's time too, not on the noon stand-in.
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    stops = {s.key: s.date for s in build_timeline(event, cfg, dates)}
+    assert stops["stage:newcomers"] == evening
+    assert stops["stage:final"] == datetime(2026, 10, 25, 12, tzinfo=UTC)
 
 
 def test_the_cut_lasts_until_the_first_scheduled_playoff_race():

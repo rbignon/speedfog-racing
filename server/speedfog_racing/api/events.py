@@ -73,6 +73,7 @@ from speedfog_racing.services.event_service import (
     showcase_field,
     signature_weapon,
     slot_label,
+    stage_time_set,
 )
 
 router = APIRouter()
@@ -181,7 +182,10 @@ async def list_events(
             upcoming_date = resolved.dates[upcoming.key]
             assert upcoming_date is not None, "next_stage_key only returns dated stages"
             next_stage = EventNextStageResponse(
-                key=upcoming.key, label=upcoming.label, date=upcoming_date
+                key=upcoming.key,
+                label=upcoming.label,
+                date=upcoming_date,
+                time_set=stage_time_set(upcoming, stage_races[upcoming.key]),
             )
         champion = None
         if phase == "finished" and final is not None and results[final.key].complete:
@@ -285,7 +289,10 @@ async def get_event(
         upcoming_date = resolved.dates[upcoming.key]
         assert upcoming_date is not None, "next_stage_key only returns dated stages"
         next_stage = EventNextStageResponse(
-            key=upcoming.key, label=upcoming.label, date=upcoming_date
+            key=upcoming.key,
+            label=upcoming.label,
+            date=upcoming_date,
+            time_set=stage_time_set(upcoming, stage_races[upcoming.key]),
         )
 
     def user_of(user_id: UUID | None) -> UserResponse | None:
@@ -307,6 +314,7 @@ async def get_event(
             kind=kind,
             date=date,
             date_fixed=stage.date is not None,
+            time_set=stage_time_set(stage, races),
             from_=sources,  # type: ignore[call-arg]  # mypy ignores populate_by_name
             races_expected=stage.races,
             complete=result.complete,

@@ -31,11 +31,14 @@
 
   // Rendered in the viewer's own timezone, like every other date on the
   // site: no explicit timeZone is passed to these, same as formatEventDay
-  // and formatEventTime's other callers.
+  // and formatEventTime's other callers. A day whose time is not set yet
+  // shows alone.
   let dateText = $derived(
-    stage.date
-      ? `${formatEventDay(stage.date)} · ${formatEventTime(stage.date)}`
-      : DATE_TO_BE_AGREED,
+    !stage.date
+      ? DATE_TO_BE_AGREED
+      : stage.time_set
+        ? `${formatEventDay(stage.date)} · ${formatEventTime(stage.date)}`
+        : formatEventDay(stage.date),
   );
 
   function casterLabel(profile: UserProfile | null): string | null {

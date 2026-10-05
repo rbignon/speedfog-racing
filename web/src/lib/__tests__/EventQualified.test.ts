@@ -13,6 +13,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     kind: "semi",
     date: "2026-10-04T20:00:00Z",
     date_fixed: true,
+    time_set: true,
     from: [],
     races_expected: 3,
     complete: false,
@@ -128,6 +129,7 @@ describe("EventQualified with quarters", () => {
         kind: "quarter",
         date: null,
         date_fixed: false,
+        time_set: true,
       }),
       stage({
         key: "quarter_b",
@@ -135,6 +137,7 @@ describe("EventQualified with quarters", () => {
         kind: "quarter",
         date: null,
         date_fixed: false,
+        time_set: true,
       }),
       stage({
         key: "semi_a",
@@ -142,6 +145,7 @@ describe("EventQualified with quarters", () => {
         kind: "semi",
         date: null,
         date_fixed: false,
+        time_set: true,
         from: ["quarter_a", "quarter_b"],
       }),
     ];

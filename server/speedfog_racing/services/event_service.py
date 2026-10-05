@@ -681,7 +681,9 @@ def build_timeline(
 ) -> list[TimelineStop]:
     """The announcement, the opening, the cut, then the playoffs in stage order.
 
-    ``dates`` are the stages' effective dates (``ResolvedStages.dates``). The
+    ``dates`` are the stages' effective dates (``ResolvedStages.dates``), so a
+    stage the config dates by its day alone sits at its race's time once one is
+    scheduled. The
     stages scheduled with their players (no config date) fold into one
     ``playoffs`` stop, placed where the first of them sits in the list and
     dated by the earliest match scheduled among them, kept between the stops
@@ -696,9 +698,17 @@ def build_timeline(
         TimelineStop(key="cut", label="Cut", date=qualifier_ends_at, kind="cut"),
     ]
     dated = [
-        (i, TimelineStop(key=f"stage:{s.key}", label=s.label, date=s.date, kind=s.kind))
+        (
+            i,
+            TimelineStop(
+                key=f"stage:{s.key}",
+                label=s.label,
+                date=dates.get(s.key) or s.moment,
+                kind=s.kind,
+            ),
+        )
         for i, s in enumerate(config.stages)
-        if s.date is not None
+        if s.moment is not None
     ]
     first_undated = next((i for i, s in enumerate(config.stages) if s.date is None), None)
     if first_undated is None:
@@ -726,10 +736,11 @@ def race_moment(race: Race) -> datetime | None:
 def stage_dates(
     stages: Sequence[EventStage | EventShowcase], stage_races: dict[str, list[tuple[Slot, Race]]]
 ) -> dict[str, datetime | None]:
-    """Each stage's date: the config's when set, else its earliest race, else None."""
+    """Each stage's date: the config's when it has a time, else its earliest race,
+    else the config's day (at noon UTC), else None."""
     dates: dict[str, datetime | None] = {}
     for stage in stages:
-        if stage.date is not None:
+        if isinstance(stage.date, datetime):
             dates[stage.key] = stage.date
             continue
         moments = [
@@ -737,13 +748,20 @@ def stage_dates(
             for _, race in stage_races.get(stage.key, [])
             if (moment := race_moment(race)) is not None
         ]
-        dates[stage.key] = min(moments, default=None)
+        dates[stage.key] = min(moments, default=stage.moment)
     return dates
+
+
+def stage_time_set(stage: EventStage | EventShowcase, races: list[tuple[Slot, Race]]) -> bool:
+    """False while the stage's date is a config day none of its races has timed yet."""
+    if stage.date is None or isinstance(stage.date, datetime):
+        return True
+    return any(race_moment(race) is not None for _, race in races)
 
 
 def first_config_date(config: EventConfig) -> datetime | None:
     """The earliest date the config fixes, for callers that do not load the races."""
-    return min((s.date for s in config.stages if s.date is not None), default=None)
+    return min((s.moment for s in config.stages if s.moment is not None), default=None)
 
 
 # --- resolved stages --------------------------------------------------------

@@ -547,10 +547,18 @@ export interface EventStage {
   key: string;
   label: string;
   kind: "round" | "quarter" | "semi" | "newcomers" | "final";
-  /** The config's date, else the earliest of the stage's races; null until one exists. */
+  /**
+   * The config's datetime, else the earliest of the stage's races, else the
+   * config's day at noon UTC; null until one exists.
+   */
   date: string | null;
   /** Whether the config fixes the date, rather than the races scheduled with the players. */
   date_fixed: boolean;
+  /**
+   * False while the date is a config day no race has given a time yet: the
+   * date then stands at noon UTC, and only its day is meant to be shown.
+   */
+  time_set: boolean;
   /** The stages this one takes its runners from (empty for a seeded stage). */
   from: string[];
   races_expected: number;
@@ -571,6 +579,8 @@ export interface EventNextStage {
   key: string;
   label: string;
   date: string;
+  /** As on EventStage. */
+  time_set: boolean;
 }
 
 export interface EventDetail {

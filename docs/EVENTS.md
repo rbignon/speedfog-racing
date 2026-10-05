@@ -49,10 +49,23 @@ A stage without a `date` is scheduled with its players: its date is the
 earliest of its attached races' `scheduled_at` (or `started_at` for a private
 race, which needs no schedule), and it has none until an attached race is
 scheduled (or has started).
+A `date` is a timezone-aware datetime (`2026-11-01T19:00:00Z`) or a day
+alone (`2026-11-01`), for an evening whose day is settled but not its time. A
+day stays in the stored config as typed. It takes its time from the stage's
+races the same way: the earliest one scheduled (or started) dates the stage,
+and until then the day stands at noon UTC, the same day for every viewer from
+UTC-11 to UTC+11. That effective date is what the phase, the timeline and the
+current and next stage read; the checks on the config alone (the order of the
+stages, the window below) always read a day at noon UTC, so two stages dated
+by the same day are out of order, and an `ends_at` set on the final's day just
+after noon passes them yet ends the event before its evening: set it past the
+evening. A naive datetime is rejected.
 The detail returns that effective date on each stage, with `date_fixed` true
-when the config sets it, and `from` for the connectors. The dated stages
-ascend; `qualifier_ends_at` is at or before the first dated stage; `ends_at`
-is after the last.
+when the config sets it, `time_set` false while it is a config day none of
+the stage's races has timed yet (the summary's and the detail's `next_stage`
+carry it too), and `from` for the connectors. The dated stages ascend;
+`qualifier_ends_at` is at or before the first dated stage; `ends_at` is after
+the last.
 
 Validation also rejects: a stage with both or neither of `seeds` and `from`
 (a newcomers stage has `size` and neither), a `from` naming a stage placed
@@ -406,7 +419,9 @@ count there. See `daily_points` in
    stage, and drives the home band, the share card and polling (see
    "Current and next stage" and "The event page"). Fixed evenings (the
    newcomers' final, the final) keep their config date instead; create their
-   races the same way, whenever the players are ready, on that date. Name
+   races the same way, whenever the players are ready, on that date. A fixed
+   evening dated by its day alone takes its time from its first scheduled
+   race, so the config needs no edit once the time is agreed. Name
    the races "Semi B - Race 1 - Standard", hyphenated like daily races: the
    race cards beside the bracket display the race name without the stage
    label the section already carries ("Race 1 - Standard"), and drop the
@@ -510,10 +525,13 @@ The format block keeps its dates to the day, in brass. Its playoffs paragraph
 counts the places (the seeded stages' seats), says the rounds without a fixed
 date are "scheduled with their players", naming a `round` stage's round after
 its seats ("the round of 32, quarters and semis"), and lists the stages the
-config dates. When every stage has a fixed date it closes with the time the
-evenings start at ("Playoff evenings start at 21:00 in your timezone");
-otherwise each fixed evening carries its own time ("then the Final on Sun 25
-Oct at 20:00"), and so does the newcomers' final. `stageTimes` reads the shared
+config dates. When every stage has a fixed date with its time set, it closes
+with the time the evenings start at ("Playoff evenings start at 21:00 in your
+timezone"); otherwise each fixed evening carries its own time ("then the Final
+on Sun 25 Oct at 20:00"), and so does the newcomers' final, unless its time is
+not set yet: the day then reads alone ("then the Final on Sun 25 Oct"), as it
+does in the qualified groups, the evening section, the home band and the talk
+scene, wherever a stage date otherwise shows its time. `stageTimes` reads the shared
 time from the stage dates: one time when they share it, plus the single evening
 that falls elsewhere when exactly one does ("the Final at 20:00"), and nothing
 when no single evening stands out against a majority: three or more times, an

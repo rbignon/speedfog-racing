@@ -996,18 +996,18 @@ async def simulate(
             }
             for s in cfg["stages"]
         ]
+
+        def shifted(when: str) -> str:
+            # A day alone (its time not set yet) moves as the day its noon UTC
+            # lands on.
+            if len(when) == 10:
+                noon = datetime.fromisoformat(when).replace(hour=12, tzinfo=UTC)
+                return T(noon).date().isoformat()
+            return T(datetime.fromisoformat(when)).isoformat().replace("+00:00", "Z")
+
         # Showcases get no races here, but a dated one moves with the rest.
         cfg["showcases"] = [
-            {
-                **s,
-                "date": (
-                    T(datetime.fromisoformat(s["date"]))
-                    .isoformat()
-                    .replace("+00:00", "Z")
-                    if s.get("date")
-                    else None
-                ),
-            }
+            {**s, "date": shifted(s["date"]) if s.get("date") else None}
             for s in cfg.get("showcases", [])
         ]
         cfg["phase_override"] = None

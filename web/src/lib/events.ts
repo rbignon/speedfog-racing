@@ -241,7 +241,9 @@ export function racesSection(
   if (stage.complete) {
     return {
       signal: { cls: "signal-finished", text: "Finished" },
-      meta: stage.date ? formatDate(stage.date) : DATE_TO_BE_AGREED,
+      meta: stage.date
+        ? formatStageDate(stage.date, stage.time_set, formatDate)
+        : DATE_TO_BE_AGREED,
     };
   }
   const started = stage.races.some((r) => r.race.status !== "setup");
@@ -251,7 +253,9 @@ export function racesSection(
   ) {
     return {
       signal: { cls: "signal-setup", text: "Up next" },
-      meta: stage.date ? formatDate(stage.date) : DATE_TO_BE_AGREED,
+      meta: stage.date
+        ? formatStageDate(stage.date, stage.time_set, formatDate)
+        : DATE_TO_BE_AGREED,
     };
   }
   const played = stage.races.filter((r) => r.race.status === "finished").length;
@@ -311,6 +315,18 @@ export function formatEventTime(iso: string): string {
 }
 
 /**
+ * A stage's date through `formatDate`, or its day alone while its time is not
+ * set: the date then stands at noon UTC, which no clock should read.
+ */
+export function formatStageDate(
+  iso: string,
+  timeSet: boolean,
+  formatDate: (iso: string) => string,
+): string {
+  return timeSet ? formatDate(iso) : formatEventDay(iso);
+}
+
+/**
  * The solo page, on the mode a race pool trains for. Solo pools are the race
  * pools prefixed, and the page keeps its own default when the pool named does
  * not exist or has no seed left, so a mode without a solo counterpart still
@@ -358,15 +374,19 @@ export interface StageTimes {
  * one: the real season's last evening is the Sunday Europe leaves summer
  * time. Only the wall clock decides, never the zone's name: evenings at the
  * same local time either side of that change still share it. Nothing either
- * while a stage is scheduled with its players (`date_fixed` false): the page
- * then gives each fixed evening its own time.
+ * while a stage is scheduled with its players (`date_fixed` false), or while a
+ * fixed day waits on its time (`time_set` false): the page then gives each
+ * evening its own time, when it has one.
  */
 export function stageTimes(
-  stages: Pick<EventStage, "label" | "date" | "date_fixed">[],
+  stages: Pick<EventStage, "label" | "date" | "date_fixed" | "time_set">[],
 ): StageTimes | null {
-  // An evening agreed with its players has no place in a shared start time.
+  // An evening agreed with its players, or still without a time, has no place
+  // in a shared start time.
   const fixed = stages.flatMap((s) =>
-    s.date_fixed && s.date !== null ? [{ label: s.label, date: s.date }] : [],
+    s.date_fixed && s.time_set && s.date !== null
+      ? [{ label: s.label, date: s.date }]
+      : [],
   );
   if (fixed.length < 2 || fixed.length !== stages.length) return null;
   const format = new Intl.DateTimeFormat("en-GB", {
@@ -560,7 +580,7 @@ export function eventBand(
       return {
         signal: { cls: "signal-active", text: "Qualifier closed" },
         line: event.next_stage
-          ? `${event.next_stage.label} on ${fmt(event.next_stage.date)}`
+          ? `${event.next_stage.label} on ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
           : null,
         actions: [pageAction("primary")],
         ...closed,
@@ -593,7 +613,7 @@ export function eventBand(
       return {
         signal: { cls: "signal-running", text: "Playoffs" },
         line: event.next_stage
-          ? `Next: ${event.next_stage.label} · ${fmt(event.next_stage.date)}`
+          ? `Next: ${event.next_stage.label} · ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
           : null,
         actions: [pageAction("primary")],
         ...closed,
@@ -724,6 +744,7 @@ export interface PlayoffsPlan {
     label: string;
     kind: EventStage["kind"];
     date: string;
+    time_set: boolean;
   }[];
 }
 
@@ -765,7 +786,15 @@ export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
         : `${kinds.slice(0, -1).join(", ")} and ${kinds.at(-1)}`;
   const fixed = tree.flatMap((s) =>
     s.date_fixed && s.date !== null
-      ? [{ key: s.key, label: s.label, kind: s.kind, date: s.date }]
+      ? [
+          {
+            key: s.key,
+            label: s.label,
+            kind: s.kind,
+            date: s.date,
+            time_set: s.time_set,
+          },
+        ]
       : [],
   );
   return { places, agreed, fixed };
@@ -787,5 +816,7 @@ export function qualifiedMeta(
     stage.kind === "round" && stage.label === title
       ? round.charAt(0).toUpperCase() + round.slice(1)
       : stage.label;
-  return stage.date ? `${name} on ${formatDate(stage.date)}` : name;
+  return stage.date
+    ? `${name} on ${formatStageDate(stage.date, stage.time_set, formatDate)}`
+    : name;
 }

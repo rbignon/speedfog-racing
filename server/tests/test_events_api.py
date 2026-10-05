@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 from sqlalchemy import select
@@ -380,6 +380,55 @@ async def test_detail_dates_a_stage_by_its_races_until_the_config_fixes_one(
         "newcomers",
         "final",
     ]
+
+
+@pytest.mark.asyncio
+async def test_a_stage_dated_by_its_day_alone_takes_its_time_from_a_race(
+    test_client, async_session
+):
+    base = datetime.now(UTC) - timedelta(days=1)
+    starts_at, qualifier_ends_at, ends_at, config = _season(base)
+    stages = config["stages"]
+    assert isinstance(stages, list)
+    semi_a_day = (base + timedelta(days=11)).date()
+    semi_b_day = (base + timedelta(days=18)).date()
+    stages[0]["date"] = semi_a_day.isoformat()
+    stages[1]["date"] = semi_b_day.isoformat()
+    semi_b_evening = datetime.combine(semi_b_day, time(19), tzinfo=UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config=config,
+        )
+        await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi_b1"),
+            event,
+            "semi_b:1",
+            status=RaceStatus.SETUP,
+            is_public=True,
+            scheduled_at=semi_b_evening,
+        )
+        await db.commit()
+    async with test_client as client:
+        detail = (await client.get("/api/events/season-one")).json()
+        (summary,) = (await client.get("/api/events")).json()
+    stages_out = {s["key"]: s for s in detail["stages"]}
+    noon = datetime.combine(semi_a_day, time(12), tzinfo=UTC)
+    assert datetime.fromisoformat(stages_out["semi_a"]["date"]) == noon
+    assert stages_out["semi_a"]["date_fixed"] is True
+    assert stages_out["semi_a"]["time_set"] is False
+    assert datetime.fromisoformat(stages_out["semi_b"]["date"]) == semi_b_evening
+    assert stages_out["semi_b"]["time_set"] is True
+    assert stages_out["final"]["time_set"] is True
+    for next_stage in (detail["next_stage"], summary["next_stage"]):
+        assert next_stage["key"] == "semi_a"
+        assert next_stage["time_set"] is False
 
 
 @pytest.mark.asyncio

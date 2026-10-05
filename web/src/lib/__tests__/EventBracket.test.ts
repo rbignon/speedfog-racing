@@ -50,6 +50,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     kind: "semi",
     date: "2026-10-04T20:00:00Z",
     date_fixed: true,
+    time_set: true,
     from: [],
     races_expected: 3,
     complete: false,
@@ -329,6 +330,7 @@ const quarters = ["a", "b", "c", "d"].map((x) =>
     kind: "quarter",
     date: null,
     date_fixed: false,
+    time_set: true,
   }),
 );
 const season = [
@@ -339,6 +341,7 @@ const season = [
     kind: "semi",
     date: null,
     date_fixed: false,
+    time_set: true,
     from: ["quarter_a", "quarter_b"],
     field: [],
   }),
@@ -348,6 +351,7 @@ const season = [
     kind: "semi",
     date: null,
     date_fixed: false,
+    time_set: true,
     from: ["quarter_c", "quarter_d"],
     field: [],
   }),
@@ -368,6 +372,7 @@ const groups = ["a", "b", "c", "d", "e", "f", "g", "h"].map((x) =>
     kind: "round",
     date: null,
     date_fixed: false,
+    time_set: true,
     field: new Array(4).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,

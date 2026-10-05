@@ -112,6 +112,7 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
     kind: "quarter",
     date: null,
     date_fixed: false,
+    time_set: true,
     from: [],
     races_expected: 3,
     complete: false,
@@ -150,6 +151,7 @@ const quartersSeason: EventStage[] = [
     kind: "newcomers",
     date: "2026-10-18T19:00:00Z",
     date_fixed: true,
+    time_set: true,
     field: seats(4),
   }),
   stageFixture({
@@ -158,6 +160,7 @@ const quartersSeason: EventStage[] = [
     kind: "final",
     date: "2026-10-25T19:00:00Z",
     date_fixed: true,
+    time_set: true,
     from: ["semi_a", "semi_b"],
   }),
 ];
@@ -269,6 +272,7 @@ describe("playoffsPlan", () => {
         kind: "semi",
         date: "2026-10-04T19:00:00Z",
         date_fixed: true,
+        time_set: true,
         field: seats(4),
       }),
       stageFixture({
@@ -276,6 +280,7 @@ describe("playoffsPlan", () => {
         kind: "final",
         date: "2026-10-25T19:00:00Z",
         date_fixed: true,
+        time_set: true,
         from: ["semi_a"],
       }),
     ]);
@@ -292,6 +297,7 @@ describe("playoffsPlan", () => {
 
 describe("qualifiedMeta", () => {
   const fmt = (iso: string) => `Day(${iso})`;
+  afterEach(() => vi.unstubAllEnvs());
   const groupA = roundSeason[0];
 
   it("names the round when the stage is labelled like its box", () => {
@@ -306,6 +312,18 @@ describe("qualifiedMeta", () => {
         fmt,
       ),
     ).toBe("Round of 32 on Day(2026-10-10T19:00:00Z)");
+  });
+
+  it("gives the day alone while the stage's time is not set", () => {
+    vi.stubEnv("TZ", "America/New_York");
+    expect(
+      qualifiedMeta(
+        { ...groupA, date: "2026-10-10T12:00:00Z", time_set: false },
+        "Group A",
+        roundSeason,
+        fmt,
+      ),
+    ).toBe("Round of 32 on Sat 10 Oct");
   });
 
   it("keeps a stage's own label when it differs from the box title", () => {
@@ -422,6 +440,7 @@ describe("champions", () => {
     kind,
     date: "2026-10-25T19:00:00Z",
     date_fixed: true,
+    time_set: true,
     from: [],
     races_expected: 3,
     complete,
@@ -548,10 +567,12 @@ describe("liveStage", () => {
 
 describe("racesSection", () => {
   const fmt = (iso: string) => `D(${iso})`;
+  afterEach(() => vi.unstubAllEnvs());
   const semiA = {
     key: "semi_a",
     label: "Semi A",
     date: "2026-10-04T19:00:00Z",
+    time_set: true,
     races_expected: 3,
     complete: false,
     races: [] as EventStage["races"],
@@ -560,11 +581,17 @@ describe("racesSection", () => {
     key: "semi_b",
     label: "Semi B",
     date: "2026-10-11T19:00:00Z",
+    time_set: true,
     races_expected: 3,
     complete: false,
     races: [] as EventStage["races"],
   };
-  const nextB = { key: "semi_b", label: "Semi B", date: semiB.date };
+  const nextB = {
+    key: "semi_b",
+    label: "Semi B",
+    date: semiB.date,
+    time_set: true,
+  };
   const evening = new Date("2026-10-04T20:15:00Z");
   const raceAt = (index: number, status: string) => ({
     slot: `semi_a:${index}`,
@@ -616,12 +643,33 @@ describe("racesSection", () => {
 
   it("points at the next stage, dated, while its evening is ahead", () => {
     const detail = detailWith({
-      next_stage: { key: "semi_a", label: "Semi A", date: semiA.date },
+      next_stage: {
+        key: "semi_a",
+        label: "Semi A",
+        date: semiA.date,
+        time_set: true,
+      },
       stages: [semiA, semiB] as EventDetail["stages"],
     });
     const section = racesSection(detail, fmt, new Date("2026-10-01T15:00:00Z"));
     expect(section?.signal.text).toBe("Up next");
     expect(section?.meta).toBe("D(2026-10-04T19:00:00Z)");
+  });
+
+  it("dates the next stage by its day alone while its time is not set", () => {
+    vi.stubEnv("TZ", "Asia/Tokyo");
+    const day = { ...semiA, date: "2026-10-04T12:00:00Z", time_set: false };
+    const detail = detailWith({
+      next_stage: {
+        key: "semi_a",
+        label: "Semi A",
+        date: day.date,
+        time_set: false,
+      },
+      stages: [day, semiB] as EventDetail["stages"],
+    });
+    const section = racesSection(detail, fmt, new Date("2026-10-01T15:00:00Z"));
+    expect(section?.meta).toBe("Sun 4 Oct");
   });
 
   it("marks the last stage finished once everything ran, and yields null without stages", () => {
@@ -693,6 +741,7 @@ describe("formatEventDate with the zone, and stageTimes", () => {
       label: `Stage ${i + 1}`,
       date,
       date_fixed: true,
+      time_set: true,
     }));
   // The real season: four Sunday evenings, the last one the day Europe leaves
   // summer time, read from Paris.
@@ -702,7 +751,12 @@ describe("formatEventDate with the zone, and stageTimes", () => {
       ["Semi B", "2026-10-11T19:00:00Z"],
       ["Newcomers' final", "2026-10-18T19:00:00Z"],
       ["Final", last],
-    ].map(([label, date]) => ({ label, date, date_fixed: true }));
+    ].map(([label, date]) => ({
+      label,
+      date,
+      date_fixed: true,
+      time_set: true,
+    }));
 
   afterEach(() => vi.unstubAllEnvs());
 
@@ -782,6 +836,15 @@ describe("formatEventDate with the zone, and stageTimes", () => {
   it("says nothing while a stage is scheduled with its players", () => {
     const stages = season("2026-10-25T19:00:00Z").map((s, i) =>
       i === 0 ? { ...s, date_fixed: false } : s,
+    );
+    expect(stageTimes(stages)).toBeNull();
+  });
+
+  it("says nothing while a stage's day waits on its time", () => {
+    // Its noon UTC stand-in is no evening time to announce, or to set apart.
+    vi.stubEnv("TZ", "Europe/Paris");
+    const stages = season("2026-10-25T12:00:00Z").map((s, i) =>
+      i === 3 ? { ...s, time_set: false } : s,
     );
     expect(stageTimes(stages)).toBeNull();
   });
@@ -965,6 +1028,7 @@ describe("signupIntentStands", () => {
 
 describe("eventBand", () => {
   const fmt = (iso: string) => `@${iso}`;
+  afterEach(() => vi.unstubAllEnvs());
   const eventPage = { href: "/events/season-one", label: "Event page" };
   function summaryWith(partial: Partial<EventSummary>): EventSummary {
     return {
@@ -1054,6 +1118,7 @@ describe("eventBand", () => {
           key: "semi_a",
           label: "Semi A",
           date: "2026-10-04T19:00:00Z",
+          time_set: true,
         },
       }),
       fmt,
@@ -1127,6 +1192,7 @@ describe("eventBand", () => {
           key: "final",
           label: "Final",
           date: "2026-10-25T19:00:00Z",
+          time_set: true,
         },
       }),
       fmt,
@@ -1135,6 +1201,23 @@ describe("eventBand", () => {
     expect(state.line).toBe("Next: Final · @2026-10-25T19:00:00Z");
     expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
     expect(eventBand(summaryWith({ phase: "playoffs" }), fmt).line).toBeNull();
+  });
+
+  it("names the next evening's day alone while its time is not set", () => {
+    vi.stubEnv("TZ", "America/Los_Angeles");
+    const final = {
+      key: "final",
+      label: "Final",
+      date: "2026-10-25T12:00:00Z",
+      time_set: false,
+    };
+    expect(
+      eventBand(summaryWith({ phase: "cut", next_stage: final }), fmt).line,
+    ).toBe("Final on Sun 25 Oct");
+    expect(
+      eventBand(summaryWith({ phase: "playoffs", next_stage: final }), fmt)
+        .line,
+    ).toBe("Next: Final · Sun 25 Oct");
   });
 
   it("closes on the champion, and on nothing when the final never happened", () => {

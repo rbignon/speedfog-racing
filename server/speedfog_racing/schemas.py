@@ -1,10 +1,19 @@
 """Pydantic schemas for API requests and responses."""
 
-from datetime import UTC, date, datetime
-from typing import Any, Literal
+import re
+from datetime import UTC, date, datetime, time
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from speedfog_racing.models import (
     FeedbackSource,
@@ -972,6 +981,33 @@ DEFAULT_PLAYOFF_POINTS: tuple[int, ...] = (100, 70, 40, 20)
 DEFAULT_PLAYOFF_CUTOFF_MINUTES = 10
 
 
+def _read_day(value: Any) -> Any:
+    # Left to the union, "2026-11-01" would parse as a naive midnight.
+    if isinstance(value, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return date.fromisoformat(value)
+    return value
+
+
+def _check_aware(value: datetime | date) -> datetime | date:
+    if isinstance(value, datetime) and value.tzinfo is None:
+        raise ValueError(
+            "date must be a day (2026-11-01) or a timezone-aware datetime (2026-11-01T19:00:00Z)"
+        )
+    return value
+
+
+# A stage's or a showcase's date: an instant, or a day whose time is not set yet.
+StageDate = Annotated[datetime | date, BeforeValidator(_read_day), AfterValidator(_check_aware)]
+
+
+def _stage_moment(when: datetime | date | None) -> datetime | None:
+    """A stage date as an instant: a day stands at noon UTC, the same day for
+    every viewer from UTC-11 to UTC+11."""
+    if when is None or isinstance(when, datetime):
+        return when
+    return datetime.combine(when, time(12), tzinfo=UTC)
+
+
 class EventMode(BaseModel):
     key: str = Field(min_length=1, max_length=50)
     label: str = Field(min_length=1, max_length=50)
@@ -998,7 +1034,7 @@ class EventStage(BaseModel):
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
     kind: Literal["round", "quarter", "semi", "newcomers", "final"]
-    date: datetime | None = None
+    date: StageDate | None = None
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
     from_: list[str] | None = Field(default=None, alias="from")
@@ -1007,10 +1043,12 @@ class EventStage(BaseModel):
     size: int | None = Field(default=None, ge=2, le=8)
     modes: list[str] = []
 
+    @property
+    def moment(self) -> datetime | None:
+        return _stage_moment(self.date)
+
     @model_validator(mode="after")
     def _check_kind_fields(self) -> "EventStage":
-        if self.date is not None and self.date.tzinfo is None:
-            raise ValueError("date must be timezone-aware")
         if self.seeds is not None:
             if not self.seeds or any(s < 1 for s in self.seeds):
                 raise ValueError("seeds must be positive ladder positions")
@@ -1039,15 +1077,13 @@ class EventShowcase(BaseModel):
 
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
-    date: datetime | None = None
+    date: StageDate | None = None
     races: int = Field(ge=1, le=5)
     modes: list[str] = []
 
-    @model_validator(mode="after")
-    def _check_date(self) -> "EventShowcase":
-        if self.date is not None and self.date.tzinfo is None:
-            raise ValueError("date must be timezone-aware")
-        return self
+    @property
+    def moment(self) -> datetime | None:
+        return _stage_moment(self.date)
 
 
 class EventConfig(BaseModel):
@@ -1130,9 +1166,9 @@ class EventConfig(BaseModel):
             raise ValueError("a newcomers stage needs announced_at")
         # A stage without a date is scheduled with its players: only the
         # dated ones fix an order.
-        dates = [s.date for s in self.stages if s.date is not None]
+        dates = [s.moment for s in self.stages if s.moment is not None]
         if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
-            raise ValueError("stage dates must be ascending")
+            raise ValueError("stage dates must be ascending (a day alone counts as noon UTC)")
         if any(len(r) > 300 for r in self.rules + self.playoff_rules):
             raise ValueError("each rule is at most 300 characters")
         # A finish always outscores a DNF, and a better rank never scores less.
@@ -1276,10 +1312,14 @@ class EventStageResponse(BaseModel):
     key: str
     label: str
     kind: str
-    # The config's date, else the earliest of the stage's races; None until one exists.
+    # The config's datetime, else the earliest of the stage's races, else the
+    # config's day at noon UTC; None until one exists.
     date: datetime | None
     # Whether the config fixes the date rather than the races scheduled with the players.
     date_fixed: bool
+    # False while the date is a config day no race has given a time yet: the
+    # date then stands at noon UTC, and only its day is meant to be shown.
+    time_set: bool
     from_: list[str] = Field(default_factory=list, alias="from")
     races_expected: int
     complete: bool
@@ -1293,6 +1333,8 @@ class EventNextStageResponse(BaseModel):
     key: str
     label: str
     date: datetime
+    # As on EventStageResponse.
+    time_set: bool
 
 
 class EventDetailResponse(BaseModel):
@@ -1381,7 +1423,7 @@ class EventUpsertRequest(BaseModel):
         # qualifier's own runs would count towards it.
         if self.config.announced_at is not None and self.config.announced_at >= self.starts_at:
             raise ValueError("announced_at must be before starts_at")
-        dated = [s.date for s in self.config.stages if s.date is not None]
+        dated = [s.moment for s in self.config.stages if s.moment is not None]
         if dated:
             if self.qualifier_ends_at > dated[0]:
                 raise ValueError("qualifier_ends_at must not be after the first dated stage")
