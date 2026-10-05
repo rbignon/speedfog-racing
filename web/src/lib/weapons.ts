@@ -69,3 +69,32 @@ export function formatCombo(
 ): string {
   return ids.map(getName).join(" + ");
 }
+
+/** The highest-ticks combo of a weapons list (first wins a tie). */
+function topOf(weapons: WeaponCombo[]): number[] | null {
+  let best: WeaponCombo | null = null;
+  for (const c of weapons) {
+    if (!best || c.ticks > best.ticks) best = c;
+  }
+  return best ? best.ids : null;
+}
+
+/**
+ * The most-used combo of the runner's latest zone with any weapon
+ * observations: the best guess a zone_history snapshot alone can give for
+ * what they are wielding. It seeds the live display on race_state; from
+ * then on each player_update carries the actually observed hands (the
+ * `weapons` field), which supersedes this. Raw runtime ids are returned
+ * (affinity and upgrade preserved); display resolves names via the
+ * catalogue.
+ */
+export function zoneTopCombo(
+  history: ZoneHistoryEntry[] | null | undefined,
+): number[] | null {
+  if (!history) return null;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const weapons = history[i].weapons;
+    if (weapons?.length) return topOf(weapons);
+  }
+  return null;
+}

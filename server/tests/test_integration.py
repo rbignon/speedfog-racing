@@ -1089,6 +1089,53 @@ def test_status_update_weapons_dual_preserves_mod_order(
     ]
 
 
+def test_status_update_relays_the_equipped_combo_on_player_update(
+    integration_client, race_with_participants
+):
+    """The player_update that follows a status_update carries the filtered
+    combo the runner holds right now, so spectators track a swap within a
+    tick; a tick with no tracked weapon observed carries None ("no new
+    observation", never "unarmed"), and clients keep the last combo."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        # First update records the spawn (became_active), which broadcasts a
+        # leaderboard instead of a player_update: drain it.
+        mod0.send_status_update(igt_ms=500, death_count=0, weapons=[None, 2000025])
+        mod0.receive_until_type("leaderboard_update")
+
+        # 33200000 = Academy Glintstone Staff (excluded), 2000025 = Longsword +25.
+        mod0.send_status_update(igt_ms=1000, death_count=0, weapons=[33200000, 2000025])
+        msg = mod0.receive_until_type("player_update")
+        assert msg["player"]["weapons"] == [2000025]
+
+        # Loading screen: nothing tracked observed this tick.
+        mod0.send_status_update(igt_ms=2000, death_count=0, weapons=[None, None])
+        msg = mod0.receive_until_type("player_update")
+        assert msg["player"]["weapons"] is None
+
+        # Both hands tracked: mod-reported order preserved.
+        mod0.send_status_update(igt_ms=3000, death_count=0, weapons=[3070000, 2000025])
+        msg = mod0.receive_until_type("player_update")
+        assert msg["player"]["weapons"] == [3070000, 2000025]
+
+
 # =============================================================================
 # Scenario 3c: Stale Save Rejected on Status Update
 # =============================================================================

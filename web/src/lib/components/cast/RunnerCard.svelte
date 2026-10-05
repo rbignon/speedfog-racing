@@ -36,6 +36,11 @@
      * scene's cards pass nothing, so the section renders empty rather than
      * fabricating data for a card that has no room for it anyway. */
     splits?: SplitRow[];
+    /** What the runner is wielding, already resolved to display names
+     * ("Moonveil + Misericorde"); empty hides the row (catalogue still
+     * loading, or nothing observed yet). No upgrade level on purpose:
+     * competitive modes play at max upgrade, so it would be noise. */
+    weapons?: string;
   }
 
   let {
@@ -48,6 +53,7 @@
     leader,
     zoneNames = null,
     splits = [],
+    weapons = "",
   }: Props = $props();
 
   let color = $derived(
@@ -170,6 +176,12 @@
         ><span class="sm">{formatIgt(participant.igt_ms)}</span></span
       >
     </div>
+    {#if weapons}
+      <div class="crow arms">
+        <span class="ck">Weapons</span>
+        <span class="cv"><span class="sm wname">{weapons}</span></span>
+      </div>
+    {/if}
   </div>
   {#if variant === "tall"}
     <div class="splits">
@@ -342,6 +354,20 @@
   /* DNF is a state, not an alarm: the secondary text colour, not ember. */
   .cv.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* A paired combo of long names can outgrow the card: the value cell
+   * shrinks and ellipsizes rather than pushing the row wider. */
+  .crow.arms .cv {
+    flex: 1;
+    min-width: 0;
+    justify-content: flex-end;
+  }
+
+  .wname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .rcard.mirror .chead {

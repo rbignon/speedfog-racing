@@ -23,14 +23,19 @@ export async function loadCatalogue(): Promise<void> {
   if (loading) return loading;
   loading = (async () => {
     const response = await fetch("/api/weapons");
+    // A failed fetch leaves the catalogue not ready: printing "Weapon #..."
+    // on a broadcast is worse than a blank line, and a later call retries
+    // (an OBS scene stays up for hours, so always-on consumers poll).
     if (!response.ok) {
-      cache = {};
       return;
     }
     cache = (await response.json()) as Record<string, CatalogueEntry>;
   })();
-  await loading;
-  loading = null;
+  try {
+    await loading;
+  } finally {
+    loading = null;
+  }
 }
 
 export function getWeaponName(rawId: number): string {

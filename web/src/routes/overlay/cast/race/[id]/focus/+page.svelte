@@ -1,9 +1,16 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { raceStore } from "$lib/stores/race.svelte";
   import { sceneLayout } from "$lib/cast/layout";
   import { resolveSlots } from "$lib/cast/params";
   import { parseDagGraph } from "$lib/dag";
   import { buildCastSplits } from "$lib/cast/splits";
+  import { formatCombo } from "$lib/weapons";
+  import {
+    getWeaponName,
+    isCatalogueReady,
+    loadCatalogue,
+  } from "$lib/stores/weaponsCatalogue.svelte";
   import CastPlate from "$lib/components/cast/CastPlate.svelte";
   import CastDesk from "$lib/components/cast/CastDesk.svelte";
   import CastPov from "$lib/components/cast/CastPov.svelte";
@@ -57,6 +64,33 @@
   let heroSplits = $derived(
     buildCastSplits(heroParticipant?.zone_history ?? null, zoneNames),
   );
+
+  // The wielded combo resolves to names only once the catalogue is in, so
+  // a card never prints the raw "Weapon #..." fallback mid-load; an OBS
+  // scene stays up for hours, so a failed load retries instead of
+  // silencing the line for the whole broadcast.
+  let catalogueReady = $state(false);
+  onMount(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = () => {
+      loadCatalogue()
+        .catch(() => {})
+        .then(() => {
+          if (isCatalogueReady()) catalogueReady = true;
+          else timer = setTimeout(attempt, 30_000);
+        });
+    };
+    attempt();
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  });
+
+  let heroWeapons = $derived.by(() => {
+    if (!catalogueReady || !heroParticipant) return "";
+    const ids = raceStore.currentWeapons[heroParticipant.id];
+    return ids ? formatCombo(ids, getWeaponName) : "";
+  });
 </script>
 
 <CastPlate
@@ -87,6 +121,7 @@
       variant="tall"
       leader={ranks.get(heroParticipant.id) === 1}
       splits={heroSplits}
+      weapons={heroWeapons}
     />
   {/if}
   <CastMiniStandings

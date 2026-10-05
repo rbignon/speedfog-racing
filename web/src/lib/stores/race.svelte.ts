@@ -15,6 +15,7 @@ import {
 } from "$lib/websocket";
 import type { DebugFlags } from "$lib/api";
 import { preserveZoneHistory } from "$lib/zone-history";
+import { zoneTopCombo } from "$lib/weapons";
 import { computeGap } from "$lib/gap";
 import { createDelayQueue, type DelayQueue } from "$lib/cast/delay";
 
@@ -108,6 +109,15 @@ class RaceStore {
   // Cheat detections pushed live to the race staff (debug_flags_detected):
   // participant id -> full map. The page merges it over the REST snapshot.
   debugFlags = $state<Record<string, DebugFlags>>({});
+  // participant id -> the combo the runner is wielding right now, as raw
+  // runtime weapon ids. Each player_update carries the hands the mod
+  // observed that tick (null when nothing tracked was seen: loading
+  // screen, never "unarmed"), so the entry keeps the last real
+  // observation; race_state seeds it from zone_history's per-zone
+  // counters until the first live tick. Written only when the combo
+  // actually changed, so a card reading its own runner's entry is not
+  // invalidated by every tick.
+  currentWeapons = $state<Record<string, number[]>>({});
   connected = $state(false);
   loading = $state(true);
   wsError = $state<{ code: number; reason: string } | null>(null);
@@ -202,6 +212,7 @@ class RaceStore {
     this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
     this.debugFlags = {};
+    this.currentWeapons = {};
     this.connected = false;
     this.loading = true;
     this.wsError = null;
@@ -226,6 +237,19 @@ class RaceStore {
             this.race = msg.race;
             this.seed = msg.seed;
             this.participants = msg.participants;
+            // Seed the wielded-combo map from the snapshot's histories (the
+            // zone's most-used combo), keeping any sharper live observation
+            // already held: race_state rebroadcasts on every REST change
+            // (a join, a finish), and downgrading everyone's combo to the
+            // zone-dominant one would visibly flip names on air. Departed
+            // participants drop out either way.
+            const seeded: Record<string, number[]> = {};
+            for (const p of msg.participants) {
+              const combo =
+                this.currentWeapons[p.id] ?? zoneTopCombo(p.zone_history);
+              if (combo) seeded[p.id] = combo;
+            }
+            this.currentWeapons = seeded;
             // Older servers may not include pending_invites: keep an empty
             // array so the page can distinguish "WS sent the list" from
             // "WS hasn't broadcast yet" (null).
@@ -274,6 +298,17 @@ class RaceStore {
 
         onPlayerUpdate: (msg) => {
           const apply = () => {
+            // The hands the mod observed this tick; null means nothing
+            // tracked was seen (loading screen), never "unarmed", so the
+            // last known combo stands.
+            const observed = msg.player.weapons;
+            if (
+              observed?.length &&
+              observed.join("_") !==
+                this.currentWeapons[msg.player.id]?.join("_")
+            ) {
+              this.currentWeapons[msg.player.id] = observed;
+            }
             // Same as leaderboard_update: restore the race_state-only fields the
             // message drops (zone_history, daily_points).
             const existing = this.participants.find(
@@ -436,6 +471,7 @@ class RaceStore {
     this.dailyStreakUpdate = null;
     this.spectatorCount = 0;
     this.debugFlags = {};
+    this.currentWeapons = {};
     this.connected = false;
     this.loading = true;
     this.wsError = null;

@@ -164,6 +164,12 @@ class ParticipantInfo(BaseModel):
     # daily's field, or an event qualifier's settled runs while it is open
     # too; null otherwise. Carried by race_state only.
     daily_points: int | None = None
+    # The filtered combo observed in the runner's hands this tick, raw runtime
+    # ids in mod-reported order ([x] when only one hand holds a tracked
+    # weapon). Rides the player_update that follows a status_update which saw
+    # one: None means "no new observation" (loading screen, every other
+    # message), never "unarmed", so clients keep the last combo they know.
+    weapons: list[int] | None = None
 
 
 class RaceInfo(BaseModel):

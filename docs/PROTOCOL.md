@@ -210,7 +210,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 }
 ```
 
-`weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches) and writes the surviving raw IDs onto the current `zone_history` entry as `weapons`. A tick that resolves to `[null, null]` after filtering (loading screen, unreadable memory, empty hands, or all-filtered types) is skipped: the last meaningful weapons captured for the current zone are preserved.
+`weapons` is `[left_hand, right_hand]` raw runtime `EquipParamWeapon` IDs (param row + upgrade level, e.g. `2000025` = Longsword +25). Each slot is `null` when the hand is empty, masked under two-handing, unreadable, or filled with the Unarmed sentinel (`110000`). The field is omitted by older mod builds. The server discards weapons whose `wep_type` is in the excluded set (staves, seals, shields, torches), bumps the surviving combo's per-zone counter on the current `zone_history` entry, and relays the same combo on the `player_update` that follows (see [`player_update`](#player_update)), so spectators track a swap within a tick. A tick that resolves to `[null, null]` after filtering (loading screen, unreadable memory, empty hands, or all-filtered types) is skipped: the counters already accumulated for the current zone are preserved, and the `player_update` carries no observation.
 
 `debug_flags` lists the wire names of the game debug flags (practice tool / TarnishedTool switches such as `one_shot` or `player_no_death`) the mod read as on since the race start. It is cumulative, so a flag switched off again is still reported; omitted when empty and by pre-1.5 mods. Unknown names and malformed values are ignored without rejecting the update. The server keeps the first observation of each flag on the participant (`igt_ms`, `node_id`, `detected_at`); training sessions ignore the field. See `docs/CHEAT_DETECTION.md`.
 
@@ -565,6 +565,13 @@ Never sent on event qualifier races (`Race.is_event_qualifier`): those run async
 #### `player_update`
 
 Single player update, broadcast to all connections (mods + spectators). See also the [Spectator Connection](#websocket-spectator-connection) section.
+
+The participant payload may carry `weapons`: the filtered combo observed in
+the runner's hands by the `status_update` this broadcast follows, as raw
+runtime IDs in mod-reported order (a single-element list when only one hand
+holds a tracked weapon). `null` means "no new observation this tick"
+(loading screen, or the broadcast came from another trigger), never
+"unarmed": clients keep the last combo they know. Mods ignore the field.
 
 **Async races (mods skipped).** On async races (`Race.projects_ghosts`: Daily Seeds and event qualifier seeds), `player_update` is routed to spectators only. Mods consume `player_update` by overwriting the matching row in their local participant list, which would desync that single row from the projected leaderboard until the next `leaderboard_update` tick (~1s). Mods receive their per-viewer projection through `leaderboard_update` instead.
 
@@ -1108,7 +1115,7 @@ Shared schema across all WebSocket messages:
 | `equipped_name_template_id` | `string?` | Logical id of the active name template (web resolves `background_css` via the catalog). `null` or `"default"` means no override; render with the default style.                   |
 | `name_template`             | `object?` | Pre-resolved render payload for the mod overlay: `{ color?: "#RRGGBB", gradient?: ["#RRGGBB","#RRGGBB"] }`. `null` for default users; backgrounds are not transmitted (web-only). |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17, "weapons"?: [int|null, int|null] }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. `weapons` is `[left_hand, right_hand]` runtime weapon IDs (last-write-wins per zone via `status_update`), filtered to the tracked melee/ranged set; absent on entries pre-dating the feature or when the mod didn't report a value. Entries without `type` are treated as `"fog"` for backward compatibility.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17, "weapons"?: [int|null, int|null] }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. `weapons` is a list of per-zone combo counters, `[{ "ids": [int, ...], "ticks": int }, ...]`: each `status_update` that observed a tracked weapon bumps its combo's `ticks` (one id when a single hand is tracked, two in mod-reported order). Filtered to the tracked melee/ranged set; absent on entries pre-dating the feature or when the mod didn't report a value (entries from before the counters may carry the old `[left, right]` pair shape). Entries without `type` are treated as `"fog"` for backward compatibility.
 
 `name_template` example:
 

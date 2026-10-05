@@ -33,6 +33,11 @@ export interface WsParticipant {
   equipped_badge_id?: string | null;
   equipped_name_template_id?: string | null;
   daily_points?: number | null;
+  // The filtered combo observed in the runner's hands, raw runtime ids.
+  // Only rides the player_update after a status_update that saw a tracked
+  // weapon: null means "no new observation", never "unarmed" (see the race
+  // store's currentWeapons).
+  weapons?: number[] | null;
 }
 
 export interface WsRaceInfo {

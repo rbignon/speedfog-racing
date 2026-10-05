@@ -423,13 +423,13 @@ async def test_death_delta_triggers_deathless_elimination(
     handler._participant_id = p_id
 
     await handler._broadcast_after_status_update(
-        participant, became_active=False, death_delta=1, history_changed=False
+        participant, became_active=False, death_delta=1, history_changed=False, weapons=None
     )
     elim.assert_awaited_once_with(dl_async_session, p_id)
 
     elim.reset_mock()
     await handler._broadcast_after_status_update(
-        participant, became_active=False, death_delta=0, history_changed=False
+        participant, became_active=False, death_delta=0, history_changed=False, weapons=None
     )
     elim.assert_not_awaited()
 
@@ -469,7 +469,7 @@ async def test_death_delta_no_elimination_on_plain_race(
     handler._participant_id = p_id
 
     await handler._broadcast_after_status_update(
-        participant, became_active=False, death_delta=1, history_changed=False
+        participant, became_active=False, death_delta=1, history_changed=False, weapons=None
     )
     elim.assert_not_awaited()
 

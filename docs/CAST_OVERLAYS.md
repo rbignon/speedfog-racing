@@ -347,6 +347,25 @@ time:
   0 either way), so leaving it off the common no-delay case keeps that URL
   shorter without changing what it does.
 
+## Wielded weapons
+
+The quad and duel runner cards and the focus scene's hero card name the
+weapons their runner is wielding right now ("Moonveil + Misericorde"),
+without the upgrade level: competitive modes play at max upgrade, so it
+would be noise. The mod reports the equipped hands in every status_update
+(it always has; the server counts them per zone in `zone_history`, the
+combo counters the race page's weapons popover aggregates), and the server
+now relays the observed combo on that runner's `player_update`, so the
+line follows a swap within a tick (see the `player_update` section of
+`PROTOCOL.md`). A tick that observed nothing (loading screen) carries no
+combo rather than "unarmed", so the last known combo stands. A page that
+just connected seeds from the current zone's most-used combo
+(`zoneTopCombo` in `web/src/lib/weapons.ts`) until the first live tick; a
+runner whose mod is disconnected, or who has finished, keeps the last
+combo observed. Names resolve through the `GET /api/weapons` catalogue;
+until it loads (retried while the scene is up), the line stays blank
+rather than printing a raw id.
+
 ## Delay
 
 The race's live data (leaderboard, zone updates, race status, the clock)

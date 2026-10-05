@@ -645,6 +645,7 @@ class ConnectionManager:
         *,
         graph_json: dict[str, Any] | None = None,
         project_ghosts: bool = False,
+        weapons: list[int] | None = None,
     ) -> None:
         """Broadcast a single player update.
 
@@ -673,6 +674,7 @@ class ConnectionManager:
                 )
                 if graph_json
                 else None,
+                weapons=weapons,
             )
         )
         payload = message.model_dump_json()
@@ -851,6 +853,7 @@ def participant_to_info(
     layer_entry_igt: int | None = None,
     include_zone_history: bool = False,
     daily_points: int | None = None,
+    weapons: list[int] | None = None,
 ) -> ParticipantInfo:
     """Convert a Participant model to ParticipantInfo schema.
 
@@ -900,6 +903,7 @@ def participant_to_info(
         equipped_name_template_id=participant.user.equipped_name_template_id,
         name_template=name_template_payload,
         daily_points=daily_points,
+        weapons=weapons,
     )
 
 

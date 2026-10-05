@@ -594,6 +594,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         became_active: bool,
         death_delta: int,
         history_changed: bool,
+        weapons: list[int] | None,
     ) -> None:
         assert self._participant_id is not None
 
@@ -609,6 +610,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     entity,
                     graph_json=self._cached_graph_json,
                     project_ghosts=entity.race.projects_ghosts,
+                    weapons=weapons,
                 ),
                 self._maybe_unicast_projection(entity),
             )
@@ -634,6 +636,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     entity,
                     graph_json=_get_graph_json(entity),
                     project_ghosts=entity.race.projects_ghosts,
+                    weapons=weapons,
                 )
 
         if history_changed:

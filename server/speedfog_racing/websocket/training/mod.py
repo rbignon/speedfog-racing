@@ -363,6 +363,9 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         became_active: bool,
         death_delta: int,
         history_changed: bool,
+        # A training session has no spectator cards naming the wielded
+        # combo; the observation still lands in zone_history as always.
+        weapons: list[int] | None,
     ) -> None:
         await _broadcast_participant_update(entity, graph_json=self._get_graph_json(entity))
 

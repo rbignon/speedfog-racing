@@ -21,6 +21,11 @@
      * on the wire is a graph node id, never a display string. On a miss the
      * zone line is left blank, same as RunnerCard's zoneLabel. */
     zoneNames?: Map<string, string> | null;
+    /** What the runner is wielding, already resolved to display names
+     * ("Moonveil + Misericorde"); empty hides the line (catalogue still
+     * loading, or nothing observed yet). No upgrade level on purpose:
+     * competitive modes play at max upgrade, so it would be noise. */
+    weapons?: string;
   }
 
   let {
@@ -32,6 +37,7 @@
     mirrored,
     leader,
     zoneNames = null,
+    weapons = "",
   }: Props = $props();
 
   let color = $derived(
@@ -138,6 +144,9 @@
     </div>
     <span class="drk">{rank}</span>
   </div>
+  {#if weapons}
+    <span class="dweap">{weapons}</span>
+  {/if}
   <div class="dstats">
     <div class="dstat">
       <span class="dk">Depth</span>
@@ -315,11 +324,25 @@
     color: var(--color-info);
   }
 
+  /* The wielded combo, between the head and the stats row. A paired combo
+   * of long names ellipsizes rather than growing the card. */
+  .dweap {
+    font-family: var(--font-mono);
+    font-size: 18px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .dcard.mirror .dhead {
     flex-direction: row-reverse;
   }
 
   .dcard.mirror .dwho {
+    text-align: right;
+  }
+
+  .dcard.mirror .dweap {
     text-align: right;
   }
 

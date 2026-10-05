@@ -7,6 +7,7 @@ import {
   aggregateZoneCombos,
   formatCombo,
   topCombos,
+  zoneTopCombo,
 } from "$lib/weapons";
 
 const ENTRY = (
@@ -158,6 +159,32 @@ describe("topCombos", () => {
       { ids: [1], ticks: 70, percent: 70 },
       { ids: [2], ticks: 30, percent: 30 },
     ]);
+  });
+});
+
+describe("zoneTopCombo", () => {
+  it("returns the most-used combo of the latest zone with observations", () => {
+    const history = [
+      ENTRY("a", [{ ids: [9000010], ticks: 90 }]),
+      ENTRY("b", [
+        { ids: [3070000], ticks: 2 },
+        { ids: [2000025], ticks: 40 },
+      ]),
+    ];
+    expect(zoneTopCombo(history)).toEqual([2000025]);
+  });
+
+  it("skips a just-entered zone with no observations yet", () => {
+    const history = [
+      ENTRY("a", [{ ids: [2000025], ticks: 41 }]),
+      ENTRY("b", undefined),
+    ];
+    expect(zoneTopCombo(history)).toEqual([2000025]);
+  });
+
+  it("returns null when the history carries no weapons at all", () => {
+    expect(zoneTopCombo([ENTRY("a", undefined)])).toBeNull();
+    expect(zoneTopCombo(null)).toBeNull();
   });
 });
 

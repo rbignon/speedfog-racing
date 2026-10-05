@@ -735,6 +735,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 entity.death_count = new_death_count
 
             raw_weapons = msg.get("weapons")
+            live_weapons: list[int] | None = None
             if isinstance(raw_weapons, list) and len(raw_weapons) == 2 and entity.zone_history:
                 left = filter_equipped(raw_weapons[0] if isinstance(raw_weapons[0], int) else None)
                 right = filter_equipped(raw_weapons[1] if isinstance(raw_weapons[1], int) else None)
@@ -742,6 +743,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 # screen, all-filtered, unreadable memory). Preserves whatever
                 # counter was already accumulated for this zone.
                 if left is not None or right is not None:
+                    # The same canonical shape bump_combo stores: this tick's
+                    # observation also rides the broadcast below, so
+                    # spectators track the equipped combo live.
+                    live_weapons = [w for w in (left, right) if w is not None]
                     current = entity.zone_history[-1].get("weapons", []) or []
                     new_weapons = bump_combo(current, left, right)
                     new_history = [dict(e) for e in entity.zone_history]
@@ -761,6 +766,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             became_active=became_active,
             death_delta=delta,
             history_changed=history_changed,
+            weapons=live_weapons,
         )
 
     @sentry_breadcrumb
@@ -1177,6 +1183,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         became_active: bool,
         death_delta: int,
         history_changed: bool,
+        weapons: list[int] | None,
     ) -> None: ...
 
     @abstractmethod
