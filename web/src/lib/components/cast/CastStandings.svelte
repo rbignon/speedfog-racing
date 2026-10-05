@@ -102,6 +102,20 @@
       ? short.slice(0, ZONE_LABEL_MAX - 1) + "…"
       : short;
   }
+
+  // Duplicated in every card that shows an IGT (RunnerCard, CastLog, ...),
+  // this codebase's established way of formatting one rather than a shared
+  // helper.
+  function formatIgt(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }
 </script>
 
 <div
@@ -123,12 +137,17 @@
       >
       <span
         class="gap"
-        class:ahead={p.gap_ms != null && p.gap_ms < 0}
-        class:behind={p.gap_ms != null && p.gap_ms > 0}
+        class:ahead={p.status !== "finished" &&
+          p.gap_ms != null &&
+          p.gap_ms < 0}
+        class:behind={p.status !== "finished" &&
+          p.gap_ms != null &&
+          p.gap_ms > 0}
         class:dnf={isOutOfRace(p.status)}
-        >{#if p.status === "disqualified"}DQ{:else if p.status === "abandoned"}DNF{:else if p.gap_ms != null}{formatGap(
-            p.gap_ms,
-          )}{/if}</span
+        class:finished={p.status === "finished"}
+        >{#if p.status === "disqualified"}DQ{:else if p.status === "abandoned"}DNF{:else if p.status === "finished"}{formatIgt(
+            p.igt_ms,
+          )}{:else if p.gap_ms != null}{formatGap(p.gap_ms)}{/if}</span
       >
     </div>
   {/each}
@@ -258,6 +277,13 @@
    * Mirrors RunnerCard's and CastMiniStandings' own Gap row. */
   .gap.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* A finished runner shows their final time, not a gap that reads as if
+   * they were still racing: the same finished colour as the talk scene's
+   * race cards and status pills. */
+  .gap.finished {
+    color: var(--color-info);
   }
 
   /* A quiet line, not a shout: same row rhythm as the data above it, but

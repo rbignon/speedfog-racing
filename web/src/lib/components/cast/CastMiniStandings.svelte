@@ -63,6 +63,20 @@
     }
     return parts.join(" ");
   }
+
+  // Duplicated in every card that shows an IGT (RunnerCard, CastLog, ...),
+  // this codebase's established way of formatting one rather than a shared
+  // helper.
+  function formatIgt(ms: number): string {
+    const totalSeconds = Math.floor(ms / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+    }
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }
 </script>
 
 <div
@@ -77,12 +91,17 @@
       <span class="nm" style={nameStyleFor(p)}>{displayName(p)}</span>
       <span
         class="gap"
-        class:ahead={p.gap_ms != null && p.gap_ms < 0}
-        class:behind={p.gap_ms != null && p.gap_ms > 0}
+        class:ahead={p.status !== "finished" &&
+          p.gap_ms != null &&
+          p.gap_ms < 0}
+        class:behind={p.status !== "finished" &&
+          p.gap_ms != null &&
+          p.gap_ms > 0}
         class:dnf={isOutOfRace(p.status)}
-        >{#if p.status === "disqualified"}DQ{:else if p.status === "abandoned"}DNF{:else if p.gap_ms != null}{formatGap(
-            p.gap_ms,
-          )}{/if}</span
+        class:finished={p.status === "finished"}
+        >{#if p.status === "disqualified"}DQ{:else if p.status === "abandoned"}DNF{:else if p.status === "finished"}{formatIgt(
+            p.igt_ms,
+          )}{:else if p.gap_ms != null}{formatGap(p.gap_ms)}{/if}</span
       >
     </div>
   {/each}
@@ -143,7 +162,9 @@
    * at 294px content width with rank (20) + dot (10) + the new gap
    * minimum (42) + 3 gaps (30), this cell gets about 192px, a few pixels
    * clear of that name. A longer Twitch name (up to 25 characters) can
-   * still ellipsize. */
+   * still ellipsize, and a finished row's final time ("48:23", or
+   * "1:02:05" past the hour) is wider than the 42px floor, so long names
+   * ellipsize earlier on those rows. */
   .nm {
     flex: 1;
     min-width: 0;
@@ -158,9 +179,9 @@
   }
 
   /* min-width is a floor, not a cap: nothing here clips this cell's own
-   * text (no overflow/ellipsis, and flex-shrink stays 0), so a longer gap
-   * a short race never produces (a two-minute-plus "+12:04") still renders
-   * whole, just wider than this floor, at .nm's expense on that one row
+   * text (no overflow/ellipsis, and flex-shrink stays 0), so a value wider
+   * than the floor (a finished runner's final time, or a gap a short race
+   * never produces) still renders whole, at .nm's expense on that one row
    * rather than this cell's. */
   .gap {
     font-family: var(--font-mono);
@@ -183,6 +204,13 @@
    * Mirrors RunnerCard's own Gap row. */
   .gap.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* A finished runner shows their final time, not a gap that reads as if
+   * they were still racing: the same finished colour as the talk scene's
+   * race cards and status pills. */
+  .gap.finished {
+    color: var(--color-info);
   }
 
   /* A quiet line, not a shout: same row rhythm as the data above it, but

@@ -152,8 +152,15 @@ function quadScene(cams: number): CastScene {
 
 // --- scene 2, focus -------------------------------------------------------
 
-const HERO: Rect = { x: M, y: MAIN_Y, w: 1296, h: 729 };
-const FOCUS_PANEL: Rect = { x: 1328, y: MAIN_Y, w: 240, h: MAIN_H };
+// The hero's runner card sits left of the hero hole, so the eye reads
+// card -> hero -> the small POVs, left to right across the scene.
+const FOCUS_PANEL: Rect = { x: M, y: MAIN_Y, w: 240, h: MAIN_H };
+const HERO: Rect = {
+  x: FOCUS_PANEL.x + FOCUS_PANEL.w + G,
+  y: MAIN_Y,
+  w: 1296,
+  h: 729,
+};
 const SMALL_W = 320; // a sixth of the canvas width
 const SMALL_H = 180;
 const SMALL_X = 1584;

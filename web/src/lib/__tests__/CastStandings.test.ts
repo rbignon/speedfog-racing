@@ -97,6 +97,28 @@ describe("CastStandings: gap column", () => {
     expect(cell?.classList.contains("ahead")).toBe(true);
     expect(cell?.classList.contains("behind")).toBe(false);
   });
+
+  it("shows a finished runner's final time in the finished colour, over their gap", () => {
+    const { container } = render(CastStandings, {
+      props: {
+        ...baseProps,
+        participants: [
+          fakeParticipant({ id: "p-1", gap_ms: null }),
+          fakeParticipant({
+            id: "p-2",
+            status: "finished",
+            igt_ms: 3_725_000,
+            gap_ms: 12_345,
+          }),
+        ],
+      },
+    });
+    const cell = gapCell(container, 1);
+    expect(cell?.textContent).toBe("1:02:05");
+    expect(cell?.classList.contains("finished")).toBe(true);
+    expect(cell?.classList.contains("behind")).toBe(false);
+    expect(cell?.classList.contains("ahead")).toBe(false);
+  });
 });
 
 describe("CastStandings: row cap", () => {

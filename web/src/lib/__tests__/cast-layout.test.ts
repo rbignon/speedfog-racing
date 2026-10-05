@@ -79,6 +79,12 @@ describe("sceneLayout", () => {
     expect(smalls).toEqual(["pov1", "pov2", "pov4"]);
   });
 
+  it("seats the hero's runner card panel to the left of the hero hole", () => {
+    const { holes, panels } = sceneLayout("focus", { focus: 1 });
+    const hero = holes.find((h) => h.role === "hero")!;
+    expect(panels.focus.x + panels.focus.w).toBeLessThanOrEqual(hero.x);
+  });
+
   it("gives the metro scene one map hole and no POV", () => {
     const { holes } = sceneLayout("metro");
     expect(holes.filter((h) => h.role === "map")).toHaveLength(1);

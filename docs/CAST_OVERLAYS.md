@@ -113,7 +113,7 @@ its own zone splits render beside it.
 
 | Hole                     | Label              | Position (x, y) | Size (w x h) |
 | ------------------------ | ------------------ | --------------- | ------------ |
-| hero                     | HERO (POV `focus`) | 16, 16          | 1296 x 729   |
+| hero                     | HERO (POV `focus`) | 272, 16         | 1296 x 729   |
 | pov (1st remaining slot) | POV n              | 1584, 16        | 320 x 180    |
 | pov (2nd remaining slot) | POV n              | 1584, 212       | 320 x 180    |
 | pov (3rd remaining slot) | POV n              | 1584, 408       | 320 x 180    |
@@ -122,7 +122,8 @@ The three small POV holes are whichever slots `focus` did not pick, in slot
 order. A mini standings panel sits at (1584, 604), 320 x 148 (rank, colour
 dot, name and gap; no depth cell, since the scene's own POVs already show
 what each runner is doing), and the hero's own runner card fills the panel
-at (1328, 16), 240 x 736. Plus the shared desk band.
+at (16, 16), 240 x 736, left of the hero hole, so the scene reads card,
+hero, field, left to right. Plus the shared desk band.
 
 ### Metro
 
@@ -196,6 +197,9 @@ seed illegible).
 
 The standings panel beneath the map is a single column, one row per runner
 as the mockup draws it: rank, colour dot, name, zone, deaths, depth and gap.
+A finished runner's gap cell shows their final time in the finished colour
+instead of a gap that would read as if they were still racing; DNF and DQ
+keep their plain-text marks. The focus scene's mini standings do the same.
 A playoff race seats four runners, which is exactly what the panel fits; a
 bigger field gets the row cap described in "Field-size overflow" above. It
 also reads a `lines` query parameter (default: fit as many rows as the panel
