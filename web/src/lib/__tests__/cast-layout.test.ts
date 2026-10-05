@@ -8,7 +8,7 @@ import {
   type CastSceneId,
 } from "$lib/cast/layout";
 
-const SCENES: CastSceneId[] = ["quad", "focus", "metro", "talk"];
+const SCENES: CastSceneId[] = ["quad", "focus", "metro", "duel", "talk"];
 
 function overlaps(a: Rect, b: Rect): boolean {
   return (
@@ -83,6 +83,26 @@ describe("sceneLayout", () => {
     const { holes, panels } = sceneLayout("focus", { focus: 1 });
     const hero = holes.find((h) => h.role === "hero")!;
     expect(panels.focus.x + panels.focus.w).toBeLessThanOrEqual(hero.x);
+  });
+
+  it("seats two runners side by side on the duel scene, the strip tiling beneath them", () => {
+    const { holes, panels } = sceneLayout("duel");
+    const povs = holes.filter((h) => h.role === "pov");
+    expect(povs.map((h) => h.id)).toEqual(["pov1", "pov2"]);
+    expect(povs[0].y).toBe(povs[1].y);
+    expect(povs[0].w).toBe(povs[1].w);
+    // The strip reads card, versus block, card, left to right, all of it
+    // below the two POVs and above the desk band.
+    expect(panels.duel1.x + panels.duel1.w).toBeLessThanOrEqual(
+      panels.versus.x,
+    );
+    expect(panels.versus.x + panels.versus.w).toBeLessThanOrEqual(
+      panels.duel2.x,
+    );
+    for (const p of [panels.duel1, panels.versus, panels.duel2]) {
+      expect(p.y).toBeGreaterThanOrEqual(povs[0].y + povs[0].h);
+      expect(p.y + p.h).toBeLessThanOrEqual(panels.race.y);
+    }
   });
 
   it("gives the metro scene one map hole and no POV", () => {

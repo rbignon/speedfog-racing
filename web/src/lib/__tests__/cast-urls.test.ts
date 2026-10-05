@@ -25,6 +25,12 @@ describe("buildCastUrl", () => {
     ).not.toContain("focus=");
   });
 
+  it("seats only the duel scene's two holes, dropping the slots it cannot show", () => {
+    expect(buildCastUrl("https://x.tv", "duel", base)).toBe(
+      "https://x.tv/overlay/cast/race/r1/duel?p1=nicky_rr&p2=mm420_&c1=fogcaster&c2=nightbell&cams=2&delay=8",
+    );
+  });
+
   it("leaves out what is already the default, so the URL stays readable", () => {
     const url = buildCastUrl("https://x.tv", "quad", {
       ...base,

@@ -1,7 +1,7 @@
 # Cast Overlays
 
-Four full-screen OBS scenes for a caster running a broadcast: quad, focus,
-metro and talk. They are a different kind of overlay from the two existing
+Five full-screen OBS scenes for a caster running a broadcast: quad, focus,
+duel, metro and talk. They are a different kind of overlay from the two existing
 ones, `/overlay/race/[id]/dag` and `/overlay/race/[id]/leaderboard`: those are
 transparent widgets a caster places anywhere on a scene they build themselves
 (a DAG in one corner, a leaderboard strip along an edge, sized and positioned
@@ -71,9 +71,9 @@ them show more than the panel's own capacity allows. The quad scene's four
 runner cards seat exactly four runners by construction (see `resolveSlots`)
 and need no cap.
 
-## The four scenes
+## The five scenes
 
-Three of the four scenes (quad, focus, metro) share a **desk** band along the
+Four of the five scenes (quad, focus, duel, metro) share a **desk** band along the
 bottom: a race name panel, a caster lockup (the SpeedFog Racing wordmark,
 crossed with the event's co-brand when one is set), a clock panel, and up to
 two caster cam holes. How many cam holes it cuts depends on the `cams`
@@ -124,6 +124,29 @@ dot, name and gap; no depth cell, since the scene's own POVs already show
 what each runner is doing), and the hero's own runner card fills the panel
 at (16, 16), 240 x 736, left of the hero hole, so the scene reads card,
 hero, field, left to right. Plus the shared desk band.
+
+### Duel
+
+Two runners head to head, each at the biggest 16:9 the main area fits side
+by side, for a showcase match or any race the commentary treats as a duel.
+Under each POV sits that runner's card (avatar, name, rank, zone, depth,
+deaths, IGT; the right card mirrored to face inward, like the quad scene's
+right column), and between the cards a versus block: the head-to-head gap
+between the two seated runners themselves (their `gap_ms` values share the
+field leader's reference, so the difference is the duel's own gap, whoever
+else is in the race), who leads, and both sides' deaths and depth. A runner
+out of the race shows DNF or DQ in place of a stale zone and drops out of
+the gap (the surviving side leads), and a finished runner's IGT takes the
+finished colour, as in the standings panels.
+
+| Hole | Label | Position (x, y) | Size (w x h) |
+| ---- | ----- | --------------- | ------------ |
+| pov1 | POV 1 | 16, 16          | 928 x 522    |
+| pov2 | POV 2 | 976, 16         | 928 x 522    |
+
+Panels: the two runner cards at (16, 554) and (1468, 554), each 436 x 198,
+and the versus block between them at (468, 554), 984 x 198. Plus the shared
+desk band.
 
 ### Metro
 
@@ -281,8 +304,11 @@ Metro reads `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but neither
 `p1`..`p4` nor `focus`: it has no POV holes to seat and no hero, so
 `sceneLayout("metro", ...)` is called with `cams` alone and `resolveSlots` is
 never called on that page at all. A `p1` or `focus` added to a metro URL is
-silently ignored. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no
-runners to seat and no live feed to delay; see "Delay" below).
+silently ignored. Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4`
+or `focus` in its URL is silently ignored), plus `cams`, `c1`, `c2`,
+`delay`, `guides` and `event`. Talk only reads `c1`, `c2`, `cams` and
+`guides` (it has no runners to seat and no live feed to delay; see "Delay"
+below).
 
 | Param      | Meaning                                                                                     | Default |
 | ---------- | ------------------------------------------------------------------------------------------- | ------- |
@@ -307,7 +333,8 @@ someone else's video mid-race.
 turn its form into a scene URL, and it does not carry every parameter every
 time:
 
-- `p1`..`p4` only for the slots actually named, race scenes only.
+- `p1`..`p4` only for the slots actually named, race scenes only (`p1`..`p2`
+  on duel, the only holes it has).
 - `focus` only on the focus scene, and only when set.
 - `c1`/`c2` only for the casters actually named.
 - `event` only when a co-brand is chosen, race scenes only.
@@ -358,10 +385,12 @@ It gives a caster, without hand-editing a URL:
   second after the panel's inputs stop changing, so typing a runner or
   caster name doesn't reload the preview (and reopen its spectator
   WebSocket) on every keystroke; every other field in the panel stays live.
-- A scene picker: Quad, Focus 1 through 4, Metro, Talk.
-- Hole assignment (race scenes only): a dropdown per POV hole, defaulting to
-  "(auto, join order)"; picking the same runner twice is refused rather than
-  silently hiding another runner.
+- A scene picker: Quad, Focus 1 through 4, Duel, Metro, Talk.
+- Hole assignment (race scenes only): a dropdown per POV hole (two on the
+  duel scene), defaulting to "(auto, join order)"; picking the same runner
+  twice is refused rather than silently hiding another runner, except when
+  the duplicate sits in a hole the duel scene doesn't render, which is
+  freed instead (it can't be cleared from the panel).
 - Cams (0, 1 or 2) and the two caster usernames.
 - An event co-brand picker, and, on the talk scene, a stage picker scoped to
   the chosen event: its stages, then its showcases.

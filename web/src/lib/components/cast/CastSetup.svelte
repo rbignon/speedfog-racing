@@ -31,6 +31,7 @@
     { id: "focus", focus: 2, label: "Focus 2" },
     { id: "focus", focus: 3, label: "Focus 3" },
     { id: "focus", focus: 4, label: "Focus 4" },
+    { id: "duel", label: "Duel" },
     { id: "metro", label: "Metro" },
     { id: "talk", label: "Talk" },
   ];
@@ -73,7 +74,7 @@
     };
   }
 
-  const SCENE_IDS: CastSceneId[] = ["quad", "focus", "metro", "talk"];
+  const SCENE_IDS: CastSceneId[] = ["quad", "focus", "metro", "duel", "talk"];
 
   // A function, not a top-level const: `race` is a prop, and reading it
   // outside a closure would only ever capture its initial value.
@@ -176,9 +177,18 @@
           j !== i && s !== null && s.toLowerCase() === name.toLowerCase(),
       );
       if (dupIndex !== -1) {
-        slotErrors[i] = `Already seated in POV ${dupIndex + 1}.`;
-        target.value = slots[i] ?? "";
-        return;
+        // The refusal protects holes actually on screen from silently
+        // losing their runner; a duplicate sitting in a hole the current
+        // scene doesn't render (the duel scene shows two of the four, and
+        // defaults seat the whole field) can't be freed from the UI, so
+        // it is cleared instead.
+        if (scene === "duel" && dupIndex >= 2) {
+          slots[dupIndex] = null;
+        } else {
+          slotErrors[i] = `Already seated in POV ${dupIndex + 1}.`;
+          target.value = slots[i] ?? "";
+          return;
+        }
       }
     }
     slotErrors[i] = null;
@@ -279,8 +289,8 @@
   // caster has actually picked which stage it introduces: an unconfigured
   // talk URL would just point at a 404.
   let allUrls = $derived.by(() => {
-    const lines = (["quad", "focus", "metro"] as CastSceneId[]).map((id) =>
-      buildCastUrl(origin, id, urlOpts),
+    const lines = (["quad", "focus", "duel", "metro"] as CastSceneId[]).map(
+      (id) => buildCastUrl(origin, id, urlOpts),
     );
     if (eventSlug && stageKey) {
       lines.push(buildCastUrl(origin, "talk", urlOpts));
@@ -353,7 +363,9 @@
     <div class="section">
       <h3>Hole assignment</h3>
       <div class="hole-grid">
-        {#each [0, 1, 2, 3] as i (i)}
+        <!-- The duel scene only has two POV holes; a p3/p4 would be dropped
+             from its URL anyway (see buildCastUrl). -->
+        {#each scene === "duel" ? [0, 1] : [0, 1, 2, 3] as i (i)}
           <label class="field">
             <span>POV {i + 1}</span>
             <select

@@ -118,6 +118,55 @@ describe("CastSetup: OBS positions", () => {
   });
 });
 
+describe("CastSetup: duel scene", () => {
+  it("frees a hidden slot's runner for a duel hole instead of refusing", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-7"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Duel");
+    const selects =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
+
+    // carol sits in slot 3 by default, a hole the duel scene doesn't render
+    // (and so can't be freed from): seating her in POV 1 must clear that
+    // hidden slot, not refuse with an error about an invisible dropdown.
+    await fireEvent.change(selects[0], { target: { value: "carol" } });
+
+    expect(selects[0].value).toBe("carol");
+    expect(container.textContent).not.toContain("Already seated");
+  });
+
+  it("still refuses a duplicate between the duel scene's own two holes", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-8"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Duel");
+    const selects =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
+
+    await fireEvent.change(selects[1], { target: { value: "alice" } });
+
+    expect(selects[1].value).toBe("bob");
+    expect(container.textContent).toContain("Already seated in POV 1.");
+  });
+
+  it("offers only the duel scene's two holes and builds its URL", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-6"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Duel");
+
+    const labels = [
+      ...container.querySelectorAll(".hole-grid .field > span:first-child"),
+    ].map((e) => e.textContent);
+    expect(labels).toEqual(["POV 1", "POV 2"]);
+    const url = (container.querySelector(".url-input") as HTMLInputElement)
+      .value;
+    expect(url).toContain("/overlay/cast/race/race-6/duel");
+    expect(url).not.toContain("p3=");
+  });
+});
+
 describe("CastSetup: talk scene URL guard", () => {
   it("withholds the copyable URL and the preview until an event and stage are chosen", async () => {
     const { container } = render(CastSetup, {

@@ -37,7 +37,7 @@ export interface CastScene {
   panels: Record<string, Rect>;
 }
 
-export type CastSceneId = "quad" | "focus" | "metro" | "talk";
+export type CastSceneId = "quad" | "focus" | "metro" | "duel" | "talk";
 
 export interface SceneOptions {
   /** Which slot holds the hero POV on the focus scene (1 to 4). */
@@ -193,7 +193,58 @@ function focusScene(focus: number, cams: number): CastScene {
   };
 }
 
-// --- scene 3, metro -------------------------------------------------------
+// --- scene 3, duel --------------------------------------------------------
+
+// Two runners at the biggest 16:9 the main area fits side by side, and a
+// strip beneath them reading card, versus block, card: each runner's card
+// under their own POV, the head-to-head numbers between them.
+const DUEL_POV_W = 928;
+const DUEL_POV_H = 522; // 16:9 of 928
+const DUEL_POV2_X = CANVAS.w - M - DUEL_POV_W;
+const DUEL_STRIP_Y = MAIN_Y + DUEL_POV_H + G;
+const DUEL_STRIP_H = MAIN_Y + MAIN_H - DUEL_STRIP_Y;
+const DUEL_CARD_W = 436; // same width as the talk scene's race cards
+const DUEL_VS_X = M + DUEL_CARD_W + G;
+const DUEL_VS_W = CANVAS.w - M - DUEL_CARD_W - G - DUEL_VS_X;
+
+function duelScene(cams: number): CastScene {
+  const holes: CastRect[] = [
+    {
+      id: "pov1",
+      role: "pov",
+      label: "POV 1",
+      x: M,
+      y: MAIN_Y,
+      w: DUEL_POV_W,
+      h: DUEL_POV_H,
+    },
+    {
+      id: "pov2",
+      role: "pov",
+      label: "POV 2",
+      x: DUEL_POV2_X,
+      y: MAIN_Y,
+      w: DUEL_POV_W,
+      h: DUEL_POV_H,
+    },
+  ];
+  return {
+    holes: [...holes, ...deskHoles(cams)],
+    panels: {
+      ...deskPanels(),
+      duel1: { x: M, y: DUEL_STRIP_Y, w: DUEL_CARD_W, h: DUEL_STRIP_H },
+      versus: { x: DUEL_VS_X, y: DUEL_STRIP_Y, w: DUEL_VS_W, h: DUEL_STRIP_H },
+      duel2: {
+        x: CANVAS.w - M - DUEL_CARD_W,
+        y: DUEL_STRIP_Y,
+        w: DUEL_CARD_W,
+        h: DUEL_STRIP_H,
+      },
+    },
+  };
+}
+
+// --- scene 4, metro -------------------------------------------------------
 
 const MAP: Rect = { x: M, y: MAIN_Y, w: CANVAS.w - 2 * M, h: 482 };
 const METRO_LOG: Rect = { x: M, y: 522, w: 900, h: 230 };
@@ -216,7 +267,7 @@ function metroScene(cams: number): CastScene {
   };
 }
 
-// --- scene 4, talk --------------------------------------------------------
+// --- scene 5, talk --------------------------------------------------------
 
 const TALK_CAM_W = 736;
 const TALK_CAM_H = 552; // 4:3
@@ -286,6 +337,8 @@ export function sceneLayout(
       return focusScene(opts.focus ?? 1, cams);
     case "metro":
       return metroScene(cams);
+    case "duel":
+      return duelScene(cams);
     case "talk":
       return talkScene(cams);
   }
