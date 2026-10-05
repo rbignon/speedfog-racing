@@ -147,6 +147,9 @@
       />{/if}</span
   >
   <span class="czone">{zoneLabel(participant.current_zone)}</span>
+  {#if weapons}
+    <span class="cweap">{weapons}</span>
+  {/if}
   <div class="crows">
     <div class="crow">
       <span class="ck">Depth</span>
@@ -176,12 +179,6 @@
         ><span class="sm">{formatIgt(participant.igt_ms)}</span></span
       >
     </div>
-    {#if weapons}
-      <div class="crow arms">
-        <span class="ck">Weapons</span>
-        <span class="cv"><span class="sm wname">{weapons}</span></span>
-      </div>
-    {/if}
   </div>
   {#if variant === "tall"}
     <div class="splits">
@@ -275,7 +272,7 @@
 
   .cname {
     display: inline-block;
-    margin-top: 8px;
+    margin-top: 6px;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 32px;
@@ -294,6 +291,7 @@
   .czone {
     margin-top: 2px;
     font-size: 17px;
+    line-height: 1.3;
     color: var(--color-text-secondary);
   }
 
@@ -310,7 +308,7 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 10px;
-    padding-top: 8px;
+    padding-top: 6px;
     border-top: 1px solid var(--color-border);
   }
 
@@ -356,18 +354,20 @@
     color: var(--color-text-secondary);
   }
 
-  /* A paired combo of long names can outgrow the card: the value cell
-   * shrinks and ellipsizes rather than pushing the row wider. */
-  .crow.arms .cv {
-    flex: 1;
-    min-width: 0;
-    justify-content: flex-end;
-  }
-
-  .wname {
+  /* The wielded combo, under the zone line: a full-width line of its own,
+   * no label, because a labelled stats row leaves a 280px card too little
+   * width for real weapon names. One compact line on the quad cards (the
+   * card's height budget is exactly full), never squeezed by the card's
+   * own flex column; the tall hero card has room for two lines. */
+  .cweap {
+    margin-top: 2px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.3;
+    flex-shrink: 0;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .rcard.mirror .chead {
@@ -375,7 +375,8 @@
   }
 
   .rcard.mirror .cname,
-  .rcard.mirror .czone {
+  .rcard.mirror .czone,
+  .rcard.mirror .cweap {
     text-align: right;
   }
 
@@ -404,6 +405,15 @@
 
   .rcard.tall .czone {
     font-size: 20px;
+  }
+
+  .rcard.tall .cweap {
+    font-size: 17px;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
   }
 
   .rcard.tall .crows {
