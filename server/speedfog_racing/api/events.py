@@ -68,6 +68,7 @@ from speedfog_racing.services.event_service import (
     next_stage_key,
     resolve_stages,
     resolve_withdrawn,
+    score_playoff_race,
     score_race,
     showcase_field,
     signature_weapon,
@@ -311,7 +312,14 @@ async def get_event(
             complete=result.complete,
             modes=stage.modes,
             races=[
-                EventStageRaceResponse(slot=str(s), index=s.index, race=race_response(r, user))
+                EventStageRaceResponse(
+                    slot=str(s),
+                    index=s.index,
+                    race=race_response(r, user),
+                    points={
+                        str(uid): sc.points for uid, sc in score_playoff_race(r, config).items()
+                    },
+                )
                 for s, r in races
             ],
             results=[

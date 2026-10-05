@@ -29,6 +29,7 @@ function fakePreview(over: Record<string, unknown> = {}) {
 function fakeEntry(
   raceOver: Record<string, unknown>,
   index = 1,
+  points: Record<string, number> = {},
 ): EventStageRace {
   return {
     slot: "r1",
@@ -38,6 +39,7 @@ function fakeEntry(
       participant_previews: [],
       ...raceOver,
     } as unknown as Race,
+    points,
   };
 }
 
@@ -99,6 +101,62 @@ describe("CastRaceCard: per-runner result", () => {
     );
     expect(rows[1].querySelector(".bp")?.textContent).toBe("");
     expect(rows[1].querySelector(".bp")?.classList.contains("prov")).toBe(true);
+  });
+});
+
+describe("CastRaceCard: per-race points", () => {
+  it("shows each runner's points once the race is finished, a DNF scoring 0", () => {
+    const entry = fakeEntry(
+      {
+        status: "finished",
+        participant_previews: [
+          fakePreview({ id: "u1", status: "finished", igt_ms: 72_000 }),
+          fakePreview({ id: "u2", status: "abandoned", igt_ms: 50_000 }),
+        ],
+      },
+      1,
+      { u1: 100, u2: 0 },
+    );
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    const rows = container.querySelectorAll(".brow");
+    expect(rows[0].querySelector(".bpts")?.textContent).toBe("100");
+    expect(rows[1].querySelector(".bpts")?.textContent).toBe("0");
+  });
+
+  it("on a live race shows points for settled finishers only", () => {
+    const entry = fakeEntry(
+      {
+        status: "running",
+        participant_previews: [
+          fakePreview({ id: "u1", status: "finished", igt_ms: 72_000 }),
+          fakePreview({ id: "u2", status: "playing", igt_ms: null }),
+        ],
+      },
+      1,
+      { u1: 100, u2: 0 },
+    );
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    const rows = container.querySelectorAll(".brow");
+    expect(rows[0].querySelector(".bpts")?.textContent).toBe("100");
+    expect(rows[1].querySelector(".bpts")?.textContent).toBe("");
+  });
+
+  it("shows no points while nobody has finished", () => {
+    const entry = fakeEntry({
+      status: "running",
+      participant_previews: [
+        fakePreview({ id: "u1", status: "playing", igt_ms: null }),
+      ],
+    });
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    const row = container.querySelector(".brow");
+    expect(row?.querySelector(".bpts")?.textContent).toBe("");
   });
 });
 

@@ -790,6 +790,77 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
 
 
 @pytest.mark.asyncio
+async def test_each_stage_race_carries_the_points_it_gave(test_client, async_session):
+    """``races[].points`` maps user id -> this race's own points: a finished
+    race scores its whole field (a DNF on 0), a live race its settled
+    finishers (the rest provisionally on 0), a race nobody finished none."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        cleo = await _user(db, "cleo")
+        event = await _event(
+            db, config={**CONFIG, "phase_override": "playoffs", "showcases": [SHOWCASE]}
+        )
+        semi = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(db, semi, ana, ParticipantStatus.FINISHED, 1_000_000)
+        first = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "show1"),
+            event,
+            "showcase:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(db, first, ana, ParticipantStatus.FINISHED, 1_000_000)
+        await _entry(db, first, bob, ParticipantStatus.FINISHED, 1_500_000)
+        await _entry(db, first, cleo, ParticipantStatus.ABANDONED, 800_000, layer=2)
+        second = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "show2"),
+            event,
+            "showcase:2",
+            status=RaceStatus.RUNNING,
+            is_public=True,
+        )
+        await _entry(db, second, bob, ParticipantStatus.FINISHED, 1_200_000)
+        await _entry(db, second, cleo, ParticipantStatus.PLAYING, 900_000, layer=2)
+        third = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "show3"),
+            event,
+            "showcase:3",
+            status=RaceStatus.RUNNING,
+            is_public=True,
+        )
+        await _entry(db, third, cleo, ParticipantStatus.PLAYING, 100_000, layer=1)
+        await db.commit()
+        ana_id, bob_id, cleo_id = str(ana.id), str(bob.id), str(cleo.id)
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
+    assert [r["points"] for r in semi_a["races"]] == [{ana_id: 100}]
+    showcase = data["showcases"][0]
+    by_index = {r["index"]: r["points"] for r in showcase["races"]}
+    assert by_index[1] == {ana_id: 100, bob_id: 70, cleo_id: 0}
+    assert by_index[2] == {bob_id: 100, cleo_id: 0}
+    assert by_index[3] == {}
+
+
+@pytest.mark.asyncio
 async def test_a_showcase_holds_neither_the_season_nor_its_player_count(test_client, async_session):
     now = datetime.now(UTC)
     async with async_session() as db:

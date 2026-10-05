@@ -826,11 +826,13 @@ describe("pollIntervalMs and ordinal", () => {
               slot: "quarter_b:1",
               index: 1,
               race: { scheduled_at: "2026-10-09T19:00:00Z" } as Race,
+              points: {},
             },
             {
               slot: "quarter_b:2",
               index: 2,
               race: { scheduled_at: "2026-10-10T19:00:00Z" } as Race,
+              points: {},
             },
           ],
         }),

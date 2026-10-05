@@ -521,6 +521,11 @@ export interface EventStageRace {
   slot: string;
   index: number;
   race: Race;
+  // This race's own playoff points, user id -> points (mirrors
+  // EventStageRaceResponse): empty until someone finishes, then the whole
+  // field is keyed, with everyone not yet finished provisionally on 0.
+  // Gate display on the runner's own status, never on key presence.
+  points: Record<string, number>;
 }
 
 export interface EventStageEntry {

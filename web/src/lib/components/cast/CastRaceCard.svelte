@@ -52,6 +52,7 @@
     nameStyle: string;
     tbd: boolean;
     right: string;
+    pts: string;
   }
 
   function displayName(u: User): string {
@@ -103,11 +104,21 @@
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
 
-  // A race carries no per-runner point value of its own: only the stage's
-  // running total does (see CastRoundStandings). What a specific race does
-  // give each finisher is their time, so that's what the result cell shows;
-  // a runner who hasn't finished this race yet gets a blank cell rather than
-  // a guessed number.
+  // The points this race itself gave (entry.points, the same scoring the
+  // stage totals sum): a finished race scores its whole field, so every row
+  // shows its points, a DNF's 0 included; a live race only its settled
+  // finishers, since everyone else's 0 is a provisional DNF that would read
+  // as a result the runner doesn't have yet.
+  function ptsFor(p: { id: string; status: string }): string {
+    if (!entry) return "";
+    // `points` can be missing for one poll during a deploy window (new web
+    // build, old API): a blank cell there beats a scene broken on air.
+    const pts = entry.points?.[p.id];
+    if (pts === undefined) return "";
+    if (entry.race.status !== "finished" && p.status !== "finished") return "";
+    return String(pts);
+  }
+
   let rows = $derived<Row[]>(
     entry
       ? entry.race.participant_previews.map((p) => ({
@@ -119,6 +130,7 @@
             p.status === "finished" && p.igt_ms != null
               ? formatIgt(p.igt_ms)
               : "",
+          pts: ptsFor(p),
         }))
       : field.map((seat, i) => ({
           key: seat.user?.id ?? `tbd-${i}`,
@@ -126,6 +138,7 @@
           nameStyle: seat.user ? nameStyleFor(seat.user) : "",
           tbd: seat.user === null,
           right: "",
+          pts: "",
         })),
   );
 
@@ -156,6 +169,7 @@
         >{row.name}</span
       >
       <span class="bp" class:prov={row.right === ""}>{row.right}</span>
+      <span class="bpts">{row.pts}</span>
     </div>
   {/each}
   {#if plan.hiddenCount > 0}
@@ -254,11 +268,14 @@
     font-style: italic;
   }
 
+  /* The time cedes gold to the points cell beside it: on the talk scene a
+   * gold number is a points value (CastRoundStandings' .sp), and one gold
+   * cell per row keeps the card readable at broadcast distance. */
   .bp {
     font-family: var(--font-mono);
     font-size: 23px;
     font-weight: 600;
-    color: var(--color-gold);
+    color: var(--color-text-secondary);
     min-width: 44px;
     text-align: right;
     flex-shrink: 0;
@@ -266,6 +283,16 @@
 
   .bp.prov {
     opacity: 0.75;
+  }
+
+  .bpts {
+    font-family: var(--font-mono);
+    font-size: 23px;
+    font-weight: 600;
+    color: var(--color-gold);
+    min-width: 48px;
+    text-align: right;
+    flex-shrink: 0;
   }
 
   /* A quiet line, not a shout: same row rhythm as the data above it, but

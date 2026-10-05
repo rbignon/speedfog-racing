@@ -1243,6 +1243,11 @@ class EventStageRaceResponse(BaseModel):
     slot: str
     index: int
     race: RaceResponse
+    # This race's own playoff points, user id -> points, from the same scoring
+    # the stage totals sum (``score_playoff_race``): a finished race scores its
+    # whole field (a DNF on 0), a live race its settled finishers (the rest
+    # provisionally on 0), a race nobody finished carries none.
+    points: dict[str, int] = {}
 
 
 class EventWeaponResponse(BaseModel):

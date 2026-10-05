@@ -230,6 +230,15 @@ count (see the Playoff scoring section of `EVENTS.md`). A stage whose key leaves
 the event's config mid-evening freezes the scene on its last copy rather
 than blanking it on air; the URL has to follow the new key.
 
+Each race card also shows the points that race itself gave, in the result
+row's gold cell (on the talk scene a gold number is always a points value,
+the same vocabulary as the standings' totals; the finisher's time sits
+beside it in secondary). The server sends them per race (`races[].points`,
+the same `score_playoff_race` scoring the stage totals sum): once a race
+with a finisher is over, every row shows its points, a DNF's 0 included;
+while it runs, only the settled finishers do, since everyone else's 0 is a
+provisional DNF.
+
 The same scene can point at one of the event's showcases instead (an
 evening outside the bracket, see "Showcases" in [EVENTS.md](EVENTS.md)), at
 the same path with the showcase's key in place of the stage's. The topline
