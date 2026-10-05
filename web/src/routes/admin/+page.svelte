@@ -55,6 +55,7 @@
     | "stats"
     | "activity"
     | "races"
+    | "cheat"
     | "users"
     | "feedback"
     | "seeds"
@@ -494,10 +495,12 @@
     if (tab === "activity" && !activity) {
       loadActivity();
     }
-    // Refetch on every open so the monitoring view stays current.
+    // Refetch on every open so the monitoring views stay current.
     if (tab === "races") {
       if (!eventsLoaded) loadEvents();
       loadInflightRaces();
+    }
+    if (tab === "cheat") {
       loadCheatDetections();
     }
     if (tab === "feedback" && !feedbackLoaded) {
@@ -1100,6 +1103,13 @@
       onclick={() => switchTab("races")}
     >
       Races
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === "cheat"}
+      onclick={() => switchTab("cheat")}
+    >
+      Cheat
     </button>
     <button
       class="tab"
@@ -1970,56 +1980,54 @@
         </button>
       {/if}
     {/if}
-  {:else if activeTab === "races"}
-    <div class="reported-section">
-      <SectionTitle>Cheat Detections</SectionTitle>
-      {#if cheatLoading && cheatDetections.length === 0}
-        <p class="loading">Loading detections...</p>
-      {:else if cheatDetections.length > 0}
-        <div class="table-wrapper">
-          <table>
-            <thead>
+  {:else if activeTab === "cheat"}
+    {#if cheatLoading && cheatDetections.length === 0}
+      <p class="loading">Loading detections...</p>
+    {:else if cheatDetections.length > 0}
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Player</th>
+              <th>Race</th>
+              <th>Flags</th>
+              <th>IGT</th>
+              <th>Zone</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each cheatDetections as d (d.participant_id)}
+              {@const flags =
+                detectionRows({ [d.participant_id]: d.debug_flags })[0]
+                  ?.flags ?? []}
+              {@const first = flags[0]}
               <tr>
-                <th>Player</th>
-                <th>Race</th>
-                <th>Flags</th>
-                <th>IGT</th>
-                <th>Zone</th>
-                <th>Date</th>
+                <td><UserLink user={d.user} /></td>
+                <td>
+                  <a href="/race/{d.race_id}" class="username-link"
+                    >{d.race_name}</a
+                  >
+                </td>
+                <td>{flags.map((f) => f.label).join(", ")}</td>
+                <td class="mono"
+                  >{first ? formatDetectionIgt(first.igtMs) : "-"}</td
+                >
+                <td
+                  >{first?.nodeId
+                    ? (d.zone_names[first.nodeId] ?? first.nodeId)
+                    : "-"}</td
+                >
+                <td class="date-cell">{formatDate(d.last_detected_at)}</td>
               </tr>
-            </thead>
-            <tbody>
-              {#each cheatDetections as d (d.participant_id)}
-                {@const flags =
-                  detectionRows({ [d.participant_id]: d.debug_flags })[0]
-                    ?.flags ?? []}
-                {@const first = flags[0]}
-                <tr>
-                  <td><UserLink user={d.user} /></td>
-                  <td>
-                    <a href="/race/{d.race_id}" class="username-link"
-                      >{d.race_name}</a
-                    >
-                  </td>
-                  <td>{flags.map((f) => f.label).join(", ")}</td>
-                  <td class="mono"
-                    >{first ? formatDetectionIgt(first.igtMs) : "-"}</td
-                  >
-                  <td
-                    >{first?.nodeId
-                      ? (d.zone_names[first.nodeId] ?? first.nodeId)
-                      : "-"}</td
-                  >
-                  <td class="date-cell">{formatDate(d.last_detected_at)}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      {:else}
-        <p class="empty">No cheat detections.</p>
-      {/if}
-    </div>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {:else}
+      <p class="empty">No cheat detections.</p>
+    {/if}
+  {:else if activeTab === "races"}
     {#if racesLoading && !racesLoaded}
       <p class="loading">Loading races...</p>
     {:else if inflightRaces.length === 0}

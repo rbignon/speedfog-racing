@@ -57,7 +57,7 @@ wire names and carry the same human-readable labels.
    Discord channel (`DISCORD_ADMIN_WEBHOOK_URL`).
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists
-   every detection in the Races tab (`GET /api/admin/cheat-detections`).
+   every detection in the Cheat tab (`GET /api/admin/cheat-detections`).
 
 There is no automatic sanction: the race staff decide (see Sanctions).
 
