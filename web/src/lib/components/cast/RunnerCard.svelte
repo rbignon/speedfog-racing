@@ -468,6 +468,11 @@
     font-size: 32px;
   }
 
+  /* The tall card's values grow to 32px; its role label follows in step. */
+  .rcard.tall .cv.role {
+    font-size: 28px;
+  }
+
   .rcard.tall .cv .sm {
     font-size: 24px;
   }

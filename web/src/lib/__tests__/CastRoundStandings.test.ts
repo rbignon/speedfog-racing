@@ -161,6 +161,22 @@ describe("CastRoundStandings: cut line", () => {
     expect(rows[1].nextElementSibling).toBe(cut);
   });
 
+  it("still draws the cut on the last row shown above the hidden-count line", () => {
+    // 10 runners in a panel of 6 rows: 5 shown, then "+ 5 more".
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(10),
+        advance: 5,
+        complete: false,
+        nextLabel: "Final",
+      },
+    });
+    const rows = [...container.querySelectorAll(".srow:not(.more)")];
+    expect(rows).toHaveLength(5);
+    expect(rows[4].nextElementSibling?.classList.contains("scut")).toBe(true);
+  });
+
   it("draws no cut once the stage is complete, its chips say who went on", () => {
     const { container } = render(CastRoundStandings, {
       props: {

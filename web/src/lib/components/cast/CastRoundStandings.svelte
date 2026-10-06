@@ -130,7 +130,7 @@
           >{/if}
         <span class="sp">{entry.points}</span>
       </div>
-      {#if i === cutAfter && i < plan.visible.length - 1}
+      {#if i === cutAfter}
         <div class="scut">
           {#if nextLabel}<span>{nextLabel}</span>{/if}
         </div>
@@ -152,9 +152,11 @@
     padding: 2px 0 0 30px;
   }
 
+  /* One line exactly its font size tall: HEADER_RESERVE counts it so. */
   .seyebrow {
     font-family: var(--font-mono);
     font-size: 18px;
+    line-height: 1;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--color-text-disabled);
@@ -233,9 +235,11 @@
   /* A qualifier's top rows (the ones carrying .stag below) are the ones
    * that matter most and have the least room, since they add a fifth cell
    * to the row: measured on a real name, SeriousChallenges needed 232px
-   * against this cell's 224px budget there. .stag and .sp below give up
-   * about 12px between them (padding on the chip, font-size on the points)
-   * rather than this cell, so it clears with a few pixels to spare; .sav
+   * against this cell's 224px budget there, with a "Final" chip. .stag and
+   * .sp below give up about 12px between them (padding on the chip,
+   * font-size on the points) rather than this cell, so it cleared with a few
+   * pixels to spare; the chip now names the next stage ("Quarter A" is about
+   * 36px wider), so a name that long ellipsizes on an advancing row. .sav
    * stays 36px, since a real avatar is what makes this panel read as a
    * podium rather than another list. */
   .sn {
@@ -257,6 +261,8 @@
   .scut {
     position: relative;
     height: 0;
+    /* The border takes no room either: the rows below keep their place. */
+    margin-bottom: -2px;
     /* Literal fallback first; see the note on .srow + .srow above. */
     border-top: 2px dashed rgba(200, 164, 78, 0.7);
     border-top: 2px dashed
@@ -266,12 +272,12 @@
   .scut span {
     position: absolute;
     right: 0;
-    top: -11px;
+    top: -12px;
     padding-left: 10px;
     background: var(--color-bg);
     font-family: var(--font-mono);
-    font-size: 16px;
-    line-height: 20px;
+    font-size: 18px;
+    line-height: 22px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     color: var(--color-gold);

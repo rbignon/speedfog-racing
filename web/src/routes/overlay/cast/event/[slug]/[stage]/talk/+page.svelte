@@ -53,14 +53,14 @@
     casterLabel(data.casters[1] ?? null),
   ]);
 
-  // fillSlots keeps a stage slot with no race yet in its place as null, the
-  // same shape the event page itself renders (see EventRacePlaceholder).
   // The stage the advancing runners go on to, named on their chip: the one
   // whose `from` lists this stage. A final or a showcase feeds none.
   let nextLabel = $derived(
     data.event.stages.find((s) => s.from.includes(stage.key))?.label ?? null,
   );
 
+  // fillSlots keeps a stage slot with no race yet in its place as null, the
+  // same shape the event page itself renders (see EventRacePlaceholder).
   let slots = $derived(fillSlots(stage.races, stage.races_expected));
   // Played means finished, as in the event page's evening section: a race
   // created ahead of the evening is attached long before it counts.

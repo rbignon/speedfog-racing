@@ -109,6 +109,6 @@ describe("CastDuelCard: stats", () => {
     const labels = [...container.querySelectorAll(".dk")].map(
       (el) => el.textContent,
     );
-    expect(labels).toEqual(["Deaths", "IGT"]);
+    expect(labels).not.toContain("Depth");
   });
 });

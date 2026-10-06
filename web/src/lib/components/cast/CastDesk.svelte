@@ -46,13 +46,14 @@
   // always matches what the caster's delayed video is showing.
   let delayMs = $derived(parseCastParams(page.url).delayMs);
 
-  // A finished race has no clock to keep. Freezing at race_ends_at was
-  // considered and rejected: a race everyone finished early would then show
-  // a time longer than it actually ran. Showing nothing claims nothing, so
-  // the interval stops rather than ticking on for a clock nobody reads.
+  // Only a running race has a clock to keep: before the start the panel
+  // says Upcoming, and a finished race shows no time. Freezing at
+  // race_ends_at was considered and rejected: a race everyone finished early
+  // would then show a time longer than it actually ran. Showing nothing
+  // claims nothing, so the interval only ticks while the clock is shown.
   let now = $state(Date.now());
   $effect(() => {
-    if (!panels.clock || status === "finished") return;
+    if (!panels.clock || status !== "running") return;
     const id = setInterval(() => {
       now = Date.now();
     }, 1000);
