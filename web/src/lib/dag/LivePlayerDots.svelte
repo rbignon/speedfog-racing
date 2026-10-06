@@ -23,6 +23,7 @@
     LIVE_TAG_LINE_WIDTH,
     LIVE_TAG_NAME_GAP,
     LIVE_TAG_FONT_SIZE,
+    LIVE_TAG_ZONE_FONT_SIZE,
     LIVE_TAG_TIER_GAP,
     LIVE_TAG_MAX_TIERS,
     LIVE_TAG_SHADOW_OFFSET,
@@ -63,6 +64,11 @@
     /** How much larger than drawn the map draws its node glyphs, so the
      * name lanes clear them. */
     nodeScale?: number;
+    /** Put each runner's zone (the leg of the route they stand on) under
+     * their name, for a map whose own node labels are off: shown whole, a
+     * seed's labels would render at a few pixels. Not for a finisher (the
+     * final node says where they are) nor before the start. */
+    tagZones?: boolean;
   }
 
   let {
@@ -75,6 +81,7 @@
     markScale = 1,
     nameLanes = false,
     nodeScale = 1,
+    tagZones = false,
   }: Props = $props();
 
   // Wall-clock elapsed time for orbit animation
@@ -270,6 +277,7 @@
       lineWidth: LIVE_TAG_LINE_WIDTH * k,
       nameGap: LIVE_TAG_NAME_GAP * k,
       font: LIVE_TAG_FONT_SIZE * k,
+      zoneFont: LIVE_TAG_ZONE_FONT_SIZE * k,
       tierGap: LIVE_TAG_TIER_GAP * k,
       shadowOffset: LIVE_TAG_SHADOW_OFFSET * k,
       shadowBlur: LIVE_TAG_SHADOW_BLUR * k,
@@ -277,14 +285,26 @@
   });
   let tagSpacing = $derived(2 * (tg.dot + tg.ring) + 1);
   // The box the text-before/after-edge baselines align is the font's
-  // ascent plus descent, about 1.2em, not the bare em.
+  // ascent plus descent, about 1.2em, not the bare em. With zone lines on,
+  // every tag reserves one under its name, so stacked tags keep one rhythm.
+  let zoneLineHeight = $derived(tagZones ? tg.zoneFont * 1.2 : 0);
   let tagMetrics = $derived({
     dotRadius: tg.dot + tg.ring,
     reach: tg.dot + tg.lineLength + tg.nameGap,
-    nameHeight: tg.font * 1.2,
-    tierStep: tg.font * 1.2 + tg.tierGap,
+    nameHeight: tg.font * 1.2 + zoneLineHeight,
+    tierStep: tg.font * 1.2 + zoneLineHeight + tg.tierGap,
     maxTiers: LIVE_TAG_MAX_TIERS,
   });
+
+  // A node's display name is a whole route label ("Liurnia - Academy
+  // Crystal Cave - Crystalian Duo"): the tag keeps its last leg, the place
+  // the runner actually stands, as the cast cards do.
+  function zoneLeg(nodeId: string | null): string | null {
+    if (!nodeId) return null;
+    const name = nodeMap.get(nodeId)?.displayName;
+    if (!name) return null;
+    return name.includes(" - ") ? name.split(" - ").pop()! : name;
+  }
 
   let tagView: TagView = $derived.by(() => {
     if (view) return view;
@@ -307,6 +327,7 @@
     y: number;
     color: string;
     displayName: string;
+    zone: string | null;
     opacity: number;
     dir: -1 | 1;
     reach: number;
@@ -336,6 +357,7 @@
       spotX: number;
       color: string;
       displayName: string;
+      zone: string | null;
       opacity: number;
       lean: -1 | 1;
       finished: boolean;
@@ -396,6 +418,10 @@
         spotX: spot.spotX,
         color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
         displayName: p.twitch_display_name || p.twitch_username,
+        zone:
+          tagZones && !preRace && p.status !== "finished"
+            ? zoneLeg(p.current_zone)
+            : null,
         opacity: spot.opacity,
         // Stable per runner, so a tag on the middle row keeps its side.
         lean: p.color_index % 2 === 0 ? -1 : 1,
@@ -415,7 +441,10 @@
     const anchors = points.map((pt) => ({
       id: pt.id,
       ...spread.get(pt.id)!,
-      width: estimateNameWidth(pt.displayName, tg.font),
+      width: Math.max(
+        estimateNameWidth(pt.displayName, tg.font),
+        pt.zone ? estimateNameWidth(pt.zone, tg.zoneFont) : 0,
+      ),
       spotX: pt.spotX,
       lean: pt.lean,
     }));
@@ -435,6 +464,7 @@
           y: anchors[i].y,
           color: pt.color,
           displayName: pt.displayName,
+          zone: pt.zone,
           opacity: pt.opacity,
           ...placement,
         },
@@ -506,10 +536,12 @@
       </circle>
     </g>
   {/each}
+  <!-- The name, then (zone lines on) the zone under it: above the dot the
+       block's foot meets the connector, so the name rides one line higher. -->
   {#each tags as tag (tag.participantId)}
     <text
       x={tag.nameX}
-      y={tag.y + tag.dir * tag.reach}
+      y={tag.y + tag.dir * tag.reach - (tag.dir < 0 ? zoneLineHeight : 0)}
       text-anchor="middle"
       dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
       font-size={tg.font}
@@ -518,6 +550,18 @@
       filter="url(#player-tag-shadow)"
       class="tag-name">{tag.displayName}</text
     >
+    {#if tag.zone}
+      <text
+        x={tag.nameX}
+        y={tag.dir < 0 ? tag.y - tag.reach : tag.y + tag.reach + tg.font * 1.2}
+        text-anchor="middle"
+        dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
+        font-size={tg.zoneFont}
+        opacity={tag.opacity}
+        filter="url(#player-tag-shadow)"
+        class="tag-zone">{tag.zone}</text
+      >
+    {/if}
   {/each}
 {:else}
   <!-- Player dots -->
@@ -571,5 +615,14 @@
     font-family: var(--font-display);
     font-weight: 600;
     letter-spacing: 0.02em;
+  }
+
+  .tag-zone {
+    pointer-events: none;
+    user-select: none;
+    font-family: var(--font-display);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    fill: var(--color-text, #e8e6e1);
   }
 </style>

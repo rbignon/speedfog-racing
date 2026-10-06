@@ -201,6 +201,11 @@ export const LIVE_TAG_NAME_GAP = 1;
 /** Name font size (px): well above a zone label, it names a person */
 export const LIVE_TAG_FONT_SIZE = 19;
 
+/** The zone line under a name, when the map shows it there (px): smaller
+ * than the name it qualifies, and about 20px on the metro cast scene, the
+ * floor its secondary text keeps at broadcast distance */
+export const LIVE_TAG_ZONE_FONT_SIZE = 14;
+
 /** Soft dark shadow under a name, so it reads across the map's lines:
  * its downward offset and its blur (px) */
 export const LIVE_TAG_SHADOW_OFFSET = 1.4;

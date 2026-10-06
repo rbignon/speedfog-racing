@@ -67,6 +67,9 @@
     /** Draw live runners as named tags instead of orbiting dots. Off by
      * default: see LivePlayerDots' own doc on the prop it forwards to. */
     playerTags?: boolean;
+    /** With playerTags, put each runner's zone under their name (see
+     * LivePlayerDots' `tagZones`), for a map whose node labels are off. */
+    tagZones?: boolean;
     follow?: boolean;
     maxLayers?: number;
     fullPathOpacity?: boolean;
@@ -111,6 +114,7 @@
     anonymous = false,
     showLiveDots = false,
     playerTags = false,
+    tagZones = false,
     follow = false,
     maxLayers = 5,
     fullPathOpacity = false,
@@ -926,6 +930,7 @@
       {raceStatus}
       preRace={raceStatus === "setup"}
       {playerTags}
+      {tagZones}
       view={followWindow}
       {markScale}
       nameLanes={fillContainer && !!containerAspect}

@@ -129,3 +129,55 @@ describe("LivePlayerDots: the final node at the end of a race", () => {
     expect(dotX("Winner") - dotX("Fighter")).toBeGreaterThanOrEqual(17.5);
   });
 });
+
+// On a map shown whole the node labels would render at a few pixels, so the
+// metro scene names each runner's zone on their tag instead.
+describe("LivePlayerDots: zone line on the tags", () => {
+  const routeMap = new Map([
+    [
+      "n1",
+      fakeNode({
+        displayName: "Liurnia - Academy Crystal Cave - Crystalian Duo",
+      }),
+    ],
+  ]);
+
+  it("puts the leg a runner stands on under their name", () => {
+    const { container } = render(LivePlayerDots, {
+      props: {
+        participants: [fakeParticipant({ status: "playing" })],
+        nodeMap: routeMap,
+        playerTags: true,
+        tagZones: true,
+      },
+    });
+    expect(container.querySelector(".tag-zone")?.textContent).toBe(
+      "Crystalian Duo",
+    );
+  });
+
+  it("leaves the zone line out unless asked", () => {
+    const { container } = render(LivePlayerDots, {
+      props: {
+        participants: [fakeParticipant({ status: "playing" })],
+        nodeMap: routeMap,
+        playerTags: true,
+      },
+    });
+    expect(container.querySelector(".tag-zone")).toBeNull();
+  });
+
+  it("gives a finisher no zone line, the final node says where they are", () => {
+    const final = fakeNode({ id: "end", type: "final_boss", x: 300 });
+    const { container } = render(LivePlayerDots, {
+      props: {
+        participants: [fakeParticipant({ status: "finished" })],
+        nodeMap: new Map([...routeMap, ["end", final]]),
+        playerTags: true,
+        tagZones: true,
+      },
+    });
+    expect(container.querySelector(".tag-name")).not.toBeNull();
+    expect(container.querySelector(".tag-zone")).toBeNull();
+  });
+});

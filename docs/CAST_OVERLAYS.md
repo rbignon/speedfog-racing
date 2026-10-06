@@ -196,9 +196,13 @@ the box under 4:1), so the graph grows taller to fill it (MetroDagFull's
 the space between its top and bottom rows spreads by up to
 `FILL_MAX_ROW_STRETCH` (1.4, past which diagonals turn steep and the graph
 looks squeezed), and the rest of the height becomes equal free bands above
-and below, where the runners' names go. Zone names are left out: at this
-zoom they would render at a few pixels, and the standings below already name
-each runner's zone. The runners' marks (tags, trails, death skulls) keep the
+and below, where the runners' names go. The nodes' own zone names are left
+out: at this zoom they would render at about 5px (measured: 4.7px on a
+35-layer Boss Rush, 5.5px on a 30-layer UWYG seed). Each runner's tag names
+their zone instead, a second line under their name (the route label's last
+leg, the place they stand, about 20px on air; LivePlayerDots' `tagZones`),
+so the map still says where everyone is; a finisher's tag has none, the final
+node says it, and nobody's does before the start. The runners' marks (tags, trails, death skulls) keep the
 size they have at a 13-layer window however far the map zooms out, and the
 nodes and edges grow partway (by the square root of the zoom-out), enough to
 stay visible without crowding (MetroDagFull's `keepMarkSize`, with
@@ -235,8 +239,10 @@ their dot.
 The map also reads its own query parameters directly, not through the
 shared cast params, the same knobs `/overlay/race/[id]/dag` exposes:
 `maxLayers` follows the runners with a window that many layers wide instead
-of showing the whole seed, and brings the zone names back; `labels=0` or
-`labels=1` forces the zone names off or on either way; `fontSize` sets their
+of showing the whole seed, and brings the nodes' zone names back (the tags
+then drop their zone line, the map naming every zone itself); `labels=0` or
+`labels=1` forces the nodes' zone names off or on either way, the tags'
+zone line following the opposite; `fontSize` sets their
 size (default 9, down from the plain `/dag` strip's 11: measured against 7,
 which read thin at broadcast distance, and against 11, which made a 90-node
 seed illegible).

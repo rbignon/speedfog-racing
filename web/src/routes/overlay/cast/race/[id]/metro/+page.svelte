@@ -41,14 +41,15 @@
   // how far into the race each runner is: the graph grows taller to fill the
   // box (its rows spread up to a cap, the rest left as free bands above and
   // below, where the runners' names go; MetroDagFull's `fillContainer`), and
-  // zone names are left out, since at that zoom they would render at a few
-  // pixels (the standings below carry each runner's zone). Runner marks keep
-  // their on-screen size however far the map zooms out (MetroDagFull's
-  // `keepMarkSize`).
+  // the nodes' zone names are left out, since at that zoom they would render
+  // at a few pixels: each runner's tag names their zone under their name
+  // instead (`tagZones`). Runner marks keep their on-screen size however far
+  // the map zooms out (MetroDagFull's `keepMarkSize`).
   //
   // `maxLayers=N` in the URL follows the runners instead, with a window N
-  // layers wide, and brings the zone names back; `labels=0|1` overrides
-  // that choice either way and `fontSize` sets their size, the same knobs
+  // layers wide, and brings the nodes' zone names back, the tags dropping
+  // theirs; `labels=0|1` overrides that choice either way and `fontSize`
+  // sets their size, the same knobs
   // /overlay/race/[id]/dag reads. 9 graph units renders near 13px at a
   // 13-layer window: 11 made a 90-node seed illegible, 7 read thin at
   // broadcast distance.
@@ -120,6 +121,7 @@
         follow
         showLiveDots
         playerTags
+        tagZones={!showZoneLabels}
         showLabels={showZoneLabels}
         labelMaxChars={26}
         containerAspect={mapRect.w / mapRect.h}
