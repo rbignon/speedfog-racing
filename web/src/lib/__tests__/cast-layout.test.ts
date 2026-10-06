@@ -29,6 +29,21 @@ describe("sceneLayout", () => {
     }
   });
 
+  // A fractional coordinate would reach the mask, the guides and the OBS
+  // table: a caster can only type whole pixels into a source's transform.
+  it("puts every rectangle on whole pixels", () => {
+    for (const scene of SCENES) {
+      for (const cams of [0, 1, 2]) {
+        const { holes, panels } = sceneLayout(scene, { cams });
+        for (const r of [...holes, ...Object.values(panels)]) {
+          for (const v of [r.x, r.y, r.w, r.h]) {
+            expect(Number.isInteger(v)).toBe(true);
+          }
+        }
+      }
+    }
+  });
+
   it("never overlaps two holes", () => {
     for (const scene of SCENES) {
       const { holes } = sceneLayout(scene);
@@ -105,9 +120,9 @@ describe("sceneLayout", () => {
     }
   });
 
-  // Ignite's call (H2): the quad's four POVs were too small at a third of
-  // the canvas, so its desk alone is thinner and its POVs take the height
-  // the desk gives up; the other race scenes keep the full desk.
+  // The quad's four POVs were too small at a third of the canvas, so its
+  // desk alone is thinner and its POVs take the height the desk gives up;
+  // the other race scenes keep the full desk.
   it("thins the desk on the quad scene alone, its POVs taking the height it frees", () => {
     const quad = sceneLayout("quad");
     const cam = (scene: CastSceneId) =>

@@ -304,27 +304,31 @@
     line-height: 1.05;
   }
 
+  /* overflow: hidden clips at the line box, which at line-height 1.05 is
+   * shorter than the face's descenders (g, j, p, q, y, _): the padding
+   * gives them room, the negative margin takes it back out of the layout. */
   .cname-text {
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    padding-block: 0.15em;
+    margin-block: -0.15em;
   }
 
   .card-badge {
     width: 22px;
     height: 22px;
     margin-left: 0.25rem;
-    vertical-align: middle;
     flex-shrink: 0;
   }
 
   /* One line, clipped by the card's own width: the zone name is cut by
    * the CSS, not by a character count that would trim names which fit.
    * Never squeezed by the card's flex column either: with overflow hidden
-   * it would otherwise give up its whole height first (a hero whose name
-   * and badge wrap, over a two-line weapon, lost the zone entirely). */
+   * it would otherwise give up its whole height first (a hero whose badge
+   * wraps under its name, over a two-line weapon, lost the zone entirely). */
   .czone {
     flex-shrink: 0;
     margin-top: 2px;
@@ -494,10 +498,11 @@
     font-size: 24px;
   }
 
-  /* The one block that yields when the tall card runs short of height
-   * (a wrapped name, a two-line weapon): it shrinks, and a split row that
-   * no longer fits wraps into a second column, off to the right where the
-   * card's overflow hides it, so rows drop whole instead of being cut. */
+  /* The one block that yields when the tall card runs short of height (a
+   * badge wrapped under the name, a two-line weapon): it shrinks, and a
+   * split row that no longer fits wraps into a second column, off to the
+   * right where the card's overflow hides it, so rows drop whole instead of
+   * being cut. */
   .splits {
     margin-top: auto;
     padding-top: 12px;

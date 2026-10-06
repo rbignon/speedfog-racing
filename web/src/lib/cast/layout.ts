@@ -79,9 +79,8 @@ function desk(h: number): Desk {
 
 /** The full desk of the focus, duel and metro scenes: y 776, cams 384x288. */
 const DESK = desk(288);
-/** The quad's thinner desk, Ignite's pick (2026-10): y 848, cams 288x216.
- * Its four POVs were too small at a third of the canvas; they take the 72px
- * this desk gives up. Only the quad: the other scenes cannot grow their POVs
+/** The quad's thinner desk: y 848, cams 288x216. Its four POVs were too
+ * small at a third of the canvas; they take the 72px this desk gives up. Only the quad: the other scenes cannot grow their POVs
  * from it (the focus hero and the duel pair are bound by the width). */
 const QUAD_DESK = desk(216);
 
