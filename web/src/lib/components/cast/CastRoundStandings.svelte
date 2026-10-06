@@ -32,15 +32,17 @@
   // The panel can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number. HEADER_RESERVE is the eyebrow + title
   // block above the rows (.standings' own 2px top padding, .seyebrow's
-  // font-size 14, .stitle's 4px/14px margins and font-size 40, none of
-  // which scale with the field). ROW_HEIGHT is .srow's own height, brought
+  // font-size 18, .stitle's 4px/10px margins and font-size 40, none of
+  // which scale with the field; the title's foot margin gave up the 4px
+  // the eyebrow took when it grew from 14 to 18, so the panel still fits
+  // six rows). ROW_HEIGHT is .srow's own height, brought
   // down from the validated mockup's 72px to 56px (with .sav shrunk to
   // match, 46px to 36px): measured on a real 10-runner stage, 72px rows
   // only fit 3 of them in this 412px panel, and 56 fits 5 data rows plus
   // the hidden-count line with room to spare. There is no caster override
   // here (unlike the metro scene's CastStandings): the stage decides how
   // many runners exist, not the caster.
-  const HEADER_RESERVE = 2 + 14 + 4 + 40 + 14;
+  const HEADER_RESERVE = 2 + 18 + 4 + 40 + 10;
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
@@ -133,7 +135,7 @@
 
   .seyebrow {
     font-family: var(--font-mono);
-    font-size: 14px;
+    font-size: 18px;
     letter-spacing: 0.16em;
     text-transform: uppercase;
     color: var(--color-text-disabled);
@@ -146,7 +148,7 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
     line-height: 1;
-    margin: 4px 0 14px;
+    margin: 4px 0 10px;
   }
 
   /* Reads as "empty on purpose", not broken: the talk scene holds this

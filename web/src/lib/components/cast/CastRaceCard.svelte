@@ -145,10 +145,10 @@
   // The card can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number. HEADER_RESERVE is everything the rows
   // list doesn't get: .bracket's own 16px top+bottom padding, .bhead's
-  // line (.brn font-size 30), and .bst's block (6px/14px margins + 13px
+  // line (.brn font-size 30), and .bst's block (6px/14px margins + 18px
   // font-size), none of which grow with the field. ROW_HEIGHT is .brow's
   // own height, unchanged from the validated mockup (.brow height:56px).
-  const HEADER_RESERVE = 16 + 16 + 30 + (6 + 13 + 14);
+  const HEADER_RESERVE = 16 + 16 + 30 + (6 + 18 + 14);
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(rows, capacity));
@@ -215,14 +215,14 @@
 
   .bmode {
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: 18px;
     color: var(--color-text-secondary);
     letter-spacing: 0.04em;
   }
 
   .bst {
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 18px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
     margin: 6px 0 14px;

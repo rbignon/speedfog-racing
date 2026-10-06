@@ -265,7 +265,7 @@
 
   .dzone {
     margin-top: 2px;
-    font-size: 17px;
+    font-size: 20px;
     color: var(--color-text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;

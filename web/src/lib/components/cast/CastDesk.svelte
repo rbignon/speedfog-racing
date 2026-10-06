@@ -271,7 +271,7 @@
     background: rgba(15, 25, 35, 0.86);
     background: color-mix(in srgb, var(--color-bg) 86%, transparent);
     font-family: var(--font-mono);
-    font-size: 15px;
+    font-size: 18px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
     color: var(--color-text);

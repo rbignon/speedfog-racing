@@ -315,7 +315,7 @@
   .czone {
     flex-shrink: 0;
     margin-top: 2px;
-    font-size: 17px;
+    font-size: 20px;
     color: var(--color-text-secondary);
     white-space: nowrap;
     overflow: hidden;
