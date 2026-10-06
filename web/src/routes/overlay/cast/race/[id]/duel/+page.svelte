@@ -88,7 +88,13 @@
   {#each seated as participant, i (i)}
     {@const slot = i + 1}
     {@const hole = layout.holes.find((h) => h.id === `pov${slot}`)!}
-    <CastPov rect={hole} {participant} {slot} nameplate={false} />
+    <CastPov
+      rect={hole}
+      {participant}
+      {slot}
+      nameplate={false}
+      guides={params.guides}
+    />
     {#if participant}
       <CastDuelCard
         {participant}

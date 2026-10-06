@@ -7,8 +7,8 @@
   interface Props {
     rect: Rect;
     /** null while the slot's runner hasn't been resolved yet (an unassigned
-     * seat, or the leaderboard hasn't connected): draws the frame and slot
-     * chip in a neutral colour, with no nameplate. */
+     * seat, or the leaderboard hasn't connected): draws the frame (and, in
+     * guides mode, the slot chip) in a neutral colour, with no nameplate. */
     participant: WsParticipant | null;
     slot: number;
     /** Whether to print the runner's name at the bottom-left. False on the
@@ -16,9 +16,13 @@
      * runner; true for a hole with no card next to it (the focus scene's
      * small POVs and hero). */
     nameplate: boolean;
+    /** Guides mode: number the hole, the setup aid that matches an OBS
+     * source to it. Off air only: live, the slot number would sit beside
+     * the runner's rank, a second number per runner. */
+    guides?: boolean;
   }
 
-  let { rect, participant, slot, nameplate }: Props = $props();
+  let { rect, participant, slot, nameplate, guides = false }: Props = $props();
 
   let lineColor = $derived(
     participant
@@ -66,7 +70,9 @@
   class="pov"
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px; --c: {lineColor};"
 >
-  <span class="slot">{slot}</span>
+  {#if guides}
+    <span class="slot">{slot}</span>
+  {/if}
   {#if nameplate && participant}
     <span class="np">
       <span class="npn" style={nameStyleFor(participant)}

@@ -49,7 +49,10 @@ Adding `guides=1` to any scene's URL draws a dashed gold outline over every
 hole with a label reading `LABEL  x,y  wxh` (`formatGeo`), directly on the
 live scene. It is how a caster lines OBS sources up under the plate: open the
 scene with `guides=1`, drag each video source's transform until it matches
-its outline, then drop `guides=1` for the real broadcast.
+its outline, then drop `guides=1` for the real broadcast. Guides mode also
+numbers each POV frame with its slot (the `p1`..`p4` it takes), a chip the
+live scene leaves out: on air it would sit beside the runner card's rank, a
+second number per runner.
 
 ### Field-size overflow
 

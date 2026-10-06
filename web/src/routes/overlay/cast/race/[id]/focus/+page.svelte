@@ -108,6 +108,7 @@
       {participant}
       {slot}
       nameplate={hole.role !== "hero"}
+      guides={params.guides}
     />
   {/each}
   {#if heroParticipant}
