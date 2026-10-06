@@ -293,10 +293,12 @@ beside it in secondary). The server sends them per race (`races[].points`,
 the same `score_playoff_race` scoring the stage totals sum): once a race
 with a finisher is over, every row shows its points, a DNF's 0 included;
 while it runs, only the settled finishers do, since everyone else's 0 is a
-provisional DNF. A running race's card follows it: its runners in the race
-page's live order (the server's `races[].live`, finishers first by in-game
-time, then the deepest layer), each runner still on the course at the depth
-reached ("17/35") and one who is out marked DNF or DQ, in the time cell.
+provisional DNF. A running race's card follows it: its whole field in the
+race page's live order (the server's `races[].live`, finishers first by
+in-game time, then the deepest layer; never capped, so a big field shows its
+true top rows and "+ N more"), each runner still on the course at the depth
+reached ("17/35") in the time cell, one yet to start blank. A runner out of
+the race reads DNF or DQ there, during the race and after it.
 
 While the stage is still being raced, the standings draw its cut: a dashed
 brass line under the last runner going on (`advance`, the stage's own

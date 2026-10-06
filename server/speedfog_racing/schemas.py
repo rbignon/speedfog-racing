@@ -1275,8 +1275,7 @@ class EventQualifiedResponse(BaseModel):
     groups: list[EventQualifiedGroupResponse]
 
 
-class EventLiveRunnerResponse(BaseModel):
-    user_id: UUID
+class EventLiveRunnerResponse(ParticipantPreview):
     current_layer: int
 
 
@@ -1289,9 +1288,10 @@ class EventStageRaceResponse(BaseModel):
     # whole field (a DNF on 0), a live race its settled finishers (the rest
     # provisionally on 0), a race nobody finished carries none.
     points: dict[str, int] = {}
-    # A running race's runners in the race page's live order (finishers by
-    # IGT, then the deepest layer first, DNFs after), each with the layer it
-    # stands on; empty once the race is no longer running.
+    # A running race's whole field in the race page's live order (finishers
+    # by IGT, then the deepest layer first, DNFs after), each runner with the
+    # layer it stands on; never capped, unlike the race's previews; empty
+    # once the race is no longer running.
     live: list[EventLiveRunnerResponse] = []
 
 

@@ -11,7 +11,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from speedfog_racing.api.helpers import race_response
+from speedfog_racing.api.helpers import participant_preview, race_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -307,7 +307,9 @@ async def get_event(
             return []
         ordered, _ = sort_leaderboard(race.participants)
         return [
-            EventLiveRunnerResponse(user_id=p.user_id, current_layer=p.current_layer)
+            EventLiveRunnerResponse(
+                **participant_preview(p).model_dump(), current_layer=p.current_layer
+            )
             for p in ordered
             # Always true: the sort also takes projections, these are rows.
             if isinstance(p, Participant)

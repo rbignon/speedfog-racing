@@ -927,9 +927,10 @@ async def test_a_stage_says_how_many_of_its_runners_go_on(test_client, async_ses
 
 @pytest.mark.asyncio
 async def test_a_running_stage_race_lists_its_runners_in_live_order(test_client, async_session):
-    """``races[].live`` orders a running race's runners as the race page does
-    (finishers by IGT, then the deepest layer first, DNFs after), with the
-    layer each one stands on; a race no longer running carries none."""
+    """``races[].live`` lists a running race's whole field as the race page
+    orders it (finishers by IGT, then the deepest layer first, DNFs after),
+    each runner with the layer they stand on; a race no longer running
+    carries none. Unlike the previews, it is never capped."""
     async with async_session() as db:
         orga = await _user(db, "orga", UserRole.ORGANIZER)
         ana = await _user(db, "ana")
@@ -960,8 +961,11 @@ async def test_a_running_stage_race_lists_its_runners_in_live_order(test_client,
         await _entry(db, live, bob, ParticipantStatus.FINISHED, 1_200_000, layer=9)
         await _entry(db, live, cleo, ParticipantStatus.PLAYING, 950_000, layer=7)
         await _entry(db, live, dan, ParticipantStatus.ABANDONED, 400_000, layer=3)
+        extras = [await _user(db, f"extra{n}") for n in range(3)]
+        for extra in extras:
+            await _entry(db, live, extra, ParticipantStatus.PLAYING, 100_000, layer=1)
         await db.commit()
-        ids = {u.twitch_username: str(u.id) for u in (ana, bob, cleo, dan)}
+        ids = {u.twitch_username: str(u.id) for u in (ana, bob, cleo, dan, *extras)}
 
     async with test_client as client:
         data = (await client.get("/api/events/season-one")).json()
@@ -969,12 +973,15 @@ async def test_a_running_stage_race_lists_its_runners_in_live_order(test_client,
     semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
     by_index = {r["index"]: r["live"] for r in semi_a["races"]}
     assert by_index[1] == []
-    assert by_index[2] == [
-        {"user_id": ids["bob"], "current_layer": 9},
-        {"user_id": ids["cleo"], "current_layer": 7},
-        {"user_id": ids["ana"], "current_layer": 5},
-        {"user_id": ids["dan"], "current_layer": 3},
+    live = by_index[2]
+    assert [(e["id"], e["current_layer"]) for e in live[:3]] == [
+        (ids["bob"], 9),
+        (ids["cleo"], 7),
+        (ids["ana"], 5),
     ]
+    assert {e["id"] for e in live[3:6]} == {ids[f"extra{n}"] for n in range(3)}
+    assert (live[6]["id"], live[6]["status"]) == (ids["dan"], "abandoned")
+    assert live[0]["igt_ms"] == 1_200_000
 
 
 @pytest.mark.asyncio

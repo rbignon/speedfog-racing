@@ -1,6 +1,11 @@
 <script lang="ts">
   import type { Rect } from "$lib/cast/layout";
-  import type { EventStageRace, EventFieldSlot, User } from "$lib/api";
+  import type {
+    EventStageRace,
+    EventFieldSlot,
+    ParticipantPreview,
+    User,
+  } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { rowCapacity, planRows } from "$lib/cast/rows";
 
@@ -119,43 +124,37 @@
     return String(pts);
   }
 
-  // A running race lists its field in the race page's live order (the
-  // server's `live`), so the card follows the race while talk is on air;
-  // otherwise the previews' own order, the result order once it is over.
-  // `live` can be missing for one poll during a deploy window (new web
-  // build, old API): the previews' order stands in.
+  // A running race lists its whole field in the race page's live order (the
+  // server's `live`, never capped, so the card shows the true top and counts
+  // the rest), so the card follows the race while talk is on air; otherwise
+  // the previews, in result order once the race is over. `live` can be
+  // missing for one poll during a deploy window (new web build, old API):
+  // the previews stand in.
   let live = $derived(
     entry?.race.status === "running" ? (entry.live ?? []) : [],
   );
-  let previews = $derived.by(() => {
-    if (!entry) return [];
-    const all = entry.race.participant_previews;
-    if (live.length === 0) return all;
-    const rank = new Map(live.map((l, i) => [l.user_id, i]));
-    return [...all].sort(
-      (a, b) =>
-        (rank.get(a.id) ?? live.length) - (rank.get(b.id) ?? live.length),
-    );
-  });
-  let layers = $derived(new Map(live.map((l) => [l.user_id, l.current_layer])));
+  let runners = $derived<(ParticipantPreview & { current_layer?: number })[]>(
+    !entry ? [] : live.length > 0 ? live : entry.race.participant_previews,
+  );
 
-  // A finisher's time; in a running race, a runner still on the course at
-  // the depth they have reached, and one who is out marked as such.
-  function rightFor(p: { id: string; status: string; igt_ms: number | null }) {
+  // A finisher's time; a runner out of the race marked as such, during the
+  // race and after it; and, from the live order, a runner still on the
+  // course at the depth they have reached (nothing for one yet to start).
+  function rightFor(
+    p: ParticipantPreview & { current_layer?: number },
+  ): string {
     if (p.status === "finished" && p.igt_ms != null) return formatIgt(p.igt_ms);
-    if (live.length === 0) return "";
     if (p.status === "abandoned") return "DNF";
     if (p.status === "disqualified") return "DQ";
-    const layer = layers.get(p.id);
-    if (layer === undefined) return "";
+    if (p.status !== "playing" || p.current_layer === undefined) return "";
     const total = entry?.race.seed_total_layers ?? null;
-    const depth = Math.min(layer + 1, total || Infinity);
+    const depth = Math.min(p.current_layer + 1, total || Infinity);
     return total ? `${depth}/${total}` : String(depth);
   }
 
   let rows = $derived<Row[]>(
     entry
-      ? previews.map((p) => ({
+      ? runners.map((p) => ({
           key: p.id,
           name: displayName(p),
           nameStyle: nameStyleFor(p),

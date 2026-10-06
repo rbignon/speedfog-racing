@@ -221,36 +221,36 @@ describe("CastRaceCard: status badge", () => {
 
 describe("CastRaceCard: live race", () => {
   // Between races the talk scene can still sit on air while one runs: the
-  // card then follows it, the field in live order, each runner still on the
-  // course at the depth they have reached.
+  // card then follows it, the whole field in live order (not the capped
+  // previews), each runner still on the course at the depth they reached.
+  function live(over: Record<string, unknown>) {
+    return {
+      current_layer: 0,
+      ...fakePreview(over),
+    } as EventStageRace["live"][number];
+  }
+
   it("lists a running race's field in live order, each at their depth", () => {
     const entry = fakeEntry(
-      {
-        status: "running",
-        seed_total_layers: 35,
-        participant_previews: [
-          fakePreview({ id: "a", twitch_display_name: "Ana" }),
-          fakePreview({
-            id: "b",
-            twitch_display_name: "Bob",
-            status: "finished",
-            igt_ms: 1_200_000,
-          }),
-          fakePreview({ id: "c", twitch_display_name: "Cleo" }),
-          fakePreview({
-            id: "d",
-            twitch_display_name: "Dan",
-            status: "abandoned",
-          }),
-        ],
-      },
+      { status: "running", seed_total_layers: 35 },
       1,
       {},
       [
-        { user_id: "b", current_layer: 34 },
-        { user_id: "c", current_layer: 16 },
-        { user_id: "a", current_layer: 12 },
-        { user_id: "d", current_layer: 4 },
+        live({
+          id: "b",
+          twitch_display_name: "Bob",
+          status: "finished",
+          igt_ms: 1_200_000,
+          current_layer: 34,
+        }),
+        live({ id: "c", twitch_display_name: "Cleo", current_layer: 16 }),
+        live({ id: "a", twitch_display_name: "Ana", current_layer: 12 }),
+        live({
+          id: "d",
+          twitch_display_name: "Dan",
+          status: "abandoned",
+          current_layer: 4,
+        }),
       ],
     );
     const { container } = render(CastRaceCard, {
@@ -269,5 +269,70 @@ describe("CastRaceCard: live race", () => {
       "13/35",
       "DNF",
     ]);
+  });
+
+  it("caps a large live field from the top of the order, the rest counted", () => {
+    const field = Array.from({ length: 7 }, (_, i) =>
+      live({
+        id: `p-${i}`,
+        twitch_display_name: `R${i}`,
+        current_layer: 10 - i,
+      }),
+    );
+    const entry = fakeEntry(
+      { status: "running", seed_total_layers: 35 },
+      1,
+      {},
+      field,
+    );
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    const names = [...container.querySelectorAll(".brow .bn")].map(
+      (el) => el.textContent,
+    );
+    expect(names).toEqual(["R0", "R1", "R2", "R3"]);
+    expect(container.querySelector(".brow.more .more-text")?.textContent).toBe(
+      "+ 3 more",
+    );
+  });
+
+  it("leaves a runner who has not started blank rather than at depth 1", () => {
+    const entry = fakeEntry(
+      { status: "running", seed_total_layers: 35 },
+      1,
+      {},
+      [live({ id: "a", twitch_display_name: "Ana", status: "registered" })],
+    );
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    expect(container.querySelector(".brow .bp")?.textContent).toBe("");
+  });
+});
+
+describe("CastRaceCard: a finished race's runners who did not finish", () => {
+  it("keeps them marked DNF or DQ once the race is over", () => {
+    const entry = fakeEntry({
+      status: "finished",
+      participant_previews: [
+        fakePreview({
+          id: "a",
+          twitch_display_name: "Ana",
+          status: "abandoned",
+        }),
+        fakePreview({
+          id: "b",
+          twitch_display_name: "Bob",
+          status: "disqualified",
+        }),
+      ],
+    });
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 1, mode: "Standard", entry, field: [] },
+    });
+    expect(
+      [...container.querySelectorAll(".brow .bp")].map((el) => el.textContent),
+    ).toEqual(["DNF", "DQ"]);
   });
 });

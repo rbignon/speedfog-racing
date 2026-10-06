@@ -522,9 +522,10 @@ export interface EventStageRace {
   // field is keyed, with everyone not yet finished provisionally on 0.
   // Gate display on the runner's own status, never on key presence.
   points: Record<string, number>;
-  /** A running race's runners in the race page's live order, each with the
-   * layer it stands on; empty once the race is no longer running. */
-  live: { user_id: string; current_layer: number }[];
+  /** A running race's whole field in the race page's live order, each
+   * runner with the layer it stands on; never capped, unlike the race's
+   * previews; empty once the race is no longer running. */
+  live: (ParticipantPreview & { current_layer: number })[];
 }
 
 export interface EventStageEntry {
