@@ -4,6 +4,7 @@ import CastMiniStandings from "$lib/components/cast/CastMiniStandings.svelte";
 
 const baseProps = {
   rect: { x: 0, y: 0, w: 320, h: 148 },
+  raceStatus: "running",
 };
 
 function fakeParticipant(over: Record<string, unknown> = {}) {
@@ -164,5 +165,25 @@ describe("CastMiniStandings: gap column", () => {
     expect(cell?.textContent).toBe("-0:08");
     expect(cell?.classList.contains("ahead")).toBe(true);
     expect(cell?.classList.contains("behind")).toBe(false);
+  });
+});
+
+describe("CastMiniStandings: before the start", () => {
+  it("numbers no row while the field is only in join order", () => {
+    const { container } = render(CastMiniStandings, {
+      props: {
+        ...baseProps,
+        raceStatus: "setup",
+        participants: [
+          fakeParticipant({ id: "p-1", status: "ready" }),
+          fakeParticipant({ id: "p-2", status: "registered" }),
+        ],
+      },
+    });
+    const ranks = [...container.querySelectorAll(".lrow .rk")].map(
+      (el) => el.textContent,
+    );
+    expect(ranks).toEqual(["", ""]);
+    expect(container.querySelector(".rk.first")).toBeNull();
   });
 });

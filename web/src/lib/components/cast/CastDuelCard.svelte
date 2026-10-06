@@ -17,6 +17,9 @@
     mirrored: boolean;
     /** Rank 1: brass border and rank digit, like RunnerCard. */
     leader: boolean;
+    /** The race's own status: before the start the card carries no rank
+     * and no leader brass (join order is the only order there is). */
+    raceStatus: string;
     /** Node id -> display name, from the seed's own graph: `current_zone`
      * on the wire is a graph node id, never a display string. On a miss the
      * zone line is left blank, same as RunnerCard's zoneLabel. */
@@ -36,6 +39,7 @@
     rect,
     mirrored,
     leader,
+    raceStatus,
     zoneNames = null,
     weapons = "",
   }: Props = $props();
@@ -47,6 +51,7 @@
   let depth = $derived(
     Math.min(participant.current_layer + 1, totalLayers || Infinity),
   );
+  let ranked = $derived(raceStatus !== "setup");
 
   function displayName(p: WsParticipant): string {
     return p.twitch_display_name || p.twitch_username;
@@ -121,7 +126,7 @@
 <div
   class="dcard"
   class:mirror={mirrored}
-  class:lead={leader}
+  class:lead={leader && ranked}
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px; --c: {color};"
 >
   <div class="dhead">
@@ -143,7 +148,7 @@
         >{zoneLine}</span
       >
     </div>
-    <span class="drk">{rank}</span>
+    <span class="drk">{ranked ? rank : ""}</span>
   </div>
   {#if weapons}
     <span class="dweap">{weapons}</span>

@@ -137,6 +137,7 @@
     zoneNames={nodeNames}
     rect={layout.panels.standings}
     {lines}
+    {raceStatus}
   />
   <CastDesk
     scene="metro"

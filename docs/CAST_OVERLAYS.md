@@ -83,6 +83,11 @@ two caster cam holes. How many cam holes it cuts depends on the `cams`
 parameter (0, 1 or 2); with 0, the desk still draws its race/lockup/clock
 panels but pierces no cam holes at all.
 
+Before the start, the field stands in join order, the only order there is:
+no runner card (quad, focus, duel) shows a rank digit or the leader's brass,
+and the standings panels (metro, focus) number no row. Ranks appear with the
+race's first tick.
+
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |
 | CAM 1 | 408, 776        | 384 x 288    | `cams >= 1` |

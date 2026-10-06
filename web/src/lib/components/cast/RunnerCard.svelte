@@ -24,8 +24,9 @@
     variant: "card" | "mirror" | "tall";
     /** Rank 1: brass border, brass tint, brass rank digit. */
     leader: boolean;
-    /** The race's own status: the leader's gap row reads Leader while it
-     * runs and Winner once it is over. */
+    /** The race's own status: before the start the card carries no rank
+     * (join order is the only order there is), the leader's gap row reads
+     * Leader while it runs and Winner once it is over. */
     raceStatus: string;
     /** Node id -> display name, from the seed's own graph
      * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
@@ -72,8 +73,9 @@
   // The cards sit beside their POVs in slot order, not in a ranked list, so
   // the leader's gap row names the role rather than standing blank (a
   // ranked list, the standings, keeps its usual empty cell).
+  let ranked = $derived(raceStatus !== "setup");
   let leaderLabel = $derived(
-    !leader ? null : raceStatus === "finished" ? "Winner" : "Leader",
+    !leader || !ranked ? null : raceStatus === "finished" ? "Winner" : "Leader",
   );
 
   function displayName(p: WsParticipant): string {
@@ -141,11 +143,11 @@
   class="rcard"
   class:mirror={variant === "mirror"}
   class:tall={variant === "tall"}
-  class:lead={leader}
+  class:lead={leader && ranked}
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px; --c: {color};"
 >
   <div class="chead">
-    <span class="crk">{rank}</span>
+    <span class="crk">{ranked ? rank : ""}</span>
     {#if avatarUrl}
       <img class="cav" src={avatarUrl} alt="" />
     {:else}

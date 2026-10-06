@@ -282,3 +282,21 @@ describe("RunnerCard: IGT", () => {
     expect(igtValueCell(container)?.classList.contains("finished")).toBe(false);
   });
 });
+
+describe("RunnerCard: before the start", () => {
+  // Join order is the only order there is before the start: a rank digit
+  // and the leader's brass would announce a leader nobody has earned.
+  it("carries no rank, no leader brass and no leader label", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        leader: true,
+        raceStatus: "setup",
+        participant: fakeParticipant({ status: "ready", gap_ms: null }),
+      },
+    });
+    expect(container.querySelector(".crk")?.textContent ?? "").toBe("");
+    expect(container.querySelector(".rcard.lead")).toBeNull();
+    expect(gapValueCell(container)?.textContent).toBe("");
+  });
+});

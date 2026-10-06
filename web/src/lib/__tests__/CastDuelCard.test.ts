@@ -10,6 +10,7 @@ const baseProps = {
   zoneNames: new Map<string, string>(),
   mirrored: false,
   leader: false,
+  raceStatus: "running",
 };
 
 function fakeParticipant(over: Record<string, unknown> = {}) {
@@ -83,5 +84,20 @@ describe("CastDuelCard: states", () => {
     expect(container.querySelector(".dzone")?.textContent).toBe(
       "Promised Consort Radahn",
     );
+  });
+});
+
+describe("CastDuelCard: before the start", () => {
+  it("carries no rank and no leader brass", () => {
+    const { container } = render(CastDuelCard, {
+      props: {
+        ...baseProps,
+        leader: true,
+        raceStatus: "setup",
+        participant: fakeParticipant({ status: "ready" }),
+      },
+    });
+    expect(container.querySelector(".drk")?.textContent ?? "").toBe("");
+    expect(container.querySelector(".dcard.lead")).toBeNull();
   });
 });

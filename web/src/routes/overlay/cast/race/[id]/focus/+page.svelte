@@ -130,6 +130,7 @@
   <CastMiniStandings
     participants={raceStore.leaderboard}
     rect={layout.panels.standings}
+    {raceStatus}
   />
   <CastDesk
     scene="focus"

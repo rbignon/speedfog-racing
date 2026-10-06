@@ -6,6 +6,7 @@ const baseProps = {
   totalLayers: 10,
   zoneNames: new Map<string, string>(),
   rect: { x: 0, y: 0, w: 972, h: 230 },
+  raceStatus: "running",
 };
 
 function fakeParticipant(over: Record<string, unknown> = {}) {
@@ -203,5 +204,25 @@ describe("CastStandings: zone column", () => {
     });
     const cell = container.querySelector(".rrow .rzone");
     expect(cell?.textContent).toBe("");
+  });
+});
+
+describe("CastStandings: before the start", () => {
+  it("numbers no row while the field is only in join order", () => {
+    const { container } = render(CastStandings, {
+      props: {
+        ...baseProps,
+        raceStatus: "setup",
+        participants: [
+          fakeParticipant({ id: "p-1", status: "ready" }),
+          fakeParticipant({ id: "p-2", status: "registered" }),
+        ],
+      },
+    });
+    const ranks = [...container.querySelectorAll(".rrow .rk")].map(
+      (el) => el.textContent,
+    );
+    expect(ranks).toEqual(["", ""]);
+    expect(container.querySelector(".rk.first")).toBeNull();
   });
 });

@@ -26,6 +26,9 @@
      * many as the panel allows. Never raises the count past what the panel
      * actually fits: a caster can ask for fewer rows, never for overflow. */
     lines?: number | null;
+    /** The race's own status: before the start the rows stand in join
+     * order, the only order there is, so none is numbered. */
+    raceStatus: string;
   }
 
   let {
@@ -34,7 +37,9 @@
     zoneNames,
     rect,
     lines = null,
+    raceStatus,
   }: Props = $props();
+  let ranked = $derived(raceStatus !== "setup");
 
   // The panel can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number, so a bigger field (or a resized panel)
@@ -127,7 +132,9 @@
     {@const color = PLAYER_COLORS[p.color_index % PLAYER_COLORS.length]}
     {@const depth = Math.min(p.current_layer + 1, totalLayers || Infinity)}
     <div class="rrow" style="--c: {color};">
-      <span class="rk" class:first={i === 0}>{i + 1}</span>
+      <span class="rk" class:first={ranked && i === 0}
+        >{ranked ? i + 1 : ""}</span
+      >
       <span class="dot"></span>
       <span class="nm" style={nameStyleFor(p)}>{displayName(p)}</span>
       <span class="rzone">{zoneLabel(p.current_zone)}</span>
