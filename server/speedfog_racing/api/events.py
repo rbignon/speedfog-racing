@@ -31,6 +31,7 @@ from speedfog_racing.schemas import (
     EventLadderEntryResponse,
     EventLadderResponse,
     EventLiveRaceResponse,
+    EventLiveRunnerResponse,
     EventMyResultResponse,
     EventNextStageResponse,
     EventQualifiedGroupResponse,
@@ -75,6 +76,7 @@ from speedfog_racing.services.event_service import (
     slot_label,
     stage_time_set,
 )
+from speedfog_racing.websocket.race.manager import sort_leaderboard
 
 router = APIRouter()
 
@@ -298,6 +300,19 @@ async def get_event(
     def user_of(user_id: UUID | None) -> UserResponse | None:
         return UserResponse.model_validate(users[user_id]) if user_id in users else None
 
+    def live_order(race: Race) -> list[EventLiveRunnerResponse]:
+        # The race page's own order, from each runner's layer-entry cache
+        # (the event load defers the seed graph the fallback would scan).
+        if race.status != RaceStatus.RUNNING:
+            return []
+        ordered, _ = sort_leaderboard(race.participants)
+        return [
+            EventLiveRunnerResponse(user_id=p.user_id, current_layer=p.current_layer)
+            for p in ordered
+            # Always true: the sort also takes projections, these are rows.
+            if isinstance(p, Participant)
+        ]
+
     def stage_response(
         stage: EventStage | EventShowcase,
         *,
@@ -316,6 +331,7 @@ async def get_event(
             date_fixed=stage.date is not None,
             time_set=stage_time_set(stage, races),
             from_=sources,  # type: ignore[call-arg]  # mypy ignores populate_by_name
+            advance=stage.advance if isinstance(stage, EventStage) else None,
             races_expected=stage.races,
             complete=result.complete,
             modes=stage.modes,
@@ -327,6 +343,7 @@ async def get_event(
                     points={
                         str(uid): sc.points for uid, sc in score_playoff_race(r, config).items()
                     },
+                    live=live_order(r),
                 )
                 for s, r in races
             ],

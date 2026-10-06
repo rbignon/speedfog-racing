@@ -125,6 +125,8 @@
     racesExpected={stage.races_expected}
     results={stage.results}
     {nextLabel}
+    advance={stage.advance}
+    complete={stage.complete}
   />
 
   <CastDesk

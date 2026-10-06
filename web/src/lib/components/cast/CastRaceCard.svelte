@@ -119,17 +119,48 @@
     return String(pts);
   }
 
+  // A running race lists its field in the race page's live order (the
+  // server's `live`), so the card follows the race while talk is on air;
+  // otherwise the previews' own order, the result order once it is over.
+  // `live` can be missing for one poll during a deploy window (new web
+  // build, old API): the previews' order stands in.
+  let live = $derived(
+    entry?.race.status === "running" ? (entry.live ?? []) : [],
+  );
+  let previews = $derived.by(() => {
+    if (!entry) return [];
+    const all = entry.race.participant_previews;
+    if (live.length === 0) return all;
+    const rank = new Map(live.map((l, i) => [l.user_id, i]));
+    return [...all].sort(
+      (a, b) =>
+        (rank.get(a.id) ?? live.length) - (rank.get(b.id) ?? live.length),
+    );
+  });
+  let layers = $derived(new Map(live.map((l) => [l.user_id, l.current_layer])));
+
+  // A finisher's time; in a running race, a runner still on the course at
+  // the depth they have reached, and one who is out marked as such.
+  function rightFor(p: { id: string; status: string; igt_ms: number | null }) {
+    if (p.status === "finished" && p.igt_ms != null) return formatIgt(p.igt_ms);
+    if (live.length === 0) return "";
+    if (p.status === "abandoned") return "DNF";
+    if (p.status === "disqualified") return "DQ";
+    const layer = layers.get(p.id);
+    if (layer === undefined) return "";
+    const total = entry?.race.seed_total_layers ?? null;
+    const depth = Math.min(layer + 1, total || Infinity);
+    return total ? `${depth}/${total}` : String(depth);
+  }
+
   let rows = $derived<Row[]>(
     entry
-      ? entry.race.participant_previews.map((p) => ({
+      ? previews.map((p) => ({
           key: p.id,
           name: displayName(p),
           nameStyle: nameStyleFor(p),
           tbd: false,
-          right:
-            p.status === "finished" && p.igt_ms != null
-              ? formatIgt(p.igt_ms)
-              : "",
+          right: rightFor(p),
           pts: ptsFor(p),
         }))
       : field.map((seat, i) => ({

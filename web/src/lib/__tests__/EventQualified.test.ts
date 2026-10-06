@@ -15,6 +15,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     date_fixed: true,
     time_set: true,
     from: [],
+    advance: null,
     races_expected: 3,
     complete: false,
     modes: ["standard"],

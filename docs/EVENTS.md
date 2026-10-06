@@ -728,7 +728,12 @@ fetched is left out rather than replaced by a placeholder.
 - `GET /api/events`: the events on the bill (`EventSummaryResponse`, see Home
   page and navbar).
 - `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`),
-  plus the showcases, which only the talk cast scene reads.
+  plus the showcases, which only the talk cast scene reads. Two stage fields
+  serve that scene alone: a stage's `advance` (how many of its runners go on,
+  null for a stage nobody takes from and for a showcase), under which it
+  draws the provisional cut, and each stage race's `live`, its runners in
+  the race page's live order with the layer each stands on (empty once the
+  race is no longer running), which its race card follows.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

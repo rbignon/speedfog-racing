@@ -1275,6 +1275,11 @@ class EventQualifiedResponse(BaseModel):
     groups: list[EventQualifiedGroupResponse]
 
 
+class EventLiveRunnerResponse(BaseModel):
+    user_id: UUID
+    current_layer: int
+
+
 class EventStageRaceResponse(BaseModel):
     slot: str
     index: int
@@ -1284,6 +1289,10 @@ class EventStageRaceResponse(BaseModel):
     # whole field (a DNF on 0), a live race its settled finishers (the rest
     # provisionally on 0), a race nobody finished carries none.
     points: dict[str, int] = {}
+    # A running race's runners in the race page's live order (finishers by
+    # IGT, then the deepest layer first, DNFs after), each with the layer it
+    # stands on; empty once the race is no longer running.
+    live: list[EventLiveRunnerResponse] = []
 
 
 class EventWeaponResponse(BaseModel):
@@ -1321,6 +1330,9 @@ class EventStageResponse(BaseModel):
     # date then stands at noon UTC, and only its day is meant to be shown.
     time_set: bool
     from_: list[str] = Field(default_factory=list, alias="from")
+    # How many of the stage's runners go on to the stage that takes from it;
+    # None for a stage nobody takes from, and for a showcase.
+    advance: int | None = None
     races_expected: int
     complete: bool
     modes: list[str]

@@ -910,6 +910,74 @@ async def test_each_stage_race_carries_the_points_it_gave(test_client, async_ses
 
 
 @pytest.mark.asyncio
+async def test_a_stage_says_how_many_of_its_runners_go_on(test_client, async_session):
+    """``advance`` is the stage's own cut (the talk scene draws its line under
+    that row); a stage nobody takes from, or a showcase, carries none."""
+    async with async_session() as db:
+        await _event(db, config={**CONFIG, "phase_override": "playoffs", "showcases": [SHOWCASE]})
+        await db.commit()
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    advance = {s["key"]: s["advance"] for s in data["stages"]}
+    assert advance == {"semi_a": 2, "semi_b": 2, "newcomers": None, "final": None}
+    assert data["showcases"][0]["advance"] is None
+
+
+@pytest.mark.asyncio
+async def test_a_running_stage_race_lists_its_runners_in_live_order(test_client, async_session):
+    """``races[].live`` orders a running race's runners as the race page does
+    (finishers by IGT, then the deepest layer first, DNFs after), with the
+    layer each one stands on; a race no longer running carries none."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        cleo = await _user(db, "cleo")
+        dan = await _user(db, "dan")
+        event = await _event(db, config={**CONFIG, "phase_override": "playoffs"})
+        done = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(db, done, ana, ParticipantStatus.FINISHED, 1_000_000)
+        live = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi2"),
+            event,
+            "semi_a:2",
+            status=RaceStatus.RUNNING,
+            is_public=True,
+        )
+        await _entry(db, live, ana, ParticipantStatus.PLAYING, 900_000, layer=5)
+        await _entry(db, live, bob, ParticipantStatus.FINISHED, 1_200_000, layer=9)
+        await _entry(db, live, cleo, ParticipantStatus.PLAYING, 950_000, layer=7)
+        await _entry(db, live, dan, ParticipantStatus.ABANDONED, 400_000, layer=3)
+        await db.commit()
+        ids = {u.twitch_username: str(u.id) for u in (ana, bob, cleo, dan)}
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
+    by_index = {r["index"]: r["live"] for r in semi_a["races"]}
+    assert by_index[1] == []
+    assert by_index[2] == [
+        {"user_id": ids["bob"], "current_layer": 9},
+        {"user_id": ids["cleo"], "current_layer": 7},
+        {"user_id": ids["ana"], "current_layer": 5},
+        {"user_id": ids["dan"], "current_layer": 3},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_a_showcase_holds_neither_the_season_nor_its_player_count(test_client, async_session):
     now = datetime.now(UTC)
     async with async_session() as db:

@@ -30,6 +30,7 @@ function fakeEntry(
   raceOver: Record<string, unknown>,
   index = 1,
   points: Record<string, number> = {},
+  live: EventStageRace["live"] = [],
 ): EventStageRace {
   return {
     slot: "r1",
@@ -40,12 +41,13 @@ function fakeEntry(
       ...raceOver,
     } as unknown as Race,
     points,
+    live,
   };
 }
 
 describe("CastRaceCard: row cap", () => {
   // rect is 436x412, the real per-slot race card rect from layout.ts's talk
-  // scene: (412 - 95 header reserve) / 56 row height = 5 rows fit.
+  // scene: (412 - 100 header reserve) / 56 row height = 5 rows fit.
   function previews(n: number) {
     return Array.from({ length: n }, (_, i) =>
       fakePreview({ id: `p-${i}`, status: "playing", igt_ms: null }),
@@ -214,5 +216,58 @@ describe("CastRaceCard: status badge", () => {
     const badge = container.querySelector(".bst");
     expect(badge?.classList.contains("upcoming")).toBe(true);
     expect(badge?.textContent).toBe("Upcoming");
+  });
+});
+
+describe("CastRaceCard: live race", () => {
+  // Between races the talk scene can still sit on air while one runs: the
+  // card then follows it, the field in live order, each runner still on the
+  // course at the depth they have reached.
+  it("lists a running race's field in live order, each at their depth", () => {
+    const entry = fakeEntry(
+      {
+        status: "running",
+        seed_total_layers: 35,
+        participant_previews: [
+          fakePreview({ id: "a", twitch_display_name: "Ana" }),
+          fakePreview({
+            id: "b",
+            twitch_display_name: "Bob",
+            status: "finished",
+            igt_ms: 1_200_000,
+          }),
+          fakePreview({ id: "c", twitch_display_name: "Cleo" }),
+          fakePreview({
+            id: "d",
+            twitch_display_name: "Dan",
+            status: "abandoned",
+          }),
+        ],
+      },
+      1,
+      {},
+      [
+        { user_id: "b", current_layer: 34 },
+        { user_id: "c", current_layer: 16 },
+        { user_id: "a", current_layer: 12 },
+        { user_id: "d", current_layer: 4 },
+      ],
+    );
+    const { container } = render(CastRaceCard, {
+      props: { rect, slot: 2, mode: "Boss Rush", entry, field: [] },
+    });
+    const rows = [...container.querySelectorAll(".brow")];
+    expect(rows.map((r) => r.querySelector(".bn")?.textContent)).toEqual([
+      "Bob",
+      "Cleo",
+      "Ana",
+      "Dan",
+    ]);
+    expect(rows.map((r) => r.querySelector(".bp")?.textContent)).toEqual([
+      "20:00",
+      "17/35",
+      "13/35",
+      "DNF",
+    ]);
   });
 });

@@ -137,3 +137,65 @@ describe("CastRoundStandings: eyebrow", () => {
     );
   });
 });
+
+describe("CastRoundStandings: cut line", () => {
+  function results(n: number) {
+    return Array.from({ length: n }, (_, i) =>
+      fakeEntry({ user: fakeUser({ id: `u-${i}` }) }),
+    );
+  }
+
+  it("draws the stage's cut under its last runner going on while it runs", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(4),
+        advance: 2,
+        complete: false,
+        nextLabel: "Quarter A",
+      },
+    });
+    const cut = container.querySelector(".scut");
+    expect(cut?.textContent?.trim()).toBe("Quarter A");
+    const rows = [...container.querySelectorAll(".srow")];
+    expect(rows[1].nextElementSibling).toBe(cut);
+  });
+
+  it("draws no cut once the stage is complete, its chips say who went on", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(4),
+        advance: 2,
+        complete: true,
+        nextLabel: "Quarter A",
+      },
+    });
+    expect(container.querySelector(".scut")).toBeNull();
+  });
+
+  it("draws no cut on a stage nobody goes on from", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(4),
+        advance: null,
+        complete: false,
+      },
+    });
+    expect(container.querySelector(".scut")).toBeNull();
+  });
+
+  it("draws no cut with nobody below it yet", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(2),
+        advance: 2,
+        complete: false,
+        nextLabel: "Quarter A",
+      },
+    });
+    expect(container.querySelector(".scut")).toBeNull();
+  });
+});

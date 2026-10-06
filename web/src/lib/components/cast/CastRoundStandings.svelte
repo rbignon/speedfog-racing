@@ -18,6 +18,11 @@
      * advancing runners' chip names; null for a stage nobody goes on from
      * (a final, a showcase), whose rows never advance. */
     nextLabel?: string | null;
+    /** How many runners go on (`stage.advance`); null when nobody does. */
+    advance?: number | null;
+    /** Whether the stage is over (`stage.complete`): until then the cut is a
+     * line under the last runner going on, after it the chips say who did. */
+    complete?: boolean;
   }
 
   let {
@@ -27,6 +32,8 @@
     racesExpected,
     results,
     nextLabel = null,
+    advance = null,
+    complete = false,
   }: Props = $props();
 
   // The panel can never overflow: how many rows fit comes from this rect's
@@ -46,6 +53,13 @@
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
+  // The stage's cut, drawn while it is still being raced, under its last
+  // runner going on, once someone stands below it.
+  let cutAfter = $derived(
+    !complete && advance !== null && results.length > advance
+      ? advance - 1
+      : null,
+  );
 
   function displayName(u: User): string {
     return u.twitch_display_name || u.twitch_username;
@@ -116,6 +130,11 @@
           >{/if}
         <span class="sp">{entry.points}</span>
       </div>
+      {#if i === cutAfter && i < plan.visible.length - 1}
+        <div class="scut">
+          {#if nextLabel}<span>{nextLabel}</span>{/if}
+        </div>
+      {/if}
     {/each}
     {#if plan.hiddenCount > 0}
       <div class="srow more">
@@ -230,6 +249,32 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* The provisional cut: no height of its own (the row count above holds),
+   * a dashed brass line on the boundary with the stage it leads to named at
+   * its right end, and no plain border on the row below it. */
+  .scut {
+    position: relative;
+    height: 0;
+    /* Literal fallback first; see the note on .srow + .srow above. */
+    border-top: 2px dashed rgba(200, 164, 78, 0.7);
+    border-top: 2px dashed
+      color-mix(in srgb, var(--color-gold) 70%, transparent);
+  }
+
+  .scut span {
+    position: absolute;
+    right: 0;
+    top: -11px;
+    padding-left: 10px;
+    background: var(--color-bg);
+    font-family: var(--font-mono);
+    font-size: 16px;
+    line-height: 20px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-gold);
   }
 
   .stag {
