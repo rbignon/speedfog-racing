@@ -36,8 +36,8 @@
         ? "Finished"
         : "Upcoming",
   );
-  // Mirrors CastDesk's own live/finished/upcoming palette, so a card reads
-  // the same way as the desk's own status pill.
+  // The cast palette for a race's state: live in ember, finished in steel
+  // (CastDesk's own "Finished" word), upcoming quiet.
   let accent = $derived(
     status === "live"
       ? "var(--color-danger)"

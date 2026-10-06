@@ -71,21 +71,6 @@
     status === "running" ? formatCountdown(countdownMs) : null,
   );
 
-  let pillText = $derived(
-    status === "running"
-      ? "Live"
-      : status === "finished"
-        ? "Finished"
-        : "Upcoming",
-  );
-  let pillClass = $derived(
-    status === "running"
-      ? "live"
-      : status === "finished"
-        ? "finished"
-        : "upcoming",
-  );
-
   // The race-zone lines come from the organizer-authored name, not from
   // event_slot (a routing key, not a display string; see race-name.ts). A
   // name that doesn't split still needs to look intentional, not like a
@@ -138,12 +123,18 @@
     style="left: {panels.clock.x}px; top: {panels.clock.y}px; width: {panels
       .clock.w}px; height: {panels.clock.h}px;"
   >
-    <span class="pill pill-{pillClass}">{pillText}</span>
-    {#if status !== "finished"}
+    <!-- One element per state: a ticking clock says the race is live on
+         its own, so it carries no Live tag; before and after, the state
+         itself takes the clock's place, in large type. -->
+    {#if status === "running"}
       <span class="cz-big">{formatElapsed(elapsedMs)}</span>
       {#if endsInText}
         <span class="cz-end">Ends in <b>{endsInText}</b></span>
       {/if}
+    {:else if status === "finished"}
+      <span class="cz-state finished">Finished</span>
+    {:else}
+      <span class="cz-state">Upcoming</span>
     {/if}
   </div>
 {/if}
@@ -231,43 +222,18 @@
     gap: 6px;
   }
 
-  .pill {
-    font-family: var(--font-mono);
-    font-size: 15px;
+  .cz-state {
+    font-family: var(--font-display);
+    font-size: 56px;
     font-weight: 600;
-    letter-spacing: 0.09em;
-    padding: 3px 10px;
+    line-height: 1;
+    letter-spacing: 0.06em;
     text-transform: uppercase;
-    border: 1px solid transparent;
-  }
-
-  /* Every color-mix() below has a literal fallback declared first: OBS
-   * builds in the field still ship Chromium 103, which predates
-   * color-mix() (needs 111). The literal is kept when unsupported and
-   * overridden by the color-mix() line when it is. */
-  .pill-live {
-    color: var(--color-danger);
-    border-color: var(--color-danger);
-    background: rgba(220, 106, 81, 0.12);
-    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
-  }
-
-  .pill-finished {
-    color: var(--color-info);
-    border-color: var(--color-info);
-    background: rgba(123, 162, 204, 0.12);
-    background: color-mix(in srgb, var(--color-info) 12%, transparent);
-  }
-
-  .pill-upcoming {
     color: var(--color-text-secondary);
-    border-color: var(--color-text-secondary);
-    background: rgba(150, 160, 173, 0.12);
-    background: color-mix(
-      in srgb,
-      var(--color-text-secondary) 12%,
-      transparent
-    );
+  }
+
+  .cz-state.finished {
+    color: var(--color-info);
   }
 
   .cz-big {
@@ -300,7 +266,8 @@
     bottom: 0;
     padding: 5px 14px;
     /* Load-bearing scrim (the caster name sits over the video hole), so the
-     * literal fallback comes first; see the note above .pill-live. */
+     * literal fallback comes first: OBS builds in the field still ship
+     * Chromium 103, which predates color-mix() (needs 111). */
     background: rgba(15, 25, 35, 0.86);
     background: color-mix(in srgb, var(--color-bg) 86%, transparent);
     font-family: var(--font-mono);

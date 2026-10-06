@@ -81,7 +81,11 @@ bottom: a race name panel, a caster lockup (the SpeedFog Racing wordmark,
 crossed with the event's co-brand when one is set), a clock panel, and up to
 two caster cam holes. How many cam holes it cuts depends on the `cams`
 parameter (0, 1 or 2); with 0, the desk still draws its race/lockup/clock
-panels but pierces no cam holes at all.
+panels but pierces no cam holes at all. The clock panel shows one element
+per state: the race clock alone while the race runs (its ticking says the
+race is live, so it carries no Live tag; "Ends in" joins it once the race
+has a deadline), and in its place a large "Upcoming" before the start and a
+large "Finished", in the finished colour, once it is over.
 
 Before the start, the field stands in join order, the only order there is:
 no runner card (quad, focus, duel) shows a rank digit or the leader's brass,
