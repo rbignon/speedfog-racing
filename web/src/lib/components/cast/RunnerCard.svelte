@@ -155,7 +155,7 @@
     {/if}
   </div>
   <span class="cname" style={nameStyleFor(participant)}
-    >{displayName(participant)}{#if badge}<img
+    ><span class="cname-text">{displayName(participant)}</span>{#if badge}<img
         src="/badges/{badge.icon_filename}"
         alt={badge.name}
         title={badge.name}
@@ -289,14 +289,27 @@
     background: var(--color-border);
   }
 
+  /* The name keeps one line, ellipsized at the card's width (a 216px quad
+   * card cut "SeriousChallenges" mid-letter), and the badge stays whole:
+   * beside the name when both fit, on the next line when they don't. */
   .cname {
-    display: inline-block;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     margin-top: 8px;
     font-family: var(--font-display);
     font-weight: 600;
     font-size: 32px;
     letter-spacing: 0.02em;
     line-height: 1.05;
+  }
+
+  .cname-text {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .card-badge {
@@ -417,6 +430,10 @@
 
   .rcard.mirror .chead {
     flex-direction: row-reverse;
+  }
+
+  .rcard.mirror .cname {
+    justify-content: flex-end;
   }
 
   .rcard.mirror .cname,
