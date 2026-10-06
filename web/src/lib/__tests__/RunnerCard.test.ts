@@ -10,6 +10,7 @@ const baseProps = {
   rect: { x: 0, y: 0, w: 280, h: 360 },
   variant: "card" as const,
   leader: false,
+  raceStatus: "running",
 };
 
 function fakeParticipant(over: Record<string, unknown> = {}) {
@@ -44,8 +45,19 @@ function gapValueCell(container: HTMLElement): Element | null {
   return null;
 }
 
+function igtValueCell(container: HTMLElement): Element | null {
+  for (const row of container.querySelectorAll(".crow")) {
+    if (row.querySelector(".ck")?.textContent === "IGT") {
+      return row.querySelector(".cv");
+    }
+  }
+  return null;
+}
+
 describe("RunnerCard: gap row", () => {
-  it("shows nothing, not a placeholder, for the leader (gap_ms null)", () => {
+  // The cards sit beside their POVs in slot order, not in a ranked list, so
+  // a blank gap row on the first runner would read as missing data.
+  it("names the leader while the race runs", () => {
     const { container } = render(RunnerCard, {
       props: {
         ...baseProps,
@@ -53,10 +65,31 @@ describe("RunnerCard: gap row", () => {
         participant: fakeParticipant({ status: "playing", gap_ms: null }),
       },
     });
-    const cell = gapValueCell(container);
-    expect(cell).not.toBeNull();
-    // Empty, not "-", not "--.--", not the mockup's em dash.
-    expect(cell?.textContent).toBe("");
+    expect(gapValueCell(container)?.textContent).toBe("Leader");
+  });
+
+  it("names the winner once the race is over", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        leader: true,
+        raceStatus: "finished",
+        participant: fakeParticipant({ status: "finished", gap_ms: null }),
+      },
+    });
+    expect(gapValueCell(container)?.textContent).toBe("Winner");
+  });
+
+  it("marks a first-ranked runner who is out as DNF, not as the winner", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        leader: true,
+        raceStatus: "finished",
+        participant: fakeParticipant({ status: "abandoned", gap_ms: null }),
+      },
+    });
+    expect(gapValueCell(container)?.textContent).toBe("DNF");
   });
 
   it("reads DNF for an abandoned runner", () => {
@@ -226,5 +259,26 @@ describe("RunnerCard: splits (tall variant)", () => {
       },
     });
     expect(container.querySelector(".splits")).toBeNull();
+  });
+});
+
+describe("RunnerCard: IGT", () => {
+  it("shows a finished runner's final time in the finished colour", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({ status: "finished", igt_ms: 4_029_000 }),
+      },
+    });
+    const cell = igtValueCell(container);
+    expect(cell?.textContent).toBe("1:07:09");
+    expect(cell?.classList.contains("finished")).toBe(true);
+  });
+
+  it("leaves a running clock in the plain colour", () => {
+    const { container } = render(RunnerCard, {
+      props: { ...baseProps, participant: fakeParticipant() },
+    });
+    expect(igtValueCell(container)?.classList.contains("finished")).toBe(false);
   });
 });

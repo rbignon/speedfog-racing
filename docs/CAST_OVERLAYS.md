@@ -96,7 +96,12 @@ at (1528, 776), 376 x 288.
 
 Four runners in a 2x2 grid, filling the main area above the desk. Each POV
 hole has a runner card beside it (avatar, name, rank, layer progress); the
-right column's cards are mirrored to face inward, toward their POV.
+right column's cards are mirrored to face inward, toward their POV. The
+cards sit in slot order, not in a ranked list, so the first runner's gap
+row names the role instead of standing blank: Leader while the race runs,
+Winner once it is over (the ranked standings panels keep their usual empty
+cell). A finished runner's IGT takes the finished colour, as on the duel
+cards and in the standings; the focus scene's hero card does the same.
 
 | Hole | Label | Position (x, y) | Size (w x h) |
 | ---- | ----- | --------------- | ------------ |

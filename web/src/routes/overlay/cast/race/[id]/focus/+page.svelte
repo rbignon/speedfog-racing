@@ -32,6 +32,7 @@
   let ranks = $derived(
     new Map(raceStore.leaderboard.map((p, i) => [p.id, i + 1])),
   );
+  let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
   let avatars = $derived(
     new Map(
       data.race.participants.map((p) => [p.id, p.user.twitch_avatar_url]),
@@ -121,6 +122,7 @@
       rect={layout.panels.focus}
       variant="tall"
       leader={ranks.get(heroParticipant.id) === 1}
+      {raceStatus}
       splits={heroSplits}
       weapons={heroWeapons}
     />

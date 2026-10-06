@@ -20,6 +20,7 @@
   let ranks = $derived(
     new Map(raceStore.leaderboard.map((p, i) => [p.id, i + 1])),
   );
+  let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
   let avatars = $derived(
     new Map(
       data.race.participants.map((p) => [p.id, p.user.twitch_avatar_url]),
@@ -65,6 +66,7 @@
         rect={quadSeat(slot).card}
         variant={quadSeat(slot).mirrored ? "mirror" : "card"}
         leader={ranks.get(participant.id) === 1}
+        {raceStatus}
       />
     {/if}
   {/each}

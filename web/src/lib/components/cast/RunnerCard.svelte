@@ -24,6 +24,9 @@
     variant: "card" | "mirror" | "tall";
     /** Rank 1: brass border, brass tint, brass rank digit. */
     leader: boolean;
+    /** The race's own status: the leader's gap row reads Leader while it
+     * runs and Winner once it is over. */
+    raceStatus: string;
     /** Node id -> display name, from the seed's own graph
      * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
      * wire is a graph node id, never a display string. On a miss (the seed
@@ -53,6 +56,7 @@
     rect,
     variant,
     leader,
+    raceStatus,
     zoneNames = null,
     splits = [],
     weapons = "",
@@ -64,6 +68,12 @@
   let badge = $derived(rewards.lookupBadge(participant.equipped_badge_id));
   let depth = $derived(
     Math.min(participant.current_layer + 1, totalLayers || Infinity),
+  );
+  // The cards sit beside their POVs in slot order, not in a ranked list, so
+  // the leader's gap row names the role rather than standing blank (a
+  // ranked list, the standings, keeps its usual empty cell).
+  let leaderLabel = $derived(
+    !leader ? null : raceStatus === "finished" ? "Winner" : "Leader",
   );
 
   function displayName(p: WsParticipant): string {
@@ -168,9 +178,12 @@
         class:ahead={participant.gap_ms != null && participant.gap_ms < 0}
         class:behind={participant.gap_ms != null && participant.gap_ms > 0}
         class:dnf={isOutOfRace(participant.status)}
+        class:role={leaderLabel !== null &&
+          !isOutOfRace(participant.status) &&
+          participant.gap_ms == null}
         >{#if participant.status === "disqualified"}DQ{:else if participant.status === "abandoned"}DNF{:else if participant.gap_ms != null}{formatGap(
             participant.gap_ms,
-          )}{/if}</span
+          )}{:else if leaderLabel}{leaderLabel}{/if}</span
       >
     </div>
     <div class="crow">
@@ -179,7 +192,7 @@
     </div>
     <div class="crow">
       <span class="ck">IGT</span>
-      <span class="cv"
+      <span class="cv" class:finished={participant.status === "finished"}
         ><span class="sm">{formatIgt(participant.igt_ms)}</span></span
       >
     </div>
@@ -360,6 +373,22 @@
   /* DNF is a state, not an alarm: the secondary text colour, not ember. */
   .cv.dnf {
     color: var(--color-text-secondary);
+  }
+
+  /* Leader / Winner: a role, not a time, so the card's display face in the
+   * leader's brass rather than a mono number. */
+  .cv.role {
+    font-family: var(--font-display);
+    font-size: 24px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-gold);
+  }
+
+  /* A finished runner's time is their result: the finished colour the duel
+   * cards and the standings give it too. */
+  .cv.finished {
+    color: var(--color-info);
   }
 
   /* The hero's wielded combo, under the zone line: a full-width line of
