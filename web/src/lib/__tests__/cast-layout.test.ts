@@ -105,6 +105,46 @@ describe("sceneLayout", () => {
     }
   });
 
+  // Ignite's call (H2): the quad's four POVs were too small at a third of
+  // the canvas, so its desk alone is thinner and its POVs take the height
+  // the desk gives up; the other race scenes keep the full desk.
+  it("thins the desk on the quad scene alone, its POVs taking the height it frees", () => {
+    const quad = sceneLayout("quad");
+    const cam = (scene: CastSceneId) =>
+      sceneLayout(scene).holes.find((h) => h.id === "cam1")!;
+    for (const scene of ["focus", "duel", "metro"] as const) {
+      expect(cam("quad").h).toBeLessThan(cam(scene).h);
+      expect(sceneLayout(scene).panels.race.h).toBe(cam(scene).h);
+    }
+    expect(quad.panels.race.h).toBe(cam("quad").h);
+    expect(cam("quad").w * 3).toBe(cam("quad").h * 4);
+    const povs = quad.holes.filter((h) => h.role === "pov");
+    for (const p of povs) expect(p.w * 9).toBe(p.h * 16);
+    // The same 24px breath above the desk as the other scenes keep.
+    const bottom = Math.max(...povs.map((p) => p.y + p.h));
+    expect(quad.panels.race.y - bottom).toBe(24);
+    const focus = sceneLayout("focus");
+    expect(
+      focus.panels.race.y - (focus.panels.focus.y + focus.panels.focus.h),
+    ).toBe(24);
+  });
+
+  it("tiles the quad's cards and POVs edge to edge across the canvas", () => {
+    const { holes, panels } = sceneLayout("quad");
+    const row = [
+      panels.card1,
+      holes.find((h) => h.id === "pov1")!,
+      holes.find((h) => h.id === "pov2")!,
+      panels.card2,
+    ];
+    expect(row[0].x).toBe(16);
+    for (let i = 1; i < row.length; i++) {
+      expect(row[i].x).toBe(row[i - 1].x + row[i - 1].w + 16);
+    }
+    expect(row[3].x + row[3].w).toBe(CANVAS.w - 16);
+    expect(panels.card1.h).toBe(row[1].h);
+  });
+
   it("gives the metro scene one map hole and no POV", () => {
     const { holes } = sceneLayout("metro");
     expect(holes.filter((h) => h.role === "map")).toHaveLength(1);
@@ -114,8 +154,16 @@ describe("sceneLayout", () => {
 
 describe("formatGeo", () => {
   it("prints the label, the origin and the size the way OBS asks for them", () => {
-    const rect = sceneLayout("quad").holes.find((h) => h.id === "pov1")!;
-    expect(formatGeo(rect)).toBe("POV 1  312,16  640x360");
+    const rect = {
+      id: "pov1",
+      role: "pov" as const,
+      label: "POV 1",
+      x: 248,
+      y: 16,
+      w: 704,
+      h: 396,
+    };
+    expect(formatGeo(rect)).toBe("POV 1  248,16  704x396");
   });
 });
 

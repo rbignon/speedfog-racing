@@ -77,9 +77,9 @@ and need no cap.
 ## The five scenes
 
 Four of the five scenes (quad, focus, duel, metro) share a **desk** band along the
-bottom: a race name panel, a caster lockup (the SpeedFog Racing wordmark,
-crossed with the event's co-brand when one is set), a clock panel, and up to
-two caster cam holes. How many cam holes it cuts depends on the `cams`
+bottom (the quad's is thinner, see Quad): a race name panel, a caster lockup
+(the SpeedFog Racing wordmark, crossed with the event's co-brand when one is
+set), a clock panel, and up to two caster cam holes. How many cam holes it cuts depends on the `cams`
 parameter (0, 1 or 2); with 0, the desk still draws its race/lockup/clock
 panels but pierces no cam holes at all. The clock panel shows one element
 per state: the race clock alone while the race runs (its ticking says the
@@ -97,6 +97,8 @@ race's first tick.
 | CAM 1 | 408, 776        | 384 x 288    | `cams >= 1` |
 | CAM 2 | 1128, 776       | 384 x 288    | `cams >= 2` |
 
+That is the full desk, 288px tall, of the focus, duel and metro scenes.
+
 The desk's own panels (not holes, no OBS source needed): the race-name panel
 at (16, 776), 376 x 288; the lockup at (820, 776), 280 x 288; the clock panel
 at (1528, 776), 376 x 288.
@@ -110,16 +112,30 @@ cards sit in slot order, not in a ranked list, so the first runner's gap
 row names the role instead of standing blank: Leader while the race runs,
 Winner once it is over (the ranked standings panels keep their usual empty
 cell). A finished runner's IGT takes the finished colour, as on the duel
-cards and in the standings; the focus scene's hero card does the same.
+cards and in the standings; the focus scene's hero card does the same. A
+card's name keeps one line, ellipsized at the card's width, its badge whole
+beside it or on the next line.
+
+The quad has a desk of its own, thinner (216px instead of 288, Ignite's
+pick in October 2026): its four POVs, too small at a third of the canvas
+(640 x 360), take the 72px it frees, and the cards take the width the POVs
+leave, 216px each. The other race scenes keep the full desk: their POVs are
+bound by the width and could not grow from it. The cams therefore change
+size and place when the broadcast cuts between the quad and another scene;
+each OBS scene has its own sources anyway.
 
 | Hole | Label | Position (x, y) | Size (w x h) |
 | ---- | ----- | --------------- | ------------ |
-| pov1 | POV 1 | 312, 16         | 640 x 360    |
-| pov2 | POV 2 | 968, 16         | 640 x 360    |
-| pov3 | POV 3 | 312, 392        | 640 x 360    |
-| pov4 | POV 4 | 968, 392        | 640 x 360    |
+| pov1 | POV 1 | 248, 16         | 704 x 396    |
+| pov2 | POV 2 | 968, 16         | 704 x 396    |
+| pov3 | POV 3 | 248, 428        | 704 x 396    |
+| pov4 | POV 4 | 968, 428        | 704 x 396    |
+| cam1 | CAM 1 | 504, 848        | 288 x 216    |
+| cam2 | CAM 2 | 1128, 848       | 288 x 216    |
 
-Plus the shared desk band (cam holes as above).
+The quad desk's panels: the race name at (16, 848), 472 x 216; the lockup at
+(820, 848), 280 x 216; the clock at (1432, 848), 472 x 216. The runner cards
+sit at x 16 and 1688, at the POV rows' y, 216 x 396.
 
 ### Focus
 

@@ -46,33 +46,64 @@ export interface SceneOptions {
   cams?: number;
 }
 
-// --- the desk, shared by the quad, focus and metro scenes -----------------
+// --- the desk, shared by the quad, focus, duel and metro scenes ----------
 
-const BAND_H = 288;
-const BAND_Y = CANVAS.h - M - BAND_H; // 776
-const CAM_W = 384; // 4:3 at the band's height
-const CAM_H = 288;
 const LOCK_W = 280;
 const LOCK_GAP = 28;
-const CAM1_X = Math.round((CANVAS.w - (2 * CAM_W + 2 * LOCK_GAP + LOCK_W)) / 2);
-const LOCK_X = CAM1_X + CAM_W + LOCK_GAP;
-const CAM2_X = LOCK_X + LOCK_W + LOCK_GAP;
 
-/** Main area above the desk: y 16 to 752. */
+/** A desk band along the canvas foot: two 4:3 cams at its full height, tight
+ * around the lockup and centred, the race name and the clock filling the
+ * sides. */
+interface Desk {
+  y: number;
+  h: number;
+  camW: number;
+  cam1X: number;
+  lockX: number;
+  cam2X: number;
+}
+
+function desk(h: number): Desk {
+  const camW = (h * 4) / 3;
+  const cam1X = Math.round((CANVAS.w - (2 * camW + 2 * LOCK_GAP + LOCK_W)) / 2);
+  const lockX = cam1X + camW + LOCK_GAP;
+  return {
+    y: CANVAS.h - M - h,
+    h,
+    camW,
+    cam1X,
+    lockX,
+    cam2X: lockX + LOCK_W + LOCK_GAP,
+  };
+}
+
+/** The full desk of the focus, duel and metro scenes: y 776, cams 384x288. */
+const DESK = desk(288);
+/** The quad's thinner desk, Ignite's pick (2026-10): y 848, cams 288x216.
+ * Its four POVs were too small at a third of the canvas; they take the 72px
+ * this desk gives up. Only the quad: the other scenes cannot grow their POVs
+ * from it (the focus hero and the duel pair are bound by the width). */
+const QUAD_DESK = desk(216);
+
+/** Main area above a desk, kept 24px clear of it. */
 const MAIN_Y = M;
-const MAIN_H = BAND_Y - 24 - MAIN_Y;
+function mainHeight(d: Desk): number {
+  return d.y - 24 - MAIN_Y;
+}
+/** Above the full desk: y 16 to 752. */
+const MAIN_H = mainHeight(DESK);
 
-function deskHoles(cams: number): CastRect[] {
+function deskHoles(cams: number, d: Desk = DESK): CastRect[] {
   const holes: CastRect[] = [];
   if (cams >= 1) {
     holes.push({
       id: "cam1",
       role: "cam",
       label: "CAM 1",
-      x: CAM1_X,
-      y: BAND_Y,
-      w: CAM_W,
-      h: CAM_H,
+      x: d.cam1X,
+      y: d.y,
+      w: d.camW,
+      h: d.h,
     });
   }
   if (cams >= 2) {
@@ -80,33 +111,35 @@ function deskHoles(cams: number): CastRect[] {
       id: "cam2",
       role: "cam",
       label: "CAM 2",
-      x: CAM2_X,
-      y: BAND_Y,
-      w: CAM_W,
-      h: CAM_H,
+      x: d.cam2X,
+      y: d.y,
+      w: d.camW,
+      h: d.h,
     });
   }
   return holes;
 }
 
-function deskPanels(): Record<string, Rect> {
+function deskPanels(d: Desk = DESK): Record<string, Rect> {
   return {
-    race: { x: M, y: BAND_Y, w: CAM1_X - 2 * M, h: BAND_H },
-    lockup: { x: LOCK_X, y: BAND_Y, w: LOCK_W, h: BAND_H },
+    race: { x: M, y: d.y, w: d.cam1X - 2 * M, h: d.h },
+    lockup: { x: d.lockX, y: d.y, w: LOCK_W, h: d.h },
     clock: {
-      x: CAM2_X + CAM_W + M,
-      y: BAND_Y,
-      w: CANVAS.w - M - (CAM2_X + CAM_W + M),
-      h: BAND_H,
+      x: d.cam2X + d.camW + M,
+      y: d.y,
+      w: CANVAS.w - M - (d.cam2X + d.camW + M),
+      h: d.h,
     },
   };
 }
 
 // --- scene 1, quad --------------------------------------------------------
 
-const POV_W = 640; // exactly a third of the canvas width
-const POV_H = 360;
-const CARD_W = 280; // 2 * CARD_W + 2 * POV_W = 1840, the canvas minus margins
+// Two rows of 16:9 POVs fill the height above the quad's own desk; the cards
+// take the width the POVs leave, so the row tiles the canvas edge to edge.
+const POV_H = (mainHeight(QUAD_DESK) - G) / 2; // 396
+const POV_W = (POV_H * 16) / 9; // 704
+const CARD_W = (CANVAS.w - 2 * M - 2 * POV_W - 3 * G) / 2; // 216
 const COL_L_CARD = M;
 const COL_L_POV = COL_L_CARD + CARD_W + G;
 const COL_R_POV = COL_L_POV + POV_W + G;
@@ -143,11 +176,11 @@ function quadScene(cams: number): CastScene {
     w: POV_W,
     h: POV_H,
   }));
-  const panels: Record<string, Rect> = { ...deskPanels() };
+  const panels: Record<string, Rect> = { ...deskPanels(QUAD_DESK) };
   for (let slot = 1; slot <= 4; slot++) {
     panels[`card${slot}`] = quadSeat(slot).card;
   }
-  return { holes: [...holes, ...deskHoles(cams)], panels };
+  return { holes: [...holes, ...deskHoles(cams, QUAD_DESK)], panels };
 }
 
 // --- scene 2, focus -------------------------------------------------------
