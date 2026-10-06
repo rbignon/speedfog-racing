@@ -9,17 +9,21 @@ Usage:
     cd server && uv run python ../tools/extract_zone_times.py
     cd server && uv run python ../tools/extract_zone_times.py --deviation 40 --min-samples 8
     cd server && uv run python ../tools/extract_zone_times.py --report-only
+    cd server && uv run python ../tools/extract_zone_times.py --since 2026-06-01 \\
+        --types mini_dungeon legacy_dungeon --deviation 0 --min-samples 30
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime
 import json
 import math
 import statistics
 import sys
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -55,19 +59,27 @@ def _floor_half(value: float) -> float:
 # ---------------------------------------------------------------------------
 
 
-async def load_seed_graphs(conn: asyncpg.Connection) -> dict[str, dict]:
+async def load_seed_graphs(
+    conn: asyncpg.Connection, since: datetime.date | None = None
+) -> dict[str, dict]:
     """Load graph_json for all seeds used in races with zone_history data.
+
+    ``since`` keeps only races created on or after that day.
 
     Returns: {seed_id: parsed_graph_json}
     """
-    rows = await conn.fetch("""
+    rows = await conn.fetch(
+        """
         SELECT DISTINCT s.id, s.graph_json::text
         FROM seeds s
         JOIN races r ON r.seed_id = s.id
         JOIN participants p ON p.race_id = r.id
         WHERE p.zone_history IS NOT NULL
           AND p.zone_history::text NOT IN ('null', '[]')
-    """)
+          AND ($1::date IS NULL OR r.created_at >= $1::date)
+        """,
+        since,
+    )
     graphs = {}
     for row in rows:
         graph_text = row["graph_json"]
@@ -84,15 +96,24 @@ class ParticipantData:
     seed_id: str
 
 
-async def load_participants(conn: asyncpg.Connection) -> list[ParticipantData]:
-    """Load participants with zone_history, status, igt_ms, and their seed_id."""
-    rows = await conn.fetch("""
+async def load_participants(
+    conn: asyncpg.Connection, since: datetime.date | None = None
+) -> list[ParticipantData]:
+    """Load participants with zone_history, status, igt_ms, and their seed_id.
+
+    ``since`` keeps only races created on or after that day.
+    """
+    rows = await conn.fetch(
+        """
         SELECT p.zone_history::text, p.status, p.igt_ms, r.seed_id::text
         FROM participants p
         JOIN races r ON p.race_id = r.id
         WHERE p.zone_history IS NOT NULL
           AND p.zone_history::text NOT IN ('null', '[]')
-    """)
+          AND ($1::date IS NULL OR r.created_at >= $1::date)
+        """,
+        since,
+    )
     participants = []
     for row in rows:
         history = json.loads(row["zone_history"])
@@ -158,6 +179,7 @@ def _compute_outcome(
 def compute_cluster_durations(
     participants: list[ParticipantData],
     seed_graphs: dict[str, dict],
+    cluster_types: Mapping[str, str] | None = None,
 ) -> dict[str, list[float]]:
     """Compute cluster traversal durations in minutes.
 
@@ -177,11 +199,22 @@ def compute_cluster_durations(
 
     Durations are raw cluster traversal times (not decomposed per zone).
 
+    ``cluster_types`` ({node_id: current cluster type}) drops the clears that
+    do not measure the cluster in its own role: a seed that placed it as its
+    final boss (nobody can turn back and the scaling is maxed out), and a
+    major arena whose boss was shuffled (the time measures the drawn boss,
+    not the arena). Minor arenas keep their shuffled clears: minor bosses
+    are shuffled in most pools, so that is their usual traversal. Clears
+    from before a cluster's type was reclassified are kept: the zones and
+    the traversal are the same.
+
     Returns: {node_id: [cluster_duration_minutes, ...]}
     """
     cluster_durations: dict[str, list[float]] = defaultdict(list)
     skipped_backed = 0
     skipped_other = 0
+    skipped_final = 0
+    skipped_shuffled = 0
 
     for p in participants:
         history = p.zone_history
@@ -234,10 +267,24 @@ def compute_cluster_durations(
                 skipped_other += 1
                 continue
 
+            cluster_type = cluster_types.get(node_id) if cluster_types else None
+            if cluster_type is not None:
+                seed_node = seed_nodes.get(node_id, {})
+                if (
+                    seed_node.get("type") == "final_boss"
+                    and cluster_type != "final_boss"
+                ):
+                    skipped_final += 1
+                    continue
+                if cluster_type == "major_boss" and seed_node.get("randomized_bosses"):
+                    skipped_shuffled += 1
+                    continue
+
             cluster_durations[node_id].append(total_ms / 1000.0 / 60.0)
 
     print(
-        f"  Filtered: {skipped_backed} backed, {skipped_other} playing/abandoned",
+        f"  Filtered: {skipped_backed} backed, {skipped_other} playing/abandoned, "
+        f"{skipped_final} final boss, {skipped_shuffled} shuffled major boss",
         file=sys.stderr,
     )
 
@@ -323,11 +370,18 @@ def get_current_weight(
 ) -> tuple[int | float, int | float | None]:
     """Get the current effective weight and explicit override for a cluster.
 
-    Single-zone: zone override from [zones.*] or type default.
-    Multi-zone: cluster override from [clusters.*] or clusters.json weight.
+    A [clusters.*] weight override wins for any cluster, as in the generator.
+    Otherwise single-zone: zone override from [zones.*] or type default;
+    multi-zone: clusters.json weight.
 
     Returns: (effective_weight, override_value_or_None)
     """
+    clusters_meta = metadata.get("clusters", {})
+    if node_id in clusters_meta:
+        cm = clusters_meta[node_id]
+        if isinstance(cm, dict) and "weight" in cm:
+            return cm["weight"], cm["weight"]
+
     if info["n_zones"] == 1:
         zone_name = info["primary_zone"]
         zones_meta = metadata.get("zones", {})
@@ -340,12 +394,6 @@ def get_current_weight(
         defaults = metadata.get("defaults", {})
         return defaults.get(info["type"], 2), None
 
-    # Multi-zone: cluster override in TOML takes precedence, then clusters.json weight
-    clusters_meta = metadata.get("clusters", {})
-    if node_id in clusters_meta:
-        cm = clusters_meta[node_id]
-        if isinstance(cm, dict) and "weight" in cm:
-            return cm["weight"], cm["weight"]
     w = info["weight"]
     return (w if w is not None else 2), None
 
@@ -415,8 +463,10 @@ def format_overrides(
 ) -> list[str]:
     """Format suggested overrides where observed median deviates from current weight.
 
-    For single-zone clusters, suggests [zones.*] overrides.
+    For single-zone clusters, suggests [zones.*] overrides, unless the
+    cluster already carries a [clusters.*] weight (which wins).
     For multi-zone clusters, suggests [clusters.*] weight overrides.
+    Proposals are rounded to 0.5 in both cases.
     """
     lines = []
     lines.append("")
@@ -428,6 +478,7 @@ def format_overrides(
     lines.append("=" * 80)
 
     current_defaults = current_metadata.get("defaults", {})
+    clusters_meta = current_metadata.get("clusters", {})
     suggestions: list[dict] = []
 
     for node_id, durations in cluster_durations.items():
@@ -454,11 +505,10 @@ def format_overrides(
         if effective_weight == 0:
             continue
 
-        # For multi-zone clusters, round proposed to int (cluster weights are ints)
-        if n_zones > 1:
-            proposed = round(proposed)
-            if proposed < 1:
-                proposed = 1
+        cluster_meta = clusters_meta.get(node_id)
+        zone_level = n_zones == 1 and not (
+            isinstance(cluster_meta, dict) and "weight" in cluster_meta
+        )
 
         deviation = (
             abs(proposed - effective_weight) / ((proposed + effective_weight) / 2) * 100
@@ -472,6 +522,7 @@ def format_overrides(
                 "type": cluster_type,
                 "n": n,
                 "n_zones": n_zones,
+                "zone_level": zone_level,
                 "median": median,
                 "proposed": proposed,
                 "effective_weight": effective_weight,
@@ -498,7 +549,7 @@ def format_overrides(
             continue
 
         # Determine action
-        if s["n_zones"] == 1:
+        if s["zone_level"]:
             # Single-zone: suggest [zones.*] override
             if s["current_override"] is not None:
                 if s["proposed"] == s["cur_type_default"]:
@@ -513,7 +564,7 @@ def format_overrides(
                     f"ADD [zones.{s['primary_zone']}] weight = {_fmt_wt(s['proposed'])}"
                 )
         else:
-            # Multi-zone: suggest [clusters.*] override
+            # Multi-zone or cluster-level override: suggest [clusters.*] override
             if s["current_override"] is not None:
                 action = (
                     f"UPDATE [clusters] {_fmt_wt(s['current_override'])} "
@@ -622,6 +673,17 @@ async def main():
         help="Only show full data report, skip change suggestions",
     )
     parser.add_argument(
+        "--since",
+        type=datetime.date.fromisoformat,
+        help="Only use races created on or after this day (YYYY-MM-DD)",
+    )
+    parser.add_argument(
+        "--types",
+        nargs="+",
+        metavar="TYPE",
+        help="Only report clusters of these types (e.g. mini_dungeon legacy_dungeon)",
+    )
+    parser.add_argument(
         "--db-url",
         default=DB_URL,
         help="PostgreSQL connection URL",
@@ -631,8 +693,8 @@ async def main():
     conn = await asyncpg.connect(args.db_url)
     try:
         print("Loading data...", file=sys.stderr)
-        seed_graphs = await load_seed_graphs(conn)
-        participants = await load_participants(conn)
+        seed_graphs = await load_seed_graphs(conn, args.since)
+        participants = await load_participants(conn, args.since)
         clusters_json = load_clusters_json(args.clusters)
         cluster_info = build_cluster_info(clusters_json)
         print(
@@ -641,7 +703,11 @@ async def main():
             file=sys.stderr,
         )
 
-        all_cluster_durations = compute_cluster_durations(participants, seed_graphs)
+        all_cluster_durations = compute_cluster_durations(
+            participants,
+            seed_graphs,
+            {nid: info["type"] for nid, info in cluster_info.items()},
+        )
         current_metadata = load_zone_metadata(args.metadata)
 
         # Filter to current clusters only (ignore stale data from old seeds)
@@ -656,6 +722,15 @@ async def main():
                 f"  Ignored {n_stale} stale cluster(s) not in clusters.json",
                 file=sys.stderr,
             )
+        if args.types:
+            known_types = {info["type"] for info in cluster_info.values()}
+            for unknown in sorted(set(args.types) - known_types):
+                print(f"WARNING: no cluster has type {unknown!r}", file=sys.stderr)
+            cluster_durations = {
+                nid: durs
+                for nid, durs in cluster_durations.items()
+                if cluster_info[nid]["type"] in args.types
+            }
 
         new_defaults = compute_type_defaults(cluster_durations, cluster_info)
 
