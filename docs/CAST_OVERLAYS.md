@@ -131,7 +131,10 @@ order. A mini standings panel sits at (1584, 604), 320 x 148 (rank, colour
 dot, name and gap; no depth cell, since the scene's own POVs already show
 what each runner is doing), and the hero's own runner card fills the panel
 at (16, 16), 240 x 736, left of the hero hole, so the scene reads card,
-hero, field, left to right. Plus the shared desk band.
+hero, field, left to right. When a long name (or its badge) wraps and the
+weapon line takes two lines, the splits at the card's foot are what give
+way, a whole row at a time; the zone line above them never does. Plus the
+shared desk band.
 
 ### Duel
 

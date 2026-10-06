@@ -306,8 +306,12 @@
   }
 
   /* One line, clipped by the card's own width: the zone name is cut by
-   * the CSS, not by a character count that would trim names which fit. */
+   * the CSS, not by a character count that would trim names which fit.
+   * Never squeezed by the card's flex column either: with overflow hidden
+   * it would otherwise give up its whole height first (a hero whose name
+   * and badge wrap, over a two-line weapon, lost the zone entirely). */
   .czone {
+    flex-shrink: 0;
     margin-top: 2px;
     font-size: 17px;
     color: var(--color-text-secondary);
@@ -466,9 +470,24 @@
     font-size: 24px;
   }
 
+  /* The one block that yields when the tall card runs short of height
+   * (a wrapped name, a two-line weapon): it shrinks, and a split row that
+   * no longer fits wraps into a second column, off to the right where the
+   * card's overflow hides it, so rows drop whole instead of being cut. */
   .splits {
     margin-top: auto;
     padding-top: 12px;
+    min-height: 0;
+    flex: 0 1 auto;
+    display: flex;
+    flex-direction: column;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow: hidden;
+  }
+
+  .splits > * {
+    width: 100%;
   }
 
   .sp-t {
