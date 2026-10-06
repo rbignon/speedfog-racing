@@ -14,9 +14,20 @@
     racesExpected: number;
     /** Already ranked by the server (`stage.results`): row `i` is rank `i + 1`. */
     results: EventStageEntry[];
+    /** The label of the stage this one feeds ("Quarter A"), which the
+     * advancing runners' chip names; null for a stage nobody goes on from
+     * (a final, a showcase), whose rows never advance. */
+    nextLabel?: string | null;
   }
 
-  let { rect, label, racesPlayed, racesExpected, results }: Props = $props();
+  let {
+    rect,
+    label,
+    racesPlayed,
+    racesExpected,
+    results,
+    nextLabel = null,
+  }: Props = $props();
 
   // The panel can never overflow: how many rows fit comes from this rect's
   // own height, not a typed number. HEADER_RESERVE is the eyebrow + title
@@ -99,7 +110,8 @@
         <span class="sn" style={nameStyleFor(entry.user)}
           >{displayName(entry.user)}</span
         >
-        {#if entry.advances}<span class="stag">Final</span>{/if}
+        {#if entry.advances && nextLabel}<span class="stag">{nextLabel}</span
+          >{/if}
         <span class="sp">{entry.points}</span>
       </div>
     {/each}

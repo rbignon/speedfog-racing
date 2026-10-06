@@ -70,10 +70,11 @@ describe("CastRoundStandings: row cap", () => {
 });
 
 describe("CastRoundStandings: advancing mark", () => {
-  it("gives an advancing entry the Final chip and row accent, and withholds both from the rest", () => {
+  it("names the stage an advancing entry goes on to, and withholds chip and accent from the rest", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
+        nextLabel: "Quarter A",
         results: [
           fakeEntry({ user: fakeUser({ id: "u1" }), advances: true }),
           fakeEntry({ user: fakeUser({ id: "u2" }), advances: false }),
@@ -82,7 +83,7 @@ describe("CastRoundStandings: advancing mark", () => {
     });
     const rows = container.querySelectorAll(".srow");
     expect(rows[0].classList.contains("adv")).toBe(true);
-    expect(rows[0].querySelector(".stag")?.textContent).toBe("Final");
+    expect(rows[0].querySelector(".stag")?.textContent).toBe("Quarter A");
     expect(rows[1].classList.contains("adv")).toBe(false);
     expect(rows[1].querySelector(".stag")).toBeNull();
   });

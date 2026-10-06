@@ -281,8 +281,11 @@ caster override here, since the stage's field size and a race's finisher
 count aren't something a caster usefully chooses. The stage standings
 panel's own row is 56px tall with a 36px avatar (down from the mockup's
 72px/46px), measured against a real 10-runner stage where the original
-size only fit 3 of them in the panel's 412px height; the brass `Final`
-chip and the advancing runner's rule stay exactly as they were.
+size only fit 3 of them in the panel's 412px height; the brass chip and
+the advancing runner's rule stay exactly as they were. Once the stage is
+complete, the chip on each advancing runner names the stage they go on to
+("Quarter A" after a group, "Semi A" after a quarter, "Final" after a
+semi): the talk page finds it as the stage whose `from` lists this one.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |
