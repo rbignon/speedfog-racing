@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/svelte";
 import LivePlayerDots from "$lib/dag/LivePlayerDots.svelte";
 import type { PositionedNode } from "$lib/dag/types";
+import { LIVE_TAG_NAME_GAP } from "$lib/dag/constants";
 
 function fakeNode(over: Partial<PositionedNode> = {}): PositionedNode {
   return {
@@ -179,5 +180,30 @@ describe("LivePlayerDots: zone line on the tags", () => {
     });
     expect(container.querySelector(".tag-name")).not.toBeNull();
     expect(container.querySelector(".tag-zone")).toBeNull();
+  });
+});
+
+describe("LivePlayerDots: a tag with no zone line", () => {
+  // With zone lines on, a tag that has none (a finisher, anyone before the
+  // start) must still sit on its connector: only a real zone line pushes a
+  // name placed above the dot one line further up.
+  it("keeps its name on the connector's end", () => {
+    const final = fakeNode({ id: "end", type: "final_boss" });
+    const { container } = render(LivePlayerDots, {
+      props: {
+        participants: [fakeParticipant({ status: "finished" })],
+        nodeMap: new Map([["end", final]]),
+        playerTags: true,
+        tagZones: true,
+      },
+    });
+    const line = container.querySelector(".tag-line");
+    const name = container.querySelector(".tag-name");
+    const y1 = Number(line?.getAttribute("y1"));
+    const y2 = Number(line?.getAttribute("y2"));
+    const dir = Math.sign(y2 - y1);
+    expect(Number(name?.getAttribute("y"))).toBeCloseTo(
+      y2 + dir * LIVE_TAG_NAME_GAP,
+    );
   });
 });

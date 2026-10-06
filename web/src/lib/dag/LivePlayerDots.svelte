@@ -298,13 +298,20 @@
 
   // A node's display name is a whole route label ("Liurnia - Academy
   // Crystal Cave - Crystalian Duo"): the tag keeps its last leg, the place
-  // the runner actually stands, as the cast cards do.
-  function zoneLeg(nodeId: string | null): string | null {
-    if (!nodeId) return null;
-    const name = nodeMap.get(nodeId)?.displayName;
-    if (!name) return null;
-    return name.includes(" - ") ? name.split(" - ").pop()! : name;
-  }
+  // the runner actually stands, as the cast cards do. Cut once per map, not
+  // on every runner update.
+  let zoneLegs = $derived(
+    new Map(
+      tagZones
+        ? [...nodeMap.values()].map((n) => [
+            n.id,
+            n.displayName.includes(" - ")
+              ? n.displayName.split(" - ").pop()!
+              : n.displayName,
+          ])
+        : [],
+    ),
+  );
 
   let tagView: TagView = $derived.by(() => {
     if (view) return view;
@@ -420,7 +427,7 @@
         displayName: p.twitch_display_name || p.twitch_username,
         zone:
           tagZones && !preRace && p.status !== "finished"
-            ? zoneLeg(p.current_zone)
+            ? zoneLegs.get(p.current_zone ?? "") || null
             : null,
         opacity: spot.opacity,
         // Stable per runner, so a tag on the middle row keeps its side.
@@ -541,7 +548,9 @@
   {#each tags as tag (tag.participantId)}
     <text
       x={tag.nameX}
-      y={tag.y + tag.dir * tag.reach - (tag.dir < 0 ? zoneLineHeight : 0)}
+      y={tag.y +
+        tag.dir * tag.reach -
+        (tag.dir < 0 && tag.zone ? zoneLineHeight : 0)}
       text-anchor="middle"
       dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
       font-size={tg.font}
