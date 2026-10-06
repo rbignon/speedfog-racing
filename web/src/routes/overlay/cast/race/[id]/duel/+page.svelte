@@ -101,7 +101,6 @@
         {participant}
         rank={ranks.get(participant.id) ?? slot}
         avatarUrl={avatars.get(participant.id) ?? null}
-        {totalLayers}
         {zoneNames}
         rect={layout.panels[`duel${slot}`]}
         mirrored={slot === 2}

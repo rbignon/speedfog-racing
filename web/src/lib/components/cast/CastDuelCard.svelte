@@ -10,7 +10,6 @@
     participant: WsParticipant;
     rank: number;
     avatarUrl: string | null;
-    totalLayers: number | null;
     rect: Rect;
     /** The right card faces inward, toward the versus block, the same way
      * the quad scene's right column mirrors its cards toward their POV. */
@@ -35,7 +34,6 @@
     participant,
     rank,
     avatarUrl,
-    totalLayers,
     rect,
     mirrored,
     leader,
@@ -48,9 +46,6 @@
     PLAYER_COLORS[participant.color_index % PLAYER_COLORS.length],
   );
   let badge = $derived(rewards.lookupBadge(participant.equipped_badge_id));
-  let depth = $derived(
-    Math.min(participant.current_layer + 1, totalLayers || Infinity),
-  );
   let ranked = $derived(raceStatus !== "setup");
 
   function displayName(p: WsParticipant): string {
@@ -153,13 +148,9 @@
   {#if weapons}
     <span class="dweap">{weapons}</span>
   {/if}
+  <!-- Depth lives in the versus block beside the card, each side's in the
+       column next to its own runner: the card keeps what only it shows. -->
   <div class="dstats">
-    <div class="dstat">
-      <span class="dk">Depth</span>
-      <span class="dv"
-        >{depth}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
-      >
-    </div>
     <div class="dstat">
       <span class="dk">Deaths</span>
       <span class="dv"><SkullIcon size={19} />{participant.death_count}</span>
@@ -316,12 +307,6 @@
     font-family: var(--font-mono);
     font-size: 24px;
     font-weight: 600;
-  }
-
-  .dv i {
-    font-style: normal;
-    font-size: 16px;
-    color: var(--color-text-secondary);
   }
 
   /* A finished runner's time is their result: the same finished colour the

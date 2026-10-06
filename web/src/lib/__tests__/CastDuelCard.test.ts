@@ -6,7 +6,6 @@ const baseProps = {
   rect: { x: 16, y: 554, w: 436, h: 198 },
   rank: 1,
   avatarUrl: null,
-  totalLayers: 35,
   zoneNames: new Map<string, string>(),
   mirrored: false,
   leader: false,
@@ -99,5 +98,17 @@ describe("CastDuelCard: before the start", () => {
     });
     expect(container.querySelector(".drk")?.textContent ?? "").toBe("");
     expect(container.querySelector(".dcard.lead")).toBeNull();
+  });
+});
+
+describe("CastDuelCard: stats", () => {
+  it("leaves depth to the versus block beside it", () => {
+    const { container } = render(CastDuelCard, {
+      props: { ...baseProps, participant: fakeParticipant() },
+    });
+    const labels = [...container.querySelectorAll(".dk")].map(
+      (el) => el.textContent,
+    );
+    expect(labels).toEqual(["Deaths", "IGT"]);
   });
 });

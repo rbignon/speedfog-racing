@@ -149,15 +149,18 @@ shared desk band.
 
 Two runners head to head, each at the biggest 16:9 the main area fits side
 by side, for a showcase match or any race the commentary treats as a duel.
-Under each POV sits that runner's card (avatar, name, rank, zone, depth,
+Under each POV sits that runner's card (avatar, name, rank, zone, weapons,
 deaths, IGT; the right card mirrored to face inward, like the quad scene's
-right column), and between the cards a versus block: the head-to-head gap
-between the two seated runners themselves (their `gap_ms` values share the
-field leader's reference, so the difference is the duel's own gap, whoever
-else is in the race), who leads, and both sides' deaths and depth. A runner
-out of the race shows DNF or DQ in place of a stale zone and drops out of
-the gap (the surviving side leads), and a finished runner's IGT takes the
-finished colour, as in the standings panels.
+right column), and between the cards a versus block in three columns: each
+side's depth in the outer column next to that runner's own card, and in the
+middle the head-to-head gap between the two seated runners themselves
+(their `gap_ms` values share the field leader's reference, so the difference
+is the duel's own gap, whoever else is in the race) with who leads, or who
+wins once neither side is still racing (finished or out). Deaths stay on the
+cards, not repeated in the block. A runner out of the race shows DNF or DQ
+in place of a stale zone and drops out of the gap (the surviving side
+leads), and a finished runner's IGT takes the finished colour, as in the
+standings panels.
 
 | Hole | Label | Position (x, y) | Size (w x h) |
 | ---- | ----- | --------------- | ------------ |

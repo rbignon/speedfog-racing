@@ -4,7 +4,6 @@
   import type { WsParticipant } from "$lib/websocket";
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import { formatGap } from "$lib/gap";
-  import SkullIcon from "$lib/components/SkullIcon.svelte";
 
   interface Props {
     /** The two seated runners, left and right, in POV order (not rank
@@ -30,19 +29,27 @@
     return Math.min(p.current_layer + 1, totalLayers || Infinity);
   }
 
+  // Neither side can change the outcome any more: finished, or out.
+  function done(p: WsParticipant): boolean {
+    return p.status === "finished" || isOutOfRace(p.status);
+  }
+
   // The duel's own gap: the two seated runners against each other, not
   // against the field's leader (a showcase race can hold more runners than
   // the scene seats). Both gap_ms values share the leader's reference, so
   // their difference is the head-to-head gap; a side out of the race has no
-  // live gap to show, and the surviving side leads by default.
+  // live gap to show, and the surviving side leads by default. Once neither
+  // side is still racing, the side ahead has won rather than leads.
   let duel = $derived.by(() => {
     if (!a || !b) return null;
+    const settled = done(a) && done(b);
     const outA = isOutOfRace(a.status);
     const outB = isOutOfRace(b.status);
     if (outA || outB) {
       return {
         gapText: "–",
         leader: outA === outB ? null : outA ? b : a,
+        settled,
       };
     }
     // Two playing runners with no computed gap yet (the splits still in
@@ -54,13 +61,14 @@
       a.status === "playing" &&
       b.status === "playing"
     ) {
-      return { gapText: "–", leader: null };
+      return { gapText: "–", leader: null, settled };
     }
     const diff = (a.gap_ms ?? 0) - (b.gap_ms ?? 0);
-    if (diff === 0) return { gapText: "0:00", leader: null };
+    if (diff === 0) return { gapText: "0:00", leader: null, settled };
     return {
       gapText: formatGap(Math.abs(diff)),
       leader: diff > 0 ? b : a,
+      settled,
     };
   });
 </script>
@@ -70,38 +78,28 @@
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
   {#if a && b && duel}
+    <!-- Each side's depth stands next to that runner's own card, the gap
+         between them; deaths stay on the cards rather than repeated here. -->
     <div class="vcol">
-      <span class="vk">Deaths</span>
-      <span class="vv">
-        <span class="vside vd-a" style="--c: {colorOf(a)};"
-          >{a.death_count}</span
-        >
-        <SkullIcon size={22} />
-        <span class="vside vd-b" style="--c: {colorOf(b)};"
-          >{b.death_count}</span
-        >
-      </span>
+      <span class="vk">Depth</span>
+      <span class="vside vl-a" style="--c: {colorOf(a)};"
+        >{depthOf(a)}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
+      >
     </div>
     <div class="vcol vmain">
       <span class="vk">Gap</span>
       <span class="vgap">{duel.gapText}</span>
       {#if duel.leader}
         <span class="vlead" style="--c: {colorOf(duel.leader)};"
-          >{displayName(duel.leader)} leads</span
+          >{displayName(duel.leader)} {duel.settled ? "wins" : "leads"}</span
         >
       {/if}
     </div>
     <div class="vcol">
       <span class="vk">Depth</span>
-      <span class="vv">
-        <span class="vside vl-a" style="--c: {colorOf(a)};"
-          >{depthOf(a)}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
-        >
-        <span class="vdash">–</span>
-        <span class="vside vl-b" style="--c: {colorOf(b)};"
-          >{depthOf(b)}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
-        >
-      </span>
+      <span class="vside vl-b" style="--c: {colorOf(b)};"
+        >{depthOf(b)}{#if totalLayers}<i>/{totalLayers}</i>{/if}</span
+      >
     </div>
   {:else}
     <span class="vempty">VS</span>
@@ -146,31 +144,21 @@
     color: var(--color-text-secondary);
   }
 
-  .vv {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    font-family: var(--font-mono);
-    font-size: 40px;
-    font-weight: 600;
-  }
-
   .vside {
+    font-family: var(--font-mono);
+    font-size: 44px;
+    font-weight: 600;
+    line-height: 1.1;
     /* The runner's route colour underlines whose number this is, the same
      * line colour as the POV frame above it. */
     border-bottom: 3px solid var(--c, var(--color-border));
     padding: 0 4px 2px;
   }
 
-  .vv i {
+  .vside i {
     font-style: normal;
-    font-size: 22px;
+    font-size: 24px;
     color: var(--color-text-secondary);
-  }
-
-  .vdash {
-    color: var(--color-text-secondary);
-    font-size: 26px;
   }
 
   .vgap {

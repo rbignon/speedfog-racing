@@ -86,6 +86,29 @@ describe("CastDuelVersus: gap", () => {
     expect(container.querySelector(".vlead")?.textContent).toBe("Alice leads");
   });
 
+  it("names the winner once neither side is still racing", () => {
+    const { container } = render(CastDuelVersus, {
+      props: {
+        ...baseProps,
+        a: fakeParticipant({ status: "finished", gap_ms: null }),
+        b: bob({ status: "finished", gap_ms: 42_000 }),
+      },
+    });
+    expect(container.querySelector(".vgap")?.textContent).toBe("+0:42");
+    expect(container.querySelector(".vlead")?.textContent).toBe("Alice wins");
+  });
+
+  it("names the finisher the winner over a side that dropped out", () => {
+    const { container } = render(CastDuelVersus, {
+      props: {
+        ...baseProps,
+        a: fakeParticipant({ status: "abandoned", gap_ms: null }),
+        b: bob({ status: "finished", gap_ms: 0 }),
+      },
+    });
+    expect(container.querySelector(".vlead")?.textContent).toBe("Bob wins");
+  });
+
   it("names no leader once both sides are out of the race", () => {
     const { container } = render(CastDuelVersus, {
       props: {
@@ -111,8 +134,10 @@ describe("CastDuelVersus: gap", () => {
   });
 });
 
-describe("CastDuelVersus: side stats", () => {
-  it("renders both sides' deaths and depth", () => {
+describe("CastDuelVersus: side columns", () => {
+  // Each side's depth stands in the column next to that runner's own card,
+  // the gap between them; deaths stay on the cards, not repeated here.
+  it("puts each side's depth in its own outer column, and no deaths", () => {
     const { container } = render(CastDuelVersus, {
       props: {
         ...baseProps,
@@ -120,10 +145,12 @@ describe("CastDuelVersus: side stats", () => {
         b: bob({ death_count: 5, current_layer: 4 }),
       },
     });
-    expect(container.querySelector(".vd-a")?.textContent).toBe("3");
-    expect(container.querySelector(".vd-b")?.textContent).toBe("5");
-    expect(container.querySelector(".vl-a")?.textContent).toBe("7/35");
-    expect(container.querySelector(".vl-b")?.textContent).toBe("5/35");
+    const cols = [...container.querySelectorAll(".vcol")];
+    expect(cols).toHaveLength(3);
+    expect(cols[0].querySelector(".vl-a")?.textContent).toBe("7/35");
+    expect(cols[1].querySelector(".vgap")).not.toBeNull();
+    expect(cols[2].querySelector(".vl-b")?.textContent).toBe("5/35");
+    expect(container.textContent).not.toMatch(/deaths/i);
   });
 
   it("renders a quiet placeholder while a seat is empty", () => {
