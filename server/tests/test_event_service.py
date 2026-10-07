@@ -1613,3 +1613,22 @@ def test_the_timeline_orders_the_brackets_stops_by_date():
     stops = build_timeline(event, _brackets(), {"semi_a": late})
     assert [s.key for s in stops][3:] == ["playoffs", "stage:newcomers_final", "stage:final"]
     assert stops[3].date == datetime(2026, 10, 18, 19, tzinfo=UTC)
+
+
+def test_each_bracket_has_its_own_current_and_next_stage():
+    cfg = _brackets()
+    main, newcomers = cfg.brackets[0].stages, cfg.brackets[1].stages
+    evening = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    races = [
+        _scheduled("newcomers_semi_a:1", evening, RaceStatus.RUNNING),
+        _scheduled("semi_b:1", evening + timedelta(days=2)),
+    ]
+    now = evening + timedelta(minutes=20)
+    resolved = _resolved(cfg, races, now)
+    assert current_stage_key(cfg, resolved, now) == "newcomers_semi_a"
+    assert current_stage_key(cfg, resolved, now, main) is None
+    assert current_stage_key(cfg, resolved, now, newcomers) == "newcomers_semi_a"
+    assert next_stage_key(cfg, resolved, now) == "semi_b"
+    assert next_stage_key(cfg, resolved, now, main) == "semi_b"
+    # The newcomers' final waits on Newcomers semi B, which nobody has scheduled.
+    assert next_stage_key(cfg, resolved, now, newcomers) is None

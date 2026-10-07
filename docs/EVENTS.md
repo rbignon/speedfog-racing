@@ -226,8 +226,14 @@ not complete, else the last of them. The next stage (`next_stage`, on the
 detail and the summary) is the earliest stage ahead with a date, not
 complete, that waits on no stage without one: the final is not next while
 a semi feeding it is unscheduled,
-while the newcomers' final, drawn from the ladder, can be. The Open Graph
-card shows the current stage, else the next one.
+while a stage waiting on nothing undated (a bracket's seeded first round, or
+a newcomers bracket's stages) can be. The Open Graph
+card shows the current stage, else the next one. The detail also gives each
+bracket its own current and next stage, under `brackets`, by the same rules
+applied to that bracket's stages alone: each tab of the page shows its own
+evening (see The event page), while the top-level `current_stage_key` and
+`next_stage` stay event-wide for the home band, the share card and the live
+strip.
 
 ## Scoring
 
@@ -773,7 +779,10 @@ fetched is left out rather than replaced by a placeholder.
   draws the provisional cut, and each stage race's `live`, its whole field
   in the race page's live order (each runner's preview plus the layer they
   stand on; never capped, unlike the race's five previews; empty once the
-  race is no longer running), which its race card follows.
+  race is no longer running), which its race card follows. Each stage
+  carries `bracket` (its bracket's key; null for a showcase), and `brackets`
+  lists the brackets in order (`key`, `label`, `entry`, and that bracket's own
+  `current_stage_key` and `next_stage`).
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

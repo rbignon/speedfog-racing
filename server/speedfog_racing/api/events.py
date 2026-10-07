@@ -25,6 +25,7 @@ from speedfog_racing.models import (
     compute_late_join_deadlines,
 )
 from speedfog_racing.schemas import (
+    EventBracketResponse,
     EventConfig,
     EventDetailResponse,
     EventFieldSlotResponse,
@@ -284,18 +285,21 @@ async def get_event(
         ),
         None,
     )
-    upcoming_key = next_stage_key(config, resolved, now)
-    upcoming = config.stage(upcoming_key) if upcoming_key else None
-    next_stage = None
-    if upcoming is not None:
-        upcoming_date = resolved.dates[upcoming.key]
-        assert upcoming_date is not None, "next_stage_key only returns dated stages"
-        next_stage = EventNextStageResponse(
-            key=upcoming.key,
-            label=upcoming.label,
-            date=upcoming_date,
-            time_set=stage_time_set(upcoming, stage_races[upcoming.key]),
+
+    def next_stage_response(key: str | None) -> EventNextStageResponse | None:
+        stage = config.stage(key) if key else None
+        if stage is None:
+            return None
+        when = resolved.dates[stage.key]
+        assert when is not None, "next_stage_key only returns dated stages"
+        return EventNextStageResponse(
+            key=stage.key,
+            label=stage.label,
+            date=when,
+            time_set=stage_time_set(stage, stage_races[stage.key]),
         )
+
+    next_stage = next_stage_response(next_stage_key(config, resolved, now))
 
     def user_of(user_id: UUID | None) -> UserResponse | None:
         return UserResponse.model_validate(users[user_id]) if user_id in users else None
@@ -319,6 +323,7 @@ async def get_event(
         stage: EventStage | EventShowcase,
         *,
         kind: str,
+        bracket: str | None,
         sources: list[str],
         date: datetime | None,
         races: list[tuple[Slot, Race]],
@@ -329,6 +334,7 @@ async def get_event(
             key=stage.key,
             label=stage.label,
             kind=kind,
+            bracket=bracket,
             date=date,
             date_fixed=stage.date is not None,
             time_set=stage_time_set(stage, races),
@@ -450,22 +456,41 @@ async def get_event(
                 for key, slots in qualified.items()
             ],
         ),
+        brackets=[
+            EventBracketResponse(
+                key=bracket.key,
+                label=bracket.label,
+                entry=bracket.entry,
+                current_stage_key=(
+                    current_stage_key(config, resolved, now, bracket.stages)
+                    if phase == "playoffs"
+                    else None
+                ),
+                next_stage=next_stage_response(
+                    next_stage_key(config, resolved, now, bracket.stages)
+                ),
+            )
+            for bracket in config.brackets
+        ],
         stages=[
             stage_response(
                 stage,
                 kind=stage.kind,
+                bracket=bracket.key,
                 sources=stage.from_ or [],
                 date=resolved.dates[stage.key],
                 races=stage_races[stage.key],
                 result=results[stage.key],
                 field=field_of(stage.key),
             )
-            for stage in config.stages
+            for bracket in config.brackets
+            for stage in bracket.stages
         ],
         showcases=[
             stage_response(
                 showcase,
                 kind="showcase",
+                bracket=None,
                 sources=[],
                 date=resolved.showcase_dates[showcase.key],
                 races=resolved.showcase_races[showcase.key],

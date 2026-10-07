@@ -1364,6 +1364,8 @@ class EventStageResponse(BaseModel):
     key: str
     label: str
     kind: str
+    # The key of the bracket holding the stage; None for a showcase.
+    bracket: str | None = None
     # The config's datetime, else the earliest of the stage's races, else the
     # config's day at noon UTC; None until one exists.
     date: datetime | None
@@ -1392,6 +1394,17 @@ class EventNextStageResponse(BaseModel):
     time_set: bool
 
 
+class EventBracketResponse(BaseModel):
+    key: str
+    label: str
+    entry: str
+    # This bracket's own current and next evening, computed on its stages
+    # alone, so each tab of the page shows its own evening; the detail's
+    # top-level fields stay event-wide.
+    current_stage_key: str | None
+    next_stage: EventNextStageResponse | None
+
+
 class EventDetailResponse(BaseModel):
     slug: str
     name: str
@@ -1414,6 +1427,7 @@ class EventDetailResponse(BaseModel):
     qualifier_races: list[EventQualifierRaceResponse]
     ladder: EventLadderResponse
     qualified: EventQualifiedResponse
+    brackets: list[EventBracketResponse]
     stages: list[EventStageResponse]
     # For the cast scenes: the event page never renders them.
     showcases: list[EventStageResponse]

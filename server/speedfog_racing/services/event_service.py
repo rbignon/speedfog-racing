@@ -886,19 +886,26 @@ def _stage_days(stage: EventStage, resolved: ResolvedStages) -> set[date]:
     return {m.astimezone(UTC).date() for m in moments if m is not None}
 
 
-def current_stage_key(config: EventConfig, resolved: ResolvedStages, now: datetime) -> str | None:
+def current_stage_key(
+    config: EventConfig,
+    resolved: ResolvedStages,
+    now: datetime,
+    stages: Sequence[EventStage] | None = None,
+) -> str | None:
     """The stage being played: one with a race running, else one played today (UTC).
 
     Two stages running at once resolve to the first in bracket order, like the
     live race. Among the stages of the day, the first that has started (any
     attached race not in setup) and is not complete wins; failing that the
-    first not complete; else the last of them. ``now`` must be timezone-aware.
+    first not complete; else the last of them. ``stages`` narrows the search
+    to one bracket's (default: every stage). ``now`` must be timezone-aware.
     """
-    for stage in config.stages:
+    candidates = config.stages if stages is None else list(stages)
+    for stage in candidates:
         if any(r.status == RaceStatus.RUNNING for _, r in resolved.stage_races.get(stage.key, [])):
             return stage.key
     today = now.astimezone(UTC).date()
-    todays = [s for s in config.stages if today in _stage_days(s, resolved)]
+    todays = [s for s in candidates if today in _stage_days(s, resolved)]
 
     def started(stage: EventStage) -> bool:
         return any(r.status != RaceStatus.SETUP for _, r in resolved.stage_races.get(stage.key, []))
@@ -912,11 +919,17 @@ def current_stage_key(config: EventConfig, resolved: ResolvedStages, now: dateti
     return todays[-1].key if todays else None
 
 
-def next_stage_key(config: EventConfig, resolved: ResolvedStages, now: datetime) -> str | None:
+def next_stage_key(
+    config: EventConfig,
+    resolved: ResolvedStages,
+    now: datetime,
+    stages: Sequence[EventStage] | None = None,
+) -> str | None:
     """The next evening that can honestly be announced, or None.
 
     The earliest stage ahead of ``now``, not complete, that waits on no stage
     without a date: a final is not "next" while a semi feeding it has none.
+    ``stages`` narrows the search to one bracket's (default: every stage).
     """
 
     def waits_on_undated(stage: EventStage) -> bool:
@@ -933,7 +946,7 @@ def next_stage_key(config: EventConfig, resolved: ResolvedStages, now: datetime)
     ahead = sorted(
         (
             (moment, stage.key)
-            for stage in config.stages
+            for stage in (config.stages if stages is None else stages)
             if (moment := resolved.dates.get(stage.key)) is not None
             and moment > now
             and not resolved.results[stage.key].complete

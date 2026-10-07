@@ -839,6 +839,7 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
     ]
     assert duel_result["complete"] is True
     assert not any(r["advances"] for r in duel_result["results"])
+    assert all(s["bracket"] is None for s in data["showcases"])
 
 
 @pytest.mark.asyncio
@@ -1456,3 +1457,26 @@ async def test_featured_loader_leaves_the_seed_graphs_behind(async_session):
         (race,) = event.races
         assert race.seed.pool_name == "standard"
         assert "graph_json" not in race.seed.__dict__
+
+
+@pytest.mark.asyncio
+async def test_detail_lists_each_bracket_with_its_own_next_evening(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        await _season_event(db, "season-one", now - timedelta(days=1))
+        await db.commit()
+    data = (await test_client.get("/api/events/season-one")).json()
+    assert [(b["key"], b["label"], b["entry"]) for b in data["brackets"]] == [
+        ("main", "Playoffs", "all"),
+        ("newcomers", "Newcomers", "newcomers"),
+    ]
+    # Semi A (day 11) leads the main bracket; the newcomers' final (day 25) its own.
+    assert [b["next_stage"]["key"] for b in data["brackets"]] == ["semi_a", "newcomers"]
+    assert [b["current_stage_key"] for b in data["brackets"]] == [None, None]
+    assert data["next_stage"]["key"] == "semi_a"
+    assert [(s["key"], s["bracket"]) for s in data["stages"]] == [
+        ("semi_a", "main"),
+        ("semi_b", "main"),
+        ("final", "main"),
+        ("newcomers", "newcomers"),
+    ]
