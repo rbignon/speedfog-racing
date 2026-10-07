@@ -409,7 +409,11 @@ count there. See `daily_points` in
 ## Running an event (admin)
 
 1. `/admin`, Events tab: create the event from the template, adjust dates,
-   modes and stages, save. Mode keys must be pool names. A rejected save
+   modes and stages, save. Mode keys must be pool names.
+   The stages go inside `brackets`: the template has a Top 16 bracket and a
+   newcomers bracket of two semis and a final; add, remove or relabel
+   brackets there, keeping stage keys and labels unique across the whole
+   event. A rejected save
    shows the server's validation errors next to the JSON editor, each
    prefixed with its field path. A save is also rejected when the new config
    would orphan a race already attached to a slot it no longer has room for
@@ -464,7 +468,7 @@ count there. See `daily_points` in
    stage's races then dates it, which ends the `cut`, makes it the next
    stage, and drives the home band, the share card and polling (see
    "Current and next stage" and "The event page"). Fixed evenings (the
-   newcomers' final, the final) keep their config date instead; create their
+   newcomers bracket's final, the Top 16 final) keep their config date instead; create their
    races the same way, whenever the players are ready, on that date. A fixed
    evening dated by its day alone takes its time from its first scheduled
    race, so the config needs no edit once the time is agreed. Name
@@ -483,8 +487,8 @@ count there. See `daily_points` in
 5. A qualified runner withdraws: list them at the end of the config's
    `withdrawn` list before their group's first race starts, and save; the
    page hands the seat to the next runner on the ladder, whom the organizer
-   tells. If that runner declines too, add them as well. A call-up can move
-   a newcomer out of the newcomers' final, or shift its field, so update the
+   tells. If that runner declines too, add them as well. A call-up can take
+   a newcomer out of the newcomers bracket, or shift its field, so update the
    registrations of any races already created for those stages. A runner who
    renames on Twitch and logs in under the new name must be re-listed under
    it: the old name no longer matches any user, and the admin refuses it on
@@ -503,6 +507,12 @@ count there. See `daily_points` in
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.
+
+When a deploy changes the config's shape (a data migration rewriting stored
+documents, as the move to brackets did), roll back in this order: put the
+stored config back into a shape the older code reads, then roll the code
+back; the older code refuses a document it does not know, and the page then
+reads "Event not found".
 
 ### Attaching a race to a slot
 
