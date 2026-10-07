@@ -280,9 +280,10 @@ they leave it. Seeding reads only ranked entries, so a signup never resolves
 a seed or a newcomers' slot.
 
 The page marks the qualification limit on the ladder with a line under the
-last qualifying row. The cut is the seeded stages' seats summed client-side
-(`playoffsPlan`), which the gapless-seeds rule makes the largest seed, and
-it takes rows positionally like seeding does, so a tie spanning the boundary
+last qualifying row. The line marks the first bracket's seats: `playoffsPlan` sums its seeded
+stages' seats client-side, which the gapless-seeds rule makes the largest
+seed. A filtered bracket (the newcomers) draws positions that are not
+contiguous, so it gets no line. The cut takes rows positionally like seeding does, so a tie spanning the boundary
 still cuts where the seats run out; the line follows the visible rows when
 filters hide some, and only renders while a row sits below it.
 
@@ -304,10 +305,10 @@ position it waits on, and reads "TBD" in a filtered bracket, whose pool
 positions would read like ladder positions. A withdrawal
 declared once any race of the runner's seeded stage has left setup calls
 nobody up: the runner keeps the seat, and the stage goes on with whoever
-races. The ladder itself is unchanged by a withdrawal. On the page, the
-seeded stages' boxes are titled Group A, Group B and so on; a
-box whose stage carries that same label shows its round's name ("Round of
-32") in its meta line instead of repeating it.
+races. The ladder itself is unchanged by a withdrawal. On the page, each
+seeded stage's box is titled with its stage's label; a round's box names its
+round in its meta line ("Round of 32"), another stage's gives its date. With
+several brackets, each bracket's boxes sit under its label.
 
 ### Playoff scoring
 
@@ -549,6 +550,17 @@ whose races the bracket block lists. What the viewer can no longer act on
 keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
+From the cut on, an event with several brackets opens its bracket block on a
+tab bar, one tab per bracket, in the tab style of the stats page, an ember dot
+on the tab of a bracket whose race runs. `?bracket=<key>` selects the tab
+(switching tabs replaces the history entry); without it, or with an unknown
+key, the page opens on the bracket of the live race, else of the event-wide
+current stage, else of the next stage, else on the first bracket. Each tab lays
+its own bracket out as below, with its own evening section: that bracket's
+current stage, else its next one, else, once the bracket is played out, its
+final, so a bracket finished before the other keeps its last evening on show.
+An event with a single bracket shows no tab bar.
+
 From the cut on, the bracket block lays the playoffs out as a tree: one column
 per round (a seeded stage opens it, a fed stage follows its deepest source),
 each stage centred on the stages it takes runners from, connectors between
@@ -559,8 +571,7 @@ axis; for a tree of four rounds or more (a round of 32 before the quarters)
 that side column narrows so the rounds keep their width, and the evening
 section spreads over the final's column too, above the final, which sits
 halfway down the first round; the playoff rules run under the whole tree, their
-list in two columns on a wide screen, and the newcomers' final sits under the
-final, level with the last first-round box. Under 900px it becomes one column,
+list in two columns on a wide screen. Under 900px it becomes one column,
 the evening first. A shorter tree (two semis) keeps the older arrangement: the
 tree with a narrow Champion column, the evening section and the rules beside
 it. A stage without a date reads "Date to be agreed", and the evening section
@@ -570,7 +581,11 @@ The format block keeps its dates to the day, in brass. Its playoffs paragraph
 counts the places (the seeded stages' seats), says the rounds without a fixed
 date are "scheduled with their players", naming a `round` stage's round after
 its seats ("the round of 32, quarters and semis"), and lists the stages the
-config dates. When every stage has a fixed date with its time set, it closes
+config dates. It speaks about the first bracket; each later bracket drawing
+from the newcomers gets a paragraph of its own: "Newcomers get a bracket of
+their own: two semis, then a final on Sun 25 Oct" (a bracket of a single stage
+reads "a final of their own"), the newcomer definition, and its field ("the 8
+best newcomers outside the top 32"). When every stage has a fixed date with its time set, it closes
 with the time the evenings start at ("Playoff evenings start at 21:00 in your
 timezone"); otherwise each fixed evening carries its own time ("then the Final
 on Sun 25 Oct at 20:00"), and so does the newcomers' final, unless its time is
@@ -639,9 +654,9 @@ megabytes instead of the hundreds of the source. The source stays out of
 `web/static/`, which ships whole into every build and every deploy archive.
 
 Once the phase
-is `finished`, two compact plates under the band crown the final's and the
-newcomers' final's winners (the leader of each complete stage), the champion's
-larger, with their story: the position they qualified at on the ladder, the
+is `finished`, one compact plate per bracket under the band crowns its final's winner
+(the leader of each complete final), in bracket order: the first bracket's, the
+event's champion, larger, the others labelled with their bracket, with their story: the position they qualified at on the ladder, the
 evening's races finished first out of the races expected (a race nobody
 finished counts for no one), and their signature weapon, the one carried the
 longest over every event race they entered, showcases aside

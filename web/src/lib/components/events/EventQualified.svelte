@@ -1,57 +1,64 @@
 <script lang="ts">
-  import type { EventQualified, EventStage } from "$lib/api";
-  import { qualifiedMeta } from "$lib/events";
+  import type {
+    EventBracket,
+    EventQualified,
+    EventQualifiedGroup,
+    EventStage,
+  } from "$lib/api";
+  import { bracketStages, qualifiedMeta, qualifiedSections } from "$lib/events";
   import EventStageBox, { type StageRow } from "./EventStageBox.svelte";
 
   let {
     qualified,
     stages,
+    brackets,
     cutAt,
     formatDate,
   }: {
     qualified: EventQualified;
     stages: EventStage[];
+    brackets: EventBracket[];
     cutAt: string;
     formatDate: (iso: string) => string;
   } = $props();
 
-  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
-  let boxes = $derived(
-    qualified.groups.map((group) => {
-      const stage = stages.find((s) => s.key === group.stage_key);
-      const seededIndex = stages
-        .filter((s) => s.from.length === 0 && s.kind !== "newcomers")
-        .findIndex((s) => s.key === group.stage_key);
-      const title =
-        stage?.kind === "newcomers"
-          ? "Newcomers"
-          : `Group ${letters[seededIndex] ?? ""}`;
-      const meta = stage
-        ? qualifiedMeta(stage, title, stages, formatDate)
-        : group.label;
-      const rows: StageRow[] = group.entries.map((e, i) => ({
-        key: `${group.stage_key}-${i}`,
-        rank: e.seed,
-        user: e.user,
-        newcomer: e.newcomer,
-        label: e.note ?? undefined,
-      }));
-      const filled = group.entries.filter((e) => e.user).length;
-      return {
-        key: group.stage_key,
-        title,
-        meta,
-        chips: (stage?.modes ?? []).map((text) => ({
-          text,
-          state: "todo" as const,
-        })),
-        rows,
-        signal: {
-          cls: "signal-setup",
-          text: `${filled} / ${group.entries.length}`,
-        },
-      };
-    }),
+  function boxOf(group: EventQualifiedGroup) {
+    const stage = stages.find((s) => s.key === group.stage_key);
+    const rows: StageRow[] = group.entries.map((e, i) => ({
+      key: `${group.stage_key}-${i}`,
+      rank: e.seed,
+      user: e.user,
+      newcomer: e.newcomer,
+      label: e.note ?? undefined,
+    }));
+    const filled = group.entries.filter((e) => e.user).length;
+    return {
+      key: group.stage_key,
+      title: group.label,
+      meta: stage
+        ? qualifiedMeta(
+            stage,
+            bracketStages(stages, stage.bracket ?? ""),
+            formatDate,
+          )
+        : "",
+      chips: (stage?.modes ?? []).map((text) => ({
+        text,
+        state: "todo" as const,
+      })),
+      rows,
+      signal: {
+        cls: "signal-setup",
+        text: `${filled} / ${group.entries.length}`,
+      },
+    };
+  }
+
+  let sections = $derived(
+    qualifiedSections(qualified, stages, brackets).map((section) => ({
+      ...section,
+      boxes: section.groups.map(boxOf),
+    })),
   );
 </script>
 
@@ -68,15 +75,18 @@
       ></span
     >
   </p>
-  {#each boxes as box (box.key)}
-    <EventStageBox
-      title={box.title}
-      meta={box.meta}
-      state="setup"
-      signal={box.signal}
-      rows={box.rows}
-      chips={box.chips}
-    />
+  {#each sections as section (section.key)}
+    {#if section.label}<p class="bracket-label">{section.label}</p>{/if}
+    {#each section.boxes as box (box.key)}
+      <EventStageBox
+        title={box.title}
+        meta={box.meta}
+        state="setup"
+        signal={box.signal}
+        rows={box.rows}
+        chips={box.chips}
+      />
+    {/each}
   {/each}
 </div>
 
@@ -95,6 +105,15 @@
     gap: 0.5rem;
     align-items: center;
     flex-wrap: wrap;
+  }
+  .bracket-label {
+    margin: 0.4rem 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
   }
   .cut {
     margin-left: auto;

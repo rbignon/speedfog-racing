@@ -157,7 +157,6 @@
   .g.quarter.done,
   .g.semi.done,
   .g.playoffs.done,
-  .g.newcomers.done,
   .g.final.done {
     background: var(--color-gold);
   }
@@ -165,7 +164,6 @@
   .g.quarter.now,
   .g.semi.now,
   .g.playoffs.now,
-  .g.newcomers.now,
   .g.final.now {
     box-shadow: var(--glow-gold);
   }

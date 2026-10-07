@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { page } from "$app/state";
+  import { goto } from "$app/navigation";
   import { auth } from "$lib/stores/auth.svelte";
   import {
     fetchEvent,
@@ -10,12 +12,15 @@
   } from "$lib/api";
   import {
     blockOrder,
+    bracketStages,
+    bracketView,
     champions,
     encodeSignupIntent,
     eventFacts,
     formatEventDate,
     formatEventDay,
     liveStage,
+    newcomersPlans,
     pollIntervalMs,
     openingRefreshMs,
     fillSlots,
@@ -23,6 +28,7 @@
     ordinal,
     playoffsPlan,
     racesSection,
+    selectedBracketKey,
     shownStage,
     signupIntentStands,
     stageTimes,
@@ -35,6 +41,7 @@
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
   import EventLadder from "$lib/components/events/EventLadder.svelte";
   import EventQualified from "$lib/components/events/EventQualified.svelte";
+  import EventBracketTabs from "$lib/components/events/EventBracketTabs.svelte";
   import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
   import EventBracket from "$lib/components/events/EventBracket.svelte";
   import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
@@ -85,10 +92,21 @@
   let seedsOpenAt = $derived(
     detail.phase === "upcoming" ? detail.starts_at : null,
   );
-  let plan = $derived(playoffsPlan(detail.stages));
-  let newcomersStage = $derived(
-    detail.stages.find((s) => s.kind === "newcomers"),
+  // The format paragraph, the ladder's cut line and the qualified meta
+  // speak about the first bracket; later newcomers brackets get a paragraph
+  // of their own.
+  let firstStages = $derived(
+    detail.brackets.length > 0
+      ? bracketStages(detail.stages, detail.brackets[0].key)
+      : [],
   );
+  let plan = $derived(playoffsPlan(firstStages));
+  let newcomers = $derived(newcomersPlans(detail));
+  // One tab per bracket from the cut on; the URL's ?bracket= picks it.
+  let bracketKey = $derived(
+    selectedBracketKey(detail, page.url.searchParams.get("bracket")),
+  );
+  let view = $derived(bracketView(detail, bracketKey));
   // The announcement is the newcomer cut. The timeline always carries it;
   // the fallback only satisfies the type.
   let announcedAt = $derived(
@@ -96,8 +114,18 @@
       detail.starts_at,
   );
   let eveningTimes = $derived(stageTimes(detail.stages));
-  let shown = $derived(shownStage(detail));
+  let shown = $derived(shownStage(view));
   let crowned = $derived(champions(detail));
+
+  function selectBracket(key: string) {
+    const url = new URL(page.url);
+    url.searchParams.set("bracket", key);
+    goto(url.toString(), {
+      replaceState: true,
+      noScroll: true,
+      keepFocus: true,
+    });
+  }
   let phaseSignal = $derived.by(() => {
     switch (detail.phase) {
       case "upcoming":
@@ -238,7 +266,7 @@
 <main class="container">
   {#snippet eveningSection()}
     {#if shown}
-      {@const section = racesSection(detail, fmtZone, now)}
+      {@const section = racesSection(view, fmtZone, now)}
       <div>
         <SectionTitle>{shown.label}</SectionTitle>
         {#if section}
@@ -328,23 +356,24 @@
                     .exception.label} at {eveningTimes.exception
                     .time}{/if}.{/if}
             </p>
-            {#if newcomersStage}
+            {#each newcomers as bracket (bracket.key)}
               <p>
-                <strong>Newcomers get a final of their own</strong
-                >{newcomersStage.date
+                <strong
+                  >Newcomers get {bracket.shape ? "a bracket" : "a final"} of their
+                  own</strong
+                >{bracket.shape ? `: ${bracket.shape}` : ""}{bracket.final?.date
                   ? " on "
-                  : ""}{#if newcomersStage.date}<span class="date"
-                    >{fmtDay(newcomersStage.date)}</span
-                  >{!eveningTimes && newcomersStage.time_set
-                    ? ` at ${fmtTime(newcomersStage.date)}`
+                  : ""}{#if bracket.final?.date}<span class="date"
+                    >{fmtDay(bracket.final.date)}</span
+                  >{!eveningTimes && bracket.final.time_set
+                    ? ` at ${fmtTime(bracket.final.date)}`
                     : ""}{/if}. You are a newcomer if you had finished fewer
                 than {detail.newcomer_threshold}
                 SpeedFog races or daily seeds when the event was announced on
-                <span class="date">{fmtDay(announcedAt)}</span>: the {newcomersStage
-                  .field.length} best newcomers outside the top {plan.places} make
-                up its field.
+                <span class="date">{fmtDay(announcedAt)}</span>: the {bracket.seats}
+                best newcomers outside the top {plan.places} make up its field.
               </p>
-            {/if}
+            {/each}
           </div>
           <div class="facts">
             {#each facts as fact, i (i)}
@@ -557,6 +586,7 @@
           <EventQualified
             qualified={detail.qualified}
             stages={detail.stages}
+            brackets={detail.brackets}
             cutAt={detail.qualifier_ends_at}
             formatDate={fmtZone}
           />
@@ -573,8 +603,8 @@
     {:else if block === "champions"}
       {#if crowned.length > 0}
         <section class="podium" aria-label="Winners">
-          {#each crowned as champion (champion.kind)}
-            {@const first = champion.kind === "final"}
+          {#each crowned as champion (champion.bracket)}
+            {@const first = champion.first}
             <div class="plate" class:first>
               <span class="chip plate-chip">{champion.label}</span>
               {#if champion.user.twitch_avatar_url}
@@ -625,12 +655,22 @@
       {/if}
     {:else if block === "bracket_ladder"}
       <section class="bracket-block">
-        <EventBracket
-          stages={detail.stages}
-          formatDay={fmtDay}
-          aside={shown ? eveningSection : undefined}
-          rules={detail.playoff_rules.length > 0 ? playoffRules : undefined}
-        />
+        <div class="brackets">
+          {#if detail.brackets.length > 1 && bracketKey}
+            <EventBracketTabs
+              brackets={detail.brackets}
+              stages={detail.stages}
+              selected={bracketKey}
+              onselect={selectBracket}
+            />
+          {/if}
+          <EventBracket
+            stages={view.stages}
+            formatDay={fmtDay}
+            aside={shown ? eveningSection : undefined}
+            rules={detail.playoff_rules.length > 0 ? playoffRules : undefined}
+          />
+        </div>
         <div class="ladder-col">
           <SectionTitle>Qualifier ladder</SectionTitle>
           <p class="meta-row">
@@ -1053,6 +1093,11 @@
     letter-spacing: 0.09em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
+  }
+  .brackets {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
   }
   .bracket-block {
     display: flex;

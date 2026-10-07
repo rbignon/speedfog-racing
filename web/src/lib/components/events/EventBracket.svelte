@@ -51,11 +51,11 @@
   let side = $derived(2 * depth + 1);
   // Equal tree rows so a first-round box that grows (a wrapped label) does
   // not throw off the connectors' row centres: title row, tree rows, rules
-  // row in the tall layout; tree rows, newcomers row in the short one.
+  // row in the tall layout; the tree rows alone in the short one.
   let rowsTemplate = $derived(
     layout.tall
       ? `auto repeat(${layout.rows}, 1fr) auto`
-      : `repeat(${layout.rows}, 1fr) auto`,
+      : `repeat(${layout.rows}, 1fr)`,
   );
   // Mobile reading order (tall layout): the evening first, then the rounds.
   let orderOf = $derived(
@@ -247,20 +247,6 @@
         {@render crown(layout.final.stage, "Champion")}
       </div>
     {/if}
-    {#if layout.newcomers}
-      <!-- Tall: under the final, level with the last first-round box. Short:
-           a row of its own under the tree. -->
-      <div
-        class="newcomers"
-        style:grid-column="{side - 2} / span 3"
-        style:grid-row={layout.tall ? top + layout.rows - 1 : top + layout.rows}
-        style:--order={afterTree + 1}
-      >
-        {@render box(layout.newcomers)}
-        <div class="conn" aria-hidden="true">{@render line("M0 50 H24")}</div>
-        {@render crown(layout.newcomers, "Newcomers")}
-      </div>
-    {/if}
     {#if layout.tall && rules}
       <div
         class="rules"
@@ -315,14 +301,6 @@
    * not throw the connectors' row centres off for the others. */
   .cell:not(.fed) {
     display: grid;
-  }
-  /* The newcomers' final, its connector and its crown share the final's,
-   * the gutter's and the side column's tracks, bottom-aligned together. */
-  .newcomers {
-    display: grid;
-    grid-template-columns: subgrid;
-    align-items: center;
-    align-self: end;
   }
   .conn {
     display: flex;
@@ -419,8 +397,7 @@
   }
   /* Tall tree: one column, the evening first, the rounds in order. */
   @media (max-width: 899px) {
-    .brk.tall,
-    .brk.tall .newcomers {
+    .brk.tall {
       display: flex;
       flex-direction: column;
       gap: 14px;
@@ -428,9 +405,6 @@
     .brk.tall > * {
       order: var(--order, 0);
       align-self: stretch;
-    }
-    .brk.tall .newcomers {
-      align-items: stretch;
     }
     .brk.tall .conn {
       display: none;
@@ -441,15 +415,10 @@
   }
   /* Short tree: stacks as before, in document order. */
   @media (max-width: 760px) {
-    .brk,
-    .newcomers {
+    .brk {
       display: flex;
       flex-direction: column;
       gap: 14px;
-    }
-    .newcomers {
-      align-self: stretch;
-      align-items: stretch;
     }
     .conn {
       display: none;

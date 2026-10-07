@@ -2,6 +2,7 @@ import { render } from "@testing-library/svelte";
 import { describe, expect, it } from "vitest";
 import EventQualified from "$lib/components/events/EventQualified.svelte";
 import type {
+  EventBracket,
   EventQualified as EventQualifiedData,
   EventStage,
 } from "$lib/api";
@@ -32,7 +33,7 @@ const stages: EventStage[] = [
   stage({ key: "semi-b", label: "Semi B", kind: "semi" }),
   stage({
     key: "newcomers",
-    label: "Newcomers Final",
+    label: "Newcomers' final",
     kind: "final",
     bracket: "newcomers",
   }),
@@ -56,7 +57,7 @@ function qualifiedWith(
       },
       {
         stage_key: "newcomers",
-        label: "Newcomers",
+        label: "Newcomers' final",
         entries: [{ seed: 1, user: null, newcomer: true, note: null }],
       },
     ],
@@ -66,38 +67,43 @@ function qualifiedWith(
 
 const fmt = (iso: string) => iso;
 
+const bracket = (key: string, label: string): EventBracket => ({
+  key,
+  label,
+  entry: key === "main" ? "all" : "newcomers",
+  current_stage_key: null,
+  next_stage: null,
+});
+const brackets = [bracket("main", "Top 32"), bracket("newcomers", "Newcomers")];
+
 describe("EventQualified group titles", () => {
-  it("labels the first and second semi groups Group A and Group B in stage order", () => {
-    const { getByText } = render(EventQualified, {
+  it("titles each box with its stage's label and heads each bracket when there are several", () => {
+    const { container } = render(EventQualified, {
       qualified: qualifiedWith(),
       stages,
-      cutAt: "2026-09-20T00:00:00Z",
+      brackets,
+      cutAt: "2026-10-08T08:00:00Z",
       formatDate: fmt,
     });
-    expect(getByText("Group A")).toBeTruthy();
-    expect(getByText("Group B")).toBeTruthy();
+    expect(
+      [...container.querySelectorAll(".bracket-label")].map(
+        (n) => n.textContent,
+      ),
+    ).toEqual(["Top 32", "Newcomers"]);
+    expect(
+      [...container.querySelectorAll(".name")].map((n) => n.textContent),
+    ).toEqual(["Semi A", "Semi B", "Newcomers' final"]);
   });
 
-  it("labels the newcomers group Newcomers regardless of where the newcomers stage sits in the array", () => {
-    const reordered: EventStage[] = [
-      stage({
-        key: "newcomers",
-        label: "Newcomers Final",
-        kind: "final",
-        bracket: "newcomers",
-      }),
-      stage({ key: "semi-a", label: "Semi A", kind: "semi" }),
-      stage({ key: "semi-b", label: "Semi B", kind: "semi" }),
-    ];
-    const { getByText } = render(EventQualified, {
-      qualified: qualifiedWith(),
-      stages: reordered,
-      cutAt: "2026-09-20T00:00:00Z",
+  it("shows no bracket heading for a single bracket", () => {
+    const { container } = render(EventQualified, {
+      qualified: qualifiedWith({ groups: qualifiedWith().groups.slice(0, 2) }),
+      stages: stages.slice(0, 2),
+      brackets: brackets.slice(0, 1),
+      cutAt: "2026-10-08T08:00:00Z",
       formatDate: fmt,
     });
-    expect(getByText("Newcomers")).toBeTruthy();
-    expect(getByText("Group A")).toBeTruthy();
-    expect(getByText("Group B")).toBeTruthy();
+    expect(container.querySelector(".bracket-label")).toBeNull();
   });
 
   it("shows the filled/total count for a group", () => {
@@ -125,56 +131,11 @@ describe("EventQualified group titles", () => {
         ],
       }),
       stages,
+      brackets,
       cutAt: "2026-09-20T00:00:00Z",
       formatDate: fmt,
     });
     expect(getByText("1 / 2")).toBeTruthy();
-  });
-});
-
-describe("EventQualified with quarters", () => {
-  it("letters the seeded groups and leaves a date out until one exists", () => {
-    const quarterStages = [
-      stage({
-        key: "quarter_a",
-        label: "Quarter A",
-        kind: "quarter",
-        date: null,
-        date_fixed: false,
-        time_set: true,
-      }),
-      stage({
-        key: "quarter_b",
-        label: "Quarter B",
-        kind: "quarter",
-        date: null,
-        date_fixed: false,
-        time_set: true,
-      }),
-      stage({
-        key: "semi_a",
-        label: "Semi A",
-        kind: "semi",
-        date: null,
-        date_fixed: false,
-        time_set: true,
-        from: ["quarter_a", "quarter_b"],
-      }),
-    ];
-    const { getByText, queryByText } = render(EventQualified, {
-      qualified: qualifiedWith({
-        groups: [
-          { stage_key: "quarter_a", label: "Quarter A", entries: [] },
-          { stage_key: "quarter_b", label: "Quarter B", entries: [] },
-        ],
-      }),
-      stages: quarterStages,
-      cutAt: "2026-10-08T08:00:00Z",
-      formatDate: fmt,
-    });
-    expect(getByText("Group B")).toBeTruthy();
-    expect(getByText("Quarter B")).toBeTruthy();
-    expect(queryByText(/Quarter B on/)).toBeNull();
   });
 });
 
@@ -183,6 +144,7 @@ describe("EventQualified provisional banner", () => {
     const { getByText } = render(EventQualified, {
       qualified: qualifiedWith({ provisional: true }),
       stages,
+      brackets,
       cutAt: "2026-09-20T00:00:00Z",
       formatDate: fmt,
     });
@@ -194,6 +156,7 @@ describe("EventQualified provisional banner", () => {
     const { getByText, queryByText } = render(EventQualified, {
       qualified: qualifiedWith({ provisional: false }),
       stages,
+      brackets,
       cutAt: "2026-09-20T00:00:00Z",
       formatDate: fmt,
     });
