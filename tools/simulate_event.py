@@ -14,10 +14,10 @@ machine unless --force is given: it writes fabricated participations onto real
 user rows, deletes the participants and casters of the races it manages, and
 detaches every other race from the event.
 
-It manages fifty-seven races, named the way docs/EVENTS.md has an organizer
+It manages sixty-three races, named the way docs/EVENTS.md has an organizer
 name real ones so the page renders them identically, and found again by their
 event slot on later runs. Creating them consumes one available seed each
-(eight groups, four quarters, two semis, the newcomers' and the open final,
+(eight groups, four quarters, two semis and the final, then the newcomers' two semis and final,
 three races apiece, plus the nine qualifier seeds); a pool out of fresh seeds
 lends its latest consumed one.
 
@@ -114,14 +114,14 @@ STARTS = D("2026-09-23T08:00")
 CUT = D("2026-10-08T08:00")
 ENDS = D("2026-11-01T23:00")
 MATCH_POOLS = ["standard", "boss_rush", "uwyg_major"]
-# key: (evening, pools, dated in the config), in the config's stage order. The
+# key: (evening, pools, dated in the config), in the config's flattened stage order
+# (the Top 32 bracket, then the newcomers bracket). The
 # pools are the ones each race's seed is drawn from, in race order; the race is
 # named after the stage's own mode label. Groups, quarters and semis are
 # scheduled with their players: the config leaves their date out and their
 # races carry it, so their evenings here are one plausible calendar between
 # the cut and the final.
 STAGES: dict[str, tuple[datetime, list[str], bool]] = {
-    "newcomers": (D("2026-10-11T19:00"), ["standard", "sprint", "boss_rush"], True),
     "group_a": (D("2026-10-10T19:00"), MATCH_POOLS, False),
     "group_b": (D("2026-10-12T19:00"), MATCH_POOLS, False),
     "group_c": (D("2026-10-13T19:00"), MATCH_POOLS, False),
@@ -141,6 +141,21 @@ STAGES: dict[str, tuple[datetime, list[str], bool]] = {
     "final": (
         D("2026-11-01T19:00"),
         ["hardcore", "uwyg_rush", "hardcore_boss_rush"],
+        True,
+    ),
+    "newcomers_semi_a": (
+        D("2026-10-09T19:00"),
+        ["standard", "sprint", "boss_rush"],
+        False,
+    ),
+    "newcomers_semi_b": (
+        D("2026-10-10T15:00"),
+        ["standard", "sprint", "boss_rush"],
+        False,
+    ),
+    "newcomers_final": (
+        D("2026-10-11T19:00"),
+        ["standard", "sprint", "boss_rush"],
         True,
     ),
 }
@@ -179,11 +194,12 @@ SCENARIOS: dict[str, datetime | tuple[str, str]] = {
     "announce": D("2026-09-18T15:00"),
     "announce_attached": D("2026-09-18T15:00"),
     "qualifier": D("2026-09-27T15:00"),
-    # The qualifier closed, no race attached yet: the newcomers' final, the only dated evening, is
-    # what the page announces next, though Group A plays a day earlier with none yet.
+    # The qualifier closed: Newcomers semi A, its races attached two days ahead, is what
+    # the page announces next.
     "cut": D("2026-10-08T12:00"),
-    "newcomers_live": ("live", "newcomers"),
-    # The newcomers' final and Group A played, Group B tonight.
+    # Newcomers semi A live: the newcomers bracket opens first.
+    "newcomers_live": ("live", "newcomers_semi_a"),
+    # The newcomers bracket and Group A played, Group B tonight.
     "newcomers_done": D("2026-10-12T08:00"),
     # Groups A and B played, C live, the others scheduled.
     "group_c_live": ("live", "group_c"),
@@ -514,7 +530,7 @@ async def pick_seed(db, pool: str) -> Seed:
     if seed is not None:
         seed.status = SeedStatus.CONSUMED
         return seed
-    # A local database rarely holds fifty-seven fresh seeds: two simulated races
+    # A local database rarely holds sixty-three fresh seeds: two simulated races
     # may share a pack, which nothing on the event page can tell.
     seed = (
         await db.execute(
@@ -626,18 +642,18 @@ async def pick_roster(
         .scalars()
         .all()
     )
-    if len(veterans) < 36 or len(newcomers) < 14:
+    if len(veterans) < 36 or len(newcomers) < 20:
         raise SystemExit(
             f"not enough users to build a roster: {len(veterans)} veterans, "
-            f"{len(newcomers)} newcomers (need 36 and 14)"
+            f"{len(newcomers)} newcomers (need 36 and 20)"
         )
     vets = rng.sample(veterans[:44], 36)
     casters = [u for u in veterans if u not in vets][:2]
-    # Fourteen newcomers rather than nine: several rank inside
-    # the top 32 (seeded into a group like any other runner) or get skipped a
-    # mode by the partial-attendance roll above, and the newcomers' final still
-    # needs enough of them left standing after the last group seed.
-    news = rng.sample(newcomers, 14)
+    # Twenty newcomers rather than nine: several rank inside the top 32 (seeded
+    # into a group like any other runner) or get skipped a mode by the
+    # partial-attendance roll above, and the newcomers bracket needs eight ranked
+    # newcomers past the top 32.
+    news = rng.sample(newcomers, 20)
     runners = [Runner(viewer, 0.93, False)] if viewer else []
     runners += [Runner(u, rng.uniform(0.78, 1.32), False) for u in vets[:34]]
     runners += [Runner(u, rng.uniform(1.04, 1.4), True) for u in news]
@@ -985,16 +1001,22 @@ async def simulate(
         event.ends_at = T(ENDS)
         cfg = dict(event.config)
         cfg["announced_at"] = T(ANNOUNCE).isoformat().replace("+00:00", "Z")
-        cfg["stages"] = [
+        cfg["brackets"] = [
             {
-                **s,
-                "date": (
-                    T(STAGES[s["key"]][0]).isoformat().replace("+00:00", "Z")
-                    if STAGES[s["key"]][2]
-                    else None
-                ),
+                **bracket,
+                "stages": [
+                    {
+                        **s,
+                        "date": (
+                            T(STAGES[s["key"]][0]).isoformat().replace("+00:00", "Z")
+                            if STAGES[s["key"]][2]
+                            else None
+                        ),
+                    }
+                    for s in bracket["stages"]
+                ],
             }
-            for s in cfg["stages"]
+            for bracket in cfg["brackets"]
         ]
 
         def shifted(when: str) -> str:
@@ -1022,7 +1044,7 @@ async def simulate(
     )
     for key, (date, _pools, dated) in STAGES.items():
         print(
-            f"  {key:10s} {T(date):%a %d %b %H:%M}Z{'' if dated else ' (races)'}  "
+            f"  {key:16s} {T(date):%a %d %b %H:%M}Z{'' if dated else ' (races)'}  "
             f"{[u.twitch_username for u in fields[key]]}"
         )
     print("ladder after the cut:")

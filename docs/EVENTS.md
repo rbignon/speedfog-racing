@@ -679,14 +679,14 @@ final incomplete shows no plate.
 `tools/simulate_event.py <stage>` fills a local database with a whole
 simulated season and projects it at the state named by the stage, shifting
 every date so that state is the current one: the announcement, the open
-qualifier, the cut with no race attached, the newcomers' final live and
-played, Group C live beside two played groups, every group played, Quarter C
+qualifier, the cut with no race attached, Newcomers semi A live and the
+newcomers bracket played, Group C live beside two played groups, every group played, Quarter C
 live beside two played quarters, the quarters over with no semi scheduled,
 Semi A live, and the final live and finished. The event must already exist,
 and its modes and stages must match Season One's real configuration, which
 the tool reproduces (its showcases stay empty). It writes fabricated
 participations onto real user rows, detaches every race it does not manage
-from the event, and consumes an available seed for each of the fifty-seven
+from the event, and consumes an available seed for each of the sixty-three
 races it creates (a pool out of fresh seeds lends its latest consumed one),
 so it refuses a database that is not on this machine. On a database restored
 from production, the real event carries the real qualifier runs, which a run
