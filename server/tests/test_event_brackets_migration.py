@@ -133,3 +133,12 @@ def test_downgrade_leaves_a_newcomers_bracket_with_semis_alone():
 
 def test_downgrade_leaves_a_document_without_brackets_alone():
     assert migration.unwrap_brackets(copy.deepcopy(SEASON_ONE)) is None
+
+
+def test_the_migrated_season_one_document_validates():
+    from speedfog_racing.schemas import EventConfig
+
+    cfg = EventConfig.model_validate(migration.wrap_stages_in_brackets(copy.deepcopy(SEASON_ONE)))
+    assert [b.key for b in cfg.brackets] == ["main", "newcomers"]
+    newcomers = cfg.stage("newcomers")
+    assert newcomers is not None and newcomers.seeds == [1, 2, 3, 4]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pytest
 from sqlalchemy import select
@@ -12,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import Event, Pool, Race, Seed, SeedStatus, User, UserRole
+
+from .event_fixtures import bracketed, stages_of
 
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 DOC = {
@@ -104,6 +107,11 @@ QUARTERS_DOC = {
 }
 
 
+def _upsert(doc: dict[str, Any]) -> dict[str, Any]:
+    """``doc`` as the admin upsert takes it: its flat stage list wrapped into brackets."""
+    return {**doc, "config": bracketed(doc["config"])}
+
+
 @pytest.fixture
 async def async_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -155,7 +163,7 @@ ADMIN = {"Authorization": "Bearer tok-root"}
 async def test_upsert_requires_admin(test_client, users):
     async with test_client as client:
         response = await client.post(
-            "/api/admin/events", json=DOC, headers={"Authorization": "Bearer tok-orga"}
+            "/api/admin/events", json=_upsert(DOC), headers={"Authorization": "Bearer tok-orga"}
         )
     assert response.status_code == 403
 
@@ -179,11 +187,11 @@ async def test_events_admin_endpoints_require_admin(test_client, users, method, 
 @pytest.mark.asyncio
 async def test_upsert_creates_then_updates(test_client, users):
     async with test_client as client:
-        created = await client.post("/api/admin/events", json=DOC, headers=ADMIN)
+        created = await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
         assert created.status_code == 200, created.text
         assert created.json()["phase"] == "cut"
         renamed = dict(DOC, name="Fog Cup")
-        updated = await client.post("/api/admin/events", json=renamed, headers=ADMIN)
+        updated = await client.post("/api/admin/events", json=_upsert(renamed), headers=ADMIN)
         assert updated.json()["name"] == "Fog Cup"
         assert updated.json()["id"] == created.json()["id"]
         listed = await client.get("/api/admin/events", headers=ADMIN)
@@ -194,7 +202,7 @@ async def test_upsert_creates_then_updates(test_client, users):
 async def test_upsert_rejects_unknown_mode_pool(test_client, users):
     doc = dict(DOC, config=dict(DOC["config"], modes=[{"key": "nope", "label": "Nope"}]))
     async with test_client as client:
-        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+        response = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
     assert response.status_code == 422
     assert "nope" in response.text
 
@@ -236,12 +244,15 @@ async def test_admin_list_survives_a_stored_config_the_schema_rejects(
         race = await _race(db, orga, "standard", "s9", max_participants=2)
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         async with async_session() as db:
             event = await db.get(Event, uuid.UUID(event_id))
-            stages = [dict(s) for s in event.config["stages"]]
+            (main,) = event.config["brackets"]
+            stages = [dict(s) for s in main["stages"]]
             stages[0] = dict(stages[0], seeds=[1, 3])  # seed 2 is nobody's
-            event.config = dict(event.config, stages=stages)
+            event.config = dict(event.config, brackets=[dict(main, stages=stages)])
             await db.commit()
 
         listed = await client.get("/api/admin/events", headers=ADMIN)
@@ -251,7 +262,7 @@ async def test_admin_list_survives_a_stored_config_the_schema_rejects(
         # now that it does not parse: the phase falls back to the dates.
         assert row["phase"] != "cut"
         assert "gap" in row["config_error"]
-        assert row["config"]["stages"][0]["seeds"] == [1, 3]
+        assert stages_of(row["config"])[0]["seeds"] == [1, 3]
 
         # Attaching needs the parsed config, so it refuses, but as a 422 naming
         # the document rather than a 500.
@@ -273,7 +284,7 @@ async def test_upsert_refuses_config_that_orphans_an_attached_slot(
         std = await _race(db, orga, "standard", "s7")
         await db.commit()
     async with test_client as client:
-        created = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()
+        created = (await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)).json()
         event_id = created["id"]
         attached = await client.post(
             f"/api/admin/races/{std.id}/event",
@@ -286,7 +297,7 @@ async def test_upsert_refuses_config_that_orphans_an_attached_slot(
             DOC,
             config=dict(DOC["config"], modes=[{"key": "boss_rush", "label": "Boss Rush"}]),
         )
-        rejected = await client.post("/api/admin/events", json=dropped_mode, headers=ADMIN)
+        rejected = await client.post("/api/admin/events", json=_upsert(dropped_mode), headers=ADMIN)
         assert rejected.status_code == 422
         assert "qualifier:standard:1" in rejected.text
 
@@ -297,7 +308,7 @@ async def test_upsert_refuses_config_that_orphans_an_attached_slot(
             DOC,
             config=dict(DOC["config"], modes=[{"key": "standard", "label": "Standard Mode"}]),
         )
-        compatible = await client.post("/api/admin/events", json=relabeled, headers=ADMIN)
+        compatible = await client.post("/api/admin/events", json=_upsert(relabeled), headers=ADMIN)
         assert compatible.status_code == 200, compatible.text
 
 
@@ -310,7 +321,9 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
         other = await _race(db, orga, "standard", "s2")
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
 
         bad_slot = await client.post(
             f"/api/admin/races/{std.id}/event",
@@ -365,7 +378,9 @@ async def test_attach_stage_slot_requires_room_for_the_field(test_client, users,
         small = await _race(db, orga, "standard", "s3", max_participants=1)
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         response = await client.post(
             f"/api/admin/races/{small.id}/event",
             json={"event_id": event_id, "slot": "semi_a:1"},
@@ -381,7 +396,9 @@ async def test_attach_rejects_daily_seed(test_client, users, async_session):
         daily = await _race(db, orga, "standard", "d1", daily_date=date(2026, 9, 1))
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         response = await client.post(
             f"/api/admin/races/{daily.id}/event",
             json={"event_id": event_id, "slot": "qualifier:standard:1"},
@@ -404,7 +421,9 @@ async def test_attach_qualifier_rejects_mismatched_window(test_client, users, as
         )
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         response = await client.post(
             f"/api/admin/races/{race.id}/event",
             json={"event_id": event_id, "slot": "qualifier:standard:1"},
@@ -428,7 +447,9 @@ async def test_attach_qualifier_rejects_unset_window(test_client, users, async_s
         )
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         response = await client.post(
             f"/api/admin/races/{race.id}/event",
             json={"event_id": event_id, "slot": "qualifier:standard:1"},
@@ -446,7 +467,9 @@ async def test_attach_stage_slot_succeeds_without_excluding_from_stats(
         race = await _race(db, orga, "standard", "s6", max_participants=2)
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         response = await client.post(
             f"/api/admin/races/{race.id}/event",
             json={"event_id": event_id, "slot": "semi_a:1"},
@@ -465,7 +488,7 @@ async def test_attach_to_a_fed_stage_needs_room_for_every_source(test_client, us
         await db.commit()
     async with test_client as client:
         event_id = (
-            await client.post("/api/admin/events", json=QUARTERS_DOC, headers=ADMIN)
+            await client.post("/api/admin/events", json=_upsert(QUARTERS_DOC), headers=ADMIN)
         ).json()["id"]
         refused = await client.post(
             f"/api/admin/races/{three.id}/event",
@@ -493,16 +516,18 @@ async def test_the_quarters_config_replaces_the_semis_one_under_attached_qualifi
         std = await _race(db, orga, "standard", "s12")
         await db.commit()
     async with test_client as client:
-        event_id = (await client.post("/api/admin/events", json=DOC, headers=ADMIN)).json()["id"]
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
         attached = await client.post(
             f"/api/admin/races/{std.id}/event",
             json={"event_id": event_id, "slot": "qualifier:standard:1"},
             headers=ADMIN,
         )
         assert attached.status_code == 200, attached.text
-        replaced = await client.post("/api/admin/events", json=QUARTERS_DOC, headers=ADMIN)
+        replaced = await client.post("/api/admin/events", json=_upsert(QUARTERS_DOC), headers=ADMIN)
     assert replaced.status_code == 200, replaced.text
-    assert [s["key"] for s in replaced.json()["config"]["stages"]][:2] == [
+    assert [s["key"] for s in stages_of(replaced.json()["config"])][:2] == [
         "quarter_a",
         "quarter_b",
     ]
@@ -527,7 +552,7 @@ async def test_a_showcase_slot_takes_any_field_and_keeps_its_races(
         extra = await _race(db, orga, "standard", "s21")
         await db.commit()
     async with test_client as client:
-        created = await client.post("/api/admin/events", json=SHOWCASE_DOC, headers=ADMIN)
+        created = await client.post("/api/admin/events", json=_upsert(SHOWCASE_DOC), headers=ADMIN)
         event_id = created.json()["id"]
         # The runners are picked by hand: no field size to make room for.
         accepted = await client.post(
@@ -543,7 +568,7 @@ async def test_a_showcase_slot_takes_any_field_and_keeps_its_races(
         )
         assert beyond.status_code == 422 and "races" in beyond.text
 
-        dropped = await client.post("/api/admin/events", json=DOC, headers=ADMIN)
+        dropped = await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
         assert dropped.status_code == 422 and "showcase:1" in dropped.text
 
 
@@ -551,7 +576,7 @@ async def test_a_showcase_slot_takes_any_field_and_keeps_its_races(
 async def test_upsert_refuses_a_withdrawn_name_that_matches_no_user(test_client, users):
     doc = dict(DOC, config=dict(DOC["config"], withdrawn=["ORGA", "ghost"]))
     async with test_client as client:
-        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+        response = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
     assert response.status_code == 422
     assert "ghost" in response.text
     assert "ORGA" not in response.text
@@ -561,5 +586,5 @@ async def test_upsert_refuses_a_withdrawn_name_that_matches_no_user(test_client,
 async def test_upsert_takes_withdrawn_names_whatever_their_case(test_client, users):
     doc = dict(DOC, config=dict(DOC["config"], withdrawn=[" ORGA "]))
     async with test_client as client:
-        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+        response = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
     assert response.status_code == 200, response.text

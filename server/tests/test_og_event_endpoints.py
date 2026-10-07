@@ -25,6 +25,8 @@ from speedfog_racing.models import (
     UserRole,
 )
 
+from .event_fixtures import bracketed
+
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 CONFIG = {
     "modes": [{"key": "standard", "label": "Standard"}],
@@ -115,7 +117,7 @@ async def event(async_session):
             qualifier_ends_at=T0 + timedelta(days=7),
             ends_at=datetime(2026, 10, 26, tzinfo=UTC),
             newcomer_threshold=5,
-            config=CONFIG,
+            config=bracketed(CONFIG),
         )
         seed = Seed(
             seed_number="ev1",

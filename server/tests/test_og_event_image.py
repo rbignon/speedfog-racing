@@ -17,6 +17,8 @@ from speedfog_racing.services.og_image import (
     summarize_event,
 )
 
+from .event_fixtures import bracketed
+
 _PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 STARTS = dt.datetime(2026, 9, 23, 8, tzinfo=dt.UTC)  # a Wednesday
@@ -124,7 +126,7 @@ def _event(races: list[SimpleNamespace], **overrides: object) -> SimpleNamespace
         "qualifier_ends_at": CUT,
         "ends_at": ENDS,
         "newcomer_threshold": 5,
-        "config": CONFIG,
+        "config": bracketed(CONFIG),
         "races": races,
         "signups": [],
     }
@@ -237,7 +239,9 @@ def test_signups_leave_the_card_at_the_cut() -> None:
 
 def test_a_showcase_runner_is_no_entrant() -> None:
     event, users = _qualifier_world(["ana", "bob"])
-    event.config = {**CONFIG, "showcases": [{"key": "showcase", "label": "Showcase", "races": 3}]}
+    event.config = bracketed(
+        {**CONFIG, "showcases": [{"key": "showcase", "label": "Showcase", "races": 3}]}
+    )
     showcase = _race("showcase:1", [_entry(users["ana"], 800_000), _entry(_user("cleo"), 900_000)])
     event.races.append(showcase)
     summary = summarize_event(event, now=STARTS + dt.timedelta(days=2), finished_before={})
@@ -281,10 +285,12 @@ def test_an_undated_current_stage_shows_no_date_on_the_card() -> None:
     attached; the card and its description must leave the date out, not print
     "on None". A race RUNNING makes its stage current regardless of a date."""
     event, users = _qualifier_world(["ana", "bob"])
-    event.config = {
-        **CONFIG,
-        "stages": [*CONFIG["stages"][:-1], {**CONFIG["stages"][-1], "date": None}],
-    }
+    event.config = bracketed(
+        {
+            **CONFIG,
+            "stages": [*CONFIG["stages"][:-1], {**CONFIG["stages"][-1], "date": None}],
+        }
+    )
     running_final = _race("final:1", [_entry(users["ana"], 900_000)], finished=False)
     event.races.append(running_final)
     now = NEWCOMERS + dt.timedelta(days=2)  # after every dated stage, before ends_at
@@ -327,13 +333,15 @@ def test_the_window_label_names_the_year_once_within_one_year() -> None:
 
 def test_a_long_stage_label_shrinks_the_caption_rather_than_overflowing() -> None:
     event, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
-    event.config = {
-        **CONFIG,
-        "stages": [
-            {**CONFIG["stages"][0], "label": "Semi A of the Ignite Invitational"},
-            *CONFIG["stages"][1:],
-        ],
-    }
+    event.config = bracketed(
+        {
+            **CONFIG,
+            "stages": [
+                {**CONFIG["stages"][0], "label": "Semi A of the Ignite Invitational"},
+                *CONFIG["stages"][1:],
+            ],
+        }
+    )
     summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before={})
     assert summary.caption_font_size < 34
 
@@ -443,13 +451,15 @@ def test_the_cache_key_moves_when_the_partner_logo_does() -> None:
 
 def test_a_stage_label_containing_of_keeps_its_whole_name_in_a_final_slot() -> None:
     event, _ = _qualifier_world(["ana", "bob"])
-    event.config = {
-        **CONFIG,
-        "stages": [
-            {**CONFIG["stages"][0], "label": "Semi A of the Invitational"},
-            *CONFIG["stages"][1:],
-        ],
-    }
+    event.config = bracketed(
+        {
+            **CONFIG,
+            "stages": [
+                {**CONFIG["stages"][0], "label": "Semi A of the Invitational"},
+                *CONFIG["stages"][1:],
+            ],
+        }
+    )
     summary = summarize_event(event, now=FINAL - dt.timedelta(hours=2), finished_before={})
     assert summary.field[0].label == "Semi A of the Invitational"
 
@@ -468,7 +478,7 @@ def test_a_newcomers_stage_seats_the_best_ranked_newcomers() -> None:
 
 def test_playoffs_without_a_configured_stage_fall_back_to_the_field() -> None:
     event, _ = _qualifier_world(["ana", "bob"])
-    event.config = {**CONFIG, "stages": []}
+    event.config = bracketed({**CONFIG, "stages": []})
     summary = summarize_event(event, now=SEMI_A, finished_before={})
     assert summary.phase == "playoffs"
     assert summary.kind == "event_entrants"
@@ -478,14 +488,16 @@ def test_playoffs_without_a_configured_stage_fall_back_to_the_field() -> None:
 def test_a_wide_semi_keeps_its_line_up_on_the_card() -> None:
     """Nothing caps a semi's seeds, so the card caps the seats it draws."""
     event, _ = _qualifier_world([f"runner{i:02d}" for i in range(12)])
-    event.config = {
-        **CONFIG,
-        "stages": [
-            {**CONFIG["stages"][0], "seeds": list(range(1, 12))},
-            {**CONFIG["stages"][1], "seeds": [12], "advance": 1},
-            *CONFIG["stages"][2:],
-        ],
-    }
+    event.config = bracketed(
+        {
+            **CONFIG,
+            "stages": [
+                {**CONFIG["stages"][0], "seeds": list(range(1, 12))},
+                {**CONFIG["stages"][1], "seeds": [12], "advance": 1},
+                *CONFIG["stages"][2:],
+            ],
+        }
+    )
     summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before={})
     assert len(summary.field) == 8
     assert summary.field_overflow_count == 3
@@ -507,8 +519,8 @@ def test_a_wide_display_name_shrinks_the_winner_line() -> None:
 async def test_every_card_kind_renders_with_a_complete_context() -> None:
     """An attribute driven by a missing context key renders empty, not wrong."""
     running, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
-    # A complete final ends the event whatever the clock says, so the winner
-    # card needs its own world.
+    # The winner card needs a complete final, which the other cards' world
+    # leaves out.
     crowned, users = _qualifier_world(["ana", "bob"])
     crowned.races.append(
         _race("final:1", [_entry(users["bob"], 800_000), _entry(users["ana"], 900_000)])

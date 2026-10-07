@@ -1033,14 +1033,13 @@ class EventStage(BaseModel):
 
     key: str = Field(min_length=1, max_length=30)
     label: str = Field(min_length=1, max_length=60)
-    kind: Literal["round", "quarter", "semi", "newcomers", "final"]
+    kind: Literal["round", "quarter", "semi", "final"]
     date: StageDate | None = None
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
     from_: list[str] | None = Field(default=None, alias="from")
     # How many of this stage's runners go on to the stage naming it in ``from``.
     advance: int | None = Field(default=None, ge=1, le=3)
-    size: int | None = Field(default=None, ge=2, le=8)
     modes: list[str] = []
 
     @property
@@ -1048,25 +1047,38 @@ class EventStage(BaseModel):
         return _stage_moment(self.date)
 
     @model_validator(mode="after")
-    def _check_kind_fields(self) -> "EventStage":
+    def _check_field_source(self) -> "EventStage":
         if self.seeds is not None:
             if not self.seeds or any(s < 1 for s in self.seeds):
-                raise ValueError("seeds must be positive ladder positions")
+                raise ValueError("seeds must be positive positions in the bracket's pool")
             if len(set(self.seeds)) != len(self.seeds):
                 raise ValueError("seeds must be distinct")
         if self.from_ is not None and not self.from_:
             raise ValueError("from must name at least one stage")
-        if self.kind == "newcomers":
-            if self.size is None:
-                raise ValueError("a newcomers stage needs size")
-            if self.seeds is not None or self.from_ is not None or self.advance is not None:
-                raise ValueError("a newcomers stage takes no seeds, from or advance")
-        else:
-            if (self.seeds is None) == (self.from_ is None):
-                raise ValueError("a stage takes its field from exactly one of seeds or from")
-            if self.size is not None:
-                raise ValueError("size only applies to a newcomers stage")
+        if (self.seeds is None) == (self.from_ is None):
+            raise ValueError("a stage takes its field from exactly one of seeds or from")
         return self
+
+
+class EventBracket(BaseModel):
+    """A chain of stages drawing its runners from one pool of the ladder.
+
+    Brackets draw in config order: a runner an earlier bracket drew, at the
+    cut or by a call-up, never enters a later one's pool.
+    """
+
+    key: str = Field(min_length=1, max_length=30)
+    label: str = Field(min_length=1, max_length=60)
+    # Who the pool holds: every ranked runner, or the newcomers only.
+    entry: Literal["all", "newcomers"]
+    stages: list[EventStage] = Field(min_length=1)
+
+    def final_stage(self) -> EventStage | None:
+        return next((s for s in self.stages if s.kind == "final"), None)
+
+    def closing_stage(self) -> EventStage:
+        """The stage whose completion completes the bracket: its final, else its last."""
+        return self.final_stage() or self.stages[-1]
 
 
 class EventShowcase(BaseModel):
@@ -1089,7 +1101,7 @@ class EventShowcase(BaseModel):
 class EventConfig(BaseModel):
     modes: list[EventMode] = Field(min_length=1, max_length=6)
     seeds_per_mode: int = Field(default=2, ge=1, le=4)
-    stages: list[EventStage] = []
+    brackets: list[EventBracket] = []
     showcases: list[EventShowcase] = []
     rules: list[str] = []
     playoff_rules: list[str] = []
@@ -1104,71 +1116,48 @@ class EventConfig(BaseModel):
     announced_at: datetime | None = None
     # Twitch usernames of qualified runners who gave up their place, in the
     # order they did: a seeded stage hands each vacated seat to the next runner
-    # on the ladder (see compute_qualified).
+    # on its bracket's bench (see compute_qualified).
     withdrawn: list[str] = Field(default_factory=list, max_length=64)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_flat_stages(cls, data: Any) -> Any:
+        # The stage list moved into brackets; a document still carrying it
+        # would otherwise parse as an event without any playoffs.
+        if isinstance(data, dict) and "stages" in data:
+            raise ValueError("stages moved into brackets: wrap them in a bracket")
+        return data
+
+    @property
+    def stages(self) -> list[EventStage]:
+        """Every bracket's stages, in bracket order, then stage order."""
+        return [stage for bracket in self.brackets for stage in bracket.stages]
 
     @model_validator(mode="after")
     def _check_structure(self) -> "EventConfig":
         keys = [m.key for m in self.modes]
         if len(set(keys)) != len(keys):
             raise ValueError("mode keys must be unique")
+        bracket_keys = [b.key for b in self.brackets]
+        if len(set(bracket_keys)) != len(bracket_keys):
+            raise ValueError("bracket keys must be unique")
         # Stages and showcases share the "<key>:<n>" slot namespace.
         stage_keys = [s.key for s in self.stages] + [s.key for s in self.showcases]
         if len(set(stage_keys)) != len(stage_keys):
             raise ValueError("stage and showcase keys must be unique")
-        seeded = [s for s in self.stages if s.seeds is not None]
-        all_seeds = [seed for s in seeded for seed in s.seeds or []]
-        duplicated_seeds = sorted({seed for seed in all_seeds if all_seeds.count(seed) > 1})
-        if duplicated_seeds:
-            raise ValueError(
-                f"seeds must be distinct across stages, duplicated: {duplicated_seeds}"
-            )
-        # The newcomers' group starts after the largest seed, so a gap would
-        # drop those ladder positions from every playoff group at once; and the
-        # page reads the cut off the seeded fields' sizes, which a gap makes
-        # a smaller number than the positions the seeds actually reach into.
-        missing = sorted(set(range(1, len(all_seeds) + 1)) - set(all_seeds))
-        if missing:
-            raise ValueError(
-                f"seeds must cover the ladder from 1 without a gap, missing: {missing}"
-            )
-        position = {s.key: i for i, s in enumerate(self.stages)}
-        takers: dict[str, list[str]] = {}
-        for stage in self.stages:
-            for source in stage.from_ or []:
-                if position.get(source, len(self.stages)) >= position[stage.key]:
-                    raise ValueError(
-                        f"from must name stages placed before {stage.key}, got {source!r}"
-                    )
-                if self.stages[position[source]].kind == "newcomers":
-                    raise ValueError(f"from cannot name the newcomers stage ({stage.key})")
-                takers.setdefault(source, []).append(stage.key)
-        for stage in self.stages:
-            taken_by = takers.get(stage.key, [])
-            if len(taken_by) > 1:
-                raise ValueError(f"{stage.key} feeds more than one stage: {taken_by}")
-            if taken_by and stage.advance is None:
-                raise ValueError(f"{stage.key} feeds {taken_by[0]} and needs advance")
-            if not taken_by and stage.advance is not None:
-                raise ValueError(f"{stage.key} has advance but no stage takes from it")
-            if stage.advance is not None and stage.advance > self.field_size(stage):
-                raise ValueError(
-                    f"{stage.key}: advance {stage.advance} exceeds its field of "
-                    f"{self.field_size(stage)}"
-                )
-        for kind in ("final", "newcomers"):
-            if sum(1 for s in self.stages if s.kind == kind) > 1:
-                raise ValueError(f"at most one {kind} stage")
-        # The announcement is the newcomer cut. A newcomers' final draws its
-        # field from that cut, so it must be an explicit date, never the
+        # The home band, the share card, the live strip and the race names show
+        # a stage's label alone, so two brackets' "Semi A" would read the same.
+        labels = [s.label for s in self.stages]
+        repeated = sorted({label for label in labels if labels.count(label) > 1})
+        if repeated:
+            raise ValueError(f"stage labels must be unique across brackets, repeated: {repeated}")
+        for bracket in self.brackets:
+            self._check_bracket(bracket)
+        # The announcement is the newcomer cut. A newcomers bracket draws its
+        # pool from that cut, so it must be an explicit date, never the
         # timeline's display default.
-        if self.announced_at is None and any(s.kind == "newcomers" for s in self.stages):
-            raise ValueError("a newcomers stage needs announced_at")
-        # A stage without a date is scheduled with its players: only the
-        # dated ones fix an order.
-        dates = [s.moment for s in self.stages if s.moment is not None]
-        if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
-            raise ValueError("stage dates must be ascending (a day alone counts as noon UTC)")
+        if self.announced_at is None and any(b.entry == "newcomers" for b in self.brackets):
+            raise ValueError("a newcomers bracket needs announced_at")
         if any(len(r) > 300 for r in self.rules + self.playoff_rules):
             raise ValueError("each rule is at most 300 characters")
         # A finish always outscores a DNF, and a better rank never scores less.
@@ -1187,6 +1176,61 @@ class EventConfig(BaseModel):
             raise ValueError("withdrawn names must be unique")
         return self
 
+    def _check_bracket(self, bracket: EventBracket) -> None:
+        """One bracket's seeds, ``from`` chain, ``advance``, final and dates."""
+        stages = bracket.stages
+        all_seeds = [seed for s in stages for seed in s.seeds or []]
+        duplicated = sorted({seed for seed in all_seeds if all_seeds.count(seed) > 1})
+        if duplicated:
+            raise ValueError(
+                f"{bracket.key}: seeds must be distinct across stages, duplicated: {duplicated}"
+            )
+        # A bracket's bench starts after its largest seed, so a gap would drop
+        # those pool positions from all of its stages at once; and the page
+        # reads the cut off the seeded fields' sizes, which a gap makes a
+        # smaller number than the positions the seeds reach into.
+        missing = sorted(set(range(1, len(all_seeds) + 1)) - set(all_seeds))
+        if missing:
+            raise ValueError(
+                f"{bracket.key}: seeds must cover its pool from 1 without a gap, missing: {missing}"
+            )
+        position = {s.key: i for i, s in enumerate(stages)}
+        takers: dict[str, list[str]] = {}
+        for stage in stages:
+            for source in stage.from_ or []:
+                if source not in position and self.stage(source) is not None:
+                    raise ValueError(
+                        f"from must name a stage of its own bracket ({stage.key} names {source!r})"
+                    )
+                if position.get(source, len(stages)) >= position[stage.key]:
+                    raise ValueError(
+                        f"from must name stages placed before {stage.key}, got {source!r}"
+                    )
+                takers.setdefault(source, []).append(stage.key)
+        for stage in stages:
+            taken_by = takers.get(stage.key, [])
+            if len(taken_by) > 1:
+                raise ValueError(f"{stage.key} feeds more than one stage: {taken_by}")
+            if taken_by and stage.advance is None:
+                raise ValueError(f"{stage.key} feeds {taken_by[0]} and needs advance")
+            if not taken_by and stage.advance is not None:
+                raise ValueError(f"{stage.key} has advance but no stage takes from it")
+            if stage.advance is not None and stage.advance > self.field_size(stage):
+                raise ValueError(
+                    f"{stage.key}: advance {stage.advance} exceeds its field of "
+                    f"{self.field_size(stage)}"
+                )
+        if sum(1 for s in stages if s.kind == "final") > 1:
+            raise ValueError(f"{bracket.key}: at most one final")
+        # A stage without a date is scheduled with its players: only the dated
+        # ones fix an order, and only within a bracket (another bracket's
+        # evenings fall wherever they fall).
+        dates = [s.moment for s in stages if s.moment is not None]
+        if any(b <= a for a, b in zip(dates, dates[1:], strict=False)):
+            raise ValueError(
+                "stage dates must be ascending within a bracket (a day alone counts as noon UTC)"
+            )
+
     def mode_keys(self) -> list[str]:
         return [m.key for m in self.modes]
 
@@ -1197,14 +1241,13 @@ class EventConfig(BaseModel):
         return next((s for s in self.showcases if s.key == key), None)
 
     def final_stage(self) -> EventStage | None:
-        return next((s for s in self.stages if s.kind == "final"), None)
+        """The first bracket's final: its winner is the event's champion."""
+        return self.brackets[0].final_stage() if self.brackets else None
 
     def field_size(self, stage: EventStage) -> int:
-        """Runners a stage seats: its seeds, the newcomers' size, or what its sources send on."""
+        """Runners a stage seats: its seeds, or what its sources send on."""
         if stage.seeds is not None:
             return len(stage.seeds)
-        if stage.size is not None:
-            return stage.size
         sources = [self.stage(key) for key in stage.from_ or []]
         return sum(source.advance or 0 for source in sources if source is not None)
 
@@ -1435,7 +1478,8 @@ class EventUpsertRequest(BaseModel):
         # qualifier's own runs would count towards it.
         if self.config.announced_at is not None and self.config.announced_at >= self.starts_at:
             raise ValueError("announced_at must be before starts_at")
-        dated = [s.moment for s in self.config.stages if s.moment is not None]
+        # Brackets date their evenings apart, so the list order says nothing.
+        dated = sorted(s.moment for s in self.config.stages if s.moment is not None)
         if dated:
             if self.qualifier_ends_at > dated[0]:
                 raise ValueError("qualifier_ends_at must not be after the first dated stage")

@@ -816,6 +816,7 @@ async def test_ban_endpoints_are_admin_only_and_spare_admins(sx_client, sx_users
 async def test_ban_side_effects(sx_client, sx_session, sx_users, monkeypatch):
     import speedfog_racing.api.admin as admin_api
     import speedfog_racing.api.races as races_api
+    from tests.event_fixtures import bracketed
     from tests.test_events_api import CONFIG
 
     monkeypatch.setattr(races_api, "fire_disqualification_notification", MagicMock())
@@ -846,7 +847,7 @@ async def test_ban_side_effects(sx_client, sx_session, sx_users, monkeypatch):
             qualifier_ends_at=now + timedelta(days=6),
             ends_at=now + timedelta(days=20),
             newcomer_threshold=5,
-            config=CONFIG,
+            config=bracketed(CONFIG),
         )
         db.add(event)
         await db.flush()

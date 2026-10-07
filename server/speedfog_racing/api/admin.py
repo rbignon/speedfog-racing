@@ -1359,10 +1359,10 @@ def _admin_event_response(event: Event) -> AdminEventResponse:
         ends_at=ends_at,
         first_stage_at=first_config_date(config) if config else None,
         # The admin list does not group the attached races by stage (unlike the
-        # public event page), so it cannot tell whether the last stage is
-        # complete; treat it as not complete, which only affects the
+        # public event page), so it cannot tell whether the brackets are
+        # complete; treat them as not complete, which only affects the
         # "playoffs" vs "finished" phase split.
-        last_stage_complete=False,
+        brackets_complete=False,
         override=config.phase_override if config else None,
     )
     attached = {r.event_slot: r.id for r in event.races if r.event_slot is not None}

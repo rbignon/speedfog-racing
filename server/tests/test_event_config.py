@@ -7,6 +7,12 @@ from pydantic import ValidationError
 
 from speedfog_racing.schemas import EventConfig, EventUpsertRequest
 
+from .event_fixtures import bracketed, stages_of
+
+
+def _valid(doc):
+    return EventConfig.model_validate(bracketed(doc))
+
 
 def _config(**overrides):
     base = {
@@ -59,7 +65,7 @@ def _config(**overrides):
 
 
 def test_valid_config_exposes_lookups():
-    cfg = EventConfig.model_validate(_config())
+    cfg = _valid(_config())
     assert cfg.mode_keys() == ["standard", "boss_rush"]
     assert cfg.stage("final") is not None and cfg.stage("final").from_ == ["semi_a", "semi_b"]
     assert cfg.final_stage() is not None and cfg.final_stage().key == "final"
@@ -69,112 +75,92 @@ def test_valid_config_exposes_lookups():
 def test_duplicate_mode_keys_rejected():
     modes = [{"key": "standard", "label": "A"}, {"key": "standard", "label": "B"}]
     with pytest.raises(ValidationError, match="unique"):
-        EventConfig.model_validate(_config(modes=modes))
+        _valid(_config(modes=modes))
 
 
 def test_semi_requires_distinct_seeds():
     stages = _config()["stages"]
     stages[0]["seeds"] = [1, 1]
     with pytest.raises(ValidationError, match="seeds"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_seeds_must_be_distinct_across_stages():
     stages = _config()["stages"]
     stages[1]["seeds"] = [1, 3]  # seed 1 already used by semi_a
     with pytest.raises(ValidationError, match="distinct across"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_semi_seeds_must_cover_the_ladder_from_one():
-    """A gap drops those ladder positions from the semis and from the newcomers'
-    group alike, which starts after the largest seed any semi uses."""
+    """A gap drops those positions from the semis and from the bench alike,
+    which starts after the largest seed any semi uses."""
     stages = _config()["stages"]
     stages[1]["seeds"] = [2, 5]  # 1, 2, 4, 5 across the semis: 3 goes nowhere
     with pytest.raises(ValidationError, match="without a gap"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
     stages[0]["seeds"] = [2, 4]
     stages[1]["seeds"] = [3, 5]  # nobody holds seed 1
     with pytest.raises(ValidationError, match="without a gap"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_stage_dates_must_ascend():
     stages = _config()["stages"]
     stages[1]["date"] = "2026-10-03T19:00:00Z"
     with pytest.raises(ValidationError, match="ascending"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_phase_override_must_be_a_phase():
     with pytest.raises(ValidationError, match="phase_override"):
-        EventConfig.model_validate(_config(phase_override="halftime"))
+        _valid(_config(phase_override="halftime"))
 
 
 def test_playoff_rules_share_the_rule_length_cap():
     with pytest.raises(ValidationError, match="300"):
-        EventConfig.model_validate(_config(playoff_rules=["x" * 301]))
+        _valid(_config(playoff_rules=["x" * 301]))
 
 
 def test_facts_reject_blank_or_overlong_text():
     with pytest.raises(ValidationError, match="blank"):
-        EventConfig.model_validate(_config(facts=[{"title": " ", "lines": ["4 Sundays"]}]))
+        _valid(_config(facts=[{"title": " ", "lines": ["4 Sundays"]}]))
     with pytest.raises(ValidationError, match="fact line"):
-        EventConfig.model_validate(
-            _config(facts=[{"title": "Playoffs", "lines": ["4 Sundays", " "]}])
-        )
+        _valid(_config(facts=[{"title": "Playoffs", "lines": ["4 Sundays", " "]}]))
     with pytest.raises(ValidationError, match="fact line"):
-        EventConfig.model_validate(_config(facts=[{"title": "Modes", "lines": ["x" * 61]}]))
+        _valid(_config(facts=[{"title": "Modes", "lines": ["x" * 61]}]))
     with pytest.raises(ValidationError, match="lines"):
-        EventConfig.model_validate(_config(facts=[{"title": "Modes", "lines": []}]))
+        _valid(_config(facts=[{"title": "Modes", "lines": []}]))
 
 
 def test_announced_at_must_be_timezone_aware():
     with pytest.raises(ValidationError, match="announced_at"):
-        EventConfig.model_validate(_config(announced_at="2026-10-01T10:00:00"))
+        _valid(_config(announced_at="2026-10-01T10:00:00"))
 
 
 def test_stage_date_must_be_timezone_aware():
     stages = _config()["stages"]
     stages[0]["date"] = "2026-10-04T19:00:00"
     with pytest.raises(ValidationError, match="timezone-aware datetime"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_a_stage_date_may_be_a_day_whose_time_is_not_set():
     stages = _config()["stages"]
     stages[3]["date"] = "2026-10-25"
-    cfg = EventConfig.model_validate(_config(stages=stages))
+    cfg = _valid(_config(stages=stages))
     # Stored as typed, so the admin editor hands the day back unchanged.
-    assert cfg.model_dump(mode="json", by_alias=True)["stages"][3]["date"] == "2026-10-25"
+    dumped = stages_of(cfg.model_dump(mode="json", by_alias=True))
+    assert next(s for s in dumped if s["key"] == "final")["date"] == "2026-10-25"
 
 
 def test_a_day_takes_part_in_the_ascending_order():
     stages = _config()["stages"]
     stages[1]["date"] = "2026-10-04"  # the day of semi_a, which is at 19:00Z
     with pytest.raises(ValidationError, match="ascending"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
     stages[1]["date"] = "2026-10-05"
-    EventConfig.model_validate(_config(stages=stages))
-
-
-def test_newcomers_without_size_rejected():
-    stages = _config()["stages"]
-    del stages[2]["size"]
-    with pytest.raises(ValidationError, match="a newcomers stage needs size"):
-        EventConfig.model_validate(_config(stages=stages))
-
-
-def test_newcomers_stage_requires_announced_at():
-    """The announcement is the newcomer cut, so a newcomers' final needs it dated
-    rather than left to the timeline's display default."""
-    with pytest.raises(ValidationError, match="a newcomers stage needs announced_at"):
-        EventConfig.model_validate(_config(announced_at=None))
-
-
-def test_announced_at_stays_optional_without_a_newcomers_stage():
-    stages = [s for s in _config()["stages"] if s["kind"] != "newcomers"]
-    EventConfig.model_validate(_config(stages=stages, announced_at=None))
+    _valid(_config(stages=stages))
 
 
 def test_event_upsert_rejects_naive_dates():
@@ -187,7 +173,7 @@ def test_event_upsert_rejects_naive_dates():
         "starts_at": "2026-09-23T08:00:00+00:00",
         "qualifier_ends_at": "2026-09-30T08:00:00+00:00",
         "ends_at": "2026-10-26T00:00:00+00:00",
-        "config": _config(),
+        "config": bracketed(_config()),
     }
     naive_starts = dict(base_doc, starts_at="2026-09-23T08:00:00")
     with pytest.raises(ValidationError, match="starts_at"):
@@ -207,16 +193,16 @@ def test_event_upsert_rejects_announcement_at_or_after_the_opening():
         "starts_at": "2026-09-23T08:00:00+00:00",
         "qualifier_ends_at": "2026-09-30T08:00:00+00:00",
         "ends_at": "2026-10-26T00:00:00+00:00",
-        "config": _config(announced_at="2026-09-23T08:00:00+00:00"),
+        "config": bracketed(_config(announced_at="2026-09-23T08:00:00+00:00")),
     }
     with pytest.raises(ValidationError, match="announced_at must be before starts_at"):
         EventUpsertRequest.model_validate(doc)
 
 
 def test_from_alias_round_trips_through_json_dump():
-    cfg = EventConfig.model_validate(_config())
+    cfg = _valid(_config())
     dumped = cfg.model_dump(mode="json", by_alias=True)
-    final_stage_dump = next(s for s in dumped["stages"] if s["key"] == "final")
+    final_stage_dump = next(s for s in stages_of(dumped) if s["key"] == "final")
     assert final_stage_dump["from"] == ["semi_a", "semi_b"]
     assert "from_" not in final_stage_dump
 
@@ -283,7 +269,7 @@ def _quarters(**overrides):
 
 
 def test_quarters_feed_semis_that_feed_the_final():
-    cfg = EventConfig.model_validate(_quarters())
+    cfg = _valid(_quarters())
     semi_a, final = cfg.stage("semi_a"), cfg.stage("final")
     assert semi_a is not None and final is not None
     # A fed stage seats what its sources send on: two quarters of 2 each.
@@ -295,76 +281,62 @@ def test_advance_sits_on_the_stage_that_sends_runners_on():
     stages = _quarters()["stages"]
     stages[-1]["advance"] = 2  # the final takes from the semis, nothing takes from it
     with pytest.raises(ValidationError, match="no stage takes from it"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
     stages = _quarters()["stages"]
     del stages[0]["advance"]  # quarter_a feeds semi_a without saying how many
     with pytest.raises(ValidationError, match="needs advance"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_from_only_names_earlier_stages():
     stages = _quarters()["stages"]
     stages[4]["from"] = ["quarter_a", "semi_b"]  # semi_b comes after semi_a
     with pytest.raises(ValidationError, match="placed before"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
     stages = _quarters()["stages"]
     stages[4]["from"] = ["quarter_a", "nowhere"]
     with pytest.raises(ValidationError, match="placed before"):
-        EventConfig.model_validate(_config(stages=stages))
-
-
-def test_from_never_names_the_newcomers_stage():
-    stages = _config()["stages"]
-    stages[3]["from"] = ["semi_a", "newcomers"]
-    with pytest.raises(ValidationError, match="newcomers"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_a_stage_feeds_one_stage_at_most():
     stages = _quarters()["stages"]
     stages[5]["from"] = ["quarter_c", "quarter_a"]  # quarter_a already feeds semi_a
     with pytest.raises(ValidationError, match="more than one stage"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_a_stage_takes_its_field_from_exactly_one_source():
     stages = _config()["stages"]
     stages[3]["seeds"] = [5]  # the final would take seeds and semi runners at once
     with pytest.raises(ValidationError, match="exactly one of seeds or from"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
     stages = _config()["stages"]
     del stages[3]["from"]  # nor may it take nothing at all
     with pytest.raises(ValidationError, match="exactly one of seeds or from"):
-        EventConfig.model_validate(_config(stages=stages))
-
-
-def test_newcomers_take_no_other_source():
-    stages = _config()["stages"]
-    stages[2]["seeds"] = [5]
-    with pytest.raises(ValidationError, match="a newcomers stage takes no seeds"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_advance_never_exceeds_the_field_it_comes_from():
     stages = _config()["stages"]
     stages[0]["advance"] = 3  # semi_a seats 2 runners
     with pytest.raises(ValidationError, match="exceeds its field of 2"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_one_final_at_most():
     stages = _quarters()["stages"]
     stages[5]["kind"] = "final"
     with pytest.raises(ValidationError, match="at most one final"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_a_stage_may_leave_its_date_to_its_races():
     stages = _quarters()["stages"]
     for stage in stages[:6]:
         del stage["date"]  # quarters and semis are scheduled with their players
-    cfg = EventConfig.model_validate(_config(stages=stages))
-    assert [s.key for s in cfg.stages if s.date is not None] == ["newcomers", "final"]
+    cfg = _valid(_config(stages=stages))
+    assert [s.key for s in cfg.stages if s.date is not None] == ["final", "newcomers"]
 
 
 def test_only_the_dated_stages_must_ascend():
@@ -372,7 +344,7 @@ def test_only_the_dated_stages_must_ascend():
     del stages[0]["date"]
     stages[1]["date"] = "2026-10-20T19:00:00Z"  # after semi_a's date
     with pytest.raises(ValidationError, match="ascending"):
-        EventConfig.model_validate(_config(stages=stages))
+        _valid(_config(stages=stages))
 
 
 def test_upsert_reads_the_window_against_the_dated_stages():
@@ -385,7 +357,7 @@ def test_upsert_reads_the_window_against_the_dated_stages():
         "starts_at": "2026-09-23T08:00:00+00:00",
         "qualifier_ends_at": "2026-10-08T08:00:00+00:00",
         "ends_at": "2026-10-26T00:00:00+00:00",
-        "config": _config(stages=stages),
+        "config": bracketed(_config(stages=stages)),
     }
     EventUpsertRequest.model_validate(doc)
     late_cut = dict(doc, qualifier_ends_at="2026-10-19T08:00:00+00:00")  # after the newcomers
@@ -394,8 +366,10 @@ def test_upsert_reads_the_window_against_the_dated_stages():
     # A day without a time counts from noon UTC.
     stages[6]["date"] = "2026-10-08"
     stages[7]["date"] = "2026-10-25"
-    EventUpsertRequest.model_validate(dict(doc, config=_config(stages=stages)))
-    late_end = dict(doc, config=_config(stages=stages), ends_at="2026-10-25T12:00:00+00:00")
+    EventUpsertRequest.model_validate(dict(doc, config=bracketed(_config(stages=stages))))
+    late_end = dict(
+        doc, config=bracketed(_config(stages=stages)), ends_at="2026-10-25T12:00:00+00:00"
+    )
     with pytest.raises(ValidationError, match="last dated stage"):
         EventUpsertRequest.model_validate(late_end)
 
@@ -406,20 +380,20 @@ SHOWCASE = {"key": "showcase", "label": "Ignite Showcase", "races": 3}
 def test_showcase_keys_share_the_slot_namespace_with_stages():
     # A race attaches to "<key>:<n>" whether the key names a stage or a showcase.
     with pytest.raises(ValidationError, match="unique"):
-        EventConfig.model_validate(_config(showcases=[dict(SHOWCASE, key="final")]))
+        _valid(_config(showcases=[dict(SHOWCASE, key="final")]))
     with pytest.raises(ValidationError, match="unique"):
-        EventConfig.model_validate(_config(showcases=[SHOWCASE, SHOWCASE]))
+        _valid(_config(showcases=[SHOWCASE, SHOWCASE]))
 
 
 def test_a_showcase_date_stays_out_of_the_bracket_order():
     # Before the first stage and after the final, listed backwards: only stages ascend.
     early = dict(SHOWCASE, key="warmup", date="2026-09-20T19:00:00Z")
     late = dict(SHOWCASE, date="2026-11-01T19:00:00Z")
-    EventConfig.model_validate(_config(showcases=[late, early]))
+    _valid(_config(showcases=[late, early]))
     naive = dict(SHOWCASE, date="2026-11-01T19:00:00")
     with pytest.raises(ValidationError, match="timezone-aware datetime"):
-        EventConfig.model_validate(_config(showcases=[naive]))
-    EventConfig.model_validate(_config(showcases=[dict(SHOWCASE, date="2026-11-01")]))
+        _valid(_config(showcases=[naive]))
+    _valid(_config(showcases=[dict(SHOWCASE, date="2026-11-01")]))
 
 
 def _round_of_32_stages() -> list[dict[str, object]]:
@@ -486,7 +460,7 @@ def _round_of_32_stages() -> list[dict[str, object]]:
 
 
 def test_a_round_of_32_feeds_quarters_semis_and_the_final():
-    cfg = EventConfig.model_validate(_config(stages=_round_of_32_stages()))
+    cfg = _valid(_config(stages=_round_of_32_stages()))
     quarter_a, final = cfg.stage("quarter_a"), cfg.stage("final")
     assert quarter_a is not None and final is not None
     # Two groups send two runners each; two semis send two each.
@@ -496,9 +470,179 @@ def test_a_round_of_32_feeds_quarters_semis_and_the_final():
 
 def test_withdrawn_names_must_be_unique_whatever_their_case():
     with pytest.raises(ValidationError, match="withdrawn"):
-        EventConfig.model_validate(_config(withdrawn=["Ana", " ana"]))
+        _valid(_config(withdrawn=["Ana", " ana"]))
 
 
 def test_withdrawn_names_must_not_be_blank():
     with pytest.raises(ValidationError, match="withdrawn"):
-        EventConfig.model_validate(_config(withdrawn=["  "]))
+        _valid(_config(withdrawn=["  "]))
+
+
+def _two_brackets(**overrides):
+    def stage(key, label, kind, **fields):
+        return {"key": key, "label": label, "kind": kind, "races": 3, **fields}
+
+    base = {
+        "modes": [{"key": "standard", "label": "Standard"}],
+        "announced_at": "2026-09-16T18:00:00Z",
+        "brackets": [
+            {
+                "key": "main",
+                "label": "Top 8",
+                "entry": "all",
+                "stages": [
+                    stage("semi_a", "Semi A", "semi", seeds=[1, 4, 5, 8], advance=2),
+                    stage("semi_b", "Semi B", "semi", seeds=[2, 3, 6, 7], advance=2),
+                    stage(
+                        "final",
+                        "Final",
+                        "final",
+                        date="2026-11-01T19:00:00Z",
+                        **{"from": ["semi_a", "semi_b"]},
+                    ),
+                ],
+            },
+            {
+                "key": "newcomers",
+                "label": "Newcomers",
+                "entry": "newcomers",
+                "stages": [
+                    stage(
+                        "newcomers_semi_a",
+                        "Newcomers semi A",
+                        "semi",
+                        seeds=[1, 4, 5, 8],
+                        advance=2,
+                    ),
+                    stage(
+                        "newcomers_semi_b",
+                        "Newcomers semi B",
+                        "semi",
+                        seeds=[2, 3, 6, 7],
+                        advance=2,
+                    ),
+                    stage(
+                        "newcomers_final",
+                        "Newcomers' final",
+                        "final",
+                        date="2026-10-25T19:00:00Z",
+                        **{"from": ["newcomers_semi_a", "newcomers_semi_b"]},
+                    ),
+                ],
+            },
+        ],
+    }
+    base.update(overrides)
+    return base
+
+
+def _newcomers_stages(doc):
+    return doc["brackets"][1]["stages"]
+
+
+def test_brackets_reuse_seed_numbers_flatten_in_order_and_date_apart():
+    # Seeds 1 to 8 in both brackets, and the newcomers' final (25 Oct) listed
+    # after the final (1 Nov): each bracket checks its own seeds and dates.
+    cfg = EventConfig.model_validate(_two_brackets())
+    assert [s.key for s in cfg.stages] == [
+        "semi_a",
+        "semi_b",
+        "final",
+        "newcomers_semi_a",
+        "newcomers_semi_b",
+        "newcomers_final",
+    ]
+    assert cfg.final_stage() is not None and cfg.final_stage().key == "final"
+    assert cfg.brackets[1].closing_stage().key == "newcomers_final"
+    assert cfg.field_size(cfg.stage("newcomers_final")) == 4
+
+
+def test_the_champions_final_is_the_first_brackets_even_without_one():
+    doc = _two_brackets()
+    main = doc["brackets"][0]
+    main["stages"] = [{**main["stages"][0], "seeds": [1, 2, 3, 4], "advance": None}]
+    cfg = EventConfig.model_validate(doc)
+    assert cfg.final_stage() is None
+    assert cfg.brackets[0].closing_stage().key == "semi_a"
+
+
+def test_from_never_reaches_into_another_bracket():
+    doc = _two_brackets()
+    _newcomers_stages(doc)[2]["from"] = ["newcomers_semi_a", "semi_b"]
+    with pytest.raises(ValidationError, match="its own bracket"):
+        EventConfig.model_validate(doc)
+
+
+def test_a_bracket_crowns_one_final_at_most():
+    doc = _two_brackets()
+    _newcomers_stages(doc)[0]["kind"] = "final"
+    with pytest.raises(ValidationError, match="at most one final"):
+        EventConfig.model_validate(doc)
+
+
+def test_seeds_cover_each_brackets_pool_from_one():
+    doc = _two_brackets()
+    _newcomers_stages(doc)[0]["seeds"] = [1, 4, 5, 9]
+    with pytest.raises(ValidationError, match="without a gap"):
+        EventConfig.model_validate(doc)
+
+
+def test_stage_labels_are_unique_across_brackets():
+    doc = _two_brackets()
+    _newcomers_stages(doc)[0]["label"] = "Semi A"
+    with pytest.raises(ValidationError, match="labels must be unique"):
+        EventConfig.model_validate(doc)
+
+
+def test_bracket_keys_are_unique():
+    doc = _two_brackets()
+    doc["brackets"][1]["key"] = "main"
+    with pytest.raises(ValidationError, match="bracket keys must be unique"):
+        EventConfig.model_validate(doc)
+
+
+def test_a_newcomers_bracket_needs_announced_at():
+    with pytest.raises(ValidationError, match="a newcomers bracket needs announced_at"):
+        EventConfig.model_validate(_two_brackets(announced_at=None))
+    doc = _two_brackets(announced_at=None)
+    doc["brackets"] = doc["brackets"][:1]
+    EventConfig.model_validate(doc)
+
+
+def test_dates_ascend_within_a_bracket():
+    doc = _two_brackets()
+    _newcomers_stages(doc)[0]["date"] = "2026-10-26T19:00:00Z"
+    with pytest.raises(ValidationError, match="ascending"):
+        EventConfig.model_validate(doc)
+
+
+def test_a_bracket_holds_a_stage_at_least():
+    doc = _two_brackets()
+    doc["brackets"][1]["stages"] = []
+    with pytest.raises(ValidationError):
+        EventConfig.model_validate(doc)
+
+
+def test_a_flat_stage_list_is_refused():
+    # A document the migration missed must not read as an event without playoffs.
+    doc = _two_brackets()
+    doc["stages"] = doc.pop("brackets")[0]["stages"]
+    with pytest.raises(ValidationError, match="stages moved into brackets"):
+        EventConfig.model_validate(doc)
+
+
+def test_upsert_reads_the_window_against_the_earliest_and_latest_stage():
+    doc = {
+        "slug": "season-one",
+        "name": "Season One",
+        "starts_at": "2026-09-23T08:00:00+00:00",
+        "qualifier_ends_at": "2026-10-08T08:00:00+00:00",
+        "ends_at": "2026-11-02T00:00:00+00:00",
+        "config": _two_brackets(),
+    }
+    EventUpsertRequest.model_validate(doc)
+    # The newcomers' final (25 Oct) is listed last yet comes first.
+    with pytest.raises(ValidationError, match="first dated stage"):
+        EventUpsertRequest.model_validate(dict(doc, qualifier_ends_at="2026-10-26T08:00:00+00:00"))
+    with pytest.raises(ValidationError, match="last dated stage"):
+        EventUpsertRequest.model_validate(dict(doc, ends_at="2026-10-31T00:00:00+00:00"))

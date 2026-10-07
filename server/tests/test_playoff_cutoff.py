@@ -21,6 +21,8 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.services.event_service import start_playoff_cutoff
 
+from .event_fixtures import bracketed
+
 START = datetime(2026, 10, 12, 19, tzinfo=UTC)
 CONFIG = {
     "modes": [{"key": "standard", "label": "Standard"}],
@@ -67,7 +69,7 @@ async def _race(
             starts_at=START - timedelta(days=30),
             qualifier_ends_at=START - timedelta(days=10),
             ends_at=START + timedelta(days=20),
-            config=CONFIG,
+            config=bracketed(CONFIG),
         )
         db.add_all([seed, event])
         await db.flush()

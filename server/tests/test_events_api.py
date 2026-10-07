@@ -25,6 +25,8 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.services.event_service import load_featured_events
 
+from .event_fixtures import bracketed
+
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 CONFIG = {
     "modes": [{"key": "standard", "label": "Standard"}, {"key": "boss_rush", "label": "Boss Rush"}],
@@ -243,7 +245,7 @@ async def _event(
         qualifier_ends_at=qualifier_ends_at or starts_at + timedelta(days=7),
         ends_at=ends_at,
         newcomer_threshold=5,
-        config=config,
+        config=bracketed(config),
     )
     db.add(event)
     await db.flush()
@@ -377,7 +379,7 @@ async def test_detail_dates_a_stage_by_its_races_until_the_config_fixes_one(
         "open",
         "cut",
         "playoffs",
-        "newcomers",
+        "final",
         "final",
     ]
 
@@ -561,7 +563,7 @@ async def test_detail_ladder_is_provisional_during_qualifier(test_client, world)
         "cut",
         "semi",
         "semi",
-        "newcomers",
+        "final",
         "final",
     ]
     assert data["stages"][0]["modes"] == ["Standard", "Boss Rush", "UWYG Major Rush"]
@@ -810,7 +812,8 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
     async with test_client as client:
         data = (await client.get("/api/events/season-one")).json()
 
-    assert [s["key"] for s in data["stages"]] == [s["key"] for s in CONFIG["stages"]]
+    # The main bracket's stages, then the newcomers bracket's.
+    assert [s["key"] for s in data["stages"]] == ["semi_a", "semi_b", "final", "newcomers"]
     assert not any("showcase" in stop["key"] for stop in data["timeline"])
     assert data["live_race"] is None
     assert data["current_stage_key"] is None
@@ -1001,6 +1004,12 @@ async def test_a_showcase_holds_neither_the_season_nor_its_player_count(test_cli
             ends_at=ends_at,
             config={**config, "showcases": [SHOWCASE]},
         )
+        # The newcomers' final is played out too: the season waits on every bracket.
+        for i in (1, 2):
+            seed = await _seed(db, "standard", f"newcomers{i}")
+            await _race(
+                db, orga, seed, event, f"newcomers:{i}", status=RaceStatus.FINISHED, is_public=True
+            )
         for i in (1, 2, 3):
             seed = await _seed(db, "standard", f"final{i}")
             race = await _race(
@@ -1185,7 +1194,7 @@ async def test_signups_close_with_the_qualifier(test_client, world, async_sessio
         event = await db.get(Event, world["event"].id)
         assert event is not None
         db.add(EventSignup(event_id=event.id, user_id=cleo.id))
-        event.config = {**CONFIG, "phase_override": "cut"}
+        event.config = bracketed({**CONFIG, "phase_override": "cut"})
         await db.commit()
     cleo_h = {"Authorization": "Bearer tok-cleo"}
     async with test_client as client:
@@ -1373,6 +1382,12 @@ async def test_listing_crowns_the_champion_once_the_final_is_complete(test_clien
         bob = await _user(db, "bob")
         # The final was dated a day ago; the season ends tomorrow.
         event = await _season_event(db, "season-one", now - timedelta(days=33))
+        # The newcomers' final is played out: the season only waits on the final.
+        for i in (1, 2):
+            seed = await _seed(db, "standard", f"newcomers{i}")
+            await _race(
+                db, orga, seed, event, f"newcomers:{i}", status=RaceStatus.FINISHED, is_public=True
+            )
         for i in (1, 2):
             seed = await _seed(db, "standard", f"final{i}")
             race = await _race(

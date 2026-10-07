@@ -12,6 +12,8 @@ from pydantic import ValidationError
 
 from speedfog_racing.schemas import EventConfig
 
+from .event_fixtures import bracketed
+
 _MIGRATION = (
     Path(__file__).resolve().parents[1]
     / "alembic"
@@ -74,7 +76,7 @@ PRODUCTION = {
 
 def test_the_production_document_no_longer_validates_as_stored():
     with pytest.raises(ValidationError):
-        EventConfig.model_validate(PRODUCTION)
+        EventConfig.model_validate(bracketed(PRODUCTION))
 
 
 def test_upgrade_moves_the_final_advance_onto_the_semis():
@@ -83,7 +85,7 @@ def test_upgrade_moves_the_final_advance_onto_the_semis():
     by_key = {s["key"]: s for s in moved["stages"]}
     assert by_key["semi_a"]["advance"] == 2 and by_key["semi_b"]["advance"] == 2
     assert by_key["final"].get("advance") is None
-    cfg = EventConfig.model_validate(moved)
+    cfg = EventConfig.model_validate(bracketed(moved))
     final = cfg.stage("final")
     assert final is not None and cfg.field_size(final) == 4
     # The input document is left as it was.
@@ -109,7 +111,7 @@ def test_upgrade_changes_nothing_on_a_second_run_or_a_three_round_document():
             _stage("final", "final", "2026-10-25T19:00:00Z", **{"from": ["semi_a"]}),
         ],
     }
-    EventConfig.model_validate(three_rounds)
+    EventConfig.model_validate(bracketed(three_rounds))
     assert migration.move_advance_to_sources(three_rounds) is None
     assert migration.move_advance_to_sources({"modes": []}) is None
 

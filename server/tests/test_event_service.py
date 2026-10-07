@@ -40,52 +40,56 @@ from speedfog_racing.services.event_service import (
 )
 from speedfog_racing.services.weapons import WEAPONS
 
+from .event_fixtures import bracketed, stages_of
+
 MODES = ["standard", "boss_rush"]
 
 
 def _config(seeds_a=(1, 4), seeds_b=(2, 3), newcomers_size=2) -> EventConfig:
     return EventConfig.model_validate(
-        {
-            "modes": [{"key": m, "label": m} for m in MODES],
-            "seeds_per_mode": 2,
-            "announced_at": "2026-09-16T18:00:00Z",
-            "stages": [
-                {
-                    "key": "semi_a",
-                    "label": "Semi A",
-                    "kind": "semi",
-                    "date": "2026-10-04T19:00:00Z",
-                    "races": 3,
-                    "seeds": list(seeds_a),
-                    "advance": 2,
-                },
-                {
-                    "key": "semi_b",
-                    "label": "Semi B",
-                    "kind": "semi",
-                    "date": "2026-10-11T19:00:00Z",
-                    "races": 3,
-                    "seeds": list(seeds_b),
-                    "advance": 2,
-                },
-                {
-                    "key": "newcomers",
-                    "label": "Newcomers",
-                    "kind": "newcomers",
-                    "date": "2026-10-18T19:00:00Z",
-                    "races": 2,
-                    "size": newcomers_size,
-                },
-                {
-                    "key": "final",
-                    "label": "Final",
-                    "kind": "final",
-                    "date": "2026-10-25T19:00:00Z",
-                    "races": 3,
-                    "from": ["semi_a", "semi_b"],
-                },
-            ],
-        }
+        bracketed(
+            {
+                "modes": [{"key": m, "label": m} for m in MODES],
+                "seeds_per_mode": 2,
+                "announced_at": "2026-09-16T18:00:00Z",
+                "stages": [
+                    {
+                        "key": "semi_a",
+                        "label": "Semi A",
+                        "kind": "semi",
+                        "date": "2026-10-04T19:00:00Z",
+                        "races": 3,
+                        "seeds": list(seeds_a),
+                        "advance": 2,
+                    },
+                    {
+                        "key": "semi_b",
+                        "label": "Semi B",
+                        "kind": "semi",
+                        "date": "2026-10-11T19:00:00Z",
+                        "races": 3,
+                        "seeds": list(seeds_b),
+                        "advance": 2,
+                    },
+                    {
+                        "key": "newcomers",
+                        "label": "Newcomers",
+                        "kind": "newcomers",
+                        "date": "2026-10-18T19:00:00Z",
+                        "races": 2,
+                        "size": newcomers_size,
+                    },
+                    {
+                        "key": "final",
+                        "label": "Final",
+                        "kind": "final",
+                        "date": "2026-10-25T19:00:00Z",
+                        "races": 3,
+                        "from": ["semi_a", "semi_b"],
+                    },
+                ],
+            }
+        )
     )
 
 
@@ -907,12 +911,14 @@ def _quarters_config() -> EventConfig:
         },
     ]
     return EventConfig.model_validate(
-        {
-            "modes": [{"key": m, "label": m} for m in MODES],
-            "seeds_per_mode": 2,
-            "announced_at": "2026-09-16T18:00:00Z",
-            "stages": stages,
-        }
+        bracketed(
+            {
+                "modes": [{"key": m, "label": m} for m in MODES],
+                "seeds_per_mode": 2,
+                "announced_at": "2026-09-16T18:00:00Z",
+                "stages": stages,
+            }
+        )
     )
 
 
@@ -964,7 +970,8 @@ def test_a_withdrawn_runner_off_the_seeds_is_never_called_up_nor_a_newcomer():
     groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16], u[15]])
     # u[16] gave up before anyone was called: seed 16's seat goes to the 18th runner.
     assert groups["quarter_a"][3].user_id == u[17]
-    assert [s.user_id for s in groups["newcomers"]] == [u[18], u[19]]
+    # In the newcomers' bracket, u[16]'s seat goes to its first bench runner.
+    assert [s.user_id for s in groups["newcomers"]] == [u[19], u[18]]
 
 
 def test_a_withdrawn_newcomer_off_the_seeds_is_skipped_in_the_newcomers_draw():
@@ -972,10 +979,11 @@ def test_a_withdrawn_newcomer_off_the_seeds_is_skipped_in_the_newcomers_draw():
     u = [uuid4() for _ in range(20)]
     newcomers = {u[16]: True, u[17]: True, u[18]: True}
     groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16]])
-    # u[16] holds no seat (nobody was called up): withdrawing them changes no
-    # seed, only removes them from the newcomers' draw.
+    # u[16] holds no seat in the Top 16 (nobody was called up): withdrawing
+    # them changes no seed there. Seeded first among the newcomers, they hand
+    # that seat to the newcomers' first bench runner.
     assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
-    assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
+    assert [s.user_id for s in groups["newcomers"]] == [u[18], u[17]]
 
 
 def test_the_newcomers_draw_after_the_furthest_runner_called_up():
@@ -1004,7 +1012,7 @@ def test_a_newcomer_behind_a_started_stage_withdrawal_stays_in_the_draw():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
     newcomers = {u[16]: True, u[17]: True}
-    # The only withdrawal sits in a started stage: furthest stays at 16, so the
+    # The only withdrawal sits in a started stage: nobody is called up, so the
     # newcomers' draw still opens at position 17.
     groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]], started={"quarter_a"})
     assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
@@ -1094,7 +1102,7 @@ END = datetime(2026, 10, 26, 0, tzinfo=UTC)
 def _undated_quarters() -> EventConfig:
     """This season as configured: quarters and semis left to their races, three per evening."""
     raw = _quarters_config().model_dump(mode="json", by_alias=True)
-    for stage in raw["stages"]:
+    for stage in stages_of(raw):
         stage["races"] = 3
         if stage["kind"] in ("quarter", "semi"):
             stage["date"] = None
@@ -1122,8 +1130,8 @@ def test_a_stage_date_is_the_config_one_else_its_earliest_race():
 
 def test_a_config_day_takes_its_time_from_its_earliest_race():
     raw = _undated_quarters().model_dump(mode="json", by_alias=True)
-    for stage in raw["stages"]:
-        if stage["kind"] in ("newcomers", "final"):
+    for stage in stages_of(raw):
+        if stage["key"] in ("newcomers", "final"):
             stage["date"] = stage["date"][:10]  # the day, its time not set yet
     cfg = EventConfig.model_validate(raw)
     evening = datetime(2026, 10, 18, 18, 30, tzinfo=UTC)
@@ -1163,41 +1171,33 @@ def test_the_cut_lasts_until_the_first_scheduled_playoff_race():
 def test_the_timeline_folds_the_undated_stages_into_one_playoffs_stop():
     event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
     stops = build_timeline(event, _undated_quarters(), {})
-    assert [s.kind for s in stops] == ["announce", "open", "cut", "playoffs", "newcomers", "final"]
+    assert [s.kind for s in stops] == ["announce", "open", "cut", "playoffs", "final", "final"]
     assert stops[3].date == CUT
     assert "playoffs" not in [s.kind for s in build_timeline(event, _config(), {})]
 
 
-def test_the_playoffs_stop_follows_the_list_and_the_first_scheduled_match():
-    """This season lists the newcomers' final first: it is played before the quarters."""
-    raw = _undated_quarters().model_dump(mode="json", by_alias=True)
-    raw["stages"].sort(key=lambda s: s["kind"] != "newcomers")
-    cfg = EventConfig.model_validate(raw)
+def test_the_playoffs_stop_follows_the_first_scheduled_match_in_date_order():
+    """Undated quarters and semis, the newcomers' final on 18 Oct, the final on 25 Oct."""
+    cfg = _undated_quarters()
     event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
-    newcomers = datetime(2026, 10, 18, 19, tzinfo=UTC)
     final = datetime(2026, 10, 25, 19, tzinfo=UTC)
 
-    def playoffs_at(dates: dict[str, datetime | None]) -> datetime:
+    def tail(dates: dict[str, datetime | None]) -> tuple[list[str], datetime]:
         stops = build_timeline(event, cfg, dates)
-        assert [s.kind for s in stops] == [
-            "announce",
-            "open",
-            "cut",
-            "newcomers",
-            "playoffs",
-            "final",
-        ]
-        return stops[4].date
+        playoffs = next(s.date for s in stops if s.key == "playoffs")
+        return [s.key for s in stops][3:], playoffs
 
-    # Nothing scheduled yet: the stop takes the date of the one before it.
-    assert playoffs_at({}) == newcomers
-    # The earliest scheduled match dates it...
-    first_match = datetime(2026, 10, 20, 20, tzinfo=UTC)
-    later_match = datetime(2026, 10, 21, 20, tzinfo=UTC)
-    assert playoffs_at({"quarter_c": later_match, "quarter_b": first_match}) == first_match
-    # ...kept between the stops around it, so the rail never runs backwards.
-    assert playoffs_at({"quarter_a": datetime(2026, 10, 12, 20, tzinfo=UTC)}) == newcomers
-    assert playoffs_at({"quarter_a": datetime(2026, 10, 30, 20, tzinfo=UTC)}) == final
+    before = ["playoffs", "stage:newcomers", "stage:final"]
+    after = ["stage:newcomers", "playoffs", "stage:final"]
+    # Nothing scheduled yet: the stop stands on the cut.
+    assert tail({}) == (before, CUT)
+    # The earliest scheduled match dates it, on either side of the newcomers' final...
+    early = datetime(2026, 10, 12, 20, tzinfo=UTC)
+    late = datetime(2026, 10, 20, 20, tzinfo=UTC)
+    assert tail({"quarter_c": late, "quarter_b": early}) == (before, early)
+    assert tail({"quarter_b": late}) == (after, late)
+    # ...never past the final its stages lead to.
+    assert tail({"quarter_a": datetime(2026, 10, 30, 20, tzinfo=UTC)}) == (after, final)
 
 
 def _phase(now, **kw):
@@ -1206,7 +1206,7 @@ def _phase(now, **kw):
         qualifier_ends_at=CUT,
         ends_at=END,
         first_stage_at=FIRST,
-        last_stage_complete=False,
+        brackets_complete=False,
         override=None,
     )
     args.update(kw)
@@ -1231,7 +1231,7 @@ def test_phase_boundaries(now, expected):
 
 def test_phase_override_and_completed_last_stage():
     assert _phase(T0, override="playoffs") == "playoffs"
-    assert _phase(FIRST + timedelta(days=1), last_stage_complete=True) == "finished"
+    assert _phase(FIRST + timedelta(days=1), brackets_complete=True) == "finished"
     assert _phase(T0, first_stage_at=None) == "qualifier"
     assert _phase(CUT, first_stage_at=None) == "playoffs"
 
@@ -1326,7 +1326,7 @@ def test_timeline_uses_announced_at_when_present():
         "cut",
         "semi",
         "semi",
-        "newcomers",
+        "final",
         "final",
     ]
     assert stops[0].date == datetime(2026, 9, 16, 18, tzinfo=UTC)
@@ -1385,3 +1385,171 @@ def test_resolve_stages_sorts_the_slots_and_drops_what_the_config_does_not_know(
     assert set(resolved.stage_races) == {"semi_a", "semi_b", "newcomers", "final"}
     assert resolved.results["semi_a"].complete is False
     assert resolved.phase == "playoffs"
+
+
+# --- brackets ---------------------------------------------------------------
+
+
+def _brackets(newcomers_seeds=((1, 4), (2, 3))) -> EventConfig:
+    """A Top 4 and a newcomers bracket, each two semis of two then a final."""
+
+    def stage(key, label, kind, **fields):
+        return {"key": key, "label": label, "kind": kind, "races": 1, **fields}
+
+    (na, nb) = newcomers_seeds
+    return EventConfig.model_validate(
+        {
+            "modes": [{"key": m, "label": m} for m in MODES],
+            "announced_at": "2026-09-16T18:00:00Z",
+            "brackets": [
+                {
+                    "key": "main",
+                    "label": "Top 4",
+                    "entry": "all",
+                    "stages": [
+                        stage("semi_a", "Semi A", "semi", seeds=[1, 4], advance=1),
+                        stage("semi_b", "Semi B", "semi", seeds=[2, 3], advance=1),
+                        stage(
+                            "final",
+                            "Final",
+                            "final",
+                            date="2026-10-25T19:00:00Z",
+                            **{"from": ["semi_a", "semi_b"]},
+                        ),
+                    ],
+                },
+                {
+                    "key": "newcomers",
+                    "label": "Newcomers",
+                    "entry": "newcomers",
+                    "stages": [
+                        stage(
+                            "newcomers_semi_a",
+                            "Newcomers semi A",
+                            "semi",
+                            seeds=list(na),
+                            advance=1,
+                        ),
+                        stage(
+                            "newcomers_semi_b",
+                            "Newcomers semi B",
+                            "semi",
+                            seeds=list(nb),
+                            advance=1,
+                        ),
+                        stage(
+                            "newcomers_final",
+                            "Newcomers' final",
+                            "final",
+                            date="2026-10-18T19:00:00Z",
+                            **{"from": ["newcomers_semi_a", "newcomers_semi_b"]},
+                        ),
+                    ],
+                },
+            ],
+        }
+    )
+
+
+def _ids(slots):
+    return [s.user_id for s in slots]
+
+
+def test_the_newcomers_bracket_seeds_its_own_pool():
+    u = [uuid4() for _ in range(8)]
+    # u[1] is a newcomer inside the top 4: the Top 4 keeps them.
+    newcomers = {u[1]: True, u[4]: True, u[5]: True, u[6]: True, u[7]: True}
+    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers)
+    assert _ids(groups["semi_b"]) == [u[1], u[2]]
+    assert _ids(groups["newcomers_semi_a"]) == [u[4], u[7]]
+    assert _ids(groups["newcomers_semi_b"]) == [u[5], u[6]]
+    # The seed shown is the ladder position, never the place in the pool.
+    assert [slot_label(s) for s in groups["newcomers_semi_a"]] == ["Seed 5", "Seed 8"]
+
+
+def test_a_top_call_up_takes_a_newcomer_out_of_the_newcomers_pool():
+    u = [uuid4() for _ in range(9)]
+    newcomers = {x: True for x in u[4:]}
+    # Seed 4 withdraws: the first bench runner, u[4], a newcomer, is called up.
+    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[3]])
+    assert _ids(groups["semi_a"]) == [u[0], u[4]]
+    assert _ids(groups["newcomers_semi_a"]) == [u[5], u[8]]
+    assert _ids(groups["newcomers_semi_b"]) == [u[6], u[7]]
+
+
+def test_a_runner_withdrawn_from_the_top_never_enters_the_newcomers_bracket():
+    u = [uuid4() for _ in range(10)]
+    newcomers = {u[1]: True, **{x: True for x in u[4:]}}
+    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[1]])
+    # u[1], a newcomer seeded 2nd, gives up: u[4] takes the seat, and neither
+    # of them is drawn again.
+    assert _ids(groups["semi_b"]) == [u[4], u[2]]
+    drawn = _ids(groups["newcomers_semi_a"]) + _ids(groups["newcomers_semi_b"])
+    assert drawn == [u[5], u[8], u[6], u[7]]
+
+
+def test_a_newcomer_kept_in_a_started_group_never_enters_the_newcomers_bracket():
+    u = [uuid4() for _ in range(9)]
+    newcomers = {u[1]: True, **{x: True for x in u[4:]}}
+    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[1]], started={"semi_b"})
+    assert _ids(groups["semi_b"]) == [u[1], u[2]]
+    drawn = _ids(groups["newcomers_semi_a"]) + _ids(groups["newcomers_semi_b"])
+    assert u[1] not in drawn
+    assert drawn == [u[4], u[7], u[5], u[6]]
+
+
+def test_a_withdrawn_newcomer_is_replaced_from_the_newcomers_bench():
+    u = [uuid4() for _ in range(10)]
+    newcomers = {x: True for x in u[4:]}
+    # Newcomer seed 2 (u[5], Newcomers semi B) withdraws: the newcomers' bench
+    # starts after their 4th seed, so u[8] takes the seat; the others stay put.
+    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[5]])
+    assert _ids(groups["newcomers_semi_a"]) == [u[4], u[7]]
+    assert _ids(groups["newcomers_semi_b"]) == [u[8], u[6]]
+    assert slot_label(groups["newcomers_semi_b"][0]) == "Seed 9"
+
+
+def test_an_empty_newcomers_seat_carries_no_seed_number():
+    u = [uuid4() for _ in range(5)]
+    groups = compute_qualified(_ladder_of(*u), _brackets(), {u[4]: True})
+    assert [slot_label(s) for s in groups["newcomers_semi_a"]] == ["Seed 5", UNDECIDED]
+    assert [slot_label(s) for s in groups["newcomers_semi_b"]] == [UNDECIDED, UNDECIDED]
+    final = compute_qualified(_ladder_of(*u), _brackets(), {u[4]: True}, ladder_final=True)
+    assert [slot_label(s) for s in final["newcomers_semi_b"]] == [NO_RUNNER, NO_RUNNER]
+    # A seat past the ladder in a bracket drawing from everyone keeps its number.
+    short = compute_qualified(_ladder_of(*u[:3]), _brackets(), {})
+    assert slot_label(short["semi_a"][1]) == "Seed 4"
+
+
+def test_the_event_finishes_once_every_bracket_is_complete():
+    cfg = _brackets()
+    now = datetime(2026, 10, 25, 22, tzinfo=UTC)
+    main = [_slotted(f"{key}:1") for key in ("semi_a", "semi_b", "final")]
+    newcomers = [
+        _slotted(f"{key}:1") for key in ("newcomers_semi_a", "newcomers_semi_b", "newcomers_final")
+    ]
+    # The newcomers' final, listed last, played out does not end the event.
+    assert _resolved(cfg, newcomers, now).phase == "playoffs"
+    assert _resolved(cfg, main, now).phase == "playoffs"
+    assert _resolved(cfg, main + newcomers, now).phase == "finished"
+
+
+def test_the_timeline_orders_the_brackets_stops_by_date():
+    # The newcomers' final (18 Oct) is listed after the final (25 Oct).
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    stops = build_timeline(event, _brackets(), {})
+    assert [s.key for s in stops] == [
+        "announce",
+        "open",
+        "cut",
+        "playoffs",
+        "stage:newcomers_final",
+        "stage:final",
+    ]
+    assert stops[3].date == CUT
+    # A semi scheduled after the newcomers' final stays before it: the
+    # newcomers' semis the stop also stands for lead to that final.
+    late = datetime(2026, 10, 20, 19, tzinfo=UTC)
+    stops = build_timeline(event, _brackets(), {"semi_a": late})
+    assert [s.key for s in stops][3:] == ["playoffs", "stage:newcomers_final", "stage:final"]
+    assert stops[3].date == datetime(2026, 10, 18, 19, tzinfo=UTC)

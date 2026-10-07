@@ -3,8 +3,9 @@
 A co-branded tournament run on the platform: one week of qualifying on dedicated
 week-long seeds, then playoff evenings, all on one page, `/events/[slug]`. The
 first instance is SpeedFog x Ignite Season One (qualifier 23 September to 8
-October 2026; a round of 32 in eight groups, quarters and semis scheduled with
-their players, the final on 1 November).
+October 2026; a Top 32 bracket (a round of 32 in eight groups, quarters and
+semis scheduled with their players, the final on 1 November) and a newcomers
+bracket for the best eight newcomers outside it).
 
 ## Model
 
@@ -21,7 +22,7 @@ computed on each request by `services/event_service.py`.
 | ------------------------ | ---------------------------------------------------------------------------------- |
 | `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                      |
 | `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                        |
-| `stages`                 | ordered playoff stages, see below                                                  |
+| `brackets`               | ordered playoff brackets, each holding its stages, see Brackets                    |
 | `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)                  |
 | `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)            |
 | `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)                |
@@ -32,18 +33,20 @@ computed on each request by `services/event_service.py`.
 | `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)              |
 | `withdrawn`              | qualified runners who gave up their place, Twitch usernames (see Qualified groups) |
 
-A stage: `key`, `label`, `kind` (`round`, `quarter`, `semi`, `newcomers`,
-`final`), `date` (optional: see below), `races` (per evening), `modes`
-(display labels, not pool keys: one chip per race in the bracket boxes and
-qualified groups, linking to the race page once a race is attached, and the
-name of a race placeholder), and where its runners come from: `seeds`
-(ladder positions) or `from` (earlier stages it takes runners from), or
-`size` for the newcomers' final. `advance` sits on the stage that sends
-runners on: how many of its runners go to the stage naming it in `from` (the
-top 2 of each group of a round, of each quarter, of each semi). The kind
-only matters for display, except `final` (its winner is the champion) and
-`newcomers` (its own draw). `round` is a seeded round played before the
-quarters; the format paragraph names it after its seats ("round of 32").
+A bracket: `key`, `label`, `entry` (`all` or `newcomers`, see Brackets) and
+its `stages`, at least one. A stage: `key`, `label`, `kind` (`round`,
+`quarter`, `semi`, `final`), `date` (optional: see below), `races` (per
+evening), `modes` (display labels, not pool keys: one chip per race in the
+bracket boxes and qualified groups, linking to the race page once a race is
+attached, and the name of a race placeholder), and where its runners come
+from: `seeds` (positions in its bracket's pool) or `from` (earlier stages of
+the same bracket it takes runners from). `advance` sits on the stage that
+sends runners on: how many of its runners go to the stage naming it in
+`from` (the top 2 of each group of a round, of each quarter, of each semi).
+The kind only matters for display, except `final` (its winner is its
+bracket's champion, and the first bracket's is the event's). `round` is a
+seeded round played before the quarters; the format paragraph names it after
+its seats ("round of 32").
 
 A stage without a `date` is scheduled with its players: its date is the
 earliest of its attached races' `scheduled_at` (or `started_at` for a private
@@ -63,27 +66,30 @@ evening. A naive datetime is rejected.
 The detail returns that effective date on each stage, with `date_fixed` true
 when the config sets it, `time_set` false while it is a config day none of
 the stage's races has timed yet (the summary's and the detail's `next_stage`
-carry it too), and `from` for the connectors. The dated stages ascend;
-`qualifier_ends_at` is at or before the first dated stage; `ends_at` is after
-the last.
+carry it too), and `from` for the connectors. The dated stages of a bracket
+ascend; `qualifier_ends_at` is at or before the earliest dated stage;
+`ends_at` is after the latest.
 
-Validation also rejects: a stage with both or neither of `seeds` and `from`
-(a newcomers stage has `size` and neither), a `from` naming a stage placed
-later in the list, an unknown stage or the newcomers stage (list order is
-bracket order), a stage feeding more than one stage, `advance` on a stage
-nothing takes from or missing on one something does, an `advance` larger
-than the field it comes from, a second final or newcomers stage, seed numbers
-reused across stages (not just within one), seeds that do not cover the
-ladder from 1 without a gap (the newcomers' group draws from the ladder
-positions after the largest seed used by any stage, so a gap would exclude
-those positions from every playoff group at once), a `phase_override`
-outside the five phases, a `newcomers` stage without `announced_at`, a blank
-or repeated `withdrawn` name (case-insensitive), and a naive (timezone-less)
-`announced_at` or stage `date`. `starts_at`, `qualifier_ends_at` and
-`ends_at` on the upsert request are rejected the same way when naive, and so
-is an `announced_at` at or after `starts_at`: the qualifier's own runs would
-otherwise count towards the newcomer cut. The admin upsert also refuses a
-`withdrawn` name that matches no user's Twitch username.
+Validation also rejects: a stage with both or neither of `seeds` and `from`,
+a `from` naming a stage placed later in its bracket, an unknown stage or a
+stage of another bracket, a stage feeding more than one stage, `advance` on
+a stage nothing takes from or missing on one something does, an `advance`
+larger than the field it comes from, a second final in a bracket, seed
+numbers reused within a bracket (several brackets reuse them freely), a
+bracket's seeds that do not cover its pool from 1 without a gap (its bench
+starts after its largest seed, so a gap would exclude those positions from
+all of its stages at once), repeated bracket keys, repeated stage labels, a
+bracket without stages, a `phase_override` outside the five phases, a
+`newcomers` bracket without `announced_at`, a blank or repeated `withdrawn`
+name (case-insensitive), a naive (timezone-less) `announced_at` or stage
+`date`, and a document still holding a top-level `stages` list (see the
+migration below). `starts_at`, `qualifier_ends_at` and `ends_at` on the
+upsert request are rejected the same way when naive, and so is an
+`announced_at` at or after `starts_at`: the qualifier's own runs would
+otherwise count towards the newcomer cut. `qualifier_ends_at` must not pass
+the earliest dated stage of any bracket, and `ends_at` must come after the
+latest. The admin upsert also refuses a `withdrawn` name that matches no
+user's Twitch username.
 
 One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of
@@ -96,7 +102,33 @@ from the dates alone, and its editor loads the stored document as it is.
 Attaching a race to a slot needs the parsed config, so it refuses with a 422
 naming the same errors. Moving `advance` from the final onto the stages that
 feed it was such a change: its migration (`4f7c2a9d1e6b`) rewrites the stored
-documents, and runs again harmlessly on one already moved.
+documents, and runs again harmlessly on one already moved. Moving the stages
+into brackets was another: its migration (`b8e2f4a6c1d3`) wraps a flat list
+into a `main` bracket and turns a `newcomers` stage into a `newcomers`
+bracket holding one final seeded 1 to its size, under the same key so its
+races keep their slot, and leaves a document already moved alone; the schema
+refuses a top-level `stages` rather than reading it as an event without
+playoffs.
+
+### Brackets
+
+The playoffs are one bracket or several, drawn in config order. Each draws
+from its own pool: the ranked ladder filtered by its `entry` (`all`,
+everyone; `newcomers`, the runners flagged newcomer, see Scoring), less every
+runner an earlier bracket drew, at the cut or by a call-up, whether or not
+they withdrew after. A newcomer inside the Top 32 therefore plays the Top 32
+only, and a Top 32 call-up can take a newcomer out of the newcomers' pool. A
+bracket's `seeds` index its pool (newcomer seed 1 is the best newcomer no
+earlier bracket drew), while the page always shows a runner's ladder
+position. Everything else works per bracket: `from` names a stage of the
+same bracket, its seeds cover its pool from 1 without a gap, it has at most
+one `final`, and its dated stages ascend in list order. Across brackets,
+dates are free: a newcomers' evening may fall between two Top 32 rounds, and
+the timeline orders the stops by date. Stage keys are unique across the
+event (they name the race slots), and so are stage labels, since the home
+band, the share card, the live strip and the race names show a label alone:
+"Newcomers semi A", not a second "Semi A". The event's champion is the first
+bracket's final winner.
 
 ### Showcases
 
@@ -104,7 +136,7 @@ A showcase is an evening outside the bracket, a match between runners picked
 by hand, that the talk cast scene can still score (see
 [CAST_OVERLAYS.md](CAST_OVERLAYS.md)). It takes a `key`, a `label`, `races`,
 `modes` and an optional `date`, with the same meaning as a stage's, and none
-of `kind`, `seeds`, `from`, `advance` or `size`: its field is whoever races
+of `kind`, `seeds`, `from` or `advance`: its field is whoever races
 it, the participants of its attached races by username. Its races attach to
 `<key>:<n>` like a stage's, so validation rejects a key used by both a stage
 and a showcase. They score as a stage's do (points summed over the races, a
@@ -135,16 +167,18 @@ viewer's timezone, so keep dates to the day.
 
 `GET /api/events/{slug}` returns the timeline as an ordered list of stops:
 `announce`, `open` (at `starts_at`), `cut` (at `qualifier_ends_at`), then one
-`stage:<stage key>` per dated stage, in stage order. When stages have no
-config date, one `playoffs` stop stands for every match scheduled with the
-players: it sits where the first of those stages sits in the list (a
-newcomers' final listed before the quarters comes before it), dated by the
-earliest match scheduled among them, kept between the stops around it so the
-rail never runs backwards, and, before any match is scheduled, at the date of
-the stop before it. `announce` uses `announced_at` when the config sets it,
-otherwise `starts_at` minus 7 days.
+`stage:<stage key>` per dated stage. Every bracket's dated stages get a stop
+each, and the stops run in date order. When stages have no config date, one
+`playoffs` stop stands for every match scheduled with the players, whatever
+their bracket: it is dated by the earliest match scheduled among them, kept
+at or after its floor (the cut, and every dated stage listed before its
+bracket's first undated stage) and at or before its ceiling (the earliest
+dated stage listed after its bracket's first undated stage), so the rail
+never runs backwards; before any match is scheduled it stands on its floor.
+`announce` uses `announced_at` when the config sets it, otherwise
+`starts_at` minus 7 days.
 The same date is the newcomer cut (see Scoring), which is why a `newcomers`
-stage requires `announced_at`: a final's field must never hang on a default.
+bracket requires `announced_at`: its pool must never hang on a default.
 The Playoffs stop shows no date line on the page: its date only places the
 ridden rail, each match carrying its own date in the bracket.
 
@@ -165,16 +199,17 @@ reporting the stored row after the cut, when the ladder no longer lists it.
 | `upcoming`  | before `starts_at`                                                   |
 | `qualifier` | until `qualifier_ends_at`                                            |
 | `cut`       | until the first stage date (a scheduled race dates an undated stage) |
-| `playoffs`  | until `ends_at`, or until the last stage is complete                 |
+| `playoffs`  | until `ends_at`, or until every bracket is complete                  |
 | `finished`  | after                                                                |
 
 The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
 advancing runners (its `advance`) then fill the stage it feeds automatically.
+A bracket is complete when its final is (its last stage, without a final).
 
 The admin events list computes `phase` without grouping the races by stage, so
-it always treats the last stage as not yet complete. This only matters
-between the last stage finishing and `ends_at`: in that window the admin list
+it always treats the brackets as not yet complete. This only matters
+between the last bracket finishing and `ends_at`: in that window the admin list
 still shows `playoffs`, while the public event page (which loads the stage
 races) already shows `finished`. It also reads only the config's dates, so an
 event whose first match is scheduled by its races stays `cut` there until the
@@ -220,12 +255,13 @@ races, so they count towards that; solo sessions are not, so they do not. The
 format block names daily seeds explicitly, since "races" alone reads as
 organised races to a player who mostly runs the daily.
 
-A seeded stage's `seeds` index into the sorted ladder position by position
-(seed 1 is the top entry, seed 2 the next, and so on), not by each entry's own
-displayed rank. Tied runners occupy consecutive positions sharing the same
-rank, so a seed number can resolve to a runner whose displayed ladder rank is
-lower than the seed itself (e.g. a three-way tie for rank 1 means seed 3 also
-holds a rank-1 runner). A runner with no scoring qualifier run (on every
+A seeded stage's `seeds` index into the sorted ladder (its bracket's pool,
+see Brackets) position by position (seed 1 is the top entry, seed 2 the
+next, and so on), not by each entry's own displayed rank. Tied runners
+occupy consecutive positions sharing the same rank, so a seed number can
+resolve to a runner whose displayed ladder rank is lower than the seed
+itself (e.g. a three-way tie for rank 1 means seed 3 also holds a rank-1
+runner). A runner with no scoring qualifier run (on every
 attached seed, fewer than two zone entries or a run not yet finished or
 abandoned) is not on the ladder: the ladder's `entered` count is the number
 of runners with at least one scoring run, not the number who joined a
@@ -244,19 +280,22 @@ it takes rows positionally like seeding does, so a tie spanning the boundary
 still cuts where the seats run out; the line follows the visible rows when
 filters hide some, and only renders while a row sits below it.
 
-Qualified groups map each seeded stage's `seeds` to ladder positions. The
-runners ranked after the largest seed form the bench. The config's
-`withdrawn` names are replayed in their order: a withdrawal of a runner
-holding a seat (a seed, or an earlier replacement) vacates it and hands it to
-the first bench runner neither called up nor withdrawn so far, shown under
-their own position ("Seed 33"); a withdrawal of a bench runner only keeps
-them from being called up. A replacement once called up stays put whatever
-is declared after, and only seeded stages call anyone up: a runner who gives
-up a fed stage leaves it one short. The newcomers' group takes the first
-ranked newcomers positioned after the last seed or the furthest runner
-called up, withdrawn ones skipped. A seat nobody can fill reads "TBD" while
-the ladder is provisional and "No runner" once it is final; a seat past the
-end of a provisional ladder keeps its "Seed N" placeholder. A withdrawal
+Qualified groups map each seeded stage's `seeds` to its bracket's pool (see
+Brackets), bracket by bracket. A bracket's bench is its pool past its largest
+seed. The config's `withdrawn` names are replayed in their order within each
+bracket: a withdrawal of a runner holding a seat there (a seed, or an
+earlier replacement) vacates it and hands it to the first bench runner
+neither called up nor withdrawn so far, shown under their own ladder
+position ("Seed 33"); a withdrawal of a runner holding no seat there only
+keeps them from being called up in it. A replacement once called up stays
+put whatever is declared after, and only seeded stages call anyone up: a
+runner who gives up a fed stage leaves it one short. A runner drawn into an
+earlier bracket never enters a later one, withdrawn or not. A seat nobody
+can fill reads "TBD" while the ladder is provisional and "No runner" once it
+is final; a seat past the end of a provisional ladder keeps its "Seed N"
+placeholder in a bracket drawing from everyone, where N is the ladder
+position it waits on, and reads "TBD" in a filtered bracket, whose pool
+positions would read like ladder positions. A withdrawal
 declared once any race of the runner's seeded stage has left setup calls
 nobody up: the runner keeps the seat, and the stage goes on with whoever
 races. The ladder itself is unchanged by a withdrawal. On the page, the
@@ -471,9 +510,9 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
   mode key, and `late_join_window_minutes` and `race_duration_minutes` both
   set and equal; attaching then sets `exclude_from_stats` on the race.
 - A stage slot requires `max_participants` to be null or at least the stage's
-  field size: the number of `seeds` for a seeded stage, `size` for a
-  newcomers stage, the sum of its sources' `advance` for a stage fed by
-  others. A showcase slot takes any `max_participants`, having no field.
+  field size: the number of `seeds` for a seeded stage, the sum of its
+  sources' `advance` for a stage fed by others. A showcase slot takes any
+  `max_participants`, having no field.
 - A Daily Seed race is refused.
 - An event whose stored config no longer parses is refused (422, naming the
   validation errors): the slot cannot be checked without it. Detaching still

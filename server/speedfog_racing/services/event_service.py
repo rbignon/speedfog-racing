@@ -354,76 +354,79 @@ def compute_qualified(
     ladder_final: bool = False,
     started: Collection[str] = (),
 ) -> dict[str, list[QualifiedSlot]]:
-    """Seeded stages take ladder positions; newcomers come after the last position used.
+    """Each bracket seats its seeded stages from its own pool, in bracket order.
 
-    ``withdrawn`` are the runners who gave up their place, in the order they did.
-    Replayed in that order, a withdrawal vacates the seat its runner holds (a seed
-    or an earlier replacement) and hands it to the first runner ranked after the
-    largest seed who is neither called up nor withdrawn so far; the withdrawal of
-    a runner holding no seat only keeps them from being called up. A replacement
-    once called up therefore stays put whatever is declared after. A seat nobody
-    can fill reads ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER``
-    once it is final. ``started`` names the stages whose field has already begun
-    racing: a withdrawal from a seat there changes nothing, though the runner
-    still counts as withdrawn everywhere else (never called up, skipped in the
-    newcomers' draw).
+    A bracket's pool is the ranked ladder filtered by its entry (everyone, or
+    the newcomers), less every runner an earlier bracket drew, at the cut or
+    by a call-up, whether or not they withdrew after; its stages' ``seeds``
+    index that pool. ``withdrawn`` are the runners who gave up their place, in
+    the order they did, replayed within each bracket: a withdrawal vacates the
+    seat its runner holds there (a seed or an earlier replacement) and hands it
+    to the first runner of the pool past the bracket's largest seed who is
+    neither called up nor withdrawn so far; the withdrawal of a runner holding
+    no seat there only keeps them from being called up in it. A replacement
+    once called up therefore stays put whatever is declared after. A seat
+    shows its runner's ladder position. A seat nobody can fill reads
+    ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER`` once it is
+    final; past the end of a provisional ladder it keeps its seed number only
+    in a bracket drawing from everyone, where that number is the ladder
+    position it waits on. ``started`` names the stages whose field has already
+    begun racing: a withdrawal from a seat there changes nothing, though the
+    runner still counts as withdrawn everywhere else.
     """
     ranked = [e for e in ladder if e.rank is not None]
+    position = {e.user_id: i for i, e in enumerate(ranked, start=1)}
     empty = NO_RUNNER if ladder_final else UNDECIDED
-    seeded = [s for s in config.stages if s.seeds is not None]
-    last_seed = max((seed for s in seeded for seed in s.seeds or []), default=0)
     groups: dict[str, list[QualifiedSlot]] = {}
-    # Who holds which seat: (stage key, index in its seeds).
-    seat_of: dict[UUID, tuple[str, int]] = {}
-    for stage in seeded:
-        slots: list[QualifiedSlot] = []
-        for i, seed in enumerate(stage.seeds or []):
-            entry = ranked[seed - 1] if seed - 1 < len(ranked) else None
-            if entry is None:
-                slots.append(QualifiedSlot(seed=seed, user_id=None, note=empty))
-                continue
-            slots.append(QualifiedSlot(seed=seed, user_id=entry.user_id, note=None))
-            seat_of[entry.user_id] = (stage.key, i)
-        groups[stage.key] = slots
-    # The bench: every runner ranked after the largest seed, by ladder position.
-    bench = list(enumerate(ranked[last_seed:], start=last_seed + 1))
-    gone: set[UUID] = set()
-    furthest = last_seed
-    for user_id in withdrawn:
-        gone.add(user_id)
-        seat = seat_of.get(user_id)
-        if seat is None or seat[0] in started:
-            continue
-        del seat_of[user_id]
-        key, i = seat
-        called = next(
-            ((pos, e) for pos, e in bench if e.user_id not in gone and e.user_id not in seat_of),
-            None,
-        )
-        if called is None:
-            groups[key][i] = QualifiedSlot(seed=None, user_id=None, note=empty)
-            continue
-        pos, entry = called
-        groups[key][i] = QualifiedSlot(seed=pos, user_id=entry.user_id, note=None)
-        seat_of[entry.user_id] = (key, i)
-        furthest = max(furthest, pos)
-    for stage in config.stages:
-        if stage.kind != "newcomers":
-            continue
-        if stage.size is None:
-            # The schema requires a newcomers stage to declare size; this is
-            # unreachable for a validated EventConfig, kept as a type-narrowing guard.
-            continue
-        size = stage.size
-        picks = [
+    # Everyone a bracket has seated so far, at the cut or by a call-up.
+    drawn: set[UUID] = set()
+    for bracket in config.brackets:
+        pool = [
             e
-            for e in ranked[furthest:]
-            if newcomers.get(e.user_id, False) and e.user_id not in gone
-        ][:size]
-        slots = [QualifiedSlot(seed=e.rank, user_id=e.user_id, note=None) for e in picks]
-        while len(slots) < size:
-            slots.append(QualifiedSlot(seed=None, user_id=None, note=empty))
-        groups[stage.key] = slots
+            for e in ranked
+            if e.user_id not in drawn
+            and (bracket.entry == "all" or newcomers.get(e.user_id, False))
+        ]
+        numbered = bracket.entry == "all"
+        seeded = [s for s in bracket.stages if s.seeds is not None]
+        last_seed = max((seed for s in seeded for seed in s.seeds or []), default=0)
+        # Who holds which seat in this bracket: (stage key, index in its seeds).
+        seat_of: dict[UUID, tuple[str, int]] = {}
+        for stage in seeded:
+            slots: list[QualifiedSlot] = []
+            for i, seed in enumerate(stage.seeds or []):
+                entry = pool[seed - 1] if seed - 1 < len(pool) else None
+                if entry is None:
+                    slots.append(
+                        QualifiedSlot(seed=seed if numbered else None, user_id=None, note=empty)
+                    )
+                    continue
+                slots.append(
+                    QualifiedSlot(seed=position[entry.user_id], user_id=entry.user_id, note=None)
+                )
+                seat_of[entry.user_id] = (stage.key, i)
+                drawn.add(entry.user_id)
+            groups[stage.key] = slots
+        bench = pool[last_seed:]
+        gone: set[UUID] = set()
+        for user_id in withdrawn:
+            gone.add(user_id)
+            seat = seat_of.get(user_id)
+            if seat is None or seat[0] in started:
+                continue
+            del seat_of[user_id]
+            key, i = seat
+            called = next(
+                (e for e in bench if e.user_id not in gone and e.user_id not in seat_of), None
+            )
+            if called is None:
+                groups[key][i] = QualifiedSlot(seed=None, user_id=None, note=empty)
+                continue
+            groups[key][i] = QualifiedSlot(
+                seed=position[called.user_id], user_id=called.user_id, note=None
+            )
+            seat_of[called.user_id] = (key, i)
+            drawn.add(called.user_id)
     return groups
 
 
@@ -617,7 +620,7 @@ def compute_phase(
     qualifier_ends_at: datetime,
     ends_at: datetime,
     first_stage_at: datetime | None,
-    last_stage_complete: bool,
+    brackets_complete: bool,
     override: str | None,
 ) -> Phase:
     if override in EVENT_PHASES:
@@ -626,7 +629,7 @@ def compute_phase(
         return "upcoming"
     if now < qualifier_ends_at:
         return "qualifier"
-    if now >= ends_at or last_stage_complete:
+    if now >= ends_at or brackets_complete:
         return "finished"
     if first_stage_at is not None and now < first_stage_at:
         return "cut"
@@ -661,15 +664,13 @@ class TimelineStop:
     key: str
     label: str
     date: datetime
-    kind: Literal[
-        "announce", "open", "cut", "playoffs", "round", "quarter", "semi", "newcomers", "final"
-    ]
+    kind: Literal["announce", "open", "cut", "playoffs", "round", "quarter", "semi", "final"]
 
 
 def announce_date(event: Event, config: EventConfig) -> datetime:
     """When the event was announced: the first timeline stop and the newcomer cut.
 
-    A config with a newcomers' final always dates it (schema rule); without
+    A config with a newcomers bracket always dates it (schema rule); without
     one, the default only decides the newcomer tag.
     """
     starts_at, _, _ = event_window(event)
@@ -679,16 +680,20 @@ def announce_date(event: Event, config: EventConfig) -> datetime:
 def build_timeline(
     event: Event, config: EventConfig, dates: Mapping[str, datetime | None]
 ) -> list[TimelineStop]:
-    """The announcement, the opening, the cut, then the playoffs in stage order.
+    """The announcement, the opening, the cut, then the playoffs in date order.
 
     ``dates`` are the stages' effective dates (``ResolvedStages.dates``), so a
     stage the config dates by its day alone sits at its race's time once one is
-    scheduled. The
-    stages scheduled with their players (no config date) fold into one
-    ``playoffs`` stop, placed where the first of them sits in the list and
-    dated by the earliest match scheduled among them, kept between the stops
-    around it so the rail never runs backwards; with no match scheduled yet,
-    it takes the date of the stop before it.
+    scheduled. Every bracket's dated stages get a stop each; the stages
+    scheduled with their players (no config date), whatever their bracket,
+    fold into one ``playoffs`` stop. That stop is dated by the earliest match
+    scheduled among them, kept at or after its floor (the cut, and every dated
+    stage listed before its bracket's first undated one) and at or before its
+    ceiling (the earliest dated stage listed after its bracket's first undated
+    one), the floor winning should they cross; with no match scheduled yet it
+    stands on its floor. Stops run in date order; on a tie the playoffs stop
+    comes after its floor's stops and before the others, so the rail never
+    runs backwards.
     """
     starts_at, qualifier_ends_at, _ends_at = event_window(event)
     announced = announce_date(event, config)
@@ -697,32 +702,48 @@ def build_timeline(
         TimelineStop(key="open", label="Seeds open", date=starts_at, kind="open"),
         TimelineStop(key="cut", label="Cut", date=qualifier_ends_at, kind="cut"),
     ]
-    dated = [
-        (
-            i,
-            TimelineStop(
-                key=f"stage:{s.key}",
-                label=s.label,
-                date=dates.get(s.key) or s.moment,
-                kind=s.kind,
-            ),
+    # (date, tie, stop): on the same date, tie 0 runs before the playoffs stop
+    # (tie 1), tie 2 after it; the sort is stable, so bracket and stage order
+    # settle the rest.
+    ordered: list[tuple[datetime, int, TimelineStop]] = []
+    floor = qualifier_ends_at
+    ceiling: datetime | None = None
+    for bracket in config.brackets:
+        first_undated = next((i for i, s in enumerate(bracket.stages) if s.date is None), None)
+        for i, s in enumerate(bracket.stages):
+            if s.moment is None:
+                continue
+            when = dates.get(s.key) or s.moment
+            after = first_undated is not None and i > first_undated
+            ordered.append(
+                (
+                    when,
+                    2 if after else 0,
+                    TimelineStop(key=f"stage:{s.key}", label=s.label, date=when, kind=s.kind),
+                )
+            )
+            if first_undated is None:
+                continue
+            if after:
+                ceiling = when if ceiling is None else min(ceiling, when)
+            else:
+                floor = max(floor, when)
+    undated = [s for s in config.stages if s.date is None]
+    if undated:
+        scheduled = [at for s in undated if (at := dates.get(s.key)) is not None]
+        moment = min(scheduled) if scheduled else floor
+        if ceiling is not None:
+            moment = min(moment, ceiling)
+        moment = max(moment, floor)
+        ordered.append(
+            (
+                moment,
+                1,
+                TimelineStop(key="playoffs", label="Playoffs", date=moment, kind="playoffs"),
+            )
         )
-        for i, s in enumerate(config.stages)
-        if s.moment is not None
-    ]
-    first_undated = next((i for i, s in enumerate(config.stages) if s.date is None), None)
-    if first_undated is None:
-        return stops + [stop for _, stop in dated]
-    stops.extend(stop for i, stop in dated if i < first_undated)
-    after = [stop for i, stop in dated if i > first_undated]
-    scheduled = [
-        when for s in config.stages if s.date is None and (when := dates.get(s.key)) is not None
-    ]
-    moment = max(stops[-1].date, min(scheduled)) if scheduled else stops[-1].date
-    if after:
-        moment = min(moment, after[0].date)
-    stops.append(TimelineStop(key="playoffs", label="Playoffs", date=moment, kind="playoffs"))
-    return stops + after
+    ordered.sort(key=lambda item: (item[0], item[1]))
+    return stops + [stop for _, _, stop in ordered]
 
 
 # --- stage dates ------------------------------------------------------------
@@ -829,14 +850,15 @@ def resolve_stages(event: Event, config: EventConfig, now: datetime) -> Resolved
         for stage in config.stages
     }
     dates = stage_dates(config.stages, stage_races)
-    last = config.stages[-1] if config.stages else None
+    # The event is over once every bracket is: its final, or its last stage.
+    closing = [bracket.closing_stage() for bracket in config.brackets]
     phase = compute_phase(
         now=now,
         starts_at=starts_at,
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
         first_stage_at=min((d for d in dates.values() if d is not None), default=None),
-        last_stage_complete=results[last.key].complete if last is not None else False,
+        brackets_complete=bool(closing) and all(results[s.key].complete for s in closing),
         override=config.phase_override,
     )
     return ResolvedStages(
@@ -1047,7 +1069,7 @@ def is_event_joinable(event: Event, now: datetime) -> bool:
     """Whether runners can still join ``event`` (sign up, enter a qualifier)."""
     starts_at, qualifier_ends_at, ends_at = event_window(event)
     config = EventConfig.model_validate(event.config)
-    # Whether the last stage is complete only tells playoffs from finished,
+    # Whether the brackets are complete only tells playoffs from finished,
     # neither of which can be joined, so the stage races are not needed here.
     phase = compute_phase(
         now=now,
@@ -1055,7 +1077,7 @@ def is_event_joinable(event: Event, now: datetime) -> bool:
         qualifier_ends_at=qualifier_ends_at,
         ends_at=ends_at,
         first_stage_at=first_config_date(config),
-        last_stage_complete=False,
+        brackets_complete=False,
         override=config.phase_override,
     )
     return phase in JOINABLE_PHASES

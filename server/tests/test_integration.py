@@ -32,6 +32,8 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.websocket.race.manager import manager
 
+from .event_fixtures import bracketed
+
 # =============================================================================
 # Helper Classes
 # =============================================================================
@@ -2836,19 +2838,21 @@ def test_a_playoff_race_s_first_finish_starts_the_cutoff_countdown(
                 starts_at=now - timedelta(days=30),
                 qualifier_ends_at=now - timedelta(days=10),
                 ends_at=now + timedelta(days=10),
-                config={
-                    "modes": [{"key": "standard", "label": "Standard"}],
-                    "stages": [
-                        {
-                            "key": "final",
-                            "label": "Final",
-                            "kind": "final",
-                            "races": 3,
-                            "seeds": [1, 2, 3],
-                        }
-                    ],
-                    "playoff_cutoff_minutes": 7,
-                },
+                config=bracketed(
+                    {
+                        "modes": [{"key": "standard", "label": "Standard"}],
+                        "stages": [
+                            {
+                                "key": "final",
+                                "label": "Final",
+                                "kind": "final",
+                                "races": 3,
+                                "seeds": [1, 2, 3],
+                            }
+                        ],
+                        "playoff_cutoff_minutes": 7,
+                    }
+                ),
             )
             db.add(event)
             await db.flush()
