@@ -1200,6 +1200,66 @@ def test_the_playoffs_stop_follows_the_first_scheduled_match_in_date_order():
     assert tail({"quarter_a": datetime(2026, 10, 30, 20, tzinfo=UTC)}) == (after, final)
 
 
+def test_a_single_bracket_keeps_its_playoffs_stop_between_its_dated_stages():
+    """Group A on 4 Oct, Group B and the semi scheduled with their players, the final on 25 Oct."""
+
+    def stage(key, label, kind, **fields):
+        return {"key": key, "label": label, "kind": kind, "races": 1, **fields}
+
+    cfg = EventConfig.model_validate(
+        {
+            "modes": [{"key": m, "label": m} for m in MODES],
+            "brackets": [
+                {
+                    "key": "main",
+                    "label": "Playoffs",
+                    "entry": "all",
+                    "stages": [
+                        stage(
+                            "group_a",
+                            "Group A",
+                            "round",
+                            date="2026-10-04T19:00:00Z",
+                            seeds=[1, 4, 5, 8],
+                            advance=2,
+                        ),
+                        stage("group_b", "Group B", "round", seeds=[2, 3, 6, 7], advance=2),
+                        stage(
+                            "semi", "Semi", "semi", advance=2, **{"from": ["group_a", "group_b"]}
+                        ),
+                        stage(
+                            "final",
+                            "Final",
+                            "final",
+                            date="2026-10-25T19:00:00Z",
+                            **{"from": ["semi"]},
+                        ),
+                    ],
+                }
+            ],
+        }
+    )
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END)
+    group_a = datetime(2026, 10, 4, 19, tzinfo=UTC)
+    final = datetime(2026, 10, 25, 19, tzinfo=UTC)
+
+    def tail(dates: dict[str, datetime | None]) -> tuple[list[str], datetime]:
+        stops = build_timeline(event, cfg, dates)
+        playoffs = next(s.date for s in stops if s.key == "playoffs")
+        return [s.key for s in stops][3:], playoffs
+
+    order = ["stage:group_a", "playoffs", "stage:final"]
+    # Nothing scheduled: the stop stands on its floor, Group A's evening, after it.
+    assert tail({}) == (order, group_a)
+    # A match scheduled before Group A is held at its floor...
+    assert tail({"group_b": datetime(2026, 10, 2, 19, tzinfo=UTC)}) == (order, group_a)
+    # ...one in between dates it...
+    between = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    assert tail({"group_b": between}) == (order, between)
+    # ...and one past the final is held at its ceiling, before the final.
+    assert tail({"semi": datetime(2026, 10, 30, 19, tzinfo=UTC)}) == (order, final)
+
+
 def _phase(now, **kw):
     args = dict(
         starts_at=T0,
