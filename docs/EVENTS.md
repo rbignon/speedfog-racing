@@ -486,10 +486,11 @@ count there. See `daily_points` in
    the evening.
 5. A qualified runner withdraws: list them at the end of the config's
    `withdrawn` list before their group's first race starts, and save; the
-   page hands the seat to the next runner on the ladder, whom the organizer
-   tells. If that runner declines too, add them as well. A call-up can take
-   a newcomer out of the newcomers bracket, or shift its field, so update the
-   registrations of any races already created for those stages. A runner who
+   page hands the seat to the next runner of that bracket's own pool (for the
+   newcomers bracket, the next newcomer on the ladder not already drawn),
+   whom the organizer tells. If that runner declines too, add them as well.
+   A call-up can take a newcomer out of the newcomers bracket, or shift its
+   field, so update the registrations of any races already created for those stages. A runner who
    renames on Twitch and logs in under the new name must be re-listed under
    it: the old name no longer matches any user, and the admin refuses it on
    the next save. This `withdrawn` list is unrelated to the signup
