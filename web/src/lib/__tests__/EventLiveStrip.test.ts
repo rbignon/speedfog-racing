@@ -47,6 +47,7 @@ function stageWith(overrides: Partial<EventStage> = {}): EventStage {
     key: "semi_a",
     label: "Semi A",
     kind: "semi",
+    bracket: "main",
     date: "2026-10-04T20:00:00Z",
     date_fixed: true,
     time_set: true,

@@ -1,7 +1,10 @@
 import type {
+  EventBracket,
   EventDetail,
   EventFact,
   EventPhase,
+  EventQualified,
+  EventQualifiedGroup,
   EventStage,
   EventSummary,
   User,
@@ -49,21 +52,23 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
 
 type FactsInput = Pick<
   EventDetail,
-  "facts" | "modes" | "seeds_per_mode" | "stages"
+  "facts" | "modes" | "seeds_per_mode" | "stages" | "brackets"
 >;
 
 /**
  * The format block's tiles: the config's own facts when it sets any, else
- * four derived from the event's shape (seed and mode counts, the mode labels,
- * stage and race counts, the newcomers' final day).
+ * tiles derived from the event's shape (seed and mode counts, the mode
+ * labels, the first bracket's stage and race counts, then one tile per
+ * later bracket with its final's day).
  */
 export function eventFacts(
   detail: FactsInput,
   formatDay: (iso: string) => string,
 ): EventFact[] {
   if (detail.facts && detail.facts.length > 0) return detail.facts;
-  const races = detail.stages[0]?.races_expected;
-  const newcomers = detail.stages.find((s) => s.kind === "newcomers");
+  const [first, ...others] = detail.brackets;
+  const main = first ? bracketStages(detail.stages, first.key) : [];
+  const races = main[0]?.races_expected;
   const facts: EventFact[] = [
     {
       title: "Qualifier",
@@ -76,17 +81,20 @@ export function eventFacts(
     {
       title: "Playoffs",
       lines: [
-        `${detail.stages.length} stages`,
+        `${main.length} stages`,
         ...(races ? [`${races} races each`] : []),
       ],
     },
   ];
-  if (newcomers) {
+  for (const bracket of others) {
+    const stages = bracketStages(detail.stages, bracket.key);
+    const final = stages.find((s) => s.kind === "final");
     facts.push({
-      title: "Newcomers",
-      lines: newcomers.date
-        ? ["Own final", formatDay(newcomers.date)]
-        : ["Own final"],
+      title: bracket.label,
+      lines: [
+        stages.length > 1 ? "Own bracket" : "Own final",
+        ...(final?.date ? [formatDay(final.date)] : []),
+      ],
     });
   }
   return facts;
@@ -118,6 +126,64 @@ export function liveStage(detail: LiveStageInput): EventStage | null {
   );
 }
 
+/** A bracket's stages, in bracket order. */
+export function bracketStages(stages: EventStage[], key: string): EventStage[] {
+  return stages.filter((s) => s.bracket === key);
+}
+
+/** The stage whose completion completes a bracket: its final, else its last. */
+export function closingStage(stages: EventStage[]): EventStage | null {
+  return stages.find((s) => s.kind === "final") ?? stages.at(-1) ?? null;
+}
+
+type BracketChoiceInput = Pick<
+  EventDetail,
+  "brackets" | "stages" | "live_race" | "current_stage_key" | "next_stage"
+>;
+
+/**
+ * The bracket the page shows: the one the URL asks for when it exists, else
+ * the one with the live race, else the one being played, else the one
+ * holding the next evening, else the first.
+ */
+export function selectedBracketKey(
+  detail: BracketChoiceInput,
+  asked: string | null,
+): string | null {
+  if (asked && detail.brackets.some((b) => b.key === asked)) return asked;
+  const bracketOf = (key: string | null | undefined) =>
+    detail.stages.find((s) => s.key === key)?.bracket ?? null;
+  return (
+    liveStage(detail)?.bracket ??
+    bracketOf(detail.current_stage_key) ??
+    bracketOf(detail.next_stage?.key) ??
+    detail.brackets[0]?.key ??
+    null
+  );
+}
+
+/**
+ * The detail as one bracket sees it: its stages only, and its own current
+ * and next evening in place of the event-wide ones. The live race stays the
+ * event's: a bracket's evening reads live only when the race is one of its
+ * own stages'.
+ */
+export function bracketView<
+  T extends Pick<
+    EventDetail,
+    "stages" | "brackets" | "current_stage_key" | "next_stage"
+  >,
+>(detail: T, key: string | null): T {
+  const bracket = detail.brackets.find((b) => b.key === key);
+  if (!bracket) return detail;
+  return {
+    ...detail,
+    stages: bracketStages(detail.stages, bracket.key),
+    current_stage_key: bracket.current_stage_key,
+    next_stage: bracket.next_stage,
+  };
+}
+
 /**
  * A race name without its leading stage label ("Semi A - Race 1 - Standard"
  * shown under a "Semi A" heading reads "Race 1 - Standard"); unchanged when
@@ -138,7 +204,10 @@ export function stageWinner(stage: EventStage): User | null {
 }
 
 export interface Champion {
-  kind: "final" | "newcomers";
+  /** The bracket whose final crowned them. */
+  bracket: string;
+  /** The event's champion (the first bracket's): its plate leads, larger. */
+  first: boolean;
   label: string;
   user: User;
   /** Position on the qualifier ladder, null if unranked there. */
@@ -153,16 +222,19 @@ export interface Champion {
   weapon: string | null;
 }
 
-type ChampionsInput = Pick<EventDetail, "stages" | "ladder">;
+type ChampionsInput = Pick<EventDetail, "stages" | "ladder" | "brackets">;
 
 /**
- * The decided winners of the stages that crown one, the final first and
- * the newcomers' final after it, with where they came from on the ladder,
- * their evening's record and their signature weapon.
+ * The decided winners of the brackets' finals, in bracket order: the first
+ * bracket's is the event's champion, the others carry their bracket's label,
+ * each with where they came from on the ladder, their evening's record and
+ * their signature weapon.
  */
 export function champions(detail: ChampionsInput): Champion[] {
-  const crown = (kind: Champion["kind"], label: string): Champion[] => {
-    const stage = detail.stages.find((s) => s.kind === kind && s.complete);
+  return detail.brackets.flatMap((bracket, i): Champion[] => {
+    const stage = bracketStages(detail.stages, bracket.key).find(
+      (s) => s.kind === "final" && s.complete,
+    );
     const user = stage ? stageWinner(stage) : null;
     if (!stage || !user) return [];
     const wins = stage.races.filter(
@@ -173,8 +245,9 @@ export function champions(detail: ChampionsInput): Champion[] {
     ).length;
     return [
       {
-        kind,
-        label,
+        bracket: bracket.key,
+        first: i === 0,
+        label: i === 0 ? "Champion" : bracket.label,
         user,
         ladderRank:
           detail.ladder.entries.find((e) => e.user.id === user.id)?.rank ??
@@ -184,8 +257,7 @@ export function champions(detail: ChampionsInput): Champion[] {
         weapon: stage.results[0].signature_weapon?.name ?? null,
       },
     ];
-  };
-  return [...crown("final", "Champion"), ...crown("newcomers", "Newcomers")];
+  });
 }
 
 type ShownStageInput = Pick<
@@ -195,14 +267,19 @@ type ShownStageInput = Pick<
 
 /**
  * The evening whose races the bracket block lists: the current stage during
- * the playoffs, else the next one, else the last one once everything ran;
- * none while no evening can honestly be called next.
+ * the playoffs, else the next one, else, once the stages are played out (or
+ * the event is over), the one closing them; none while no evening can
+ * honestly be called next. Given one bracket's view (``bracketView``), a
+ * bracket finished before the other keeps showing its final.
  */
 export function shownStage(detail: ShownStageInput): EventStage | null {
+  const closing = closingStage(detail.stages);
   const key =
     detail.current_stage_key ??
     detail.next_stage?.key ??
-    (detail.phase === "finished" ? detail.stages.at(-1)?.key : undefined);
+    (closing && (closing.complete || detail.phase === "finished")
+      ? closing.key
+      : undefined);
   return detail.stages.find((s) => s.key === key) ?? null;
 }
 
@@ -651,7 +728,6 @@ export interface BracketLayout {
   /** Boxes in the first round: the tree's rows. */
   rows: number;
   final: BracketCell | null;
-  newcomers: EventStage | null;
   /**
    * Four first-round boxes or more: the tree is tall enough for the evening
    * section to sit above the Champion in a side column.
@@ -663,10 +739,10 @@ export interface BracketLayout {
  * The bracket as a grid: one column per round (a seeded stage is round 0, a
  * fed one follows its deepest source), each round ordered so a stage's
  * sources sit next to each other, a fed stage spanning its sources' rows.
- * The newcomers' final stands apart.
+ * One bracket at a time: the page lays each bracket out on its own tab.
  */
 export function bracketLayout(stages: EventStage[]): BracketLayout {
-  const tree = stages.filter((s) => s.kind !== "newcomers");
+  const tree = stages;
   const byKey = new Map(tree.map((s) => [s.key, s]));
   const roundOf = new Map<string, number>();
   const round = (stage: EventStage): number => {
@@ -717,7 +793,6 @@ export function bracketLayout(stages: EventStage[]): BracketLayout {
     links,
     rows,
     final: finalStage ? (cells.get(finalStage.key) ?? null) : null,
-    newcomers: stages.find((s) => s.kind === "newcomers") ?? null,
     tall: rows >= 4,
   };
 }
@@ -738,7 +813,7 @@ export interface PlayoffsPlan {
   places: number;
   /** The rounds scheduled with their players, "quarters and semis", or null. */
   agreed: string | null;
-  /** The stages on a date the config fixes, newcomers' final aside, in order. */
+  /** The stages on a date the config fixes, in the bracket's order. */
   fixed: {
     key: string;
     label: string;
@@ -752,7 +827,6 @@ const KIND_PLURAL: Record<Exclude<EventStage["kind"], "round">, string> = {
   quarter: "quarters",
   semi: "semis",
   final: "final",
-  newcomers: "newcomers' final",
 };
 
 /** A round played before the quarters, named after its seats: "round of 32". */
@@ -763,9 +837,9 @@ function roundName(stages: EventStage[]): string {
   return `round of ${seats}`;
 }
 
-/** What the format block's playoffs paragraph says about the bracket. */
+/** What the format block's playoffs paragraph says about a bracket (the first one). */
 export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
-  const tree = stages.filter((s) => s.kind !== "newcomers");
+  const tree = stages;
   const places = tree
     .filter((s) => s.from.length === 0)
     .reduce((n, s) => n + s.field.length, 0);
@@ -800,23 +874,113 @@ export function playoffsPlan(stages: EventStage[]): PlayoffsPlan {
   return { places, agreed, fixed };
 }
 
+const COUNT_WORDS = [
+  "no",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+];
+const ROUND_WORDS: Record<EventStage["kind"], [string, string]> = {
+  round: ["group", "groups"],
+  quarter: ["quarter", "quarters"],
+  semi: ["semi", "semis"],
+  final: ["final", "finals"],
+};
+
+/** A bracket's rounds in words, "two semis, then a final"; null for a single stage. */
+export function bracketShape(stages: EventStage[]): string | null {
+  if (stages.length < 2) return null;
+  const rounds = bracketLayout(stages).rounds.map((round) => {
+    const [singular, plural] = ROUND_WORDS[round[0].stage.kind];
+    return round.length === 1
+      ? `a ${singular}`
+      : `${COUNT_WORDS[round.length] ?? round.length} ${plural}`;
+  });
+  return rounds.length === 1
+    ? rounds[0]
+    : `${rounds.slice(0, -1).join(", ")}, then ${rounds.at(-1)}`;
+}
+
+export interface NewcomersPlan {
+  key: string;
+  /** Runners its seeded stages seat. */
+  seats: number;
+  /** Its rounds in words; null for a bracket of a single stage. */
+  shape: string | null;
+  /** Its final, whose date the paragraph gives. */
+  final: EventStage | null;
+}
+
+/** The newcomers brackets the format block describes, after the first bracket. */
+export function newcomersPlans(
+  detail: Pick<EventDetail, "brackets" | "stages">,
+): NewcomersPlan[] {
+  return detail.brackets
+    .slice(1)
+    .filter((b) => b.entry === "newcomers")
+    .map((bracket) => {
+      const stages = bracketStages(detail.stages, bracket.key);
+      return {
+        key: bracket.key,
+        seats: stages
+          .filter((s) => s.from.length === 0)
+          .reduce((n, s) => n + s.field.length, 0),
+        shape: bracketShape(stages),
+        final: stages.find((s) => s.kind === "final") ?? null,
+      };
+    });
+}
+
+export interface QualifiedSection {
+  key: string;
+  /** The bracket's label; null when the event has a single bracket. */
+  label: string | null;
+  groups: EventQualifiedGroup[];
+}
+
+/** The qualified groups under their brackets, in bracket order. */
+export function qualifiedSections(
+  qualified: EventQualified,
+  stages: EventStage[],
+  brackets: EventBracket[],
+): QualifiedSection[] {
+  const bracketOf = new Map(stages.map((s) => [s.key, s.bracket]));
+  return brackets
+    .map((bracket) => ({
+      key: bracket.key,
+      label: brackets.length > 1 ? bracket.label : null,
+      groups: qualified.groups.filter(
+        (g) => bracketOf.get(g.stage_key) === bracket.key,
+      ),
+    }))
+    .filter((section) => section.groups.length > 0);
+}
+
 /**
- * The meta line of a qualified group's box: the stage's label, with its date
- * when it has one. A round's stage labelled like its box title ("Group A")
- * would repeat it, so it names its round instead ("Round of 32").
+ * The meta line under a qualified group's box, titled with its stage's
+ * label: a round's stage names its round ("Round of 32"), with the stage's
+ * date when it has one ("Round of 32 on Sun 12 Oct, 21:00"); another stage
+ * gives its date alone, or nothing before it has one. ``stages`` are its
+ * bracket's, which name the round after their seats.
  */
 export function qualifiedMeta(
   stage: EventStage,
-  title: string,
   stages: EventStage[],
   formatDate: (iso: string) => string,
 ): string {
   const round = roundName(stages);
   const name =
-    stage.kind === "round" && stage.label === title
+    stage.kind === "round"
       ? round.charAt(0).toUpperCase() + round.slice(1)
-      : stage.label;
-  return stage.date
-    ? `${name} on ${formatStageDate(stage.date, stage.time_set, formatDate)}`
-    : name;
+      : null;
+  const date = stage.date
+    ? formatStageDate(stage.date, stage.time_set, formatDate)
+    : null;
+  if (name && date) return `${name} on ${date}`;
+  return name ?? date ?? "";
 }

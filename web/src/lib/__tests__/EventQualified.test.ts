@@ -11,6 +11,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     key: "semi-a",
     label: "Semi A",
     kind: "semi",
+    bracket: "main",
     date: "2026-10-04T20:00:00Z",
     date_fixed: true,
     time_set: true,
@@ -29,7 +30,12 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
 const stages: EventStage[] = [
   stage({ key: "semi-a", label: "Semi A", kind: "semi" }),
   stage({ key: "semi-b", label: "Semi B", kind: "semi" }),
-  stage({ key: "newcomers", label: "Newcomers Final", kind: "newcomers" }),
+  stage({
+    key: "newcomers",
+    label: "Newcomers Final",
+    kind: "final",
+    bracket: "newcomers",
+  }),
 ];
 
 function qualifiedWith(
@@ -74,7 +80,12 @@ describe("EventQualified group titles", () => {
 
   it("labels the newcomers group Newcomers regardless of where the newcomers stage sits in the array", () => {
     const reordered: EventStage[] = [
-      stage({ key: "newcomers", label: "Newcomers Final", kind: "newcomers" }),
+      stage({
+        key: "newcomers",
+        label: "Newcomers Final",
+        kind: "final",
+        bracket: "newcomers",
+      }),
       stage({ key: "semi-a", label: "Semi A", kind: "semi" }),
       stage({ key: "semi-b", label: "Semi B", kind: "semi" }),
     ];

@@ -427,7 +427,11 @@ export interface DailyWeekResponse {
 // --- Events ---------------------------------------------------------------
 
 export type EventPhase =
-  "upcoming" | "qualifier" | "cut" | "playoffs" | "finished";
+  | "upcoming"
+  | "qualifier"
+  | "cut"
+  | "playoffs"
+  | "finished";
 
 export interface EventMode {
   key: string;
@@ -452,7 +456,6 @@ export interface EventTimelineStop {
     | "round"
     | "quarter"
     | "semi"
-    | "newcomers"
     | "final";
 }
 
@@ -546,7 +549,9 @@ export interface EventFieldSlot {
 export interface EventStage {
   key: string;
   label: string;
-  kind: "round" | "quarter" | "semi" | "newcomers" | "final";
+  kind: "round" | "quarter" | "semi" | "final";
+  /** The key of the bracket holding the stage; null for a showcase. */
+  bracket: string | null;
   /**
    * The config's datetime, else the earliest of the stage's races, else the
    * config's day at noon UTC; null until one exists.
@@ -586,6 +591,18 @@ export interface EventNextStage {
   time_set: boolean;
 }
 
+/** A chain of stages drawing its runners from one pool of the ladder. */
+export interface EventBracket {
+  key: string;
+  label: string;
+  /** Who the bracket's pool holds: every ranked runner, or the newcomers. */
+  entry: "all" | "newcomers";
+  /** The stage of this bracket being played, during the playoffs. */
+  current_stage_key: string | null;
+  /** This bracket's next evening that can honestly be announced. */
+  next_stage: EventNextStage | null;
+}
+
 export interface EventDetail {
   slug: string;
   name: string;
@@ -608,6 +625,7 @@ export interface EventDetail {
   qualifier_races: EventQualifierRace[];
   ladder: EventLadder;
   qualified: EventQualified;
+  brackets: EventBracket[];
   stages: EventStage[];
   showcases: EventShowcase[];
   current_stage_key: string | null;

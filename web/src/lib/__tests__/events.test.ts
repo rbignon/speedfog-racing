@@ -4,7 +4,11 @@ import {
   SIGNUP_INTENT_TTL_MS,
   blockOrder,
   bracketLayout,
+  bracketShape,
+  bracketStages,
+  bracketView,
   champions,
+  closingStage,
   encodeSignupIntent,
   eventBand,
   eventFacts,
@@ -13,12 +17,15 @@ import {
   formatEventDay,
   linkPath,
   liveStage,
+  newcomersPlans,
   openingRefreshMs,
   ordinal,
   playoffsPlan,
   pollIntervalMs,
   qualifiedMeta,
+  qualifiedSections,
   racesSection,
+  selectedBracketKey,
   shownStage,
   signupIntentStands,
   soloSeedLabel,
@@ -27,8 +34,10 @@ import {
   timeRemaining,
 } from "$lib/events";
 import type {
+  EventBracket,
   EventDetail,
   EventPhase,
+  EventQualified,
   EventStage,
   EventSummary,
   Race,
@@ -101,6 +110,7 @@ function detailWith(partial: Partial<EventDetail>): EventDetail {
     next_stage: null,
     current_stage_key: null,
     stages: [],
+    brackets: [],
     ...partial,
   } as EventDetail;
 }
@@ -110,6 +120,7 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
     key: "s",
     label: "S",
     kind: "quarter",
+    bracket: "main",
     date: null,
     date_fixed: false,
     time_set: true,
@@ -128,7 +139,234 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
 const seats = (n: number) =>
   Array.from({ length: n }, (_, i) => ({ user: null, label: `Seed ${i + 1}` }));
 
-// This season: quarters into semis into the final, the newcomers' final aside.
+const mainBracket: EventBracket = {
+  key: "main",
+  label: "Top 32",
+  entry: "all",
+  current_stage_key: null,
+  next_stage: null,
+};
+const newcomersBracket: EventBracket = {
+  key: "newcomers",
+  label: "Newcomers",
+  entry: "newcomers",
+  current_stage_key: null,
+  next_stage: null,
+};
+const runningRace = (slot: string) =>
+  ({
+    slot,
+    index: 1,
+    race: { id: slot, status: "running" },
+    points: {},
+    live: [],
+  }) as unknown as EventStage["races"][number];
+const twoBrackets: EventStage[] = [
+  stageFixture({ key: "semi_a", kind: "semi", field: seats(4) }),
+  stageFixture({ key: "semi_b", kind: "semi", field: seats(4) }),
+  stageFixture({ key: "final", kind: "final", from: ["semi_a", "semi_b"] }),
+  stageFixture({
+    key: "newcomers_semi_a",
+    kind: "semi",
+    bracket: "newcomers",
+    field: seats(4),
+  }),
+  stageFixture({
+    key: "newcomers_semi_b",
+    kind: "semi",
+    bracket: "newcomers",
+    field: seats(4),
+  }),
+  stageFixture({
+    key: "newcomers_final",
+    kind: "final",
+    bracket: "newcomers",
+    from: ["newcomers_semi_a", "newcomers_semi_b"],
+    date: "2026-10-25T19:00:00Z",
+  }),
+];
+
+describe("selectedBracketKey", () => {
+  const base = detailWith({
+    brackets: [mainBracket, newcomersBracket],
+    stages: twoBrackets,
+  });
+
+  it("follows the URL when it names a bracket, the default otherwise", () => {
+    expect(selectedBracketKey(base, "newcomers")).toBe("newcomers");
+    expect(selectedBracketKey(base, "nope")).toBe("main");
+    expect(selectedBracketKey(base, null)).toBe("main");
+  });
+
+  it("opens on the live race's bracket, else the current, else the next", () => {
+    const stages = twoBrackets.map((s) =>
+      s.key === "newcomers_semi_b"
+        ? { ...s, races: [runningRace("newcomers_semi_b:1")] }
+        : s,
+    );
+    const live = detailWith({
+      ...base,
+      stages,
+      live_race: { id: "newcomers_semi_b:1" } as EventDetail["live_race"],
+    });
+    expect(selectedBracketKey(live, null)).toBe("newcomers");
+    expect(
+      selectedBracketKey(
+        { ...base, current_stage_key: "newcomers_semi_a" },
+        null,
+      ),
+    ).toBe("newcomers");
+    expect(
+      selectedBracketKey(
+        {
+          ...base,
+          next_stage: {
+            key: "newcomers_final",
+            label: "x",
+            date: "2026-10-25T19:00:00Z",
+            time_set: true,
+          },
+        },
+        null,
+      ),
+    ).toBe("newcomers");
+  });
+
+  it("has nothing to select without brackets", () => {
+    expect(selectedBracketKey(detailWith({}), "main")).toBeNull();
+  });
+});
+
+describe("bracketView", () => {
+  it("keeps one bracket's stages and puts its own evening in place of the event's", () => {
+    const next = {
+      key: "newcomers_final",
+      label: "Newcomers' final",
+      date: "2026-10-25T19:00:00Z",
+      time_set: true,
+    };
+    const detail = detailWith({
+      brackets: [mainBracket, { ...newcomersBracket, next_stage: next }],
+      stages: twoBrackets,
+      next_stage: {
+        key: "semi_a",
+        label: "Semi A",
+        date: "2026-10-12T19:00:00Z",
+        time_set: true,
+      },
+    });
+    const view = bracketView(detail, "newcomers");
+    expect(view.stages.map((s) => s.key)).toEqual([
+      "newcomers_semi_a",
+      "newcomers_semi_b",
+      "newcomers_final",
+    ]);
+    expect(view.next_stage).toEqual(next);
+    expect(bracketView(detail, null)).toBe(detail);
+  });
+});
+
+describe("shownStage per bracket", () => {
+  it("keeps a completed bracket's final while the other bracket plays on", () => {
+    const stages = bracketStages(twoBrackets, "newcomers").map((s) => ({
+      ...s,
+      complete: true,
+    }));
+    const shown = shownStage({
+      phase: "playoffs",
+      stages,
+      current_stage_key: null,
+      next_stage: null,
+    });
+    expect(shown?.key).toBe("newcomers_final");
+    expect(closingStage(stages)?.key).toBe("newcomers_final");
+    // Not complete yet and nothing current or next: no evening to show.
+    expect(
+      shownStage({
+        phase: "playoffs",
+        stages: bracketStages(twoBrackets, "newcomers"),
+        current_stage_key: null,
+        next_stage: null,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("bracketShape and newcomersPlans", () => {
+  it("says a bracket's rounds in words", () => {
+    expect(bracketShape(bracketStages(twoBrackets, "newcomers"))).toBe(
+      "two semis, then a final",
+    );
+    expect(bracketShape(roundSeason)).toBe(
+      "eight groups, four quarters, two semis, then a final",
+    );
+    expect(
+      bracketShape([stageFixture({ key: "only", kind: "final" })]),
+    ).toBeNull();
+  });
+
+  it("describes the newcomers brackets after the first, with their seats and final", () => {
+    const plans = newcomersPlans({
+      brackets: [mainBracket, newcomersBracket],
+      stages: twoBrackets,
+    });
+    expect(plans).toHaveLength(1);
+    expect(plans[0]).toMatchObject({
+      key: "newcomers",
+      seats: 8,
+      shape: "two semis, then a final",
+    });
+    expect(plans[0].final?.key).toBe("newcomers_final");
+    // A first bracket drawing from the newcomers is the main one, not described here.
+    expect(
+      newcomersPlans({
+        brackets: [{ ...newcomersBracket }],
+        stages: bracketStages(twoBrackets, "newcomers"),
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("qualifiedSections", () => {
+  const group = (stage_key: string) => ({
+    stage_key,
+    label: stage_key,
+    entries: [],
+  });
+  const qualified: EventQualified = {
+    provisional: true,
+    groups: [
+      group("semi_a"),
+      group("semi_b"),
+      group("newcomers_semi_a"),
+      group("newcomers_semi_b"),
+    ],
+  };
+
+  it("heads each bracket's groups with its label when there are several", () => {
+    const sections = qualifiedSections(qualified, twoBrackets, [
+      mainBracket,
+      newcomersBracket,
+    ]);
+    expect(
+      sections.map((s) => [s.label, s.groups.map((g) => g.stage_key)]),
+    ).toEqual([
+      ["Top 32", ["semi_a", "semi_b"]],
+      ["Newcomers", ["newcomers_semi_a", "newcomers_semi_b"]],
+    ]);
+  });
+
+  it("leaves a single bracket without a heading", () => {
+    const single = qualifiedSections(
+      { provisional: true, groups: [group("semi_a")] },
+      bracketStages(twoBrackets, "main"),
+      [mainBracket],
+    );
+    expect(single.map((s) => s.label)).toEqual([null]);
+  });
+});
+
+// This season: quarters into semis into the final.
 const quartersSeason: EventStage[] = [
   stageFixture({ key: "quarter_a", label: "Quarter A", field: seats(4) }),
   stageFixture({ key: "quarter_b", label: "Quarter B", field: seats(4) }),
@@ -145,15 +383,6 @@ const quartersSeason: EventStage[] = [
     label: "Semi B",
     kind: "semi",
     from: ["quarter_c", "quarter_d"],
-  }),
-  stageFixture({
-    key: "newcomers",
-    label: "Newcomers' final",
-    kind: "newcomers",
-    date: "2026-10-18T19:00:00Z",
-    date_fixed: true,
-    time_set: true,
-    field: seats(4),
   }),
   stageFixture({
     key: "final",
@@ -216,7 +445,6 @@ describe("bracketLayout", () => {
     const semiB = layout.rounds[1][1];
     expect([semiB.row, semiB.span]).toEqual([2, 2]);
     expect([layout.final?.row, layout.final?.span]).toEqual([0, 4]);
-    expect(layout.newcomers?.key).toBe("newcomers");
     const toFinal = layout.links.find((l) => l.target.stage.key === "final");
     expect(toFinal?.from).toEqual([25, 75]);
   });
@@ -302,13 +530,10 @@ describe("qualifiedMeta", () => {
   const groupA = roundSeason[0];
 
   it("names the round when the stage is labelled like its box", () => {
-    expect(qualifiedMeta(groupA, "Group A", roundSeason, fmt)).toBe(
-      "Round of 32",
-    );
+    expect(qualifiedMeta(groupA, roundSeason, fmt)).toBe("Round of 32");
     expect(
       qualifiedMeta(
         { ...groupA, date: "2026-10-10T19:00:00Z" },
-        "Group A",
         roundSeason,
         fmt,
       ),
@@ -320,18 +545,22 @@ describe("qualifiedMeta", () => {
     expect(
       qualifiedMeta(
         { ...groupA, date: "2026-10-10T12:00:00Z", time_set: false },
-        "Group A",
         roundSeason,
         fmt,
       ),
     ).toBe("Round of 32 on Sat 10 Oct");
   });
 
-  it("keeps a stage's own label when it differs from the box title", () => {
+  it("gives another stage's date alone, nothing before it has one", () => {
     const quarterA = quartersSeason[0];
-    expect(qualifiedMeta(quarterA, "Group A", quartersSeason, fmt)).toBe(
-      "Quarter A",
-    );
+    expect(
+      qualifiedMeta(
+        { ...quarterA, date: "2026-10-10T19:00:00Z" },
+        quartersSeason,
+        fmt,
+      ),
+    ).toBe("Day(2026-10-10T19:00:00Z)");
+    expect(qualifiedMeta(quarterA, quartersSeason, fmt)).toBe("");
   });
 });
 
@@ -363,8 +592,24 @@ describe("shownStage and racesSection without a date", () => {
 
 describe("eventFacts", () => {
   const stages = [
-    { kind: "semi", races_expected: 3, date: "2026-10-04T19:00:00Z" },
-    { kind: "newcomers", races_expected: 3, date: "2026-10-18T19:00:00Z" },
+    {
+      kind: "semi",
+      bracket: "main",
+      races_expected: 3,
+      date: "2026-10-04T19:00:00Z",
+    },
+    {
+      kind: "final",
+      bracket: "main",
+      races_expected: 3,
+      date: "2026-10-25T19:00:00Z",
+    },
+    {
+      kind: "final",
+      bracket: "newcomers",
+      races_expected: 3,
+      date: "2026-10-18T19:00:00Z",
+    },
   ] as EventDetail["stages"];
   const base = {
     facts: null,
@@ -373,6 +618,7 @@ describe("eventFacts", () => {
       { key: "boss_rush", label: "Boss Rush" },
     ],
     seeds_per_mode: 2,
+    brackets: [mainBracket, newcomersBracket],
     stages,
   };
 
@@ -384,7 +630,7 @@ describe("eventFacts", () => {
     );
   });
 
-  it("derives the tiles from the event's shape, the newcomers' one only with that stage", () => {
+  it("derives the tiles from the event's shape, one per later bracket", () => {
     const tiles = eventFacts(base, () => "Sun 18 Oct");
     expect(tiles.map((t) => t.title)).toEqual([
       "Qualifier",
@@ -396,8 +642,19 @@ describe("eventFacts", () => {
     expect(tiles[1].lines).toEqual(["Standard", "Boss Rush"]);
     expect(tiles[2].lines).toEqual(["2 stages", "3 races each"]);
     expect(tiles[3].lines).toEqual(["Own final", "Sun 18 Oct"]);
+    // A newcomers bracket of several stages is a bracket of its own.
+    const semis = [
+      { kind: "semi", bracket: "newcomers", races_expected: 3, date: null },
+      { kind: "semi", bracket: "newcomers", races_expected: 3, date: null },
+    ] as unknown as EventDetail["stages"];
     expect(
-      eventFacts({ ...base, stages: [stages[0]] }, () => "x").map(
+      eventFacts(
+        { ...base, stages: [...semis, ...stages] },
+        () => "Sun 18 Oct",
+      )[3].lines,
+    ).toEqual(["Own bracket", "Sun 18 Oct"]);
+    expect(
+      eventFacts({ ...base, brackets: [mainBracket] }, () => "x").map(
         (t) => t.title,
       ),
     ).not.toContain("Newcomers");
@@ -439,6 +696,7 @@ describe("champions", () => {
     key: kind,
     label: kind,
     kind,
+    bracket: "main",
     date: "2026-10-25T19:00:00Z",
     date_fixed: true,
     time_set: true,
@@ -476,17 +734,23 @@ describe("champions", () => {
     ],
   } as unknown as EventDetail["ladder"];
 
-  it("crowns the leader of a complete final or newcomers' final only, the final first, with their story", () => {
+  it("crowns each bracket's complete final in bracket order, the first as Champion", () => {
     const crowned = champions({
+      brackets: [mainBracket, newcomersBracket],
       stages: [
         stageOf("semi", true),
-        stageOf("newcomers", true),
         stageOf("final", true),
+        stageOf("final", true, {
+          key: "newcomers_final",
+          bracket: "newcomers",
+        }),
       ],
       ladder,
     });
-    expect(crowned.map((c) => c.kind)).toEqual(["final", "newcomers"]);
-    expect(crowned.map((c) => c.label)).toEqual(["Champion", "Newcomers"]);
+    expect(crowned.map((c) => [c.bracket, c.first, c.label])).toEqual([
+      ["main", true, "Champion"],
+      ["newcomers", false, "Newcomers"],
+    ]);
     expect(crowned[0]).toMatchObject({
       user: winner,
       ladderRank: 7,
@@ -494,12 +758,28 @@ describe("champions", () => {
       racesExpected: 3,
       weapon: "Bloodhound's Fang",
     });
-    expect(champions({ stages: [stageOf("final", false)], ladder })).toEqual(
-      [],
-    );
+    // The newcomers' final decided first: its plate alone, not the event's.
+    const early = champions({
+      brackets: [mainBracket, newcomersBracket],
+      stages: [
+        stageOf("final", false),
+        stageOf("final", true, {
+          key: "newcomers_final",
+          bracket: "newcomers",
+        }),
+      ],
+      ladder,
+    });
+    expect(early.map((c) => [c.bracket, c.first])).toEqual([
+      ["newcomers", false],
+    ]);
     // Complete but nobody scored: no winner to crown.
     expect(
-      champions({ stages: [stageOf("final", true, { results: [] })], ladder }),
+      champions({
+        brackets: [mainBracket],
+        stages: [stageOf("final", true, { results: [] })],
+        ladder,
+      }),
     ).toEqual([]);
   });
 
@@ -515,6 +795,7 @@ describe("champions", () => {
       { ...stageOf("final", true).results[0], signature_weapon: null },
     ];
     const crowned = champions({
+      brackets: [mainBracket],
       stages: [
         stageOf("final", true, {
           races: [wonBy(1, "u1"), nobodyFinished],
