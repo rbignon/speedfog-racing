@@ -1397,7 +1397,7 @@ class EventNextStageResponse(BaseModel):
 class EventBracketResponse(BaseModel):
     key: str
     label: str
-    entry: str
+    entry: Literal["all", "newcomers"]
     # This bracket's own current and next evening, computed on its stages
     # alone, so each tab of the page shows its own evening; the detail's
     # top-level fields stay event-wide.

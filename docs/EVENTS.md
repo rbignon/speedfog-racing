@@ -106,7 +106,9 @@ documents, and runs again harmlessly on one already moved. Moving the stages
 into brackets was another: its migration (`b8e2f4a6c1d3`) wraps a flat list
 into a `main` bracket and turns a `newcomers` stage into a `newcomers`
 bracket holding one final seeded 1 to its size, under the same key so its
-races keep their slot, and leaves a document already moved alone; the schema
+races keep their slot (the first bracket is labelled "Playoffs", which shows
+on the event page's tab bar and on the qualified column's sub-headings until
+the organizer relabels it in the admin), and leaves a document already moved alone; the schema
 refuses a top-level `stages` rather than reading it as an event without
 playoffs.
 
@@ -155,9 +157,11 @@ the signature weapon, so a runner seen only in a showcase is no entrant.
 ### Facts
 
 The format block shows a grid of small tiles, one title over one to four
-lines each. Without `facts` the page derives four of them from the config
-(seed and mode counts, the mode labels, stage and race counts, the newcomers'
-final day). Setting `facts` (up to 8 tiles, titles up to 40 characters,
+lines each. Without `facts` the page derives them from the config:
+Qualifier (seed and mode counts), Modes (the mode labels), Playoffs (the
+first bracket's stage count and races per evening), then one tile per later
+bracket, titled with the bracket's label and reading "Own bracket" (several
+stages) or "Own final" (one stage), plus its final's day when it has one. Setting `facts` (up to 8 tiles, titles up to 40 characters,
 lines up to 60) replaces that grid with free text, so an event can say
 "4 Sundays" or name a seasonal pool; an empty list behaves like an unset
 field. Fact lines are plain text: a date typed there is not converted to the
@@ -420,6 +424,9 @@ count there. See `daily_points` in
    (a removed or renamed mode, stage or showcase, or a lowered
    `seeds_per_mode`): the error names the orphaned slots, and nothing is
    stored until the races are detached from the Races tab.
+   After the deploy that moved the stages into brackets, relabel the
+   brackets here (the migration names the first one "Playoffs"); for Season
+   One, also turn the one-stage newcomers bracket into its semis and final.
 2. Before the qualifier: `tools/qualifier.py create` (usage in its docstring;
    `--dry-run` shows what it would do) creates the race of every empty
    `qualifier:<mode>:<n>` slot and attaches it, named "SEASON ONE QUALIFIER -
@@ -512,8 +519,9 @@ No manual transition exists: the page follows the dates and the race states.
 When a deploy changes the config's shape (a data migration rewriting stored
 documents, as the move to brackets did), roll back in this order: put the
 stored config back into a shape the older code reads, then roll the code
-back; the older code refuses a document it does not know, and the page then
-reads "Event not found".
+back; the older schema ignores the keys it does not know, so it would read
+the bracketed document as an event without any playoff stages: the page
+shows no bracket and the attached stage races go unrecognised.
 
 ### Attaching a race to a slot
 
