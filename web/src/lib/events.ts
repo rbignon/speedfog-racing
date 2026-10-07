@@ -18,6 +18,7 @@ export type EventBlock =
   | "seeds"
   | "ladder_qualified"
   | "live"
+  | "playoffs_intro"
   | "champions"
   | "bracket_ladder";
 
@@ -27,7 +28,8 @@ export type EventBlock =
  * visitors who have never played it. The take-part block carries the
  * qualifier rules, the bracket block the playoff rules and the next (or
  * current) evening's races; from the cut on the bracket replaces the
- * qualified column, the ladder staying under it.
+ * qualified column, the ladder staying under it, and a short introduction
+ * to the playoffs heads it until they are over.
  */
 export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
@@ -42,9 +44,9 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
         "ladder_qualified",
       ];
     case "cut":
-      return ["bracket_ladder"];
+      return ["playoffs_intro", "bracket_ladder"];
     case "playoffs":
-      return ["live", "bracket_ladder"];
+      return ["live", "playoffs_intro", "bracket_ladder"];
     case "finished":
       return ["champions", "bracket_ladder"];
   }
@@ -892,18 +894,75 @@ const ROUND_WORDS: Record<EventStage["kind"], [string, string]> = {
   final: ["final", "finals"],
 };
 
-/** A bracket's rounds in words, "two semis, then a final"; null for a single stage. */
-export function bracketShape(stages: EventStage[]): string | null {
-  if (stages.length < 2) return null;
-  const rounds = bracketLayout(stages).rounds.map((round) => {
+/** How many, in words up to eight: "four", else the digits. */
+function countWord(n: number): string {
+  return COUNT_WORDS[n] ?? String(n);
+}
+
+/** Each round of a laid-out bracket in words: "eight groups", "a final". */
+function roundWords(layout: BracketLayout): string[] {
+  return layout.rounds.map((round) => {
     const [singular, plural] = ROUND_WORDS[round[0].stage.kind];
     return round.length === 1
       ? `a ${singular}`
-      : `${COUNT_WORDS[round.length] ?? round.length} ${plural}`;
+      : `${countWord(round.length)} ${plural}`;
   });
+}
+
+/** A bracket's rounds in words, "two semis, then a final"; null for a single stage. */
+export function bracketShape(stages: EventStage[]): string | null {
+  if (stages.length < 2) return null;
+  const rounds = roundWords(bracketLayout(stages));
   return rounds.length === 1
     ? rounds[0]
     : `${rounds.slice(0, -1).join(", ")}, then ${rounds.at(-1)}`;
+}
+
+export interface PlayoffsIntro {
+  /** Runners the ladder sends to the first bracket. */
+  places: number;
+  /** Its rounds before the final, in words: "eight groups", "two semis". */
+  rounds: string[];
+  /** Its final, named by its label and dated when it has a date. */
+  final: EventStage | null;
+  /** A first-round match: "Four runners a match, three races an evening ...". */
+  match: string;
+  /** How many of a first-round match go on; null when that round is the final. */
+  advance: number | null;
+  /** The newcomers brackets after it. */
+  newcomers: NewcomersPlan[];
+}
+
+/**
+ * What the playoffs introduction says, from the cut on: the first bracket's
+ * seats and rounds up to its final, what a first-round match is, and the
+ * newcomers brackets beside it. Null for an event without playoffs.
+ */
+export function playoffsIntro(
+  detail: Pick<EventDetail, "brackets" | "stages">,
+): PlayoffsIntro | null {
+  const first = detail.brackets[0];
+  const stages = first ? bracketStages(detail.stages, first.key) : [];
+  if (stages.length === 0) return null;
+  const layout = bracketLayout(stages);
+  const final = layout.final?.stage ?? null;
+  const words = roundWords(layout);
+  // The final closes the tree on a round of its own; it is named by its label.
+  const rounds = final ? words.slice(0, -1) : words;
+  // A first round's stages share their size and races: one speaks for all.
+  const opening = layout.rounds[0]?.[0]?.stage;
+  const runners = countWord(opening?.field.length ?? 0);
+  const races = opening?.races_expected ?? 0;
+  return {
+    places: playoffsPlan(stages).places,
+    rounds,
+    final,
+    match:
+      `${runners.charAt(0).toUpperCase()}${runners.slice(1)} runners a match, ` +
+      `${countWord(races)} race${races === 1 ? "" : "s"} an evening on the same seed`,
+    advance: opening?.advance ?? null,
+    newcomers: newcomersPlans(detail),
+  };
 }
 
 export interface NewcomersPlan {

@@ -569,6 +569,16 @@ whose races the bracket block lists. What the viewer can no longer act on
 keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
+From the cut until the playoffs are over, a short "The playoffs" block heads
+the bracket, under the live strip while a race runs. It says, from the
+config, what a viewer arriving from a cast needs (`playoffsIntro`): the first
+bracket's seats and its rounds up to the final, dated when the config dates
+it; what a first-round match is (its runners, its races per evening, how many
+go on); one sentence per newcomers bracket; and how to watch (matches agreed
+with their runners, cast live on Twitch, the live banner leading to the
+cast). The format block's fact tiles sit beside it. Once the event is
+finished the champion plates take its place.
+
 From the cut on, an event with several brackets opens its bracket block on a
 tab bar, one tab per bracket, in the tab style of the stats page, an ember dot
 on the tab of a bracket whose race runs. `?bracket=<key>` selects the tab

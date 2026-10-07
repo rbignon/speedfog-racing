@@ -26,6 +26,7 @@
     fillSlots,
     formatEventTime,
     ordinal,
+    playoffsIntro,
     playoffsPlan,
     racesSection,
     selectedBracketKey,
@@ -102,6 +103,7 @@
   );
   let plan = $derived(playoffsPlan(firstStages));
   let newcomers = $derived(newcomersPlans(detail));
+  let intro = $derived(playoffsIntro(detail));
   // One tab per bracket from the cut on; the URL's ?bracket= picks it.
   let bracketKey = $derived(
     selectedBracketKey(detail, page.url.searchParams.get("bracket")),
@@ -302,6 +304,19 @@
     {/if}
   {/snippet}
 
+  {#snippet factTiles()}
+    <div class="facts">
+      {#each facts as fact, i (i)}
+        <div>
+          <span class="k">{fact.title}</span>
+          <span class="v"
+            >{#each fact.lines as line, i (i)}<span>{line}</span>{/each}</span
+          >
+        </div>
+      {/each}
+    </div>
+  {/snippet}
+
   {#snippet playoffRules()}
     <div class="rules-card">
       <h3>Playoff rules</h3>
@@ -375,17 +390,7 @@
               </p>
             {/each}
           </div>
-          <div class="facts">
-            {#each facts as fact, i (i)}
-              <div>
-                <span class="k">{fact.title}</span>
-                <span class="v"
-                  >{#each fact.lines as line, i (i)}<span>{line}</span
-                    >{/each}</span
-                >
-              </div>
-            {/each}
-          </div>
+          {@render factTiles()}
         </div>
       </section>
     {:else if block === "take_part"}
@@ -599,6 +604,47 @@
           stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
           null}
         <EventLiveStrip race={detail.live_race} {stage} raceIndex={index} />
+      {/if}
+    {:else if block === "playoffs_intro"}
+      {#if intro}
+        <section>
+          <SectionTitle>The playoffs</SectionTitle>
+          <div class="fmt">
+            <div class="prose">
+              <!-- Spaces sit inside expressions, not next to an {#if}: see
+                   the format block above. -->
+              <p>
+                <strong
+                  >The top {intro.places} of the qualifier race it out</strong
+                >: {intro.rounds.join(", ")}{intro.rounds.length > 0 &&
+                intro.final
+                  ? ", then "
+                  : ""}{intro.final ? `the ${intro.final.label}` : ""}{intro
+                  .final?.date
+                  ? " on "
+                  : ""}{#if intro.final?.date}<span class="date"
+                    >{fmtDay(intro.final.date)}</span
+                  >{/if}. {intro.match}{intro.advance
+                  ? `; the top ${intro.advance} go on to the next round`
+                  : ""}.
+              </p>
+              {#each intro.newcomers as bracket (bracket.key)}
+                <p>
+                  <strong
+                    >The {bracket.seats} best newcomers outside the top {intro.places}
+                    get {bracket.shape ? "a bracket" : "a final"} of their own</strong
+                  >{bracket.shape ? `: ${bracket.shape}` : ""}.
+                </p>
+              {/each}
+              <p>
+                Each match is played on an evening agreed with its runners and
+                cast live on Twitch, every runner streaming their own POV. When
+                one is on, a banner at the top of this page leads to the cast.
+              </p>
+            </div>
+            {@render factTiles()}
+          </div>
+        </section>
       {/if}
     {:else if block === "champions"}
       {#if crowned.length > 0}

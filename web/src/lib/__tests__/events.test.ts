@@ -20,6 +20,7 @@ import {
   newcomersPlans,
   openingRefreshMs,
   ordinal,
+  playoffsIntro,
   playoffsPlan,
   pollIntervalMs,
   qualifiedMeta,
@@ -81,6 +82,18 @@ describe("blockOrder", () => {
 
   it("opens the finished page with the champions", () => {
     expect(blockOrder("finished")[0]).toBe("champions");
+  });
+
+  it("introduces the playoffs over the bracket while they are ahead or under way", () => {
+    for (const phase of ["cut", "playoffs"] as const) {
+      const blocks = blockOrder(phase);
+      expect(blocks.indexOf("playoffs_intro"), phase).toBe(
+        blocks.indexOf("bracket_ladder") - 1,
+      );
+    }
+    for (const phase of ["upcoming", "qualifier", "finished"] as const) {
+      expect(blockOrder(phase), phase).not.toContain("playoffs_intro");
+    }
   });
 
   it("introduces SpeedFog first while the event can still be joined, and only then", () => {
@@ -324,6 +337,68 @@ describe("bracketShape and newcomersPlans", () => {
         stages: bracketStages(twoBrackets, "newcomers"),
       }),
     ).toEqual([]);
+  });
+});
+
+describe("playoffsIntro", () => {
+  // The round of 32 as configured: groups of four, three races, top 2 on.
+  const season = roundSeason.map((s) =>
+    s.kind === "round" ? { ...s, advance: 2 } : s,
+  );
+
+  it("names the first bracket's rounds before its final, the match, and who goes on", () => {
+    const intro = playoffsIntro({
+      brackets: [mainBracket, newcomersBracket],
+      stages: [...season, ...bracketStages(twoBrackets, "newcomers")],
+    });
+    expect(intro).toMatchObject({
+      places: 32,
+      rounds: ["eight groups", "four quarters", "two semis"],
+      match: "Four runners a match, three races an evening on the same seed",
+      advance: 2,
+    });
+    expect(intro?.final?.key).toBe("final");
+    expect(intro?.newcomers.map((n) => [n.seats, n.shape])).toEqual([
+      [8, "two semis, then a final"],
+    ]);
+  });
+
+  it("reads a lone final as the whole bracket, with nobody going on", () => {
+    const final = stageFixture({
+      key: "final",
+      kind: "final",
+      field: seats(4),
+      races_expected: 1,
+    });
+    const intro = playoffsIntro({ brackets: [mainBracket], stages: [final] });
+    expect(intro).toMatchObject({
+      places: 4,
+      rounds: [],
+      match: "Four runners a match, one race an evening on the same seed",
+      advance: null,
+      newcomers: [],
+    });
+    expect(intro?.final?.key).toBe("final");
+  });
+
+  it("names every round of a bracket without a final, and counts big matches in digits", () => {
+    const groups = [
+      stageFixture({ key: "g1", kind: "round", field: seats(12) }),
+      stageFixture({ key: "g2", kind: "round", field: seats(12) }),
+    ];
+    const intro = playoffsIntro({ brackets: [mainBracket], stages: groups });
+    expect(intro).toMatchObject({
+      places: 24,
+      rounds: ["two groups"],
+      final: null,
+      match: "12 runners a match, three races an evening on the same seed",
+    });
+  });
+
+  it("has nothing to say about an event without playoffs", () => {
+    expect(playoffsIntro({ brackets: [], stages: [] })).toBeNull();
+    // A bracket holding no stage yet is no playoffs either.
+    expect(playoffsIntro({ brackets: [mainBracket], stages: [] })).toBeNull();
   });
 });
 
