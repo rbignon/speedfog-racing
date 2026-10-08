@@ -1401,6 +1401,8 @@ class EventStageResponse(BaseModel):
     advance: int | None = None
     races_expected: int
     complete: bool
+    # Complete with no match: the stage was left with no more runners than it sends on.
+    walkover: bool = False
     modes: list[str]
     races: list[EventStageRaceResponse]
     results: list[EventStageEntryResponse]

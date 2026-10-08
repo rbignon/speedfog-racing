@@ -17,6 +17,7 @@ from speedfog_racing.services.event_service import (
     Slot,
     StageEntry,
     StageResult,
+    apply_walkovers,
     bracket_draw,
     build_timeline,
     compute_ladder,
@@ -889,15 +890,15 @@ def test_final_field_pads_short_decided_stages_to_the_advance_count():
     final = cfg.final_stage()
     a, b = uuid4(), uuid4()
     # Each source stage is complete but produced only one advancing entry (advance=2):
-    # the field must still be padded to the full advance count with a placeholder.
+    # the field must still be padded to the full advance count with NO_RUNNER.
     short_a = StageResult(complete=True, entries=[StageEntry(a, 300, 0, True)])
     short_b = StageResult(complete=True, entries=[StageEntry(b, 250, 0, True)])
     slots = fed_field(final, cfg, {"semi_a": short_a, "semi_b": short_b})
     assert [(s.user_id, s.label) for s in slots] == [
         (a, "Semi A"),
-        (None, "Top 2 of Semi A"),
+        (None, NO_RUNNER),
         (b, "Semi B"),
-        (None, "Top 2 of Semi B"),
+        (None, NO_RUNNER),
     ]
 
 
@@ -1635,3 +1636,92 @@ def test_forfeits_refuse_blank_repeated_and_withdrawn_names():
 def test_draw_locks_at_must_be_timezone_aware():
     with pytest.raises(ValidationError, match="draw_locks_at must be timezone-aware"):
         EventConfig.model_validate(_raw_config(draw_locks_at="2026-10-01T12:00:00"))
+
+
+def _one_group_then_final() -> EventConfig:
+    return EventConfig.model_validate(
+        {
+            "modes": [{"key": m, "label": m} for m in MODES],
+            "brackets": [
+                {
+                    "key": "main",
+                    "label": "Top 4",
+                    "entry": "all",
+                    "stages": [
+                        {
+                            "key": "group_a",
+                            "label": "Group A",
+                            "kind": "round",
+                            "races": 1,
+                            "seeds": [1, 2, 3, 4],
+                            "advance": 2,
+                        },
+                        {
+                            "key": "final",
+                            "label": "Final",
+                            "kind": "final",
+                            "races": 1,
+                            "date": FIRST.isoformat(),
+                            "from": ["group_a"],
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+
+
+def _walkover_resolved(cfg: EventConfig, now: datetime):
+    event = SimpleNamespace(starts_at=T0, qualifier_ends_at=CUT, ends_at=END, races=[])
+    return resolve_stages(event, cfg, now)
+
+
+def test_a_group_down_to_its_advancing_runners_goes_through_without_a_match():
+    cfg = _one_group_then_final()
+    u = [uuid4() for _ in range(4)]
+    now = CUT + timedelta(days=1)
+    resolved = _walkover_resolved(cfg, now)
+    out = {u[0], u[2]}
+    qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True, forfeits=out)
+    assert apply_walkovers(cfg, resolved, qualified, out) == {"group_a"}
+    result = resolved.results["group_a"]
+    assert result.complete
+    assert [(e.user_id, e.points, e.advances) for e in result.entries] == [
+        (u[1], 0, True),
+        (u[3], 0, True),
+    ]
+    # The final seats them, and is no longer held back by an undated group.
+    assert [s.user_id for s in fed_field(cfg.stage("final"), cfg, resolved.results)] == [
+        u[1],
+        u[3],
+    ]
+    assert next_stage_key(cfg, resolved, now) == "final"
+
+
+def test_a_group_left_with_one_runner_sends_them_alone():
+    cfg = _one_group_then_final()
+    u = [uuid4() for _ in range(4)]
+    resolved = _walkover_resolved(cfg, CUT + timedelta(days=1))
+    out = {u[0], u[1], u[2]}
+    qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True, forfeits=out)
+    apply_walkovers(cfg, resolved, qualified, out)
+    field = fed_field(cfg.stage("final"), cfg, resolved.results)
+    assert [(s.user_id, s.label) for s in field] == [(u[3], "Group A"), (None, NO_RUNNER)]
+
+
+def test_a_group_with_three_runners_still_plays():
+    cfg = _one_group_then_final()
+    u = [uuid4() for _ in range(4)]
+    resolved = _walkover_resolved(cfg, CUT + timedelta(days=1))
+    qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True, forfeits={u[0]})
+    assert apply_walkovers(cfg, resolved, qualified, {u[0]}) == set()
+    assert resolved.results["group_a"].complete is False
+
+
+def test_a_provisional_draw_never_walks_a_stage_over():
+    cfg = _one_group_then_final()
+    u = [uuid4() for _ in range(3)]  # seed 4 waits on the ladder: TBD
+    resolved = _walkover_resolved(cfg, CUT + timedelta(days=1))
+    out = {u[0], u[1]}
+    qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=False, forfeits=out)
+    assert apply_walkovers(cfg, resolved, qualified, out) == set()

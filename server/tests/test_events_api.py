@@ -167,15 +167,16 @@ async def _season_event(db: AsyncSession, slug: str, base: datetime) -> Event:
     )
 
 
-def _expected_next_stage_key() -> str | None:
+def _expected_next_stage_key(skipping: frozenset[str] = frozenset()) -> str | None:
     """The key of the first configured stage dated after the real wall clock.
 
     Mirrors the endpoint's own selection so the assertion stays correct
-    whenever this suite runs, rather than pinning it to today's date.
+    whenever this suite runs, rather than pinning it to today's date. Stages
+    that went through without a match (``skipping``) are never next.
     """
     now = datetime.now(UTC)
     for stage in CONFIG["stages"]:
-        if datetime.fromisoformat(stage["date"]) > now:
+        if stage["key"] not in skipping and datetime.fromisoformat(stage["date"]) > now:
             return stage["key"]
     return None
 
@@ -722,7 +723,11 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
     # The base id of the Uchigatana carried on std1, normalised from its runtime id.
     assert semi["results"][0]["signature_weapon"]["id"] == 9000000
 
-    expected_next = _expected_next_stage_key()
+    # Only two runners are ranked: semi_b (seeds 2 and 3) is short a seat and goes
+    # through without a match, so it is never the next evening.
+    walked = frozenset(s["key"] for s in data["stages"] if s["walkover"])
+    assert "semi_b" in walked
+    expected_next = _expected_next_stage_key(walked)
     if expected_next is None:
         assert data["next_stage"] is None
     else:
@@ -1557,3 +1562,48 @@ async def test_detail_lists_each_bracket_with_its_own_next_evening(test_client, 
         ("final", "main"),
         ("newcomers", "newcomers"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_detail_walks_a_stage_over_once_a_forfeit_leaves_it_short(test_client, async_session):
+    async with async_session() as db:
+        config = {**CONFIG, "phase_override": "cut", "forfeits": ["runner1"]}
+        event = await _event(db, config=config)
+        await _ranked_runners(db, event, 4, RaceStatus.FINISHED)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    semi_a = stages["semi_a"]
+    assert (semi_a["walkover"], semi_a["complete"]) == (True, True)
+    assert [
+        (e["user"]["twitch_username"], e["points"], e["advances"]) for e in semi_a["results"]
+    ] == [("runner4", 0, True)]
+    # Semi B lost nobody: it still plays, though both its runners go through.
+    assert (stages["semi_b"]["walkover"], stages["semi_b"]["complete"]) == (False, False)
+
+
+@pytest.mark.asyncio
+async def test_listing_next_stage_sees_the_stages_that_need_no_match(test_client, async_session):
+    now = datetime.now(UTC)
+    starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=8))
+    stages = [
+        {**s, "date": None} if s["key"] in ("semi_a", "semi_b") else s
+        for s in config["stages"]
+        if s["key"] != "newcomers"
+    ]
+    async with async_session() as db:
+        event = await _event(
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "stages": stages, "forfeits": ["runner1", "runner2"]},
+        )
+        await _ranked_runners(db, event, 4, RaceStatus.FINISHED)
+        await db.commit()
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    # Each undated semi is down to one runner: both go through without a
+    # match, so the dated final is the next evening on the home band.
+    assert summary["next_stage"]["key"] == "final"

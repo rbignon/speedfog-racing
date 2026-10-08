@@ -57,6 +57,7 @@ from speedfog_racing.services.event_service import (
     Slot,
     StageResult,
     announce_date,
+    apply_walkovers,
     bracket_draw,
     build_timeline,
     compute_ladder,
@@ -163,6 +164,37 @@ async def list_events(
         if phase == "upcoming" and players < MIN_UPCOMING_PLAYERS:
             players, previews = 0, []
 
+        # From the cut until the playoffs are over, each bracket's qualified
+        # runners. A newcomers bracket draws on the newcomer flags: the one
+        # query the summary runs beyond the load, only in these phases and
+        # only for an event that has such a bracket.
+        brackets: list[EventSummaryBracketResponse] = []
+        if phase in ("cut", "playoffs"):
+            newcomers: dict[UUID, bool] = {}
+            if any(b.entry == "newcomers" for b in config.brackets):
+                finished_before = await count_finished_before(
+                    db, set(users), announce_date(event, config)
+                )
+                newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
+            ladder_final = bool(resolved.qualifier) and all(
+                r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
+            )
+            forfeits = resolve_withdrawn(config.forfeits, users)
+            qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
+            apply_walkovers(config, resolved, qualified, forfeits)
+            for bracket, seated in bracket_draw(config, qualified):
+                brackets.append(
+                    EventSummaryBracketResponse(
+                        key=bracket.key,
+                        label=bracket.label,
+                        qualified=[
+                            UserResponse.model_validate(users[user_id])
+                            for user_id in seated
+                            if user_id in users
+                        ],
+                    )
+                )
+
         live = None
         running = next(
             (
@@ -198,41 +230,6 @@ async def list_events(
             leader = next(iter(results[final.key].entries), None)
             if leader is not None and leader.user_id in users:
                 champion = UserResponse.model_validate(users[leader.user_id])
-
-        # From the cut until the playoffs are over, each bracket's qualified
-        # runners. A newcomers bracket draws on the newcomer flags: the one
-        # query the summary runs beyond the load, only in these phases and
-        # only for an event that has such a bracket.
-        brackets: list[EventSummaryBracketResponse] = []
-        if phase in ("cut", "playoffs"):
-            newcomers: dict[UUID, bool] = {}
-            if any(b.entry == "newcomers" for b in config.brackets):
-                finished_before = await count_finished_before(
-                    db, set(users), announce_date(event, config)
-                )
-                newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-            ladder_final = bool(resolved.qualifier) and all(
-                r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
-            )
-            qualified = compute_qualified(
-                ladder,
-                config,
-                newcomers,
-                ladder_final,
-                resolve_withdrawn(config.forfeits, users),
-            )
-            for bracket, seated in bracket_draw(config, qualified):
-                brackets.append(
-                    EventSummaryBracketResponse(
-                        key=bracket.key,
-                        label=bracket.label,
-                        qualified=[
-                            UserResponse.model_validate(users[user_id])
-                            for user_id in seated
-                            if user_id in users
-                        ],
-                    )
-                )
 
         summaries.append(
             EventSummaryResponse(
@@ -307,6 +304,7 @@ async def get_event(
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
     forfeits = set(resolve_withdrawn(config.forfeits, users))
     qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
+    walkovers = apply_walkovers(config, resolved, qualified, forfeits)
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties
     # between two RUNNING stage races resolve deterministically.
@@ -363,6 +361,7 @@ async def get_event(
         races: list[tuple[Slot, Race]],
         result: StageResult,
         field: list[EventFieldSlotResponse],
+        walkover: bool = False,
     ) -> EventStageResponse:
         return EventStageResponse(
             key=stage.key,
@@ -376,6 +375,7 @@ async def get_event(
             advance=stage.advance if isinstance(stage, EventStage) else None,
             races_expected=stage.races,
             complete=result.complete,
+            walkover=walkover,
             modes=stage.modes,
             races=[
                 EventStageRaceResponse(
@@ -527,6 +527,7 @@ async def get_event(
                 races=stage_races[stage.key],
                 result=results[stage.key],
                 field=field_of(stage.key),
+                walkover=stage.key in walkovers,
             )
             for bracket in config.brackets
             for stage in bracket.stages

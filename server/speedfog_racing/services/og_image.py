@@ -25,6 +25,7 @@ from speedfog_racing.schemas import EVENT_PHASES, EventConfig
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MIN_UPCOMING_PLAYERS,
+    apply_walkovers,
     bracket_draw,
     compute_ladder,
     compute_qualified,
@@ -569,13 +570,9 @@ def summarize_event(
     )
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
-    qualified = compute_qualified(
-        ladder,
-        config,
-        newcomers,
-        ladder_final,
-        resolve_withdrawn(config.forfeits, users),
-    )
+    forfeits = resolve_withdrawn(config.forfeits, users)
+    qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
+    apply_walkovers(config, resolved, qualified, forfeits)
 
     # The ladder already runs best first, then the runners it could not rank;
     # everyone else joined a race without ever scoring and closes the row.

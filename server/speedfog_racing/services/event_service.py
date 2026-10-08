@@ -454,6 +454,58 @@ def bracket_draw(
     return draw
 
 
+def apply_walkovers(
+    config: EventConfig,
+    resolved: ResolvedStages,
+    qualified: Mapping[str, list[QualifiedSlot]],
+    forfeits: Collection[UUID] = (),
+) -> set[str]:
+    """Complete in ``resolved.results`` every stage that needs no match; name them.
+
+    A stage other than a final, with no race attached, whose field is settled
+    (every seat held or past the end of a final ladder; every source
+    complete), is short of runners (forfeits or empty seats) and keeps no
+    more of them than it sends on, is complete: they all advance, without
+    points, by seed (a fed stage keeps its field's order). A stage whose
+    whole field advances by design still plays: nobody is missing. Stages run in
+    bracket order, so a stage completed here feeds the next. Call it right after
+    the draw, before anything reads stage completeness (the current and next
+    stage, the fed fields).
+    """
+    out = set(forfeits)
+    walkovers: set[str] = set()
+    for stage in config.stages:
+        if stage.kind == "final" or stage.advance is None or resolved.stage_races[stage.key]:
+            continue
+        if stage.seeds is not None:
+            slots = qualified.get(stage.key, [])
+            if any(s.user_id is None and s.note != NO_RUNNER for s in slots):
+                continue
+            seats = len(slots)
+            present = [
+                s.user_id
+                for s in sorted(slots, key=lambda s: s.seed or 0)
+                if s.user_id is not None and s.user_id not in out
+            ]
+        else:
+            if not all(resolved.results[key].complete for key in stage.from_ or []):
+                continue
+            fed = fed_field(stage, config, resolved.results)
+            seats = len(fed)
+            present = [s.user_id for s in fed if s.user_id is not None and s.user_id not in out]
+        if len(present) >= seats or len(present) > stage.advance:
+            continue
+        resolved.results[stage.key] = StageResult(
+            complete=True,
+            entries=[
+                StageEntry(user_id=user_id, points=0, igt_total=0, advances=True)
+                for user_id in present
+            ],
+        )
+        walkovers.add(stage.key)
+    return walkovers
+
+
 # --- stages -----------------------------------------------------------------
 
 
@@ -584,7 +636,7 @@ def fed_field(
                 if e.advances
             ]
             decided.extend(
-                FieldSlot(user_id=None, label=placeholder) for _ in range(count - len(decided))
+                FieldSlot(user_id=None, label=NO_RUNNER) for _ in range(count - len(decided))
             )
             slots.extend(decided)
         else:

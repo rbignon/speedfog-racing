@@ -212,6 +212,14 @@ reporting the stored row after the cut, when the ladder no longer lists it.
 The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
 advancing runners (its `advance`) then fill the stage it feeds automatically.
+A stage other than a final is also complete, with no race attached, when its
+field is settled (every seat held or past the end of a final ladder, every
+source complete), short of runners (forfeits or empty seats) and keeps no more
+of them than its `advance`: they all go through without a match, by seed (a
+fed stage keeps its field's order), with no points, and the stage reads
+`walkover`. This runs right after the draw, so the stage it feeds seats them
+and can become the next evening. A stage whose whole field advances by design
+still plays. A place a complete source cannot fill reads "No runner".
 A bracket is complete when its final is (its last stage, without a final).
 
 The admin events list computes `phase` without grouping the races by stage, so
