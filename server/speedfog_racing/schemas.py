@@ -1046,6 +1046,20 @@ class EventStage(BaseModel):
     def moment(self) -> datetime | None:
         return _stage_moment(self.date)
 
+    @property
+    def sources(self) -> list[tuple[str, int | None]]:
+        """``from`` parsed: (stage key, place), the place None for a whole stage."""
+        parsed: list[tuple[str, int | None]] = []
+        for item in self.from_ or []:
+            key, sep, place = item.partition(":")
+            parsed.append((key, int(place) if sep else None))
+        return parsed
+
+    @property
+    def source_keys(self) -> list[str]:
+        """The stages this one takes runners from, each once, in ``from`` order."""
+        return list(dict.fromkeys(key for key, _ in self.sources))
+
     @model_validator(mode="after")
     def _check_field_source(self) -> "EventStage":
         if self.seeds is not None:
@@ -1055,6 +1069,10 @@ class EventStage(BaseModel):
                 raise ValueError("seeds must be distinct")
         if self.from_ is not None and not self.from_:
             raise ValueError("from must name at least one stage")
+        for item in self.from_ or []:
+            key, sep, place = item.partition(":")
+            if not key or (sep and not (place.isdigit() and int(place) >= 1)):
+                raise ValueError(f"from items are a stage key or key:place, got {item!r}")
         if (self.seeds is None) == (self.from_ is None):
             raise ValueError("a stage takes its field from exactly one of seeds or from")
         return self
@@ -1210,9 +1228,10 @@ class EventConfig(BaseModel):
                 f"{bracket.key}: seeds must cover its pool from 1 without a gap, missing: {missing}"
             )
         position = {s.key: i for i, s in enumerate(stages)}
-        takers: dict[str, list[str]] = {}
+        # source key -> the places taken from it (None: all of them)
+        taken: dict[str, list[tuple[str, int | None]]] = {}
         for stage in stages:
-            for source in stage.from_ or []:
+            for source, place in stage.sources:
                 if source not in position and self.stage(source) is not None:
                     raise ValueError(
                         f"from must name a stage of its own bracket ({stage.key} names {source!r})"
@@ -1221,20 +1240,39 @@ class EventConfig(BaseModel):
                     raise ValueError(
                         f"from must name stages placed before {stage.key}, got {source!r}"
                     )
-                takers.setdefault(source, []).append(stage.key)
+                taken.setdefault(source, []).append((stage.key, place))
         for stage in stages:
-            taken_by = takers.get(stage.key, [])
-            if len(taken_by) > 1:
-                raise ValueError(f"{stage.key} feeds more than one stage: {taken_by}")
-            if taken_by and stage.advance is None:
-                raise ValueError(f"{stage.key} feeds {taken_by[0]} and needs advance")
-            if not taken_by and stage.advance is not None:
+            refs = taken.get(stage.key, [])
+            if refs and stage.advance is None:
+                raise ValueError(f"{stage.key} feeds {refs[0][0]} and needs advance")
+            if not refs and stage.advance is not None:
                 raise ValueError(f"{stage.key} has advance but no stage takes from it")
             if stage.advance is not None and stage.advance > self.field_size(stage):
                 raise ValueError(
                     f"{stage.key}: advance {stage.advance} exceeds its field of "
                     f"{self.field_size(stage)}"
                 )
+            if stage.advance is None or not refs:
+                continue
+            # Every place it sends on goes to exactly one seat: a whole-stage
+            # item takes them all, a key:place item one.
+            places = [
+                p
+                for _, place in refs
+                for p in ([place] if place is not None else range(1, stage.advance + 1))
+            ]
+            missing_places = sorted({p for p in places if p > stage.advance})
+            if missing_places:
+                raise ValueError(
+                    f"{stage.key} sends on {stage.advance}, "
+                    f"places {', '.join(map(str, missing_places))} do not exist"
+                )
+            twice = sorted({p for p in places if places.count(p) > 1})
+            if twice:
+                raise ValueError(f"{stage.key}: places taken more than once: {twice}")
+            untaken = sorted(set(range(1, stage.advance + 1)) - set(places))
+            if untaken:
+                raise ValueError(f"{stage.key}: places nobody takes: {untaken}")
         if sum(1 for s in stages if s.kind == "final") > 1:
             raise ValueError(f"{bracket.key}: at most one final")
         # A stage without a date is scheduled with its players: only the dated
@@ -1260,11 +1298,15 @@ class EventConfig(BaseModel):
         return self.brackets[0].final_stage() if self.brackets else None
 
     def field_size(self, stage: EventStage) -> int:
-        """Runners a stage seats: its seeds, or what its sources send on."""
+        """Runners a stage seats: its seeds, or one per place its sources send it."""
         if stage.seeds is not None:
             return len(stage.seeds)
-        sources = [self.stage(key) for key in stage.from_ or []]
-        return sum(source.advance or 0 for source in sources if source is not None)
+        total = 0
+        for key, place in stage.sources:
+            source = self.stage(key)
+            if source is not None:
+                total += 1 if place is not None else (source.advance or 0)
+        return total
 
 
 class EventTimelineStopResponse(BaseModel):

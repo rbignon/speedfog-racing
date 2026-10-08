@@ -42,7 +42,10 @@ evening), `modes` (display labels, not pool keys: one chip per race in the
 bracket boxes and qualified groups, linking to the race page once a race is
 attached, and the name of a race placeholder), and where its runners come
 from: `seeds` (positions in its bracket's pool) or `from` (earlier stages of
-the same bracket it takes runners from). `advance` sits on the stage that
+the same bracket it takes runners from, each item a stage key, all its
+advancing runners by place, or `key:place`, one place: `group_a:1` is Group
+A's winner, so the places of a round can be dispatched crosswise into the
+next). `advance` sits on the stage that
 sends runners on: how many of its runners go to the stage naming it in
 `from` (the top 2 of each group of a round, of each quarter, of each semi).
 The kind only matters for display, except `final` (its winner is its
@@ -74,7 +77,7 @@ ascend; `qualifier_ends_at` is at or before the earliest dated stage;
 
 Validation also rejects: a stage with both or neither of `seeds` and `from`,
 a `from` naming a stage placed later in its bracket, an unknown stage or a
-stage of another bracket, a stage feeding more than one stage, `advance` on
+stage of another bracket, a place taken by no seat or by two (a whole stage counts as all its places), a place beyond its stage's `advance`, a `from` item that is neither a key nor `key:place`, `advance` on
 a stage nothing takes from or missing on one something does, an `advance`
 larger than the field it comes from, a second final in a bracket, seed
 numbers reused within a bracket (several brackets reuse them freely), a

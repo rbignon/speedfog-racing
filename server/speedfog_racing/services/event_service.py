@@ -488,7 +488,7 @@ def apply_walkovers(
                 if s.user_id is not None and s.user_id not in out
             ]
         else:
-            if not all(resolved.results[key].complete for key in stage.from_ or []):
+            if not all(resolved.results[key].complete for key in stage.source_keys):
                 continue
             fed = fed_field(stage, config, resolved.results)
             seats = len(fed)
@@ -1000,7 +1000,7 @@ def next_stage_key(
     """
 
     def waits_on_undated(stage: EventStage) -> bool:
-        for key in stage.from_ or []:
+        for key in stage.source_keys:
             source = config.stage(key)
             if source is None:
                 continue

@@ -522,7 +522,7 @@ async def get_event(
                 stage,
                 kind=stage.kind,
                 bracket=bracket.key,
-                sources=stage.from_ or [],
+                sources=stage.source_keys,
                 date=resolved.dates[stage.key],
                 races=stage_races[stage.key],
                 result=results[stage.key],

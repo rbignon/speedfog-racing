@@ -298,10 +298,10 @@ def test_from_only_names_earlier_stages():
         _valid(_config(stages=stages))
 
 
-def test_a_stage_feeds_one_stage_at_most():
+def test_a_whole_stage_cannot_feed_two_stages():
     stages = _quarters()["stages"]
     stages[5]["from"] = ["quarter_c", "quarter_a"]  # quarter_a already feeds semi_a
-    with pytest.raises(ValidationError, match="more than one stage"):
+    with pytest.raises(ValidationError, match="taken more than once"):
         _valid(_config(stages=stages))
 
 
@@ -645,3 +645,58 @@ def test_upsert_reads_the_window_against_the_earliest_and_latest_stage():
         EventUpsertRequest.model_validate(dict(doc, qualifier_ends_at="2026-10-26T08:00:00+00:00"))
     with pytest.raises(ValidationError, match="last dated stage"):
         EventUpsertRequest.model_validate(dict(doc, ends_at="2026-10-31T00:00:00+00:00"))
+
+
+def _crossed(**semis):
+    """``_quarters`` with each semi taking one place of every quarter."""
+    doc = bracketed(_quarters())
+    stages = {s["key"]: s for s in stages_of(doc)}
+    stages["semi_a"]["from"] = semis.get(
+        "semi_a", ["quarter_a:1", "quarter_b:2", "quarter_c:1", "quarter_d:2"]
+    )
+    stages["semi_b"]["from"] = semis.get(
+        "semi_b", ["quarter_a:2", "quarter_b:1", "quarter_c:2", "quarter_d:1"]
+    )
+    return doc
+
+
+def test_semis_can_take_one_place_of_every_quarter():
+    cfg = EventConfig.model_validate(_crossed())
+    semi_a = cfg.stage("semi_a")
+    assert semi_a is not None
+    assert semi_a.sources == [
+        ("quarter_a", 1),
+        ("quarter_b", 2),
+        ("quarter_c", 1),
+        ("quarter_d", 2),
+    ]
+    assert semi_a.source_keys == ["quarter_a", "quarter_b", "quarter_c", "quarter_d"]
+    assert cfg.field_size(semi_a) == 4
+
+
+def test_a_place_must_exist_and_be_taken_exactly_once():
+    with pytest.raises(ValidationError, match="places 3 do not exist"):
+        EventConfig.model_validate(
+            _crossed(semi_a=["quarter_a:1", "quarter_b:2", "quarter_c:1", "quarter_d:3"])
+        )
+    with pytest.raises(ValidationError, match="taken more than once"):
+        EventConfig.model_validate(
+            _crossed(semi_a=["quarter_a:2", "quarter_b:2", "quarter_c:1", "quarter_d:2"])
+        )
+    with pytest.raises(ValidationError, match="nobody takes"):
+        EventConfig.model_validate(_crossed(semi_a=["quarter_b:2", "quarter_c:1", "quarter_d:2"]))
+
+
+def test_a_whole_stage_and_one_of_its_places_overlap():
+    with pytest.raises(ValidationError, match="taken more than once"):
+        EventConfig.model_validate(
+            _crossed(semi_a=["quarter_a", "quarter_b:2", "quarter_c:1", "quarter_d:2"])
+        )
+
+
+def test_a_from_item_is_a_key_or_a_key_and_a_place():
+    for bad in ("quarter_a:0", "quarter_a:x", ":1"):
+        with pytest.raises(ValidationError, match="key or key:place"):
+            EventConfig.model_validate(
+                _crossed(semi_a=[bad, "quarter_b:2", "quarter_c:1", "quarter_d:2"])
+            )
