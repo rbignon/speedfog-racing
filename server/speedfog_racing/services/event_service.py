@@ -210,18 +210,24 @@ class LadderEntry:
     igt_total: int
     provisional: bool
     rank: int | None = None
+    withdrawn: bool = False
 
 
 def compute_ladder(
     modes: list[str],
     qualifier_races: list[tuple[Slot, Race]],
     signed_up: Iterable[UUID] = (),
+    struck: Collection[UUID] = (),
 ) -> list[LadderEntry]:
     """Best seed per mode, summed over modes; ranked entries first, then unranked.
 
     ``signed_up`` are the runners who said they are in, in signup order: the
     ones without a scoring run close the list, without rank, score or counted
     mode. A signed-up runner who scored is already listed through their run.
+
+    ``struck`` are the runners who withdrew before the draw locked: they keep
+    their place in the list, unranked and flagged ``withdrawn``, and the others
+    are ranked as if they were absent, so the numbering carries on past them.
     """
     # user -> mode -> (points, finished, ranking igt_ms, provisional, slot)
     best: dict[UUID, dict[str, tuple[int, bool, int, bool, str]]] = {}
@@ -275,16 +281,22 @@ def compute_ladder(
         (e for e in entries if e.total is not None),
         key=lambda e: (-(e.total or 0), -e.finished_seeds, e.igt_total),
     )
+    struck_ids = set(struck)
     rank = 0
-    for i, entry in enumerate(ranked_entries):
-        previous = ranked_entries[i - 1] if i else None
+    counted: list[LadderEntry] = []
+    for entry in ranked_entries:
+        if entry.user_id in struck_ids:
+            entry.withdrawn = True
+            continue
+        previous = counted[-1] if counted else None
         if previous is None or (entry.total, entry.finished_seeds, entry.igt_total) != (
             previous.total,
             previous.finished_seeds,
             previous.igt_total,
         ):
-            rank = i + 1
+            rank = len(counted) + 1
         entry.rank = rank
+        counted.append(entry)
     unranked = sorted(
         (e for e in entries if e.total is None), key=lambda e: (-e.modes_scored, -e.partial)
     )
@@ -307,6 +319,8 @@ def compute_ladder(
                 provisional=False,
             )
         )
+    for entry in (*unranked, *signups):
+        entry.withdrawn = entry.user_id in struck_ids
     return ranked_entries + unranked + signups
 
 

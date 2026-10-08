@@ -281,6 +281,52 @@ def test_ladder_takes_best_seed_per_mode_and_requires_every_mode():
     assert ladder[0].user_id == a and ladder[-1].user_id == b
 
 
+def _one_seed_each(*times: int):
+    """One seed per mode, each runner finishing both in the given time."""
+    users = [uuid4() for _ in times]
+    std = _race([_participant(u, ParticipantStatus.FINISHED, t) for u, t in zip(users, times)])
+    boss = _race([_participant(u, ParticipantStatus.FINISHED, t) for u, t in zip(users, times)])
+    qualifier = [
+        (parse_slot("qualifier:standard:1"), std),
+        (parse_slot("qualifier:boss_rush:1"), boss),
+    ]
+    return users, qualifier
+
+
+def test_a_struck_runner_keeps_their_place_unranked_and_the_rest_move_up():
+    users, qualifier = _one_seed_each(10, 20, 30, 40)
+    ladder = compute_ladder(MODES, qualifier, struck=[users[1]])
+    assert [e.user_id for e in ladder] == users
+    assert [(e.rank, e.withdrawn) for e in ladder] == [
+        (1, False),
+        (None, True),
+        (2, False),
+        (3, False),
+    ]
+
+
+def test_a_tie_below_a_struck_runner_keeps_sharing_its_rank():
+    # c and d finish level; once b is struck they are both 2nd, e is 4th.
+    users, qualifier = _one_seed_each(10, 20, 30, 30, 40)
+    ladder = compute_ladder(MODES, qualifier, struck=[users[1]])
+    assert [e.rank for e in ladder] == [1, None, 2, 2, 4]
+
+
+def test_a_struck_runner_without_a_full_ladder_row_is_still_flagged():
+    a, b = uuid4(), uuid4()
+    std = _race(
+        [
+            _participant(a, ParticipantStatus.FINISHED, 10),
+            _participant(b, ParticipantStatus.FINISHED, 20),
+        ]
+    )
+    qualifier = [(parse_slot("qualifier:standard:1"), std)]
+    ladder = compute_ladder(MODES, qualifier, struck=[b])
+    by_user = {e.user_id: e for e in ladder}
+    assert by_user[b].withdrawn and by_user[b].rank is None
+    assert not by_user[a].withdrawn
+
+
 def test_ladder_breaks_total_ties_on_counted_igt():
     a, b = uuid4(), uuid4()
     # Same points everywhere (a shared 1st on the standard seed, a solo 1st each on
