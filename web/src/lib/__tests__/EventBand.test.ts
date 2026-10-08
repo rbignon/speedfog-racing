@@ -19,6 +19,7 @@ function summaryWith(partial: Partial<EventSummary>): EventSummary {
     next_stage: null,
     live: null,
     champion: null,
+    brackets: [],
     ...partial,
   };
 }

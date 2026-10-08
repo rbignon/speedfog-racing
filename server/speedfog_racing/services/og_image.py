@@ -327,7 +327,7 @@ async def render_daily_og(race: Race, *, cache_dir: Path) -> bytes:
 EVENT_STATUS_LABEL = {
     "upcoming": "Upcoming",
     "qualifier": "Qualifier open",
-    "cut": "Qualifier closed",
+    "cut": "Playoffs incoming",
     "playoffs": "Playoffs",
     "finished": "Finished",
 }
@@ -579,6 +579,8 @@ def summarize_event(
             [
                 kind,
                 phase,
+                # A relabelled phase re-renders its cards, which the phase alone would not.
+                EVENT_STATUS_LABEL[phase],
                 lockup,
                 headline or "",
                 caption or "",

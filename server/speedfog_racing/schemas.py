@@ -1445,12 +1445,20 @@ class EventLiveRaceResponse(BaseModel):
     races_expected: int
 
 
+class EventSummaryBracketResponse(BaseModel):
+    key: str
+    label: str
+    # The bracket's qualified runners in seed order; a seat nobody holds is left out.
+    qualified: list[UserResponse]
+
+
 class EventSummaryResponse(BaseModel):
     """An event on the bill, as the home page and the navbar show it.
 
     The phase, the player count and previews under the Open Graph card's rule
     (the ladder orders them, best first), the next stage, the live playoff
-    race and the champion once the final is complete.
+    race, the champion once the final is complete, and from the cut until the
+    playoffs are over each bracket's qualified runners.
     """
 
     slug: str
@@ -1467,6 +1475,7 @@ class EventSummaryResponse(BaseModel):
     next_stage: EventNextStageResponse | None
     live: EventLiveRaceResponse | None
     champion: UserResponse | None
+    brackets: list[EventSummaryBracketResponse] = []
 
 
 class EventUpsertRequest(BaseModel):

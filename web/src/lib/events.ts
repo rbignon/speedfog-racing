@@ -7,6 +7,7 @@ import type {
   EventQualifiedGroup,
   EventStage,
   EventSummary,
+  EventSummaryBracket,
   User,
 } from "$lib/api";
 
@@ -607,6 +608,8 @@ export interface EventBandState {
   signedUp: boolean;
   /** Someone is in and the event can still be joined: stack their avatars after the line. */
   showPlayers: boolean;
+  /** From the cut until the playoffs are over: one row of qualified avatars per bracket. */
+  brackets: EventSummaryBracket[];
 }
 
 /**
@@ -638,8 +641,11 @@ export function eventBand(
   const joinable = {
     signedUp: event.my_signup,
     showPlayers: event.players > 0,
+    brackets: [],
   };
-  const closed = { signedUp: false, showPlayers: false };
+  const closed = { signedUp: false, showPlayers: false, brackets: [] };
+  // From the cut on, the field is known: each bracket's qualified line up.
+  const drawn = { ...closed, brackets: event.brackets };
   switch (event.phase) {
     case "upcoming":
       return {
@@ -657,12 +663,12 @@ export function eventBand(
       };
     case "cut":
       return {
-        signal: { cls: "signal-active", text: "Qualifier closed" },
+        signal: { cls: "signal-active", text: "Playoffs incoming" },
         line: event.next_stage
           ? `${event.next_stage.label} on ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
           : null,
         actions: [pageAction("primary")],
-        ...closed,
+        ...drawn,
       };
     case "playoffs": {
       const live = event.live;
@@ -686,7 +692,7 @@ export function eventBand(
                 },
             pageAction("outline"),
           ],
-          ...closed,
+          ...drawn,
         };
       }
       return {
@@ -695,7 +701,7 @@ export function eventBand(
           ? `Next: ${event.next_stage.label} · ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
           : null,
         actions: [pageAction("primary")],
-        ...closed,
+        ...drawn,
       };
     }
     case "finished":

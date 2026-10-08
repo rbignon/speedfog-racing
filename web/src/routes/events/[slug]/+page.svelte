@@ -135,7 +135,7 @@
       case "qualifier":
         return { cls: "signal-running", text: "Qualifier open" };
       case "cut":
-        return { cls: "signal-active", text: "Qualifier closed" };
+        return { cls: "signal-active", text: "Playoffs incoming" };
       case "playoffs":
         return { cls: "signal-running", text: "Playoffs" };
       case "finished":

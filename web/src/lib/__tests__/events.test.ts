@@ -1402,9 +1402,40 @@ describe("eventBand", () => {
       next_stage: null,
       live: null,
       champion: null,
+      brackets: [],
       ...partial,
     } as EventSummary;
   }
+
+  it("lines up each bracket's qualified from the cut until the playoffs are over", () => {
+    const brackets = [
+      { key: "main", label: "Top 32", qualified: [{ id: "u1" } as User] },
+      { key: "newcomers", label: "Newcomers", qualified: [] },
+    ];
+    const live = {
+      race: { id: "r7", casters: [] },
+      stage_label: "Group A",
+      index: 1,
+      races_expected: 3,
+    } as unknown as EventSummary["live"];
+    for (const partial of [
+      { phase: "cut" as const },
+      { phase: "playoffs" as const },
+      { phase: "playoffs" as const, live },
+    ]) {
+      expect(
+        eventBand(summaryWith({ ...partial, brackets }), fmt).brackets,
+        JSON.stringify(partial.phase),
+      ).toBe(brackets);
+    }
+    // The qualifier shows who is in instead, the finished band its champion.
+    for (const phase of ["upcoming", "qualifier", "finished"] as const) {
+      expect(
+        eventBand(summaryWith({ phase, brackets }), fmt).brackets,
+        phase,
+      ).toEqual([]);
+    }
+  });
 
   it("advertises the opening while upcoming", () => {
     const young = eventBand(summaryWith({}), fmt);
@@ -1483,7 +1514,7 @@ describe("eventBand", () => {
       }),
       fmt,
     );
-    expect(state.signal.text).toBe("Qualifier closed");
+    expect(state.signal.text).toBe("Playoffs incoming");
     expect(state.line).toBe("Semi A on @2026-10-04T19:00:00Z");
     expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
   });

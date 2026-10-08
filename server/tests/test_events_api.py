@@ -1315,6 +1315,8 @@ async def test_listing_summary_during_the_qualifier(test_client, async_session):
     assert summary["next_stage"]["key"] == "semi_a"
     assert summary["live"] is None
     assert summary["champion"] is None
+    # Nobody is qualified while the qualifier runs.
+    assert summary["brackets"] == []
     assert as_aaa[0]["my_signup"] is True
 
 
@@ -1346,6 +1348,73 @@ async def test_listing_hides_a_young_upcoming_count(test_client, async_session):
         assert [u["twitch_username"] for u in summary["player_previews"]] == [
             f"r{i}" for i in range(8)
         ]
+
+
+@pytest.mark.asyncio
+async def test_listing_lists_each_brackets_qualified_once_the_qualifier_is_over(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        # The qualifier closed yesterday, Semi A plays in three days: the cut.
+        event = await _season_event(db, "season-one", now - timedelta(days=8))
+        await _ranked_runners(db, event, 7, RaceStatus.FINISHED)
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    assert summary["phase"] == "cut"
+    rows = [
+        (b["key"], b["label"], [u["twitch_username"] for u in b["qualified"]])
+        for b in summary["brackets"]
+    ]
+    # Seed order in each bracket; the newcomers' pool starts past the top 4.
+    assert rows == [
+        ("main", "Playoffs", ["runner1", "runner2", "runner3", "runner4"]),
+        ("newcomers", "Newcomers", ["runner5", "runner6"]),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_listing_rows_follow_the_events_own_draw_through_a_call_up(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=12))
+    async with async_session() as db:
+        # Semi A was dated yesterday: the playoffs. Seed 2 gave up their place.
+        event = await _event(
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "withdrawn": ["runner2"]},
+        )
+        await _ranked_runners(db, event, 7, RaceStatus.FINISHED)
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+        detail = (await client.get("/api/events/season-one")).json()
+    assert summary["phase"] == "playoffs"
+    rows = {b["key"]: [u["twitch_username"] for u in b["qualified"]] for b in summary["brackets"]}
+    # runner5 takes the seat under their own position, so sorts after the
+    # seeds; runner2, drawn into the top 4 before withdrawing, never reaches
+    # the newcomers' pool, nor does runner5, called up.
+    assert rows == {
+        "main": ["runner1", "runner3", "runner4", "runner5"],
+        "newcomers": ["runner6", "runner7"],
+    }
+    # The same seats as the event page's own draw.
+    bracket_of = {s["key"]: s["bracket"] for s in detail["stages"]}
+    seats: dict[str, list[tuple[int, str]]] = {}
+    for group in detail["qualified"]["groups"]:
+        for entry in group["entries"]:
+            if entry["user"]:
+                seats.setdefault(bracket_of[group["stage_key"]], []).append(
+                    (entry["seed"], entry["user"]["twitch_username"])
+                )
+    assert rows == {key: [name for _, name in sorted(row)] for key, row in seats.items()}
 
 
 @pytest.mark.asyncio

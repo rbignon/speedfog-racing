@@ -44,6 +44,7 @@ from speedfog_racing.schemas import (
     EventStageEntryResponse,
     EventStageRaceResponse,
     EventStageResponse,
+    EventSummaryBracketResponse,
     EventSummaryResponse,
     EventTimelineStopResponse,
     EventWeaponResponse,
@@ -196,6 +197,56 @@ async def list_events(
             if leader is not None and leader.user_id in users:
                 champion = UserResponse.model_validate(users[leader.user_id])
 
+        # From the cut until the playoffs are over, each bracket's qualified
+        # runners. A newcomers bracket draws on the newcomer flags: the one
+        # query the summary runs beyond the load, only in these phases and
+        # only for an event that has such a bracket.
+        brackets: list[EventSummaryBracketResponse] = []
+        if phase in ("cut", "playoffs"):
+            newcomers: dict[UUID, bool] = {}
+            if any(b.entry == "newcomers" for b in config.brackets):
+                finished_before = await count_finished_before(
+                    db, set(users), announce_date(event, config)
+                )
+                newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
+            ladder_final = bool(resolved.qualifier) and all(
+                r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
+            )
+            started = {
+                key
+                for key, races in stage_races.items()
+                if any(r.status != RaceStatus.SETUP for _, r in races)
+            }
+            qualified = compute_qualified(
+                ladder,
+                config,
+                newcomers,
+                resolve_withdrawn(config.withdrawn, users),
+                ladder_final,
+                started,
+            )
+            for bracket in config.brackets:
+                seats = sorted(
+                    (
+                        slot
+                        for stage in bracket.stages
+                        for slot in qualified.get(stage.key, [])
+                        if slot.user_id in users
+                    ),
+                    key=lambda slot: slot.seed or 0,
+                )
+                brackets.append(
+                    EventSummaryBracketResponse(
+                        key=bracket.key,
+                        label=bracket.label,
+                        qualified=[
+                            UserResponse.model_validate(users[slot.user_id])
+                            for slot in seats
+                            if slot.user_id is not None
+                        ],
+                    )
+                )
+
         summaries.append(
             EventSummaryResponse(
                 slug=event.slug,
@@ -212,6 +263,7 @@ async def list_events(
                 next_stage=next_stage,
                 live=live,
                 champion=champion,
+                brackets=brackets,
             )
         )
     summaries.sort(key=lambda s: (s.phase == "finished", s.starts_at))

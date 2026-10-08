@@ -1,8 +1,9 @@
 <script lang="ts">
   // The event on the bill, as the home page and the dashboard feature it:
   // the event page's lockup, a phase signal with one line of state, and the
-  // buttons; the lockup and buttons lead there (or to the live race). Signing
-  // up stays on the event page, which owns the Twitch intent flow.
+  // buttons; the lockup and buttons lead there (or to the live race), and from
+  // the cut on a row of qualified avatars per bracket. Signing up stays on the
+  // event page, which owns the Twitch intent flow.
   import type { EventSummary, User } from "$lib/api";
   import { eventBand, formatEventDate } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
@@ -17,6 +18,24 @@
   const nameOf = (user: User) =>
     user.twitch_display_name || user.twitch_username;
 </script>
+
+{#snippet avatar(user: User)}
+  {#if user.twitch_avatar_url}
+    <img
+      src={user.twitch_avatar_url}
+      alt={nameOf(user)}
+      title={nameOf(user)}
+      class="avatar"
+    />
+  {:else}
+    <span
+      class="avatar avatar-placeholder"
+      role="img"
+      aria-label={nameOf(user)}
+      title={nameOf(user)}>{nameOf(user).charAt(0).toUpperCase()}</span
+    >
+  {/if}
+{/snippet}
 
 <section class="band" aria-label="Current event">
   <div class="band-inner">
@@ -44,22 +63,7 @@
               : 's'} in"
           >
             {#each event.player_previews as user (user.id)}
-              {#if user.twitch_avatar_url}
-                <img
-                  src={user.twitch_avatar_url}
-                  alt={nameOf(user)}
-                  title={nameOf(user)}
-                  class="avatar"
-                />
-              {:else}
-                <span
-                  class="avatar avatar-placeholder"
-                  role="img"
-                  aria-label={nameOf(user)}
-                  title={nameOf(user)}
-                  >{nameOf(user).charAt(0).toUpperCase()}</span
-                >
-              {/if}
+              {@render avatar(user)}
             {/each}
             {#if overflowCount > 0}
               <span class="avatar avatar-overflow">+{overflowCount}</span>
@@ -67,6 +71,22 @@
           </div>
         {/if}
       </div>
+      {#each state.brackets as bracket (bracket.key)}
+        {#if bracket.qualified.length > 0}
+          <div class="bracket-row">
+            <span class="bracket-label">{bracket.label}</span>
+            <div
+              class="avatar-stack"
+              role="group"
+              aria-label="{bracket.label}: {bracket.qualified.length} qualified"
+            >
+              {#each bracket.qualified as user (user.id)}
+                {@render avatar(user)}
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {/each}
     </div>
     <div class="band-right">
       {#if event.partner_name}
@@ -193,6 +213,26 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
     font-weight: 600;
+  }
+  /* From the cut on, one row per bracket: its label, then its qualified. A
+   * long row wraps on a phone, its label level with the first line. */
+  .bracket-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.9rem;
+  }
+  .bracket-label {
+    flex: 0 0 6.5rem;
+    line-height: 26px;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+  }
+  .bracket-row .avatar-stack {
+    flex-wrap: wrap;
+    row-gap: 4px;
   }
   .band-right {
     display: flex;

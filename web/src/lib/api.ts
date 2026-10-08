@@ -662,6 +662,15 @@ export interface EventSummary {
   next_stage: EventNextStage | null;
   live: EventLiveRace | null;
   champion: User | null;
+  /** From the cut until the playoffs are over, each bracket's qualified runners in seed order. */
+  brackets: EventSummaryBracket[];
+}
+
+/** A bracket on the home band: its label and the runners it seats. */
+export interface EventSummaryBracket {
+  key: string;
+  label: string;
+  qualified: User[];
 }
 
 export interface AdminEvent {

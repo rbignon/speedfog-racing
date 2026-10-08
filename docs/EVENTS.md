@@ -739,8 +739,11 @@ than a showcase's, plus the signups while the event can still be joined, the lad
 the first `MAX_PLAYER_PREVIEWS` of them are previewed; both empty while an
 upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
-final is complete, and `my_signup`. It skips the newcomer flags (the
-detail's only database work beyond the load) and the signature weapons. An
+final is complete, `my_signup`, and from the cut until the playoffs are over
+`brackets`: each bracket's label and its qualified runners in seed order, a
+seat nobody holds left out. It skips the signature weapons, and it reads the
+newcomer flags (the detail's only database work beyond the load), which a
+newcomers bracket's draw needs, only in those two phases. An
 event whose stored config no longer validates is left out rather than
 breaking the home page.
 
@@ -759,7 +762,12 @@ that page), a phase signal, one line of state and the buttons, which
 
 Who is in shows as the race cards' avatar stack after the line (initials for
 a runner without an avatar, the name on hover, a `+N` chip for the players
-beyond the previews), while the event can be joined and someone is.
+beyond the previews), while the event can be joined and someone is. From the
+cut until the playoffs are over the same avatars line up under the line, one
+row per bracket behind its label (the config's: "Top 32", then
+"Newcomers" for Season One), every qualified runner shown, and a bracket
+nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
+on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
 next to the `Event page` button. The watch link follows the live strip's
 rule (a live caster's own stream, else the first caster's channel). The
