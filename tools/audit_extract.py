@@ -22,7 +22,7 @@ Twitch names are replaced by stable pseudonyms (player_0001 is the oldest
 account) unless --real-names is given, since a name can prime an analyst. The
 same replacement runs over the free text that repeats them: race names, custom
 rules, chat messages (system messages such as "x has joined the race" carry
-display names) and event configs (the withdrawn list). It only knows the exact
+display names) and event configs (the withdrawn and forfeits lists). It only knows the exact
 logins and display names of four characters or more, so a nickname or a
 misspelling in someone's message goes through, and a login that is also an
 ordinary word gets replaced wherever that word appears. System accounts (the
@@ -85,7 +85,7 @@ COMPACT_NODE_KEYS = (
 
 # Event config fields that are free text (names can appear in them). The rest
 # of the config is structure (mode, stage and slot keys) and stays untouched.
-EVENT_TEXT_KEYS = ("withdrawn", "rules", "playoff_rules", "facts")
+EVENT_TEXT_KEYS = ("withdrawn", "forfeits", "rules", "playoff_rules", "facts")
 
 # Shorter names are too likely to be ordinary words in free text.
 MIN_SCRUBBED_NAME = 4

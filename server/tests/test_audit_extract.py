@@ -138,6 +138,7 @@ async def _populate(maker: async_sessionmaker[AsyncSession]) -> dict[str, Any]:
             ends_at=datetime(2026, 11, 1, tzinfo=UTC),
             config={
                 "withdrawn": ["bobby"],
+                "forfeits": ["Bobby"],
                 "rules": ["Ask Alice"],
                 "modes": [{"key": "standard", "label": "Standard"}],
             },
@@ -319,6 +320,7 @@ async def test_free_text_names_are_replaced_whole_words_only(maker, tmp_path):
     assert dq["disqualification_reason"] == "No death, see player_0001's run"
     config = _rows(bundle, "events.jsonl")[0]["config"]
     assert config["withdrawn"] == ["player_0002"]
+    assert config["forfeits"] == ["player_0002"]
     assert config["rules"] == ["Ask player_0001"]
     # Structure is not free text: left as it is.
     assert config["modes"] == [{"key": "standard", "label": "Standard"}]
