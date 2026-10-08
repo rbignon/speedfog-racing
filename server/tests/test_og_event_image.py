@@ -7,9 +7,12 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.services.og_image import (
     _TEMPLATE_VERSION,
+    EventOgSummary,
     build_event_context,
     event_og_description,
     render_event_og,
@@ -516,6 +519,227 @@ def test_a_wide_display_name_shrinks_the_winner_line() -> None:
     assert wide.winner_font_size < narrow.winner_font_size
 
 
+# Two brackets whose matches are scheduled with their players: from the cut,
+# nothing is current or next until a race is (the dated final waits on its
+# undated semis).
+DRAW_CONFIG = {
+    "modes": CONFIG["modes"],
+    "seeds_per_mode": 1,
+    "announced_at": "2026-09-16T18:00:00Z",
+    "brackets": [
+        {
+            "key": "main",
+            "label": "Top 4",
+            "entry": "all",
+            "stages": [
+                {
+                    "key": "semi_a",
+                    "label": "Semi A",
+                    "kind": "semi",
+                    "races": 1,
+                    "seeds": [1, 4],
+                    "advance": 1,
+                },
+                {
+                    "key": "semi_b",
+                    "label": "Semi B",
+                    "kind": "semi",
+                    "races": 1,
+                    "seeds": [2, 3],
+                    "advance": 1,
+                },
+                {
+                    "key": "final",
+                    "label": "Final",
+                    "kind": "final",
+                    "races": 1,
+                    "date": FINAL.isoformat(),
+                    "from": ["semi_a", "semi_b"],
+                },
+            ],
+        },
+        {
+            "key": "newcomers",
+            "label": "Newcomers",
+            "entry": "newcomers",
+            "stages": [
+                {
+                    "key": "newcomers_final",
+                    "label": "Newcomers' final",
+                    "kind": "final",
+                    "races": 1,
+                    "seeds": [1, 2],
+                },
+            ],
+        },
+    ],
+}
+
+
+def _draw_world(
+    names: list[str], newcomer_names: tuple[str, ...] = ("eve", "fay"), **config: object
+) -> tuple[SimpleNamespace, dict[uuid.UUID, int]]:
+    """The draw config, with every runner but ``newcomer_names`` a veteran."""
+    event, users = _qualifier_world(names)
+    event.config = {**DRAW_CONFIG, **config}
+    veterans = {u.id: 9 for name, u in users.items() if name not in newcomer_names}
+    return event, veterans
+
+
+def _rows(summary: EventOgSummary) -> list[tuple[str, list[list[str]], int]]:
+    return [
+        (b.label, [[u.twitch_username for u in row] for row in b.rows], b.overflow_count)
+        for b in summary.brackets
+    ]
+
+
+def test_the_cut_with_nothing_scheduled_lines_up_each_brackets_draw() -> None:
+    """The card a qualified announcement is shared with: who is in, per bracket,
+    best seed first, rather than every entrant under a repeated phase label."""
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay", "gus"])
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    assert summary.kind == "event_brackets"
+    assert _rows(summary) == [
+        ("Top 4", [["ana", "bob", "cleo", "dee"]], 0),
+        ("Newcomers", [["eve", "fay"]], 0),
+    ]
+    assert summary.caption is None
+    assert event_og_description(summary) == "Playoffs incoming · 7 players"
+
+
+def test_a_call_up_joins_its_brackets_row_and_leaves_the_newcomers() -> None:
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"], withdrawn=["Bob"])
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    # eve, first past the Top 4's seeds, takes bob's seat; the newcomers bracket
+    # then draws from fay alone, its empty seat left out.
+    assert _rows(summary) == [
+        ("Top 4", [["ana", "cleo", "dee", "eve"]], 0),
+        ("Newcomers", [["fay"]], 0),
+    ]
+
+
+def test_a_bracket_nobody_holds_a_seat_in_shows_no_row() -> None:
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee"])
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    assert [b.label for b in summary.brackets] == ["Top 4"]
+
+
+def _one_round(size: int) -> dict[str, object]:
+    return {
+        "brackets": [
+            {
+                "key": "main",
+                "label": "Open round",
+                "entry": "all",
+                "stages": [
+                    {
+                        "key": "round",
+                        "label": "Round",
+                        "kind": "round",
+                        "races": 1,
+                        "seeds": list(range(1, size + 1)),
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def test_a_wide_bracket_splits_into_even_rows() -> None:
+    names = [f"runner{i:02d}" for i in range(20)]
+    event, veterans = _draw_world(names, newcomer_names=(), **_one_round(20))
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    [(_, rows, overflow)] = _rows(summary)
+    assert [len(row) for row in rows] == [10, 10]
+    assert [name for row in rows for name in row] == names
+    assert overflow == 0
+
+
+def test_a_bracket_past_two_full_rows_ends_on_an_overflow_chip() -> None:
+    names = [f"runner{i:02d}" for i in range(34)]
+    event, veterans = _draw_world(names, newcomer_names=(), **_one_round(34))
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    [(_, rows, overflow)] = _rows(summary)
+    # Two rows of 16 cells, the last cell being the +3 chip.
+    assert [len(row) for row in rows] == [16, 15]
+    assert overflow == 3
+
+
+def _open_brackets(*sizes: int) -> dict[str, object]:
+    """Brackets drawing from everyone in turn, one seeded round each."""
+    return {
+        "brackets": [
+            {
+                "key": f"b{n}",
+                "label": f"Bracket {n}",
+                "entry": "all",
+                "stages": [
+                    {
+                        "key": f"b{n}_round",
+                        "label": f"Round {n}",
+                        "kind": "round",
+                        "races": 1,
+                        "seeds": list(range(1, size + 1)),
+                    }
+                ],
+            }
+            for n, size in enumerate(sizes)
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    "sizes", [(32, 8), (8,), (40,), (40, 8, 8), (32, 32, 32), (8, 8, 8, 8, 8, 8)]
+)
+async def test_the_draw_stays_between_the_lockup_and_the_footer(sizes: tuple[int, ...]) -> None:
+    """Whatever the brackets, every label and avatar sits under the lockup's
+    baseline (y=222), above the footer's caps (y=551) and inside the side
+    margins, at a size a face still reads at."""
+    names = [f"runner{i:03d}" for i in range(sum(sizes))]
+    event, veterans = _draw_world(names, newcomer_names=(), **_open_brackets(*sizes))
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    assert summary.kind == "event_brackets"
+    ctx = await build_event_context(summary, avatar_lookup=_lookup, logo_lookup=_no_logo)
+    size = ctx["bracket_avatar_size"]
+    assert size >= 28
+    for bracket in ctx["brackets"]:
+        assert bracket["label_y"] - 20 > 222
+        cells = [(cell["x"], row["y"]) for row in bracket["rows"] for cell in row["cells"]]
+        if bracket["overflow"]:
+            cells.append((bracket["overflow"]["x"], bracket["overflow"]["y"]))
+        for x, y in cells:
+            assert 60 <= x and x + size <= 1140
+            assert bracket["label_y"] < y and y + size < 551
+
+
+def test_brackets_too_many_for_the_card_leave_it_last_first() -> None:
+    names = [f"runner{i:03d}" for i in range(48)]
+    event, veterans = _draw_world(names, newcomer_names=(), **_open_brackets(*[8] * 6))
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    labels = [b.label for b in summary.brackets]
+    assert 1 < len(labels) < 6
+    assert labels == [f"Bracket {n}" for n in range(len(labels))]
+
+
+def test_a_scheduled_match_takes_the_card_back_from_the_draw() -> None:
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"])
+    semi = _race("semi_b:1", [], finished=False)
+    semi.status = RaceStatus.SETUP
+    semi.scheduled_at = CUT + dt.timedelta(days=3)
+    event.races.append(semi)
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    assert summary.kind == "event_stage"
+    assert summary.stage_label == "Semi B"
+
+
+def test_the_cache_key_moves_when_the_draw_does() -> None:
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"])
+    now = CUT + dt.timedelta(days=1)
+    before = summarize_event(event, now=now, finished_before=veterans).cache_key
+    event.config = {**event.config, "withdrawn": ["bob"]}
+    assert summarize_event(event, now=now, finished_before=veterans).cache_key != before
+
+
 async def test_every_card_kind_renders_with_a_complete_context() -> None:
     """An attribute driven by a missing context key renders empty, not wrong."""
     running, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
@@ -525,14 +749,16 @@ async def test_every_card_kind_renders_with_a_complete_context() -> None:
     crowned.races.append(
         _race("final:1", [_entry(users["bob"], 800_000), _entry(users["ana"], 900_000)])
     )
+    drawn, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"])
     moments = {
         "event_upcoming": (running, STARTS - dt.timedelta(days=3)),
         "event_entrants": (running, STARTS + dt.timedelta(days=2)),
         "event_stage": (running, CUT + dt.timedelta(days=1)),
+        "event_brackets": (drawn, CUT + dt.timedelta(days=1)),
         "event_winner": (crowned, ENDS + dt.timedelta(days=1)),
     }
     for kind, (event, now) in moments.items():
-        summary = summarize_event(event, now=now, finished_before={})
+        summary = summarize_event(event, now=now, finished_before=veterans)
         assert summary.kind == kind
         ctx = await build_event_context(summary, avatar_lookup=_lookup, logo_lookup=_no_logo)
         svg = render_svg(summary.kind, ctx)

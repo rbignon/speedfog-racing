@@ -1,0 +1,20 @@
+{% extends "og/_event_base.svg.j2" %}
+{# The draw, from the cut while no evening is current or next: each bracket's
+   label over its runners in seed order, whole avatars row by row, a chip
+   counting the runners left out past two full rows. The badge already names
+   the phase, so no caption repeats it. #}
+{% block event_body %}
+  {% set size = bracket_avatar_size %}
+  {% for bracket in brackets %}
+    <text x="600" y="{{ bracket.label_y }}" text-anchor="middle" font-family="Spline Sans Mono" font-size="20" font-weight="600" letter-spacing="4" fill="{{ accent_color }}">{{ bracket.label.upper() }}</text>
+    {% for row in bracket.rows %}
+      {% for cell in row.cells %}
+        <image x="{{ cell.x }}" y="{{ row.y }}" width="{{ size }}" height="{{ size }}" clip-path="url(#avatar-clip)" href="{{ cell.avatar_b64 }}"/>
+      {% endfor %}
+    {% endfor %}
+    {% if bracket.overflow %}
+      <circle cx="{{ bracket.overflow.x + size / 2 }}" cy="{{ bracket.overflow.y + size / 2 }}" r="{{ size / 2 }}" fill="#1c2a3f"/>
+      <text x="{{ bracket.overflow.x + size / 2 }}" y="{{ bracket.overflow.y + size * 0.62 }}" text-anchor="middle" font-family="Spline Sans Mono" font-size="{{ size * 0.36 }}" font-weight="500" fill="#96a0ad">+{{ bracket.overflow.count }}</text>
+    {% endif %}
+  {% endfor %}
+{% endblock %}

@@ -7,6 +7,7 @@ import base64
 import datetime as dt
 import hashlib
 import logging
+import math
 import unicodedata
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ from speedfog_racing.schemas import EVENT_PHASES, EventConfig
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MIN_UPCOMING_PLAYERS,
+    bracket_draw,
     compute_ladder,
     compute_qualified,
     current_stage_key,
@@ -55,6 +57,7 @@ _TEMPLATE_BY_KIND = {
     "event_upcoming": "og/event_upcoming.svg.j2",
     "event_entrants": "og/event_entrants.svg.j2",
     "event_stage": "og/event_stage.svg.j2",
+    "event_brackets": "og/event_brackets.svg.j2",
     "event_winner": "og/event_winner.svg.j2",
 }
 
@@ -357,6 +360,23 @@ _CONTENT_WIDTH = 1080
 _LOCKUP_WIDTH_WITH_LOGO = 888
 # A stage caption sets its label and its date apart by this much.
 _CAPTION_GAP = 76
+# The draw card: whole avatars in rows of 16 at most, two rows per bracket,
+# each bracket under its label, the blocks centred between the lockup and the
+# footer. Their avatars shrink below the cap only when the blocks would not
+# fit, never below the floor: the brackets that would push them under it are
+# left off the card, the last first.
+_BRACKET_ROW_CELLS = 16
+_BRACKET_MAX_ROWS = 2
+_BRACKET_AVATAR_MAX = 56
+_BRACKET_AVATAR_MIN = 28
+_BRACKET_AVATAR_GAP = 8
+_BRACKET_ROW_GAP = 8
+# From a block's top to its first row, and to its label's baseline.
+_BRACKET_LABEL_HEIGHT = 34
+_BRACKET_LABEL_BASELINE = 20
+_BRACKET_SPACING = 22
+_BRACKETS_TOP = 250
+_BRACKETS_BOTTOM = 530
 
 
 @dataclass(frozen=True)
@@ -365,6 +385,15 @@ class EventOgSlot:
 
     user: User | None
     label: str
+
+
+@dataclass(frozen=True)
+class EventOgBracket:
+    """One bracket of the draw card: its label over its runners, row by row."""
+
+    label: str
+    rows: list[list[User]]
+    overflow_count: int
 
 
 @dataclass(frozen=True)
@@ -392,6 +421,7 @@ class EventOgSummary:
     field_overflow_count: int
     field_size: int
     field_gap: int
+    brackets: list[EventOgBracket]
     winner: User | None
     winner_font_size: int
     player_count_label: str | None
@@ -434,6 +464,45 @@ def _field_geometry(count: int) -> tuple[int, int]:
         if count <= limit:
             return size, gap
     return 72, 22
+
+
+def _draw_bracket(label: str, runners: list[User]) -> EventOgBracket:
+    """A bracket of the draw card: its label, cut to fit, over its runners in rows
+    of at most 16, split as evenly as they go.
+
+    Past two full rows, the last cell becomes a chip counting the runners left out.
+    """
+    cap = _BRACKET_ROW_CELLS * _BRACKET_MAX_ROWS
+    shown = runners if len(runners) <= cap else runners[: cap - 1]
+    overflow_count = len(runners) - len(shown)
+    cells = len(shown) + (1 if overflow_count else 0)
+    per_row = math.ceil(cells / math.ceil(cells / _BRACKET_ROW_CELLS))
+    return EventOgBracket(
+        label=_truncate(label, _MAX_STAGE_LABEL),
+        rows=[shown[i : i + per_row] for i in range(0, len(shown), per_row)],
+        overflow_count=overflow_count,
+    )
+
+
+def _draw_height(brackets: list[EventOgBracket], size: int) -> int:
+    """How tall the draw's blocks stand with avatars of ``size``."""
+    rows = sum(len(b.rows) for b in brackets)
+    return (
+        len(brackets) * _BRACKET_LABEL_HEIGHT
+        + rows * size
+        + (rows - len(brackets)) * _BRACKET_ROW_GAP
+        + (len(brackets) - 1) * _BRACKET_SPACING
+    )
+
+
+def _draw_avatar_size(brackets: list[EventOgBracket]) -> int:
+    """The largest avatar, up to the cap, that lets every block fit the card's body.
+
+    Below the floor once the brackets are too many: the caller drops some first.
+    """
+    rows = sum(len(b.rows) for b in brackets)
+    room = _BRACKETS_BOTTOM - _BRACKETS_TOP - _draw_height(brackets, 0)
+    return min(_BRACKET_AVATAR_MAX, room // rows)
 
 
 def _event_day(moment: dt.datetime, *, weekday: bool = False) -> str:
@@ -529,6 +598,18 @@ def summarize_event(
     def user_of(user_id: UUID | None) -> User | None:
         return users.get(user_id) if user_id is not None else None
 
+    # From the cut, while no evening is current or next, the card shows the draw.
+    brackets: list[EventOgBracket] = []
+    if phase in ("cut", "playoffs") and stage is None:
+        for bracket, seated in bracket_draw(config, qualified):
+            runners = [users[user_id] for user_id in seated if user_id in users]
+            if runners:
+                brackets.append(_draw_bracket(bracket.label, runners))
+        # A single bracket always fits: only an extra one can push the avatars
+        # under the floor.
+        while len(brackets) > 1 and _draw_avatar_size(brackets) < _BRACKET_AVATAR_MIN:
+            brackets.pop()
+
     headline_label = headline = caption = stage_label = stage_date = None
     field: list[EventOgSlot] = []
     if phase == "upcoming":
@@ -557,8 +638,10 @@ def summarize_event(
                 EventOgSlot(user_of(slot.user_id), slot_label(slot))
                 for slot in qualified.get(stage.key, [])
             ]
+    elif brackets:
+        kind = "event_brackets"
     else:
-        # Playoffs with no stage configured, or a window that ran out before a
+        # Playoffs with no runner drawn yet, or a window that ran out before a
         # final was ever played: the field and a plain caption are what is left.
         kind = "event_entrants"
         caption = "Event finished" if phase == "finished" else EVENT_STATUS_LABEL[phase]
@@ -592,6 +675,11 @@ def summarize_event(
                 f"+{overflow_count}/{field_overflow_count}",
                 *(str(user.id) for user in entrants),
                 *(f"{slot.user.id if slot.user else ''}@{slot.label}" for slot in field),
+                *(
+                    f"{b.label}:{'/'.join(str(u.id) for row in b.rows for u in row)}"
+                    f"+{b.overflow_count}"
+                    for b in brackets
+                ),
                 str(winner.id) if winner is not None else "",
             ]
         ).encode("utf-8")
@@ -640,6 +728,7 @@ def summarize_event(
         field_overflow_count=field_overflow_count,
         field_size=field_size,
         field_gap=field_gap,
+        brackets=brackets,
         winner=winner,
         winner_font_size=_fitted_size(
             _display_chars(winner.twitch_display_name or winner.twitch_username) if winner else 0,
@@ -679,6 +768,54 @@ async def build_event_context(
             }
         )
 
+    # The draw: blocks stacked from the top of their centred band, each row
+    # centred on the card, its chip (if any) in the cell after its last runner.
+    # Up to 40 avatars, fetched together rather than one cold fetch at a time.
+    brackets = []
+    size = 0
+    if summary.brackets:
+        size = _draw_avatar_size(summary.brackets)
+        avatars = iter(
+            await asyncio.gather(
+                *(
+                    _resolve(avatar_lookup, user.twitch_avatar_url)
+                    for bracket in summary.brackets
+                    for row in bracket.rows
+                    for user in row
+                )
+            )
+        )
+        y = (
+            _BRACKETS_TOP
+            + (_BRACKETS_BOTTOM - _BRACKETS_TOP - _draw_height(summary.brackets, size)) / 2
+        )
+        step = size + _BRACKET_AVATAR_GAP
+        for bracket in summary.brackets:
+            label_y = y + _BRACKET_LABEL_BASELINE
+            y += _BRACKET_LABEL_HEIGHT
+            laid_rows = []
+            overflow = None
+            for i, row in enumerate(bracket.rows):
+                last = i == len(bracket.rows) - 1
+                cells = len(row) + (1 if last and bracket.overflow_count else 0)
+                x0 = 600 - (step * cells - _BRACKET_AVATAR_GAP) / 2
+                laid = [
+                    {"x": x0 + j * step, "avatar_b64": _b64(next(avatars))} for j in range(len(row))
+                ]
+                if last and bracket.overflow_count:
+                    overflow = {"x": x0 + len(row) * step, "y": y, "count": bracket.overflow_count}
+                laid_rows.append({"y": y, "cells": laid})
+                y += size + (_BRACKET_ROW_GAP if not last else 0)
+            brackets.append(
+                {
+                    "label": bracket.label,
+                    "label_y": label_y,
+                    "rows": laid_rows,
+                    "overflow": overflow,
+                }
+            )
+            y += _BRACKET_SPACING
+
     winner = None
     if summary.winner is not None:
         avatar = await _resolve(avatar_lookup, summary.winner.twitch_avatar_url)
@@ -714,6 +851,8 @@ async def build_event_context(
         "field_size": summary.field_size,
         "field_gap": summary.field_gap,
         "caption_gap": _CAPTION_GAP,
+        "brackets": brackets,
+        "bracket_avatar_size": size,
         "winner": winner,
         "winner_font_size": summary.winner_font_size,
         "player_count_label": summary.player_count_label,

@@ -41,6 +41,31 @@ def _ctx(**overrides: Any) -> dict[str, Any]:
         "field_size": 96,
         "field_gap": 44,
         "winner": {"name": "wospince", "avatar_b64": _AVATAR},
+        "brackets": [
+            {
+                "label": "Top 32",
+                "label_y": 277,
+                "rows": [
+                    {
+                        "y": 291,
+                        "cells": [{"x": 100 + i * 62, "avatar_b64": _AVATAR} for i in range(4)],
+                    }
+                ],
+                "overflow": None,
+            },
+            {
+                "label": "Newcomers",
+                "label_y": 400,
+                "rows": [
+                    {
+                        "y": 414,
+                        "cells": [{"x": 100 + i * 62, "avatar_b64": _AVATAR} for i in range(2)],
+                    }
+                ],
+                "overflow": {"x": 224, "y": 414, "count": 5},
+            },
+        ],
+        "bracket_avatar_size": 56,
         "player_count_label": "24 players",
         "window_label": "23 September - 25 October 2026",
     }
@@ -53,7 +78,7 @@ def _images(svg: str) -> list[ET.Element]:
 
 
 @pytest.mark.parametrize(
-    "kind", ["event_upcoming", "event_entrants", "event_stage", "event_winner"]
+    "kind", ["event_upcoming", "event_entrants", "event_stage", "event_brackets", "event_winner"]
 )
 def test_every_event_template_renders_valid_svg(kind: str) -> None:
     root = ET.fromstring(render_svg(kind, _ctx()))
@@ -147,3 +172,15 @@ def test_an_entrant_row_with_nobody_in_it_says_so() -> None:
     """A qualifier that just opened would otherwise show an empty band."""
     assert "No players yet" in render_svg("event_entrants", _ctx(entrants=[]))
     assert "No players yet" not in render_svg("event_entrants", _ctx())
+
+
+def test_the_brackets_card_draws_one_avatar_per_seated_runner() -> None:
+    # Six seated runners plus the partner logo.
+    assert len(_images(render_svg("event_brackets", _ctx()))) == 7
+
+
+def test_the_brackets_card_draws_a_chip_only_for_a_bracket_with_runners_left_out() -> None:
+    brackets = _ctx()["brackets"]
+    assert "+5" in render_svg("event_brackets", _ctx())
+    trimmed = [brackets[0], {**brackets[1], "overflow": None}]
+    assert "+5" not in render_svg("event_brackets", _ctx(brackets=trimmed))

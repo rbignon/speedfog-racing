@@ -57,6 +57,7 @@ from speedfog_racing.services.event_service import (
     Slot,
     StageResult,
     announce_date,
+    bracket_draw,
     build_timeline,
     compute_ladder,
     compute_qualified,
@@ -225,24 +226,15 @@ async def list_events(
                 ladder_final,
                 started,
             )
-            for bracket in config.brackets:
-                seats = sorted(
-                    (
-                        slot
-                        for stage in bracket.stages
-                        for slot in qualified.get(stage.key, [])
-                        if slot.user_id in users
-                    ),
-                    key=lambda slot: slot.seed or 0,
-                )
+            for bracket, seated in bracket_draw(config, qualified):
                 brackets.append(
                     EventSummaryBracketResponse(
                         key=bracket.key,
                         label=bracket.label,
                         qualified=[
-                            UserResponse.model_validate(users[slot.user_id])
-                            for slot in seats
-                            if slot.user_id is not None
+                            UserResponse.model_validate(users[user_id])
+                            for user_id in seated
+                            if user_id in users
                         ],
                     )
                 )

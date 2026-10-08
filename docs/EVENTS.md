@@ -792,15 +792,27 @@ The card follows the phase, on the same computation as the page
 | `upcoming`        | the day the qualifier opens; from ten players in, their row of avatars under it                           |
 | `qualifier`       | every entrant as one row of avatars, then the closing day                                                 |
 | `cut`, `playoffs` | the current stage's line-up by name, else the next one's (see Current and next stage); the stage and date |
+|                   | with neither, the draw: each bracket's label over its qualified runners                                   |
 | `finished`        | the winner of the final                                                                                   |
 
 The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
-a seed number for a seeded stage, the source stage for a fed one. A finished event
-whose final never happened, and a `cut` or `playoffs` card with neither a
-current nor a next stage, both fall back to the entrant row.
+a seed number for a seeded stage, the source stage for a fed one.
+
+The draw is the card the qualified are announced with, before any match is
+scheduled, and the one shown again whenever no evening is current or next
+during the playoffs: the same runners as the home band's rows (each
+bracket's seated runners in seed order, call-ups included, a bracket nobody
+holds a seat in left out), as whole avatars in rows of at most 16, split
+evenly (Season One's Top 32 on two rows of 16, its newcomers on one of 8), up
+to two rows per bracket, the last cell a `+N` chip beyond that. The avatars
+shrink to fit the card, never under a legible floor: brackets too many for
+it are left off the card, the last first. The badge names the phase, so no
+caption repeats it. A finished event whose final never happened, and a `cut`
+or `playoffs` card with no runner drawn yet, both fall back to the entrant
+row.
 
 Signups count as entrants while the event can still be joined: after the
 scored runners on the qualifier card, in signup order, and on the upcoming
@@ -813,8 +825,8 @@ Stage dates show the day in UTC, no time: an evening slot never lands on a
 different day for a European or American viewer, so the card needs no timezone.
 
 The PNG is cached on disk as `event-<slug>-v<template>-<key>.png`, the key
-hashing what the card shows (phase, stage, line-up, entrants, counts, the
-partner logo URL), so it is
+hashing what the card shows (phase, stage, line-up, the draw, entrants,
+counts, the partner logo URL), so it is
 re-rendered when the event moves and served from disk otherwise. The partner
 logo is fetched once from `partner_logo_url` (rooted at `base_url` when the
 value is site-relative) and cached next to the avatars; a logo that cannot be

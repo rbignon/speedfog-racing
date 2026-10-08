@@ -37,6 +37,7 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.schemas import (
     EVENT_PHASES,
+    EventBracket,
     EventConfig,
     EventShowcase,
     EventStage,
@@ -437,6 +438,25 @@ def slot_label(slot: QualifiedSlot) -> str:
     if slot.seed is not None:
         return f"Seed {slot.seed}"
     return slot.note or UNDECIDED
+
+
+def bracket_draw(
+    config: EventConfig, qualified: Mapping[str, list[QualifiedSlot]]
+) -> list[tuple[EventBracket, list[UUID]]]:
+    """Each bracket with the runners ``compute_qualified`` seated in it, best seed first.
+
+    Seeds are ladder positions, so a call-up lands where they ranked. A seat
+    nobody holds is left out: a bracket nobody holds a seat in yet comes with
+    an empty list.
+    """
+    draw: list[tuple[EventBracket, list[UUID]]] = []
+    for bracket in config.brackets:
+        seats = sorted(
+            (slot for stage in bracket.stages for slot in qualified.get(stage.key, [])),
+            key=lambda slot: slot.seed or 0,
+        )
+        draw.append((bracket, [slot.user_id for slot in seats if slot.user_id is not None]))
+    return draw
 
 
 # --- stages -----------------------------------------------------------------
