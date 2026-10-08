@@ -633,11 +633,13 @@ def summarize_event(
             field = [
                 EventOgSlot(user_of(slot.user_id), slot.label.split(" of ", 1)[-1])
                 for slot in fed_field(stage, config, results)
+                if slot.user_id is None or slot.user_id not in forfeits
             ]
         else:
             field = [
                 EventOgSlot(user_of(slot.user_id), slot_label(slot))
                 for slot in qualified.get(stage.key, [])
+                if not slot.forfeited
             ]
     elif brackets:
         kind = "event_brackets"

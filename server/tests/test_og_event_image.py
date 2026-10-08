@@ -267,6 +267,20 @@ def test_the_cut_seats_the_top_of_the_ladder_in_the_first_semi() -> None:
     assert [slot.user.twitch_username for slot in summary.field] == ["ana", "bob"]
 
 
+def test_a_forfeit_leaves_the_stage_line_up() -> None:
+    """Consistent with the draw card: a seat held by a forfeit shows no avatar."""
+    event, _ = _qualifier_world(["ana", "bob", "cleo", "dee", "eve"])
+    # Still a match with bob struck out: cleo and ana race for one place.
+    semi_a = {**CONFIG["stages"][0], "seeds": [1, 2, 3], "advance": 1}
+    semi_b = {**CONFIG["stages"][1], "seeds": [4, 5]}
+    event.config = bracketed(
+        {**CONFIG, "stages": [semi_a, semi_b, *CONFIG["stages"][2:]], "forfeits": ["Bob"]}
+    )
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before={})
+    assert summary.stage_label == "Semi A"
+    assert [slot.user.twitch_username for slot in summary.field if slot.user] == ["ana", "cleo"]
+
+
 def test_playoffs_show_the_stage_of_the_day() -> None:
     event, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
     summary = summarize_event(event, now=SEMI_B + dt.timedelta(hours=1), finished_before={})
