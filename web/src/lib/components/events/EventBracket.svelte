@@ -7,6 +7,7 @@
     fillSlots,
     forfeitNotes,
     linkPath,
+    seatCode,
     stageWinner,
     stripStagePrefix,
   } from "$lib/events";
@@ -137,10 +138,10 @@
               : "pts",
       }));
     }
-    // A decided slot's label is "Seed N" for a qualifier seed, or the
-    // source stage's label (e.g. "Quarter A") when it comes from an earlier
-    // playoff stage; only the seed form has a rank number to show, so the
-    // stage-provenance form goes in the right cell instead.
+    // A decided slot's label is "Seed N" for a qualifier seed, or its place
+    // in an earlier stage ("1st of Group A"); only the seed form has a rank
+    // number to show, so a fed seat's short code ("A1") goes in the right
+    // cell instead.
     return stage.field.map((slot, i) => {
       const isSeed = slot.label.startsWith("Seed ");
       return {
@@ -149,7 +150,8 @@
         user: slot.user,
         label: slot.label,
         forfeit: slot.forfeited,
-        right: slot.user && !isSeed ? slot.label : "",
+        right:
+          slot.user && !isSeed ? (seatCode(slot, stages) ?? slot.label) : "",
         rightClass: "pts",
       };
     });

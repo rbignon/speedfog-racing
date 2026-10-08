@@ -622,7 +622,13 @@ An event with a single bracket shows no tab bar.
 From the cut on, the bracket block lays the playoffs out as a tree: one column
 per round (a seeded stage opens it, a fed stage follows its deepest source),
 each stage centred on the stages it takes runners from, connectors between
-them, the final leading to the Champion. With four first-round boxes or more
+them, the final leading to the Champion. A round whose stages draw places
+crosswise (a source feeding several stages, e.g. a group's winner and runner-up
+going to different quarters) has no tree to centre on: it is spread evenly over
+the first round's rows, each stage next to the sources it draws on, without
+connectors. The seat labels say where each runner comes from ("1st of Group
+A"), and a decided runner's right cell reads the short code ("A1"); stages fed
+by whole stages (the final from the semis) keep their connectors. With four first-round boxes or more
 (quarters) the tree takes the page's width: a side column holds the evening
 section on top, level with the "Bracket" title, and the Champion on the final's
 axis; for a tree of four rounds or more (a round of 32 before the quarters)

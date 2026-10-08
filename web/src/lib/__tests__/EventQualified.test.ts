@@ -28,6 +28,8 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
       user: null,
       label: "TBD",
       forfeited: false,
+      source: null,
+      place: null,
     })),
     ...overrides,
   };

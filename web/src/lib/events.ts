@@ -1,6 +1,7 @@
 import type {
   EventBracket,
   EventDetail,
+  EventFieldSlot,
   EventFact,
   EventPhase,
   EventQualified,
@@ -199,6 +200,20 @@ export function stripStagePrefix(name: string, stageLabel: string): string {
     if (name.startsWith(prefix)) return name.slice(prefix.length);
   }
   return name;
+}
+
+/**
+ * A decided fed seat's short form for a narrow box: the source stage's last
+ * word and the place taken there ("A1" for the winner of Group A), the
+ * notation organizers use. Null for a seeded seat.
+ */
+export function seatCode(
+  slot: EventFieldSlot,
+  stages: EventStage[],
+): string | null {
+  if (slot.source === null || slot.place === null) return null;
+  const label = stages.find((s) => s.key === slot.source)?.label ?? slot.source;
+  return `${label.trim().split(/\s+/).pop()}${slot.place}`;
 }
 
 /** A stage's winner: its leader once the stage is complete, else null. */
@@ -800,7 +815,9 @@ export interface BracketLayout {
 /**
  * The bracket as a grid: one column per round (a seeded stage is round 0, a
  * fed one follows its deepest source), each round ordered so a stage's
- * sources sit next to each other, a fed stage spanning its sources' rows.
+ * sources sit next to each other, a fed stage spanning its sources' rows. A round
+ * whose stages draw places crosswise (a source feeding several stages) has no
+ * tree to centre on: it is spread evenly without connectors.
  * One bracket at a time: the page lays each bracket out on its own tab.
  */
 export function bracketLayout(stages: EventStage[]): BracketLayout {
@@ -819,16 +836,49 @@ export function bracketLayout(stages: EventStage[]): BracketLayout {
   const order: EventStage[][] = Array.from({ length: depth }, () => []);
   for (let r = depth - 1; r >= 0; r--) {
     const inRound = tree.filter((s) => round(s) === r);
-    const wanted = r === depth - 1 ? [] : order[r + 1].flatMap((s) => s.from);
+    const wanted =
+      r === depth - 1 ? [] : [...new Set(order[r + 1].flatMap((s) => s.from))];
     const placed = wanted.flatMap(
       (k) => inRound.find((s) => s.key === k) ?? [],
     );
     order[r] = [...placed, ...inRound.filter((s) => !placed.includes(s))];
   }
+  const rows = order[0]?.length ?? 0;
   const cells = new Map<string, BracketCell>();
   const links: BracketLink[] = [];
-  const rounds = order.map((stagesOfRound, r) =>
-    stagesOfRound.map((stage, i) => {
+  // A source feeding several stages (its places dispatched crosswise) makes
+  // its takers cross-fed: no tree to centre them on, so their round is
+  // spread evenly, each stage next to the sources it draws on.
+  const takers = new Map<string, number>();
+  for (const s of tree)
+    for (const k of s.from) takers.set(k, (takers.get(k) ?? 0) + 1);
+  const crossFed = (s: EventStage) =>
+    s.from.some((k) => (takers.get(k) ?? 0) > 1);
+  const centre = (c: BracketCell) => c.row + c.span / 2;
+  const rounds = order.map((stagesOfRound, r) => {
+    if (r > 0 && stagesOfRound.some(crossFed)) {
+      const meanOf = (stage: EventStage) => {
+        const sources = stage.from.flatMap((k) => cells.get(k) ?? []);
+        return sources.length
+          ? sources.reduce((t, c) => t + centre(c), 0) / sources.length
+          : 0;
+      };
+      const sorted = [...stagesOfRound].sort(
+        (a, b) => meanOf(a) - meanOf(b) || tree.indexOf(a) - tree.indexOf(b),
+      );
+      return sorted.map((stage, i) => {
+        const row = Math.round((i * rows) / sorted.length);
+        const cell: BracketCell = {
+          stage,
+          round: r,
+          row,
+          span: Math.round(((i + 1) * rows) / sorted.length) - row,
+        };
+        cells.set(stage.key, cell);
+        return cell;
+      });
+    }
+    return stagesOfRound.map((stage, i) => {
       const sources = stage.from.flatMap((k) => cells.get(k) ?? []);
       let cell: BracketCell;
       if (r === 0 || sources.length === 0) {
@@ -846,9 +896,8 @@ export function bracketLayout(stages: EventStage[]): BracketLayout {
       }
       cells.set(stage.key, cell);
       return cell;
-    }),
-  );
-  const rows = rounds[0]?.length ?? 0;
+    });
+  });
   const finalStage = tree.find((s) => s.kind === "final");
   return {
     rounds,

@@ -550,6 +550,9 @@ export interface EventFieldSlot {
   label: string;
   /** Withdrew after the lock: the seat stays theirs, nobody replaces them. */
   forfeited: boolean;
+  /** A fed seat: the stage it comes from and the place it takes there; null on a seeded seat. */
+  source: string | null;
+  place: number | null;
 }
 
 export interface EventStage {

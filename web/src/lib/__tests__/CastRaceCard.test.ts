@@ -173,8 +173,16 @@ describe("CastRaceCard: no race attached yet", () => {
         }),
         label: "Top 2 of Quarter C",
         forfeited: false,
+        source: null,
+        place: null,
       },
-      { user: null, label: "Top 2 of Quarter C", forfeited: false },
+      {
+        user: null,
+        label: "Top 2 of Quarter C",
+        forfeited: false,
+        source: null,
+        place: null,
+      },
     ];
     const { container } = render(CastRaceCard, {
       props: {

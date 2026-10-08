@@ -64,6 +64,8 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
       user: null,
       label: `Seed ${i + 1}`,
       forfeited: false,
+      source: null,
+      place: null,
     })),
     ...overrides,
   };
@@ -268,8 +270,16 @@ describe("EventBracket rows", () => {
               },
               label: "Semi A",
               forfeited: false,
+              source: null,
+              place: null,
             },
-            { user: null, label: "Seed 2", forfeited: false },
+            {
+              user: null,
+              label: "Seed 2",
+              forfeited: false,
+              source: null,
+              place: null,
+            },
           ],
         }),
       ],
@@ -386,6 +396,8 @@ const groups = ["a", "b", "c", "d", "e", "f", "g", "h"].map((x) =>
       user: null,
       label: `Seed ${i + 1}`,
       forfeited: false,
+      source: null,
+      place: null,
     })),
   }),
 );
@@ -413,6 +425,8 @@ describe("EventBracket notes and forfeits", () => {
     user: who(id),
     label: "Seed 1",
     forfeited,
+    source: null,
+    place: null,
   });
 
   it("tells the provisional lock and tags a forfeit in its box", () => {

@@ -22,6 +22,7 @@ import {
   ordinal,
   playoffsIntro,
   playoffsPlan,
+  seatCode,
   forfeitNotes,
   pollIntervalMs,
   provisionalUntil,
@@ -157,6 +158,8 @@ const seats = (n: number) =>
     user: null,
     label: `Seed ${i + 1}`,
     forfeited: false,
+    source: null,
+    place: null,
   }));
 
 const mainBracket: EventBracket = {
@@ -557,6 +560,91 @@ describe("bracketLayout", () => {
     expect(layout.rows).toBe(2);
     expect(layout.tall).toBe(false);
   });
+
+  const crossedSeason: EventStage[] = (() => {
+    const quarters: Record<string, string[]> = {
+      quarter_a: ["group_a", "group_b", "group_c", "group_d"],
+      quarter_b: ["group_e", "group_f", "group_g", "group_h"],
+      quarter_c: ["group_a", "group_b", "group_c", "group_d"],
+      quarter_d: ["group_e", "group_f", "group_g", "group_h"],
+    };
+    const allQuarters = ["quarter_a", "quarter_b", "quarter_c", "quarter_d"];
+    return roundSeason.map((s) =>
+      s.key in quarters
+        ? { ...s, from: quarters[s.key] }
+        : s.kind === "semi"
+          ? { ...s, from: allQuarters }
+          : s,
+    );
+  })();
+
+  it("spreads crossed rounds evenly, each next to the groups it draws on", () => {
+    const layout = bracketLayout(crossedSeason);
+    expect(layout.rows).toBe(8);
+    expect(layout.rounds[1].map((c) => [c.stage.key, c.row, c.span])).toEqual([
+      ["quarter_a", 0, 2],
+      ["quarter_c", 2, 2],
+      ["quarter_b", 4, 2],
+      ["quarter_d", 6, 2],
+    ]);
+    expect(layout.rounds[2].map((c) => [c.stage.key, c.row, c.span])).toEqual([
+      ["semi_a", 0, 4],
+      ["semi_b", 4, 4],
+    ]);
+    // Only the final, fed by whole semis, keeps a connector.
+    expect(layout.links.map((l) => l.target.stage.key)).toEqual(["final"]);
+    expect([layout.final?.row, layout.final?.span]).toEqual([0, 8]);
+  });
+
+  it("keeps crossed rows contiguous when the stages do not divide the rows", () => {
+    const three = crossedSeason
+      .filter(
+        (s) => s.key !== "quarter_d" && s.kind !== "semi" && s.kind !== "final",
+      )
+      .map((s) =>
+        s.key === "quarter_c" ? { ...s, from: ["group_a", "group_e"] } : s,
+      );
+    const cells = bracketLayout(three).rounds[1];
+    const spans = cells.map((c) => [c.row, c.row + c.span]);
+    expect(spans[0][0]).toBe(0);
+    expect(spans[spans.length - 1][1]).toBe(8);
+    for (let i = 1; i < spans.length; i++)
+      expect(spans[i][0]).toBe(spans[i - 1][1]);
+  });
+});
+
+describe("seatCode", () => {
+  const stages = [stageFixture({ key: "group_a", label: "Group A" })];
+
+  it("gives a decided fed seat its source letter and place", () => {
+    expect(
+      seatCode(
+        {
+          user: null,
+          label: "1st of Group A",
+          forfeited: false,
+          source: "group_a",
+          place: 1,
+        },
+        stages,
+      ),
+    ).toBe("A1");
+  });
+
+  it("gives a seeded seat none", () => {
+    expect(
+      seatCode(
+        {
+          user: null,
+          label: "Seed 3",
+          forfeited: false,
+          source: null,
+          place: null,
+        },
+        stages,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("linkPath", () => {
@@ -791,6 +879,8 @@ describe("forfeitNotes", () => {
     user: user(name),
     label: "Seed 1",
     forfeited,
+    source: null,
+    place: null,
   });
   const stage = (
     label: string,
@@ -854,8 +944,20 @@ describe("forfeitNotes", () => {
   });
 
   it("counts undecided placeholders among those still in a fed stage", () => {
-    const undecided = { user: null, label: "Group A winner", forfeited: false };
-    const none = { user: null, label: "No runner", forfeited: false };
+    const undecided = {
+      user: null,
+      label: "Group A winner",
+      forfeited: false,
+      source: null,
+      place: null,
+    };
+    const none = {
+      user: null,
+      label: "No runner",
+      forfeited: false,
+      source: null,
+      place: null,
+    };
     const fed = stage("Semi", [seat("a", true), seat("b"), undecided, none]);
     const [note] = forfeitNotes([fed]);
     expect(note.present).toEqual([user("b")]);
