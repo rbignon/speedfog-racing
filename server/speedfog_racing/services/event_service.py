@@ -335,6 +335,8 @@ class QualifiedSlot:
     seed: int | None
     user_id: UUID | None
     note: str | None
+    # The runner drawn to this seat at the cut, once a withdrawal has vacated it.
+    replaces: UUID | None = None
 
 
 def resolve_withdrawn(names: Sequence[str], users: Mapping[UUID, User]) -> list[UUID]:
@@ -373,7 +375,10 @@ def compute_qualified(
     in a bracket drawing from everyone, where that number is the ladder
     position it waits on. ``started`` names the stages whose field has already
     begun racing: a withdrawal from a seat there changes nothing, though the
-    runner still counts as withdrawn everywhere else.
+    runner still counts as withdrawn everywhere else. A seat a withdrawal
+    vacated names in ``replaces`` the runner drawn to it at the cut, however
+    many times it has changed hands since, and whether or not anyone is left
+    to take it.
     """
     ranked = [e for e in ladder if e.rank is not None]
     position = {e.user_id: i for i, e in enumerate(ranked, start=1)}
@@ -393,6 +398,8 @@ def compute_qualified(
         last_seed = max((seed for s in seeded for seed in s.seeds or []), default=0)
         # Who holds which seat in this bracket: (stage key, index in its seeds).
         seat_of: dict[UUID, tuple[str, int]] = {}
+        # Who each seat was drawn for at the cut.
+        drawn_for: dict[tuple[str, int], UUID] = {}
         for stage in seeded:
             slots: list[QualifiedSlot] = []
             for i, seed in enumerate(stage.seeds or []):
@@ -406,6 +413,7 @@ def compute_qualified(
                     QualifiedSlot(seed=position[entry.user_id], user_id=entry.user_id, note=None)
                 )
                 seat_of[entry.user_id] = (stage.key, i)
+                drawn_for[(stage.key, i)] = entry.user_id
                 drawn.add(entry.user_id)
             groups[stage.key] = slots
         bench = pool[last_seed:]
@@ -421,10 +429,15 @@ def compute_qualified(
                 (e for e in bench if e.user_id not in gone and e.user_id not in seat_of), None
             )
             if called is None:
-                groups[key][i] = QualifiedSlot(seed=None, user_id=None, note=empty)
+                groups[key][i] = QualifiedSlot(
+                    seed=None, user_id=None, note=empty, replaces=drawn_for[seat]
+                )
                 continue
             groups[key][i] = QualifiedSlot(
-                seed=position[called.user_id], user_id=called.user_id, note=None
+                seed=position[called.user_id],
+                user_id=called.user_id,
+                note=None,
+                replaces=drawn_for[seat],
             )
             seat_of[called.user_id] = (key, i)
             drawn.add(called.user_id)

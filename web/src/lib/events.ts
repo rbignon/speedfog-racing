@@ -206,6 +206,41 @@ export function stageWinner(stage: EventStage): User | null {
   return stage.complete ? (stage.results[0]?.user ?? null) : null;
 }
 
+/** A seeded seat a withdrawal vacated, as the note under the bracket title tells it. */
+export interface Withdrawal {
+  /** The runner drawn to the seat at the cut. */
+  withdrew: User;
+  /** Who holds it now; null when nobody was left to call up. */
+  by: User | null;
+  /** Their ladder position, from the seat's "Seed N" label. */
+  position: number | null;
+  /** Nobody holds it yet, but the ladder can still bring someone ("TBD"). */
+  open: boolean;
+  stage: string;
+}
+
+/** Every vacated seat of ``stages``, in stage then seat order. */
+export function withdrawalsOf(stages: EventStage[]): Withdrawal[] {
+  return stages.flatMap((stage) =>
+    stage.field.flatMap((slot) =>
+      slot.replaces
+        ? [
+            {
+              withdrew: slot.replaces,
+              by: slot.user,
+              position:
+                slot.user && slot.label.startsWith("Seed ")
+                  ? Number(slot.label.slice("Seed ".length))
+                  : null,
+              open: !slot.user && slot.label === "TBD",
+              stage: stage.label,
+            },
+          ]
+        : [],
+    ),
+  );
+}
+
 export interface Champion {
   /** The bracket whose final crowned them. */
   bracket: string;

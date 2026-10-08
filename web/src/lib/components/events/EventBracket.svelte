@@ -6,8 +6,10 @@
     bracketLayout,
     fillSlots,
     linkPath,
+    ordinal,
     stageWinner,
     stripStagePrefix,
+    withdrawalsOf,
   } from "$lib/events";
   import EventStageBox, {
     type StageChip,
@@ -31,6 +33,9 @@
   } = $props();
 
   let layout = $derived(bracketLayout(stages));
+  // Seats a withdrawal vacated, told under the title for as long as the
+  // bracket shows: a box's "sub" tag only lasts until its stage is played.
+  let withdrawals = $derived(withdrawalsOf(stages));
   let depth = $derived(layout.rounds.length);
   // A tree of four rounds or more (a round of 32 before the quarters)
   // narrows the side column so the rounds keep their width; the final's
@@ -132,6 +137,10 @@
         rank: slot.user && isSeed ? slot.label.replace("Seed ", "") : null,
         user: slot.user,
         label: slot.label,
+        sub:
+          slot.replaces && slot.user
+            ? `Replaces ${slot.replaces.twitch_display_name || slot.replaces.twitch_username}, who withdrew`
+            : undefined,
         right: slot.user && !isSeed ? slot.label : "",
         rightClass: "pts",
       };
@@ -148,6 +157,27 @@
     rows={rowsOf(stage)}
     chips={chipsOf(stage)}
   />
+{/snippet}
+
+{#snippet withdrawalNote()}
+  {#if withdrawals.length > 0}
+    <ul class="withdrawals">
+      {#each withdrawals as w (w.withdrew.id)}
+        <li>
+          <UserLink user={w.withdrew} /> withdrew:
+          {#if w.by}
+            <UserLink user={w.by} />{w.position !== null
+              ? ` (${ordinal(w.position)})`
+              : ""} takes their seat in {w.stage}.
+          {:else if w.open}
+            their seat in {w.stage} is still to be filled.
+          {:else}
+            nobody is left to take their seat in {w.stage}.
+          {/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
 {/snippet}
 
 {#snippet crown(stage: EventStage, name: string)}
@@ -196,6 +226,7 @@
         style:--order="1"
       >
         <SectionTitle>Bracket</SectionTitle>
+        {@render withdrawalNote()}
       </div>
       {#if aside}
         <div
@@ -266,6 +297,7 @@
   <div class="split">
     <div>
       <SectionTitle>Bracket</SectionTitle>
+      {@render withdrawalNote()}
       {@render tree()}
     </div>
     {#if aside || rules}
@@ -278,6 +310,16 @@
 {/if}
 
 <style>
+  .withdrawals {
+    list-style: none;
+    margin: -0.35rem 0 0.9rem;
+    padding: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+  .withdrawals li + li {
+    margin-top: 0.15rem;
+  }
   .brk {
     display: grid;
     column-gap: 0;

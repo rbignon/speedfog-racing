@@ -62,6 +62,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     field: new Array(8).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,
+      replaces: null,
     })),
     ...overrides,
   };
@@ -265,8 +266,9 @@ describe("EventBracket rows", () => {
                 twitch_avatar_url: null,
               },
               label: "Semi A",
+              replaces: null,
             },
-            { user: null, label: "Seed 2" },
+            { user: null, label: "Seed 2", replaces: null },
           ],
         }),
       ],
@@ -382,6 +384,7 @@ const groups = ["a", "b", "c", "d", "e", "f", "g", "h"].map((x) =>
     field: new Array(4).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,
+      replaces: null,
     })),
   }),
 );

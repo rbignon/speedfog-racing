@@ -1018,6 +1018,47 @@ def test_a_newcomer_behind_a_started_stage_withdrawal_stays_in_the_draw():
     assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
 
 
+def test_a_call_up_names_the_runner_whose_seat_it_takes():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
+    assert [s.replaces for s in groups["quarter_a"]] == [None, None, None, u[15]]
+    assert all(s.replaces is None for s in groups["quarter_c"])
+
+
+def test_a_seat_handed_on_twice_names_the_runner_drawn_there_at_the_cut():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1], u[16]])
+    # u[16] took seed 16's seat, then withdrew: u[18] holds it now, still for u[15].
+    assert (groups["quarter_a"][3].user_id, groups["quarter_a"][3].replaces) == (u[18], u[15])
+    assert (groups["quarter_c"][0].user_id, groups["quarter_c"][0].replaces) == (u[17], u[1])
+
+
+def test_a_seat_nobody_is_left_to_take_still_names_who_withdrew():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(16)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], ladder_final=True)
+    seat = groups["quarter_a"][3]
+    assert (seat.user_id, seat.replaces) == (None, u[15])
+
+
+def test_a_seat_emptied_after_a_call_up_still_names_the_runner_drawn_at_the_cut():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(17)]
+    # u[16], the only bench runner, takes seed 16's seat, then withdraws too.
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[16]], ladder_final=True)
+    seat = groups["quarter_a"][3]
+    assert (seat.user_id, seat.replaces, seat.note) == (None, u[15], NO_RUNNER)
+
+
+def test_a_withdrawal_from_a_started_stage_replaces_nobody():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], started={"quarter_a"})
+    assert all(s.replaces is None for s in groups["quarter_a"])
+
+
 def test_a_seat_nobody_can_fill_reads_tbd_then_no_runner():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(16)]
@@ -1567,6 +1608,7 @@ def test_a_withdrawn_newcomer_is_replaced_from_the_newcomers_bench():
     assert _ids(groups["newcomers_semi_a"]) == [u[4], u[7]]
     assert _ids(groups["newcomers_semi_b"]) == [u[8], u[6]]
     assert slot_label(groups["newcomers_semi_b"][0]) == "Seed 9"
+    assert groups["newcomers_semi_b"][0].replaces == u[5]
 
 
 def test_an_empty_newcomers_seat_carries_no_seed_number():

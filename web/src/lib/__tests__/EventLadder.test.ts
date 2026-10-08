@@ -22,6 +22,8 @@ function entry(overrides: Partial<EventLadderEntry> = {}): EventLadderEntry {
       twitch_avatar_url: null,
     },
     newcomer: false,
+    withdrawn: false,
+    called_up: false,
     mode_points: { standard: 100, hard: 90 },
     total: 190,
     modes_scored: 2,

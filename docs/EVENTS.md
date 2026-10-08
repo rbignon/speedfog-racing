@@ -309,10 +309,24 @@ position it waits on, and reads "TBD" in a filtered bracket, whose pool
 positions would read like ladder positions. A withdrawal
 declared once any race of the runner's seeded stage has left setup calls
 nobody up: the runner keeps the seat, and the stage goes on with whoever
-races. The ladder itself is unchanged by a withdrawal. On the page, each
+races. The ladder's order is unchanged by a withdrawal. On the page, each
 seeded stage's box is titled with its stage's label; a round's box names its
 round in its meta line ("Round of 32"), another stage's gives its date. With
 several brackets, each bracket's boxes sit under its label.
+
+A seat a withdrawal vacated says so: its field slot carries `replaces`, the
+runner drawn to it at the cut, however many times it has changed hands
+since (a call-up who declines in turn shows only as withdrawn) and whether
+or not anyone is left to take it; a withdrawal from a started stage replaces
+nobody. Each ladder entry carries `withdrawn` (listed in the config) and
+`called_up` (holding a seat a withdrawal vacated). The page tells it three
+ways: a line per vacated seat under the bracket's title, for as long as the
+bracket shows ("ItsShura withdrew: dinossb (33rd) takes their seat in Group
+G.", "their seat is still to be filled" while a provisional ladder can
+still bring someone, or "nobody is left to take their seat"), a `sub` tag
+beside the replacement in the stage's box until the stage is played (its tooltip names
+whom they replace), and on the ladder a `withdrawn` tag on a receded row and
+a `called up` tag; the qualification line stays positional.
 
 ### Playoff scoring
 
@@ -495,7 +509,8 @@ count there. See `daily_points` in
    `withdrawn` list before their group's first race starts, and save; the
    page hands the seat to the next runner of that bracket's own pool (for the
    newcomers bracket, the next newcomer on the ladder not already drawn),
-   whom the organizer tells. If that runner declines too, add them as well.
+   whom the organizer tells. The page says who withdrew and who took the
+   seat (see Qualified groups). If that runner declines too, add them as well.
    A call-up can take a newcomer out of the newcomers bracket, or shift its
    field, so update the registrations of any races already created for those stages. A runner who
    renames on Twitch and logs in under the new name must be re-listed under

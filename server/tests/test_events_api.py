@@ -497,6 +497,32 @@ async def test_detail_calls_up_the_next_runner_for_a_withdrawn_seed(test_client,
 
 
 @pytest.mark.asyncio
+async def test_detail_tells_who_withdrew_and_who_took_their_seat(test_client, async_session):
+    async with async_session() as db:
+        event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
+        await _ranked_runners(db, event, 5, RaceStatus.RUNNING)
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    assert [
+        (f["user"]["twitch_username"], (f["replaces"] or {}).get("twitch_username"))
+        for f in stages["semi_b"]["field"]
+    ] == [("runner5", "runner2"), ("runner3", None)]
+    flags = {
+        e["user"]["twitch_username"]: (e["withdrawn"], e["called_up"])
+        for e in data["ladder"]["entries"]
+    }
+    assert flags == {
+        "runner1": (False, False),
+        "runner2": (True, False),
+        "runner3": (False, False),
+        "runner4": (False, False),
+        "runner5": (False, True),
+    }
+
+
+@pytest.mark.asyncio
 async def test_detail_a_withdrawal_from_a_started_stage_calls_nobody_up(test_client, async_session):
     async with async_session() as db:
         event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
@@ -514,6 +540,14 @@ async def test_detail_a_withdrawal_from_a_started_stage_calls_nobody_up(test_cli
         ("Seed 2", "runner2"),
         ("Seed 3", "runner3"),
     ]
+    assert [f["replaces"] for f in stages["semi_b"]["field"]] == [None, None]
+    # Still listed, so still marked; nobody holds a seat in their stead.
+    flags = {
+        e["user"]["twitch_username"]: (e["withdrawn"], e["called_up"])
+        for e in data["ladder"]["entries"]
+    }
+    assert flags["runner2"] == (True, False)
+    assert not any(called_up for _, called_up in flags.values())
 
 
 @pytest.mark.asyncio

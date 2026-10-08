@@ -482,6 +482,10 @@ export interface EventLadderEntry {
   rank: number | null;
   user: User;
   newcomer: boolean;
+  /** Listed as withdrawn from the playoffs in the event's config. */
+  withdrawn: boolean;
+  /** Holds a seat a withdrawal vacated. */
+  called_up: boolean;
   mode_points: Record<string, number | null>;
   total: number | null;
   modes_scored: number;
@@ -544,6 +548,8 @@ export interface EventStageEntry {
 export interface EventFieldSlot {
   user: User | null;
   label: string;
+  /** A seeded seat a withdrawal vacated: the runner drawn to it at the cut. */
+  replaces: User | null;
 }
 
 export interface EventStage {

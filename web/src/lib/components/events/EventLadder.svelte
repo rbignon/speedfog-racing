@@ -100,6 +100,7 @@
         <div
           class="row"
           class:me={viewerId !== null && entry.user.id === viewerId}
+          class:withdrawn={entry.withdrawn}
           class:above-cut={i === cutIndex}
         >
           <span
@@ -111,6 +112,8 @@
           <div class="name-line">
             <UserLink user={entry.user} showBadge showAvatar />
             {#if entry.newcomer}<span class="newtag">newcomer</span>{/if}
+            {#if entry.withdrawn}<span class="newtag">withdrawn</span>{/if}
+            {#if entry.called_up}<span class="newtag">called up</span>{/if}
           </div>
           {#each modes as mode (mode.key)}
             {@const p = entry.mode_points[mode.key]}
@@ -272,6 +275,13 @@
     gap: 0.4rem;
     min-width: 0;
   }
+  /* Off the playoffs: the row stays on the ladder, receded, its tag kept
+   * at full contrast since it is the only text saying why. */
+  .row.withdrawn > .rank,
+  .row.withdrawn > .cell,
+  .row.withdrawn .name-line > :global(:first-child) {
+    opacity: 0.55;
+  }
   .newtag {
     font-family: var(--font-mono);
     font-size: 0.6rem;
@@ -281,6 +291,8 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     padding: 0 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
   }
   .cell {
     font-family: var(--font-mono);

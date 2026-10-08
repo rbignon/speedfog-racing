@@ -6,6 +6,8 @@
     user: User | null;
     label?: string;
     newcomer?: boolean;
+    /** A seat taken from a runner who withdrew: the tag's tooltip says whom. */
+    sub?: string;
     right?: string;
     rightClass?: "pts" | "lead" | "adv" | "prov";
   }
@@ -78,6 +80,7 @@
             <span class="tbd">{row.label ?? "TBD"}</span>
           {/if}
           {#if row.newcomer}<span class="newtag">new</span>{/if}
+          {#if row.sub}<span class="newtag" title={row.sub}>sub</span>{/if}
         </span>
         <span class="right {row.rightClass ?? 'pts'}">{row.right ?? ""}</span>
       </li>

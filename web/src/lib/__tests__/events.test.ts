@@ -33,6 +33,7 @@ import {
   stageTimes,
   stripStagePrefix,
   timeRemaining,
+  withdrawalsOf,
 } from "$lib/events";
 import type {
   EventBracket,
@@ -150,7 +151,11 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
 }
 
 const seats = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ user: null, label: `Seed ${i + 1}` }));
+  Array.from({ length: n }, (_, i) => ({
+    user: null,
+    label: `Seed ${i + 1}`,
+    replaces: null,
+  }));
 
 const mainBracket: EventBracket = {
   key: "main",
@@ -748,6 +753,62 @@ describe("stripStagePrefix", () => {
     expect(stripStagePrefix("Semi A - Race 1 - Standard", "Semi A")).toBe(
       "Race 1 - Standard",
     );
+  });
+});
+
+describe("withdrawalsOf", () => {
+  const user = (name: string) => ({ id: name, twitch_username: name }) as User;
+  const stage = (label: string, field: EventStage["field"]): EventStage =>
+    ({ key: label, label, field }) as EventStage;
+
+  it("lists each vacated seat with who holds it now and where they ranked", () => {
+    const stages = [
+      stage("Group F", [
+        { user: user("jeffqed"), label: "Seed 7", replaces: null },
+      ]),
+      stage("Group G", [
+        { user: user("mm420_"), label: "Seed 3", replaces: null },
+        { user: user("dinossb"), label: "Seed 33", replaces: user("ItsShura") },
+        { user: null, label: "No runner", replaces: user("ghost") },
+        { user: null, label: "TBD", replaces: user("late") },
+      ]),
+      stage("Quarter D", [
+        { user: null, label: "Top 2 of Group G", replaces: null },
+      ]),
+    ];
+    expect(withdrawalsOf(stages)).toEqual([
+      {
+        withdrew: user("ItsShura"),
+        by: user("dinossb"),
+        position: 33,
+        open: false,
+        stage: "Group G",
+      },
+      {
+        withdrew: user("ghost"),
+        by: null,
+        position: null,
+        open: false,
+        stage: "Group G",
+      },
+      {
+        withdrew: user("late"),
+        by: null,
+        position: null,
+        open: true,
+        stage: "Group G",
+      },
+    ]);
+  });
+
+  it("is empty when nobody withdrew", () => {
+    expect(
+      withdrawalsOf([
+        stage("Semi A", [
+          { user: user("ace"), label: "Seed 1", replaces: null },
+        ]),
+      ]),
+    ).toEqual([]);
   });
 });
 

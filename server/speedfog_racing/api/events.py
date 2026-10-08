@@ -314,9 +314,15 @@ async def get_event(
         for key, races in stage_races.items()
         if any(r.status != RaceStatus.SETUP for _, r in races)
     }
-    qualified = compute_qualified(
-        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final, started
-    )
+    withdrawn = resolve_withdrawn(config.withdrawn, users)
+    qualified = compute_qualified(ladder, config, newcomers, withdrawn, ladder_final, started)
+    withdrawn_ids = set(withdrawn)
+    called_up = {
+        slot.user_id
+        for slots in qualified.values()
+        for slot in slots
+        if slot.replaces is not None and slot.user_id is not None
+    }
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties
     # between two RUNNING stage races resolve deterministically.
@@ -423,7 +429,11 @@ async def get_event(
                 for slot in fed_field(stage, config, results)
             ]
         return [
-            EventFieldSlotResponse(user=user_of(slot.user_id), label=slot_label(slot))
+            EventFieldSlotResponse(
+                user=user_of(slot.user_id),
+                label=slot_label(slot),
+                replaces=user_of(slot.replaces),
+            )
             for slot in qualified.get(stage_key, [])
         ]
 
@@ -472,6 +482,8 @@ async def get_event(
                     rank=e.rank,
                     user=UserResponse.model_validate(users[e.user_id]),
                     newcomer=newcomers.get(e.user_id, False),
+                    withdrawn=e.user_id in withdrawn_ids,
+                    called_up=e.user_id in called_up,
                     mode_points=e.mode_points,
                     total=e.total,
                     modes_scored=e.modes_scored,

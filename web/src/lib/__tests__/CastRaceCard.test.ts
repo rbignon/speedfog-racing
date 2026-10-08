@@ -172,8 +172,9 @@ describe("CastRaceCard: no race attached yet", () => {
           twitch_display_name: "Bob",
         }),
         label: "Top 2 of Quarter C",
+        replaces: null,
       },
-      { user: null, label: "Top 2 of Quarter C" },
+      { user: null, label: "Top 2 of Quarter C", replaces: null },
     ];
     const { container } = render(CastRaceCard, {
       props: {

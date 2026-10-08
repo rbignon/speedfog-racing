@@ -1283,6 +1283,9 @@ class EventLadderEntryResponse(BaseModel):
     rank: int | None
     user: UserResponse
     newcomer: bool
+    # Listed in the config's withdrawn; holding a seat a withdrawal vacated.
+    withdrawn: bool
+    called_up: bool
     mode_points: dict[str, int | None]
     total: int | None
     modes_scored: int
@@ -1356,6 +1359,8 @@ class EventStageEntryResponse(BaseModel):
 class EventFieldSlotResponse(BaseModel):
     user: UserResponse | None
     label: str
+    # A seeded seat a withdrawal vacated: the runner drawn to it at the cut.
+    replaces: UserResponse | None = None
 
 
 class EventStageResponse(BaseModel):
