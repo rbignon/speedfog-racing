@@ -1201,10 +1201,9 @@ class EventConfig(BaseModel):
             raise ValueError(
                 f"{bracket.key}: seeds must be distinct across stages, duplicated: {duplicated}"
             )
-        # A gap would leave those ladder positions to no stage of the bracket;
-        # and the page
-        # reads the cut off the seeded fields' sizes, which a gap makes a
-        # smaller number than the positions the seeds reach into.
+        # A gap would leave those ladder positions to no stage of the bracket,
+        # and the page reads the cut off the seeded fields' sizes, which a gap
+        # makes a smaller number than the positions the seeds reach into.
         missing = sorted(set(range(1, len(all_seeds) + 1)) - set(all_seeds))
         if missing:
             raise ValueError(

@@ -78,12 +78,13 @@ stage of another bracket, a stage feeding more than one stage, `advance` on
 a stage nothing takes from or missing on one something does, an `advance`
 larger than the field it comes from, a second final in a bracket, seed
 numbers reused within a bracket (several brackets reuse them freely), a
-bracket's seeds that do not cover its pool from 1 without a gap (a gap would exclude those positions from
-all of its stages at once), repeated bracket keys, repeated stage labels, a
-bracket without stages, a `phase_override` outside the five phases, a
-`newcomers` bracket without `announced_at`, a blank or repeated `withdrawn`
-or `forfeits` name (case-insensitive), a name in both lists, a naive `draw_locks_at`, a naive (timezone-less) `announced_at` or stage
-`date`, and a document still holding a top-level `stages` list (see the
+bracket's seeds that do not cover its pool from 1 without a gap (a gap would
+exclude those positions from all of its stages at once), repeated bracket
+keys, repeated stage labels, a bracket without stages, a `phase_override`
+outside the five phases, a `newcomers` bracket without `announced_at`, a
+blank or repeated `withdrawn` or `forfeits` name (case-insensitive), a name
+in both lists, a naive `draw_locks_at`, a naive (timezone-less)
+`announced_at` or stage `date`, and a document still holding a top-level `stages` list (see the
 migration below). `starts_at`, `qualifier_ends_at` and `ends_at` on the
 upsert request are rejected the same way when naive, and so is an
 `announced_at` at or after `starts_at`: the qualifier's own runs would
@@ -480,6 +481,9 @@ count there. See `daily_points` in
    deadline until it reconnects. During the week that follows: nothing. To void
    a broken seed, detach it. At the cut, the runs can be audited for cheating
    before the qualified groups are announced (see [RUN_AUDIT.md](RUN_AUDIT.md)).
+   Set `draw_locks_at` before the first match is scheduled: no playoff match
+   is scheduled before the lock, since the draw can still change until then.
+   With it unset, every withdrawal redraws, stages already played included.
 4. Once a match is agreed with its players: create the stage's public races
    (four slots, a duration cap) with their `scheduled_at`, add the qualified
    runners and the casters, attach to `<stage>:<n>`. The earliest of the
@@ -508,12 +512,17 @@ count there. See `daily_points` in
    tell the runners who moved. From `draw_locks_at` on, add the name to
    `forfeits` instead: they keep their seat, flagged, and nobody is called
    up; update the registrations of the races already created for their stage
-   before it starts (a started race's entries can no longer change). A runner
-   who renames on Twitch and logs in under the new name must be re-listed
-   under it: the old name no longer matches any user, and the admin refuses
-   it on the next save. These lists are unrelated to the signup
-   "Withdraw" button (an intent signal taken before the qualifier closes,
-   see "Signups" above).
+   before it starts (a started race's entries can no longer change). A stage
+   left with no more runners than it sends on goes through without a match
+   only when no race is attached to it: if its races were already created,
+   detach them from the Races tab, and the stage then completes on its own. A
+   runner who renames on Twitch and logs in under the new name must be
+   re-listed under it: the old name no longer matches any user, and the admin
+   refuses it on the next save. After the lock the admin also refuses any
+   change to `withdrawn`, so re-listing a struck runner under a new Twitch
+   name needs `draw_locks_at` cleared for that one save, then restored. These
+   lists are unrelated to the signup "Withdraw" button (an intent signal taken
+   before the qualifier closes, see "Signups" above).
 6. A showcase (see "Showcases" above) runs the same way: add it to the
    config's `showcases`, create its races with the chosen runners and the
    casters, named after its label like a stage's ("Ignite Showcase - Race 1 -
@@ -823,7 +832,9 @@ The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
-a seed number for a seeded stage, the source stage for a fed one.
+a seed number for a seeded stage, the source stage for a fed one; a place a
+complete source cannot fill reads "No runner". A forfeit's seat is left out of
+the line-up, as on the draw card.
 
 The draw is the card the qualified are announced with, before any match is
 scheduled, and the one shown again whenever no evening is current or next

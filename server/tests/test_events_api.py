@@ -726,7 +726,7 @@ async def test_detail_final_ladder_excludes_bogus_slot_and_shows_live_stage_race
     # Only two runners are ranked: semi_b (seeds 2 and 3) is short a seat and goes
     # through without a match, so it is never the next evening.
     walked = frozenset(s["key"] for s in data["stages"] if s["walkover"])
-    assert "semi_b" in walked
+    assert walked == {"semi_b"}
     expected_next = _expected_next_stage_key(walked)
     if expected_next is None:
         assert data["next_stage"] is None

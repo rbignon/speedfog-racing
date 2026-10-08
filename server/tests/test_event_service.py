@@ -1698,6 +1698,26 @@ def test_a_group_down_to_its_advancing_runners_goes_through_without_a_match():
     assert next_stage_key(cfg, resolved, now) == "final"
 
 
+def test_a_fed_stage_short_of_runners_walks_over_keeping_the_fed_order():
+    cfg = _quarters_config()
+    resolved = _walkover_resolved(cfg, CUT + timedelta(days=1))
+    a1, a2, b1, b2 = (uuid4() for _ in range(4))
+    for key, first, second in (("quarter_a", a1, a2), ("quarter_b", b1, b2)):
+        resolved.results[key] = StageResult(
+            complete=True,
+            entries=[
+                StageEntry(user_id=first, points=0, igt_total=0, advances=True),
+                StageEntry(user_id=second, points=0, igt_total=0, advances=True),
+            ],
+        )
+    # a2 and b1 advanced, then withdrew: semi_a keeps two runners for two places.
+    assert apply_walkovers(cfg, resolved, {}, {a2, b1}) == {"semi_a"}
+    assert [e.user_id for e in resolved.results["semi_a"].entries] == [a1, b2]
+    assert resolved.results["semi_a"].complete
+    # semi_b waits on quarters nobody has played: no walkover there.
+    assert resolved.results["semi_b"].complete is False
+
+
 def test_a_group_left_with_one_runner_sends_them_alone():
     cfg = _one_group_then_final()
     u = [uuid4() for _ in range(4)]
