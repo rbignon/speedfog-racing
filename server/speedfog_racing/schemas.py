@@ -1038,7 +1038,7 @@ class EventStage(BaseModel):
     races: int = Field(ge=1, le=5)
     seeds: list[int] | None = None
     from_: list[str] | None = Field(default=None, alias="from")
-    # How many of this stage's runners go on to the stage naming it in ``from``.
+    # How many of this stage's runners go on, per place, to the stages naming it in ``from``.
     advance: int | None = Field(default=None, ge=1, le=3)
     modes: list[str] = []
 
@@ -1071,7 +1071,7 @@ class EventStage(BaseModel):
             raise ValueError("from must name at least one stage")
         for item in self.from_ or []:
             key, sep, place = item.partition(":")
-            if not key or (sep and not (place.isdigit() and int(place) >= 1)):
+            if not key or (sep and not (place.isdecimal() and int(place) >= 1)):
                 raise ValueError(f"from items are a stage key or key:place, got {item!r}")
         if (self.seeds is None) == (self.from_ is None):
             raise ValueError("a stage takes its field from exactly one of seeds or from")
@@ -1441,7 +1441,7 @@ class EventStageResponse(BaseModel):
     # date then stands at noon UTC, and only its day is meant to be shown.
     time_set: bool
     from_: list[str] = Field(default_factory=list, alias="from")
-    # How many of the stage's runners go on to the stage that takes from it;
+    # How many of the stage's runners go on to the stages that take from it;
     # None for a stage nobody takes from, and for a showcase.
     advance: int | None = None
     races_expected: int

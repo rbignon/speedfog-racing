@@ -289,6 +289,40 @@ describe("EventBracket rows", () => {
     expect(firstRow?.querySelector(".rank")?.textContent).toBe("");
     expect(firstRow?.querySelector(".right")?.textContent).toBe("Semi A");
   });
+
+  it("shows a decided fed seat's short code beside the runner", () => {
+    const { container } = render(EventBracket, {
+      stages: [
+        stage({ key: "group_a", label: "Group A", kind: "round" }),
+        stage({
+          key: "quarter_a",
+          label: "Quarter A",
+          kind: "quarter",
+          from: ["group_a"],
+          field: [
+            {
+              user: {
+                id: "u1",
+                twitch_username: "a",
+                twitch_display_name: "A",
+                twitch_avatar_url: null,
+              },
+              label: "1st of Group A",
+              forfeited: false,
+              source: "group_a",
+              place: 1,
+            },
+          ],
+        }),
+      ],
+      formatDay: fmtDay,
+    });
+    const rows = container.querySelectorAll(".box li");
+    const row = [...rows].find(
+      (r) => r.querySelector(".right")?.textContent === "A1",
+    );
+    expect(row).toBeTruthy();
+  });
 });
 
 describe("EventBracket champion box", () => {

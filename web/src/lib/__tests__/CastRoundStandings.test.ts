@@ -181,6 +181,21 @@ describe("CastRoundStandings: cut line", () => {
     expect(rows[1].nextElementSibling).toBe(cut);
   });
 
+  it("joins the distinct next stages of a cross-fed round on the cut line", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        results: results(4),
+        advance: 2,
+        complete: false,
+        nextLabels: ["Quarter A", "Quarter C"],
+      },
+    });
+    expect(container.querySelector(".scut")?.textContent?.trim()).toBe(
+      "Quarter A · Quarter C",
+    );
+  });
+
   it("still draws the cut on the last row shown above the hidden-count line", () => {
     // 10 runners in a panel of 6 rows: 5 shown, then "+ 5 more".
     const { container } = render(CastRoundStandings, {

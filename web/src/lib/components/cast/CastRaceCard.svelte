@@ -292,7 +292,7 @@
   }
 
   /* A field seat nobody has filled yet: the source stage's placeholder
-   * label ("Top 2 of Quarter C"), styled like the web page's own .tbd. */
+   * label ("1st of Quarter C"), styled like the web page's own .tbd. */
   .bn.tbd {
     color: var(--color-text-disabled);
     font-style: italic;

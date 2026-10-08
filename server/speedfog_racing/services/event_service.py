@@ -337,7 +337,7 @@ def newcomer_flags(
 # --- qualified groups -------------------------------------------------------
 
 
-# Display label of a slot nobody holds yet, next to "Seed 4" and "Top 2 of Semi B".
+# Display label of a slot nobody holds yet, next to "Seed 4" and "1st of Semi B".
 UNDECIDED = "TBD"
 # Display label of a seat nobody can hold any more: the ladder is final and no
 # runner is left on it to seat.

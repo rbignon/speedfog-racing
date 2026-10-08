@@ -695,7 +695,7 @@ def test_a_whole_stage_and_one_of_its_places_overlap():
 
 
 def test_a_from_item_is_a_key_or_a_key_and_a_place():
-    for bad in ("quarter_a:0", "quarter_a:x", ":1"):
+    for bad in ("quarter_a:0", "quarter_a:x", "quarter_a:²", ":1"):
         with pytest.raises(ValidationError, match="key or key:place"):
             EventConfig.model_validate(
                 _crossed(semi_a=[bad, "quarter_b:2", "quarter_c:1", "quarter_d:2"])

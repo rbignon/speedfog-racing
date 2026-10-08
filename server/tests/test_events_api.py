@@ -456,6 +456,12 @@ async def test_detail_seeds_the_quarters_and_names_what_the_later_rounds_wait_on
     assert [f["label"] for f in stages["final"]["field"]] == (
         ["1st of Semi A", "2nd of Semi A", "1st of Semi B", "2nd of Semi B"]
     )
+    assert [(f["source"], f["place"]) for f in stages["semi_a"]["field"]] == [
+        ("quarter_a", 1),
+        ("quarter_a", 2),
+        ("quarter_b", 1),
+        ("quarter_b", 2),
+    ]
     assert [g["stage_key"] for g in data["qualified"]["groups"]] == [
         "quarter_a",
         "quarter_b",

@@ -575,7 +575,7 @@ export interface EventStage {
   time_set: boolean;
   /** The stages this one takes its runners from (empty for a seeded stage). */
   from: string[];
-  /** How many of its runners go on to the stage that takes from it; null for
+  /** How many of its runners go on to the stages that take from it; null for
    * a stage nobody takes from (and for a showcase). */
   advance: number | null;
   races_expected: number;

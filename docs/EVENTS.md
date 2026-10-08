@@ -45,9 +45,9 @@ from: `seeds` (positions in its bracket's pool) or `from` (earlier stages of
 the same bracket it takes runners from, each item a stage key, all its
 advancing runners by place, or `key:place`, one place: `group_a:1` is Group
 A's winner, so the places of a round can be dispatched crosswise into the
-next). `advance` sits on the stage that
-sends runners on: how many of its runners go to the stage naming it in
-`from` (the top 2 of each group of a round, of each quarter, of each semi).
+next). `advance` sits on the stage that sends runners on: how many of its
+runners go on, each place to the stage or stages naming it in `from` (the
+top 2 of each group of a round, of each quarter, of each semi).
 The kind only matters for display, except `final` (its winner is its
 bracket's champion, and the first bracket's is the event's). `round` is a
 seeded round played before the quarters; the format paragraph names it after
@@ -71,13 +71,16 @@ evening. A naive datetime is rejected.
 The detail returns that effective date on each stage, with `date_fixed` true
 when the config sets it, `time_set` false while it is a config day none of
 the stage's races has timed yet (the summary's and the detail's `next_stage`
-carry it too), and `from` for the connectors. The dated stages of a bracket
-ascend; `qualifier_ends_at` is at or before the earliest dated stage;
-`ends_at` is after the latest.
+carry it too), and `from` (the source stages' keys, each once, without
+places) for the connectors and for spreading crossed rounds. The dated
+stages of a bracket ascend; `qualifier_ends_at` is at or before the earliest
+dated stage; `ends_at` is after the latest.
 
 Validation also rejects: a stage with both or neither of `seeds` and `from`,
 a `from` naming a stage placed later in its bracket, an unknown stage or a
-stage of another bracket, a place taken by no seat or by two (a whole stage counts as all its places), a place beyond its stage's `advance`, a `from` item that is neither a key nor `key:place`, `advance` on
+stage of another bracket, a place taken by no seat or by two (a whole stage
+counts as all its places), a place beyond its stage's `advance`, a `from`
+item that is neither a key nor `key:place`, `advance` on
 a stage nothing takes from or missing on one something does, an `advance`
 larger than the field it comes from, a second final in a bracket, seed
 numbers reused within a bracket (several brackets reuse them freely), a
@@ -215,13 +218,14 @@ reporting the stored row after the cut, when the ladder no longer lists it.
 
 The ladder is provisional until every attached qualifier race is FINISHED. A
 stage is complete when it has all its races attached and FINISHED; its
-advancing runners (its `advance`) then fill the stage it feeds automatically.
+advancing runners (its `advance`) then fill the stages it feeds automatically,
+each place into the stage naming it.
 A stage other than a final is also complete, with no race attached, when its
 field is settled (every seat held or past the end of a final ladder, every
 source complete), short of runners (forfeits or empty seats) and keeps no more
 of them than its `advance`: they all go through without a match, by seed (a
 fed stage keeps its field's order), with no points, and the stage reads
-`walkover`. This runs right after the draw, so the stage it feeds seats them
+`walkover`. This runs right after the draw, so the stages it feeds seat them
 and can become the next evening. A stage whose whole field advances by design
 still plays. A place a complete source cannot fill reads "No runner".
 A bracket is complete when its final is (its last stage, without a final).
@@ -434,7 +438,9 @@ count there. See `daily_points` in
 ## Running an event (admin)
 
 1. `/admin`, Events tab: create the event from the template, adjust dates,
-   modes and stages, save. Mode keys must be pool names.
+   modes and stages, save. Mode keys must be pool names. Write `key:place`
+   items in a stage's `from` only once the code that reads them is deployed
+   (older code refuses them, see the rollback note below).
    The stages go inside `brackets`: the template has a Top 16 bracket and a
    newcomers bracket of two semis and a final; add, remove or relabel
    brackets there, keeping stage keys and labels unique across the whole
@@ -548,7 +554,12 @@ No manual transition exists: the page follows the dates and the race states.
 When a deploy changes the config's shape (a data migration rewriting stored
 documents, as the move to brackets did), roll back in this order: put the
 stored config back into a shape the older code reads, then roll the code
-back; the older schema ignores the keys it does not know, so it would read
+back. In particular, older code refuses a `from` item written `key:place`
+(the event page and the share card fail, the home band drops the event,
+attaching a race is refused, and the live playoff cutoff is silently
+skipped): write `key:place` items only after deploying the code that reads
+them, and before rolling the code back put every stage's `from` back to whole
+stage keys; the older schema ignores the keys it does not know, so it would read
 the bracketed document as an event without any playoff stages: the page
 shows no bracket and the attached stage races go unrecognised.
 
@@ -628,10 +639,11 @@ going to different quarters) has no tree to centre on: it is spread evenly over
 the first round's rows, each stage next to the sources it draws on, without
 connectors. The seat labels say where each runner comes from ("1st of Group
 A"), and a decided runner's right cell reads the short code ("A1"); stages fed
-by whole stages (the final from the semis) keep their connectors. With four first-round boxes or more
-(quarters) the tree takes the page's width: a side column holds the evening
-section on top, level with the "Bracket" title, and the Champion on the final's
-axis; for a tree of four rounds or more (a round of 32 before the quarters)
+by whole stages (the final from the semis) keep their connectors. With four
+first-round boxes or more (quarters) the tree takes the page's width: a side
+column holds the evening section on top, level with the "Bracket" title, and
+the Champion on the final's axis; for a tree of four rounds or more (a round
+of 32 before the quarters)
 that side column narrows so the rounds keep their width, and the evening
 section spreads over the final's column too, above the final, which sits
 halfway down the first round; the playoff rules run under the whole tree, their
@@ -847,7 +859,8 @@ The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
-a seed number for a seeded stage, the source stage alone for a fed one (the page says "1st of Semi A", the ring only has room for "Semi A"); a place a
+a seed number for a seeded stage, the source stage alone for a fed one (the
+page says "1st of Semi A", the ring only has room for "Semi A"); a place a
 complete source cannot fill reads "No runner". A forfeit's seat is left out of
 the line-up, as on the draw card.
 
