@@ -70,7 +70,6 @@ from speedfog_racing.services.event_service import (
     load_featured_events,
     newcomer_flags,
     next_stage_key,
-    raced_runners,
     resolve_stages,
     resolve_withdrawn,
     score_playoff_race,
@@ -151,7 +150,8 @@ async def list_events(
             signed_up = [s.user_id for s in event.signups]
             users.update({s.user_id: s.user for s in event.signups})
         mode_keys = config.mode_keys()
-        ladder = compute_ladder(mode_keys, resolved.qualifier, signed_up=signed_up)
+        struck = resolve_withdrawn(config.withdrawn, users)
+        ladder = compute_ladder(mode_keys, resolved.qualifier, signed_up=signed_up, struck=struck)
         ranked_ids = {entry.user_id for entry in ladder}
         ordered = [users[entry.user_id] for entry in ladder if entry.user_id in users]
         ordered += sorted(
@@ -218,9 +218,8 @@ async def list_events(
                 ladder,
                 config,
                 newcomers,
-                resolve_withdrawn(config.withdrawn, users),
                 ladder_final,
-                raced_runners(stage_races),
+                resolve_withdrawn(config.forfeits, users),
             )
             for bracket, seated in bracket_draw(config, qualified):
                 brackets.append(
@@ -301,21 +300,13 @@ async def get_event(
     shown_qualifier = qualifier if phase != "upcoming" else []
 
     signed_up = [s.user_id for s in event.signups] if phase in JOINABLE_PHASES else []
-    ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
+    struck = resolve_withdrawn(config.withdrawn, users)
+    ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up, struck=struck)
     finished_before = await count_finished_before(db, set(users), announce_date(event, config))
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
-    withdrawn = resolve_withdrawn(config.withdrawn, users)
-    qualified = compute_qualified(
-        ladder, config, newcomers, withdrawn, ladder_final, raced_runners(stage_races)
-    )
-    withdrawn_ids = set(withdrawn)
-    called_up = {
-        slot.user_id
-        for slots in qualified.values()
-        for slot in slots
-        if slot.replaces is not None and slot.user_id is not None
-    }
+    forfeits = set(resolve_withdrawn(config.forfeits, users))
+    qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
     # Config stage order, then by index within a stage: a race attached under a
     # slot key no longer in the config never becomes the live race, and ties
     # between two RUNNING stage races resolve deterministically.
@@ -418,14 +409,18 @@ async def get_event(
             return []
         if stage.from_:
             return [
-                EventFieldSlotResponse(user=user_of(slot.user_id), label=slot.label)
+                EventFieldSlotResponse(
+                    user=user_of(slot.user_id),
+                    label=slot.label,
+                    forfeited=slot.user_id in forfeits,
+                )
                 for slot in fed_field(stage, config, results)
             ]
         return [
             EventFieldSlotResponse(
                 user=user_of(slot.user_id),
                 label=slot_label(slot),
-                replaces=user_of(slot.replaces),
+                forfeited=slot.forfeited,
             )
             for slot in qualified.get(stage_key, [])
         ]
@@ -476,8 +471,8 @@ async def get_event(
                     rank=e.rank,
                     user=UserResponse.model_validate(users[e.user_id]),
                     newcomer=newcomers.get(e.user_id, False),
-                    withdrawn=e.user_id in withdrawn_ids,
-                    called_up=e.user_id in called_up,
+                    withdrawn=e.withdrawn,
+                    forfeited=e.user_id in forfeits,
                     mode_points=e.mode_points,
                     total=e.total,
                     modes_scored=e.modes_scored,

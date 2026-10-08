@@ -607,15 +607,21 @@ def test_the_cut_with_nothing_scheduled_lines_up_each_brackets_draw() -> None:
     assert event_og_description(summary) == "Playoffs incoming · 7 players"
 
 
-def test_a_call_up_joins_its_brackets_row_and_leaves_the_newcomers() -> None:
+def test_a_struck_runner_leaves_the_draw_and_the_runners_below_move_up() -> None:
     event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"], withdrawn=["Bob"])
     summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
-    # eve, first past the Top 4's seeds, takes bob's seat; the newcomers bracket
-    # then draws from fay alone, its empty seat left out.
+    # cleo, dee and eve move up a seat; eve, a newcomer, joins the Top 4, so
+    # the newcomers bracket draws from fay alone.
     assert _rows(summary) == [
         ("Top 4", [["ana", "cleo", "dee", "eve"]], 0),
         ("Newcomers", [["fay"]], 0),
     ]
+
+
+def test_a_forfeit_leaves_the_draw_card() -> None:
+    event, veterans = _draw_world(["ana", "bob", "cleo", "dee", "eve", "fay"], forfeits=["Bob"])
+    summary = summarize_event(event, now=CUT + dt.timedelta(days=1), finished_before=veterans)
+    assert _rows(summary)[0] == ("Top 4", [["ana", "cleo", "dee"]], 0)
 
 
 def test_a_bracket_nobody_holds_a_seat_in_shows_no_row() -> None:

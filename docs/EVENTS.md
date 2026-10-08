@@ -78,8 +78,7 @@ stage of another bracket, a stage feeding more than one stage, `advance` on
 a stage nothing takes from or missing on one something does, an `advance`
 larger than the field it comes from, a second final in a bracket, seed
 numbers reused within a bracket (several brackets reuse them freely), a
-bracket's seeds that do not cover its pool from 1 without a gap (its bench
-starts after its largest seed, so a gap would exclude those positions from
+bracket's seeds that do not cover its pool from 1 without a gap (a gap would exclude those positions from
 all of its stages at once), repeated bracket keys, repeated stage labels, a
 bracket without stages, a `phase_override` outside the five phases, a
 `newcomers` bracket without `announced_at`, a blank or repeated `withdrawn`
@@ -121,9 +120,9 @@ playoffs.
 The playoffs are one bracket or several, drawn in config order. Each draws
 from its own pool: the ranked ladder filtered by its `entry` (`all`,
 everyone; `newcomers`, the runners flagged newcomer, see Scoring), less every
-runner an earlier bracket drew, at the cut or by a call-up, whether or not
-they withdrew after. A newcomer inside the Top 32 therefore plays the Top 32
-only, and a Top 32 call-up can take a newcomer out of the newcomers' pool. A
+runner an earlier bracket drew, at the draw, forfeits included. A newcomer
+inside the Top 32 therefore plays the Top 32 only, and a strike in the Top 32
+can pull a newcomer out of the newcomers' pool. A
 bracket's `seeds` index its pool (newcomer seed 1 is the best newcomer no
 earlier bracket drew), while the page always shows a runner's ladder
 position. Everything else works per bracket: `from` names a stage of the
@@ -296,44 +295,27 @@ still cuts where the seats run out; the line follows the visible rows when
 filters hide some, and only renders while a row sits below it.
 
 Qualified groups map each seeded stage's `seeds` to its bracket's pool (see
-Brackets), bracket by bracket. A bracket's bench is its pool past its largest
-seed. The config's `withdrawn` names are replayed in their order within each
-bracket: a withdrawal of a runner holding a seat there (a seed, or an
-earlier replacement) vacates it and hands it to the first bench runner
-neither called up nor withdrawn so far, shown under their own ladder
-position ("Seed 33"); a withdrawal of a runner holding no seat there only
-keeps them from being called up in it. A replacement once called up stays
-put whatever is declared after, and only seeded stages call anyone up: a
-runner who gives up a fed stage leaves it one short. A runner drawn into an
-earlier bracket never enters a later one, withdrawn or not. A seat nobody
+Brackets), bracket by bracket. A runner listed in `withdrawn` is struck from
+the ladder: their row stays, unranked and tagged `withdrawn`, and the numbering
+carries on past them, so the runners below move up a place (ties keep their
+usual rule) and the qualification line follows the renumbered ranking. The
+draw seats each bracket's pool by position on that ranking, and a seat shows
+its runner's new position ("Seed 16"). A struck newcomer leaves the newcomers'
+pool too, and a strike in the first bracket can pull a newcomer into it. A
+runner drawn into an earlier bracket never enters a later one. A seat nobody
 can fill reads "TBD" while the ladder is provisional and "No runner" once it
 is final; a seat past the end of a provisional ladder keeps its "Seed N"
 placeholder in a bracket drawing from everyone, where N is the ladder
 position it waits on, and reads "TBD" in a filtered bracket, whose pool
-positions would read like ladder positions. A runner who withdraws after
-racing their seeded stage (entered in one of its races out of setup) calls
-nobody up: they keep the seat, and the stage goes on with whoever races.
-The config keeps no date for a withdrawal, so the races' entrants are what
-tell a late withdrawal from one declared before the stage: the call-up of a
-withdrawal declared in time holds once the stage is under way, as long as
-the withdrawn runner is entered in none of its races. The ladder's order is unchanged by a withdrawal. On the page, each
+positions would read like ladder positions. On the page, each
 seeded stage's box is titled with its stage's label; a round's box names its
 round in its meta line ("Round of 32"), another stage's gives its date. With
 several brackets, each bracket's boxes sit under its label.
 
-A seat a withdrawal vacated says so: its field slot carries `replaces`, the
-runner drawn to it at the cut, however many times it has changed hands
-since (a call-up who declines in turn shows only as withdrawn) and whether
-or not anyone is left to take it; a withdrawal after racing replaces
-nobody. Each ladder entry carries `withdrawn` (listed in the config) and
-`called_up` (holding a seat a withdrawal vacated). The page tells it three
-ways: a line per vacated seat under the bracket's title, for as long as the
-bracket shows ("ItsShura withdrew: dinossb (33rd) takes their seat in Group
-G.", "their seat is still to be filled" while a provisional ladder can
-still bring someone, or "nobody is left to take their seat"), a `sub` tag
-beside the replacement in the stage's box until the stage is played (its tooltip names
-whom they replace), and on the ladder a `withdrawn` tag on a receded row and
-a `called up` tag; the qualification line stays positional.
+A runner listed in `forfeits` (withdrew from `draw_locks_at` on) keeps their
+seat and nobody replaces them: the field slot and the ladder entry carry
+`forfeited`, and the draw rows of the home band and the share card leave
+them out. A fed stage whose runner forfeits is left one short.
 
 ### Playoff scoring
 
@@ -512,21 +494,16 @@ count there. See `daily_points` in
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
-5. A qualified runner withdraws: list them at the end of the config's
-   `withdrawn` list before their group's first race starts, and save; the
-   page hands the seat to the next runner of that bracket's own pool (for the
-   newcomers bracket, the next newcomer on the ladder not already drawn),
-   whom the organizer tells. The page says who withdrew and who took the
-   seat (see Qualified groups). If that runner declines too, add them as well.
-   A call-up can take a newcomer out of the newcomers bracket, or shift its
-   field, so update the registrations of any races already created for those
-   stages before they start (a started race's entries can no longer
-   change): the withdrawn runner must not stay entered in their stage's
-   races, since a runner entered in a race of their stage that has started
-   keeps the seat. A runner who
-   renames on Twitch and logs in under the new name must be re-listed under
-   it: the old name no longer matches any user, and the admin refuses it on
-   the next save. This `withdrawn` list is unrelated to the signup
+5. A qualified runner withdraws: before `draw_locks_at`, add their name to
+   the config's `withdrawn` list and save; the ladder strikes them and the
+   groups redraw from the renumbered ranking (the page shows it at once), so
+   tell the runners who moved. From `draw_locks_at` on, add the name to
+   `forfeits` instead: they keep their seat, flagged, and nobody is called
+   up; update the registrations of the races already created for their stage
+   before it starts (a started race's entries can no longer change). A runner
+   who renames on Twitch and logs in under the new name must be re-listed
+   under it: the old name no longer matches any user, and the admin refuses
+   it on the next save. These lists are unrelated to the signup
    "Withdraw" button (an intent signal taken before the qualifier closes,
    see "Signups" above).
 6. A showcase (see "Showcases" above) runs the same way: add it to the
@@ -767,7 +744,7 @@ upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
 final is complete, `my_signup`, and from the cut until the playoffs are over
 `brackets`: each bracket's label and its qualified runners in seed order, a
-seat nobody holds left out. It skips the signature weapons, and it reads the
+seat nobody holds, or held by a forfeit, left out. It skips the signature weapons, and it reads the
 newcomer flags (the detail's only database work beyond the load), which a
 newcomers bracket's draw needs, only in those two phases. An
 event whose stored config no longer validates is left out rather than
@@ -830,7 +807,7 @@ a seed number for a seeded stage, the source stage for a fed one.
 The draw is the card the qualified are announced with, before any match is
 scheduled, and the one shown again whenever no evening is current or next
 during the playoffs: the same runners as the home band's rows (each
-bracket's seated runners in seed order, call-ups included, a bracket nobody
+bracket's seated runners in seed order, forfeits left out, a bracket nobody
 holds a seat in left out), as whole avatars in rows of at most 16, split
 evenly (Season One's Top 32 on two rows of 16, its newcomers on one of 8), up
 to two rows per bracket, the last cell a `+N` chip beyond that. The avatars

@@ -1299,9 +1299,9 @@ class EventLadderEntryResponse(BaseModel):
     rank: int | None
     user: UserResponse
     newcomer: bool
-    # Listed in the config's withdrawn; holding a seat a withdrawal vacated.
     withdrawn: bool
-    called_up: bool
+    # Struck before the lock; withdrew after it, seat kept.
+    forfeited: bool
     mode_points: dict[str, int | None]
     total: int | None
     modes_scored: int
@@ -1375,8 +1375,8 @@ class EventStageEntryResponse(BaseModel):
 class EventFieldSlotResponse(BaseModel):
     user: UserResponse | None
     label: str
-    # A seeded seat a withdrawal vacated: the runner drawn to it at the cut.
-    replaces: UserResponse | None = None
+    # Withdrew after the lock: the seat stays theirs, nobody replaces them.
+    forfeited: bool = False
 
 
 class EventStageResponse(BaseModel):

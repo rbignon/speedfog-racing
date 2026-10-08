@@ -340,7 +340,7 @@ def newcomer_flags(
 # Display label of a slot nobody holds yet, next to "Seed 4" and "Top 2 of Semi B".
 UNDECIDED = "TBD"
 # Display label of a seat nobody can hold any more: the ladder is final and no
-# runner is left on it to call up.
+# runner is left on it to seat.
 NO_RUNNER = "No runner"
 
 
@@ -349,8 +349,8 @@ class QualifiedSlot:
     seed: int | None
     user_id: UUID | None
     note: str | None
-    # The runner drawn to this seat at the cut, once a withdrawal has vacated it.
-    replaces: UUID | None = None
+    # Withdrew after the draw locked: the seat stays theirs, nobody replaces them.
+    forfeited: bool = False
 
 
 def resolve_withdrawn(names: Sequence[str], users: Mapping[UUID, User]) -> list[UUID]:
@@ -367,42 +367,28 @@ def compute_qualified(
     ladder: list[LadderEntry],
     config: EventConfig,
     newcomers: dict[UUID, bool],
-    withdrawn: Sequence[UUID] = (),
     ladder_final: bool = False,
-    raced: Mapping[str, Collection[UUID]] | None = None,
+    forfeits: Collection[UUID] = (),
 ) -> dict[str, list[QualifiedSlot]]:
     """Each bracket seats its seeded stages from its own pool, in bracket order.
 
-    A bracket's pool is the ranked ladder filtered by its entry (everyone, or
-    the newcomers), less every runner an earlier bracket drew, at the cut or
-    by a call-up, whether or not they withdrew after; its stages' ``seeds``
-    index that pool. ``withdrawn`` are the runners who gave up their place, in
-    the order they did, replayed within each bracket: a withdrawal vacates the
-    seat its runner holds there (a seed or an earlier replacement) and hands it
-    to the first runner of the pool past the bracket's largest seed who is
-    neither called up nor withdrawn so far; the withdrawal of a runner holding
-    no seat there only keeps them from being called up in it. A replacement
-    once called up therefore stays put whatever is declared after. A seat
-    shows its runner's ladder position. A seat nobody can fill reads
-    ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER`` once it is
-    final; past the end of a provisional ladder it keeps its seed number only
-    in a bracket drawing from everyone, where that number is the ladder
-    position it waits on. ``raced`` holds, per stage, the runners entered in
-    its races out of setup (``raced_runners``): a runner there who withdraws
-    keeps their seat, since the stage goes on with whoever races, though they
-    still count as withdrawn everywhere else. The config keeps no date for a
-    withdrawal, so this is what tells a late one from one declared before the
-    stage, whose call-up must hold once the stage is under way. A seat a withdrawal
-    vacated names in ``replaces`` the runner drawn to it at the cut, however
-    many times it has changed hands since, and whether or not anyone is left
-    to take it.
+    A bracket's pool is the ranked ladder (the runners who withdrew before the
+    lock are unranked there, see ``compute_ladder``) filtered by its entry
+    (everyone, or the newcomers), less every runner an earlier bracket drew;
+    its stages' ``seeds`` index that pool, and a seat shows its runner's
+    position on the ranked ladder. ``forfeits`` withdrew after the lock: they
+    keep their seat, flagged, and nobody replaces them. A seat nobody can fill
+    reads ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER`` once it
+    is final; past the end of a provisional ladder it keeps its seed number
+    only in a bracket drawing from everyone, where that number is the ladder
+    position it waits on.
     """
     ranked = [e for e in ladder if e.rank is not None]
     position = {e.user_id: i for i, e in enumerate(ranked, start=1)}
+    forfeit_ids = set(forfeits)
     empty = NO_RUNNER if ladder_final else UNDECIDED
     groups: dict[str, list[QualifiedSlot]] = {}
-    raced = raced or {}
-    # Everyone a bracket has seated so far, at the cut or by a call-up.
+    # Everyone a bracket has seated so far.
     drawn: set[UUID] = set()
     for bracket in config.brackets:
         pool = [
@@ -412,15 +398,11 @@ def compute_qualified(
             and (bracket.entry == "all" or newcomers.get(e.user_id, False))
         ]
         numbered = bracket.entry == "all"
-        seeded = [s for s in bracket.stages if s.seeds is not None]
-        last_seed = max((seed for s in seeded for seed in s.seeds or []), default=0)
-        # Who holds which seat in this bracket: (stage key, index in its seeds).
-        seat_of: dict[UUID, tuple[str, int]] = {}
-        # Who each seat was drawn for at the cut.
-        drawn_for: dict[tuple[str, int], UUID] = {}
-        for stage in seeded:
+        for stage in bracket.stages:
+            if stage.seeds is None:
+                continue
             slots: list[QualifiedSlot] = []
-            for i, seed in enumerate(stage.seeds or []):
+            for seed in stage.seeds:
                 entry = pool[seed - 1] if seed - 1 < len(pool) else None
                 if entry is None:
                     slots.append(
@@ -428,55 +410,16 @@ def compute_qualified(
                     )
                     continue
                 slots.append(
-                    QualifiedSlot(seed=position[entry.user_id], user_id=entry.user_id, note=None)
+                    QualifiedSlot(
+                        seed=position[entry.user_id],
+                        user_id=entry.user_id,
+                        note=None,
+                        forfeited=entry.user_id in forfeit_ids,
+                    )
                 )
-                seat_of[entry.user_id] = (stage.key, i)
-                drawn_for[(stage.key, i)] = entry.user_id
                 drawn.add(entry.user_id)
             groups[stage.key] = slots
-        bench = pool[last_seed:]
-        gone: set[UUID] = set()
-        for user_id in withdrawn:
-            gone.add(user_id)
-            seat = seat_of.get(user_id)
-            if seat is None or user_id in raced.get(seat[0], ()):
-                continue
-            del seat_of[user_id]
-            key, i = seat
-            called = next(
-                (e for e in bench if e.user_id not in gone and e.user_id not in seat_of), None
-            )
-            if called is None:
-                groups[key][i] = QualifiedSlot(
-                    seed=None, user_id=None, note=empty, replaces=drawn_for[seat]
-                )
-                continue
-            groups[key][i] = QualifiedSlot(
-                seed=position[called.user_id],
-                user_id=called.user_id,
-                note=None,
-                replaces=drawn_for[seat],
-            )
-            seat_of[called.user_id] = (key, i)
-            drawn.add(called.user_id)
     return groups
-
-
-def raced_runners(stage_races: Mapping[str, list[tuple[Slot, Race]]]) -> dict[str, set[UUID]]:
-    """Per stage, the runners entered in its races out of setup.
-
-    ``compute_qualified`` reads it as ``raced``: a withdrawal from one of them
-    is a late one.
-    """
-    return {
-        key: {
-            p.user_id
-            for _, race in races
-            if race.status != RaceStatus.SETUP
-            for p in race.participants
-        }
-        for key, races in stage_races.items()
-    }
 
 
 def slot_label(slot: QualifiedSlot) -> str:
@@ -493,9 +436,8 @@ def bracket_draw(
 ) -> list[tuple[EventBracket, list[UUID]]]:
     """Each bracket with the runners ``compute_qualified`` seated in it, best seed first.
 
-    Seeds are ladder positions, so a call-up lands where they ranked. A seat
-    nobody holds is left out: a bracket nobody holds a seat in yet comes with
-    an empty list.
+    Seeds are ladder positions. A seat nobody holds, or held by a forfeit, is
+    left out: a bracket nobody holds a seat in yet comes with an empty list.
     """
     draw: list[tuple[EventBracket, list[UUID]]] = []
     for bracket in config.brackets:
@@ -503,7 +445,12 @@ def bracket_draw(
             (slot for stage in bracket.stages for slot in qualified.get(stage.key, [])),
             key=lambda slot: slot.seed or 0,
         )
-        draw.append((bracket, [slot.user_id for slot in seats if slot.user_id is not None]))
+        draw.append(
+            (
+                bracket,
+                [s.user_id for s in seats if s.user_id is not None and not s.forfeited],
+            )
+        )
     return draw
 
 

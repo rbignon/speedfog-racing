@@ -817,13 +817,10 @@ async def simulate(
             for mode in MODES
             for n in range(1, SEEDS_PER_MODE + 1)
         ]
-        ladder = compute_ladder(MODES, final_qual)
-        groups = compute_qualified(
-            ladder,
-            config,
-            newcomer_flags,
-            resolve_withdrawn(config.withdrawn, users_by_id),
+        ladder = compute_ladder(
+            MODES, final_qual, struck=resolve_withdrawn(config.withdrawn, users_by_id)
         )
+        groups = compute_qualified(ladder, config, newcomer_flags)
         fields: dict[str, list[User]] = {}
         for key in STAGES:
             stage_cfg = config.stage(key)
@@ -1076,8 +1073,7 @@ def main() -> None:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="write even though the database is not on this machine, or the event "
-        "holds real runs",
+        help="write even though the database is not on this machine, or the event holds real runs",
     )
     args = parser.parse_args()
     asyncio.run(simulate(args.stage, args.slug, args.viewer, args.exclude, args.force))

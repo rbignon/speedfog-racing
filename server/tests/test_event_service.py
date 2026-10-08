@@ -17,6 +17,7 @@ from speedfog_racing.services.event_service import (
     Slot,
     StageEntry,
     StageResult,
+    bracket_draw,
     build_timeline,
     compute_ladder,
     compute_phase,
@@ -29,7 +30,6 @@ from speedfog_racing.services.event_service import (
     next_stage_key,
     parse_slot,
     race_moment,
-    raced_runners,
     resolve_stages,
     resolve_withdrawn,
     score_race,
@@ -981,180 +981,75 @@ def test_quarters_seed_from_the_ladder_and_newcomers_draw_after_seed_16():
     assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
 
 
-def test_a_withdrawal_hands_the_seat_to_the_first_runner_after_the_seeds():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
-    # Seed 16 sits in Quarter A: the 17th runner takes the seat, under their own position.
-    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[16]]
-    assert slot_label(groups["quarter_a"][3]) == "Seed 17"
+def _struck_ladder(*users, struck=()):
+    """``_ladder_of`` with ``struck`` unranked and the others renumbered in order."""
+    ladder = _ladder_of(*users)
+    rank = 0
+    for entry in ladder:
+        if entry.user_id in struck:
+            entry.rank, entry.withdrawn = None, True
+        else:
+            rank += 1
+            entry.rank = rank
+    return ladder
 
 
-def test_withdrawals_fill_their_seats_in_declared_order():
+def test_a_struck_runner_redraws_every_seat_below_theirs():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1]])
+    groups = compute_qualified(_struck_ladder(*u, struck={u[1]}), cfg, {})
+    # Seed 2 (Quarter C) now goes to the 3rd runner, and so on down the ladder:
+    # Quarter A's seed 16 is the 17th runner, labelled with their new position.
+    assert groups["quarter_c"][0].user_id == u[2]
     assert groups["quarter_a"][3].user_id == u[16]
-    # Seed 2 (Quarter C) withdrew second: the next runner on the bench.
-    assert groups["quarter_c"][0].user_id == u[17]
-    assert groups["quarter_c"][0].seed == 18
+    assert slot_label(groups["quarter_a"][3]) == "Seed 16"
+    assert all(s.user_id != u[1] for slots in groups.values() for s in slots)
 
 
-def test_a_replacement_who_withdraws_frees_the_seat_and_the_others_stay_put():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1], u[16]])
-    # u[16] was called up for seed 16, then withdrew: the 19th runner takes that seat,
-    # and seed 2's replacement (the 18th) does not move.
-    assert groups["quarter_a"][3].user_id == u[18]
-    assert groups["quarter_c"][0].user_id == u[17]
-
-
-def test_a_withdrawn_runner_off_the_seeds_is_never_called_up_nor_a_newcomer():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    newcomers = {u[16]: True, u[18]: True, u[19]: True}
-    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16], u[15]])
-    # u[16] gave up before anyone was called: seed 16's seat goes to the 18th runner.
-    assert groups["quarter_a"][3].user_id == u[17]
-    # In the newcomers' bracket, u[16]'s seat goes to its first bench runner.
-    assert [s.user_id for s in groups["newcomers"]] == [u[19], u[18]]
-
-
-def test_a_withdrawn_newcomer_off_the_seeds_is_skipped_in_the_newcomers_draw():
+def test_a_struck_newcomer_outside_the_top_leaves_the_newcomers_pool():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
     newcomers = {u[16]: True, u[17]: True, u[18]: True}
-    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[16]])
-    # u[16] holds no seat in the Top 16 (nobody was called up): withdrawing
-    # them changes no seed there. Seeded first among the newcomers, they hand
-    # that seat to the newcomers' first bench runner.
-    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
-    assert [s.user_id for s in groups["newcomers"]] == [u[18], u[17]]
-
-
-def test_the_newcomers_draw_after_the_furthest_runner_called_up():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    newcomers = {u[16]: True, u[17]: True, u[18]: True, u[19]: True}
-    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]])
-    # u[16], a newcomer, was called up into Quarter A: the newcomers' final starts after them.
+    groups = compute_qualified(_struck_ladder(*u, struck={u[16]}), cfg, newcomers)
     assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
 
 
-def test_a_runner_who_raced_their_stage_keeps_the_seat_and_calls_nobody_up():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    # Seed 16 (Quarter A) withdraws after racing Quarter A: they keep the seat.
-    # Seed 2 (Quarter C) withdraws too, from a stage still in setup: the first bench
-    # runner (position 17) takes that seat, proving the Quarter A withdrawal used
-    # nobody.
-    raced = {"quarter_a": {u[0], u[7], u[8], u[15]}}
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1]], raced=raced)
-    assert [s.user_id for s in groups["quarter_a"]] == [u[0], u[7], u[8], u[15]]
-    assert groups["quarter_c"][0].user_id == u[16]
-    assert groups["quarter_c"][0].seed == 17
-
-
-def test_a_newcomer_behind_a_late_withdrawal_stays_in_the_draw():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    newcomers = {u[16]: True, u[17]: True}
-    # The only withdrawal comes from a runner who raced their stage: nobody is
-    # called up, so the newcomers' draw still opens at position 17.
-    raced = {"quarter_a": {u[15]}}
-    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]], raced=raced)
-    assert [s.user_id for s in groups["newcomers"]] == [u[16], u[17]]
-
-
-def test_a_call_up_names_the_runner_whose_seat_it_takes():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
-    assert [s.replaces for s in groups["quarter_a"]] == [None, None, None, u[15]]
-    assert all(s.replaces is None for s in groups["quarter_c"])
-
-
-def test_a_seat_handed_on_twice_names_the_runner_drawn_there_at_the_cut():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[1], u[16]])
-    # u[16] took seed 16's seat, then withdrew: u[18] holds it now, still for u[15].
-    assert (groups["quarter_a"][3].user_id, groups["quarter_a"][3].replaces) == (u[18], u[15])
-    assert (groups["quarter_c"][0].user_id, groups["quarter_c"][0].replaces) == (u[17], u[1])
-
-
-def test_a_seat_nobody_is_left_to_take_still_names_who_withdrew():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(16)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], ladder_final=True)
-    seat = groups["quarter_a"][3]
-    assert (seat.user_id, seat.replaces) == (None, u[15])
-
-
-def test_a_seat_emptied_after_a_call_up_still_names_the_runner_drawn_at_the_cut():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(17)]
-    # u[16], the only bench runner, takes seed 16's seat, then withdraws too.
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[16]], ladder_final=True)
-    seat = groups["quarter_a"][3]
-    assert (seat.user_id, seat.replaces, seat.note) == (None, u[15], NO_RUNNER)
-
-
-def test_a_withdrawal_after_racing_replaces_nobody():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], raced={"quarter_a": {u[15]}})
-    assert all(s.replaces is None for s in groups["quarter_a"])
-
-
-def test_a_call_up_who_raced_then_withdraws_keeps_the_seat_for_the_runner_drawn():
-    cfg = _quarters_config()
-    u = [uuid4() for _ in range(20)]
-    # u[16] took seed 16's seat, raced Quarter A, then withdrew in turn.
-    raced = {"quarter_a": {u[0], u[7], u[8], u[16]}}
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, [u[15], u[16]], raced=raced)
-    seat = groups["quarter_a"][3]
-    assert (seat.user_id, seat.replaces) == (u[16], u[15])
-
-
-def test_raced_runners_are_the_entrants_of_a_stages_races_out_of_setup():
-    a, b, c = uuid4(), uuid4(), uuid4()
-    entrant = ParticipantStatus.REGISTERED
-    stage_races = {
-        "semi_a": [
-            (parse_slot("semi_a:1"), _race([_participant(a, entrant, 0)], RaceStatus.RUNNING)),
-            (parse_slot("semi_a:2"), _race([_participant(b, entrant, 0)], RaceStatus.SETUP)),
-        ],
-        "semi_b": [
-            (parse_slot("semi_b:1"), _race([_participant(c, entrant, 0)], RaceStatus.SETUP)),
-        ],
-    }
-    # A runner registered for a race still in setup has not raced the stage.
-    assert raced_runners(stage_races) == {"semi_a": {a}, "semi_b": set()}
-
-
-def test_a_withdrawal_declared_before_the_stage_holds_once_it_is_raced():
-    """The config keeps no date: a stage under way whose races the withdrawn
-    runner never entered must keep the call-up, not seat them back."""
+def test_a_strike_in_the_top_pulls_the_next_runner_out_of_the_newcomers_pool():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
     newcomers = {u[16]: True, u[17]: True, u[18]: True}
-    raced = {"quarter_a": {u[0], u[7], u[8], u[16]}}
-    groups = compute_qualified(_ladder_of(*u), cfg, newcomers, [u[15]], raced=raced)
-    seat = groups["quarter_a"][3]
-    assert (seat.user_id, seat.replaces) == (u[16], u[15])
-    # u[16], a newcomer called up into Quarter A, stays out of the newcomers' draw.
+    groups = compute_qualified(_struck_ladder(*u, struck={u[0]}), cfg, newcomers)
+    # u[16], a newcomer, is 16th once u[0] is struck: Quarter A seats them.
+    assert u[16] in [s.user_id for s in groups["quarter_a"]]
     assert [s.user_id for s in groups["newcomers"]] == [u[17], u[18]]
+
+
+def test_a_forfeit_keeps_their_seat_flagged_and_nobody_replaces_them():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, forfeits={u[15]})
+    seat = groups["quarter_a"][3]
+    assert (seat.user_id, seat.forfeited) == (u[15], True)
+    assert not any(s.forfeited for s in groups["quarter_b"])
+
+
+def test_the_band_draw_leaves_forfeits_out():
+    cfg = _quarters_config()
+    u = [uuid4() for _ in range(20)]
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, forfeits={u[15]})
+    (_, seated), _ = bracket_draw(cfg, groups)
+    assert u[15] not in seated and len(seated) == 15
 
 
 def test_a_seat_nobody_can_fill_reads_tbd_then_no_runner():
     cfg = _quarters_config()
-    u = [uuid4() for _ in range(16)]
-    provisional = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]])
-    seat = provisional["quarter_a"][3]
+    u = [uuid4() for _ in range(15)]
+    provisional = compute_qualified(_ladder_of(*u), cfg, {})
+    # Seed 16 waits on the ladder (see the next test); the newcomers' seats have
+    # no ladder position to wait on.
+    seat = provisional["newcomers"][0]
     assert (seat.seed, seat.user_id, seat.note) == (None, None, UNDECIDED)
-    final = compute_qualified(_ladder_of(*u), cfg, {}, [u[15]], ladder_final=True)
+    final = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True)
     assert slot_label(final["quarter_a"][3]) == NO_RUNNER
     assert [s.note for s in final["newcomers"]] == [NO_RUNNER, NO_RUNNER]
 
@@ -1655,50 +1550,6 @@ def test_the_newcomers_bracket_seeds_its_own_pool():
     assert _ids(groups["newcomers_semi_b"]) == [u[5], u[6]]
     # The seed shown is the ladder position, never the place in the pool.
     assert [slot_label(s) for s in groups["newcomers_semi_a"]] == ["Seed 5", "Seed 8"]
-
-
-def test_a_top_call_up_takes_a_newcomer_out_of_the_newcomers_pool():
-    u = [uuid4() for _ in range(9)]
-    newcomers = {x: True for x in u[4:]}
-    # Seed 4 withdraws: the first bench runner, u[4], a newcomer, is called up.
-    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[3]])
-    assert _ids(groups["semi_a"]) == [u[0], u[4]]
-    assert _ids(groups["newcomers_semi_a"]) == [u[5], u[8]]
-    assert _ids(groups["newcomers_semi_b"]) == [u[6], u[7]]
-
-
-def test_a_runner_withdrawn_from_the_top_never_enters_the_newcomers_bracket():
-    u = [uuid4() for _ in range(10)]
-    newcomers = {u[1]: True, **{x: True for x in u[4:]}}
-    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[1]])
-    # u[1], a newcomer seeded 2nd, gives up: u[4] takes the seat, and neither
-    # of them is drawn again.
-    assert _ids(groups["semi_b"]) == [u[4], u[2]]
-    drawn = _ids(groups["newcomers_semi_a"]) + _ids(groups["newcomers_semi_b"])
-    assert drawn == [u[5], u[8], u[6], u[7]]
-
-
-def test_a_newcomer_who_raced_their_group_never_enters_the_newcomers_bracket():
-    u = [uuid4() for _ in range(9)]
-    newcomers = {u[1]: True, **{x: True for x in u[4:]}}
-    raced = {"semi_b": {u[1], u[2]}}
-    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[1]], raced=raced)
-    assert _ids(groups["semi_b"]) == [u[1], u[2]]
-    drawn = _ids(groups["newcomers_semi_a"]) + _ids(groups["newcomers_semi_b"])
-    assert u[1] not in drawn
-    assert drawn == [u[4], u[7], u[5], u[6]]
-
-
-def test_a_withdrawn_newcomer_is_replaced_from_the_newcomers_bench():
-    u = [uuid4() for _ in range(10)]
-    newcomers = {x: True for x in u[4:]}
-    # Newcomer seed 2 (u[5], Newcomers semi B) withdraws: the newcomers' bench
-    # starts after their 4th seed, so u[8] takes the seat; the others stay put.
-    groups = compute_qualified(_ladder_of(*u), _brackets(), newcomers, [u[5]])
-    assert _ids(groups["newcomers_semi_a"]) == [u[4], u[7]]
-    assert _ids(groups["newcomers_semi_b"]) == [u[8], u[6]]
-    assert slot_label(groups["newcomers_semi_b"][0]) == "Seed 9"
-    assert groups["newcomers_semi_b"][0].replaces == u[5]
 
 
 def test_an_empty_newcomers_seat_carries_no_seed_number():
