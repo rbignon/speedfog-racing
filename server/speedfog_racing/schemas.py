@@ -1063,8 +1063,8 @@ class EventStage(BaseModel):
 class EventBracket(BaseModel):
     """A chain of stages drawing its runners from one pool of the ladder.
 
-    Brackets draw in config order: a runner an earlier bracket drew, at the
-    cut or by a call-up, never enters a later one's pool.
+    Brackets draw in config order: a runner an earlier bracket drew,
+    forfeits included, never enters a later one's pool.
     """
 
     key: str = Field(min_length=1, max_length=30)
@@ -1201,8 +1201,8 @@ class EventConfig(BaseModel):
             raise ValueError(
                 f"{bracket.key}: seeds must be distinct across stages, duplicated: {duplicated}"
             )
-        # A bracket's bench starts after its largest seed, so a gap would drop
-        # those pool positions from all of its stages at once; and the page
+        # A gap would leave those ladder positions to no stage of the bracket;
+        # and the page
         # reads the cut off the seeded fields' sizes, which a gap makes a
         # smaller number than the positions the seeds reach into.
         missing = sorted(set(range(1, len(all_seeds) + 1)) - set(all_seeds))

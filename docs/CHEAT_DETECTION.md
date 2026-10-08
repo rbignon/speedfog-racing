@@ -115,9 +115,11 @@ the role and past results stay as they are, and nothing public shows it.
   disqualified with the reason "Account banned" and their mod connection is
   closed; pending invitations and signups to events still open are removed;
   active training sessions end as if abandoned by hand. An event bracket is
-  not touched: to call up the next runner in place of a banned qualified
-  runner, an admin adds them to the event's `withdrawn` list (see
-  "Qualified groups" in `EVENTS.md`), as for any withdrawal.
+  not touched: for a banned qualified runner, an admin lists them in the
+  event's `withdrawn` before `draw_locks_at` (they are struck from the
+  ladder and every seat below redraws) or in `forfeits` from then on (they
+  keep their seat, nobody replaces them); see step 5 of "Running an event
+  (admin)" in `EVENTS.md`.
 - Lifting the ban restores the access only: removed entries and
   disqualifications stay (a disqualification is cancelled from its race
   page).

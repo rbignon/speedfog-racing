@@ -93,8 +93,7 @@ def test_seeds_must_be_distinct_across_stages():
 
 
 def test_semi_seeds_must_cover_the_ladder_from_one():
-    """A gap drops those positions from the semis and from the bench alike,
-    which starts after the largest seed any semi uses."""
+    """A gap leaves those ladder positions to no semi."""
     stages = _config()["stages"]
     stages[1]["seeds"] = [2, 5]  # 1, 2, 4, 5 across the semis: 3 goes nowhere
     with pytest.raises(ValidationError, match="without a gap"):
