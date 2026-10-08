@@ -588,3 +588,73 @@ async def test_upsert_takes_withdrawn_names_whatever_their_case(test_client, use
     async with test_client as client:
         response = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
     assert response.status_code == 200, response.text
+
+
+def _locked_doc(lock: datetime, **config: object) -> dict[str, Any]:
+    """DOC with its cut a day ago, its first evening in ten days and a lock in between."""
+    now = datetime.now(UTC)
+    raw = bracketed(DOC["config"])
+    dated = [s for b in raw["brackets"] for s in b["stages"] if s.get("date")]
+    for i, stage in enumerate(dated):
+        stage["date"] = (now + timedelta(days=10 + i)).isoformat()
+    raw.update({"draw_locks_at": lock.isoformat(), **config})
+    return {
+        **DOC,
+        "starts_at": (now - timedelta(days=8)).isoformat(),
+        "qualifier_ends_at": (now - timedelta(days=1)).isoformat(),
+        "ends_at": (now + timedelta(days=30)).isoformat(),
+        "config": raw,
+    }
+
+
+@pytest.mark.asyncio
+async def test_upsert_refuses_a_lock_outside_the_cut_and_the_first_evening(test_client, users):
+    early = _locked_doc(datetime.now(UTC) - timedelta(days=2))
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=early, headers=ADMIN)
+    assert response.status_code == 422
+    assert "draw_locks_at" in response.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_refuses_forfeits_before_the_lock(test_client, users):
+    doc = _locked_doc(datetime.now(UTC) + timedelta(days=2), forfeits=["orga"])
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 422
+    assert "forfeits" in response.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_freezes_withdrawn_once_the_lock_has_passed(test_client, users):
+    lock = datetime.now(UTC) - timedelta(hours=1)
+    async with test_client as client:
+        # Created after its own lock: nothing stored to compare, accepted.
+        created = await client.post(
+            "/api/admin/events", json=_locked_doc(lock, withdrawn=["orga"]), headers=ADMIN
+        )
+        assert created.status_code == 200, created.text
+        same = await client.post(
+            "/api/admin/events", json=_locked_doc(lock, withdrawn=[" ORGA "]), headers=ADMIN
+        )
+        assert same.status_code == 200, same.text
+        changed = await client.post(
+            "/api/admin/events", json=_locked_doc(lock, withdrawn=[]), headers=ADMIN
+        )
+        assert changed.status_code == 422
+        assert "withdrawn" in changed.text
+        late = await client.post(
+            "/api/admin/events",
+            json=_locked_doc(lock, withdrawn=["orga"], forfeits=["root"]),
+            headers=ADMIN,
+        )
+        assert late.status_code == 200, late.text
+
+
+@pytest.mark.asyncio
+async def test_upsert_refuses_a_forfeits_name_that_matches_no_user(test_client, users):
+    doc = _locked_doc(datetime.now(UTC) - timedelta(hours=1), forfeits=["ghost"])
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 422
+    assert "ghost" in response.text

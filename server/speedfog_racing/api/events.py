@@ -442,6 +442,7 @@ async def get_event(
         newcomer_threshold=event.newcomer_threshold,
         phase=phase,
         ladder_final=ladder_final,
+        draw_locks_at=config.draw_locks_at,
         my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
         modes=config.modes,
         seeds_per_mode=config.seeds_per_mode,

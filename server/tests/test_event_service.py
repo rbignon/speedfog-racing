@@ -1718,3 +1718,23 @@ def test_each_bracket_has_its_own_current_and_next_stage():
     assert next_stage_key(cfg, resolved, now, main) == "semi_b"
     # The newcomers' final waits on Newcomers semi B, which nobody has scheduled.
     assert next_stage_key(cfg, resolved, now, newcomers) is None
+
+
+def _raw_config(**overrides):
+    raw = _config().model_dump(mode="json", by_alias=True)
+    raw.update(overrides)
+    return raw
+
+
+def test_forfeits_refuse_blank_repeated_and_withdrawn_names():
+    with pytest.raises(ValidationError, match="forfeits names must not be blank"):
+        EventConfig.model_validate(_raw_config(forfeits=[" "]))
+    with pytest.raises(ValidationError, match="forfeits names must be unique"):
+        EventConfig.model_validate(_raw_config(forfeits=["Ana", "ana "]))
+    with pytest.raises(ValidationError, match="both withdrawn and forfeits"):
+        EventConfig.model_validate(_raw_config(withdrawn=["Ana"], forfeits=["ANA"]))
+
+
+def test_draw_locks_at_must_be_timezone_aware():
+    with pytest.raises(ValidationError, match="draw_locks_at must be timezone-aware"):
+        EventConfig.model_validate(_raw_config(draw_locks_at="2026-10-01T12:00:00"))

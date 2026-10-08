@@ -18,20 +18,22 @@ computed on each request by `services/event_service.py`.
 
 ### Config
 
-| field                    | meaning                                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------- |
-| `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                      |
-| `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                        |
-| `brackets`               | ordered playoff brackets, each holding its stages, see Brackets                    |
-| `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)                  |
-| `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)            |
-| `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)                |
-| `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)                 |
-| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10)     |
-| `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)                 |
-| `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)             |
-| `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)              |
-| `withdrawn`              | qualified runners who gave up their place, Twitch usernames (see Qualified groups) |
+| field                    | meaning                                                                                                               |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `modes`                  | `[{key, label}]`, keys are pool names, one ladder column each                                                         |
+| `seeds_per_mode`         | seeds per mode in the qualifier (default 2)                                                                           |
+| `brackets`               | ordered playoff brackets, each holding its stages, see Brackets                                                       |
+| `showcases`              | evenings outside the bracket, for the cast scenes (see Showcases)                                                     |
+| `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)                                               |
+| `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)                                                   |
+| `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)                                                    |
+| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10)                                        |
+| `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)                                                    |
+| `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)                                                |
+| `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)                                                 |
+| `withdrawn`              | qualified runners who withdrew before the draw locks, Twitch usernames: struck from the ladder (see Qualified groups) |
+| `forfeits`               | withdrawals from `draw_locks_at` on: seat kept, never replaced (see Qualified groups)                                 |
+| `draw_locks_at`          | the end of the redraws, one instant for the event; unset, every withdrawal redraws                                    |
 
 A bracket: `key`, `label`, `entry` (`all` or `newcomers`, see Brackets) and
 its `stages`, at least one. A stage: `key`, `label`, `kind` (`round`,
@@ -81,15 +83,17 @@ starts after its largest seed, so a gap would exclude those positions from
 all of its stages at once), repeated bracket keys, repeated stage labels, a
 bracket without stages, a `phase_override` outside the five phases, a
 `newcomers` bracket without `announced_at`, a blank or repeated `withdrawn`
-name (case-insensitive), a naive (timezone-less) `announced_at` or stage
+or `forfeits` name (case-insensitive), a name in both lists, a naive `draw_locks_at`, a naive (timezone-less) `announced_at` or stage
 `date`, and a document still holding a top-level `stages` list (see the
 migration below). `starts_at`, `qualifier_ends_at` and `ends_at` on the
 upsert request are rejected the same way when naive, and so is an
 `announced_at` at or after `starts_at`: the qualifier's own runs would
 otherwise count towards the newcomer cut. `qualifier_ends_at` must not pass
 the earliest dated stage of any bracket, and `ends_at` must come after the
-latest. The admin upsert also refuses a `withdrawn` name that matches no
-user's Twitch username.
+latest, and `draw_locks_at` must fall between `qualifier_ends_at` and the
+earliest dated stage. The admin upsert also refuses a `withdrawn` or `forfeits`
+name that matches no user's Twitch username; from `draw_locks_at` on it refuses
+any change to `withdrawn`, and before it any `forfeits`.
 
 One invariant worth keeping in mind when editing this schema: any future
 tightening of `EventConfig` validation must ship together with a backfill of

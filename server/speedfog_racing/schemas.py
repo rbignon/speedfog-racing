@@ -1114,10 +1114,16 @@ class EventConfig(BaseModel):
     facts: list[EventFact] | None = Field(default=None, max_length=8)
     phase_override: str | None = None
     announced_at: datetime | None = None
-    # Twitch usernames of qualified runners who gave up their place, in the
-    # order they did: a seeded stage hands each vacated seat to the next runner
-    # on its bracket's bench (see compute_qualified).
+    # Twitch usernames of qualified runners who withdrew before the draw
+    # locks: struck from the ladder, the runners below them move up a place
+    # and the draw is redrawn from that ranking (see compute_ladder).
     withdrawn: list[str] = Field(default_factory=list, max_length=64)
+    # Withdrawals from draw_locks_at on: the runner keeps their seat, flagged,
+    # and nobody replaces them.
+    forfeits: list[str] = Field(default_factory=list, max_length=64)
+    # The end of the redraws, one instant for the whole event. Unset, every
+    # withdrawal redraws.
+    draw_locks_at: datetime | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -1174,6 +1180,16 @@ class EventConfig(BaseModel):
             raise ValueError("withdrawn names must not be blank")
         if len(set(names)) != len(names):
             raise ValueError("withdrawn names must be unique")
+        forfeits = [name.strip().lower() for name in self.forfeits]
+        if any(not name for name in forfeits):
+            raise ValueError("forfeits names must not be blank")
+        if len(set(forfeits)) != len(forfeits):
+            raise ValueError("forfeits names must be unique")
+        both = sorted(set(names) & set(forfeits))
+        if both:
+            raise ValueError(f"names listed in both withdrawn and forfeits: {both}")
+        if self.draw_locks_at is not None and self.draw_locks_at.tzinfo is None:
+            raise ValueError("draw_locks_at must be timezone-aware")
         return self
 
     def _check_bracket(self, bracket: EventBracket) -> None:
@@ -1422,6 +1438,7 @@ class EventDetailResponse(BaseModel):
     newcomer_threshold: int
     phase: str
     ladder_final: bool
+    draw_locks_at: datetime | None = None
     my_signup: bool
     modes: list[EventMode]
     seeds_per_mode: int
@@ -1515,6 +1532,12 @@ class EventUpsertRequest(BaseModel):
                 raise ValueError("ends_at must be after the last dated stage")
         elif self.qualifier_ends_at >= self.ends_at:
             raise ValueError("ends_at must be after qualifier_ends_at")
+        lock = self.config.draw_locks_at
+        if lock is not None:
+            if lock < self.qualifier_ends_at:
+                raise ValueError("draw_locks_at must not be before qualifier_ends_at")
+            if dated and lock > dated[0]:
+                raise ValueError("draw_locks_at must not be after the first dated stage")
         return self
 
 

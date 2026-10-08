@@ -1414,8 +1414,9 @@ async def admin_upsert_event(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"config.modes keys must be pool names, unknown: {unknown}",
         )
-    if request.config.withdrawn:
-        wanted = {name.strip().lower() for name in request.config.withdrawn}
+    listed = [*request.config.withdrawn, *request.config.forfeits]
+    if listed:
+        wanted = {name.strip().lower() for name in listed}
         known = set(
             (
                 await db.execute(
@@ -1427,14 +1428,37 @@ async def admin_upsert_event(
             .scalars()
             .all()
         )
-        unmatched = [n for n in request.config.withdrawn if n.strip().lower() not in known]
-        if unmatched:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail=f"config.withdrawn names must be Twitch usernames, unknown: {unmatched}",
-            )
+        for field_name in ("withdrawn", "forfeits"):
+            names = getattr(request.config, field_name)
+            unmatched = [n for n in names if n.strip().lower() not in known]
+            if unmatched:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail=f"config.{field_name} names must be Twitch usernames, "
+                    f"unknown: {unmatched}",
+                )
     stmt = select(Event).where(Event.slug == request.slug).options(selectinload(Event.races))
     event = (await db.execute(stmt)).scalar_one_or_none()
+    lock = request.config.draw_locks_at
+    if lock is not None:
+        now = datetime.now(UTC)
+        if now < lock and request.config.forfeits:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="config.forfeits takes withdrawals from draw_locks_at on; "
+                "before it, list them in config.withdrawn",
+            )
+        if now >= lock and event is not None:
+            # Read raw: a stored document that no longer parses still has its list.
+            stored = event.config.get("withdrawn", []) if isinstance(event.config, dict) else []
+            before = {str(n).strip().lower() for n in stored}
+            after = {n.strip().lower() for n in request.config.withdrawn}
+            if before != after:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    detail="config.withdrawn is locked since draw_locks_at; "
+                    "list later withdrawals in config.forfeits",
+                )
     if event is not None:
         # ``race.event_slot`` is only ever written by ``admin_attach_race_to_event``
         # below, which already ran it through ``parse_slot``/``validate_slot`` before
