@@ -33,6 +33,7 @@ from speedfog_racing.services.event_service import (
     fed_field,
     newcomer_flags,
     next_stage_key,
+    raced_runners,
     resolve_stages,
     resolve_withdrawn,
     slot_label,
@@ -564,13 +565,13 @@ def summarize_event(
     ladder = compute_ladder(mode_keys, qualifier, signed_up=signed_up)
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
-    started = {
-        key
-        for key, races in resolved.stage_races.items()
-        if any(r.status != RaceStatus.SETUP for _, r in races)
-    }
     qualified = compute_qualified(
-        ladder, config, newcomers, resolve_withdrawn(config.withdrawn, users), ladder_final, started
+        ladder,
+        config,
+        newcomers,
+        resolve_withdrawn(config.withdrawn, users),
+        ladder_final,
+        raced_runners(resolved.stage_races),
     )
 
     # The ladder already runs best first, then the runners it could not rank;

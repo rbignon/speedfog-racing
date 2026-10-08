@@ -355,7 +355,7 @@ def compute_qualified(
     newcomers: dict[UUID, bool],
     withdrawn: Sequence[UUID] = (),
     ladder_final: bool = False,
-    started: Collection[str] = (),
+    raced: Mapping[str, Collection[UUID]] | None = None,
 ) -> dict[str, list[QualifiedSlot]]:
     """Each bracket seats its seeded stages from its own pool, in bracket order.
 
@@ -373,9 +373,12 @@ def compute_qualified(
     ``UNDECIDED`` while the ladder can still move, ``NO_RUNNER`` once it is
     final; past the end of a provisional ladder it keeps its seed number only
     in a bracket drawing from everyone, where that number is the ladder
-    position it waits on. ``started`` names the stages whose field has already
-    begun racing: a withdrawal from a seat there changes nothing, though the
-    runner still counts as withdrawn everywhere else. A seat a withdrawal
+    position it waits on. ``raced`` holds, per stage, the runners entered in
+    its races out of setup (``raced_runners``): a runner there who withdraws
+    keeps their seat, since the stage goes on with whoever races, though they
+    still count as withdrawn everywhere else. The config keeps no date for a
+    withdrawal, so this is what tells a late one from one declared before the
+    stage, whose call-up must hold once the stage is under way. A seat a withdrawal
     vacated names in ``replaces`` the runner drawn to it at the cut, however
     many times it has changed hands since, and whether or not anyone is left
     to take it.
@@ -384,6 +387,7 @@ def compute_qualified(
     position = {e.user_id: i for i, e in enumerate(ranked, start=1)}
     empty = NO_RUNNER if ladder_final else UNDECIDED
     groups: dict[str, list[QualifiedSlot]] = {}
+    raced = raced or {}
     # Everyone a bracket has seated so far, at the cut or by a call-up.
     drawn: set[UUID] = set()
     for bracket in config.brackets:
@@ -421,7 +425,7 @@ def compute_qualified(
         for user_id in withdrawn:
             gone.add(user_id)
             seat = seat_of.get(user_id)
-            if seat is None or seat[0] in started:
+            if seat is None or user_id in raced.get(seat[0], ()):
                 continue
             del seat_of[user_id]
             key, i = seat
@@ -442,6 +446,23 @@ def compute_qualified(
             seat_of[called.user_id] = (key, i)
             drawn.add(called.user_id)
     return groups
+
+
+def raced_runners(stage_races: Mapping[str, list[tuple[Slot, Race]]]) -> dict[str, set[UUID]]:
+    """Per stage, the runners entered in its races out of setup.
+
+    ``compute_qualified`` reads it as ``raced``: a withdrawal from one of them
+    is a late one.
+    """
+    return {
+        key: {
+            p.user_id
+            for _, race in races
+            if race.status != RaceStatus.SETUP
+            for p in race.participants
+        }
+        for key, races in stage_races.items()
+    }
 
 
 def slot_label(slot: QualifiedSlot) -> str:

@@ -70,6 +70,7 @@ from speedfog_racing.services.event_service import (
     load_featured_events,
     newcomer_flags,
     next_stage_key,
+    raced_runners,
     resolve_stages,
     resolve_withdrawn,
     score_playoff_race,
@@ -213,18 +214,13 @@ async def list_events(
             ladder_final = bool(resolved.qualifier) and all(
                 r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
             )
-            started = {
-                key
-                for key, races in stage_races.items()
-                if any(r.status != RaceStatus.SETUP for _, r in races)
-            }
             qualified = compute_qualified(
                 ladder,
                 config,
                 newcomers,
                 resolve_withdrawn(config.withdrawn, users),
                 ladder_final,
-                started,
+                raced_runners(stage_races),
             )
             for bracket, seated in bracket_draw(config, qualified):
                 brackets.append(
@@ -309,13 +305,10 @@ async def get_event(
     finished_before = await count_finished_before(db, set(users), announce_date(event, config))
     newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
     ladder_final = bool(qualifier) and all(r.status == RaceStatus.FINISHED for _, r in qualifier)
-    started = {
-        key
-        for key, races in stage_races.items()
-        if any(r.status != RaceStatus.SETUP for _, r in races)
-    }
     withdrawn = resolve_withdrawn(config.withdrawn, users)
-    qualified = compute_qualified(ladder, config, newcomers, withdrawn, ladder_final, started)
+    qualified = compute_qualified(
+        ladder, config, newcomers, withdrawn, ladder_final, raced_runners(stage_races)
+    )
     withdrawn_ids = set(withdrawn)
     called_up = {
         slot.user_id

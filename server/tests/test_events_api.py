@@ -522,20 +522,48 @@ async def test_detail_tells_who_withdrew_and_who_took_their_seat(test_client, as
     }
 
 
+async def _semi_b_under_way(db: AsyncSession, event: Event, *names: str) -> None:
+    """Semi B's first race running with ``names`` entered."""
+    orga = await _user(db, "orga2", UserRole.ORGANIZER)
+    semi = await _race(
+        db, orga, await _seed(db, "standard", "s-semi-b"), event, "semi_b:1", RaceStatus.RUNNING
+    )
+    for name in names:
+        runner = (await db.execute(select(User).where(User.twitch_username == name))).scalar_one()
+        await _entry(db, semi, runner, ParticipantStatus.PLAYING, 0)
+
+
 @pytest.mark.asyncio
-async def test_detail_a_withdrawal_from_a_started_stage_calls_nobody_up(test_client, async_session):
+async def test_detail_a_withdrawal_declared_before_the_stage_holds_once_it_runs(
+    test_client, async_session
+):
     async with async_session() as db:
         event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
         await _ranked_runners(db, event, 5, RaceStatus.RUNNING)
-        orga = await _user(db, "orga2", UserRole.ORGANIZER)
-        semi_seed = await _seed(db, "standard", "s-semi-b")
-        await _race(db, orga, semi_seed, event, "semi_b:1", status=RaceStatus.RUNNING)
+        # runner5 races runner2's seat: the call-up stands, and says so.
+        await _semi_b_under_way(db, event, "runner5", "runner3")
         await db.commit()
     async with test_client as client:
         data = (await client.get("/api/events/season-one")).json()
     stages = {s["key"]: s for s in data["stages"]}
-    # Semi B (seeds 2 and 3) already has a race under way: runner2 keeps
-    # seed 2 instead of being replaced by the withdrawal.
+    assert [
+        (f["user"]["twitch_username"], (f["replaces"] or {}).get("twitch_username"))
+        for f in stages["semi_b"]["field"]
+    ] == [("runner5", "runner2"), ("runner3", None)]
+
+
+@pytest.mark.asyncio
+async def test_detail_a_runner_who_raced_their_stage_keeps_the_seat(test_client, async_session):
+    async with async_session() as db:
+        event = await _event(db, config={**CONFIG, "withdrawn": ["RUNNER2"]})
+        await _ranked_runners(db, event, 5, RaceStatus.RUNNING)
+        await _semi_b_under_way(db, event, "runner2", "runner3")
+        await db.commit()
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+    stages = {s["key"]: s for s in data["stages"]}
+    # runner2 raced Semi B before withdrawing: they keep seed 2, nobody is
+    # called up, and the match goes on with the runners present.
     assert [(f["label"], f["user"]["twitch_username"]) for f in stages["semi_b"]["field"]] == [
         ("Seed 2", "runner2"),
         ("Seed 3", "runner3"),
