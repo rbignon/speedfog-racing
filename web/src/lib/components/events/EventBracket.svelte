@@ -73,7 +73,11 @@
   let afterTree = $derived(2 + layout.rounds.flat().length);
 
   const dayOf = (stage: EventStage) =>
-    stage.date ? formatDay(stage.date) : DATE_TO_BE_AGREED;
+    stage.walkover
+      ? "No match"
+      : stage.date
+        ? formatDay(stage.date)
+        : DATE_TO_BE_AGREED;
 
   function stateOf(stage: EventStage): "setup" | "running" | "finished" {
     if (stage.complete) return "finished";
@@ -92,6 +96,7 @@
   // list) coloured by the attached race's state, so the chips double as the
   // evening's progress.
   function chipsOf(stage: EventStage): StageChip[] {
+    if (stage.walkover) return [];
     return fillSlots(stage.races, stage.races_expected).map((entry, i) => {
       const status = entry?.race.status;
       return {
@@ -177,7 +182,7 @@
               user={w}
             />{/each}
           withdrew:
-          {#if note.present.length === 0}
+          {#if note.remaining === 0}
             nobody is left in {note.stage}.
           {:else if note.walkover}
             {note.stage} goes ahead with {#each note.present as p, i (p.id)}{i >
@@ -188,8 +193,8 @@
                 : ""}<UserLink user={p} />{/each}, without a match.
           {:else}
             {note.stage} plays with {["one", "two", "three", "four"][
-              note.present.length - 1
-            ] ?? note.present.length}.
+              note.remaining - 1
+            ] ?? note.remaining}.
           {/if}
         </li>
       {/each}

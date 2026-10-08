@@ -796,7 +796,14 @@ describe("forfeitNotes", () => {
     label: string,
     field: EventStage["field"],
     walkover = false,
-  ): EventStage => ({ key: label, label, field, walkover }) as EventStage;
+  ): EventStage =>
+    ({
+      key: label,
+      label,
+      field,
+      walkover,
+      results: [],
+    }) as unknown as EventStage;
 
   it("gives one note per stage with forfeits, the others still in it", () => {
     const notes = forfeitNotes([
@@ -818,15 +825,43 @@ describe("forfeitNotes", () => {
         who: [user("ItsShura")],
         stage: "Group G",
         present: [user("e"), user("f"), user("g")],
+        remaining: 3,
         walkover: false,
       },
       {
         who: [user("h"), user("j")],
         stage: "Group H",
         present: [user("i"), user("k")],
+        remaining: 2,
         walkover: true,
       },
     ]);
+  });
+
+  it("ignores a forfeit whose runner raced the stage", () => {
+    const raced = {
+      ...stage("Group A", [seat("a", true), seat("b"), seat("c"), seat("d")]),
+      results: [{ user: user("a") }, { user: user("b") }],
+    } as EventStage;
+    expect(forfeitNotes([raced])).toEqual([]);
+    const partial = {
+      ...stage("Group B", [seat("a", true), seat("b", true), seat("c")]),
+      results: [{ user: user("a") }],
+    } as EventStage;
+    const notes = forfeitNotes([partial]);
+    expect(notes).toHaveLength(1);
+    expect(notes[0].who).toEqual([user("b")]);
+  });
+
+  it("counts undecided placeholders among those still in a fed stage", () => {
+    const undecided = { user: null, label: "Group A winner", forfeited: false };
+    const none = { user: null, label: "No runner", forfeited: false };
+    const fed = stage("Semi", [seat("a", true), seat("b"), undecided, none]);
+    const [note] = forfeitNotes([fed]);
+    expect(note.present).toEqual([user("b")]);
+    expect(note.remaining).toBe(2);
+    const empty = stage("Semi", [seat("a", true), none]);
+    expect(forfeitNotes([empty])[0].remaining).toBe(0);
   });
 });
 

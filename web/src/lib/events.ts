@@ -226,27 +226,34 @@ export interface ForfeitNote {
   /** Who withdrew, in seat order. */
   who: User[];
   stage: string;
-  /** The runners still in it, in seat order. */
+  /** The seated runners still in it, in seat order. */
   present: User[];
+  /** How many runners are still in it, undecided seats included. */
+  remaining: number;
   /** It goes through without a match. */
   walkover: boolean;
 }
 
-/** One note per stage with forfeits, in stage order. */
+/**
+ * One note per stage with forfeits, in stage order. A forfeited seat whose
+ * runner raced the stage is not told: the stage was played with them.
+ */
 export function forfeitNotes(stages: EventStage[]): ForfeitNote[] {
   return stages.flatMap((stage) => {
-    const seated = stage.field.filter((slot) => slot.user !== null);
-    const who = seated
-      .filter((slot) => slot.forfeited)
+    const raced = new Set(stage.results.map((e) => e.user.id));
+    const who = stage.field
+      .filter((slot) => slot.forfeited && slot.user && !raced.has(slot.user.id))
       .map((slot) => slot.user as User);
     if (who.length === 0) return [];
+    const standing = stage.field.filter((slot) => !slot.forfeited);
     return [
       {
         who,
         stage: stage.label,
-        present: seated
-          .filter((slot) => !slot.forfeited)
+        present: standing
+          .filter((slot) => slot.user !== null)
           .map((slot) => slot.user as User),
+        remaining: standing.filter((slot) => slot.label !== "No runner").length,
         walkover: stage.walkover,
       },
     ];
