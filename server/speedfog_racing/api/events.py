@@ -413,6 +413,8 @@ async def get_event(
                     user=user_of(slot.user_id),
                     label=slot.label,
                     forfeited=slot.user_id in forfeits,
+                    source=slot.source,
+                    place=slot.place,
                 )
                 for slot in fed_field(stage, config, results)
             ]

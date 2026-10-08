@@ -1418,6 +1418,10 @@ class EventFieldSlotResponse(BaseModel):
     label: str
     # Withdrew after the lock: the seat stays theirs, nobody replaces them.
     forfeited: bool = False
+    # A fed seat: the stage it comes from and the place it takes there
+    # (null on a seeded seat).
+    source: str | None = None
+    place: int | None = None
 
 
 class EventStageResponse(BaseModel):

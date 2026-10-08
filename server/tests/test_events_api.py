@@ -451,10 +451,10 @@ async def test_detail_seeds_the_quarters_and_names_what_the_later_rounds_wait_on
         "Seed 16",
     ]
     assert [f["label"] for f in stages["semi_a"]["field"]] == (
-        ["Top 2 of Quarter A"] * 2 + ["Top 2 of Quarter B"] * 2
+        ["1st of Quarter A", "2nd of Quarter A", "1st of Quarter B", "2nd of Quarter B"]
     )
     assert [f["label"] for f in stages["final"]["field"]] == (
-        ["Top 2 of Semi A"] * 2 + ["Top 2 of Semi B"] * 2
+        ["1st of Semi A", "2nd of Semi A", "1st of Semi B", "2nd of Semi B"]
     )
     assert [g["stage_key"] for g in data["qualified"]["groups"]] == [
         "quarter_a",

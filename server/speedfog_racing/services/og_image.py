@@ -628,7 +628,7 @@ def summarize_event(
         stage_moment = resolved.dates.get(stage.key)
         stage_date = _event_day(stage_moment, weekday=True) if stage_moment is not None else None
         if stage.from_:
-            # "Top 2 of Quarter B" is the page's phrasing; under an empty ring the
+            # "1st of Quarter B" is the page's phrasing; under an empty ring the
             # card only has room for the stage the runner comes from.
             field = [
                 EventOgSlot(user_of(slot.user_id), slot.label.split(" of ", 1)[-1])

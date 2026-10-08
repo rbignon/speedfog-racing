@@ -289,7 +289,7 @@ def test_playoffs_show_the_stage_of_the_day() -> None:
 
 
 def test_an_undecided_final_slot_names_the_stage_it_waits_on() -> None:
-    """The page says "Top 2 of Semi A"; under an empty ring only the stage fits."""
+    """The page says "1st of Semi A"; under an empty ring only the stage fits."""
     event, _ = _qualifier_world(["ana", "bob", "cleo", "dee"])
     summary = summarize_event(event, now=FINAL - dt.timedelta(hours=2), finished_before={})
     assert summary.stage_label == "Open final"

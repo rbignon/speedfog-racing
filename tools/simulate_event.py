@@ -84,6 +84,7 @@ from speedfog_racing.services.event_service import (  # noqa: E402
     compute_ladder,
     compute_qualified,
     compute_stage_results,
+    fed_field,
     resolve_withdrawn,
 )
 
@@ -867,10 +868,9 @@ async def simulate(
             assert stage_cfg is not None
             if stage_cfg.from_:
                 fields[key] = [
-                    users_by_id[e.user_id]
-                    for source in stage_cfg.from_
-                    for e in results[source].entries
-                    if e.advances
+                    users_by_id[slot.user_id]
+                    for slot in fed_field(stage_cfg, config, results)
+                    if slot.user_id is not None
                 ]
                 stage_runs[key] = plan_stage(key, fields[key], skills, rng)
             races = []

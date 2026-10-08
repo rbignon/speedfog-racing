@@ -881,8 +881,14 @@ def test_final_field_labels_undecided_semis():
         entries=[StageEntry(a, 300, 0, True), StageEntry(b, 200, 0, True)],
     )
     slots = fed_field(final, cfg, {"semi_a": done})
-    assert [(s.user_id, s.label) for s in slots[:2]] == [(a, "Semi A"), (b, "Semi A")]
-    assert [(s.user_id, s.label) for s in slots[2:]] == [(None, "Top 2 of Semi B")] * 2
+    assert [(s.user_id, s.label) for s in slots[:2]] == [
+        (a, "1st of Semi A"),
+        (b, "2nd of Semi A"),
+    ]
+    assert [(s.user_id, s.label) for s in slots[2:]] == [
+        (None, "1st of Semi B"),
+        (None, "2nd of Semi B"),
+    ]
 
 
 def test_final_field_pads_short_decided_stages_to_the_advance_count():
@@ -895,9 +901,9 @@ def test_final_field_pads_short_decided_stages_to_the_advance_count():
     short_b = StageResult(complete=True, entries=[StageEntry(b, 250, 0, True)])
     slots = fed_field(final, cfg, {"semi_a": short_a, "semi_b": short_b})
     assert [(s.user_id, s.label) for s in slots] == [
-        (a, "Semi A"),
+        (a, "1st of Semi A"),
         (None, NO_RUNNER),
-        (b, "Semi B"),
+        (b, "1st of Semi B"),
         (None, NO_RUNNER),
     ]
 
@@ -1089,14 +1095,14 @@ def test_three_rounds_feed_each_other():
     )
     results = {"quarter_a": compute_stage_results(quarter_a, [race], quarter_a.advance or 0, cfg)}
     assert [(s.user_id, s.label) for s in fed_field(semi_a, cfg, results)] == [
-        (u[0], "Quarter A"),
-        (u[8], "Quarter A"),
-        (None, "Top 2 of Quarter B"),
-        (None, "Top 2 of Quarter B"),
+        (u[0], "1st of Quarter A"),
+        (u[8], "2nd of Quarter A"),
+        (None, "1st of Quarter B"),
+        (None, "2nd of Quarter B"),
     ]
     # Nothing of the semis is decided: the final only names where it waits.
     assert [s.label for s in fed_field(final, cfg, results)] == (
-        ["Top 2 of Semi A"] * 2 + ["Top 2 of Semi B"] * 2
+        ["1st of Semi A", "2nd of Semi A", "1st of Semi B", "2nd of Semi B"]
     )
 
 
@@ -1726,7 +1732,7 @@ def test_a_group_left_with_one_runner_sends_them_alone():
     qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True, forfeits=out)
     apply_walkovers(cfg, resolved, qualified, out)
     field = fed_field(cfg.stage("final"), cfg, resolved.results)
-    assert [(s.user_id, s.label) for s in field] == [(u[3], "Group A"), (None, NO_RUNNER)]
+    assert [(s.user_id, s.label) for s in field] == [(u[3], "1st of Group A"), (None, NO_RUNNER)]
 
 
 def test_a_group_with_three_runners_still_plays():
@@ -1745,3 +1751,57 @@ def test_a_provisional_draw_never_walks_a_stage_over():
     out = {u[0], u[1]}
     qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=False, forfeits=out)
     assert apply_walkovers(cfg, resolved, qualified, out) == set()
+
+
+def _crossed_quarters() -> EventConfig:
+    raw = _quarters_config().model_dump(mode="json", by_alias=True)
+    for stage in stages_of(raw):
+        if stage["key"] == "semi_a":
+            stage["from"] = ["quarter_a:1", "quarter_b:2", "quarter_c:1", "quarter_d:2"]
+        if stage["key"] == "semi_b":
+            stage["from"] = ["quarter_a:2", "quarter_b:1", "quarter_c:2", "quarter_d:1"]
+    return EventConfig.model_validate(raw)
+
+
+def _played(*ids: UUID, advance: int = 2) -> StageResult:
+    return StageResult(
+        complete=True,
+        entries=[
+            StageEntry(user_id=u, points=100 - i, igt_total=0, advances=i < advance)
+            for i, u in enumerate(ids)
+        ],
+    )
+
+
+def test_a_crossed_semi_seats_one_place_of_each_quarter():
+    cfg = _crossed_quarters()
+    a1, a2, a3, b1, b2, b3 = (uuid4() for _ in range(6))
+    results = {"quarter_a": _played(a1, a2, a3), "quarter_b": _played(b1, b2, b3)}
+    field = fed_field(cfg.stage("semi_a"), cfg, results)
+    assert [(s.user_id, s.label, s.source, s.place) for s in field] == [
+        (a1, "1st of Quarter A", "quarter_a", 1),
+        (b2, "2nd of Quarter B", "quarter_b", 2),
+        (None, "1st of Quarter C", "quarter_c", 1),
+        (None, "2nd of Quarter D", "quarter_d", 2),
+    ]
+
+
+def test_a_whole_source_gives_its_places_in_order():
+    cfg = _crossed_quarters()
+    s1, s2 = uuid4(), uuid4()
+    field = fed_field(cfg.stage("final"), cfg, {"semi_a": _played(s1, s2, uuid4())})
+    assert [s.label for s in field] == [
+        "1st of Semi A",
+        "2nd of Semi A",
+        "1st of Semi B",
+        "2nd of Semi B",
+    ]
+    assert [s.user_id for s in field[:2]] == [s1, s2]
+
+
+def test_a_place_a_complete_source_cannot_fill_reads_no_runner():
+    cfg = _crossed_quarters()
+    a1 = uuid4()
+    # Quarter A went through without a match with one runner.
+    field = fed_field(cfg.stage("semi_b"), cfg, {"quarter_a": _played(a1, advance=1)})
+    assert (field[0].user_id, field[0].label, field[0].place) == (None, NO_RUNNER, 2)

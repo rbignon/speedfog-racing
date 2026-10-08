@@ -610,37 +610,51 @@ def compute_stage_results(
     return StageResult(complete=complete, entries=entries)
 
 
+def _ordinal(n: int) -> str:
+    suffix = "th" if 11 <= n % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 @dataclass(frozen=True)
 class FieldSlot:
     user_id: UUID | None
     label: str
+    # A fed seat: the stage it comes from and the place it takes there.
+    source: str | None = None
+    place: int | None = None
 
 
 def fed_field(
     stage: EventStage, config: EventConfig, results: dict[str, StageResult]
 ) -> list[FieldSlot]:
-    """A fed stage's field: each source's advancing runners, or a placeholder per seat."""
+    """A fed stage's field, one seat per place it takes ("1st of Group A").
+
+    A whole source (a stage key alone in ``from``) gives all its places, in
+    order. Once the source is complete, a seat holds the runner who finished
+    in that place among its advancing runners, or reads ``NO_RUNNER`` when
+    it sent fewer; until then it reads its label.
+    """
     slots: list[FieldSlot] = []
-    for key in stage.from_ or []:
+    for key, place in stage.sources:
         source = config.stage(key)
         assert source is not None and source.advance is not None, (
             "the schema ties every source to an earlier stage with advance"
         )
-        count = source.advance
-        placeholder = f"Top {count} of {source.label}"
+        places = [place] if place is not None else list(range(1, source.advance + 1))
         result = results.get(key)
-        if result is not None and result.complete:
-            decided = [
-                FieldSlot(user_id=e.user_id, label=source.label)
-                for e in result.entries
-                if e.advances
-            ]
-            decided.extend(
-                FieldSlot(user_id=None, label=NO_RUNNER) for _ in range(count - len(decided))
-            )
-            slots.extend(decided)
-        else:
-            slots.extend(FieldSlot(user_id=None, label=placeholder) for _ in range(count))
+        advancing = (
+            [e.user_id for e in result.entries if e.advances]
+            if result is not None and result.complete
+            else None
+        )
+        for p in places:
+            label = f"{_ordinal(p)} of {source.label}"
+            if advancing is None:
+                slots.append(FieldSlot(user_id=None, label=label, source=key, place=p))
+            elif p <= len(advancing):
+                slots.append(FieldSlot(user_id=advancing[p - 1], label=label, source=key, place=p))
+            else:
+                slots.append(FieldSlot(user_id=None, label=NO_RUNNER, source=key, place=p))
     return slots
 
 

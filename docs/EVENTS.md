@@ -329,6 +329,12 @@ seat and nobody replaces them: the field slot and the ladder entry carry
 `forfeited`, and the draw rows of the home band and the share card leave
 them out. A fed stage whose runner forfeits is left one short.
 
+A fed stage seats one place of its sources at a time, each seat labelled by it
+("1st of Group A"); a whole source (a stage key alone in `from`) gives all its
+places, in order ("1st of Semi A", "2nd of Semi A"). A place a complete source
+cannot fill reads "No runner". The API field slot carries the seat's `source`
+(a stage key) and `place`, both null on a seeded seat.
+
 ### Playoff scoring
 
 A stage or showcase race scores on the event's own table
@@ -835,7 +841,7 @@ The header carries the phase, the co-brand lockup sits under it with the
 partner logo, and the footer holds the entrant count and the event window.
 Entrants run in ladder order (best first), capped at 14 with a `+N` chip. A
 line-up slot nobody holds yet is a dashed ring labelled with what it waits on:
-a seed number for a seeded stage, the source stage for a fed one; a place a
+a seed number for a seeded stage, the source stage alone for a fed one (the page says "1st of Semi A", the ring only has room for "Semi A"); a place a
 complete source cannot fill reads "No runner". A forfeit's seat is left out of
 the line-up, as on the draw card.
 
