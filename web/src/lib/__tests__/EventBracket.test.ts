@@ -467,11 +467,12 @@ describe("EventBracket notes and forfeits", () => {
     const { container, getByText } = render(EventBracket, {
       stages: [stage({ field: [seat("ann"), seat("bob", true), seat("cy")] })],
       formatDay: fmtDay,
-      provisionalUntil: "Oct 10, 18:00 UTC",
+      provisionalUntil: "Sat 10 Oct",
     });
-    expect(
-      getByText(/The draw is provisional until Oct 10, 18:00 UTC/),
-    ).toBeTruthy();
+    const line = container.querySelector(".bracket-notes li");
+    expect(line?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "The draw is provisional until Sat 10 Oct at the latest: a withdrawal moves everyone below up a place.",
+    );
     expect(container.querySelectorAll("li.out")).toHaveLength(1);
     expect(getByText("forfeit")).toBeTruthy();
   });

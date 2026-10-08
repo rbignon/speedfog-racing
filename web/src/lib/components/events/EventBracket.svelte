@@ -31,7 +31,7 @@
     aside?: Snippet;
     /** The playoff rules card. */
     rules?: Snippet;
-    /** The lock, formatted, while the draw can still change. */
+    /** The lock's day, formatted, while the draw can still change. */
     provisionalUntil?: string | null;
   } = $props();
 
@@ -174,8 +174,9 @@
     <ul class="bracket-notes">
       {#if provisionalUntil}
         <li>
-          The draw is provisional until {provisionalUntil}: a withdrawal moves
-          everyone below up a place.
+          The draw is provisional until <span class="date"
+            >{provisionalUntil}</span
+          > at the latest: a withdrawal moves everyone below up a place.
         </li>
       {/if}
       {#each notes as note (note.stage)}
@@ -343,6 +344,9 @@
   }
   .bracket-notes li + li {
     margin-top: 0.15rem;
+  }
+  .bracket-notes .date {
+    color: var(--color-gold);
   }
   .brk {
     display: grid;

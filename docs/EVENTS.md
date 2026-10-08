@@ -654,8 +654,10 @@ it. A stage without a date reads "Date to be agreed", and the evening section
 disappears while no evening is current or next.
 
 Notes sit under the "Bracket" title on every tab. From the cut until
-`draw_locks_at`, a line says "The draw is provisional until <instant, in the
-viewer's timezone>: a withdrawal moves everyone below up a place." Once a
+`draw_locks_at`, a line says "The draw is provisional until <day, in brass>
+at the latest: a withdrawal moves everyone below up a place.", the day of
+the lock in the viewer's timezone without its time: the bound is indicative,
+and the organizers move the lock earlier once every runner has confirmed. Once a
 runner has forfeited, one note per stage they leave stays for the whole
 playoffs: "X withdrew: Group G plays with three.", or, when the stage goes
 through without a match, "X withdrew: Group G goes ahead with Y and Z, without

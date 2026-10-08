@@ -119,10 +119,12 @@
   let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(view));
   let crowned = $derived(champions(detail));
-  // The lock under the bracket title, while the draw can still change.
+  // The lock's day under the bracket title, while the draw can still change:
+  // a bound the organizers close by hand once every runner confirmed, so the
+  // day says enough.
   let drawLock = $derived.by(() => {
     const lock = provisionalUntil(detail, now);
-    return lock ? fmtZone(lock) : null;
+    return lock ? fmtDay(lock) : null;
   });
 
   function selectBracket(key: string) {
