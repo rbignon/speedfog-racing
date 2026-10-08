@@ -28,6 +28,7 @@
     ordinal,
     playoffsIntro,
     playoffsPlan,
+    provisionalUntil,
     racesSection,
     selectedBracketKey,
     shownStage,
@@ -118,6 +119,11 @@
   let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(view));
   let crowned = $derived(champions(detail));
+  // The lock under the bracket title, while the draw can still change.
+  let drawLock = $derived.by(() => {
+    const lock = provisionalUntil(detail, now);
+    return lock ? fmtZone(lock) : null;
+  });
 
   function selectBracket(key: string) {
     const url = new URL(page.url);
@@ -715,6 +721,7 @@
             formatDay={fmtDay}
             aside={shown ? eveningSection : undefined}
             rules={detail.playoff_rules.length > 0 ? playoffRules : undefined}
+            provisionalUntil={drawLock}
           />
         </div>
         <div class="ladder-col">

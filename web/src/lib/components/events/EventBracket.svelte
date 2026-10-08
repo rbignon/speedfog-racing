@@ -5,11 +5,10 @@
     DATE_TO_BE_AGREED,
     bracketLayout,
     fillSlots,
+    forfeitNotes,
     linkPath,
-    ordinal,
     stageWinner,
     stripStagePrefix,
-    withdrawalsOf,
   } from "$lib/events";
   import EventStageBox, {
     type StageChip,
@@ -23,6 +22,7 @@
     formatDay,
     aside,
     rules,
+    provisionalUntil = null,
   }: {
     stages: EventStage[];
     formatDay: (iso: string) => string;
@@ -30,12 +30,14 @@
     aside?: Snippet;
     /** The playoff rules card. */
     rules?: Snippet;
+    /** The lock, formatted, while the draw can still change. */
+    provisionalUntil?: string | null;
   } = $props();
 
   let layout = $derived(bracketLayout(stages));
-  // Seats a withdrawal vacated, told under the title for as long as the
-  // bracket shows: a box's "sub" tag only lasts until its stage is played.
-  let withdrawals = $derived(withdrawalsOf(stages));
+  // Stages some runners forfeited, told under the title for as long as the
+  // bracket shows: a box's "forfeit" tag only lasts until its stage is played.
+  let notes = $derived(forfeitNotes(stages));
   let depth = $derived(layout.rounds.length);
   // A tree of four rounds or more (a round of 32 before the quarters)
   // narrows the side column so the rounds keep their width; the final's
@@ -114,7 +116,11 @@
         rank: i + 1,
         user: e.user,
         newcomer: e.newcomer,
-        right: e.advances ? `adv ${e.points}` : String(e.points),
+        right: stage.walkover
+          ? "adv"
+          : e.advances
+            ? `adv ${e.points}`
+            : String(e.points),
         // Points move while the evening runs (running races score
         // provisionally), so they read brass until the stage is complete.
         rightClass: e.advances
@@ -137,10 +143,7 @@
         rank: slot.user && isSeed ? slot.label.replace("Seed ", "") : null,
         user: slot.user,
         label: slot.label,
-        sub:
-          slot.replaces && slot.user
-            ? `Replaces ${slot.replaces.twitch_display_name || slot.replaces.twitch_username}, who withdrew`
-            : undefined,
+        forfeit: slot.forfeited,
         right: slot.user && !isSeed ? slot.label : "",
         rightClass: "pts",
       };
@@ -159,20 +162,34 @@
   />
 {/snippet}
 
-{#snippet withdrawalNote()}
-  {#if withdrawals.length > 0}
-    <ul class="withdrawals">
-      {#each withdrawals as w (w.withdrew.id)}
+{#snippet bracketNotes()}
+  {#if provisionalUntil || notes.length > 0}
+    <ul class="bracket-notes">
+      {#if provisionalUntil}
         <li>
-          <UserLink user={w.withdrew} /> withdrew:
-          {#if w.by}
-            <UserLink user={w.by} />{w.position !== null
-              ? ` (${ordinal(w.position)})`
-              : ""} takes their seat in {w.stage}.
-          {:else if w.open}
-            their seat in {w.stage} is still to be filled.
+          The draw is provisional until {provisionalUntil}: a withdrawal moves
+          everyone below up a place.
+        </li>
+      {/if}
+      {#each notes as note (note.stage)}
+        <li>
+          {#each note.who as w, i (w.id)}{i > 0 ? " and " : ""}<UserLink
+              user={w}
+            />{/each}
+          withdrew:
+          {#if note.present.length === 0}
+            nobody is left in {note.stage}.
+          {:else if note.walkover}
+            {note.stage} goes ahead with {#each note.present as p, i (p.id)}{i >
+              0
+                ? i === note.present.length - 1
+                  ? " and "
+                  : ", "
+                : ""}<UserLink user={p} />{/each}, without a match.
           {:else}
-            nobody is left to take their seat in {w.stage}.
+            {note.stage} plays with {["one", "two", "three", "four"][
+              note.present.length - 1
+            ] ?? note.present.length}.
           {/if}
         </li>
       {/each}
@@ -226,7 +243,7 @@
         style:--order="1"
       >
         <SectionTitle>Bracket</SectionTitle>
-        {@render withdrawalNote()}
+        {@render bracketNotes()}
       </div>
       {#if aside}
         <div
@@ -297,7 +314,7 @@
   <div class="split">
     <div>
       <SectionTitle>Bracket</SectionTitle>
-      {@render withdrawalNote()}
+      {@render bracketNotes()}
       {@render tree()}
     </div>
     {#if aside || rules}
@@ -310,14 +327,14 @@
 {/if}
 
 <style>
-  .withdrawals {
+  .bracket-notes {
     list-style: none;
     margin: -0.35rem 0 0.9rem;
     padding: 0;
     font-size: var(--font-size-sm);
     color: var(--color-text-secondary);
   }
-  .withdrawals li + li {
+  .bracket-notes li + li {
     margin-top: 0.15rem;
   }
   .brk {

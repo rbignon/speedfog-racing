@@ -22,7 +22,9 @@ import {
   ordinal,
   playoffsIntro,
   playoffsPlan,
+  forfeitNotes,
   pollIntervalMs,
+  provisionalUntil,
   qualifiedMeta,
   qualifiedSections,
   racesSection,
@@ -33,7 +35,6 @@ import {
   stageTimes,
   stripStagePrefix,
   timeRemaining,
-  withdrawalsOf,
 } from "$lib/events";
 import type {
   EventBracket,
@@ -142,6 +143,7 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
     advance: null,
     races_expected: 3,
     complete: false,
+    walkover: false,
     modes: [],
     races: [],
     results: [],
@@ -154,7 +156,7 @@ const seats = (n: number) =>
   Array.from({ length: n }, (_, i) => ({
     user: null,
     label: `Seed ${i + 1}`,
-    replaces: null,
+    forfeited: false,
   }));
 
 const mainBracket: EventBracket = {
@@ -756,59 +758,75 @@ describe("stripStagePrefix", () => {
   });
 });
 
-describe("withdrawalsOf", () => {
-  const user = (name: string) => ({ id: name, twitch_username: name }) as User;
-  const stage = (label: string, field: EventStage["field"]): EventStage =>
-    ({ key: label, label, field }) as EventStage;
+describe("provisionalUntil", () => {
+  const lock = "2026-10-10T18:00:00Z";
+  const before = new Date("2026-10-09T12:00:00Z");
+  const after = new Date("2026-10-11T12:00:00Z");
 
-  it("lists each vacated seat with who holds it now and where they ranked", () => {
-    const stages = [
-      stage("Group F", [
-        { user: user("jeffqed"), label: "Seed 7", replaces: null },
-      ]),
-      stage("Group G", [
-        { user: user("mm420_"), label: "Seed 3", replaces: null },
-        { user: user("dinossb"), label: "Seed 33", replaces: user("ItsShura") },
-        { user: null, label: "No runner", replaces: user("ghost") },
-        { user: null, label: "TBD", replaces: user("late") },
-      ]),
-      stage("Quarter D", [
-        { user: null, label: "Top 2 of Group G", replaces: null },
-      ]),
-    ];
-    expect(withdrawalsOf(stages)).toEqual([
-      {
-        withdrew: user("ItsShura"),
-        by: user("dinossb"),
-        position: 33,
-        open: false,
-        stage: "Group G",
-      },
-      {
-        withdrew: user("ghost"),
-        by: null,
-        position: null,
-        open: false,
-        stage: "Group G",
-      },
-      {
-        withdrew: user("late"),
-        by: null,
-        position: null,
-        open: true,
-        stage: "Group G",
-      },
-    ]);
+  it("holds the lock while the draw can still change", () => {
+    expect(
+      provisionalUntil({ phase: "cut", draw_locks_at: lock }, before),
+    ).toBe(lock);
+    expect(
+      provisionalUntil({ phase: "playoffs", draw_locks_at: lock }, before),
+    ).toBe(lock);
   });
 
-  it("is empty when nobody withdrew", () => {
+  it("is null once locked, without a lock, or before the cut", () => {
     expect(
-      withdrawalsOf([
-        stage("Semi A", [
-          { user: user("ace"), label: "Seed 1", replaces: null },
-        ]),
+      provisionalUntil({ phase: "cut", draw_locks_at: lock }, after),
+    ).toBeNull();
+    expect(
+      provisionalUntil({ phase: "cut", draw_locks_at: null }, before),
+    ).toBeNull();
+    expect(
+      provisionalUntil({ phase: "qualifier", draw_locks_at: lock }, before),
+    ).toBeNull();
+  });
+});
+
+describe("forfeitNotes", () => {
+  const user = (name: string) => ({ id: name, twitch_username: name }) as User;
+  const seat = (name: string, forfeited = false) => ({
+    user: user(name),
+    label: "Seed 1",
+    forfeited,
+  });
+  const stage = (
+    label: string,
+    field: EventStage["field"],
+    walkover = false,
+  ): EventStage => ({ key: label, label, field, walkover }) as EventStage;
+
+  it("gives one note per stage with forfeits, the others still in it", () => {
+    const notes = forfeitNotes([
+      stage("Group F", [seat("a"), seat("b"), seat("c"), seat("d")]),
+      stage("Group G", [
+        seat("e"),
+        seat("ItsShura", true),
+        seat("f"),
+        seat("g"),
       ]),
-    ).toEqual([]);
+      stage(
+        "Group H",
+        [seat("h", true), seat("i"), seat("j", true), seat("k")],
+        true,
+      ),
+    ]);
+    expect(notes).toEqual([
+      {
+        who: [user("ItsShura")],
+        stage: "Group G",
+        present: [user("e"), user("f"), user("g")],
+        walkover: false,
+      },
+      {
+        who: [user("h"), user("j")],
+        stage: "Group H",
+        present: [user("i"), user("k")],
+        walkover: true,
+      },
+    ]);
   });
 });
 
@@ -840,6 +858,7 @@ describe("champions", () => {
     advance: null,
     races_expected: 3,
     complete,
+    walkover: false,
     modes: [],
     races: [wonBy(1, "u1"), wonBy(2, "u2"), wonBy(3, "u1")],
     results: [

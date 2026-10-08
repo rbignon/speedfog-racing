@@ -6,8 +6,8 @@
     user: User | null;
     label?: string;
     newcomer?: boolean;
-    /** A seat taken from a runner who withdrew: the tag's tooltip says whom. */
-    sub?: string;
+    /** Withdrew after the lock: kept in the seat, receded. */
+    forfeit?: boolean;
     right?: string;
     rightClass?: "pts" | "lead" | "adv" | "prov";
   }
@@ -69,7 +69,7 @@
   {/if}
   <ol>
     {#each rows as row (row.key)}
-      <li>
+      <li class:out={row.forfeit}>
         <span class="rank" class:rank-gold={row.rank === 1}
           >{row.rank ?? ""}</span
         >
@@ -80,7 +80,7 @@
             <span class="tbd">{row.label ?? "TBD"}</span>
           {/if}
           {#if row.newcomer}<span class="newtag">new</span>{/if}
-          {#if row.sub}<span class="newtag" title={row.sub}>sub</span>{/if}
+          {#if row.forfeit}<span class="newtag">forfeit</span>{/if}
         </span>
         <span class="right {row.rightClass ?? 'pts'}">{row.right ?? ""}</span>
       </li>
@@ -188,6 +188,10 @@
   .tbd {
     color: var(--color-text-disabled);
     font-style: italic;
+  }
+  /* Withdrew after the lock: the name recedes, its tag says why. */
+  li.out .who > :global(:first-child) {
+    opacity: 0.55;
   }
   .newtag {
     font-family: var(--font-mono);

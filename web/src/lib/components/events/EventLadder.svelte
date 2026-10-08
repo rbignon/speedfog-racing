@@ -100,20 +100,21 @@
         <div
           class="row"
           class:me={viewerId !== null && entry.user.id === viewerId}
-          class:withdrawn={entry.withdrawn}
+          class:withdrawn={entry.withdrawn || entry.forfeited}
           class:above-cut={i === cutIndex}
         >
           <span
             class="rank"
             class:rank-gold={entry.rank === 1}
             class:rank-silver={entry.rank === 2}
-            class:rank-bronze={entry.rank === 3}>{entry.rank ?? "·"}</span
+            class:rank-bronze={entry.rank === 3}
+            >{entry.rank ?? (entry.withdrawn ? "" : "·")}</span
           >
           <div class="name-line">
             <UserLink user={entry.user} showBadge showAvatar />
             {#if entry.newcomer}<span class="newtag">newcomer</span>{/if}
             {#if entry.withdrawn}<span class="newtag">withdrawn</span>{/if}
-            {#if entry.called_up}<span class="newtag">called up</span>{/if}
+            {#if entry.forfeited}<span class="newtag">forfeit</span>{/if}
           </div>
           {#each modes as mode (mode.key)}
             {@const p = entry.mode_points[mode.key]}

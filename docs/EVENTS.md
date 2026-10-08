@@ -617,6 +617,19 @@ tree with a narrow Champion column, the evening section and the rules beside
 it. A stage without a date reads "Date to be agreed", and the evening section
 disappears while no evening is current or next.
 
+Notes sit under the "Bracket" title on every tab. From the cut until
+`draw_locks_at`, a line says "The draw is provisional until <instant, in the
+viewer's timezone>: a withdrawal moves everyone below up a place." Once a
+runner has forfeited, one note per stage they leave stays for the whole
+playoffs: "X withdrew: Group G plays with three.", or, when the stage goes
+through without a match, "X withdrew: Group G goes ahead with Y and Z, without
+a match.", or "X withdrew: nobody is left in Group G." A forfeit keeps their
+seat in the stage box, receded under a `forfeit` tag; a walkover stage's rows
+read `adv` without points. On the ladder, a runner struck before the lock has
+no number, a receded row and a `withdrawn` tag, the numbering carries on past
+them and the qualification line follows; a forfeit keeps their rank, receded,
+under a `forfeit` tag.
+
 The format block keeps its dates to the day, in brass. Its playoffs paragraph
 counts the places (the seeded stages' seats), says the rounds without a fixed
 date are "scheduled with their players", naming a `round` stage's round after

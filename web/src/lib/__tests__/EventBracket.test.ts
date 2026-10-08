@@ -56,13 +56,14 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     advance: null,
     races_expected: 3,
     complete: false,
+    walkover: false,
     modes: [],
     races: [],
     results: [],
     field: new Array(8).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,
-      replaces: null,
+      forfeited: false,
     })),
     ...overrides,
   };
@@ -266,9 +267,9 @@ describe("EventBracket rows", () => {
                 twitch_avatar_url: null,
               },
               label: "Semi A",
-              replaces: null,
+              forfeited: false,
             },
-            { user: null, label: "Seed 2", replaces: null },
+            { user: null, label: "Seed 2", forfeited: false },
           ],
         }),
       ],
@@ -384,7 +385,7 @@ const groups = ["a", "b", "c", "d", "e", "f", "g", "h"].map((x) =>
     field: new Array(4).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,
-      replaces: null,
+      forfeited: false,
     })),
   }),
 );
@@ -400,6 +401,74 @@ const roundSeason = [
       : s,
   ),
 ];
+
+describe("EventBracket notes and forfeits", () => {
+  const who = (id: string) => ({
+    id,
+    twitch_username: id,
+    twitch_display_name: id,
+    twitch_avatar_url: null,
+  });
+  const seat = (id: string, forfeited = false) => ({
+    user: who(id),
+    label: "Seed 1",
+    forfeited,
+  });
+
+  it("tells the provisional lock and tags a forfeit in its box", () => {
+    const { container, getByText } = render(EventBracket, {
+      stages: [stage({ field: [seat("ann"), seat("bob", true), seat("cy")] })],
+      formatDay: fmtDay,
+      provisionalUntil: "Oct 10, 18:00 UTC",
+    });
+    expect(
+      getByText(/The draw is provisional until Oct 10, 18:00 UTC/),
+    ).toBeTruthy();
+    expect(container.querySelectorAll("li.out")).toHaveLength(1);
+    expect(getByText("forfeit")).toBeTruthy();
+  });
+
+  it("words a walkover note with the runners left, spaced as a sentence (UserLink leaves a trailing space of its own)", () => {
+    const { container } = render(EventBracket, {
+      stages: [
+        stage({
+          label: "Group H",
+          walkover: true,
+          field: [seat("h1", true), seat("ann"), seat("bob"), seat("j1", true)],
+        }),
+      ],
+      formatDay: fmtDay,
+    });
+    const text = container.querySelector(".bracket-notes")?.textContent;
+    expect(text?.replace(/\s+/g, " ").replace(" ,", ",").trim()).toBe(
+      "h1 and j1 withdrew: Group H goes ahead with ann and bob, without a match.",
+    );
+  });
+
+  it("reads adv without points on a walkover stage", () => {
+    const { getByText, queryByText } = render(EventBracket, {
+      stages: [
+        stage({
+          walkover: true,
+          complete: true,
+          results: [
+            {
+              user: who("ann"),
+              newcomer: false,
+              points: 0,
+              igt_total: 0,
+              advances: true,
+              signature_weapon: null,
+            },
+          ],
+        }),
+      ],
+      formatDay: fmtDay,
+    });
+    expect(getByText("adv")).toBeTruthy();
+    expect(queryByText("adv 0")).toBeNull();
+  });
+});
 
 describe("EventBracket layout", () => {
   // Grid placement itself (rows, spans, link centres) is bracketLayout's,

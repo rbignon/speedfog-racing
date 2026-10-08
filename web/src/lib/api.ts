@@ -482,10 +482,10 @@ export interface EventLadderEntry {
   rank: number | null;
   user: User;
   newcomer: boolean;
-  /** Listed as withdrawn from the playoffs in the event's config. */
+  /** Struck from the ranking: withdrew before the draw locked. */
   withdrawn: boolean;
-  /** Holds a seat a withdrawal vacated. */
-  called_up: boolean;
+  /** Withdrew after the lock: rank and seat kept. */
+  forfeited: boolean;
   mode_points: Record<string, number | null>;
   total: number | null;
   modes_scored: number;
@@ -548,8 +548,8 @@ export interface EventStageEntry {
 export interface EventFieldSlot {
   user: User | null;
   label: string;
-  /** A seeded seat a withdrawal vacated: the runner drawn to it at the cut. */
-  replaces: User | null;
+  /** Withdrew after the lock: the seat stays theirs, nobody replaces them. */
+  forfeited: boolean;
 }
 
 export interface EventStage {
@@ -577,6 +577,8 @@ export interface EventStage {
   advance: number | null;
   races_expected: number;
   complete: boolean;
+  /** Complete without a match: no more runners than it sends on. */
+  walkover: boolean;
   modes: string[];
   races: EventStageRace[];
   results: EventStageEntry[];
@@ -621,6 +623,8 @@ export interface EventDetail {
   newcomer_threshold: number;
   phase: EventPhase;
   ladder_final: boolean;
+  /** The end of the redraws; null when every withdrawal redraws. */
+  draw_locks_at: string | null;
   my_signup: boolean;
   modes: EventMode[];
   seeds_per_mode: number;

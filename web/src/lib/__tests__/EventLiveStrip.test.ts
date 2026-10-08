@@ -55,6 +55,7 @@ function stageWith(overrides: Partial<EventStage> = {}): EventStage {
     advance: null,
     races_expected: 3,
     complete: false,
+    walkover: false,
     modes: [],
     races: [],
     results: [],

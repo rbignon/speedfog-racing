@@ -206,39 +206,51 @@ export function stageWinner(stage: EventStage): User | null {
   return stage.complete ? (stage.results[0]?.user ?? null) : null;
 }
 
-/** A seeded seat a withdrawal vacated, as the note under the bracket title tells it. */
-export interface Withdrawal {
-  /** The runner drawn to the seat at the cut. */
-  withdrew: User;
-  /** Who holds it now; null when nobody was left to call up. */
-  by: User | null;
-  /** Their ladder position, from the seat's "Seed N" label. */
-  position: number | null;
-  /** Nobody holds it yet, but the ladder can still bring someone ("TBD"). */
-  open: boolean;
-  stage: string;
+/**
+ * The instant the draw locks, while it can still change: from the cut, before
+ * ``draw_locks_at``. Null once locked, without a lock, or before the cut.
+ */
+export function provisionalUntil(
+  detail: Pick<EventDetail, "phase" | "draw_locks_at">,
+  now: Date,
+): string | null {
+  if (!detail.draw_locks_at) return null;
+  if (detail.phase !== "cut" && detail.phase !== "playoffs") return null;
+  return now.getTime() < Date.parse(detail.draw_locks_at)
+    ? detail.draw_locks_at
+    : null;
 }
 
-/** Every vacated seat of ``stages``, in stage then seat order. */
-export function withdrawalsOf(stages: EventStage[]): Withdrawal[] {
-  return stages.flatMap((stage) =>
-    stage.field.flatMap((slot) =>
-      slot.replaces
-        ? [
-            {
-              withdrew: slot.replaces,
-              by: slot.user,
-              position:
-                slot.user && slot.label.startsWith("Seed ")
-                  ? Number(slot.label.slice("Seed ".length))
-                  : null,
-              open: !slot.user && slot.label === "TBD",
-              stage: stage.label,
-            },
-          ]
-        : [],
-    ),
-  );
+/** A stage some runners withdrew from after the lock, as the bracket's note tells it. */
+export interface ForfeitNote {
+  /** Who withdrew, in seat order. */
+  who: User[];
+  stage: string;
+  /** The runners still in it, in seat order. */
+  present: User[];
+  /** It goes through without a match. */
+  walkover: boolean;
+}
+
+/** One note per stage with forfeits, in stage order. */
+export function forfeitNotes(stages: EventStage[]): ForfeitNote[] {
+  return stages.flatMap((stage) => {
+    const seated = stage.field.filter((slot) => slot.user !== null);
+    const who = seated
+      .filter((slot) => slot.forfeited)
+      .map((slot) => slot.user as User);
+    if (who.length === 0) return [];
+    return [
+      {
+        who,
+        stage: stage.label,
+        present: seated
+          .filter((slot) => !slot.forfeited)
+          .map((slot) => slot.user as User),
+        walkover: stage.walkover,
+      },
+    ];
+  });
 }
 
 export interface Champion {

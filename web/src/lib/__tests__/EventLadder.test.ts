@@ -23,7 +23,7 @@ function entry(overrides: Partial<EventLadderEntry> = {}): EventLadderEntry {
     },
     newcomer: false,
     withdrawn: false,
-    called_up: false,
+    forfeited: false,
     mode_points: { standard: 100, hard: 90 },
     total: 190,
     modes_scored: 2,
@@ -300,5 +300,25 @@ describe("EventLadder rows", () => {
       viewerId: null,
     });
     expect(getByText("1/2")).toBeTruthy();
+  });
+
+  it("leaves a struck runner without a number and tags a forfeit", () => {
+    const { container } = render(EventLadder, {
+      ladder: ladderWith([
+        entry({
+          rank: null,
+          withdrawn: true,
+          user: { ...entry().user, id: "u2", twitch_username: "bob" },
+        }),
+        entry({ rank: 2, forfeited: true }),
+      ]),
+      modes,
+      viewerId: null,
+    });
+    const rows = container.querySelectorAll(".row.withdrawn");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector(".rank")?.textContent).toBe("");
+    expect(rows[1].querySelector(".rank")?.textContent).toBe("2");
+    expect(rows[1].textContent).toContain("forfeit");
   });
 });
