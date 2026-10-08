@@ -70,11 +70,31 @@ describe("CastRoundStandings: row cap", () => {
 });
 
 describe("CastRoundStandings: advancing mark", () => {
+  it("names each advancing runner's own next stage", () => {
+    const { container } = render(CastRoundStandings, {
+      props: {
+        ...baseProps,
+        nextLabels: ["Quarter A", "Quarter C"],
+        advance: 2,
+        complete: true,
+        results: [
+          fakeEntry({ user: fakeUser({ id: "u1" }), advances: true }),
+          fakeEntry({ user: fakeUser({ id: "u2" }), advances: true }),
+          fakeEntry({ user: fakeUser({ id: "u3" }), advances: false }),
+        ],
+      },
+    });
+    const tags = [...container.querySelectorAll(".stag")].map(
+      (t) => t.textContent,
+    );
+    expect(tags).toEqual(["Quarter A", "Quarter C"]);
+  });
+
   it("names the stage an advancing entry goes on to, and withholds chip and accent from the rest", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
-        nextLabel: "Quarter A",
+        nextLabels: ["Quarter A", "Quarter A"],
         results: [
           fakeEntry({ user: fakeUser({ id: "u1" }), advances: true }),
           fakeEntry({ user: fakeUser({ id: "u2" }), advances: false }),
@@ -152,7 +172,7 @@ describe("CastRoundStandings: cut line", () => {
         results: results(4),
         advance: 2,
         complete: false,
-        nextLabel: "Quarter A",
+        nextLabels: ["Quarter A", "Quarter A"],
       },
     });
     const cut = container.querySelector(".scut");
@@ -169,7 +189,7 @@ describe("CastRoundStandings: cut line", () => {
         results: results(10),
         advance: 5,
         complete: false,
-        nextLabel: "Final",
+        nextLabels: ["Final", "Final"],
       },
     });
     const rows = [...container.querySelectorAll(".srow:not(.more)")];
@@ -184,7 +204,7 @@ describe("CastRoundStandings: cut line", () => {
         results: results(4),
         advance: 2,
         complete: true,
-        nextLabel: "Quarter A",
+        nextLabels: ["Quarter A", "Quarter A"],
       },
     });
     expect(container.querySelector(".scut")).toBeNull();
@@ -209,7 +229,7 @@ describe("CastRoundStandings: cut line", () => {
         results: results(2),
         advance: 2,
         complete: false,
-        nextLabel: "Quarter A",
+        nextLabels: ["Quarter A", "Quarter A"],
       },
     });
     expect(container.querySelector(".scut")).toBeNull();

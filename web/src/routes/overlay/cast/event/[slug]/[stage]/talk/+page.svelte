@@ -11,6 +11,7 @@
     fillSlots,
     formatEventDay,
     formatEventTime,
+    nextStageLabels,
     DATE_TO_BE_AGREED,
   } from "$lib/events";
   import CastPlate from "$lib/components/cast/CastPlate.svelte";
@@ -53,10 +54,10 @@
     casterLabel(data.casters[1] ?? null),
   ]);
 
-  // The stage the advancing runners go on to, named on their chip: the one
-  // whose `from` lists this stage. A final or a showcase feeds none.
-  let nextLabel = $derived(
-    data.event.stages.find((s) => s.from.includes(stage.key))?.label ?? null,
+  // The stage each advancing place goes on to, named on its chip: the one
+  // whose seat takes that place. A final or a showcase feeds none.
+  let nextLabels = $derived(
+    nextStageLabels(data.event.stages, stage.key, stage.advance),
   );
 
   // fillSlots keeps a stage slot with no race yet in its place as null, the
@@ -124,7 +125,7 @@
     {racesPlayed}
     racesExpected={stage.races_expected}
     results={stage.results}
-    {nextLabel}
+    {nextLabels}
     advance={stage.advance}
     complete={stage.complete}
   />

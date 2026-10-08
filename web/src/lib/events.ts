@@ -1152,3 +1152,22 @@ export function qualifiedMeta(
   if (name && date) return `${name} on ${date}`;
   return name ?? date ?? "";
 }
+
+/**
+ * The stage each advancing place of ``stageKey`` goes on to, by place
+ * (index 0 is the 1st), read off the fed seats: a group's winner and
+ * runner-up can go to different quarters. Null for a place no seat takes.
+ */
+export function nextStageLabels(
+  stages: EventStage[],
+  stageKey: string,
+  advance: number | null,
+): (string | null)[] {
+  return Array.from(
+    { length: advance ?? 0 },
+    (_, i) =>
+      stages.find((s) =>
+        s.field.some((f) => f.source === stageKey && f.place === i + 1),
+      )?.label ?? null,
+  );
+}

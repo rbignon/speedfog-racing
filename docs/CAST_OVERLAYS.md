@@ -319,7 +319,7 @@ the race reads DNF or DQ there, during the race and after it.
 
 While the stage is still being raced, the standings draw its cut: a dashed
 brass line under the last runner going on (`advance`, the stage's own
-config), naming at its right end the stage they would go on to, once someone
+config), naming at its right end the stages they would go on to, once someone
 stands below it. When the stage is complete the line gives way to the
 advancing runners' chips.
 
@@ -340,9 +340,10 @@ panel's own row is 56px tall with a 36px avatar (down from the mockup's
 72px/46px), measured against a real 10-runner stage where the original
 size only fit 3 of them in the panel's 412px height; the brass chip and
 the advancing runner's rule stay exactly as they were. Once the stage is
-complete, the chip on each advancing runner names the stage they go on to
-("Quarter A" after a group, "Semi A" after a quarter, "Final" after a
-semi): the talk page finds it as the stage whose `from` lists this one.
+complete, the chip on each advancing runner names the stage their place goes
+on to ("Quarter A" for a group's winner, "Quarter C" for its runner-up when
+the places are crossed): the talk page finds it as the stage whose seat takes
+that place.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |

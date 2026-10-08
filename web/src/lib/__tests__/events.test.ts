@@ -18,6 +18,7 @@ import {
   linkPath,
   liveStage,
   newcomersPlans,
+  nextStageLabels,
   openingRefreshMs,
   ordinal,
   playoffsIntro,
@@ -1838,5 +1839,39 @@ describe("eventBand", () => {
     expect(crowned.line).toBe("Champion");
     expect(crowned.actions).toEqual([{ ...eventPage, kind: "primary" }]);
     expect(eventBand(summaryWith({ phase: "finished" }), fmt).line).toBeNull();
+  });
+});
+
+describe("nextStageLabels", () => {
+  const seat = (source: string, place: number) => ({
+    user: null,
+    label: "",
+    forfeited: false,
+    source,
+    place,
+  });
+  const stages = [
+    stageFixture({ key: "group_a", label: "Group A", advance: 2 }),
+    stageFixture({
+      key: "quarter_a",
+      label: "Quarter A",
+      field: [seat("group_a", 1)],
+    }),
+    stageFixture({
+      key: "quarter_c",
+      label: "Quarter C",
+      field: [seat("group_a", 2)],
+    }),
+  ];
+
+  it("names, per place, the stage that place goes on to", () => {
+    expect(nextStageLabels(stages, "group_a", 2)).toEqual([
+      "Quarter A",
+      "Quarter C",
+    ]);
+  });
+
+  it("is empty for a stage nobody goes on from", () => {
+    expect(nextStageLabels(stages, "quarter_a", null)).toEqual([]);
   });
 });

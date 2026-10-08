@@ -14,10 +14,10 @@
     racesExpected: number;
     /** Already ranked by the server (`stage.results`): row `i` is rank `i + 1`. */
     results: EventStageEntry[];
-    /** The label of the stage this one feeds ("Quarter A"), which the
-     * advancing runners' chip names; null for a stage nobody goes on from
-     * (a final, a showcase), whose rows never advance. */
-    nextLabel?: string | null;
+    /** The stage each advancing place goes on to ("Quarter A" for the 1st,
+     * "Quarter C" for the 2nd), which their chips name; empty for a stage
+     * nobody goes on from (a final, a showcase). */
+    nextLabels?: (string | null)[];
     /** How many runners go on (`stage.advance`); null when nobody does. */
     advance?: number | null;
     /** Whether the stage is over (`stage.complete`): until then the cut is a
@@ -31,7 +31,7 @@
     racesPlayed,
     racesExpected,
     results,
-    nextLabel = null,
+    nextLabels = [],
     advance = null,
     complete = false,
   }: Props = $props();
@@ -53,6 +53,11 @@
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
+  // The cut line names where the runners above it go, each stage once.
+  let cutLabel = $derived(
+    [...new Set(nextLabels.filter((l): l is string => l !== null))].join(" · "),
+  );
+
   // The stage's cut, drawn while it is still being raced, under its last
   // runner going on, once someone stands below it.
   let cutAfter = $derived(
@@ -126,13 +131,14 @@
         <span class="sn" style={nameStyleFor(entry.user)}
           >{displayName(entry.user)}</span
         >
-        {#if entry.advances && nextLabel}<span class="stag">{nextLabel}</span
+        {#if entry.advances && nextLabels[i]}<span class="stag"
+            >{nextLabels[i]}</span
           >{/if}
         <span class="sp">{entry.points}</span>
       </div>
       {#if i === cutAfter}
         <div class="scut">
-          {#if nextLabel}<span>{nextLabel}</span>{/if}
+          {#if cutLabel}<span>{cutLabel}</span>{/if}
         </div>
       {/if}
     {/each}
