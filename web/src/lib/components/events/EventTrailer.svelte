@@ -46,7 +46,7 @@
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      aria-label="Watch the trailer with sound on YouTube (opens in new tab)"
+      aria-label="Watch the full trailer on YouTube (opens in new tab)"
     >
       <video
         bind:this={video}
@@ -60,7 +60,9 @@
         onplay={() => (paused = false)}
         onpause={() => (paused = true)}
       ></video>
-      <span class="chip hint" aria-hidden="true">Watch with sound &nearr;</span>
+      <span class="chip hint" aria-hidden="true"
+        >Watch full trailer &nearr;</span
+      >
     </a>
     <button
       type="button"
@@ -80,13 +82,21 @@
 </figure>
 
 <style>
+  /* A figure stretched taller than 16:9 grows the frame with it, the loop
+   * cropped to cover it, by 5% at most: a title card running edge to edge
+   * keeps its letters. Past that the frame stays at the top of the figure. */
   .media {
     margin: 0;
+    display: flex;
+    flex-direction: column;
+    container-type: inline-size;
   }
   .frame {
     position: relative;
+    flex: 1 0 auto;
     width: 100%;
     aspect-ratio: 16 / 9;
+    max-height: calc(100cqi * 9 / 16 * 1.05);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
     overflow: hidden;

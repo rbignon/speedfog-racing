@@ -318,8 +318,8 @@
     {/if}
   {/snippet}
 
-  {#snippet factTiles()}
-    <div class="facts">
+  {#snippet factTiles(stack: boolean)}
+    <div class="facts" class:stack>
       {#each facts as fact, i (i)}
         <div>
           <span class="k">{fact.title}</span>
@@ -404,7 +404,7 @@
               </p>
             {/each}
           </div>
-          {@render factTiles()}
+          {@render factTiles(false)}
         </div>
       </section>
     {:else if block === "take_part"}
@@ -623,48 +623,58 @@
       {#if intro}
         <section>
           <SectionTitle>The playoffs</SectionTitle>
-          <div class="playoffs-fmt">
-            <div class="playoffs-text">
-              <div class="prose">
-                <!-- Spaces sit inside expressions, not next to an {#if}: see
-                     the format block above. -->
-                <p>
-                  <strong
-                    >The top {intro.places} of the qualifier race it out</strong
-                  >: {intro.rounds.join(", ")}{intro.rounds.length > 0 &&
-                  intro.final
-                    ? ", then "
-                    : ""}{intro.final ? `the ${intro.final.label}` : ""}{intro
-                    .final?.date
-                    ? " on "
-                    : ""}{#if intro.final?.date}<span class="date"
-                      >{fmtDay(intro.final.date)}</span
-                    >{/if}. {intro.match}{intro.advance
-                    ? `; the top ${intro.advance} go on to the next round`
-                    : ""}.
-                </p>
-                {#each intro.newcomers as bracket (bracket.key)}
-                  <p>
-                    <strong
-                      >The {bracket.seats} best newcomers outside the top {intro.places}
-                      get {bracket.shape ? "a bracket" : "a final"} of their own</strong
-                    >{bracket.shape ? `: ${bracket.shape}` : ""}.
-                  </p>
-                {/each}
-                <p>
-                  Each match is played on an evening agreed with its runners and
-                  cast live on Twitch, every runner streaming their own POV.
-                  When one is on, a banner at the top of this page leads to the
-                  cast.
-                </p>
-              </div>
-              {@render factTiles()}
+          <!-- Spaces sit inside expressions, not next to an {#if}: see the
+               format block above. -->
+          <dl class="beats">
+            <div>
+              <dt>The top {intro.places}</dt>
+              <dd class="lead">
+                {intro.rounds.join(", ")}{intro.rounds.length > 0 && intro.final
+                  ? ", then "
+                  : ""}{#if intro.final}<strong
+                    >the {intro.final.label}{intro.final.date
+                      ? " on "
+                      : ""}{#if intro.final.date}<span class="date"
+                        >{fmtDay(intro.final.date)}</span
+                      >{/if}</strong
+                  >{/if}. {intro.match}{#if intro.advance}; <strong
+                    >the top {intro.advance} go on</strong
+                  >{/if}.
+              </dd>
             </div>
+            {#each intro.newcomers as bracket (bracket.key)}
+              <div>
+                <dt>
+                  {detail.brackets.find((b) => b.key === bracket.key)?.label}
+                </dt>
+                <dd>
+                  The <strong>{bracket.seats} best newcomers</strong> outside
+                  the top {intro.places} get {bracket.shape
+                    ? "a bracket"
+                    : "a final"} of their own{bracket.shape
+                    ? ": "
+                    : ""}{#if bracket.shape}<strong>{bracket.shape}</strong
+                    >{/if}.
+                </dd>
+              </div>
+            {/each}
+            <div>
+              <dt>Watch it live</dt>
+              <dd>
+                Every match is played on an evening agreed with its runners and
+                <strong>cast live on Twitch</strong>, each runner streaming
+                their own POV. When one is on, a banner at the top of this page
+                leads to it.
+              </dd>
+            </div>
+          </dl>
+          <div class="trailer-facts">
             <EventTrailer
               src={PLAYOFFS_LOOP_SRC}
               poster={PLAYOFFS_STILL_SRC}
               url={PLAYOFFS_TRAILER_URL}
             />
+            {@render factTiles(true)}
           </div>
         </section>
       {/if}
@@ -891,18 +901,46 @@
     gap: 24px;
     align-items: start;
   }
-  /* The playoffs block splits like the introduction: the text and its
-   * tiles, then the trailer. */
-  .playoffs-fmt {
+  /* The playoffs block opens on its beats, the introduction's concepts laid
+   * side by side (wrapping rather than narrowing when an event has several
+   * newcomers brackets), then sets the trailer beside the fact tiles,
+   * stacked to its height. */
+  .beats {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 24px;
-    align-items: start;
+    grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    gap: 1rem 24px;
+    margin: 0 0 24px;
   }
-  .playoffs-text {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
+  .beats div {
+    padding-left: 0.9rem;
+    border-left: 2px solid var(--color-border);
+  }
+  .beats dt {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .beats dd {
+    margin: 0.15rem 0 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+  .beats dd strong {
+    color: var(--color-text);
+  }
+  .beats .date {
+    color: var(--color-gold);
+  }
+  /* The first beat opens on a round or on the final, both lowercase. */
+  .beats .lead::first-letter {
+    text-transform: uppercase;
+  }
+  .trailer-facts {
+    display: grid;
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: 24px;
   }
   .facts {
     display: grid;
@@ -934,6 +972,13 @@
     line-height: 1.25;
     text-transform: uppercase;
     margin-top: 1px;
+  }
+  /* Auto rows share any height the trailer leaves over. */
+  .facts.stack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .facts.stack div {
+    justify-content: center;
   }
   .take-part {
     display: grid;
@@ -1235,11 +1280,21 @@
   }
   @media (max-width: 900px) {
     .fmt,
-    .playoffs-fmt,
     .take-part,
     .cards,
     .two-col {
       grid-template-columns: 1fr;
+    }
+  }
+  /* The trailer and the stacked tiles only share a row where the trailer is
+   * wide enough to match them; below, it takes the width, the tiles two per
+   * row under it. */
+  @media (max-width: 1100px) {
+    .trailer-facts {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .facts.stack {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 </style>

@@ -611,15 +611,26 @@ after it passed, and the phase signal.
 
 From the cut until the playoffs are over, a short "The playoffs" block heads
 the bracket, under the live strip while a race runs. It says, from the
-config, what a viewer arriving from a cast needs (`playoffsIntro`): the first
-bracket's seats and its rounds up to the final, dated when the config dates
-it; what a first-round match is (its runners, its races per evening, how many
-go on); one sentence per newcomers bracket; and how to watch (matches agreed
-with their runners, cast live on Twitch, the live banner leading to the
-cast). The format block's fact tiles follow the text, and the playoffs
-trailer sits beside both, framed like the introduction's (see below), its
-media constants at the top of `routes/events/[slug]/+page.svelte`. Once the event is finished the
-champion plates take its place.
+config, what a viewer arriving from a cast needs (`playoffsIntro`), in short
+titled beats side by side, the introduction's concepts laid out in a row: the
+first bracket's seats, its rounds up to the final, dated when the config
+dates it, and what a first-round match is (its runners, its races per
+evening, how many go on); one beat per newcomers bracket, under its label;
+and how to watch (evenings agreed with the runners, cast live on Twitch, the
+live banner leading to the cast). The beats wrap rather than narrow when
+there are more of them than the width holds.
+
+Under the beats, above 1100px wide, the playoffs trailer sits beside the
+format block's fact tiles, stacked in one column that shares the trailer's
+height: tiles shorter than the trailer share the height left over, taller
+ones stretch its frame, the loop cropped to cover it, but by 5% at most, so
+a title card running edge to edge keeps its letters; past that, the tiles
+run on below the frame. At the page's full width, four tiles of two lines
+each fit the trailer at 16:9. Narrower, the trailer takes the width, the
+tiles two per row under it. The trailer is framed like the introduction's
+(see below), its media constants at the top of
+`routes/events/[slug]/+page.svelte`. Once the event is finished the champion
+plates take its place.
 
 From the cut on, an event with several brackets opens its bracket block on a
 tab bar, one tab per bracket, in the tab style of the stats page, an ember dot
@@ -735,9 +746,9 @@ answered both questions by being there.
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
 concepts beside the trailer looping muted, its frame a link to the trailer
-with sound on YouTube, with a chip in the corner saying so. The frame is
-`EventTrailer.svelte`, which the playoffs block reuses for its own trailer;
-each caller holds its media as constants (this one at the top of
+with sound on YouTube, with a "Watch full trailer" chip in the corner. The
+frame is `EventTrailer.svelte`, which the playoffs block reuses for its own
+trailer; each caller holds its media as constants (this one at the top of
 `EventIntro.svelte`) rather than event config. The loop plays muted and
 inline, with a play/pause button for every viewer, and starts paused for a
 viewer who prefers reduced motion.
