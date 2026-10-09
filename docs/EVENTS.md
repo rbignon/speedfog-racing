@@ -616,8 +616,10 @@ bracket's seats and its rounds up to the final, dated when the config dates
 it; what a first-round match is (its runners, its races per evening, how many
 go on); one sentence per newcomers bracket; and how to watch (matches agreed
 with their runners, cast live on Twitch, the live banner leading to the
-cast). The format block's fact tiles sit beside it. Once the event is
-finished the champion plates take its place.
+cast). The format block's fact tiles follow the text, and the playoffs
+trailer sits beside both, framed like the introduction's (see below), its
+media constants at the top of `routes/events/[slug]/+page.svelte`. Once the event is finished the
+champion plates take its place.
 
 From the cut on, an event with several brackets opens its bracket block on a
 tab bar, one tab per bracket, in the tab style of the stats page, an ember dot
@@ -733,12 +735,14 @@ answered both questions by being there.
 While the event can still be joined (`upcoming` and `qualifier`), a "What is
 SpeedFog?" section opens the page for visitors who have never played: three
 concepts beside the trailer looping muted, its frame a link to the trailer
-with sound on YouTube, with a chip in the corner saying so. The media are
-constants at the top of `EventIntro.svelte` rather than event config. The loop
-plays muted and inline, with a play/pause button for every viewer, and starts
-paused for a viewer who prefers reduced motion.
+with sound on YouTube, with a chip in the corner saying so. The frame is
+`EventTrailer.svelte`, which the playoffs block reuses for its own trailer;
+each caller holds its media as constants (this one at the top of
+`EventIntro.svelte`) rather than event config. The loop plays muted and
+inline, with a play/pause button for every viewer, and starts paused for a
+viewer who prefers reduced motion.
 
-The loop is the trailer re-encoded for the web with `ffmpeg` (854x480, 30 fps,
+Each loop is its trailer re-encoded for the web with `ffmpeg` (854x480, 30 fps,
 H.264 CRF 27 in `yuv420p`, no audio, `faststart` so the index leads the file
 and playback starts before it lands, faded out before the date card), a few
 megabytes instead of the hundreds of the source. The source stays out of

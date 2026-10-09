@@ -48,6 +48,7 @@
   import EventBracket from "$lib/components/events/EventBracket.svelte";
   import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
   import EventIntro from "$lib/components/events/EventIntro.svelte";
+  import EventTrailer from "$lib/components/events/EventTrailer.svelte";
   import EventPractice from "$lib/components/events/EventPractice.svelte";
   import type { PageData } from "./$types";
 
@@ -72,6 +73,11 @@
   // intent parked under this key is honoured on the way back (see
   // signupIntentStands for what makes it stand).
   const SIGNUP_INTENT_KEY = "event_signup_intent";
+  // The playoffs trailer beside the block's text, its loop cut before the
+  // date card.
+  const PLAYOFFS_LOOP_SRC = "/events/season-one-playoffs-trailer.mp4";
+  const PLAYOFFS_TRAILER_URL = "https://youtu.be/1QascTksGSs";
+  const PLAYOFFS_STILL_SRC = "/events/season-one-playoffs-trailer-poster.webp";
 
   const fmt = (iso: string) => formatEventDate(iso);
   // Carries the timezone, for the instants still ahead of the viewer. What
@@ -617,40 +623,48 @@
       {#if intro}
         <section>
           <SectionTitle>The playoffs</SectionTitle>
-          <div class="fmt">
-            <div class="prose">
-              <!-- Spaces sit inside expressions, not next to an {#if}: see
-                   the format block above. -->
-              <p>
-                <strong
-                  >The top {intro.places} of the qualifier race it out</strong
-                >: {intro.rounds.join(", ")}{intro.rounds.length > 0 &&
-                intro.final
-                  ? ", then "
-                  : ""}{intro.final ? `the ${intro.final.label}` : ""}{intro
-                  .final?.date
-                  ? " on "
-                  : ""}{#if intro.final?.date}<span class="date"
-                    >{fmtDay(intro.final.date)}</span
-                  >{/if}. {intro.match}{intro.advance
-                  ? `; the top ${intro.advance} go on to the next round`
-                  : ""}.
-              </p>
-              {#each intro.newcomers as bracket (bracket.key)}
+          <div class="playoffs-fmt">
+            <div class="playoffs-text">
+              <div class="prose">
+                <!-- Spaces sit inside expressions, not next to an {#if}: see
+                     the format block above. -->
                 <p>
                   <strong
-                    >The {bracket.seats} best newcomers outside the top {intro.places}
-                    get {bracket.shape ? "a bracket" : "a final"} of their own</strong
-                  >{bracket.shape ? `: ${bracket.shape}` : ""}.
+                    >The top {intro.places} of the qualifier race it out</strong
+                  >: {intro.rounds.join(", ")}{intro.rounds.length > 0 &&
+                  intro.final
+                    ? ", then "
+                    : ""}{intro.final ? `the ${intro.final.label}` : ""}{intro
+                    .final?.date
+                    ? " on "
+                    : ""}{#if intro.final?.date}<span class="date"
+                      >{fmtDay(intro.final.date)}</span
+                    >{/if}. {intro.match}{intro.advance
+                    ? `; the top ${intro.advance} go on to the next round`
+                    : ""}.
                 </p>
-              {/each}
-              <p>
-                Each match is played on an evening agreed with its runners and
-                cast live on Twitch, every runner streaming their own POV. When
-                one is on, a banner at the top of this page leads to the cast.
-              </p>
+                {#each intro.newcomers as bracket (bracket.key)}
+                  <p>
+                    <strong
+                      >The {bracket.seats} best newcomers outside the top {intro.places}
+                      get {bracket.shape ? "a bracket" : "a final"} of their own</strong
+                    >{bracket.shape ? `: ${bracket.shape}` : ""}.
+                  </p>
+                {/each}
+                <p>
+                  Each match is played on an evening agreed with its runners and
+                  cast live on Twitch, every runner streaming their own POV.
+                  When one is on, a banner at the top of this page leads to the
+                  cast.
+                </p>
+              </div>
+              {@render factTiles()}
             </div>
-            {@render factTiles()}
+            <EventTrailer
+              src={PLAYOFFS_LOOP_SRC}
+              poster={PLAYOFFS_STILL_SRC}
+              url={PLAYOFFS_TRAILER_URL}
+            />
           </div>
         </section>
       {/if}
@@ -876,6 +890,19 @@
     grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
     gap: 24px;
     align-items: start;
+  }
+  /* The playoffs block splits like the introduction: the text and its
+   * tiles, then the trailer. */
+  .playoffs-fmt {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .playoffs-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
   }
   .facts {
     display: grid;
@@ -1208,6 +1235,7 @@
   }
   @media (max-width: 900px) {
     .fmt,
+    .playoffs-fmt,
     .take-part,
     .cards,
     .two-col {
