@@ -73,10 +73,10 @@
   // intent parked under this key is honoured on the way back (see
   // signupIntentStands for what makes it stand).
   const SIGNUP_INTENT_KEY = "event_signup_intent";
-  // The playoffs trailer beside the block's text, its loop cut before the
-  // date card.
+  // The playoffs trailer beside the block's fact tiles, its loop cut before
+  // the date card.
   const PLAYOFFS_LOOP_SRC = "/events/season-one-playoffs-trailer.mp4";
-  const PLAYOFFS_TRAILER_URL = "https://youtu.be/1QascTksGSs";
+  const PLAYOFFS_TRAILER_URL = "https://youtu.be/BgyLoxDprNs";
   const PLAYOFFS_STILL_SRC = "/events/season-one-playoffs-trailer-poster.webp";
 
   const fmt = (iso: string) => formatEventDate(iso);
