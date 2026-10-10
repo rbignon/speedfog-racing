@@ -471,6 +471,16 @@
           difference). It only starts growing in real time if you exceed the
           leader's time budget for that depth.
         </p>
+        <p>
+          That is how the top 10 layout shows every gap. The layout centered on
+          you (the default) then counts every gap from yours: a runner ahead of
+          you shows a negative gap in
+          <strong style="color: var(--color-success)">green</strong>, a runner
+          behind you a positive one in
+          <strong style="color: var(--color-danger)">red</strong>, and your own
+          row shows none: the leader's row, always on screen, reads your gap to
+          the leader.
+        </p>
       </div>
     {/if}
 
@@ -488,7 +498,11 @@
       <div class="panel">
         <ul>
           <li><kbd>F9</kbd>: Toggle the overlay on/off</li>
-          <li><kbd>F10</kbd>: Toggle the leaderboard on/off</li>
+          <li>
+            <kbd>F10</kbd>: Cycle the leaderboard: the layout picked in your
+            <a href="/settings">settings</a> (centered on you by default), hidden,
+            then the other layout
+          </li>
         </ul>
       </div>
     {/if}
@@ -513,6 +527,11 @@
           <li>
             <strong>Overlay size</strong>: adjust the scale to fit your
             resolution
+          </li>
+          <li>
+            <strong>Leaderboard</strong>: start on the layout centered on you
+            (the top 3, then you between the three runners ahead and behind) or
+            on the top 10
           </li>
           <li>
             <strong>Zone language</strong>: display zone names in your language

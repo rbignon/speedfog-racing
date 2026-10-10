@@ -104,7 +104,7 @@ class UserPublicResponse(BaseModel):
     twitch_avatar_url: str | None
     role: str
     locale: str | None = None
-    overlay_settings: dict[str, float] | None = None
+    overlay_settings: dict[str, float | str] | None = None
     feedback_prompted_at: datetime | None = None
     # Played-run counts, same predicates as the public profile: they let the
     # web tell a seasoned player from a newcomer without a second request.

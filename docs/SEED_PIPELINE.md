@@ -173,6 +173,7 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    anchor = "top-right"
    font_path = ""
    font_size = <user's preference or 20.0>
+   leaderboard_mode = <user's preference or "centered">
    background_color = "#0F1923"
    background_opacity = 0.55
    text_color = "#E8E6E1"

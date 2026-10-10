@@ -8,6 +8,7 @@
     patchEquipped,
     updateLocale,
     updateOverlaySettings,
+    type LeaderboardMode,
     type LocaleInfo,
     type MyInventoryDto,
   } from "$lib/api";
@@ -20,10 +21,28 @@
   let locales = $state<LocaleInfo[]>([]);
   let selectedLocale = $state("en");
   let fontSize = $state(20);
+  let leaderboardMode = $state<LeaderboardMode>("centered");
   let inventory = $state<MyInventoryDto | null>(null);
   let selectedTemplateId = $state("default");
   let selectedBadgeId = $state<string | null>(null);
   let selectedSkinId = $state<string | null>(null);
+
+  const leaderboardModes: {
+    value: LeaderboardMode;
+    label: string;
+    hint: string;
+  }[] = [
+    {
+      value: "centered",
+      label: "Centered on you",
+      hint: "Top 3, then you between the three runners ahead and behind; gaps count from you",
+    },
+    {
+      value: "top",
+      label: "Top 10",
+      hint: "The top 10, or the top 9 then your own row if you rank lower; gaps count from the leader",
+    },
+  ];
 
   let savingOverlay = $state(false);
   let overlayError = $state<string | null>(null);
@@ -43,6 +62,8 @@
     }
     selectedLocale = auth.user?.locale ?? "en";
     fontSize = auth.user?.overlay_settings?.font_size ?? 20;
+    leaderboardMode =
+      auth.user?.overlay_settings?.leaderboard_mode ?? "centered";
     const [loadedLocales, loadedInventory] = await Promise.all([
       fetchLocales(),
       fetchMyInventory(),
@@ -67,7 +88,10 @@
         updateLocale(selectedLocale).then((r) => {
           if (auth.user) auth.user.locale = r.locale;
         }),
-        updateOverlaySettings({ font_size: fontSize }).then((r) => {
+        updateOverlaySettings({
+          font_size: fontSize,
+          leaderboard_mode: leaderboardMode,
+        }).then((r) => {
           if (auth.user) auth.user.overlay_settings = r.overlay_settings;
         }),
       ]);
@@ -165,11 +189,36 @@
       </div>
 
       <div class="setting-field">
+        <span class="field-label">Leaderboard</span>
+        <p class="field-description">
+          Layout the leaderboard starts on. F10 cycles it in game: this layout,
+          hidden, then the other one.
+        </p>
+        <div class="choice-list">
+          {#each leaderboardModes as mode (mode.value)}
+            <label class="with-hint">
+              <input
+                type="radio"
+                name="leaderboard-mode"
+                value={mode.value}
+                checked={leaderboardMode === mode.value}
+                onchange={() => (leaderboardMode = mode.value)}
+              />
+              <span class="choice-text">
+                {mode.label}
+                <span class="hint">{mode.hint}</span>
+              </span>
+            </label>
+          {/each}
+        </div>
+      </div>
+
+      <div class="setting-field">
         <span class="field-label">Language</span>
         <p class="field-description">
           Zone names and fog gate descriptions displayed in-game.
         </p>
-        <div class="locale-select">
+        <div class="choice-list">
           {#each locales as locale}
             <label>
               <input
@@ -302,18 +351,27 @@
     margin-bottom: 1rem;
   }
 
-  .locale-select {
+  .choice-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
-  .locale-select label {
+  .choice-list label {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
     font-size: var(--font-size-base);
+  }
+
+  .choice-list label.with-hint {
+    align-items: baseline;
+  }
+
+  .choice-text {
+    display: flex;
+    flex-direction: column;
   }
 
   .setting-field {

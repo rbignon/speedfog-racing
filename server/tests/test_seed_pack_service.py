@@ -167,9 +167,24 @@ def test_generate_player_config_uses_default_font_size(mock_participant, mock_ra
     assert f"font_size = {OVERLAY_DEFAULTS['font_size']}" in config
 
 
+def test_generate_player_config_uses_user_leaderboard_mode(mock_participant, mock_race):
+    """Config should carry the user's leaderboard layout."""
+    mock_participant.user.overlay_settings = {"leaderboard_mode": "top"}
+    config = tomllib.loads(generate_player_config(mock_participant, mock_race))
+    assert config["overlay"]["leaderboard_mode"] == "top"
+
+
+def test_generate_player_config_leaderboard_mode_defaults_to_centered(mock_participant, mock_race):
+    """Without a stored layout, or with one the mod would not parse, the config says centered."""
+    for stored in (None, {"font_size": 24.0}, {"leaderboard_mode": "compact"}):
+        mock_participant.user.overlay_settings = stored
+        config = tomllib.loads(generate_player_config(mock_participant, mock_race))
+        assert config["overlay"]["leaderboard_mode"] == "centered"
+
+
 def test_player_and_training_configs_set_up_the_overlay_alike(mock_participant, mock_race):
     """The race and training templates are separate strings: they must parse and agree."""
-    mock_participant.user.overlay_settings = {"font_size": 24.0}
+    mock_participant.user.overlay_settings = {"font_size": 24.0, "leaderboard_mode": "top"}
     session = MockTrainingSession(user=mock_participant.user)
 
     player = tomllib.loads(generate_player_config(mock_participant, mock_race))

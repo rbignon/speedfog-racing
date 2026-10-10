@@ -54,6 +54,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services.i18n import get_available_locales
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.seed_pack_service import LeaderboardMode
 from speedfog_racing.services.stats_service import MIN_RACES_FOR_TRAITS
 from speedfog_racing.services.user_stats_service import (
     compute_weekly_series,
@@ -92,6 +93,7 @@ class OverlaySettingsRequest(BaseModel):
     """Request to update overlay settings. Only provided fields are updated."""
 
     font_size: float | None = None
+    leaderboard_mode: LeaderboardMode | None = None
 
     @field_validator("font_size")
     @classmethod
@@ -121,7 +123,7 @@ async def update_overlay_settings(
     body: OverlaySettingsRequest,
     user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
-) -> dict[str, dict[str, float] | None]:
+) -> dict[str, dict[str, float | str] | None]:
     """Update overlay settings (merge with existing)."""
     current = dict(user.overlay_settings or {})
     updates = body.model_dump(exclude_none=True)

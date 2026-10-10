@@ -87,6 +87,52 @@ async def test_update_overlay_settings_validates_range(test_client, user_with_to
 
 
 @pytest.mark.asyncio
+async def test_leaderboard_mode_sits_beside_font_size(test_client, user_with_token):
+    """A string setting merges with the numeric one and reads back from /auth/me."""
+    _, token = user_with_token
+    async with test_client as client:
+        await client.patch(
+            "/api/users/me/settings",
+            json={"font_size": 24.0},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        response = await client.patch(
+            "/api/users/me/settings",
+            json={"leaderboard_mode": "top"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["overlay_settings"] == {
+            "font_size": 24.0,
+            "leaderboard_mode": "top",
+        }
+        response = await client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["overlay_settings"] == {
+            "font_size": 24.0,
+            "leaderboard_mode": "top",
+        }
+
+
+@pytest.mark.asyncio
+async def test_update_overlay_settings_rejects_unknown_leaderboard_mode(
+    test_client, user_with_token
+):
+    """PATCH /users/me/settings rejects a layout the mod does not know."""
+    _, token = user_with_token
+    async with test_client as client:
+        response = await client.patch(
+            "/api/users/me/settings",
+            json={"leaderboard_mode": "compact"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_update_overlay_settings_merges(test_client, user_with_token):
     """PATCH /users/me/settings merges with existing settings."""
     _, token = user_with_token

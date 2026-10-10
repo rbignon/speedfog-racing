@@ -24,10 +24,18 @@ export interface ParticipantPreview extends User {
   igt_ms: number | null;
 }
 
+/** Leaderboard layout the in-game overlay starts on (F10 cycles it). */
+export type LeaderboardMode = "centered" | "top";
+
+export interface OverlaySettings {
+  font_size?: number;
+  leaderboard_mode?: LeaderboardMode;
+}
+
 export interface AuthUser extends User {
   role: string;
   locale: string | null;
-  overlay_settings: { font_size?: number } | null;
+  overlay_settings: OverlaySettings | null;
   feedback_prompted_at: string | null;
   /**
    * Played-run counts (same predicates as the public profile). A user
@@ -427,11 +435,7 @@ export interface DailyWeekResponse {
 // --- Events ---------------------------------------------------------------
 
 export type EventPhase =
-  | "upcoming"
-  | "qualifier"
-  | "cut"
-  | "playoffs"
-  | "finished";
+  "upcoming" | "qualifier" | "cut" | "playoffs" | "finished";
 
 export interface EventMode {
   key: string;
@@ -1374,9 +1378,9 @@ export async function updateLocale(
 /**
  * Update the current user's overlay settings.
  */
-export async function updateOverlaySettings(settings: {
-  font_size?: number;
-}): Promise<{ overlay_settings: { font_size?: number } }> {
+export async function updateOverlaySettings(
+  settings: OverlaySettings,
+): Promise<{ overlay_settings: OverlaySettings }> {
   const response = await fetch(`${API_BASE}/users/me/settings`, {
     method: "PATCH",
     headers: {
@@ -1385,7 +1389,7 @@ export async function updateOverlaySettings(settings: {
     },
     body: JSON.stringify(settings),
   });
-  return handleResponse<{ overlay_settings: { font_size?: number } }>(response);
+  return handleResponse<{ overlay_settings: OverlaySettings }>(response);
 }
 
 /**
