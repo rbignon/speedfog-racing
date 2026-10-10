@@ -435,7 +435,11 @@ export interface DailyWeekResponse {
 // --- Events ---------------------------------------------------------------
 
 export type EventPhase =
-  "upcoming" | "qualifier" | "cut" | "playoffs" | "finished";
+  | "upcoming"
+  | "qualifier"
+  | "cut"
+  | "playoffs"
+  | "finished";
 
 export interface EventMode {
   key: string;

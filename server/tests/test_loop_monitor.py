@@ -196,7 +196,8 @@ def test_app_lifespan_tunes_the_collector_and_restores_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """While the server runs, what startup allocated is frozen out of the
-    collections and young collections are rarer; shutdown restores both."""
+    collections and young collections are rarer; shutdown restores the
+    thresholds and unfreezes everything."""
     from fastapi.testclient import TestClient
 
     from speedfog_racing.config import settings
@@ -210,7 +211,9 @@ def test_app_lifespan_tunes_the_collector_and_restores_it(
         assert gc.get_threshold()[0] == threshold_before[0] * 10
 
     assert gc.get_threshold() == threshold_before
-    assert gc.get_freeze_count() == frozen_before
+    # Not frozen_before: gc.unfreeze() is all or nothing, and the interpreter
+    # may start with objects of its own frozen (Python 3.12 does).
+    assert gc.get_freeze_count() == 0
 
 
 def test_a_zero_threshold_leaves_the_collector_alone(monkeypatch: pytest.MonkeyPatch) -> None:
