@@ -24,6 +24,7 @@
   import UserStatsCards from "$lib/components/UserStatsCards.svelte";
   import EventBand from "$lib/components/events/EventBand.svelte";
   import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
+  import { DISCORD_URL } from "$lib/links";
 
   let profile: UserProfile | null = $state(null);
   let activity = $state<ActivityTimeline | null>(null);
@@ -311,7 +312,7 @@
             <a href="/training" class="btn btn-primary">Play Solo</a>
             <a href="/help" class="welcome-link">How it works</a>
             <a
-              href="https://discord.gg/Qmw67J3mR9"
+              href={DISCORD_URL}
               class="discord-link"
               target="_blank"
               rel="noopener noreferrer"

@@ -3,6 +3,7 @@
   import { fetchRaces, fetchRacesPaginated, type Race } from "$lib/api";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
+  import { DISCORD_URL } from "$lib/links";
 
   const FINISHED_PAGE_SIZE = 10;
 
@@ -93,7 +94,7 @@
       <div class="empty-active">
         <p class="empty-text">No active races right now</p>
         <a
-          href="https://discord.gg/Qmw67J3mR9"
+          href={DISCORD_URL}
           class="discord-link"
           target="_blank"
           rel="noopener noreferrer"

@@ -17,6 +17,7 @@
   import AnnouncementBanner from "$lib/components/AnnouncementBanner.svelte";
   import BannedBanner from "$lib/components/BannedBanner.svelte";
   import { appUpdate } from "$lib/stores/appUpdate.svelte";
+  import { DISCORD_URL } from "$lib/links";
 
   let { children } = $props();
 
@@ -134,7 +135,7 @@
         </a>
         <nav>
           <a
-            href="https://discord.gg/Qmw67J3mR9"
+            href={DISCORD_URL}
             class="nav-icon discord-nav-icon"
             aria-label="Discord"
             target="_blank"
@@ -299,10 +300,8 @@
             <a href="/help">Help</a>
             <a href="/game-changes">Game Changes</a>
             <a href="/zones">Zones</a>
-            <a
-              href="https://discord.gg/Qmw67J3mR9"
-              target="_blank"
-              rel="noopener noreferrer">Discord</a
+            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer"
+              >Discord</a
             >
             <a href="/changelog">Changelog</a>
           </nav>

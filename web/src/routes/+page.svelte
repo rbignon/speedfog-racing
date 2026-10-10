@@ -19,6 +19,7 @@
   import EventBand from "$lib/components/events/EventBand.svelte";
   import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
+  import { DISCORD_URL } from "$lib/links";
 
   let races: Race[] = $state([]);
   let loadingRaces = $state(true);
@@ -140,7 +141,7 @@
       {/if}
     </div>
     <a
-      href="https://discord.gg/Qmw67J3mR9"
+      href={DISCORD_URL}
       class="hero-discord"
       target="_blank"
       rel="noopener noreferrer"

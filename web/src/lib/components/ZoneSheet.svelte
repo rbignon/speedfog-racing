@@ -7,6 +7,7 @@
     skipsForZones,
     zoneTipsForZones,
   } from "$lib/content/zones";
+  import { DISCORD_URL } from "$lib/links";
 
   interface Props {
     nodeId: string;
@@ -148,10 +149,8 @@
     {#if skips.length === 0}
       <p class="empty">
         No skips documented yet. Found one? Tell us on
-        <a
-          href="https://discord.gg/Qmw67J3mR9"
-          target="_blank"
-          rel="noopener noreferrer">Discord</a
+        <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer"
+          >Discord</a
         >.
       </p>
     {:else}
@@ -234,10 +233,8 @@
   {/if}
 
   <div class="sheet-footer">
-    <a
-      href="https://discord.gg/Qmw67J3mR9"
-      target="_blank"
-      rel="noopener noreferrer">Suggest a skip on Discord</a
+    <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer"
+      >Suggest a skip on Discord</a
     >
   </div>
 </div>

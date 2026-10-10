@@ -10,6 +10,7 @@
   import heroSeed from "$lib/data/hero-seed.json";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
+  import { DISCORD_URL } from "$lib/links";
 
   // General page: mode-specific tips stay in the race and solo tickers.
   // Zone-scoped tips are listed here too; their zone sheet only repeats them.
@@ -141,7 +142,7 @@
       <span>Spectate and stream races</span>
     </a>
     <a
-      href="https://discord.gg/Qmw67J3mR9"
+      href={DISCORD_URL}
       class="toc-card toc-card-discord"
       target="_blank"
       rel="noopener noreferrer"
@@ -719,10 +720,8 @@
         </ol>
         <p>
           Follow the
-          <a
-            href="https://discord.gg/Qmw67J3mR9"
-            target="_blank"
-            rel="noopener noreferrer">Discord</a
+          <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer"
+            >Discord</a
           > for status updates once the mods catch up with the patch.
         </p>
       </div>
