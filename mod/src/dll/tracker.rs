@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
+use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
@@ -140,9 +141,10 @@ pub(crate) struct LeaderboardCache {
     pub max_gap_width: f32,
     pub max_right_width: f32,
     pub my_index: Option<usize>,
-    pub need_anchor: bool,
     pub top_count: usize,
+    pub window: Option<std::ops::Range<usize>>,
     pub footer_more: usize,
+    pub mode: LeaderboardMode,
     pub version: u64,
     pub local_igt_bucket: Option<u32>,
     pub max_width: f32,
@@ -247,7 +249,7 @@ pub struct RaceTracker {
     pub(crate) show_ui: bool,
     #[cfg(debug_assertions)]
     pub(crate) show_debug: bool,
-    pub(crate) show_leaderboard: bool,
+    pub(crate) leaderboard_view: LeaderboardView,
     /// Hard latch: a durably-broken update loop; rendering and updates stop
     /// for the session (set after MAX_CONSECUTIVE_UPDATE_PANICS).
     pub(crate) tracking_disabled: bool,
@@ -365,6 +367,7 @@ impl RaceTracker {
 
         let config_seed_id = config.server.seed_id.clone();
         let config_training = config.server.training;
+        let leaderboard_mode = config.overlay.leaderboard_mode;
 
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
@@ -393,7 +396,7 @@ impl RaceTracker {
             show_ui: true,
             #[cfg(debug_assertions)]
             show_debug: false,
-            show_leaderboard: true,
+            leaderboard_view: LeaderboardView::Shown(leaderboard_mode),
             tracking_disabled: false,
             overlay_panicked: false,
             consecutive_update_panics: 0,
@@ -447,10 +450,12 @@ impl RaceTracker {
         // Check toggle_leaderboard hotkey
         if let Some(ref hotkey) = self.config.keybindings.toggle_leaderboard {
             if hotkey.is_just_pressed(ui) {
-                self.show_leaderboard = !self.show_leaderboard;
+                self.leaderboard_view = self
+                    .leaderboard_view
+                    .next(self.config.overlay.leaderboard_mode);
                 info!(
-                    show_leaderboard = self.show_leaderboard,
-                    "[HOTKEY] Toggle leaderboard"
+                    leaderboard_view = ?self.leaderboard_view,
+                    "[HOTKEY] Cycle leaderboard"
                 );
             }
         }

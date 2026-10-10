@@ -2,6 +2,9 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::ops::Range;
+
+use serde::{Deserialize, Serialize};
 
 use crate::core::protocol::ParticipantStatus;
 
@@ -139,20 +142,112 @@ pub fn compute_gap(
     }
 }
 
+/// Reference for the centered view's gaps: the local player's leader-relative
+/// gap, or 0 when they lead (everyone's gap is then unchanged). `None` keeps
+/// the board on leader-relative gaps: no leader yet, no local player
+/// (spectator), or no gap of their own (disqualified, or abandoned on the
+/// start layer).
+pub fn player_gap_reference(
+    my_index: Option<usize>,
+    my_gap: Option<i32>,
+    has_leader: bool,
+) -> Option<i32> {
+    match my_index {
+        _ if !has_leader => None,
+        Some(0) => Some(0),
+        Some(_) => my_gap,
+        None => None,
+    }
+}
+
+/// A row's gap in the centered view: its leader-relative gap minus the
+/// `reference` (see [`player_gap_reference`]), negative for runners ahead of
+/// the local player and positive for those behind. The leader's row has no
+/// leader-relative gap of its own but counts for 0 (`is_leader_row`); the
+/// local row and rows without a gap show none.
+pub fn gap_from_player(
+    row_gap: Option<i32>,
+    is_leader_row: bool,
+    is_self: bool,
+    reference: i32,
+) -> Option<i32> {
+    if is_self {
+        return None;
+    }
+    let gap = if is_leader_row { Some(0) } else { row_gap };
+    gap.map(|g| g - reference)
+}
+
+/// Which layout the in-game leaderboard uses when shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LeaderboardMode {
+    /// Top 10, the local row anchored below the top 9 when ranked lower; gaps
+    /// relative to the leader.
+    Top,
+    /// Top 3, then the local player with the three runners ahead and behind;
+    /// gaps relative to the local player. Also what a layout this build does
+    /// not know reads as, so a newer server's config still loads (hence last:
+    /// serde's fallback variant).
+    #[default]
+    #[serde(other)]
+    Centered,
+}
+
+impl LeaderboardMode {
+    fn other(self) -> Self {
+        match self {
+            Self::Centered => Self::Top,
+            Self::Top => Self::Centered,
+        }
+    }
+}
+
+/// What the leaderboard hotkey cycles through: hidden or one of the layouts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LeaderboardView {
+    Hidden,
+    Shown(LeaderboardMode),
+}
+
+impl LeaderboardView {
+    /// The view after a hotkey press: the configured `default` layout, then
+    /// hidden, then the other layout, then the default again, so one press
+    /// always hides the board from its starting view.
+    pub fn next(self, default: LeaderboardMode) -> Self {
+        match self {
+            Self::Shown(mode) if mode == default => Self::Hidden,
+            Self::Hidden => Self::Shown(default.other()),
+            Self::Shown(_) => Self::Shown(default),
+        }
+    }
+}
+
+/// Rows of the plain view, and of the top block above the local player's own
+/// rows in the top layout.
+const LEADERBOARD_ROWS: usize = 10;
+/// Rows of the top block in the centered layout.
+const CENTERED_TOP_ROWS: usize = 3;
+/// Runners shown on each side of the local player in the centered layout.
+const CENTERED_NEIGHBOURS: usize = 3;
+/// Lines the centered layout takes at most when split: the top block, the
+/// "…", and the local player between their neighbours.
+const CENTERED_SPLIT_LINES: usize = CENTERED_TOP_ROWS + 1 + 2 * CENTERED_NEIGHBOURS + 1;
+
 /// How a ranked leaderboard of `n` entries should be displayed when only a
 /// limited number of rows fit, given the local player's 0-based rank `my_index`.
 #[derive(Debug, PartialEq, Eq)]
 pub struct LeaderboardLayout {
-    /// Anchor the local row: show the top 9, a "…" separator, then the local
-    /// player's own row (used when the local player ranks outside the top 10).
-    pub need_anchor: bool,
-    /// Number of top-ranked rows to render before any anchor.
+    /// Number of top-ranked rows to render first.
     pub top_count: usize,
-    /// Count for the "+ N more" footer. When anchored this is the number of
-    /// players ranked *below* the local row, so it answers "how many are behind
-    /// me"; the "…" already stands in for those ranked between the top and the
-    /// local row. Without an anchor it is every participant past the rendered
-    /// rows.
+    /// Ranks rendered after a "…" separator, around the local player, when
+    /// they are not contiguous with the top rows: the local row alone in the
+    /// top layout, the local row and its neighbours in the centered layout.
+    pub window: Option<Range<usize>>,
+    /// Count for the "+ N more" footer: the players ranked below the last
+    /// rendered row, so with a window it answers "how many are behind it";
+    /// the "…" already stands in for those ranked between the top and the
+    /// window.
     pub footer_more: usize,
 }
 
@@ -160,23 +255,45 @@ pub struct LeaderboardLayout {
 ///
 /// `my_index` is the local player's 0-based rank, or `None` when there is no
 /// local player (e.g. a spectator).
-pub fn compute_leaderboard_layout(n: usize, my_index: Option<usize>) -> LeaderboardLayout {
-    match my_index {
+pub fn compute_leaderboard_layout(
+    n: usize,
+    my_index: Option<usize>,
+    mode: LeaderboardMode,
+) -> LeaderboardLayout {
+    let plain = |rows: usize| {
+        let top_count = rows.min(n);
+        LeaderboardLayout {
+            top_count,
+            window: None,
+            footer_more: n - top_count,
+        }
+    };
+    let split = |top_count: usize, window: Range<usize>| LeaderboardLayout {
+        top_count,
+        footer_more: n - window.end,
+        window: Some(window),
+    };
+    let Some(idx) = my_index else {
+        return plain(LEADERBOARD_ROWS);
+    };
+    match mode {
         // Local player ranks outside the top 10: show the top 9, a "…", then
-        // the local row; the footer counts only the players ranked below it.
-        Some(idx) if n > 10 && idx >= 10 => LeaderboardLayout {
-            need_anchor: true,
-            top_count: 9,
-            footer_more: n.saturating_sub(idx + 1),
-        },
-        // Everyone ranks within (or fits inside) the top 10: plain view, the
-        // footer counts whoever is left past the rendered rows.
-        _ => {
-            let top_count = 10.min(n);
-            LeaderboardLayout {
-                need_anchor: false,
-                top_count,
-                footer_more: n.saturating_sub(top_count),
+        // the local row.
+        LeaderboardMode::Top if idx >= LEADERBOARD_ROWS => {
+            split(LEADERBOARD_ROWS - 1, idx..(idx + 1).min(n))
+        }
+        LeaderboardMode::Top => plain(LEADERBOARD_ROWS),
+        LeaderboardMode::Centered => {
+            let start = idx.saturating_sub(CENTERED_NEIGHBOURS);
+            let end = (idx + CENTERED_NEIGHBOURS + 1).min(n);
+            // Ranks 1 to the window's end fit in the lines a split view takes
+            // at most (the "…" would hide one row at most, or rows of a small
+            // field): render them as one block, never shorter than the plain
+            // view.
+            if end <= CENTERED_SPLIT_LINES {
+                plain(end.max(LEADERBOARD_ROWS))
+            } else {
+                split(CENTERED_TOP_ROWS, start..end)
             }
         }
     }
@@ -595,17 +712,17 @@ mod tests {
         // 20 players, local is 15th (index 14): board shows top 9, "…", then
         // our anchored row, so "+ N more" must report the 5 players ranked
         // behind us, not all 10 rows that are hidden.
-        let layout = compute_leaderboard_layout(20, Some(14));
-        assert!(layout.need_anchor);
+        let layout = compute_leaderboard_layout(20, Some(14), LeaderboardMode::Top);
         assert_eq!(layout.top_count, 9);
+        assert_eq!(layout.window, Some(14..15));
         assert_eq!(layout.footer_more, 5);
     }
 
     #[test]
     fn test_layout_anchor_last_place_has_no_footer() {
         // Local player is dead last: nobody is behind, so no "+ N more".
-        let layout = compute_leaderboard_layout(20, Some(19));
-        assert!(layout.need_anchor);
+        let layout = compute_leaderboard_layout(20, Some(19), LeaderboardMode::Top);
+        assert_eq!(layout.window, Some(19..20));
         assert_eq!(layout.footer_more, 0);
     }
 
@@ -613,9 +730,9 @@ mod tests {
     fn test_layout_anchor_threshold() {
         // Smallest field that triggers an anchor: 11 players, local is last
         // (index 10). Top 9 + "…" + self = 10 rows, nobody ranked behind.
-        let layout = compute_leaderboard_layout(11, Some(10));
-        assert!(layout.need_anchor);
+        let layout = compute_leaderboard_layout(11, Some(10), LeaderboardMode::Top);
         assert_eq!(layout.top_count, 9);
+        assert_eq!(layout.window, Some(10..11));
         assert_eq!(layout.footer_more, 0);
     }
 
@@ -623,28 +740,189 @@ mod tests {
     fn test_layout_no_anchor_counts_hidden_tail() {
         // Local player ranks inside the top 10 (index 3): plain top-10 view, so
         // the footer counts everyone past row 10.
-        let layout = compute_leaderboard_layout(20, Some(3));
-        assert!(!layout.need_anchor);
+        let layout = compute_leaderboard_layout(20, Some(3), LeaderboardMode::Top);
         assert_eq!(layout.top_count, 10);
+        assert_eq!(layout.window, None);
         assert_eq!(layout.footer_more, 10);
     }
 
     #[test]
     fn test_layout_spectator_no_anchor() {
-        // No local player (spectator): never anchor, footer is the hidden tail.
-        let layout = compute_leaderboard_layout(20, None);
-        assert!(!layout.need_anchor);
-        assert_eq!(layout.top_count, 10);
-        assert_eq!(layout.footer_more, 10);
+        // No local player (spectator): never anchor, footer is the hidden tail,
+        // whatever the mode.
+        for mode in [LeaderboardMode::Top, LeaderboardMode::Centered] {
+            let layout = compute_leaderboard_layout(20, None, mode);
+            assert_eq!(layout.top_count, 10);
+            assert_eq!(layout.window, None);
+            assert_eq!(layout.footer_more, 10);
+        }
     }
 
     #[test]
     fn test_layout_small_field_fits_without_footer() {
-        // Eight players, all fit: no anchor, no footer.
-        let layout = compute_leaderboard_layout(8, Some(6));
-        assert!(!layout.need_anchor);
-        assert_eq!(layout.top_count, 8);
+        // Eight players, all fit: no anchor, no footer, whatever the mode.
+        for mode in [LeaderboardMode::Top, LeaderboardMode::Centered] {
+            let layout = compute_leaderboard_layout(8, Some(6), mode);
+            assert_eq!(layout.top_count, 8);
+            assert_eq!(layout.window, None);
+            assert_eq!(layout.footer_more, 0);
+        }
+    }
+
+    #[test]
+    fn test_layout_centered_seventh_keeps_plain_top_ten() {
+        // Rank 7 (index 6): the top 10 already holds the top 3, the three
+        // ahead and the three behind, so the board stays the plain top 10.
+        let layout = compute_leaderboard_layout(20, Some(6), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 10);
+        assert_eq!(layout.window, None);
+        assert_eq!(layout.footer_more, 10);
+    }
+
+    #[test]
+    fn test_layout_centered_single_hidden_row_is_shown_instead_of_separator() {
+        // Rank 8 (index 7): top 3 + "…" + ranks 5-11 would hide rank 4 alone
+        // behind a separator that takes its line anyway, so show ranks 1-11.
+        let layout = compute_leaderboard_layout(20, Some(7), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 11);
+        assert_eq!(layout.window, None);
+        assert_eq!(layout.footer_more, 9);
+    }
+
+    #[test]
+    fn test_layout_centered_small_field_shows_everyone() {
+        // Ten runners, local player last: the whole field fits the plain
+        // view, so nobody hides behind a separator.
+        let layout = compute_leaderboard_layout(10, Some(9), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 10);
+        assert_eq!(layout.window, None);
         assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_layout_centered_eleven_runners_show_everyone() {
+        // Eleven runners, local player last: ranks 1-11 take no more lines
+        // than a split view does at most (top 3, "…", 7 rows), so show them
+        // all rather than hide ranks 4-7.
+        let layout = compute_leaderboard_layout(11, Some(10), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 11);
+        assert_eq!(layout.window, None);
+        assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_leaderboard_mode_unknown_value_reads_as_centered() {
+        // A newer server may write a layout this build does not know: it must
+        // fall back to the default rather than reject the whole config.
+        let mode: LeaderboardMode = serde_json::from_str("\"compact\"").unwrap();
+        assert_eq!(mode, LeaderboardMode::Centered);
+        let mode: LeaderboardMode = serde_json::from_str("\"top\"").unwrap();
+        assert_eq!(mode, LeaderboardMode::Top);
+    }
+
+    #[test]
+    fn test_layout_centered_window_around_player() {
+        // Rank 15 (index 14): top 3, "…", ranks 12-18 (three ahead, self,
+        // three behind), and the footer counts the two below the window.
+        let layout = compute_leaderboard_layout(20, Some(14), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 3);
+        assert_eq!(layout.window, Some(11..18));
+        assert_eq!(layout.footer_more, 2);
+    }
+
+    #[test]
+    fn test_layout_centered_first_split_view() {
+        // Rank 9 (index 8) is the first rank that hides two rows (4 and 5),
+        // so the separator appears: same line count as the 11-row block.
+        let layout = compute_leaderboard_layout(20, Some(8), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 3);
+        assert_eq!(layout.window, Some(5..12));
+        assert_eq!(layout.footer_more, 8);
+    }
+
+    #[test]
+    fn test_layout_centered_near_bottom_window_shrinks() {
+        // Second to last (index 18 of 20): only one runner behind, the window
+        // stays centered and shrinks rather than sliding up.
+        let layout = compute_leaderboard_layout(20, Some(18), LeaderboardMode::Centered);
+        assert_eq!(layout.top_count, 3);
+        assert_eq!(layout.window, Some(15..20));
+        assert_eq!(layout.footer_more, 0);
+    }
+
+    #[test]
+    fn test_view_cycle_from_default() {
+        // Default, then hidden, then the other layout, then back to default,
+        // whichever layout is the default.
+        for default in [LeaderboardMode::Centered, LeaderboardMode::Top] {
+            let other = match default {
+                LeaderboardMode::Centered => LeaderboardMode::Top,
+                LeaderboardMode::Top => LeaderboardMode::Centered,
+            };
+            let start = LeaderboardView::Shown(default);
+            let hidden = start.next(default);
+            assert_eq!(hidden, LeaderboardView::Hidden);
+            let alt = hidden.next(default);
+            assert_eq!(alt, LeaderboardView::Shown(other));
+            assert_eq!(alt.next(default), start);
+        }
+    }
+
+    #[test]
+    fn test_gap_reference_behind_player_is_own_gap() {
+        assert_eq!(
+            player_gap_reference(Some(12), Some(45_000), true),
+            Some(45_000)
+        );
+    }
+
+    #[test]
+    fn test_gap_reference_leader_is_zero() {
+        // The leader has no leader-relative gap of its own; as the reference
+        // it counts for 0, leaving everyone else's gap unchanged.
+        assert_eq!(player_gap_reference(Some(0), None, true), Some(0));
+    }
+
+    #[test]
+    fn test_gap_reference_falls_back_without_own_gap() {
+        // Disqualified, or abandoned on the start layer: no own gap, the board
+        // keeps leader-relative gaps.
+        assert_eq!(player_gap_reference(Some(5), None, true), None);
+    }
+
+    #[test]
+    fn test_gap_reference_none_without_leader_or_player() {
+        assert_eq!(player_gap_reference(Some(0), None, false), None);
+        assert_eq!(player_gap_reference(None, Some(10_000), true), None);
+    }
+
+    #[test]
+    fn test_gap_from_player_signs() {
+        // Local player 45s behind the leader: a runner 30s behind the leader is
+        // 15s ahead (negative), one 60s behind is 15s behind (positive).
+        assert_eq!(
+            gap_from_player(Some(30_000), false, false, 45_000),
+            Some(-15_000)
+        );
+        assert_eq!(
+            gap_from_player(Some(60_000), false, false, 45_000),
+            Some(15_000)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_leader_row() {
+        // The leader's row carries no leader-relative gap but sits exactly the
+        // local player's gap ahead.
+        assert_eq!(gap_from_player(None, true, false, 45_000), Some(-45_000));
+    }
+
+    #[test]
+    fn test_gap_from_player_self_and_ungapped_rows() {
+        // The local row has no gap, and a row without a gap (ready,
+        // disqualified) stays without one.
+        assert_eq!(gap_from_player(Some(45_000), false, true, 45_000), None);
+        assert_eq!(gap_from_player(None, false, false, 45_000), None);
     }
 
     #[test]

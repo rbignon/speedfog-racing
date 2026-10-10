@@ -17,6 +17,11 @@ enabled = true
 anchor = "top-right"
 # Font size in pixels
 font_size = 20
+# Leaderboard layout the overlay starts on:
+#   "centered": top 3, then you between the three runners ahead and behind,
+#               gaps relative to you
+#   "top": top 10, gaps relative to the leader
+leaderboard_mode = "centered"
 # Font path. Leave empty to use the bundled Public Sans font.
 # Set to a TTF path (absolute, relative to the DLL, or just a filename to
 # search in C:\Windows\Fonts) to override.
@@ -28,5 +33,6 @@ font_size = 20
 toggle_ui = "f9"
 # Key to toggle debug section (debug builds only; release builds ignore it)
 toggle_debug = "none"
-# Key to toggle leaderboard visibility (set to "none" to disable)
+# Key to cycle the leaderboard: the starting layout, hidden, then the other
+# layout (set to "none" to disable)
 toggle_leaderboard = "f10"

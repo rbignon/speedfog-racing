@@ -1220,14 +1220,16 @@ Computed during `broadcast_leaderboard` for web spectators:
 
 The mod ignores `gap_ms` and recomputes gaps locally each frame using `leader_splits` + `layer_entry_igt`. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's snapshot `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
+The mod's centered leaderboard layout (`[overlay] leaderboard_mode = "centered"`, the default; the leaderboard hotkey cycles it with the top 10 layout and a hidden board) then re-references every gap onto the local player: a runner's gap is its leader-relative gap minus the local player's, the leader counting for 0, so runners ahead read negative and runners behind positive. The local row shows no gap, and a local player without a gap of their own (disqualified, or abandoned on the start layer) keeps the leader-relative gaps. The top 10 layout and the web always show leader-relative gaps.
+
 The web frontend recomputes the same gap in `web/src/lib/gap.ts` (a direct port of the mod/server formula), driven by the race store from the retained `leader_splits` + each participant's `layer_entry_igt` + live `igt_ms`. It has no local-memory IGT, so it uses the server snapshot `igt_ms` for every player including the viewer; gaps refresh on each `leaderboard_update` / `player_update` tick.
 
 `race_state` carries no `leader_splits` / `layer_entry_igt`, so the spectator endpoint unicasts a `leaderboard_update` immediately after the initial `race_state` (`send_leaderboard_state`); a freshly connected web client therefore has the gap inputs at once instead of waiting for the next layer-crossing broadcast. This mirrors the mod, whose own connection triggers a room-wide leaderboard broadcast. Because `leader_splits` is rebuilt from the leader's `zone_history`, it is also populated for finished races, so the leaderboard shows each finisher's delta to the winner. When every runner is out (none finished, playing or waiting to start), the first DNF leads, so the other DNFs' gaps show what orders them. Only a pre-race leaderboard (no leader yet) has no gap.
 
 #### Color coding
 
-- **Negative gap** (ahead of leader's pace): green (`-M:SS`)
-- **Positive gap** (behind leader's pace): soft red (`+M:SS`)
+- **Negative gap** (ahead of leader's pace, or of the local player in the mod's centered layout): green (`-M:SS`)
+- **Positive gap** (behind leader's pace, or the local player in the mod's centered layout): soft red (`+M:SS`)
 - **Zero gap**: default text color
 
 The web leaderboard page (`Leaderboard.svelte`) diverges: it formats the gap with `formatGapCompact` (degressive precision: `+M:SS` under 10 min, `+Mm` under 1 h, `+HhMM` from 1 h) and draws a positive gap in gold (`--color-gold`), keeping red for the death count alone and distinguishing the gap from the grey IGT of in-progress runs. Negative gaps stay green. The in-game mod and the OBS overlay keep the verbatim `formatGap` (`+H:MM:SS`) and the colors above.

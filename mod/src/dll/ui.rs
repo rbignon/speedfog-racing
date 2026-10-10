@@ -14,6 +14,7 @@ use crate::core::countdown::{
     countdown_frame, countdown_layout, ring_arc, GlyphLabel, COUNTDOWN_FONT_ATLAS_PX,
     DIGIT_INK_CENTER,
 };
+use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::protocol::{ParticipantStatus, RaceStatus};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
@@ -278,9 +279,11 @@ impl RaceTracker {
                     self.render_player_status(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
-                    if !self.config.server.training && self.show_leaderboard {
+                    if let (false, LeaderboardView::Shown(mode)) =
+                        (self.config.server.training, self.leaderboard_view)
+                    {
                         ui.separator();
-                        self.render_leaderboard(ui, max_width, &mut bufs);
+                        self.render_leaderboard(ui, max_width, mode, &mut bufs);
                     }
                     self.render_status_message(ui);
                     #[cfg(debug_assertions)]
@@ -1106,12 +1109,14 @@ impl RaceTracker {
     /// Leaderboard with color-coded status, gap timing, and right-aligned values.
     /// Gaps are computed client-side using leader_splits. The local player uses
     /// real-time game memory IGT; other players use the server's latest snapshot.
-    /// Always shows the local player: if ranked beyond top 10, anchors them
-    /// at the bottom with a `···` separator and their real rank.
+    /// Always shows the local player: past the rows the top block holds, a `···`
+    /// separator leads to their own rows (see `compute_leaderboard_layout`),
+    /// and the centered `mode` re-references every gap onto them.
     fn render_leaderboard(
         &mut self,
         ui: &hudhook::imgui::Ui,
         max_width: f32,
+        mode: LeaderboardMode,
         bufs: &mut RenderBuffers,
     ) {
         profile_span!("render_leaderboard");
@@ -1125,7 +1130,7 @@ impl RaceTracker {
 
         let buf_left = &mut bufs.buf_left;
         let buf_footer = &mut bufs.buf_footer;
-        self.refresh_leaderboard_cache(ui, max_width);
+        self.refresh_leaderboard_cache(ui, max_width, mode);
         let participants = self.participants();
         let cache = &self.leaderboard_cache;
 
@@ -1154,11 +1159,16 @@ impl RaceTracker {
             emit_row(i, i + 1, cache.my_index == Some(i), p);
         }
 
-        // Anchor: separator + self row
-        if cache.need_anchor {
-            if let Some(idx) = cache.my_index {
-                ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
-                emit_row(idx, idx + 1, true, &participants[idx]);
+        // Separator + the local player's rows
+        if let Some(window) = &cache.window {
+            ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
+            for (i, p) in participants
+                .iter()
+                .enumerate()
+                .take(window.end)
+                .skip(window.start)
+            {
+                emit_row(i, i + 1, cache.my_index == Some(i), p);
             }
         }
 
@@ -1170,13 +1180,19 @@ impl RaceTracker {
         }
     }
 
-    fn refresh_leaderboard_cache(&mut self, ui: &hudhook::imgui::Ui, max_width: f32) {
+    fn refresh_leaderboard_cache(
+        &mut self,
+        ui: &hudhook::imgui::Ui,
+        max_width: f32,
+        mode: LeaderboardMode,
+    ) {
         let local_igt_bucket = self
             .read_igt()
             .map(|igt| igt / LEADERBOARD_REFRESH_INTERVAL_MS);
         let should_refresh = self.leaderboard_cache.version != self.machine.leaderboard_version
             || self.leaderboard_cache.local_igt_bucket != local_igt_bucket
-            || (self.leaderboard_cache.max_width - max_width).abs() > f32::EPSILON;
+            || (self.leaderboard_cache.max_width - max_width).abs() > f32::EPSILON
+            || self.leaderboard_cache.mode != mode;
         if !should_refresh {
             return;
         }
@@ -1216,14 +1232,10 @@ impl RaceTracker {
             .first()
             .is_some_and(|p| p.status == ParticipantStatus::Finished);
 
-        let cache = &mut self.leaderboard_cache;
-        cache.rows.clear();
-        cache.max_gap_width = 0.0;
-        cache.max_right_width = 0.0;
-
-        profile_span!("leaderboard_rows");
-        for (i, p) in participants.iter().enumerate() {
-            let computed_gap_ms = if !has_leader {
+        let my_index = self.machine.my_participant_index;
+        // Gap to the leader, the leader itself having none.
+        let leader_gap = |i: usize, p: &crate::core::protocol::ParticipantInfo| {
+            if !has_leader {
                 None
             } else if p.status == ParticipantStatus::Finished || race_finished {
                 p.gap_ms
@@ -1245,6 +1257,33 @@ impl RaceTracker {
                         leader_finished,
                     )
                 })
+            }
+        };
+        let gap_reference = match mode {
+            LeaderboardMode::Centered => {
+                let my_gap = my_index
+                    .and_then(|m| participants.get(m).map(|p| (m, p)))
+                    .and_then(|(m, p)| leader_gap(m, p));
+                crate::core::player_gap_reference(my_index, my_gap, has_leader)
+            }
+            LeaderboardMode::Top => None,
+        };
+
+        let cache = &mut self.leaderboard_cache;
+        cache.rows.clear();
+        cache.max_gap_width = 0.0;
+        cache.max_right_width = 0.0;
+
+        profile_span!("leaderboard_rows");
+        for (i, p) in participants.iter().enumerate() {
+            let computed_gap_ms = match gap_reference {
+                Some(reference) => crate::core::gap_from_player(
+                    leader_gap(i, p),
+                    i == 0,
+                    my_index == Some(i),
+                    reference,
+                ),
+                None => leader_gap(i, p),
             };
 
             let mut row = LeaderboardRowCache::default();
@@ -1285,11 +1324,12 @@ impl RaceTracker {
             cache.rows.push(row);
         }
 
-        cache.my_index = self.machine.my_participant_index;
-        let layout = crate::core::compute_leaderboard_layout(participants.len(), cache.my_index);
-        cache.need_anchor = layout.need_anchor;
+        cache.my_index = my_index;
+        let layout = crate::core::compute_leaderboard_layout(participants.len(), my_index, mode);
         cache.top_count = layout.top_count;
+        cache.window = layout.window;
         cache.footer_more = layout.footer_more;
+        cache.mode = mode;
         cache.version = self.machine.leaderboard_version;
         cache.local_igt_bucket = local_igt_bucket;
         cache.max_width = max_width;
