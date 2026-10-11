@@ -114,8 +114,9 @@
   >
     <!-- The scene goes on air, and a caster may not see the seed before the
          start either: like the race page, which keeps its map from all but
-         the field and the organizer until then, the map waits for the race. -->
-    {#if raceStatus === "setup"}
+         the field and the organizer until then, the map waits for the race,
+         and any status it does not know keeps it hidden. -->
+    {#if raceStatus !== "running" && raceStatus !== "finished"}
       <p class="map-wait">Map revealed at race start.</p>
     {:else if raceStore.seed?.graph_json}
       <MetroDagFull

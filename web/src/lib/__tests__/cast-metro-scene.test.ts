@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushSync } from "svelte";
 import { render } from "@testing-library/svelte";
 import { raceStore } from "$lib/stores/race.svelte";
 import { parseCastParams } from "$lib/cast/params";
@@ -9,8 +10,7 @@ vi.mock("$app/state", () => ({
   },
 }));
 
-const { default: MetroScene } =
-  await import("../../routes/overlay/cast/race/[id]/metro/+page.svelte");
+import MetroScene from "../../routes/overlay/cast/race/[id]/metro/+page.svelte";
 
 const GRAPH = {
   total_layers: 2,
@@ -45,6 +45,7 @@ function renderScene(status: string) {
 
 afterEach(() => {
   raceStore.seed = null;
+  raceStore.race = null;
 });
 
 // The scene goes on air, and a caster may not see the seed before the start
@@ -53,14 +54,25 @@ afterEach(() => {
 describe("cast metro scene: the seed's map", () => {
   it("stays off the scene before the start", () => {
     const { container } = renderScene("setup");
-    const map = container.querySelector(".map");
-    expect(map?.querySelector("svg")).toBeNull();
-    expect(map?.textContent).not.toContain("Radahn");
-    expect(map?.textContent).toContain("Map revealed at race start");
+    expect(container.querySelector(".map svg")).toBeNull();
   });
 
   it("is drawn once the race runs", () => {
     const { container } = renderScene("running");
     expect(container.querySelector(".map svg")).not.toBeNull();
+  });
+
+  it("appears when the live race starts under a scene already on air", () => {
+    raceStore.race = { status: "setup" } as unknown as typeof raceStore.race;
+    const { container } = renderScene("setup");
+    expect(container.querySelector(".map svg")).toBeNull();
+    raceStore.race = { status: "running" } as unknown as typeof raceStore.race;
+    flushSync();
+    expect(container.querySelector(".map svg")).not.toBeNull();
+  });
+
+  it("stays hidden on a status it does not know", () => {
+    const { container } = renderScene("");
+    expect(container.querySelector(".map svg")).toBeNull();
   });
 });

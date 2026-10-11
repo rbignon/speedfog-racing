@@ -209,8 +209,8 @@ carries no video and the page renders it directly in that same rectangle (at
 Plus the shared desk band (cam holes only; the map takes the space the other
 two scenes give the four POV holes).
 
-Before the start the map box draws no map at all, only "Map revealed at race
-start.": the scene goes on air, and a caster may not see the seed before the
+Until the race runs (and on any status it does not know) the map box draws
+no map at all, only "Map revealed at race start.": the scene goes on air, and a caster may not see the seed before the
 start either, the same rule the race page applies to anyone but the field and
 the organizer. The Cast Setup panel's preview is this same scene, so it hides
 the map too.
@@ -230,8 +230,8 @@ out: at this zoom they would render at about 5px (measured: 4.7px on a
 their zone instead, a second line under their name (the route label's last
 leg, the place they stand, about 20px on air; LivePlayerDots' `tagZones`),
 so the map still says where everyone is; a finisher's tag has none, the final
-node says it, and nobody's does before the start. The runners' marks (tags, trails, death skulls) keep the
-size they have at a 13-layer window however far the map zooms out, and the
+node says it. The runners' marks (tags, trails, death skulls) keep the size
+they have at a 13-layer window however far the map zooms out, and the
 nodes and edges grow partway (by the square root of the zoom-out), enough to
 stay visible without crowding (MetroDagFull's `keepMarkSize`, with
 `MARK_REFERENCE_WIDTH`).
@@ -240,9 +240,8 @@ Each runner on the map is a tag, as the reference mockup draws it
 (`.mt-dot`, `.mt-line`, `.mt-name`): a still dot in a dark ring with a halo
 in the runner's colour, a straight vertical connector, and the name in large
 type at its end (`LivePlayerDots`' `playerTags`, instead of the orbiting
-dots the race page shows). Runners on the same node sit side by side; before
-the start the field gathers on the start node, and finishers on the final
-node, past anyone still fighting there. A crowd at an edge of the map slides
+dots the race page shows). Runners on the same node sit side by side, and
+finishers gather on the final node, past anyone still fighting there. A crowd at an edge of the map slides
 inward as a whole. On the whole map, names go in the free bands, their
 connectors reaching past the graph's outer rows (and past the node glyphs
 there), and the free slot with the shortest connector wins: names stack in
