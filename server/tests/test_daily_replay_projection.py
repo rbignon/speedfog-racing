@@ -60,11 +60,13 @@ def test_finished_at_t_before_final_appears_as_playing_at_projected_zone() -> No
     assert projected.death_count == 0
 
 
-def test_playing_with_t_past_history_clamps_to_last_event_igt() -> None:
+def test_playing_ghost_behind_t_stays_at_its_own_igt() -> None:
+    # Started after the viewer: nothing is known of it at the viewer's IGT, so
+    # it stands where its run has got to, not at its last zone change.
     graph = _graph({"start": 0, "fog_a": 1})
     p = _participant(
         status=ParticipantStatus.PLAYING,
-        igt_ms=120_000,
+        igt_ms=130_000,
         zone_history=[
             {"node_id": "start", "igt_ms": 0, "type": "spawn"},
             {"node_id": "fog_a", "igt_ms": 120_000},
@@ -75,8 +77,95 @@ def test_playing_with_t_past_history_clamps_to_last_event_igt() -> None:
 
     assert projected is not None
     assert projected.status == ParticipantStatus.PLAYING
-    assert projected.igt_ms == 120_000  # clamps to L_full, not viewer_igt_ms
+    assert projected.igt_ms == 130_000
     assert projected.current_zone == "fog_a"
+
+
+def test_playing_ghost_still_in_its_zone_at_t_reads_t() -> None:
+    # Started before the viewer and stuck on a boss since 18:00 of its run,
+    # now at 30:00: at the viewer's 20:00 it was still there.
+    graph = _graph({"start": 0, "fog_a": 1, "boss": 1})
+    p = _participant(
+        status=ParticipantStatus.PLAYING,
+        igt_ms=1_800_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 840_000},
+            {"node_id": "boss", "igt_ms": 1_080_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=1_200_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.status == ParticipantStatus.PLAYING
+    assert projected.igt_ms == 1_200_000
+    assert projected.current_zone == "boss"
+
+
+def test_finished_ghost_in_its_last_zone_at_t_reads_t() -> None:
+    # Finishing adds no history entry: between its arrival in the last zone
+    # and its finish, the ghost is still racing at the viewer's IGT.
+    graph = _graph({"start": 0, "fog_a": 1, "end": 2})
+    p = _participant(
+        status=ParticipantStatus.FINISHED,
+        igt_ms=600_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 100_000},
+            {"node_id": "end", "igt_ms": 480_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=540_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.status == ParticipantStatus.PLAYING
+    assert projected.igt_ms == 540_000
+    assert projected.current_zone == "end"
+
+
+def test_abandoned_ghost_drops_out_at_the_igt_it_quit() -> None:
+    # Quit at 30:00 of its run, last zone change at 18:00.
+    graph = _graph({"start": 0, "fog_a": 1})
+    p = _participant(
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=1_800_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 1_080_000},
+        ],
+    )
+
+    before = project_participant_at(p, viewer_igt_ms=1_200_000, graph_json=graph)
+    assert before is not None
+    assert before.status == ParticipantStatus.PLAYING
+    assert before.igt_ms == 1_200_000
+
+    after = project_participant_at(p, viewer_igt_ms=2_400_000, graph_json=graph)
+    assert after is not None
+    assert after.status == ParticipantStatus.ABANDONED
+    assert after.igt_ms == 1_800_000
+
+
+def test_igt_behind_the_last_zone_entry_keeps_the_entry() -> None:
+    # A row whose recorded IGT trails its last zone entry (written before every
+    # entry raised it): the ghost has still reached that entry.
+    graph = _graph({"start": 0, "fog_a": 1})
+    p = _participant(
+        status=ParticipantStatus.ABANDONED,
+        igt_ms=119_500,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 120_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=999_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.status == ParticipantStatus.ABANDONED
+    assert projected.igt_ms == 120_000
 
 
 def test_finished_at_t_equal_to_final_appears_as_finished() -> None:
@@ -138,7 +227,7 @@ def test_playing_at_t_within_history_returns_t_as_igt() -> None:
     assert projected.current_layer == 1
 
 
-def test_abandoned_with_last_event_before_t_keeps_abandoned_status() -> None:
+def test_abandoned_before_t_keeps_abandoned_status() -> None:
     graph = _graph({"start": 0, "fog_a": 1})
     p = _participant(
         status=ParticipantStatus.ABANDONED,

@@ -68,8 +68,15 @@ def project_participant_at(
     if not history:
         return None
 
-    # zone_history is append-ordered by igt_ms; last entry has the max.
-    full_last_igt = int(history[-1].get("igt_ms", 0))
+    real_status = participant.status
+    real_final_igt = int(participant.igt_ms or 0)
+    # How far the run has got: its recorded IGT, non-decreasing (heartbeats,
+    # then the finish or the abandon). A ghost whose run is past the viewer's
+    # IGT stands at that IGT even while it has stayed in one zone, so its gap
+    # keeps growing as a stuck runner's does in a live race. Every zone entry
+    # also raises the recorded IGT; the max with the last one only covers rows
+    # written before that held.
+    reached_igt = max(real_final_igt, int(history[-1].get("igt_ms", 0)))
 
     past: list[dict[str, Any]] = []
     proj_layer = 0
@@ -95,23 +102,20 @@ def project_participant_at(
     last_event = past[-1]
     proj_zone = last_event.get("node_id") if isinstance(last_event.get("node_id"), str) else None
 
-    real_status = participant.status
-    real_final_igt = int(participant.igt_ms or 0)
-
     if real_status == ParticipantStatus.DISQUALIFIED:
         # Out of the results at every IGT: ranks with the DQ rows, never as a
         # live runner or a leader to chase.
         proj_status = ParticipantStatus.DISQUALIFIED
-        proj_igt = min(viewer_igt_ms, full_last_igt)
+        proj_igt = min(viewer_igt_ms, reached_igt)
     elif real_status == ParticipantStatus.FINISHED and real_final_igt <= viewer_igt_ms:
         proj_status = ParticipantStatus.FINISHED
         proj_igt = real_final_igt
-    elif real_status == ParticipantStatus.ABANDONED and full_last_igt <= viewer_igt_ms:
+    elif real_status == ParticipantStatus.ABANDONED and reached_igt <= viewer_igt_ms:
         proj_status = ParticipantStatus.ABANDONED
-        proj_igt = full_last_igt
+        proj_igt = reached_igt
     else:
         proj_status = ParticipantStatus.PLAYING
-        proj_igt = min(viewer_igt_ms, full_last_igt)
+        proj_igt = min(viewer_igt_ms, reached_igt)
 
     return ProjectedParticipant(
         real=participant,

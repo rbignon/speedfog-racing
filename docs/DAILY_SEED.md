@@ -329,16 +329,18 @@ Scope is **mod-only**: web spectators (`/daily/[date]`, `/race/[id]`, OBS overla
 
 ### Projection rules
 
-For each viewer at IGT `T`, the server walks every other participant's `zone_history` and produces a projected snapshot. Let `L_full` be the participant's last `igt_ms` over their full history.
+For each viewer at IGT `T`, the server walks every other participant's `zone_history` and produces a projected snapshot. Let `R` be the IGT the participant's run has reached: its recorded `igt_ms`, non-decreasing (the live heartbeat value, then the IGT it finished or abandoned at), or its last `zone_history` entry for an older row whose `igt_ms` trails it.
 
 | Real status    | Condition        | Projected status | Projected `igt_ms` |
 | -------------- | ---------------- | ---------------- | ------------------ |
 | `finished`     | `final_igt <= T` | `finished`       | `final_igt`        |
-| `finished`     | `final_igt > T`  | `playing`        | `min(T, L_full)`   |
-| `playing`      | (any T)          | `playing`        | `min(T, L_full)`   |
-| `abandoned`    | `L_full <= T`    | `abandoned`      | `L_full`           |
-| `abandoned`    | `L_full > T`     | `playing`        | `min(T, L_full)`   |
-| `disqualified` | (any T)          | `disqualified`   | `min(T, L_full)`   |
+| `finished`     | `final_igt > T`  | `playing`        | `T`                |
+| `playing`      | (any T)          | `playing`        | `min(T, R)`        |
+| `abandoned`    | `R <= T`         | `abandoned`      | `R`                |
+| `abandoned`    | `R > T`          | `playing`        | `T`                |
+| `disqualified` | (any T)          | `disqualified`   | `min(T, R)`        |
+
+Every ghost whose run has reached the viewer's IGT therefore stands exactly at `T`, even while it has stayed in one zone since (a boss fight, or the last zone before a finish, which adds no history entry): its gaps keep growing as a stuck runner's do in a live race, and a ghost ranked behind another runner never reads ahead of it. Only a ghost still `playing` that has not reached `T` stands at its own IGT, `R`, the furthest anything is known of it: one that started later, or one whose run stopped reporting (a crash, or a run left without abandoning). A Daily Seed keeps the latter `playing` until it closes, since the inactivity monitor skips Daily Seeds; a qualifier abandons it after the 30 min inactivity timeout. Such a ghost can read ahead of a runner it ranks behind.
 
 Other projected fields (computed from the slice of `zone_history` with `igt_ms <= T`):
 
@@ -363,7 +365,7 @@ The projected payload is recomputed and unicast on:
 1. Any real progression of any participant (event_flag, finish, abandon, ready, register). The standard `broadcast_leaderboard` path runs, sending the real payload to web spectators and the per-viewer projected payload to each connected mod.
 2. The viewer's own 1Hz `status_update` heartbeat. The viewer's IGT just advanced, so its projection of the rest of the field has shifted; the server unicasts a fresh projected payload back to that single mod, without disturbing the others.
 
-The heartbeat projects the field from a snapshot shared by the whole room (`RaceRoom.ghost_participants`) instead of reloading every participant on each message: with a dozen runners at 1Hz on a 90-player daily, the per-message reload decoded every `zone_history` several times a second. The snapshot lives at most `GHOST_SNAPSHOT_TTL` (5 s), every `broadcast_leaderboard` (trigger 1) drops it, and the viewer's own row always comes from the participant the heartbeat just updated. A ghost's deaths and backtracks (which do not broadcast a leaderboard), and other runners' cosmetics (display name, badge, name template), can therefore show up to 5 s late in another runner's overlay; a ghost's progression never does: a heartbeat whose snapshot was invalidated while it loaded sends nothing, since the broadcast behind the invalidation has just delivered a fresh projection.
+The heartbeat projects the field from a snapshot shared by the whole room (`RaceRoom.ghost_participants`) instead of reloading every participant on each message: with a dozen runners at 1Hz on a 90-player daily, the per-message reload decoded every `zone_history` several times a second. The snapshot lives at most `GHOST_SNAPSHOT_TTL` (5 s), every `broadcast_leaderboard` (trigger 1) drops it, and the viewer's own row always comes from the participant the heartbeat just updated. A ghost's deaths and backtracks (which do not broadcast a leaderboard), the IGT of a ghost that has not reached the viewer's yet, and other runners' cosmetics (display name, badge, name template), can therefore show up to 5 s late in another runner's overlay; a ghost's progression never does: a heartbeat whose snapshot was invalidated while it loaded sends nothing, since the broadcast behind the invalidation has just delivered a fresh projection.
 
 There is no periodic server-side tick beyond what the mods themselves drive at 1Hz.
 
@@ -372,7 +374,7 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 - **Daily ends at T+24h.** The race transitions to `finished` and any remaining mods are evicted by the lifecycle. No special teardown for the projection.
 - **Qualifier attached or detached mid-race.** `projects_ghosts` is read at each broadcast, so attaching a running race to a qualifier slot turns the projection on at the next update and detaching turns it off, with no state to reset on either side.
 - **Reroll during a running daily.** The reroll path resets every participant's `zone_history`, so the projected ghost set becomes empty until participants restart, exactly mirroring the real-race semantics.
-- **Concurrent live runners.** A ghost still racing in real time has a partial `zone_history`; the projection clamps to its last available state until it advances further. Their progression naturally propagates via the trigger above.
+- **Concurrent live runners.** A ghost still racing in real time that has not reached the viewer's IGT stands at its own IGT, in its last known zone, until it advances further (or for good, if its run has silently stopped). Their progression naturally propagates via the trigger above.
 
 ---
 

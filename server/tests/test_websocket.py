@@ -864,6 +864,76 @@ class TestConnectionManager:
         assert mod_ghost["current_layer"] == 1
 
     @pytest.mark.asyncio
+    async def test_projected_ghost_stuck_in_a_zone_trails_at_the_viewer_igt(self):
+        """A ghost still on a layer the viewer has left ranks behind and its gap
+        says so: it is measured at the viewer's IGT, not at its last zone change."""
+        from speedfog_racing.websocket.race.manager import ModConnection
+
+        mgr = ConnectionManager()
+        race_id = uuid.uuid4()
+        room = mgr.get_or_create_room(race_id)
+        minute = 60_000
+        graph = {
+            "nodes": {
+                "n0": {"layer": 0},
+                "n1": {"layer": 1},
+                "n2": {"layer": 2},
+                "n3": {"layer": 3},
+                "boss3": {"layer": 3},
+                "n4": {"layer": 4},
+            }
+        }
+        # The viewer reached layer 3 at 17:00 and left it at 19:00.
+        viewer = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_zone="n4",
+            current_layer=4,
+            igt_ms=20 * minute,
+            layer_entry_igts={
+                "0": 0,
+                "1": 5 * minute,
+                "2": 10 * minute,
+                "3": 17 * minute,
+                "4": 19 * minute,
+            },
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 5 * minute},
+                {"node_id": "n2", "igt_ms": 10 * minute},
+                {"node_id": "n3", "igt_ms": 17 * minute},
+                {"node_id": "n4", "igt_ms": 19 * minute},
+            ],
+        )
+        # The ghost reached layer 3 at 14:00 and has fought its boss since
+        # 18:00; its run is at 30:00 now.
+        ghost = MockParticipant(
+            status=ParticipantStatus.PLAYING,
+            current_zone="boss3",
+            current_layer=3,
+            igt_ms=30 * minute,
+            zone_history=[
+                {"node_id": "n0", "igt_ms": 0},
+                {"node_id": "n1", "igt_ms": 4 * minute},
+                {"node_id": "n2", "igt_ms": 9 * minute},
+                {"node_id": "n3", "igt_ms": 14 * minute},
+                {"node_id": "boss3", "igt_ms": 18 * minute},
+            ],
+        )
+        mod_ws = AsyncMock()
+        room.mods[viewer.id] = ModConnection(
+            websocket=mod_ws, participant_id=viewer.id, user_id=viewer.user.id
+        )
+
+        await mgr.send_projected_to_mod(
+            race_id=race_id, viewer=viewer, participants=[viewer, ghost], graph_json=graph
+        )
+
+        payload = json.loads(mod_ws.send_text.call_args[0][0])
+        assert [p["id"] for p in payload["participants"]] == [str(viewer.id), str(ghost.id)]
+        # 3:00 earlier on layer 3, but 6:00 there by 20:00 against the viewer's 2:00.
+        assert payload["participants"][1]["gap_ms"] == 1 * minute
+
+    @pytest.mark.asyncio
     async def test_broadcast_leaderboard_projects_ghosts_non_playing_mod_gets_real_payload(self):
         """Async race: a non-playing mod (e.g. registered) receives the real payload."""
         from speedfog_racing.websocket.race.manager import ModConnection
