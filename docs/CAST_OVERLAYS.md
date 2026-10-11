@@ -209,8 +209,15 @@ carries no video and the page renders it directly in that same rectangle (at
 Plus the shared desk band (cam holes only; the map takes the space the other
 two scenes give the four POV holes).
 
-The map shows the whole seed at once, start on the left and final on the
-right, so a viewer reads at a glance how far into the race each runner is.
+Before the start the map box draws no map at all, only "Map revealed at race
+start.": the scene goes on air, and a caster may not see the seed before the
+start either, the same rule the race page applies to anyone but the field and
+the organizer. The Cast Setup panel's preview is this same scene, so it hides
+the map too.
+
+Once the race runs, the map shows the whole seed at once, start on the left
+and final on the right, so a viewer reads at a glance how far into the race
+each runner is.
 A seed is far wider than the box is tall (a 35-layer Boss Rush is about 7:1,
 the box under 4:1), so the graph grows taller to fill it (MetroDagFull's
 `fillContainer`, through `stretchToAspect` in `web/src/lib/dag/layout.ts`):

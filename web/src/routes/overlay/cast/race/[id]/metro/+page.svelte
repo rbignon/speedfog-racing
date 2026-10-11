@@ -112,7 +112,12 @@
     class="map"
     style="left: {mapRect.x}px; top: {mapRect.y}px; width: {mapRect.w}px; height: {mapRect.h}px;"
   >
-    {#if raceStore.seed?.graph_json}
+    <!-- The scene goes on air, and a caster may not see the seed before the
+         start either: like the race page, which keeps its map from all but
+         the field and the organizer until then, the map waits for the race. -->
+    {#if raceStatus === "setup"}
+      <p class="map-wait">Map revealed at race start.</p>
+    {:else if raceStore.seed?.graph_json}
       <MetroDagFull
         graphJson={raceStore.seed.graph_json}
         participants={raceStore.leaderboard}
@@ -163,5 +168,19 @@
    */
   .map {
     position: absolute;
+  }
+
+  .map-wait {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 32px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
   }
 </style>
