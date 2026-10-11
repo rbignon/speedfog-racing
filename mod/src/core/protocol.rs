@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.6";
+pub const PROTOCOL_VERSION: &str = "1.7";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -196,6 +196,11 @@ pub struct ParticipantInfo {
     pub gap_ms: Option<i32>,
     #[serde(default)]
     pub layer_entry_igt: Option<i32>,
+    /// IGT of the first arrival on each layer reached (the finish counting as
+    /// layer `total_layers`): the splits a gap to this runner is measured
+    /// against. Absent from servers speaking protocol < 1.7.
+    #[serde(default)]
+    pub layer_entry_igts: Option<HashMap<i32, i32>>,
     #[serde(default)]
     pub name_template: Option<NameTemplate>,
 }
@@ -446,7 +451,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.6""#));
+        assert!(json.contains(r#""protocol_version":"1.7""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
@@ -1228,6 +1233,28 @@ mod tests {
         }"#;
         let p: ParticipantInfo = serde_json::from_str(json).unwrap();
         assert_eq!(p.layer_entry_igt, Some(80000));
+    }
+
+    #[test]
+    fn test_participant_info_layer_entry_igts_string_keys() {
+        // JSON object keys are strings on the wire; the layers read as ints.
+        let json = r#"{
+            "id": "1",
+            "twitch_username": "player1",
+            "twitch_display_name": null,
+            "status": "playing",
+            "current_zone": null,
+            "current_layer": 2,
+            "igt_ms": 90000,
+            "death_count": 1,
+            "layer_entry_igt": 80000,
+            "layer_entry_igts": {"0": 0, "1": 30000, "2": 80000}
+        }"#;
+        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            p.layer_entry_igts,
+            Some(HashMap::from([(0, 0), (1, 30000), (2, 80000)]))
+        );
     }
 
     #[test]

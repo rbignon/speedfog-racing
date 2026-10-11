@@ -658,7 +658,7 @@ class TestConnectionManager:
     @pytest.mark.asyncio
     async def test_send_leaderboard_state_carries_gap_inputs(self):
         """A connecting spectator gets a leaderboard_update with the gap inputs
-        (leader_splits + layer_entry_igt) that race_state omits, so the gap
+        (leader_splits + layer_entry_igt(s)) that race_state omits, so the gap
         shows immediately instead of after the next layer-crossing broadcast."""
         from speedfog_racing.websocket.race.spectator import send_leaderboard_state
 
@@ -700,9 +700,11 @@ class TestConnectionManager:
         assert [p["id"] for p in payload["participants"]] == [str(leader.id), str(chaser.id)]
         # Leader splits derived from the leader's zone_history (JSON string keys).
         assert payload["leader_splits"] == {"0": 0, "1": 30000, "2": 75000}
-        # The chaser carries its own layer entry IGT, the per-player gap input.
+        # The chaser carries its own layer entry IGT, the per-player gap input,
+        # and its splits, which the mod measures runners behind it against.
         chaser_info = next(p for p in payload["participants"] if p["id"] == str(chaser.id))
         assert chaser_info["layer_entry_igt"] == 40000
+        assert chaser_info["layer_entry_igts"] == {"1": 40000}
 
     @pytest.mark.asyncio
     async def test_send_leaderboard_state_finished_race_has_winner_delta(self):

@@ -346,6 +346,7 @@ Other projected fields (computed from the slice of `zone_history` with `igt_ms <
 - `current_layer`: max layer visited in the slice (monotonic, mirroring the real-race `current_layer` invariant).
 - `death_count`: sum of `entry.deaths` over the slice.
 - `zone_history`: the slice itself, used to derive `leader_splits` for the projected leader.
+- `layer_entry_igts`: the first IGT on each layer within the slice, never the real per-layer cache, which would leak the ghost's later arrivals into the mod's pairwise gaps.
 
 Participants with empty `zone_history` (registered or ready but never started) are **excluded** from the projected payload, so the viewer only sees ghosts of players who actually played.
 

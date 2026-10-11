@@ -36,8 +36,8 @@ class ProjectedParticipant:
     igt_ms: int
     death_count: int
     zone_history: list[dict[str, Any]] | None
-    # Always empty: sort_leaderboard falls back to scanning the projected
-    # zone_history slice, which is the right behaviour for ghosts.
+    # First arrival per layer within the projected slice, never the real
+    # cache: a later arrival would leak the ghost's future.
     layer_entry_igts: dict[str, int]
 
     @property
@@ -74,6 +74,7 @@ def project_participant_at(
     past: list[dict[str, Any]] = []
     proj_layer = 0
     proj_deaths = 0
+    proj_entries: dict[str, int] = {}
     for e in history:
         igt = int(e.get("igt_ms", 0))
         if igt > viewer_igt_ms:
@@ -84,6 +85,7 @@ def project_participant_at(
             node_id = e.get("node_id")
             if isinstance(node_id, str):
                 layer = get_layer_for_node(node_id, graph_json)
+                proj_entries.setdefault(str(layer), igt)
                 if layer > proj_layer:
                     proj_layer = layer
 
@@ -119,5 +121,5 @@ def project_participant_at(
         igt_ms=proj_igt,
         death_count=proj_deaths,
         zone_history=past,
-        layer_entry_igts={},
+        layer_entry_igts=proj_entries,
     )

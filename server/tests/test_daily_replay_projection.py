@@ -266,3 +266,43 @@ def test_disqualified_never_projects_as_a_live_runner() -> None:
         projected = project_participant_at(p, viewer_igt_ms=viewer_igt, graph_json=graph)
         assert projected is not None
         assert projected.status == ParticipantStatus.DISQUALIFIED
+
+
+def test_projected_splits_stop_at_the_viewer_igt() -> None:
+    """A ghost's splits hold only the arrivals reached by the viewer's IGT: a
+    later one would leak its future progress and skew the mod's gaps."""
+    graph = _graph({"start": 0, "fog_a": 1, "fog_b": 2, "end": 3})
+    p = _participant(
+        status=ParticipantStatus.FINISHED,
+        igt_ms=600_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 100_000},
+            {"node_id": "fog_b", "igt_ms": 250_000},
+            {"node_id": "end", "igt_ms": 600_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=200_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.layer_entry_igts == {"0": 0, "1": 100_000}
+
+
+def test_projected_splits_keep_the_first_arrival_on_a_backtrack() -> None:
+    graph = _graph({"start": 0, "fog_a": 1, "fog_b": 2})
+    p = _participant(
+        status=ParticipantStatus.PLAYING,
+        igt_ms=500_000,
+        zone_history=[
+            {"node_id": "start", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "fog_a", "igt_ms": 100_000},
+            {"node_id": "fog_b", "igt_ms": 200_000},
+            {"node_id": "fog_a", "igt_ms": 300_000},
+        ],
+    )
+
+    projected = project_participant_at(p, viewer_igt_ms=400_000, graph_json=graph)
+
+    assert projected is not None
+    assert projected.layer_entry_igts == {"0": 0, "1": 100_000, "2": 200_000}

@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.6"
+PROTOCOL_VERSION = "1.7"
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -155,6 +155,9 @@ class ParticipantInfo(BaseModel):
     zone_history: list[dict[str, object]] | None = None
     gap_ms: int | None = None
     layer_entry_igt: int | None = None
+    # First-arrival IGT per layer reached (the finish recorded as layer
+    # total_layers): the splits the mod measures pairwise gaps against.
+    layer_entry_igts: dict[int, int] | None = None
     is_live: bool = False
     stream_url: str | None = None
     equipped_badge_id: str | None = None

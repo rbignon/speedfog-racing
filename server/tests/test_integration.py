@@ -1961,6 +1961,48 @@ def test_event_flag_revisit_appends_to_zone_history(
     assert history[2]["igt_ms"] == 15000
 
 
+def test_player_update_carries_the_runners_first_arrival_splits(
+    integration_client, race_with_participants
+):
+    """The mod replaces a runner's whole row on player_update, so the splits its
+    pairwise gaps are measured against must ride along: the first arrival on
+    each layer, which a revisit leaves unchanged."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+
+        # node_a sits on layer 1: first visit at 10s, revisit at 15s.
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        first_visit = mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(9000000, igt_ms=15000)
+        revisit = mod0.receive_until_type("player_update")
+
+    me = next(
+        p
+        for p in first_visit["participants"]
+        if p["twitch_username"] == players[0]["user"].twitch_username
+    )
+    assert me["layer_entry_igts"] == {"0": 0, "1": 10000}
+    assert revisit["player"]["layer_entry_igts"] == {"0": 0, "1": 10000}
+
+
 def test_event_flag_replay_same_message_id_is_idempotent(
     integration_client, race_with_participants, integration_db
 ):

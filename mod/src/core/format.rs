@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::protocol::ParticipantStatus;
+use crate::core::protocol::{ParticipantInfo, ParticipantStatus};
 
 /// Convert a `HashMap<String, i32>` (JSON wire format) to `HashMap<i32, i32>`.
 /// Keys that fail to parse are silently dropped.
@@ -142,40 +142,90 @@ pub fn compute_gap(
     }
 }
 
-/// Reference for the centered view's gaps: the local player's leader-relative
-/// gap, or 0 when they lead (everyone's gap is then unchanged). `None` keeps
-/// the board on leader-relative gaps: no leader yet, no local player
-/// (spectator), or no gap of their own (disqualified, or abandoned on the
-/// start layer).
-pub fn player_gap_reference(
+/// Whether the centered view measures its gaps from the local player. Falls
+/// back to leader-relative gaps without a leader yet, without a local player
+/// (spectator), without a gap of their own (disqualified, or abandoned on the
+/// start layer), or without their splits (a server older than protocol 1.7).
+pub fn centers_on_player(
     my_index: Option<usize>,
     my_gap: Option<i32>,
+    has_my_splits: bool,
     has_leader: bool,
-) -> Option<i32> {
-    match my_index {
-        _ if !has_leader => None,
-        Some(0) => Some(0),
-        Some(_) => my_gap,
-        None => None,
+) -> bool {
+    has_leader
+        && has_my_splits
+        && match my_index {
+            Some(0) => true,
+            Some(_) => my_gap.is_some(),
+            None => false,
+        }
+}
+
+/// One runner's side of a pairwise gap.
+#[derive(Debug, Clone, Copy)]
+pub struct GapRunner<'a> {
+    pub status: ParticipantStatus,
+    pub igt_ms: i32,
+    pub current_layer: i32,
+    pub layer_entry_igt: Option<i32>,
+    /// First-arrival IGT per layer (`ParticipantInfo::layer_entry_igts`).
+    pub splits: Option<&'a HashMap<i32, i32>>,
+}
+
+impl<'a> GapRunner<'a> {
+    /// `igt_ms` apart from `p`'s, so the local player can use the game's live IGT.
+    pub fn new(p: &'a ParticipantInfo, igt_ms: i32) -> Self {
+        Self {
+            status: p.status,
+            igt_ms,
+            current_layer: p.current_layer,
+            layer_entry_igt: p.layer_entry_igt,
+            splits: p.layer_entry_igts.as_ref(),
+        }
     }
 }
 
-/// A row's gap in the centered view: its leader-relative gap minus the
-/// `reference` (see [`player_gap_reference`]), negative for runners ahead of
-/// the local player and positive for those behind. The leader's row has no
-/// leader-relative gap of its own but counts for 0 (`is_leader_row`); the
-/// local row and rows without a gap show none.
+/// A row's gap in the centered view, measured between the row and the local
+/// player with [`compute_gap`]'s rule, the one of the pair ranked ahead
+/// standing in for the leader: negative for runners ahead, positive for those
+/// behind. Comparing the pair on its own splits keeps the arrival delay of a
+/// runner on the same layer, which the difference of two leader gaps loses
+/// once both have overrun the leader's time there. The local row shows none.
+///
+/// A value contradicting the ranking never shows. With a DNF in the pair it
+/// is an arrival ahead of the other's that the DNF's depth outranks (it
+/// reached the layer first, then quit): no gap. Between runners still racing
+/// or finished it is a snapshot a moment old right after an overtake: 0.
 pub fn gap_from_player(
-    row_gap: Option<i32>,
-    is_leader_row: bool,
-    is_self: bool,
-    reference: i32,
+    row: &GapRunner,
+    row_index: usize,
+    me: &GapRunner,
+    my_index: usize,
 ) -> Option<i32> {
-    if is_self {
-        return None;
+    let has_dnf =
+        row.status == ParticipantStatus::Abandoned || me.status == ParticipantStatus::Abandoned;
+    let between = |behind: &GapRunner, ahead: &GapRunner| {
+        let gap = compute_gap(
+            behind.igt_ms,
+            behind.current_layer,
+            behind.layer_entry_igt,
+            ahead.splits?,
+            false,
+            behind.status,
+            ahead.igt_ms,
+            ahead.status == ParticipantStatus::Finished,
+        )?;
+        match gap {
+            g if g >= 0 => Some(g),
+            _ if has_dnf => None,
+            _ => Some(0),
+        }
+    };
+    match row_index.cmp(&my_index) {
+        std::cmp::Ordering::Equal => None,
+        std::cmp::Ordering::Greater => between(row, me),
+        std::cmp::Ordering::Less => between(me, row).map(|g| -g),
     }
-    let gap = if is_leader_row { Some(0) } else { row_gap };
-    gap.map(|g| g - reference)
 }
 
 /// Which layout the in-game leaderboard uses when shown.
@@ -869,60 +919,242 @@ mod tests {
     }
 
     #[test]
-    fn test_gap_reference_behind_player_is_own_gap() {
+    fn test_centers_on_player_behind_with_own_gap() {
+        assert!(centers_on_player(Some(12), Some(45_000), true, true));
+    }
+
+    #[test]
+    fn test_centers_on_player_as_leader() {
+        // The leader has no gap of its own and still anchors the board.
+        assert!(centers_on_player(Some(0), None, true, true));
+    }
+
+    #[test]
+    fn test_centers_on_player_falls_back_without_own_gap() {
+        // Disqualified, or abandoned on the start layer: no position to
+        // measure from, the board keeps leader-relative gaps.
+        assert!(!centers_on_player(Some(5), None, true, true));
+    }
+
+    #[test]
+    fn test_centers_on_player_falls_back_without_own_splits() {
+        // A server older than protocol 1.7 sends no splits: nothing to
+        // measure the runners behind against.
+        assert!(!centers_on_player(Some(5), Some(45_000), false, true));
+    }
+
+    #[test]
+    fn test_centers_on_player_needs_a_leader_and_a_player() {
+        assert!(!centers_on_player(Some(0), None, true, false));
+        assert!(!centers_on_player(None, Some(10_000), true, true));
+    }
+
+    const MIN: i32 = 60_000;
+
+    fn playing<'a>(
+        igt_ms: i32,
+        layer: i32,
+        splits: Option<&'a HashMap<i32, i32>>,
+    ) -> GapRunner<'a> {
+        GapRunner {
+            status: ParticipantStatus::Playing,
+            igt_ms,
+            current_layer: layer,
+            layer_entry_igt: splits.and_then(|s| s.get(&layer).copied()),
+            splits,
+        }
+    }
+
+    fn finished(igt_ms: i32, splits: &HashMap<i32, i32>) -> GapRunner<'_> {
+        GapRunner {
+            status: ParticipantStatus::Finished,
+            igt_ms,
+            current_layer: 8,
+            layer_entry_igt: splits.get(&8).copied(),
+            splits: Some(splits),
+        }
+    }
+
+    /// Everyone at 50:00. The local player (rank 3) reached layer 4 at 31:00,
+    /// after the leader (30:00) and before runner B (33:00), who left it
+    /// first, at 42:00.
+    fn my_splits() -> HashMap<i32, i32> {
+        HashMap::from([(0, 0), (3, 21 * MIN), (4, 31 * MIN)])
+    }
+
+    #[test]
+    fn test_gap_from_player_to_the_leader_is_own_leader_gap() {
+        let leader = HashMap::from([(0, 0), (4, 30 * MIN), (5, 40 * MIN), (6, 45 * MIN)]);
+        let mine = my_splits();
+        let me = playing(50 * MIN, 4, Some(&mine));
+        // Arrived 1:00 after the leader, 9:00 over the leader's 10:00 on layer 4.
         assert_eq!(
-            player_gap_reference(Some(12), Some(45_000), true),
-            Some(45_000)
+            gap_from_player(&playing(50 * MIN, 6, Some(&leader)), 0, &me, 2),
+            Some(-10 * MIN)
         );
     }
 
     #[test]
-    fn test_gap_reference_leader_is_zero() {
-        // The leader has no leader-relative gap of its own; as the reference
-        // it counts for 0, leaving everyone else's gap unchanged.
-        assert_eq!(player_gap_reference(Some(0), None, true), Some(0));
-    }
-
-    #[test]
-    fn test_gap_reference_falls_back_without_own_gap() {
-        // Disqualified, or abandoned on the start layer: no own gap, the board
-        // keeps leader-relative gaps.
-        assert_eq!(player_gap_reference(Some(5), None, true), None);
-    }
-
-    #[test]
-    fn test_gap_reference_none_without_leader_or_player() {
-        assert_eq!(player_gap_reference(Some(0), None, false), None);
-        assert_eq!(player_gap_reference(None, Some(10_000), true), None);
-    }
-
-    #[test]
-    fn test_gap_from_player_signs() {
-        // Local player 45s behind the leader: a runner 30s behind the leader is
-        // 15s ahead (negative), one 60s behind is 15s behind (positive).
+    fn test_gap_from_player_ahead_since_it_left_my_layer() {
+        let b = HashMap::from([(0, 0), (4, 33 * MIN), (5, 42 * MIN)]);
+        let mine = my_splits();
+        let me = playing(50 * MIN, 4, Some(&mine));
+        // B reached layer 4 two minutes after me but has been on layer 5 for
+        // 8:00, where I am not yet: at least 8:00 ahead.
         assert_eq!(
-            gap_from_player(Some(30_000), false, false, 45_000),
-            Some(-15_000)
-        );
-        assert_eq!(
-            gap_from_player(Some(60_000), false, false, 45_000),
-            Some(15_000)
+            gap_from_player(&playing(50 * MIN, 5, Some(&b)), 1, &me, 2),
+            Some(-8 * MIN)
         );
     }
 
     #[test]
-    fn test_gap_from_player_leader_row() {
-        // The leader's row carries no leader-relative gap but sits exactly the
-        // local player's gap ahead.
-        assert_eq!(gap_from_player(None, true, false, 45_000), Some(-45_000));
+    fn test_gap_from_player_behind_on_my_layer_keeps_its_arrival_delay() {
+        let c = HashMap::from([(0, 0), (4, 38 * MIN)]);
+        let mine = my_splits();
+        let me = playing(50 * MIN, 4, Some(&mine));
+        // Reached layer 4 7:00 after me, and I have not left it.
+        assert_eq!(
+            gap_from_player(&playing(50 * MIN, 4, Some(&c)), 3, &me, 2),
+            Some(7 * MIN)
+        );
     }
 
     #[test]
-    fn test_gap_from_player_self_and_ungapped_rows() {
-        // The local row has no gap, and a row without a gap (ready,
-        // disqualified) stays without one.
-        assert_eq!(gap_from_player(Some(45_000), false, true, 45_000), None);
-        assert_eq!(gap_from_player(None, false, false, 45_000), None);
+    fn test_gap_from_player_behind_on_a_shallower_layer() {
+        let e = HashMap::from([(0, 0), (3, 25 * MIN)]);
+        let mine = my_splits();
+        let me = playing(50 * MIN, 4, Some(&mine));
+        // Reached layer 3 4:00 after me and has spent 25:00 there against my
+        // 10:00: 4:00 + 15:00.
+        assert_eq!(
+            gap_from_player(&playing(50 * MIN, 3, Some(&e)), 4, &me, 2),
+            Some(19 * MIN)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_ahead_finished_while_i_play_the_last_layer() {
+        let b = HashMap::from([(0, 0), (7, 58 * MIN), (8, 66 * MIN)]);
+        let mine = HashMap::from([(0, 0), (7, 57 * MIN)]);
+        let me = playing(70 * MIN, 7, Some(&mine));
+        // B spent 8:00 on the last layer, I am at 13:00 there after arriving
+        // 1:00 earlier: -1:00 + 5:00.
+        assert_eq!(
+            gap_from_player(&finished(66 * MIN, &b), 0, &me, 1),
+            Some(-4 * MIN)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_ahead_finished_without_a_finish_split() {
+        // A projected ghost's splits stop at its last zone: its final IGT
+        // stands in for the exit of the last layer.
+        let b = HashMap::from([(0, 0), (7, 58 * MIN)]);
+        let mine = HashMap::from([(0, 0), (7, 57 * MIN)]);
+        let me = playing(70 * MIN, 7, Some(&mine));
+        assert_eq!(
+            gap_from_player(&finished(66 * MIN, &b), 0, &me, 1),
+            Some(-4 * MIN)
+        );
+    }
+
+    fn abandoned(layer: i32, splits: &HashMap<i32, i32>) -> GapRunner<'_> {
+        GapRunner {
+            status: ParticipantStatus::Abandoned,
+            ..playing(0, layer, Some(splits))
+        }
+    }
+
+    #[test]
+    fn test_gap_from_player_dnf_behind_that_arrived_later() {
+        let mine = HashMap::from([(0, 0), (3, 25 * MIN), (4, 30 * MIN)]);
+        let dnf = HashMap::from([(0, 0), (3, 28 * MIN)]);
+        let me = playing(50 * MIN, 4, Some(&mine));
+        // A DNF counts its arrival on its deepest layer, never its overrun.
+        assert_eq!(
+            gap_from_player(&abandoned(3, &dnf), 3, &me, 1),
+            Some(3 * MIN)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_hides_a_dnf_arrival_that_contradicts_the_rank() {
+        // Reached layer 3 five minutes before me, then quit: it ranks behind
+        // on depth, so an arrival ahead of mine is no gap to show.
+        let mine = HashMap::from([(0, 0), (3, 25 * MIN), (4, 30 * MIN)]);
+        let dnf = HashMap::from([(0, 0), (3, 20 * MIN)]);
+        let me = playing(50 * MIN, 4, Some(&mine));
+        assert_eq!(gap_from_player(&abandoned(3, &dnf), 3, &me, 1), None);
+        // Mirror: I quit on layer 5, reached 5:00 before a runner still racing
+        // deeper, who ranks ahead of me.
+        let mine = HashMap::from([(0, 0), (5, 40 * MIN)]);
+        let racing = HashMap::from([(0, 0), (5, 45 * MIN), (6, 50 * MIN), (7, 55 * MIN)]);
+        let me = abandoned(5, &mine);
+        assert_eq!(
+            gap_from_player(&playing(60 * MIN, 7, Some(&racing)), 0, &me, 1),
+            None
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_clamps_a_stale_snapshot_after_an_overtake() {
+        // I passed this runner when leaving layer 4 at 42:00; their snapshot,
+        // half a second old, still predates my exit.
+        let mine = HashMap::from([(0, 0), (4, 31 * MIN), (5, 42 * MIN)]);
+        let theirs = HashMap::from([(0, 0), (4, 30 * MIN)]);
+        let me = playing(42 * MIN + 1_000, 5, Some(&mine));
+        let row = playing(42 * MIN - 500, 4, Some(&theirs));
+        assert_eq!(gap_from_player(&row, 2, &me, 1), Some(0));
+    }
+
+    #[test]
+    fn test_gap_from_player_between_finishers_is_the_time_difference() {
+        let ahead = HashMap::from([(0, 0), (8, 66 * MIN)]);
+        let mine = HashMap::from([(0, 0), (8, 70 * MIN)]);
+        let behind = HashMap::from([(0, 0), (8, 75 * MIN)]);
+        let me = finished(70 * MIN, &mine);
+        assert_eq!(
+            gap_from_player(&finished(66 * MIN, &ahead), 0, &me, 1),
+            Some(-4 * MIN)
+        );
+        assert_eq!(
+            gap_from_player(&finished(75 * MIN, &behind), 2, &me, 1),
+            Some(5 * MIN)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_behind_a_finished_player() {
+        let mine = HashMap::from([(0, 0), (7, 57 * MIN), (8, 70 * MIN)]);
+        let theirs = HashMap::from([(0, 0), (7, 60 * MIN)]);
+        let me = finished(70 * MIN, &mine);
+        // Arrived 3:00 after me on the last layer, 20:00 there against my 13:00.
+        assert_eq!(
+            gap_from_player(&playing(80 * MIN, 7, Some(&theirs)), 2, &me, 1),
+            Some(10 * MIN)
+        );
+    }
+
+    #[test]
+    fn test_gap_from_player_rows_without_a_gap() {
+        let mine = my_splits();
+        let me = playing(50 * MIN, 4, Some(&mine));
+        let theirs = HashMap::from([(0, 0), (4, 38 * MIN)]);
+        // The local row itself.
+        assert_eq!(gap_from_player(&me, 2, &me, 2), None);
+        // A runner ahead whose splits the server did not send.
+        assert_eq!(
+            gap_from_player(&playing(50 * MIN, 5, None), 1, &me, 2),
+            None
+        );
+        // Disqualified and not-yet-started runners behind.
+        for status in [ParticipantStatus::Disqualified, ParticipantStatus::Ready] {
+            let row = GapRunner {
+                status,
+                ..playing(50 * MIN, 4, Some(&theirs))
+            };
+            assert_eq!(gap_from_player(&row, 3, &me, 2), None);
+        }
     }
 
     #[test]

@@ -1111,7 +1111,8 @@ impl RaceTracker {
     /// real-time game memory IGT; other players use the server's latest snapshot.
     /// Always shows the local player: past the rows the top block holds, a `···`
     /// separator leads to their own rows (see `compute_leaderboard_layout`),
-    /// and the centered `mode` re-references every gap onto them.
+    /// and the centered `mode` measures every gap between them and the row's
+    /// runner (see `gap_from_player`).
     fn render_leaderboard(
         &mut self,
         ui: &hudhook::imgui::Ui,
@@ -1259,15 +1260,29 @@ impl RaceTracker {
                 })
             }
         };
-        let gap_reference = match mode {
-            LeaderboardMode::Centered => {
-                let my_gap = my_index
-                    .and_then(|m| participants.get(m).map(|p| (m, p)))
-                    .and_then(|(m, p)| leader_gap(m, p));
-                crate::core::player_gap_reference(my_index, my_gap, has_leader)
+        // The local player's live IGT while racing, the server's otherwise (a
+        // finisher's is final, while the game's keeps ticking).
+        let gap_igt = |p: &crate::core::protocol::ParticipantInfo| {
+            if !race_finished
+                && p.status == ParticipantStatus::Playing
+                && my_id.as_deref().is_some_and(|id| id == p.id)
+            {
+                local_igt.unwrap_or(p.igt_ms)
+            } else {
+                p.igt_ms
             }
-            LeaderboardMode::Top => None,
         };
+        let my_row = my_index.zip(my_index.and_then(|m| participants.get(m)));
+        let centered = mode == LeaderboardMode::Centered
+            && crate::core::centers_on_player(
+                my_index,
+                my_row.and_then(|(m, p)| leader_gap(m, p)),
+                my_row.is_some_and(|(_, p)| p.layer_entry_igts.is_some()),
+                has_leader,
+            );
+        let me = my_row
+            .filter(|_| centered)
+            .map(|(m, p)| (m, crate::core::GapRunner::new(p, gap_igt(p))));
 
         let cache = &mut self.leaderboard_cache;
         cache.rows.clear();
@@ -1276,12 +1291,12 @@ impl RaceTracker {
 
         profile_span!("leaderboard_rows");
         for (i, p) in participants.iter().enumerate() {
-            let computed_gap_ms = match gap_reference {
-                Some(reference) => crate::core::gap_from_player(
-                    leader_gap(i, p),
-                    i == 0,
-                    my_index == Some(i),
-                    reference,
+            let computed_gap_ms = match &me {
+                Some((m, me)) => crate::core::gap_from_player(
+                    &crate::core::GapRunner::new(p, gap_igt(p)),
+                    i,
+                    me,
+                    *m,
                 ),
                 None => leader_gap(i, p),
             };

@@ -213,6 +213,7 @@ async def _seed_race_with_finished_ghost(
                 {"node_id": "fog_b", "igt_ms": 200_000, "type": "fog"},
                 {"node_id": "end", "igt_ms": 300_000, "type": "fog"},
             ],
+            layer_entry_igts={"0": 0, "1": 100_000, "2": 200_000, "3": 300_000},
         )
         # Viewer B: still REGISTERED, so they can transition to PLAYING via
         # the first status_update on the mod WS (mirrors the real flow).
@@ -313,6 +314,9 @@ def test_mod_sees_projected_ghost_spectator_sees_real_finish(
             assert mod_alpha["current_zone"] == "start"
             assert mod_alpha["current_layer"] == 0
             assert mod_alpha["igt_ms"] <= 60_000
+            # Its splits stop there too: a later arrival would leak its future
+            # and skew the gaps the mod measures against it.
+            assert mod_alpha["layer_entry_igts"] == {"0": 0}
 
         # Spectator should see A as truly finished at its real IGT.
         spec_lb = _latest_leaderboard_within(lambda: _receive_with_timeout(spec_ws, timeout=2))
@@ -320,6 +324,7 @@ def test_mod_sees_projected_ghost_spectator_sees_real_finish(
         spec_alpha = _participant_by_username(spec_lb, "alpha")
         assert spec_alpha["status"] == "finished"
         assert spec_alpha["igt_ms"] == 300_000
+        assert spec_alpha["layer_entry_igts"] == {"0": 0, "1": 100_000, "2": 200_000, "3": 300_000}
 
 
 # ---------------------------------------------------------------------------

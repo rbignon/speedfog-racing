@@ -674,6 +674,11 @@ class ConnectionManager:
                 )
                 if graph_json
                 else None,
+                # A mod-only gap input, and on async races the message reaches
+                # spectators only.
+                layer_entry_igts=participant.layer_entry_igts
+                if graph_json and not project_ghosts
+                else None,
                 weapons=weapons,
             )
         )
@@ -851,6 +856,7 @@ def participant_to_info(
     graph_json: dict[str, Any] | None = None,
     gap_ms: int | None = None,
     layer_entry_igt: int | None = None,
+    layer_entry_igts: dict[str, int] | None = None,
     include_zone_history: bool = False,
     daily_points: int | None = None,
     weapons: list[int] | None = None,
@@ -897,6 +903,9 @@ def participant_to_info(
         zone_history=participant.zone_history if include_zone_history else None,
         gap_ms=gap_ms,
         layer_entry_igt=layer_entry_igt,
+        layer_entry_igts={int(k): v for k, v in layer_entry_igts.items()}
+        if layer_entry_igts is not None
+        else None,
         is_live=twitch_live_service.is_live(participant.user.twitch_username),
         stream_url=twitch_live_service.stream_url(participant.user.twitch_username),
         equipped_badge_id=participant.user.equipped_badge_id,
@@ -1023,6 +1032,7 @@ def _build_leaderboard_payload(
             if has_leader and graph_json
             else None,
             layer_entry_igt=entry_igts.get(p.id) if graph_json else None,
+            layer_entry_igts=p.layer_entry_igts if graph_json else None,
         )
         for i, p in enumerate(sorted_participants)
     ]

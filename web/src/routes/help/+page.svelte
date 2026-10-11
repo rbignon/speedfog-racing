@@ -473,8 +473,9 @@
         </p>
         <p>
           That is how the top 10 layout shows every gap. The layout centered on
-          you (the default) then counts every gap from yours: a runner ahead of
-          you shows a negative gap in
+          you (the default) measures each gap between you and that runner
+          instead, with the same rule, whichever of you two is ahead standing in
+          for the leader: a runner ahead of you shows a negative gap in
           <strong style="color: var(--color-success)">green</strong>, a runner
           behind you a positive one in
           <strong style="color: var(--color-danger)">red</strong>, and your own
