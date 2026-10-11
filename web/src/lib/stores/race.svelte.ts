@@ -94,6 +94,10 @@ class RaceStore {
   // entry IGT.
   leaderSplits = $state<Record<number, number> | null>(null);
   layerEntryIgts = $state<Record<string, number>>({});
+  // Participant id -> its own per-layer first-arrival IGTs, for gaps between
+  // two runners (computeGapBetween). Captured the same way, and raw: only
+  // ever replaced wholesale.
+  layerSplits = $state.raw<Record<string, Record<number, number>>>({});
   // null while no race_state has arrived yet → page falls back to the
   // initial REST fetch's pending_invites until the WS catches up.
   pendingInvites = $state<WsPendingInvite[] | null>(null);
@@ -206,6 +210,7 @@ class RaceStore {
     this.participants = [];
     this.leaderSplits = null;
     this.layerEntryIgts = {};
+    this.layerSplits = {};
     this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];
@@ -287,10 +292,13 @@ class RaceStore {
             // self-heals stale ids; leader_splits is absent until a leader exists.
             this.leaderSplits = msg.leader_splits ?? null;
             const entries: Record<string, number> = {};
+            const splits: Record<string, Record<number, number>> = {};
             for (const p of msg.participants) {
               if (p.layer_entry_igt != null) entries[p.id] = p.layer_entry_igt;
+              if (p.layer_entry_igts) splits[p.id] = p.layer_entry_igts;
             }
             this.layerEntryIgts = entries;
+            this.layerSplits = splits;
           };
           if (!this.delayQueue) return apply();
           this.delayQueue.push(apply);
@@ -464,6 +472,7 @@ class RaceStore {
     this.leaderboardRows = new Map();
     this.leaderSplits = null;
     this.layerEntryIgts = {};
+    this.layerSplits = {};
     this.pendingInvites = null;
     this.chatMessagesParticipants = [];
     this.chatMessagesPublic = [];

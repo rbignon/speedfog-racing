@@ -115,6 +115,9 @@
     b={seated[1]}
     rect={layout.panels.versus}
     {totalLayers}
+    {ranks}
+    layerEntryIgts={raceStore.layerEntryIgts}
+    layerSplits={raceStore.layerSplits}
   />
   <CastDesk
     scene="duel"

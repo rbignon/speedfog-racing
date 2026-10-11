@@ -1,9 +1,11 @@
 import { describe, it, expect } from "vitest";
 import {
   computeGap,
+  computeGapBetween,
   formatGap,
   formatGapCompact,
   type GapInput,
+  type GapSide,
 } from "$lib/gap";
 
 describe("computeGap", () => {
@@ -110,6 +112,94 @@ describe("computeGap", () => {
         leaderIgtMs: 180_000,
       }),
     ).toBe(15_000);
+  });
+});
+
+describe("computeGapBetween", () => {
+  const MIN = 60_000;
+
+  function playing(
+    igtMs: number,
+    currentLayer: number,
+    splits: Record<number, number> | null,
+  ): GapSide {
+    return {
+      status: "playing",
+      igtMs,
+      currentLayer,
+      layerEntryIgt: splits?.[currentLayer] ?? null,
+      splits,
+    };
+  }
+
+  // Everyone at 50:00; the runner ahead reached layer 4 at 31:00.
+  const ahead = playing(50 * MIN, 4, { 0: 0, 3: 21 * MIN, 4: 31 * MIN });
+
+  it("keeps the arrival delay on a shared layer both overran", () => {
+    // Against the leader both would read the same gap: this one arrived 7:00
+    // later, and the runner ahead has not left the layer.
+    expect(
+      computeGapBetween(playing(50 * MIN, 4, { 0: 0, 4: 38 * MIN }), ahead),
+    ).toBe(7 * MIN);
+  });
+
+  it("adds the overrun on a layer the runner ahead already left", () => {
+    // Reached layer 3 4:00 after the runner ahead, 25:00 there against 10:00.
+    expect(
+      computeGapBetween(playing(50 * MIN, 3, { 0: 0, 3: 25 * MIN }), ahead),
+    ).toBe(19 * MIN);
+  });
+
+  it("measures against a finisher's final IGT without a finish split", () => {
+    const finisher: GapSide = {
+      status: "finished",
+      igtMs: 66 * MIN,
+      currentLayer: 8,
+      layerEntryIgt: null,
+      splits: { 0: 0, 7: 58 * MIN },
+    };
+    // 1:00 earlier on the last layer, 13:00 there against the finisher's 8:00.
+    expect(
+      computeGapBetween(playing(70 * MIN, 7, { 0: 0, 7: 57 * MIN }), finisher),
+    ).toBe(4 * MIN);
+  });
+
+  it("reads 0 for a snapshot a moment old after an overtake", () => {
+    const passer = playing(42 * MIN + 1_000, 5, {
+      0: 0,
+      4: 31 * MIN,
+      5: 42 * MIN,
+    });
+    expect(
+      computeGapBetween(
+        playing(42 * MIN - 500, 4, { 0: 0, 4: 30 * MIN }),
+        passer,
+      ),
+    ).toBe(0);
+  });
+
+  it("shows no gap for a DNF's arrival ahead of the runner it ranks behind", () => {
+    const dnf: GapSide = {
+      ...playing(0, 3, { 0: 0, 3: 20 * MIN }),
+      status: "abandoned",
+    };
+    expect(computeGapBetween(dnf, ahead)).toBeNull();
+    // Between two DNFs, ranked on depth: the deeper one reached layer 3 at
+    // 25:00, five minutes after the one that quit there.
+    const deeper: GapSide = {
+      ...playing(0, 5, { 0: 0, 3: 25 * MIN, 5: 40 * MIN }),
+      status: "abandoned",
+    };
+    expect(computeGapBetween(dnf, deeper)).toBeNull();
+  });
+
+  it("is unknown without the splits of the runner ahead", () => {
+    expect(
+      computeGapBetween(playing(50 * MIN, 4, { 0: 0, 4: 38 * MIN }), {
+        ...ahead,
+        splits: null,
+      }),
+    ).toBeNull();
   });
 });
 

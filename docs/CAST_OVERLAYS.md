@@ -170,11 +170,15 @@ Under each POV sits that runner's card (avatar, name, rank, zone, weapons,
 deaths, IGT; the right card mirrored to face inward, like the quad scene's
 right column), and between the cards a versus block in three columns: each
 side's depth in the outer column next to that runner's own card, and in the
-middle the head-to-head gap between the two seated runners themselves
-(their `gap_ms` values share the field leader's reference, so the difference
-is the duel's own gap, whoever else is in the race) with who leads, or who
-wins once neither side is still racing (finished or out). Deaths stay on the
-cards, not repeated in the block. A runner out of the race shows DNF or DQ
+middle the head-to-head gap between the two seated runners themselves,
+whoever else is in the race: the leader gap's formula with the one ranked
+ahead standing in for the leader and its own splits (`layer_entry_igts`, see
+`computeGapBetween`), never the difference of their leader gaps, which reads
+0:00 once both overran the leader's time on a shared layer. With it comes who
+leads (the one ranked ahead), or who wins once neither side is still racing
+(finished or out); a gap not known yet (splits in flight or held back by the
+caster delay, or a race not started) shows `–`, never a tie. Deaths stay on
+the cards, not repeated in the block. A runner out of the race shows DNF or DQ
 in place of a stale zone and drops out of the gap (the surviving side
 leads), and a finished runner's IGT takes the finished colour, as in the
 standings panels.

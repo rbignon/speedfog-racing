@@ -20,6 +20,10 @@ export interface WsParticipant {
   // leaderboard_update (omitted by race_state / player_update); fed into the
   // client-side gap recomputation. See $lib/gap.
   layer_entry_igt?: number | null;
+  // First-arrival IGT per layer reached (layer -> igt_ms): the splits a gap
+  // between two runners is measured against (see computeGapBetween). The race
+  // store takes them from leaderboard_update, like layer_entry_igt.
+  layer_entry_igts?: Record<number, number> | null;
   igt_ms: number;
   // Gap to the leader in ms (negative = ahead). Recomputed live by the race
   // store from leader_splits + layer_entry_igt; the server snapshot is ignored.

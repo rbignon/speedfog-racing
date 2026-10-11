@@ -674,7 +674,8 @@ class ConnectionManager:
                 )
                 if graph_json
                 else None,
-                # A mod-only gap input, and on async races the message reaches
+                # Only mods read it here (the web takes it from
+                # leaderboard_update), and on async races the message reaches
                 # spectators only.
                 layer_entry_igts=participant.layer_entry_igts
                 if graph_json and not project_ghosts

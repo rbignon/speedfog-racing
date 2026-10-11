@@ -156,7 +156,8 @@ class ParticipantInfo(BaseModel):
     gap_ms: int | None = None
     layer_entry_igt: int | None = None
     # First-arrival IGT per layer reached (the finish recorded as layer
-    # total_layers): the splits the mod measures pairwise gaps against.
+    # total_layers): the splits the mod and the cast duel scene measure gaps
+    # between two runners against.
     layer_entry_igts: dict[int, int] | None = None
     is_live: bool = False
     stream_url: str | None = None

@@ -73,6 +73,49 @@ export function computeGap(input: GapInput): number | null {
   return entryDelta + (timeInLayer - leaderTimeInLayer);
 }
 
+/** One runner's side of a gap between two runners. */
+export interface GapSide {
+  status: string;
+  igtMs: number;
+  currentLayer: number;
+  layerEntryIgt: number | null;
+  /** The runner's first-arrival IGT per layer (`layer_entry_igts`). */
+  splits: Record<number, number> | null;
+}
+
+/**
+ * Gap in ms of `behind` to `ahead`, the runner ranked in front of it, with
+ * `computeGap`'s rule, `ahead` standing in for the leader with its own splits.
+ * Ported from the mod's `gap_from_player` (mod/src/core/format.rs). Unlike the
+ * difference of two leader gaps, it keeps the arrival delay between two
+ * runners of a layer both overran the leader's time on.
+ *
+ * Never contradicts the ranking: with a DNF in the pair, an arrival ahead of
+ * the other's that the DNF's depth outranks (it reached the layer first, then
+ * quit) gives null; between runners still racing or finished, a snapshot a
+ * moment old right after an overtake gives 0.
+ */
+export function computeGapBetween(
+  behind: GapSide,
+  ahead: GapSide,
+): number | null {
+  if (!ahead.splits) return null;
+  const gap = computeGap({
+    status: behind.status,
+    igtMs: behind.igtMs,
+    currentLayer: behind.currentLayer,
+    layerEntryIgt: behind.layerEntryIgt,
+    leaderSplits: ahead.splits,
+    isLeader: false,
+    leaderIgtMs: ahead.igtMs,
+    leaderFinished: ahead.status === "finished",
+  });
+  if (gap === null || gap >= 0) return gap;
+  return behind.status === "abandoned" || ahead.status === "abandoned"
+    ? null
+    : 0;
+}
+
 /**
  * Format a gap in ms as `+M:SS` / `+H:MM:SS` (behind) or `-M:SS` / `-H:MM:SS`
  * (ahead). Mirrors the mod's `format_gap_into`.
