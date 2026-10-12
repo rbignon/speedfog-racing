@@ -43,8 +43,10 @@ import {
   signupIntentStands,
   soloSeedLabel,
   stageTimes,
+  startsIn,
   stripStagePrefix,
   timeRemaining,
+  upcomingMatches,
 } from "$lib/events";
 import type {
   Caster,
@@ -1566,6 +1568,129 @@ describe("match table", () => {
     });
     expect(liveZoneTitle([m("finished"), m("live")])).toBe("Live matches");
     expect(liveZoneTitle([m("finished")])).toBe("Just finished");
+  });
+});
+
+describe("upcomingMatches", () => {
+  const now = new Date("2026-10-18T17:25:00Z");
+  const at = (minutes: number) =>
+    new Date(now.getTime() + minutes * 60_000).toISOString();
+  const runner = (id: string) => ({
+    user: {
+      id,
+      twitch_username: id,
+      twitch_display_name: null,
+      twitch_avatar_url: null,
+    },
+    label: `Seed ${id}`,
+    forfeited: false,
+    source: null,
+    place: null,
+  });
+  const dated = (
+    key: string,
+    date: string,
+    overrides: Partial<EventStage> = {},
+  ) =>
+    stageFixture({
+      key,
+      date,
+      field: [runner("1"), runner("2")],
+      ...overrides,
+    });
+  const keys = (
+    stages: EventStage[],
+    onAir: Parameters<typeof upcomingMatches>[2] = [],
+  ) => upcomingMatches(stages, now, onAir).map((m) => m.stage.key);
+
+  it("lists the dated, decided matches ahead, soonest first", () => {
+    const later = dated("group_b", at(3 * 24 * 60));
+    const sooner = dated("group_a", at(2 * 24 * 60));
+    const undated = stageFixture({ key: "group_c", field: [runner("3")] });
+    const undecided = dated("quarter_a", at(24 * 60), {
+      field: [
+        {
+          ...runner("4"),
+          user: null,
+          label: "1st of Group A",
+          source: "group_a",
+          place: 1,
+        },
+      ],
+    });
+    const done = dated("group_e", at(-60), { complete: true });
+    const walkover = dated("group_x", at(60), { walkover: true });
+    expect(keys([later, sooner, undated, undecided, done, walkover])).toEqual([
+      "group_a",
+      "group_b",
+    ]);
+  });
+
+  it("leaves out a match on air", () => {
+    const stage = dated("group_h", at(-30));
+    expect(keys([stage], [{ stage, state: "between", race: null }])).toEqual(
+      [],
+    );
+  });
+
+  it("dates a match already begun on another evening by its next race", () => {
+    const stage = dated("group_g", at(-2 * 24 * 60), {
+      races: [
+        {
+          slot: "group_g:1",
+          index: 1,
+          race: {
+            status: "finished",
+            finished_at: at(-2 * 24 * 60 + 60),
+          } as Race,
+          points: {},
+          live: [],
+        },
+        {
+          slot: "group_g:2",
+          index: 2,
+          race: { status: "setup", scheduled_at: at(24 * 60) } as Race,
+          points: {},
+          live: [],
+        },
+      ],
+    });
+    expect(upcomingMatches([stage], now, [])).toEqual([
+      { stage, at: at(24 * 60), timeSet: true },
+    ]);
+  });
+
+  it("keeps a late start for two hours", () => {
+    expect(keys([dated("a", at(-119)), dated("b", at(-121))])).toEqual(["a"]);
+  });
+
+  it("keeps a day-only date until its UTC day ends", () => {
+    // A day without its time stands at noon UTC.
+    const day = dated("group_a", "2026-10-18T12:00:00.000Z", {
+      time_set: false,
+    });
+    expect(
+      upcomingMatches([day], new Date("2026-10-18T23:00:00Z"), []).map(
+        (m) => m.timeSet,
+      ),
+    ).toEqual([false]);
+    expect(
+      upcomingMatches([day], new Date("2026-10-19T00:30:00Z"), []),
+    ).toEqual([]);
+  });
+});
+
+describe("startsIn", () => {
+  const now = new Date("2026-10-18T17:00:00Z");
+  const at = (minutes: number) =>
+    new Date(now.getTime() + minutes * 60_000).toISOString();
+
+  it("says how far ahead a match starts, in its coarsest unit", () => {
+    expect(startsIn(at(25), now)).toBe("in 25 min");
+    expect(startsIn(at(3 * 60 + 59), now)).toBe("in 3 h");
+    expect(startsIn(at(24 * 60), now)).toBe("in 1 day");
+    expect(startsIn(at(2 * 24 * 60 + 600), now)).toBe("in 2 days");
+    expect(startsIn(at(-5), now)).toBe("now");
   });
 });
 

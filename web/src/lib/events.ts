@@ -444,6 +444,54 @@ export function liveZoneTitle(matches: LiveMatch[]): string {
     : "Live matches";
 }
 
+// A stage date without its time stands at noon UTC: it stays ahead until the
+// end of that UTC day.
+const DAY_ONLY_GRACE_MS = 12 * 3_600_000;
+
+/** A match the bracket's Up next box can list. */
+export interface UpcomingMatch {
+  stage: EventStage;
+  /** Its next start: the stage's date, or a begun match's next race. */
+  at: string;
+  /** False while `at` is a day without its time. */
+  timeSet: boolean;
+}
+
+/**
+ * The matches of `stages` still to play, soonest first: not complete, not a
+ * walkover, not on air, with a decided field (no fed seat still waiting on
+ * its source) and a start ahead, or less than BETWEEN_RACES_MS behind (a late
+ * start; a day-only date stays until its UTC day ends). A match not begun
+ * starts at its date; one begun on another evening at its next race.
+ */
+export function upcomingMatches(
+  stages: EventStage[],
+  now: Date,
+  onAir: LiveMatch[],
+): UpcomingMatch[] {
+  const t = now.getTime();
+  const airing = new Set(onAir.map((m) => m.stage.key));
+  return stages
+    .flatMap((stage): UpcomingMatch[] => {
+      if (stage.complete || stage.walkover || airing.has(stage.key)) return [];
+      if (
+        stage.field.some((slot) => slot.source !== null && slot.user === null)
+      ) {
+        return [];
+      }
+      const begun = stage.races.some((entry) => entry.race.status !== "setup");
+      const at = begun
+        ? (nextSlot(stage)?.entry?.race.scheduled_at ?? null)
+        : stage.date;
+      const timeSet = begun || stage.time_set;
+      if (at === null) return [];
+      const grace = timeSet ? BETWEEN_RACES_MS : DAY_ONLY_GRACE_MS;
+      if (Date.parse(at) < t - grace) return [];
+      return [{ stage, at, timeSet }];
+    })
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+
 /** A bracket's stages, in bracket order. */
 export function bracketStages(stages: EventStage[], key: string): EventStage[] {
   return stages.filter((s) => s.bracket === key);
@@ -740,6 +788,17 @@ export function timeRemaining(closesAt: string | null, now: Date): string {
   if (days > 0) return `${days} day${days === 1 ? "" : "s"} ${hours} h left`;
   if (hours > 0) return `${hours} h ${mins} min left`;
   return `${mins} min left`;
+}
+
+/** How far ahead a match starts, in the coarsest useful unit; "now" once due. */
+export function startsIn(iso: string, now: Date): string {
+  const minutes = Math.floor((Date.parse(iso) - now.getTime()) / 60_000);
+  if (minutes <= 0) return "now";
+  if (minutes < 60) return `in ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `in ${hours} h`;
+  const days = Math.floor(hours / 24);
+  return `in ${days} day${days === 1 ? "" : "s"}`;
 }
 
 /**
