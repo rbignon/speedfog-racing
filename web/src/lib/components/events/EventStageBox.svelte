@@ -36,7 +36,8 @@
   }: {
     title: string;
     meta: string;
-    state: "setup" | "running" | "finished";
+    /** "active": between two races, the route still ember, without the dot. */
+    state: "setup" | "running" | "active" | "finished";
     signal: { cls: string; text: string };
     rows: StageRow[];
     chips?: StageChip[];
@@ -44,7 +45,10 @@
 </script>
 
 <div class="box">
-  <div class="route route-{state}" aria-hidden="true">
+  <div
+    class="route route-{state === 'active' ? 'running' : state}"
+    aria-hidden="true"
+  >
     <span class="line"></span><span class="m-start"></span><span class="m-end"
     ></span>
     {#if state === "running"}<span class="m-train"></span>{/if}

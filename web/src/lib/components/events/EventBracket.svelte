@@ -86,10 +86,14 @@
         ? formatDay(stage.date)
         : DATE_TO_BE_AGREED;
 
-  function stateOf(stage: EventStage): "setup" | "running" | "finished" {
+  function stateOf(
+    stage: EventStage,
+  ): "setup" | "running" | "active" | "finished" {
     if (stage.complete) return "finished";
-    return stage.races.some((r) => r.race.status === "running")
-      ? "running"
+    if (stage.races.some((r) => r.race.status === "running")) return "running";
+    // Between two races: one played, the match not over.
+    return stage.races.some((r) => r.race.status !== "setup")
+      ? "active"
       : "setup";
   }
   function signalOf(stage: EventStage): { cls: string; text: string } {
@@ -97,6 +101,8 @@
     if (state === "finished")
       return { cls: "signal-finished", text: "Finished" };
     if (state === "running") return { cls: "signal-running", text: "Live" };
+    if (state === "active")
+      return { cls: "signal-active", text: "In progress" };
     return { cls: "signal-setup", text: "Upcoming" };
   }
   // One chip per expected race, its mode label (or "Race n" past the modes

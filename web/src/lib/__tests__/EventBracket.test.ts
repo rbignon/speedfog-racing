@@ -98,6 +98,37 @@ describe("EventBracket stage state and progress", () => {
     expect(container.querySelector(".signal-setup")).not.toBeNull();
   });
 
+  it("signals In progress for a match between two races, its route still without the dot", () => {
+    const { container, getByText } = render(EventBracket, {
+      stages: [
+        stage({
+          races: [
+            {
+              slot: "semi_a:1",
+              index: 1,
+              race: raceWith({ status: "finished" }),
+              points: {},
+              live: [],
+            },
+            {
+              slot: "semi_a:2",
+              index: 2,
+              race: raceWith({ id: "r2", status: "setup" }),
+              points: {},
+              live: [],
+            },
+          ],
+        }),
+      ],
+      formatDay: fmtDay,
+    });
+    expect(getByText("In progress").classList.contains("signal-active")).toBe(
+      true,
+    );
+    expect(container.querySelector(".route-running")).not.toBeNull();
+    expect(container.querySelector(".m-train")).toBeNull();
+  });
+
   it("signals Finished for a complete stage even while one of its races is still running", () => {
     const { container } = render(EventBracket, {
       stages: [
