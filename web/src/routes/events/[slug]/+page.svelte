@@ -19,7 +19,7 @@
     eventFacts,
     formatEventDate,
     formatEventDay,
-    liveStage,
+    liveMatches,
     newcomersPlans,
     pollIntervalMs,
     openingRefreshMs,
@@ -44,7 +44,7 @@
   import EventLadder from "$lib/components/events/EventLadder.svelte";
   import EventQualified from "$lib/components/events/EventQualified.svelte";
   import EventBracketTabs from "$lib/components/events/EventBracketTabs.svelte";
-  import EventLiveStrip from "$lib/components/events/EventLiveStrip.svelte";
+  import EventLiveMatches from "$lib/components/events/EventLiveMatches.svelte";
   import EventBracket from "$lib/components/events/EventBracket.svelte";
   import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
   import EventIntro from "$lib/components/events/EventIntro.svelte";
@@ -125,6 +125,8 @@
   let eveningTimes = $derived(stageTimes(detail.stages));
   let shown = $derived(shownStage(view));
   let crowned = $derived(champions(detail));
+  // Every match on air, both brackets: one panel each at the top of the page.
+  let onAir = $derived(liveMatches(detail.stages, now));
   // The lock's day under the bracket title, while the draw can still change:
   // a bound the organizers close by hand once every runner confirmed, so the
   // day says enough.
@@ -612,12 +614,12 @@
         </div>
       </section>
     {:else if block === "live"}
-      {#if detail.live_race}
-        {@const stage = liveStage(detail)}
-        {@const index =
-          stage?.races.find((r) => r.race.id === detail.live_race?.id)?.index ??
-          null}
-        <EventLiveStrip race={detail.live_race} {stage} raceIndex={index} />
+      {#if onAir.length > 0}
+        <EventLiveMatches
+          matches={onAir}
+          stages={detail.stages}
+          languages={detail.caster_languages}
+        />
       {/if}
     {:else if block === "playoffs_intro"}
       {#if intro}
