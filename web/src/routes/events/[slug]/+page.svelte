@@ -29,16 +29,13 @@
     playoffsIntro,
     playoffsPlan,
     provisionalUntil,
-    racesSection,
     selectedBracketKey,
-    shownStage,
     signupIntentStands,
     stageTimes,
-    stripStagePrefix,
+    upcomingMatches,
   } from "$lib/events";
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
-  import RaceCard from "$lib/components/RaceCard.svelte";
   import EventTimeline from "$lib/components/events/EventTimeline.svelte";
   import EventSeedCard from "$lib/components/events/EventSeedCard.svelte";
   import EventLadder from "$lib/components/events/EventLadder.svelte";
@@ -46,7 +43,7 @@
   import EventBracketTabs from "$lib/components/events/EventBracketTabs.svelte";
   import EventLiveMatches from "$lib/components/events/EventLiveMatches.svelte";
   import EventBracket from "$lib/components/events/EventBracket.svelte";
-  import EventRacePlaceholder from "$lib/components/events/EventRacePlaceholder.svelte";
+  import EventUpNext from "$lib/components/events/EventUpNext.svelte";
   import EventIntro from "$lib/components/events/EventIntro.svelte";
   import EventTrailer from "$lib/components/events/EventTrailer.svelte";
   import EventPractice from "$lib/components/events/EventPractice.svelte";
@@ -123,10 +120,11 @@
       detail.starts_at,
   );
   let eveningTimes = $derived(stageTimes(detail.stages));
-  let shown = $derived(shownStage(view));
   let crowned = $derived(champions(detail));
   // Every match on air, both brackets: one panel each at the top of the page.
   let onAir = $derived(liveMatches(detail.stages, now));
+  // The selected bracket's next matches, the ones on air left out.
+  let upcoming = $derived(upcomingMatches(view.stages, now, onAir));
   // The lock's day under the bracket title, while the draw can still change:
   // a bound the organizers close by hand once every runner confirmed, so the
   // day says enough.
@@ -282,42 +280,25 @@
 </div>
 
 <main class="container">
-  {#snippet eveningSection()}
-    {#if shown}
-      {@const section = racesSection(view, fmtZone, now)}
-      <div>
-        <SectionTitle>{shown.label}</SectionTitle>
-        {#if section}
-          <p class="meta-row">
-            <span class="signal {section.signal.cls}"
-              >{section.signal.text}</span
-            >
-            <span class="meta-right">{section.meta}</span>
-          </p>
-        {/if}
-        <div class="stage-races">
-          {#each fillSlots(shown.races, shown.races_expected) as entry, i (i)}
-            {#if entry}
-              <RaceCard
-                race={entry.race}
-                title={stripStagePrefix(entry.race.name, shown.label)}
-                showFoot={false}
-                showRole={false}
-              />
-            {:else}
-              <EventRacePlaceholder
-                name={[`Race ${i + 1}`, shown.modes[i]]
-                  .filter(Boolean)
-                  .join(" - ")}
-                users={shown.field
-                  .map((slot) => slot.user)
-                  .filter((user) => user !== null)}
-              />
-            {/if}
-          {/each}
-        </div>
+  {#snippet upNextSection(capacity: number)}
+    <div>
+      <SectionTitle>Up next</SectionTitle>
+      <div class="up-next">
+        {#each upcoming.slice(0, capacity) as match (match.stage.key)}
+          <EventUpNext
+            {match}
+            stages={detail.stages}
+            languages={detail.caster_languages}
+            {now}
+          />
+        {/each}
       </div>
-    {/if}
+      {#if upcoming.length > capacity}
+        <p class="more">
+          {upcoming.length - capacity} more scheduled in the bracket
+        </p>
+      {/if}
+    </div>
   {/snippet}
 
   {#snippet factTiles(stack: boolean)}
@@ -747,7 +728,7 @@
           <EventBracket
             stages={view.stages}
             formatDay={fmtDay}
-            aside={shown ? eveningSection : undefined}
+            aside={upcoming.length > 0 ? upNextSection : undefined}
             rules={detail.playoff_rules.length > 0 ? playoffRules : undefined}
             provisionalUntil={drawLock}
           />
@@ -1117,12 +1098,6 @@
   .meta-row .fact-row {
     margin-left: auto;
   }
-  .meta-right {
-    margin-left: auto;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
-  }
   /* The decided winners: two compact plates centred under the band, the
    * champion's larger and on the fog accent, with the evening's figures. */
   .podium {
@@ -1267,16 +1242,21 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
   }
-  .stage-races {
+  .up-next {
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 22px;
+  }
+  .more {
+    margin: 14px 0 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-secondary);
   }
   /* Too narrow to hold both ends apart: the right-hand side joins the signal
    * on the left, wrapping under it when it does not fit. */
   @media (max-width: 640px) {
-    .meta-row .fact-row,
-    .meta-row .meta-right {
+    .meta-row .fact-row {
       margin-left: 0;
     }
   }

@@ -582,6 +582,38 @@ describe("EventBracket layout", () => {
     render: () => "<ul><li>Rule</li></ul>",
   }));
 
+  const capacity = createRawSnippet((fits: () => number) => ({
+    render: () => `<p class="fits">${fits()}</p>`,
+  }));
+
+  it("tells the side box how many matches fit above the Final or the Champion", () => {
+    const fits = (stages: EventStage[]) =>
+      render(EventBracket, {
+        stages,
+        formatDay: fmtDay,
+        aside: capacity,
+      }).container.querySelector(".fits")?.textContent;
+    // Four quarters: the Champion shares the side column, halfway down.
+    expect(fits(season)).toBe("1");
+    // A round of 32: the box spreads over the final's column, the Final
+    // far below.
+    expect(fits(roundSeason)).toBe("2");
+    // Two semis: the box sits in a column of its own.
+    expect(
+      fits([
+        stage({ key: "semi_a" }),
+        stage({ key: "semi_b", label: "Semi B" }),
+        stage({
+          key: "final",
+          label: "Final",
+          kind: "final",
+          from: ["semi_a", "semi_b"],
+          field: [],
+        }),
+      ]),
+    ).toBe("2");
+  });
+
   it("spreads the evening over the final's column in a four-round tree", () => {
     const { container } = render(EventBracket, {
       stages: roundSeason,

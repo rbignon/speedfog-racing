@@ -27,8 +27,8 @@
   }: {
     stages: EventStage[];
     formatDay: (iso: string) => string;
-    /** The evening section: its races, beside the tree's first rows. */
-    aside?: Snippet;
+    /** The Up next section, given how many matches fit beside the tree. */
+    aside?: Snippet<[number]>;
     /** The playoff rules card. */
     rules?: Snippet;
     /** The lock's day, formatted, while the draw can still change. */
@@ -45,6 +45,12 @@
   // column then sits empty above the final (the final is centred on the
   // first round), so the evening section spreads over it too.
   let wideAside = $derived(layout.tall && depth >= 4);
+  // How many Up next blocks the side box holds without reaching the boxes
+  // under it: a tall tree of fewer than four rounds centres the Champion in
+  // the side column halfway down (one block); from four rounds the box
+  // spreads over the final's column, the Final far below, and a short tree
+  // gives it a column of its own (two).
+  let asideCapacity = $derived(layout.tall && depth < 4 ? 1 : 2);
   // A tall tree seats the evening section above the Champion in a side
   // column, narrower from four rounds on so the rounds keep their width; a
   // short one keeps a narrow Champion column, the evening beside it.
@@ -260,7 +266,7 @@
           style:grid-row="1 / {top + layout.rows}"
           style:--order="0"
         >
-          {@render aside()}
+          {@render aside(asideCapacity)}
         </div>
       {/if}
     {/if}
@@ -327,7 +333,7 @@
     </div>
     {#if aside || rules}
       <div class="stack">
-        {#if aside}{@render aside()}{/if}
+        {#if aside}{@render aside(asideCapacity)}{/if}
         {#if rules}{@render rules()}{/if}
       </div>
     {/if}

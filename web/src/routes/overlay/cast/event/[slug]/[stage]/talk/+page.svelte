@@ -61,9 +61,9 @@
   );
 
   // fillSlots keeps a stage slot with no race yet in its place as null, the
-  // same shape the event page itself renders (see EventRacePlaceholder).
+  // shape the event page's match tables and Up next chips render too.
   let slots = $derived(fillSlots(stage.races, stage.races_expected));
-  // Played means finished, as in the event page's evening section: a race
+  // Played means finished, as in the event page's match panels: a race
   // created ahead of the evening is attached long before it counts.
   let racesPlayed = $derived(
     stage.races.filter((r) => r.race.status === "finished").length,

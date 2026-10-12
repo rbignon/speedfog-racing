@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  DATE_TO_BE_AGREED,
   SIGNUP_INTENT_TTL_MS,
   blockOrder,
   bracketLayout,
@@ -8,7 +7,6 @@ import {
   bracketStages,
   bracketView,
   champions,
-  closingStage,
   cutLine,
   encodeSignupIntent,
   eventBand,
@@ -37,9 +35,7 @@ import {
   qualifiedMeta,
   qualifiedSections,
   raceCell,
-  racesSection,
   selectedBracketKey,
-  shownStage,
   signupIntentStands,
   soloSeedLabel,
   stageTimes,
@@ -299,32 +295,6 @@ describe("bracketView", () => {
     ]);
     expect(view.next_stage).toEqual(next);
     expect(bracketView(detail, null)).toBe(detail);
-  });
-});
-
-describe("shownStage per bracket", () => {
-  it("keeps a completed bracket's final while the other bracket plays on", () => {
-    const stages = bracketStages(twoBrackets, "newcomers").map((s) => ({
-      ...s,
-      complete: true,
-    }));
-    const shown = shownStage({
-      phase: "playoffs",
-      stages,
-      current_stage_key: null,
-      next_stage: null,
-    });
-    expect(shown?.key).toBe("newcomers_final");
-    expect(closingStage(stages)?.key).toBe("newcomers_final");
-    // Not complete yet and nothing current or next: no evening to show.
-    expect(
-      shownStage({
-        phase: "playoffs",
-        stages: bracketStages(twoBrackets, "newcomers"),
-        current_stage_key: null,
-        next_stage: null,
-      }),
-    ).toBeNull();
   });
 });
 
@@ -744,32 +714,6 @@ describe("qualifiedMeta", () => {
       ),
     ).toBe("Day(2026-10-10T19:00:00Z)");
     expect(qualifiedMeta(quarterA, quartersSeason, fmt)).toBe("");
-  });
-});
-
-describe("shownStage and racesSection without a date", () => {
-  it("shows nothing during the playoffs when no evening is current or next", () => {
-    const base = {
-      current_stage_key: null,
-      next_stage: null,
-      stages: quartersSeason,
-    };
-    expect(shownStage({ ...base, phase: "playoffs" })).toBeNull();
-    expect(shownStage({ ...base, phase: "finished" })?.key).toBe("final");
-  });
-
-  it("names an undated stage's date as to be agreed", () => {
-    const detail = detailWith({
-      phase: "playoffs",
-      current_stage_key: "quarter_a",
-      stages: quartersSeason,
-    });
-    expect(
-      racesSection(detail, (iso) => iso, new Date("2026-10-09T12:00:00Z")),
-    ).toEqual({
-      signal: { cls: "signal-setup", text: "Up next" },
-      meta: DATE_TO_BE_AGREED,
-    });
   });
 });
 
@@ -1691,128 +1635,6 @@ describe("startsIn", () => {
     expect(startsIn(at(24 * 60), now)).toBe("in 1 day");
     expect(startsIn(at(2 * 24 * 60 + 600), now)).toBe("in 2 days");
     expect(startsIn(at(-5), now)).toBe("now");
-  });
-});
-
-describe("racesSection", () => {
-  const fmt = (iso: string) => `D(${iso})`;
-  afterEach(() => vi.unstubAllEnvs());
-  const semiA = {
-    key: "semi_a",
-    label: "Semi A",
-    date: "2026-10-04T19:00:00Z",
-    time_set: true,
-    races_expected: 3,
-    complete: false,
-    races: [] as EventStage["races"],
-  };
-  const semiB = {
-    key: "semi_b",
-    label: "Semi B",
-    date: "2026-10-11T19:00:00Z",
-    time_set: true,
-    races_expected: 3,
-    complete: false,
-    races: [] as EventStage["races"],
-  };
-  const nextB = {
-    key: "semi_b",
-    label: "Semi B",
-    date: semiB.date,
-    time_set: true,
-  };
-  const evening = new Date("2026-10-04T20:15:00Z");
-  const raceAt = (index: number, status: string) => ({
-    slot: `semi_a:${index}`,
-    index,
-    race: { id: `r${index}`, status } as Race,
-  });
-
-  it("is live, with the race index, while one of the evening's races runs", () => {
-    const detail = detailWith({
-      live_race: { id: "r2" } as Race,
-      current_stage_key: "semi_a",
-      next_stage: nextB,
-      stages: [
-        { ...semiA, races: [raceAt(1, "finished"), raceAt(2, "running")] },
-        semiB,
-      ] as EventDetail["stages"],
-    });
-    expect(racesSection(detail, fmt, evening)).toEqual({
-      signal: { cls: "signal-running", text: "Live now" },
-      meta: "Race 2 of 3",
-    });
-  });
-
-  it("stays on the evening's stage between two of its races, not the next Sunday", () => {
-    const detail = detailWith({
-      current_stage_key: "semi_a",
-      next_stage: nextB,
-      stages: [
-        { ...semiA, races: [raceAt(1, "finished")] },
-        semiB,
-      ] as EventDetail["stages"],
-    });
-    const section = racesSection(detail, fmt, evening);
-    expect(section?.signal.text).toBe("In progress");
-    expect(section?.meta).toBe("1 of 3 races played");
-  });
-
-  it("stays up next past the stage time while none of its races has started", () => {
-    const detail = detailWith({
-      current_stage_key: "semi_a",
-      next_stage: nextB,
-      stages: [
-        { ...semiA, races: [raceAt(1, "setup")] },
-        semiB,
-      ] as EventDetail["stages"],
-    });
-    expect(racesSection(detail, fmt, evening)?.signal.text).toBe("Up next");
-  });
-
-  it("points at the next stage, dated, while its evening is ahead", () => {
-    const detail = detailWith({
-      next_stage: {
-        key: "semi_a",
-        label: "Semi A",
-        date: semiA.date,
-        time_set: true,
-      },
-      stages: [semiA, semiB] as EventDetail["stages"],
-    });
-    const section = racesSection(detail, fmt, new Date("2026-10-01T15:00:00Z"));
-    expect(section?.signal.text).toBe("Up next");
-    expect(section?.meta).toBe("D(2026-10-04T19:00:00Z)");
-  });
-
-  it("dates the next stage by its day alone while its time is not set", () => {
-    vi.stubEnv("TZ", "Asia/Tokyo");
-    const day = { ...semiA, date: "2026-10-04T12:00:00Z", time_set: false };
-    const detail = detailWith({
-      next_stage: {
-        key: "semi_a",
-        label: "Semi A",
-        date: day.date,
-        time_set: false,
-      },
-      stages: [day, semiB] as EventDetail["stages"],
-    });
-    const section = racesSection(detail, fmt, new Date("2026-10-01T15:00:00Z"));
-    expect(section?.meta).toBe("Sun 4 Oct");
-  });
-
-  it("marks the last stage finished once everything ran, and yields null without stages", () => {
-    const after = new Date("2026-10-26T00:00:00Z");
-    const section = racesSection(
-      detailWith({
-        phase: "finished",
-        stages: [semiA, { ...semiB, complete: true }] as EventDetail["stages"],
-      }),
-      fmt,
-      after,
-    );
-    expect(section?.signal.text).toBe("Finished");
-    expect(racesSection(detailWith({}), fmt, after)).toBeNull();
   });
 });
 

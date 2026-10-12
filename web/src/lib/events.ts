@@ -497,11 +497,6 @@ export function bracketStages(stages: EventStage[], key: string): EventStage[] {
   return stages.filter((s) => s.bracket === key);
 }
 
-/** The stage whose completion completes a bracket: its final, else its last. */
-export function closingStage(stages: EventStage[]): EventStage | null {
-  return stages.find((s) => s.kind === "final") ?? stages.at(-1) ?? null;
-}
-
 type BracketChoiceInput = Pick<
   EventDetail,
   "brackets" | "stages" | "live_race" | "current_stage_key" | "next_stage"
@@ -694,87 +689,8 @@ export function champions(detail: ChampionsInput): Champion[] {
   });
 }
 
-type ShownStageInput = Pick<
-  EventDetail,
-  "current_stage_key" | "next_stage" | "stages" | "phase"
->;
-
-/**
- * The evening whose races the bracket block lists: the current stage during
- * the playoffs, else the next one, else, once the stages are played out (or
- * the event is over), the one closing them; none while no evening can
- * honestly be called next. Given one bracket's view (``bracketView``), a
- * bracket finished before the other keeps showing its final.
- */
-export function shownStage(detail: ShownStageInput): EventStage | null {
-  const closing = closingStage(detail.stages);
-  const key =
-    detail.current_stage_key ??
-    detail.next_stage?.key ??
-    (closing && (closing.complete || detail.phase === "finished")
-      ? closing.key
-      : undefined);
-  return detail.stages.find((s) => s.key === key) ?? null;
-}
-
 /** What a stage's date line reads while its races are not scheduled yet. */
 export const DATE_TO_BE_AGREED = "Date to be agreed";
-
-type SectionInput = Pick<EventDetail, "live_race"> & ShownStageInput;
-
-export interface RacesSection {
-  signal: { cls: string; text: string };
-  meta: string;
-}
-
-/**
- * The meta row under the races section title, about the stage whose races
- * the section lists: live while one of its races runs ("Race 2 of 3"),
- * finished once complete, up next (the date) until one of its races has
- * started, in progress between two of its races.
- */
-export function racesSection(
-  detail: SectionInput,
-  formatDate: (iso: string) => string,
-  now: Date,
-): RacesSection | null {
-  const stage = shownStage(detail);
-  if (!stage) return null;
-  const live = detail.live_race
-    ? stage.races.find((r) => r.race.id === detail.live_race?.id)
-    : undefined;
-  if (live) {
-    return {
-      signal: { cls: "signal-running", text: "Live now" },
-      meta: `Race ${live.index} of ${stage.races_expected}`,
-    };
-  }
-  if (stage.complete) {
-    return {
-      signal: { cls: "signal-finished", text: "Finished" },
-      meta: stage.date
-        ? formatStageDate(stage.date, stage.time_set, formatDate)
-        : DATE_TO_BE_AGREED,
-    };
-  }
-  const started = stage.races.some((r) => r.race.status !== "setup");
-  if (
-    !started ||
-    (stage.date !== null && new Date(stage.date).getTime() > now.getTime())
-  ) {
-    return {
-      signal: { cls: "signal-setup", text: "Up next" },
-      meta: stage.date
-        ? formatStageDate(stage.date, stage.time_set, formatDate)
-        : DATE_TO_BE_AGREED,
-    };
-  }
-  const played = stage.races.filter((r) => r.race.status === "finished").length;
-  return {
-    signal: { cls: "signal-active", text: "In progress" },
-    meta: `${played} of ${stage.races_expected} races played`,
-  };
-}
 
 /** Time left before a seed closes, in the coarsest useful unit. */
 export function timeRemaining(closesAt: string | null, now: Date): string {
