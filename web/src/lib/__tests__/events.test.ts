@@ -9,6 +9,7 @@ import {
   bracketView,
   champions,
   closingStage,
+  cutLine,
   encodeSignupIntent,
   eventBand,
   eventFacts,
@@ -16,8 +17,12 @@ import {
   formatEventDate,
   formatEventDay,
   linkPath,
+  liveMatchMeta,
   liveMatches,
   liveStage,
+  liveZoneTitle,
+  matchCasters,
+  matchRows,
   newcomersPlans,
   nextStageLabels,
   openingRefreshMs,
@@ -25,11 +30,13 @@ import {
   playoffsIntro,
   playoffsPlan,
   seatCode,
+  seatTag,
   forfeitNotes,
   pollIntervalMs,
   provisionalUntil,
   qualifiedMeta,
   qualifiedSections,
+  raceCell,
   racesSection,
   selectedBracketKey,
   shownStage,
@@ -40,12 +47,14 @@ import {
   timeRemaining,
 } from "$lib/events";
 import type {
+  Caster,
   EventBracket,
   EventDetail,
   EventPhase,
   EventQualified,
   EventStage,
   EventSummary,
+  ParticipantStatus,
   Race,
   User,
 } from "$lib/api";
@@ -1278,6 +1287,285 @@ describe("liveMatches", () => {
         now,
       ).map((m) => m.stage.key),
     ).toEqual(["group_d", "group_h", "newcomers_semi_a", "done"]);
+  });
+});
+
+describe("match table", () => {
+  const person = (id: string, name = id): User => ({
+    id,
+    twitch_username: id,
+    twitch_display_name: name,
+    twitch_avatar_url: null,
+  });
+  const preview = (id: string, status: ParticipantStatus) => ({
+    ...person(id),
+    placement: null,
+    status,
+    igt_ms: null,
+  });
+  const entry = (
+    index: number,
+    race: Partial<Race>,
+    extra: Partial<EventStage["races"][number]> = {},
+  ): EventStage["races"][number] => ({
+    slot: `s:${index}`,
+    index,
+    race: {
+      id: `r${index}`,
+      status: "setup",
+      casters: [],
+      participant_previews: [],
+      scheduled_at: null,
+      started_at: null,
+      finished_at: null,
+      seed_total_layers: 9,
+      ...race,
+    } as Race,
+    points: {},
+    live: [],
+    ...extra,
+  });
+  const result = (user: User, points: number, advances = false) => ({
+    user,
+    newcomer: false,
+    points,
+    igt_total: 0,
+    advances,
+    signature_weapon: null,
+  });
+  const seat = (user: User | null, label: string, extra = {}) => ({
+    user,
+    label,
+    forfeited: false,
+    source: null,
+    place: null,
+    ...extra,
+  });
+
+  it("reads a finished race as points, DQ or DNF", () => {
+    const race = entry(
+      1,
+      {
+        status: "finished",
+        participant_previews: [
+          preview("ana", "finished"),
+          preview("bob", "disqualified"),
+          preview("cleo", "abandoned"),
+        ],
+      },
+      { points: { ana: 100, bob: 0, cleo: 0 } },
+    );
+    expect(raceCell(race, "ana")).toEqual({ text: "100", tone: "points" });
+    expect(raceCell(race, "bob")).toEqual({ text: "DQ", tone: "out" });
+    expect(raceCell(race, "cleo")).toEqual({ text: "DNF", tone: "out" });
+  });
+
+  it("reads a running race as provisional points, the layer, DNF, or not started", () => {
+    const live = (id: string, status: ParticipantStatus, layer: number) => ({
+      ...preview(id, status),
+      current_layer: layer,
+    });
+    const race = entry(
+      2,
+      { status: "running" },
+      {
+        points: { ana: 100, bob: 0 },
+        live: [
+          live("ana", "finished", 9),
+          live("bob", "playing", 8),
+          live("cleo", "abandoned", 3),
+          live("dan", "registered", 0),
+        ],
+      },
+    );
+    expect(raceCell(race, "ana")).toEqual({ text: "100", tone: "prov" });
+    expect(raceCell(race, "bob")).toEqual({ text: "L8/9", tone: "live" });
+    expect(raceCell(race, "cleo")).toEqual({ text: "DNF", tone: "out" });
+    expect(raceCell(race, "dan")).toEqual({ text: "·", tone: "todo" });
+    const unknownDepth = {
+      ...race,
+      race: { ...race.race, seed_total_layers: null },
+    };
+    expect(raceCell(unknownDepth, "bob").text).toBe("L8");
+  });
+
+  it("leaves a race not run yet, or not attached, empty", () => {
+    expect(raceCell(entry(3, {}), "ana")).toEqual({ text: "·", tone: "todo" });
+    expect(raceCell(null, "ana")).toEqual({ text: "·", tone: "todo" });
+  });
+
+  it("ranks the results, tags each seat, and keeps a forfeit at the bottom", () => {
+    const [ana, bob, cleo] = [person("ana"), person("bob"), person("cleo")];
+    const groupE = stageFixture({ key: "group_e", label: "Group E" });
+    const stage = stageFixture({
+      key: "quarter_c",
+      races_expected: 2,
+      races: [
+        entry(
+          1,
+          {
+            status: "finished",
+            participant_previews: [
+              preview("bob", "finished"),
+              preview("ana", "finished"),
+            ],
+          },
+          { points: { bob: 100, ana: 70 } },
+        ),
+      ],
+      results: [result(bob, 100), result(ana, 70)],
+      field: [
+        seat(ana, "Seed 3"),
+        seat(bob, "1st of Group E", { source: "group_e", place: 1 }),
+        seat(cleo, "Seed 30", { forfeited: true }),
+        seat(null, "No runner"),
+      ],
+    });
+    const rows = matchRows(stage, [groupE, stage]);
+    expect(rows.map((r) => [r.user.id, r.rank, r.seat, r.forfeit])).toEqual([
+      ["bob", 1, "E1", false],
+      ["ana", 2, "#3", false],
+      ["cleo", null, "#30", true],
+    ]);
+    expect(rows[0].cells.map((c) => c.text)).toEqual(["100", "·"]);
+    expect(rows[2].total).toBeNull();
+  });
+
+  it("lists the field in seat order before the first finish", () => {
+    const stage = stageFixture({
+      field: [seat(person("ana"), "Seed 1"), seat(person("bob"), "Seed 8")],
+    });
+    expect(matchRows(stage, [stage]).map((r) => [r.user.id, r.rank])).toEqual([
+      ["ana", null],
+      ["bob", null],
+    ]);
+  });
+
+  it("seats no tag on an empty or unlabelled seat", () => {
+    expect(seatTag(seat(null, "No runner"), [])).toBeNull();
+  });
+
+  it("draws the cut under the last runner going on while the match is played", () => {
+    const quarterC = stageFixture({
+      key: "quarter_c",
+      label: "Quarter C",
+      field: [seat(null, "2nd of Group H", { source: "group_h", place: 2 })],
+    });
+    const quarterD = stageFixture({
+      key: "quarter_d",
+      label: "Quarter D",
+      field: [seat(null, "1st of Group H", { source: "group_h", place: 1 })],
+    });
+    const groupH = stageFixture({
+      key: "group_h",
+      advance: 2,
+      results: [result(person("a"), 100), result(person("b"), 70)],
+    });
+    const stages = [groupH, quarterC, quarterD];
+    expect(cutLine(groupH, stages, 4)).toEqual({
+      after: 1,
+      label: "Top 2 go on: Quarter D / Quarter C",
+    });
+    expect(cutLine({ ...groupH, complete: true }, stages, 4)).toBeNull();
+    expect(cutLine({ ...groupH, results: [] }, stages, 4)).toBeNull();
+    expect(cutLine({ ...groupH, advance: null }, stages, 4)).toBeNull();
+    expect(cutLine(groupH, stages, 2)).toBeNull();
+  });
+
+  it("gathers a match's casters once each, in race order", () => {
+    const caster = (id: string): Caster => ({
+      id: `c-${id}`,
+      user: person(id),
+      is_live: false,
+      stream_url: null,
+    });
+    const stage = stageFixture({
+      races: [
+        entry(2, { casters: [caster("karssi"), caster("itzcbd")] }),
+        entry(1, { casters: [caster("itzcbd")] }),
+      ],
+    });
+    expect(matchCasters(stage).map((c) => c.user.id)).toEqual([
+      "itzcbd",
+      "karssi",
+    ]);
+  });
+
+  it("says what a panel's match is doing", () => {
+    const time = (iso: string) => iso.slice(11, 16);
+    const modes = ["Standard", "Boss Rush", "UWYG"];
+    const played = entry(1, {
+      status: "finished",
+      finished_at: "2026-10-18T17:15:00Z",
+    });
+    const running = entry(2, {
+      status: "running",
+      started_at: "2026-10-18T17:02:00Z",
+    });
+    expect(
+      liveMatchMeta(
+        {
+          stage: stageFixture({ modes, races: [played, running] }),
+          state: "live",
+          race: running,
+        },
+        time,
+      ),
+    ).toBe("Race 2 of 3 · Boss Rush · started 17:02");
+    const next = entry(2, { scheduled_at: "2026-10-18T17:30:00Z" });
+    expect(
+      liveMatchMeta(
+        {
+          stage: stageFixture({ modes, races: [played, next] }),
+          state: "between",
+          race: next,
+        },
+        time,
+      ),
+    ).toBe("Next: Boss Rush at 17:30");
+    expect(
+      liveMatchMeta(
+        {
+          stage: stageFixture({ races: [played] }),
+          state: "between",
+          race: null,
+        },
+        time,
+      ),
+    ).toBe("Next: Race 2");
+    const [ana, bob, cleo] = [
+      person("ana", "Ana"),
+      person("bob", "Bob"),
+      person("cleo", "Cleo"),
+    ];
+    const done = stageFixture({
+      complete: true,
+      races: [played],
+      results: [
+        result(ana, 240, true),
+        result(bob, 210, true),
+        result(cleo, 90),
+      ],
+    });
+    expect(
+      liveMatchMeta({ stage: done, state: "finished", race: null }, time),
+    ).toBe("Ended 17:15 · Ana and Bob go on");
+    expect(
+      liveMatchMeta(
+        { stage: { ...done, kind: "final" }, state: "finished", race: null },
+        time,
+      ),
+    ).toBe("Ended 17:15 · Ana wins");
+  });
+
+  it("titles the zone after what it holds", () => {
+    const m = (state: "live" | "finished") => ({
+      stage: stageFixture({}),
+      state,
+      race: null,
+    });
+    expect(liveZoneTitle([m("finished"), m("live")])).toBe("Live matches");
+    expect(liveZoneTitle([m("finished")])).toBe("Just finished");
   });
 });
 

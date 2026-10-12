@@ -1,4 +1,5 @@
 import type {
+  Caster,
   EventBracket,
   EventDetail,
   EventFieldSlot,
@@ -215,6 +216,232 @@ export function liveMatches(stages: EventStage[], now: Date): LiveMatch[] {
     }
   }
   return [...onAir, ...finished];
+}
+
+/** A match's casters, each once (by user id), races in slot order. */
+export function matchCasters(stage: EventStage): Caster[] {
+  const seen = new Set<string>();
+  const casters: Caster[] = [];
+  for (const entry of [...stage.races].sort((a, b) => a.index - b.index)) {
+    for (const caster of entry.race.casters) {
+      if (seen.has(caster.user.id)) continue;
+      seen.add(caster.user.id);
+      casters.push(caster);
+    }
+  }
+  return casters;
+}
+
+/**
+ * A seat's short tag beside its runner: "#22" for a qualifier seed, the seat
+ * code for a fed seat ("E1"), null for a seat with neither (an empty seat).
+ */
+export function seatTag(
+  slot: EventFieldSlot,
+  stages: EventStage[],
+): string | null {
+  if (slot.source !== null) return seatCode(slot, stages);
+  return slot.label.startsWith("Seed ")
+    ? `#${slot.label.slice("Seed ".length)}`
+    : null;
+}
+
+/** One runner's cell for one race of a match. */
+export interface MatchCell {
+  text: string;
+  /** points: settled; prov: scored in a running race; live: still riding;
+   * out: DNF or DQ; todo: not run yet. */
+  tone: "points" | "prov" | "live" | "out" | "todo";
+}
+
+const TODO_CELL: MatchCell = { text: "·", tone: "todo" };
+
+/**
+ * What a runner did in one race of a match (`entry` null: no race attached
+ * yet). A finished race reads its own points for a finisher, else DQ or DNF;
+ * a running race reads the points once the runner finished (provisional),
+ * the layer they ride on meanwhile, DQ or DNF when out of it; a race not run
+ * reads nothing.
+ */
+export function raceCell(
+  entry: EventStageRace | null,
+  userId: string,
+): MatchCell {
+  if (!entry) return TODO_CELL;
+  const { race, points } = entry;
+  if (race.status === "finished") {
+    const runner = race.participant_previews.find((p) => p.id === userId);
+    if (runner?.status === "finished") {
+      return { text: String(points[userId] ?? 0), tone: "points" };
+    }
+    return {
+      text: runner?.status === "disqualified" ? "DQ" : "DNF",
+      tone: "out",
+    };
+  }
+  if (race.status !== "running") return TODO_CELL;
+  const runner = entry.live.find((p) => p.id === userId);
+  if (!runner) return TODO_CELL;
+  switch (runner.status) {
+    case "finished":
+      return { text: String(points[userId] ?? 0), tone: "prov" };
+    case "playing":
+      return {
+        text: race.seed_total_layers
+          ? `L${runner.current_layer}/${race.seed_total_layers}`
+          : `L${runner.current_layer}`,
+        tone: "live",
+      };
+    case "disqualified":
+      return { text: "DQ", tone: "out" };
+    case "abandoned":
+      return { text: "DNF", tone: "out" };
+    default:
+      return TODO_CELL;
+  }
+}
+
+/** One runner's row in a match panel's table. */
+export interface MatchRow {
+  user: User;
+  /** The rank once the match has results (1 leads), else null. */
+  rank: number | null;
+  seat: string | null;
+  /** Withdrew after the lock: kept in the seat, receded. */
+  forfeit: boolean;
+  /** One per expected race, in slot order. */
+  cells: MatchCell[];
+  /** The match total, null for a runner without a result. */
+  total: number | null;
+  advances: boolean;
+}
+
+/**
+ * A match's table: the results in their order, then any seated runner not in
+ * them (a forfeit, in seat order); before the first finish, the field in seat
+ * order. Empty seats have no row.
+ */
+export function matchRows(stage: EventStage, stages: EventStage[]): MatchRow[] {
+  const slots = fillSlots(stage.races, stage.races_expected);
+  const seatOf = (userId: string) =>
+    stage.field.find((slot) => slot.user?.id === userId) ?? null;
+  const row = (
+    user: User,
+    rank: number | null,
+    total: number | null,
+    advances: boolean,
+  ): MatchRow => {
+    const slot = seatOf(user.id);
+    return {
+      user,
+      rank,
+      seat: slot ? seatTag(slot, stages) : null,
+      forfeit: slot?.forfeited ?? false,
+      cells: slots.map((entry) => raceCell(entry, user.id)),
+      total,
+      advances,
+    };
+  };
+  const ranked = stage.results.map((e, i) =>
+    row(e.user, i + 1, e.points, e.advances),
+  );
+  const listed = new Set(stage.results.map((e) => e.user.id));
+  const rest = stage.field.flatMap((slot) =>
+    slot.user && !listed.has(slot.user.id)
+      ? [row(slot.user, null, null, false)]
+      : [],
+  );
+  return [...ranked, ...rest];
+}
+
+/**
+ * The cut drawn in a match table while the match is played: under row
+ * `after` (0-based, the last runner going on), naming where they go.
+ * Null once complete, before any result, for a stage nobody goes on from,
+ * or when every row goes on.
+ */
+export function cutLine(
+  stage: EventStage,
+  stages: EventStage[],
+  rows: number,
+): { after: number; label: string } | null {
+  const advance = stage.advance;
+  if (
+    stage.complete ||
+    stage.results.length === 0 ||
+    advance === null ||
+    rows <= advance
+  ) {
+    return null;
+  }
+  const labels = [
+    ...new Set(
+      nextStageLabels(stages, stage.key, advance).filter(
+        (label): label is string => label !== null,
+      ),
+    ),
+  ];
+  return {
+    after: advance - 1,
+    label: `Top ${advance} go on${labels.length > 0 ? `: ${labels.join(" / ")}` : ""}`,
+  };
+}
+
+/**
+ * The line beside a panel's signal: the race being run ("Race 2 of 3 · Boss
+ * Rush · started 19:02"), the next one between two ("Next: Boss Rush at
+ * 19:30", no time while unscheduled), or the end and who goes on ("Ended
+ * 21:47 · Ana and Bob go on", a final's "Ended 23:10 · Ana wins").
+ */
+export function liveMatchMeta(
+  match: LiveMatch,
+  formatTime: (iso: string) => string,
+): string {
+  const { stage, race } = match;
+  const mode = (index: number) => stage.modes[index - 1] ?? `Race ${index}`;
+  const name = (user: User) => user.twitch_display_name || user.twitch_username;
+  switch (match.state) {
+    case "live": {
+      if (!race) return "";
+      return [
+        `Race ${race.index} of ${stage.races_expected}`,
+        mode(race.index),
+        ...(race.race.started_at
+          ? [`started ${formatTime(race.race.started_at)}`]
+          : []),
+      ].join(" · ");
+    }
+    case "between": {
+      const next = nextSlot(stage);
+      if (!next) return "";
+      const at = next.entry?.race.scheduled_at;
+      return `Next: ${mode(next.index)}${at ? ` at ${formatTime(at)}` : ""}`;
+    }
+    case "finished": {
+      const ended = lastFinishedAt(stage);
+      const head = ended ? `Ended ${formatTime(ended)}` : "Ended";
+      if (stage.kind === "final") {
+        const winner = stage.results[0]?.user;
+        return winner ? `${head} · ${name(winner)} wins` : head;
+      }
+      const going = stage.results
+        .filter((e) => e.advances)
+        .map((e) => name(e.user));
+      if (going.length === 0) return head;
+      const who =
+        going.length === 1
+          ? going[0]
+          : `${going.slice(0, -1).join(", ")} and ${going[going.length - 1]}`;
+      return `${head} · ${who} ${going.length === 1 ? "goes" : "go"} on`;
+    }
+  }
+}
+
+/** The live zone's title: "Just finished" once every panel is a finished one. */
+export function liveZoneTitle(matches: LiveMatch[]): string {
+  return matches.every((m) => m.state === "finished")
+    ? "Just finished"
+    : "Live matches";
 }
 
 /** A bracket's stages, in bracket order. */
