@@ -179,6 +179,17 @@ impl ParticipantStatus {
     }
 }
 
+/// Reads a layer -> IGT map. JSON object keys are strings, and once an
+/// internally tagged enum (`ServerMessage`) has buffered them serde can no
+/// longer read them as integers, so they are read as strings and parsed
+/// (`parse_splits`: a key that is not an integer is dropped).
+fn deserialize_layer_map<'de, D>(deserializer: D) -> Result<Option<HashMap<i32, i32>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<HashMap<String, i32>>::deserialize(deserializer)?.map(crate::core::parse_splits))
+}
+
 /// Participant info in leaderboard
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParticipantInfo {
@@ -198,8 +209,9 @@ pub struct ParticipantInfo {
     pub layer_entry_igt: Option<i32>,
     /// IGT of the first arrival on each layer reached (the finish counting as
     /// layer `total_layers`): the splits a gap to this runner is measured
-    /// against. Absent from servers speaking protocol < 1.7.
-    #[serde(default)]
+    /// against. Absent from servers speaking protocol < 1.7, null where the
+    /// server does not send it (e.g. on `auth_ok`).
+    #[serde(default, deserialize_with = "deserialize_layer_map")]
     pub layer_entry_igts: Option<HashMap<i32, i32>>,
     #[serde(default)]
     pub name_template: Option<NameTemplate>,
@@ -1236,25 +1248,43 @@ mod tests {
     }
 
     #[test]
-    fn test_participant_info_layer_entry_igts_string_keys() {
-        // JSON object keys are strings on the wire; the layers read as ints.
+    fn test_layer_entry_igts_string_keys_inside_a_server_message() {
+        // JSON object keys are strings on the wire; the layers read as ints,
+        // also once buffered by the internally tagged `ServerMessage`.
         let json = r#"{
-            "id": "1",
-            "twitch_username": "player1",
-            "twitch_display_name": null,
-            "status": "playing",
-            "current_zone": null,
-            "current_layer": 2,
-            "igt_ms": 90000,
-            "death_count": 1,
-            "layer_entry_igt": 80000,
-            "layer_entry_igts": {"0": 0, "1": 30000, "2": 80000}
+            "type": "leaderboard_update",
+            "participants": [{
+                "id": "1",
+                "twitch_username": "player1",
+                "twitch_display_name": null,
+                "status": "playing",
+                "current_zone": null,
+                "current_layer": 2,
+                "igt_ms": 90000,
+                "death_count": 1,
+                "layer_entry_igt": 80000,
+                "layer_entry_igts": {"0": 0, "1": 30000, "2": 80000}
+            }, {
+                "id": "2",
+                "twitch_username": "player2",
+                "twitch_display_name": null,
+                "status": "ready",
+                "current_zone": null,
+                "current_layer": 0,
+                "igt_ms": 0,
+                "death_count": 0,
+                "layer_entry_igts": null
+            }]
         }"#;
-        let p: ParticipantInfo = serde_json::from_str(json).unwrap();
+        let msg: ServerMessage = serde_json::from_str(json).unwrap();
+        let ServerMessage::LeaderboardUpdate { participants, .. } = msg else {
+            panic!("Expected LeaderboardUpdate");
+        };
         assert_eq!(
-            p.layer_entry_igts,
+            participants[0].layer_entry_igts,
             Some(HashMap::from([(0, 0), (1, 30000), (2, 80000)]))
         );
+        assert_eq!(participants[1].layer_entry_igts, None);
     }
 
     #[test]
