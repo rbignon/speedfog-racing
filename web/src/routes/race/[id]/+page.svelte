@@ -369,6 +369,13 @@
   }
 
   let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
+  // Role gate for the race settings an admin may edit on the organizer's
+  // behalf; each call site keeps its own status window. Never on a daily.
+  // Invites, participant removal, custom rules and the setup map preview
+  // stay organizer-only.
+  let canEditRace = $derived(
+    (isOrganizer || auth.isAdmin) && initialRace.daily_date === null,
+  );
   // Cheat detections (staff only): REST snapshot plus live updates.
   let debugFlags = $derived(
     isOrganizer || auth.isAdmin
@@ -1107,7 +1114,7 @@
       {#if raceStatus !== "running"}
         <CasterList
           casters={initialRace.casters}
-          editable={raceStatus === "setup" && isOrganizer}
+          editable={raceStatus === "setup" && canEditRace}
           canCast={raceStatus === "setup" &&
             auth.isLoggedIn &&
             !myParticipant &&
@@ -1435,13 +1442,13 @@
                 {:else if liveScheduledAt}
                   <span class="value">
                     {formatDate(liveScheduledAt)}
-                    {#if isOrganizer}
+                    {#if canEditRace}
                       <button class="btn-edit" onclick={startEditSchedule}
                         >Edit</button
                       >
                     {/if}
                   </span>
-                {:else if isOrganizer}
+                {:else if canEditRace}
                   <span class="value">
                     To be defined
                     <button class="btn-edit" onclick={startEditSchedule}
@@ -1452,7 +1459,7 @@
                   <span class="value">To be defined</span>
                 {/if}
               </div>
-              {#if isOrganizer || liveLateJoinWindow !== null}
+              {#if canEditRace || liveLateJoinWindow !== null}
                 <div class="info-item">
                   <span class="label">Late join</span>
                   {#if editingLateJoin}
@@ -1501,7 +1508,7 @@
                   {:else if liveLateJoinWindow !== null}
                     <span class="value">
                       {formatMinutes(liveLateJoinWindow)}
-                      {#if isOrganizer}
+                      {#if canEditRace}
                         <button class="btn-edit" onclick={startEditLateJoin}
                           >Edit</button
                         >
@@ -1517,7 +1524,7 @@
                   {/if}
                 </div>
               {/if}
-              {#if isOrganizer || liveRaceDuration !== null}
+              {#if canEditRace || liveRaceDuration !== null}
                 <div class="info-item">
                   <span class="label">Duration</span>
                   {#if editingDuration}
@@ -1565,7 +1572,7 @@
                   {:else if liveRaceDuration !== null}
                     <span class="value">
                       {formatMinutes(liveRaceDuration)}
-                      {#if isOrganizer}
+                      {#if canEditRace}
                         <button class="btn-edit" onclick={startEditDuration}
                           >Edit</button
                         >
@@ -1582,12 +1589,12 @@
                 </div>
               {/if}
             {/if}
-            {#if liveDeathless || (isOrganizer && raceStatus === "setup")}
+            {#if liveDeathless || (canEditRace && raceStatus === "setup")}
               <div class="info-item">
                 <span class="label">Deathless</span>
                 <span class="value">
                   {liveDeathless ? "Enabled" : "Disabled"}
-                  {#if isOrganizer && raceStatus === "setup"}
+                  {#if canEditRace && raceStatus === "setup"}
                     <button
                       class="btn-edit"
                       onclick={() => saveDeathless(!liveDeathless)}
