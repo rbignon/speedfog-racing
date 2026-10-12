@@ -34,6 +34,7 @@ computed on each request by `services/event_service.py`.
 | `withdrawn`              | qualified runners who withdrew before the draw locks, Twitch usernames: struck from the ladder (see Qualified groups) |
 | `forfeits`               | withdrawals from `draw_locks_at` on: seat kept, never replaced (see Qualified groups)                                 |
 | `draw_locks_at`          | the end of the redraws, one instant for the event; unset, every withdrawal redraws                                    |
+| `caster_languages`       | Twitch username -> the language a caster casts in (`EN`, `FR`: 2 or 3 capitals), shown beside them on the event page  |
 
 A bracket: `key`, `label`, `entry` (`all` or `newcomers`, see Brackets) and
 its `stages`, at least one. A stage: `key`, `label`, `kind` (`round`,
@@ -89,7 +90,8 @@ exclude those positions from all of its stages at once), repeated bracket
 keys, repeated stage labels, a bracket without stages, a `phase_override`
 outside the five phases, a `newcomers` bracket without `announced_at`, a
 blank or repeated `withdrawn` or `forfeits` name (case-insensitive), a name
-in both lists, a naive `draw_locks_at`, a naive (timezone-less)
+in both lists, a blank or repeated `caster_languages` name (case-insensitive)
+or a code other than 2 or 3 capital letters, a naive `draw_locks_at`, a naive (timezone-less)
 `announced_at` or stage `date`, and a document still holding a top-level `stages` list (see the
 migration below). `starts_at`, `qualifier_ends_at` and `ends_at` on the
 upsert request are rejected the same way when naive, and so is an
@@ -97,8 +99,8 @@ upsert request are rejected the same way when naive, and so is an
 otherwise count towards the newcomer cut. `qualifier_ends_at` must not pass
 the earliest dated stage of any bracket, and `ends_at` must come after the
 latest, and `draw_locks_at` must fall between `qualifier_ends_at` and the
-earliest dated stage. The admin upsert also refuses a `withdrawn` or `forfeits`
-name that matches no user's Twitch username; from `draw_locks_at` on it refuses
+earliest dated stage. The admin upsert also refuses a `withdrawn`, `forfeits`
+or `caster_languages` name that matches no user's Twitch username; from `draw_locks_at` on it refuses
 any change to `withdrawn`, and before it any `forfeits`.
 
 One invariant worth keeping in mind when editing this schema: any future
@@ -138,7 +140,7 @@ one `final`, and its dated stages ascend in list order. Across brackets,
 dates are free: a newcomers' evening may fall between two Top 32 rounds, and
 the timeline orders the stops by date. Stage keys are unique across the
 event (they name the race slots), and so are stage labels, since the home
-band, the share card, the live strip and the race names show a label alone:
+band, the share card, the live zone and the race names show a label alone:
 "Newcomers semi A", not a second "Semi A". The event's champion is the first
 bracket's final winner.
 
@@ -255,8 +257,9 @@ card shows the current stage, else the next one. The detail also gives each
 bracket its own current and next stage, under `brackets`, by the same rules
 applied to that bracket's stages alone: each tab of the page shows its own
 evening (see The event page), while the top-level `current_stage_key` and
-`next_stage` stay event-wide for the home band, the share card and the live
-strip.
+`next_stage` stay event-wide for the home band and the share card; the event
+page's live zone and Up next box read the stages themselves (see The event
+page).
 
 ## Scoring
 
@@ -594,7 +597,8 @@ ladder, on the race listings, or on the event page.
 ## The event page
 
 `/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds while a
-stage race is RUNNING, and every 5 minutes on a playoff day (a stage dated
+match is on (a stage race RUNNING, or a match between two of its races, see
+below), and every 5 minutes on a playoff day (a stage dated
 within 12 hours of now) so an open page sees the evening's race go live;
 during the qualifier it only refreshes on page reload. An upcoming page
 reloads its data at the opening, up to ten seconds after it (spread over the
@@ -604,20 +608,20 @@ reload.
 All dates and times render in the viewer's browser timezone, and the instants
 still ahead of the viewer name that timezone too ("Wed 30 Sept, 21:00 CEST"):
 the take-part steps, the seed cards' opening, the qualified groups with the
-`Cut` tile beside them (that block only shows before the cut), and the stage
-whose races the bracket block lists. What the viewer can no longer act on
+`Cut` tile beside them (that block only shows before the cut), and the
+matches of the Up next box. What the viewer can no longer act on
 keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
 From the cut until the playoffs are over, a short "The playoffs" block heads
-the bracket, under the live strip while a race runs. It says, from the
+the bracket, under the live zone while a match is on. It says, from the
 config, what a viewer arriving from a cast needs (`playoffsIntro`), in short
 titled beats side by side, the introduction's concepts laid out in a row: the
 first bracket's seats, its rounds up to the final, dated when the config
 dates it, and what a first-round match is (its runners, its races per
 evening, how many go on); one beat per newcomers bracket, under its label;
 and how to watch (evenings agreed with the runners, cast live on Twitch, the
-live banner leading to the cast). The beats wrap rather than narrow when
+live zone leading to the casts). The beats wrap rather than narrow when
 there are more of them than the width holds.
 
 Under the beats, above 1100px wide, the playoffs trailer sits beside the
@@ -632,15 +636,53 @@ tiles two per row under it. The trailer is framed like the introduction's
 `routes/events/[slug]/+page.svelte`. Once the event is finished the champion
 plates take its place.
 
+During the playoffs, a live zone opens the page, above the playoffs
+introduction: one panel per match on air, both brackets together, two a row,
+a lone match on the full width (its casters then in a column on the right).
+A match is on air from its first race to its end (`liveMatches`): while one
+of its races runs ("Live now"); between two of its races ("In progress"),
+while its last race ended less than 2 hours ago or its next race is due
+within 2 hours (a late start counts), so a match spread over two evenings is
+off air between them; and for an hour after its last race ("Finished", with
+who goes on, or who wins a final). Panels keep the stage order, finished ones
+last, so they never swap places between two refreshes. The last final turns
+the event `finished`, and the champion plates take over at once.
+
+A panel leads with the match's casters, each once whatever the number of
+races they cast, with their language when the config's `caster_languages`
+gives one, a `LIVE` mark while their stream is on, and a Watch button (their
+live stream, else their channel). Under them, one row per runner: the results'
+order (a forfeit at the bottom, receded), the seat (`#<seed>`, or a fed
+seat's code), one cell per race (the race's points, DNF or DQ once it is
+finished; the points once the runner finished, in brass, else the layer they
+ride, while it runs; nothing before), then the total, in brass until the
+match is complete, `adv` for the runners going on once it is. While the match
+is played a dashed line under the last runner going on names where they go.
+The column headers lead to the race pages, and the header button to the race
+running ("Race page") or the next one ("Next race").
+
+Beside the bracket, the Up next box lists the selected bracket's next
+matches (`upcomingMatches`): not complete, not on air, with every seat
+decided, and a start ahead (or under 2 hours behind; a day without its time
+until its UTC day ends), soonest first. A match not begun starts at its date,
+one begun on another evening at its next race. Each block shows the date in
+brass with the viewer's timezone and how far ahead it is, the runners with
+their seats, "Cast by" and the casters with their language ("Casters to be
+announced" without any), then one chip per race with its start time, linking
+to the race once attached. It holds two matches, one in a tall tree of fewer
+than four rounds, where the Champion shares its column halfway down; a line
+counts the others. Nothing is next, no box.
+
+A bracket box whose match is between two races reads `In progress` in amber,
+its route line ember without the travelling dot.
+
 From the cut on, an event with several brackets opens its bracket block on a
 tab bar, one tab per bracket, in the tab style of the stats page, an ember dot
 on the tab of a bracket whose race runs. `?bracket=<key>` selects the tab
 (switching tabs replaces the history entry); without it, or with an unknown
 key, the page opens on the bracket of the live race, else of the event-wide
 current stage, else of the next stage, else on the first bracket. Each tab lays
-its own bracket out as below, with its own evening section: that bracket's
-current stage, else its next one, else, once the bracket is played out, its
-final, so a bracket finished before the other keeps its last evening on show.
+its own bracket out as below, with its own Up next box.
 An event with a single bracket shows no tab bar.
 
 From the cut on, the bracket block lays the playoffs out as a tree: one column
@@ -654,17 +696,16 @@ connectors. The seat labels say where each runner comes from ("1st of Group
 A"), and a decided runner's right cell reads the short code ("A1"); stages fed
 by whole stages (the final from the semis) keep their connectors. With four
 first-round boxes or more (quarters) the tree takes the page's width: a side
-column holds the evening section on top, level with the "Bracket" title, and
+column holds the Up next box on top, level with the "Bracket" title, and
 the Champion on the final's axis; for a tree of four rounds or more (a round
 of 32 before the quarters)
-that side column narrows so the rounds keep their width, and the evening
-section spreads over the final's column too, above the final, which sits
+that side column narrows so the rounds keep their width, and the Up next box
+spreads over the final's column too, above the final, which sits
 halfway down the first round; the playoff rules run under the whole tree, their
 list in two columns on a wide screen. Under 900px it becomes one column,
-the evening first. A shorter tree (two semis) keeps the older arrangement: the
-tree with a narrow Champion column, the evening section and the rules beside
-it. A stage without a date reads "Date to be agreed", and the evening section
-disappears while no evening is current or next.
+the Up next box first. A shorter tree (two semis) keeps the older
+arrangement: the tree with a narrow Champion column, the Up next box and the
+rules beside it. A stage without a date reads "Date to be agreed".
 
 Notes sit under the "Bracket" title on every tab. From the cut until
 `draw_locks_at`, a line says "The draw is provisional until <day, in brass>
@@ -694,7 +735,7 @@ with the time the evenings start at ("Playoff evenings start at 21:00 in your
 timezone"); otherwise each fixed evening carries its own time ("then the Final
 on Sun 25 Oct at 20:00"), and so does the newcomers' final, unless its time is
 not set yet: the day then reads alone ("then the Final on Sun 25 Oct"), as it
-does in the qualified groups, the evening section, the home band and the talk
+does in the qualified groups, the Up next box, the home band and the talk
 scene, wherever a stage date otherwise shows its time. `stageTimes` reads the shared
 time from the stage dates: one time when they share it, plus the single evening
 that falls elsewhere when exactly one does ("the Final at 20:00"), and nothing
@@ -846,7 +887,7 @@ row per bracket behind its label (the config's: "Top 32", then
 nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
 on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
-next to the `Event page` button. The watch link follows the live strip's
+next to the `Event page` button. The watch link follows the live zone's
 rule (a live caster's own stream, else the first caster's channel). The
 instants on the line are ahead of the viewer, so they carry the timezone
 like the event page's.
@@ -918,7 +959,7 @@ fetched is left out rather than replaced by a placeholder.
   page and navbar).
 - `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`),
   plus the showcases, which only the talk cast scene reads. Two stage fields
-  serve that scene alone: a stage's `advance` (how many of its runners go on,
+  serve that scene and the event page's match panels: a stage's `advance` (how many of its runners go on,
   null for a stage nobody takes from and for a showcase), under which it
   draws the provisional cut, and each stage race's `live`, its whole field
   in the race page's live order (each runner's preview plus the layer they
@@ -926,7 +967,9 @@ fetched is left out rather than replaced by a placeholder.
   race is no longer running), which its race card follows. Each stage
   carries `bracket` (its bracket's key; null for a showcase), and `brackets`
   lists the brackets in order (`key`, `label`, `entry`, and that bracket's own
-  `current_stage_key` and `next_stage`).
+  `current_stage_key` and `next_stage`). The detail also carries
+  `caster_languages`, the config's map resolved to the attached casters' user
+  ids, and every race carries `finished_at`.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

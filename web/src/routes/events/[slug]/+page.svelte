@@ -646,8 +646,8 @@
               <dd>
                 Every match is played on an evening agreed with its runners and
                 <strong>cast live on Twitch</strong>, each runner streaming
-                their own POV. When one is on, a banner at the top of this page
-                leads to it.
+                their own POV. When one is on, its panel at the top of this page
+                leads to its casts.
               </dd>
             </div>
           </dl>
