@@ -193,6 +193,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         created_at=race.created_at,
         scheduled_at=race.scheduled_at,
         started_at=race.started_at,
+        finished_at=race.finished_at,
         seeds_released_at=race.seeds_released_at,
         late_join_window_minutes=race.late_join_window_minutes,
         race_duration_minutes=race.race_duration_minutes,

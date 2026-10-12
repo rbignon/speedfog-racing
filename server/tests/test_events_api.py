@@ -1613,3 +1613,28 @@ async def test_listing_next_stage_sees_the_stages_that_need_no_match(test_client
     # Each undated semi is down to one runner: both go through without a
     # match, so the dated final is the next evening on the home band.
     assert summary["next_stage"]["key"] == "final"
+
+
+@pytest.mark.asyncio
+async def test_a_finished_stage_race_says_when_it_ended(test_client, async_session):
+    """The live zone keeps a match on air from its races' end times."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(db, config={**CONFIG, "phase_override": "playoffs"})
+        race = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        race.finished_at = datetime(2026, 10, 4, 21, 47, tzinfo=UTC)
+        await db.commit()
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
+    assert semi_a["races"][0]["race"]["finished_at"].startswith("2026-10-04T21:47:00")

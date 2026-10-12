@@ -65,6 +65,8 @@ export interface Race {
   created_at: string;
   scheduled_at: string | null;
   started_at: string | null;
+  /** When the race finished; set on every FINISHED race. */
+  finished_at: string | null;
   seeds_released_at: string | null;
   late_join_window_minutes: number | null;
   race_duration_minutes: number | null;

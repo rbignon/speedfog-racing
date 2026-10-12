@@ -21,6 +21,7 @@ function raceWith(overrides: Partial<Race> = {}): Race {
     created_at: "2026-08-01T10:00:00Z",
     scheduled_at: null,
     started_at: "2026-10-04T20:00:00Z",
+    finished_at: null,
     seeds_released_at: null,
     late_join_window_minutes: null,
     race_duration_minutes: null,

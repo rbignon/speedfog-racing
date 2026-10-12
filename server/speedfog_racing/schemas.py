@@ -420,6 +420,7 @@ class RaceResponse(BaseModel):
     created_at: datetime
     scheduled_at: datetime | None = None
     started_at: datetime | None = None
+    finished_at: datetime | None = None
     seeds_released_at: datetime | None = None
     late_join_window_minutes: int | None = None
     race_duration_minutes: int | None = None
