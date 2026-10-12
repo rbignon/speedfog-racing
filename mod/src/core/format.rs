@@ -88,9 +88,11 @@ pub fn format_gap_into(buf: &mut String, ms: i32) {
 
 /// Compute LiveSplit-style gap for a single participant.
 ///
-/// Returns `None` for the leader, pre-race and disqualified statuses, or
-/// missing splits. A DNF's gap is its arrival on its deepest layer against the
-/// leader's, the time it ranks on.
+/// Returns `None` for the leader, a runner not in the race (pre-race, DNF,
+/// disqualified), or missing splits. The server's `gap_ms` still gives a DNF
+/// its arrival on its deepest layer against the leader's; next to runners
+/// still racing, often layers deeper, it would read as a pace the DNF no
+/// longer has.
 /// Uses the caller's `igt_ms` (local IGT for self, server snapshot for others).
 // The eight parameters are all distinct gap-calc inputs; bundling them into a
 // struct would not read more clearly than the positional arguments here.
@@ -110,14 +112,6 @@ pub fn compute_gap(
     }
     match status {
         ParticipantStatus::Finished => Some(igt_ms - leader_igt_ms),
-        // Never the time spent there before abandoning, which would
-        // contradict its rank. Everyone enters the start layer at 0, so a DNF
-        // still there has no gap.
-        ParticipantStatus::Abandoned if current_layer == 0 => None,
-        ParticipantStatus::Abandoned => {
-            let leader_entry = leader_splits.get(&current_layer)?;
-            Some(layer_entry_igt? - leader_entry)
-        }
         ParticipantStatus::Playing => {
             let leader_entry = leader_splits.get(&current_layer)?;
             let player_entry = layer_entry_igt?;
@@ -144,8 +138,8 @@ pub fn compute_gap(
 
 /// Whether the centered view measures its gaps from the local player. Falls
 /// back to leader-relative gaps without a leader yet, without a local player
-/// (spectator), without a gap of their own (disqualified, or abandoned on the
-/// start layer), or without their splits (a server older than protocol 1.7).
+/// (spectator), without a gap of their own (out of the race: DNF or
+/// disqualified), or without their splits (a server older than protocol 1.7).
 pub fn centers_on_player(
     my_index: Option<usize>,
     my_gap: Option<i32>,
@@ -196,14 +190,17 @@ impl<'a> GapRunner<'a> {
 /// the IGT leaves out load fades, so over a live race the runners' IGTs drift
 /// apart, and one on a shallower layer can be ahead on the IGT the race is
 /// decided on until its IGT passes the one at which the other left that
-/// layer. A DNF's arrival on its deepest layer can likewise precede the
-/// other's, the DNF ranking behind on depth.
+/// layer. A pair with a DNF has none, as against the leader (see
+/// [`compute_gap`]).
 pub fn gap_from_player(
     row: &GapRunner,
     row_index: usize,
     me: &GapRunner,
     my_index: usize,
 ) -> Option<i32> {
+    if row.status == ParticipantStatus::Abandoned || me.status == ParticipantStatus::Abandoned {
+        return None;
+    }
     let between = |behind: &GapRunner, ahead: &GapRunner| {
         compute_gap(
             behind.igt_ms,
@@ -513,10 +510,10 @@ mod tests {
     }
 
     #[test]
-    fn test_compute_gap_abandoned_is_layer_entry_delta() {
+    fn test_compute_gap_abandoned_none() {
+        // Entered layer 2 at 80000, 5 s after the leader, then quit: out of
+        // the race, no gap, unlike the server's gap_ms.
         let splits = HashMap::from([(0, 0), (1, 30000), (2, 75000), (3, 120000)]);
-        // Entered layer 2 at 80000 (leader 75000) and stayed 220 s, far past
-        // the leader's 45 s budget: a DNF ranks on its arrival, so no overshoot.
         let gap = compute_gap(
             300000,
             2,
@@ -527,31 +524,7 @@ mod tests {
             120000,
             true,
         );
-        assert_eq!(gap, Some(5000));
-        // A layer the leader never reached has no split to compare against.
-        let deeper = compute_gap(
-            300000,
-            4,
-            Some(200000),
-            &splits,
-            false,
-            ParticipantStatus::Abandoned,
-            120000,
-            true,
-        );
-        assert_eq!(deeper, None);
-        // Everyone enters the start layer at 0: a DNF still there has no gap.
-        let start_layer = compute_gap(
-            60000,
-            0,
-            Some(0),
-            &splits,
-            false,
-            ParticipantStatus::Abandoned,
-            120000,
-            true,
-        );
-        assert_eq!(start_layer, None);
+        assert_eq!(gap, None);
     }
 
     #[test]
@@ -926,8 +899,8 @@ mod tests {
 
     #[test]
     fn test_centers_on_player_falls_back_without_own_gap() {
-        // Disqualified, or abandoned on the start layer: no position to
-        // measure from, the board keeps leader-relative gaps.
+        // A DNF or disqualified: no position to measure from, the board
+        // keeps leader-relative gaps.
         assert!(!centers_on_player(Some(5), None, true, true));
     }
 
@@ -1061,37 +1034,19 @@ mod tests {
     }
 
     #[test]
-    fn test_gap_from_player_dnf_behind_that_arrived_later() {
+    fn test_gap_from_player_dnf_has_none() {
+        // Quit on layer 3, which I reached at 25:00 and left at 30:00: out of
+        // the race, whether it arrived there after me or before.
         let mine = HashMap::from([(0, 0), (3, 25 * MIN), (4, 30 * MIN)]);
-        let dnf = HashMap::from([(0, 0), (3, 28 * MIN)]);
         let me = playing(50 * MIN, 4, Some(&mine));
-        // A DNF counts its arrival on its deepest layer, never its overrun.
-        assert_eq!(
-            gap_from_player(&abandoned(3, &dnf), 3, &me, 1),
-            Some(3 * MIN)
-        );
-    }
-
-    #[test]
-    fn test_gap_from_player_signs_a_dnf_arrival_ahead_of_the_other() {
-        // Reached layer 3 five minutes before me, then quit: it ranks behind
-        // on depth, its arrival ahead of mine all the same.
-        let mine = HashMap::from([(0, 0), (3, 25 * MIN), (4, 30 * MIN)]);
-        let dnf = HashMap::from([(0, 0), (3, 20 * MIN)]);
-        let me = playing(50 * MIN, 4, Some(&mine));
-        assert_eq!(
-            gap_from_player(&abandoned(3, &dnf), 3, &me, 1),
-            Some(-5 * MIN)
-        );
-        // Mirror: I quit on layer 5, reached 5:00 before a runner still racing
-        // deeper, who ranks ahead of me.
-        let mine = HashMap::from([(0, 0), (5, 40 * MIN)]);
-        let racing = HashMap::from([(0, 0), (5, 45 * MIN), (6, 50 * MIN), (7, 55 * MIN)]);
-        let me = abandoned(5, &mine);
-        assert_eq!(
-            gap_from_player(&playing(60 * MIN, 7, Some(&racing)), 0, &me, 1),
-            Some(5 * MIN)
-        );
+        for arrival in [28 * MIN, 20 * MIN] {
+            let dnf = HashMap::from([(0, 0), (3, arrival)]);
+            assert_eq!(gap_from_player(&abandoned(3, &dnf), 3, &me, 1), None);
+        }
+        // Ranked ahead of me, which the server's order never does today:
+        // still none, rather than my gap to its splits.
+        let dnf = HashMap::from([(0, 0), (3, 20 * MIN), (4, 26 * MIN), (5, 33 * MIN)]);
+        assert_eq!(gap_from_player(&abandoned(5, &dnf), 0, &me, 1), None);
     }
 
     #[test]

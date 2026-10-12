@@ -1240,9 +1240,10 @@ impl RaceTracker {
             .is_some_and(|p| p.status == ParticipantStatus::Finished);
 
         let my_index = self.machine.my_participant_index;
-        // Gap to the leader, the leader itself having none.
+        // Gap to the leader, the leader itself having none, nor a DNF, even
+        // once the race is over and the server's gap_ms would give it one.
         let leader_gap = |i: usize, p: &crate::core::protocol::ParticipantInfo| {
-            if !has_leader {
+            if !has_leader || p.status == ParticipantStatus::Abandoned {
                 None
             } else if p.status == ParticipantStatus::Finished || race_finished {
                 p.gap_ms

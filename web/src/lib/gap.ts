@@ -1,6 +1,7 @@
 /**
- * Client-side gap (delta to leader) logic, ported verbatim from the mod's
- * `compute_gap` (mod/src/core/format.rs) and the server's `compute_gap_ms`.
+ * Client-side gap (delta to leader) logic, ported verbatim from the server's
+ * `compute_gap_ms`; the mod's `compute_gap` (mod/src/core/format.rs) shares it
+ * except that it gives a DNF no gap in game.
  *
  * The race store recomputes the gap live on every tick from the leader's
  * per-layer splits plus each player's layer entry IGT, so the web leaderboard
@@ -95,7 +96,7 @@ export interface GapSide {
  * and `behind`, on a shallower layer, can be ahead on the IGT the race is
  * decided on until its IGT passes the one at which `ahead` left that layer. A
  * DNF's arrival on its deepest layer can likewise precede the other's, the DNF
- * ranking behind on depth.
+ * ranking behind on depth (the mod shows no gap with a DNF in the pair).
  */
 export function computeGapBetween(
   behind: GapSide,
