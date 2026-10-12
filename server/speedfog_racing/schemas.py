@@ -1117,6 +1117,10 @@ class EventShowcase(BaseModel):
         return _stage_moment(self.date)
 
 
+# A caster's language as the event page shows it beside their name ("EN", "FR").
+CASTER_LANGUAGE_CODE = re.compile(r"[A-Z]{2,3}")
+
+
 class EventConfig(BaseModel):
     modes: list[EventMode] = Field(min_length=1, max_length=6)
     seeds_per_mode: int = Field(default=2, ge=1, le=4)
@@ -1140,6 +1144,9 @@ class EventConfig(BaseModel):
     # Withdrawals from draw_locks_at on: the runner keeps their seat, flagged,
     # and nobody replaces them.
     forfeits: list[str] = Field(default_factory=list, max_length=64)
+    # Twitch username -> the language a caster casts in, shown beside them on
+    # the event page. The language belongs to the person, not to a race.
+    caster_languages: dict[str, str] = Field(default_factory=dict, max_length=64)
     # The end of the redraws, one instant for the whole event. Unset, every
     # withdrawal redraws.
     draw_locks_at: datetime | None = None
@@ -1170,7 +1177,7 @@ class EventConfig(BaseModel):
         stage_keys = [s.key for s in self.stages] + [s.key for s in self.showcases]
         if len(set(stage_keys)) != len(stage_keys):
             raise ValueError("stage and showcase keys must be unique")
-        # The home band, the share card, the live strip and the race names show
+        # The home band, the share card, the live zone and the race names show
         # a stage's label alone, so two brackets' "Semi A" would read the same.
         labels = [s.label for s in self.stages]
         repeated = sorted({label for label in labels if labels.count(label) > 1})
@@ -1207,6 +1214,18 @@ class EventConfig(BaseModel):
         both = sorted(set(names) & set(forfeits))
         if both:
             raise ValueError(f"names listed in both withdrawn and forfeits: {both}")
+        caster_names = [name.strip().lower() for name in self.caster_languages]
+        if any(not name for name in caster_names):
+            raise ValueError("caster_languages names must not be blank")
+        if len(set(caster_names)) != len(caster_names):
+            raise ValueError("caster_languages names must be unique")
+        bad_codes = sorted(
+            code
+            for code in self.caster_languages.values()
+            if not CASTER_LANGUAGE_CODE.fullmatch(code)
+        )
+        if bad_codes:
+            raise ValueError(f"caster_languages codes are 2 or 3 capital letters, got: {bad_codes}")
         if self.draw_locks_at is not None and self.draw_locks_at.tzinfo is None:
             raise ValueError("draw_locks_at must be timezone-aware")
         return self
@@ -1504,6 +1523,9 @@ class EventDetailResponse(BaseModel):
     current_stage_key: str | None
     live_race: RaceResponse | None
     next_stage: EventNextStageResponse | None
+    # Caster user id -> language code, for the casters attached to the
+    # event's races (``EventConfig.caster_languages`` resolved).
+    caster_languages: dict[UUID, str]
 
 
 class EventLiveRaceResponse(BaseModel):

@@ -654,6 +654,8 @@ export interface EventDetail {
   current_stage_key: string | null;
   live_race: Race | null;
   next_stage: EventNextStage | null;
+  /** Caster user id -> language code ("EN", "FR"), for the casters attached to the event's races. */
+  caster_languages: Record<string, string>;
 }
 
 /** A playoff race running right now, with the slot it fills in its stage. */

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Caster,
     Event,
     EventSignup,
     Participant,
@@ -1638,3 +1639,40 @@ async def test_a_finished_stage_race_says_when_it_ended(test_client, async_sessi
 
     semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
     assert semi_a["races"][0]["race"]["finished_at"].startswith("2026-10-04T21:47:00")
+
+
+@pytest.mark.asyncio
+async def test_detail_gives_each_attached_caster_its_language(test_client, async_session):
+    """``caster_languages`` keys the config's names by the attached casters'
+    ids, whatever the case; a name casting none of the event's races stays out."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        karssi = await _user(db, "Karssi")
+        cbd = await _user(db, "itzcbd")
+        await _user(db, "owarida")
+        event = await _event(
+            db,
+            config={
+                **CONFIG,
+                "phase_override": "playoffs",
+                "caster_languages": {"karssi": "FR", "ITZCBD": "EN", "owarida": "FR"},
+            },
+        )
+        race = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.SETUP,
+            is_public=True,
+        )
+        db.add(Caster(race_id=race.id, user_id=karssi.id))
+        db.add(Caster(race_id=race.id, user_id=cbd.id))
+        await db.commit()
+        expected = {str(karssi.id): "FR", str(cbd.id): "EN"}
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    assert data["caster_languages"] == expected

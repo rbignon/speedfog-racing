@@ -71,6 +71,7 @@ from speedfog_racing.services.event_service import (
     load_featured_events,
     newcomer_flags,
     next_stage_key,
+    resolve_caster_languages,
     resolve_stages,
     resolve_withdrawn,
     score_playoff_race,
@@ -557,6 +558,7 @@ async def get_event(
         ),
         live_race=race_response(live, user) if live is not None else None,
         next_stage=next_stage,
+        caster_languages=resolve_caster_languages(config.caster_languages, event.races),
     )
 
 

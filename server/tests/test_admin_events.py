@@ -583,6 +583,16 @@ async def test_upsert_refuses_a_withdrawn_name_that_matches_no_user(test_client,
 
 
 @pytest.mark.asyncio
+async def test_upsert_refuses_a_caster_language_name_that_matches_no_user(test_client, users):
+    doc = dict(DOC, config=dict(DOC["config"], caster_languages={"orga": "EN", "ghost": "FR"}))
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
+    assert response.status_code == 422
+    assert "caster_languages" in response.text
+    assert "ghost" in response.text
+
+
+@pytest.mark.asyncio
 async def test_upsert_takes_withdrawn_names_whatever_their_case(test_client, users):
     doc = dict(DOC, config=dict(DOC["config"], withdrawn=[" ORGA "]))
     async with test_client as client:

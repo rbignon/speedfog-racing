@@ -477,6 +477,27 @@ def test_withdrawn_names_must_not_be_blank():
         _valid(_config(withdrawn=["  "]))
 
 
+def test_caster_languages_names_are_unique_whatever_their_case():
+    with pytest.raises(ValidationError, match="caster_languages"):
+        _valid(_config(caster_languages={"Karssi": "FR", " karssi": "FR"}))
+
+
+def test_caster_languages_names_must_not_be_blank():
+    with pytest.raises(ValidationError, match="caster_languages"):
+        _valid(_config(caster_languages={"  ": "EN"}))
+
+
+@pytest.mark.parametrize("code", ["fr", "F", "FREN", "F1", ""])
+def test_caster_languages_codes_are_two_or_three_capitals(code):
+    with pytest.raises(ValidationError, match="caster_languages"):
+        _valid(_config(caster_languages={"karssi": code}))
+
+
+def test_caster_languages_take_short_capital_codes():
+    cfg = _valid(_config(caster_languages={"karssi": "FR", "itzcbd": "EN", "vela": "ESP"}))
+    assert cfg.caster_languages["vela"] == "ESP"
+
+
 def _two_brackets(**overrides):
     def stage(key, label, kind, **fields):
         return {"key": key, "label": label, "kind": kind, "races": 3, **fields}

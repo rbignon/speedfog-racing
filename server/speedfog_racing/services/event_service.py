@@ -363,6 +363,24 @@ def resolve_withdrawn(names: Sequence[str], users: Mapping[UUID, User]) -> list[
     return [user_id for name in names if (user_id := by_name.get(name.strip().lower())) is not None]
 
 
+def resolve_caster_languages(
+    languages: Mapping[str, str], races: Iterable[Race]
+) -> dict[UUID, str]:
+    """``languages`` keyed by the user id of each caster attached to ``races``.
+
+    Names match Twitch usernames case-insensitively; a name casting none of
+    ``races`` is left out.
+    """
+    by_name = {name.strip().lower(): code for name, code in languages.items()}
+    resolved: dict[UUID, str] = {}
+    for race in races:
+        for caster in race.casters:
+            code = by_name.get(caster.user.twitch_username.lower())
+            if code is not None:
+                resolved[caster.user_id] = code
+    return resolved
+
+
 def compute_qualified(
     ladder: list[LadderEntry],
     config: EventConfig,

@@ -1414,7 +1414,8 @@ async def admin_upsert_event(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"config.modes keys must be pool names, unknown: {unknown}",
         )
-    listed = [*request.config.withdrawn, *request.config.forfeits]
+    caster_names = list(request.config.caster_languages)
+    listed = [*request.config.withdrawn, *request.config.forfeits, *caster_names]
     if listed:
         wanted = {name.strip().lower() for name in listed}
         known = set(
@@ -1428,8 +1429,11 @@ async def admin_upsert_event(
             .scalars()
             .all()
         )
-        for field_name in ("withdrawn", "forfeits"):
-            names = getattr(request.config, field_name)
+        for field_name, names in (
+            ("withdrawn", request.config.withdrawn),
+            ("forfeits", request.config.forfeits),
+            ("caster_languages", caster_names),
+        ):
             unmatched = [n for n in names if n.strip().lower() not in known]
             if unmatched:
                 raise HTTPException(
