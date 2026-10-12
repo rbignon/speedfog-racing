@@ -247,9 +247,9 @@ Players on the same layer are sorted by layer entry IGT (who arrived first), not
 
 ### Client-Side Gap Computation (Mod)
 
-For playing and abandoned players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
+For playing and abandoned players during a running race, the mod recomputes gaps locally each frame using the same formula with `leader_splits` + `layer_entry_igt` from `leaderboard_update` and `player_update` messages. For the local player, while they play, the mod substitutes the real-time local IGT (read from game memory) instead of the server's `igt_ms`. For other players, the mod uses their server-provided `igt_ms` directly; gaps step in discrete increments aligned with the server's `player_update` cadence (~1s).
 
-When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish.
+When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish. For the same reason, gaps against a finished local player leading the race use their server-recorded final IGT, never the game's, so a runner on the last layer gains the overrun of the leader's actual time there.
 
 In the centered leaderboard layout (the default), the mod instead measures every gap between the local player and each runner with the same formula, the one of the pair ranked ahead standing in for the leader and its own splits (`layer_entry_igts`) for `leader_splits`, so runners ahead read negative and runners behind positive, the other way round while their IGTs have drifted apart (see [Gap Timing](PROTOCOL.md#gap-timing)).
 

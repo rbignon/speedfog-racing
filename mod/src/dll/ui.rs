@@ -1212,18 +1212,24 @@ impl RaceTracker {
         let local_igt = self.read_igt().map(|v| v as i32);
         let my_id = self.my_participant_id().cloned();
 
+        // The local player's live IGT while racing, the server's otherwise (a
+        // finisher's is final, while the game's keeps ticking).
+        let gap_igt = |p: &crate::core::protocol::ParticipantInfo| {
+            if !race_finished
+                && p.status == ParticipantStatus::Playing
+                && my_id.as_deref().is_some_and(|id| id == p.id)
+            {
+                local_igt.unwrap_or(p.igt_ms)
+            } else {
+                p.igt_ms
+            }
+        };
         let leader_igt_ms = participants
             .first()
             .filter(|p| {
                 p.status == ParticipantStatus::Playing || p.status == ParticipantStatus::Finished
             })
-            .map(|p| {
-                if my_id.as_deref().is_some_and(|id| id == p.id) {
-                    local_igt.unwrap_or(p.igt_ms)
-                } else {
-                    p.igt_ms
-                }
-            })
+            .map(gap_igt)
             .unwrap_or(0);
         let has_leader = leader_splits.is_some_and(|s| !s.is_empty())
             || participants
@@ -1241,14 +1247,9 @@ impl RaceTracker {
             } else if p.status == ParticipantStatus::Finished || race_finished {
                 p.gap_ms
             } else {
-                let igt = if my_id.as_deref().is_some_and(|id| id == p.id) {
-                    local_igt.unwrap_or(p.igt_ms)
-                } else {
-                    p.igt_ms
-                };
                 leader_splits.and_then(|splits| {
                     crate::core::compute_gap(
-                        igt,
+                        gap_igt(p),
                         p.current_layer,
                         p.layer_entry_igt,
                         splits,
@@ -1258,18 +1259,6 @@ impl RaceTracker {
                         leader_finished,
                     )
                 })
-            }
-        };
-        // The local player's live IGT while racing, the server's otherwise (a
-        // finisher's is final, while the game's keeps ticking).
-        let gap_igt = |p: &crate::core::protocol::ParticipantInfo| {
-            if !race_finished
-                && p.status == ParticipantStatus::Playing
-                && my_id.as_deref().is_some_and(|id| id == p.id)
-            {
-                local_igt.unwrap_or(p.igt_ms)
-            } else {
-                p.igt_ms
             }
         };
         let my_row = my_index.zip(my_index.and_then(|m| participants.get(m)));
