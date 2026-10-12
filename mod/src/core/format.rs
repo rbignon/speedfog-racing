@@ -192,10 +192,13 @@ impl<'a> GapRunner<'a> {
 /// runner on the same layer, which the difference of two leader gaps loses
 /// once both have overrun the leader's time there. The local row shows none.
 ///
-/// A value contradicting the ranking never shows. With a DNF in the pair it
-/// is an arrival ahead of the other's that the DNF's depth outranks (it
-/// reached the layer first, then quit): no gap. Between runners still racing
-/// or finished it is a snapshot a moment old right after an overtake: 0.
+/// A value contradicting the ranking keeps its sign between runners still
+/// racing or finished: the IGT leaves out load fades, so over a live race the
+/// runners' IGTs drift apart, and one on a shallower layer can be ahead on the
+/// IGT the race is decided on until its IGT passes the one at which the other
+/// left that layer. With a DNF in the pair it is an arrival ahead of the
+/// other's that the DNF's depth outranks (it reached the layer first, then
+/// quit): no gap.
 pub fn gap_from_player(
     row: &GapRunner,
     row_index: usize,
@@ -215,10 +218,10 @@ pub fn gap_from_player(
             ahead.igt_ms,
             ahead.status == ParticipantStatus::Finished,
         )?;
-        match gap {
-            g if g >= 0 => Some(g),
-            _ if has_dnf => None,
-            _ => Some(0),
+        if gap < 0 && has_dnf {
+            None
+        } else {
+            Some(gap)
         }
     };
     match row_index.cmp(&my_index) {
@@ -1097,14 +1100,27 @@ mod tests {
     }
 
     #[test]
-    fn test_gap_from_player_clamps_a_stale_snapshot_after_an_overtake() {
-        // I passed this runner when leaving layer 4 at 42:00; their snapshot,
-        // half a second old, still predates my exit.
-        let mine = HashMap::from([(0, 0), (4, 31 * MIN), (5, 42 * MIN)]);
-        let theirs = HashMap::from([(0, 0), (4, 30 * MIN)]);
-        let me = playing(42 * MIN + 1_000, 5, Some(&mine));
-        let row = playing(42 * MIN - 500, 4, Some(&theirs));
-        assert_eq!(gap_from_player(&row, 2, &me, 1), Some(0));
+    fn test_gap_from_player_signs_a_shallower_runner_ahead_on_igt() {
+        // A live race: the IGT leaves out load fades, so the runners' IGTs
+        // drift apart. A, deeper (layer 5, at 45:00), reached layer 4 at 35:00
+        // and left it at 41:00; I reached it at 34:00 and am still there.
+        let a = HashMap::from([(0, 0), (4, 35 * MIN), (5, 41 * MIN)]);
+        let mine = HashMap::from([(0, 0), (4, 34 * MIN)]);
+        let row = playing(45 * MIN, 5, Some(&a));
+        // 1:00 ahead of A's pace on layer 4 until I overrun its 6:00 there,
+        // then less and less until my IGT passes its exit, then behind.
+        for (my_igt, gap) in [
+            (38 * MIN, MIN),
+            (40 * MIN + 30_000, 30_000),
+            (42 * MIN, -MIN),
+        ] {
+            let me = playing(my_igt, 4, Some(&mine));
+            assert_eq!(gap_from_player(&row, 0, &me, 1), Some(gap));
+        }
+        // Mirror: deeper myself, the runner behind reads ahead of my pace.
+        let me = playing(45 * MIN, 5, Some(&a));
+        let row = playing(38 * MIN, 4, Some(&mine));
+        assert_eq!(gap_from_player(&row, 1, &me, 0), Some(-MIN));
     }
 
     #[test]

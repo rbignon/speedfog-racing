@@ -55,10 +55,11 @@
   // against the field's leader (a showcase race can hold more runners than
   // the scene seats). It is measured on the splits of the one ranked ahead
   // (computeGapBetween), not as the difference of their leader gaps, which
-  // reads 0:00 once both overran the leader's time on a layer they share. A
-  // side out of the race has no live gap to show, and the surviving side
-  // leads by default. Once neither side is still racing, the side ahead has
-  // won rather than leads.
+  // reads 0:00 once both overran the leader's time on a layer they share. It
+  // reads negative while the side behind, on a shallower layer, is ahead on
+  // IGT, the side ahead on depth still leading. A side out of the race has no
+  // live gap to show, and the surviving side leads by default. Once neither
+  // side is still racing, the side ahead has won rather than leads.
   let duel = $derived.by(() => {
     if (!a || !b) return null;
     const settled = done(a) && done(b);

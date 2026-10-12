@@ -174,7 +174,9 @@ middle the head-to-head gap between the two seated runners themselves,
 whoever else is in the race: the leader gap's formula with the one ranked
 ahead standing in for the leader and its own splits (`layer_entry_igts`, see
 `computeGapBetween`), never the difference of their leader gaps, which reads
-0:00 once both overran the leader's time on a shared layer. With it comes who
+0:00 once both overran the leader's time on a shared layer. It reads negative
+while the runner behind, on a shallower layer, is ahead on IGT (the runners'
+IGTs drift apart over a live race, see `docs/PROTOCOL.md`). With it comes who
 leads (the one ranked ahead), or who wins once neither side is still racing
 (finished or out); a gap not known yet (splits in flight or held back by the
 caster delay, or a race not started) shows `–`, never a tie. Deaths stay on

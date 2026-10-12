@@ -482,6 +482,12 @@
           row shows none: the leader's row, always on screen, reads your gap to
           the leader.
         </p>
+        <p>
+          Loading screens don't count toward the in-game time, so over a race
+          your in-game times drift apart. A runner ahead of you can then show a
+          positive gap in red while you are still ahead of their in-game pace on
+          your depth, and a runner behind you a negative one in green.
+        </p>
       </div>
     {/if}
 

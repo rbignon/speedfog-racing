@@ -90,6 +90,25 @@ describe("CastDuelVersus: gap", () => {
     expect(container.querySelector(".vlead")?.textContent).toBe("Alice leads");
   });
 
+  it("signs the gap of a runner behind on depth but ahead on IGT", () => {
+    // Their IGTs drifted apart: Alice, deeper, reached layer 4 at 35:00 and
+    // left it at 41:00; Bob reached it at 34:00 and is there at 38:00.
+    const { container } = render(CastDuelVersus, {
+      props: {
+        ...baseProps,
+        layerEntryIgts: { "p-1": 41 * MIN, "p-2": 34 * MIN },
+        layerSplits: {
+          "p-1": { 0: 0, 4: 35 * MIN, 5: 41 * MIN },
+          "p-2": { 0: 0, 4: 34 * MIN },
+        },
+        a: fakeParticipant({ current_layer: 5, igt_ms: 45 * MIN }),
+        b: bob({ current_layer: 4, igt_ms: 38 * MIN }),
+      },
+    });
+    expect(container.querySelector(".vgap")?.textContent).toBe("-1:00");
+    expect(container.querySelector(".vlead")?.textContent).toBe("Alice leads");
+  });
+
   it("shows an even duel without inventing a leader", () => {
     const { container } = render(CastDuelVersus, {
       props: {

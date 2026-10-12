@@ -164,18 +164,19 @@ describe("computeGapBetween", () => {
     ).toBe(4 * MIN);
   });
 
-  it("reads 0 for a snapshot a moment old after an overtake", () => {
-    const passer = playing(42 * MIN + 1_000, 5, {
-      0: 0,
-      4: 31 * MIN,
-      5: 42 * MIN,
-    });
+  it("reads negative for a shallower runner ahead on IGT", () => {
+    // A live race: the IGT leaves out load fades, so the runners' IGTs drift
+    // apart. The deeper runner reached layer 4 at 35:00 and left it at 41:00;
+    // the other reached it at 34:00 and is still there.
+    const deeper = playing(45 * MIN, 5, { 0: 0, 4: 35 * MIN, 5: 41 * MIN });
+    const splits = { 0: 0, 4: 34 * MIN };
+    // 1:00 ahead of its pace there, then less once past its 6:00 on the
+    // layer, then behind once past its exit.
+    expect(computeGapBetween(playing(38 * MIN, 4, splits), deeper)).toBe(-MIN);
     expect(
-      computeGapBetween(
-        playing(42 * MIN - 500, 4, { 0: 0, 4: 30 * MIN }),
-        passer,
-      ),
-    ).toBe(0);
+      computeGapBetween(playing(40 * MIN + 30_000, 4, splits), deeper),
+    ).toBe(-30_000);
+    expect(computeGapBetween(playing(42 * MIN, 4, splits), deeper)).toBe(MIN);
   });
 
   it("shows no gap for a DNF's arrival ahead of the runner it ranks behind", () => {
