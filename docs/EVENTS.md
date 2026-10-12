@@ -642,8 +642,9 @@ a lone match on the full width (its casters then in a column on the right).
 A match is on air from its first race to its end (`liveMatches`): while one
 of its races runs ("Live now"); between two of its races ("In progress"),
 while its last race ended less than 2 hours ago or its next race is due
-within 2 hours (a late start counts), so a match spread over two evenings is
-off air between them; and for an hour after its last race ("Finished", with
+within 2 hours (a start up to 2 hours late counts, so a match postponed
+without its next race re-dated falls off air), so a match spread over two
+evenings is off air between them; and for an hour after its last race ("Finished", with
 who goes on, or who wins a final). Panels keep the stage order, finished ones
 last, so they never swap places between two refreshes. The last final turns
 the event `finished`, and the champion plates take over at once.
@@ -659,7 +660,11 @@ ride, while it runs; nothing before), then the total, in brass until the
 match is complete, `adv` for the runners going on once it is. While the match
 is played a dashed line under the last runner going on names where they go.
 The column headers lead to the race pages, and the header button to the race
-running ("Race page") or the next one ("Next race").
+running ("Race page") or the next one ("Next race"). A race time reads alone on
+the viewer's day and with its day otherwise ("Next: Boss Rush at Wed 14 Oct,
+22:00"), so a race two evenings away never reads as tonight; the Up next chips
+do the same against their match's day. A lone match nobody casts keeps the
+full width for its table.
 
 Beside the bracket, the Up next box lists the selected bracket's next
 matches (`upcomingMatches`): not complete, not on air, with every seat
@@ -887,8 +892,9 @@ row per bracket behind its label (the config's: "Top 32", then
 nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
 on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
-next to the `Event page` button. The watch link follows the live zone's
-rule (a live caster's own stream, else the first caster's channel). The
+next to the `Event page` button. The watch link is a live caster's own
+stream, else the first caster's channel (the live zone gives each caster a
+button of their own). The
 instants on the line are ahead of the viewer, so they carry the timezone
 like the event page's.
 

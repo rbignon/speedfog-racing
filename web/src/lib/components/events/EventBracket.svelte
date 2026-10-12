@@ -43,7 +43,7 @@
   // A tree of four rounds or more (a round of 32 before the quarters)
   // narrows the side column so the rounds keep their width; the final's
   // column then sits empty above the final (the final is centred on the
-  // first round), so the evening section spreads over it too.
+  // first round), so the Up next box spreads over it too.
   let wideAside = $derived(layout.tall && depth >= 4);
   // How many Up next blocks the side box holds without reaching the boxes
   // under it: a tall tree of fewer than four rounds centres the Champion in
@@ -51,9 +51,9 @@
   // spreads over the final's column, the Final far below, and a short tree
   // gives it a column of its own (two).
   let asideCapacity = $derived(layout.tall && depth < 4 ? 1 : 2);
-  // A tall tree seats the evening section above the Champion in a side
-  // column, narrower from four rounds on so the rounds keep their width; a
-  // short one keeps a narrow Champion column, the evening beside it.
+  // A tall tree seats the Up next box above the Champion in a side column,
+  // narrower from four rounds on so the rounds keep their width; a short one
+  // keeps a narrow Champion column, the Up next box beside it.
   let sideWidth = $derived(
     !layout.tall ? "0.7fr" : wideAside ? "0.8fr" : "1.25fr",
   );
@@ -71,7 +71,7 @@
       ? `auto repeat(${layout.rows}, 1fr) auto`
       : `repeat(${layout.rows}, 1fr)`,
   );
-  // Mobile reading order (tall layout): the evening first, then the rounds.
+  // Mobile reading order (tall layout): Up next first, then the rounds.
   let orderOf = $derived(
     new Map(
       layout.rounds.flat().map((cell, i) => [cell.stage.key, 2 + i] as const),
@@ -477,7 +477,7 @@
     font-weight: 400;
     font-size: var(--font-size-sm);
   }
-  /* Tall tree: one column, the evening first, the rounds in order. */
+  /* Tall tree: one column, Up next first, the rounds in order. */
   @media (max-width: 899px) {
     .brk.tall {
       display: flex;

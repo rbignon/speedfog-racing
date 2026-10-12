@@ -30,8 +30,9 @@ export type EventBlock =
  * Which blocks the page shows, top to bottom, for a phase. While the event
  * can still be joined, an introduction to SpeedFog opens the page for
  * visitors who have never played it. The take-part block carries the
- * qualifier rules, the bracket block the playoff rules and the next (or
- * current) evening's races; from the cut on the bracket replaces the
+ * qualifier rules, the bracket block the playoff rules and the bracket's
+ * next matches (Up next); during the playoffs the matches on air lead the
+ * page (the live block); from the cut on the bracket replaces the
  * qualified column, the ladder staying under it, and a short introduction
  * to the playoffs heads it until they are over.
  */
@@ -178,7 +179,7 @@ export function nextSlot(
  * The matches on air, every bracket's: one with a race running (`live`); one
  * between two races (`between`): a race played, the match not over, its last
  * race ended less than BETWEEN_RACES_MS ago or its next race due within as
- * long (a late start counts), so a match spread over two evenings is off air
+ * long (a start as late counts too), so a match spread over two evenings is off air
  * between them; one complete less than FINISHED_SHOWN_MS ago (`finished`).
  * Walkovers never are. Running and in-progress matches come first, in stage
  * order (bracket, then stage), the finished ones after them in the same
@@ -211,7 +212,12 @@ export function liveMatches(stages: EventStage[], now: Date): LiveMatch[] {
     const next = nextSlot(stage);
     const nextAt = next?.entry?.race.scheduled_at;
     const untilNext = nextAt ? Date.parse(nextAt) - t : Infinity;
-    if (sinceEnd < BETWEEN_RACES_MS || untilNext <= BETWEEN_RACES_MS) {
+    // A late start counts for as long, so a match postponed without its next
+    // race re-dated falls off air instead of staying on it for days.
+    if (
+      sinceEnd < BETWEEN_RACES_MS ||
+      Math.abs(untilNext) <= BETWEEN_RACES_MS
+    ) {
       onAir.push({ stage, state: "between", race: next?.entry ?? null });
     }
   }
@@ -750,6 +756,20 @@ export function formatEventTime(iso: string): string {
     minute: "2-digit",
     hour12: false,
   }).format(new Date(iso));
+}
+
+/**
+ * A match's instant as a panel or an Up next block reads it: the time alone
+ * on the same local day as `reference`, else with its day ("Wed 14 Oct,
+ * 22:00"), so a race two evenings away never reads as tonight.
+ */
+export function formatMatchTime(iso: string, reference: Date): string {
+  const at = new Date(iso);
+  const sameDay =
+    at.getFullYear() === reference.getFullYear() &&
+    at.getMonth() === reference.getMonth() &&
+    at.getDate() === reference.getDate();
+  return sameDay ? formatEventTime(iso) : formatEventDate(iso);
 }
 
 /**

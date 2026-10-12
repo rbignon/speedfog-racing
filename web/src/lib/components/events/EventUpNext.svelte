@@ -3,7 +3,7 @@
   import {
     fillSlots,
     formatEventDate,
-    formatEventTime,
+    formatMatchTime,
     formatStageDate,
     matchCasters,
     seatTag,
@@ -19,14 +19,14 @@
   let {
     match,
     stages,
-    languages,
+    languages = {},
     now,
   }: {
     match: UpcomingMatch;
     /** Every stage of the event, for the fed seats' codes. */
     stages: EventStage[];
     /** Caster user id -> language code (`caster_languages`). */
-    languages: Record<string, string>;
+    languages?: Record<string, string>;
     now: Date;
   } = $props();
 
@@ -93,7 +93,7 @@
       {#if entry}
         <a class="chip" href="/race/{entry.race.id}"
           >{label}{#if entry.race.scheduled_at}<b
-              >{formatEventTime(entry.race.scheduled_at)}</b
+              >{formatMatchTime(entry.race.scheduled_at, new Date(match.at))}</b
             >{/if}</a
         >
       {:else}

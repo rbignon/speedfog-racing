@@ -3,7 +3,7 @@
   import {
     cutLine,
     fillSlots,
-    formatEventTime,
+    formatMatchTime,
     liveMatchMeta,
     matchCasters,
     matchRows,
@@ -15,14 +15,17 @@
   let {
     match,
     stages,
-    languages,
+    languages = {},
+    now,
     wide = false,
   }: {
     match: LiveMatch;
     /** Every stage of the event: seat codes and the cut line read them. */
     stages: EventStage[];
     /** Caster user id -> language code (`caster_languages`). */
-    languages: Record<string, string>;
+    languages?: Record<string, string>;
+    /** The page's clock: a race on another day reads with its day. */
+    now: Date;
     /** Alone in the zone: the table beside a column of casters. */
     wide?: boolean;
   } = $props();
@@ -38,7 +41,7 @@
   let rows = $derived(matchRows(stage, stages));
   let cut = $derived(cutLine(stage, stages, rows.length));
   let casters = $derived(matchCasters(stage));
-  let meta = $derived(liveMatchMeta(match, formatEventTime));
+  let meta = $derived(liveMatchMeta(match, (iso) => formatMatchTime(iso, now)));
   // The running race's page while it runs, the next race's between two.
   let action = $derived(
     match.race && match.state !== "finished"
@@ -55,15 +58,17 @@
     if (entry.race.status === "finished") return "done";
     if (entry.race.status === "running") return "● live";
     return entry.race.scheduled_at
-      ? formatEventTime(entry.race.scheduled_at)
+      ? formatMatchTime(entry.race.scheduled_at, now)
       : "";
   }
-  // A live caster's own stream, else their channel (the home band's rule).
+  // Each caster's own live stream, else their channel.
   const watchUrl = (caster: Caster) =>
     caster.stream_url ?? `https://twitch.tv/${caster.user.twitch_username}`;
 </script>
 
-<article class="match" class:wide>
+<!-- The casters' column only exists with casters: a lone match nobody casts
+     keeps the full width for its table. -->
+<article class="match" class:wide={wide && casters.length > 0}>
   <div
     class="route {match.state === 'finished'
       ? 'route-finished'

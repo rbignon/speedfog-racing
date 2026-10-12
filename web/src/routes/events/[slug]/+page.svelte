@@ -600,6 +600,7 @@
           matches={onAir}
           stages={detail.stages}
           languages={detail.caster_languages}
+          {now}
         />
       {/if}
     {:else if block === "playoffs_intro"}

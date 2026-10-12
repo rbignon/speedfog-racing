@@ -11,11 +11,13 @@
   let {
     matches,
     stages,
-    languages,
+    languages = {},
+    now,
   }: {
     matches: LiveMatch[];
     stages: EventStage[];
-    languages: Record<string, string>;
+    languages?: Record<string, string>;
+    now: Date;
   } = $props();
 </script>
 
@@ -27,6 +29,7 @@
         {match}
         {stages}
         {languages}
+        {now}
         wide={matches.length === 1}
       />
     {/each}

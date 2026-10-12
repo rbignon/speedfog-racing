@@ -14,6 +14,8 @@ import {
   fillSlots,
   formatEventDate,
   formatEventDay,
+  formatEventTime,
+  formatMatchTime,
   linkPath,
   liveMatchMeta,
   liveMatches,
@@ -1160,6 +1162,18 @@ describe("liveMatches", () => {
     ]);
   });
 
+  it("lets a match whose next race is long overdue fall off air, and stops polling for it", () => {
+    // Postponed after its first race, its next race never re-dated.
+    const stage = match("p", [
+      entry(1, { status: "finished", finished_at: at(-4 * 24 * 60) }),
+      entry(2, { scheduled_at: at(-3 * 24 * 60) }),
+    ]);
+    expect(liveMatches([stage], now)).toEqual([]);
+    expect(
+      pollIntervalMs(detailWith({ phase: "playoffs", stages: [stage] }), now),
+    ).toBeNull();
+  });
+
   it("takes a match spread over two evenings off air between them", () => {
     const stage = match("g", [
       entry(1, { status: "finished", finished_at: at(-2 * 24 * 60) }),
@@ -1621,6 +1635,25 @@ describe("upcomingMatches", () => {
     expect(
       upcomingMatches([day], new Date("2026-10-19T00:30:00Z"), []),
     ).toEqual([]);
+  });
+});
+
+describe("formatMatchTime", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("gives the time alone on the reference's day, the day too otherwise", () => {
+    vi.stubEnv("TZ", "Europe/Paris");
+    // 23:30 in Paris on the 12th, then 00:30 on the 13th, then two days on.
+    const evening = new Date("2026-10-12T21:30:00Z");
+    expect(formatMatchTime("2026-10-12T21:00:00Z", evening)).toBe(
+      formatEventTime("2026-10-12T21:00:00Z"),
+    );
+    expect(formatMatchTime("2026-10-12T22:30:00Z", evening)).toBe(
+      formatEventDate("2026-10-12T22:30:00Z"),
+    );
+    expect(formatMatchTime("2026-10-14T20:00:00Z", evening)).toBe(
+      formatEventDate("2026-10-14T20:00:00Z"),
+    );
   });
 });
 
