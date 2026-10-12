@@ -7,6 +7,7 @@ import type {
   EventQualified,
   EventQualifiedGroup,
   EventStage,
+  EventStageRace,
   EventSummary,
   EventSummaryBracket,
   User,
@@ -128,6 +129,92 @@ export function liveStage(detail: LiveStageInput): EventStage | null {
       s.races.some((r) => r.race.id === detail.live_race?.id),
     ) ?? null
   );
+}
+
+/** How long a match between two races stays on air after its last finish, or before its next race. */
+export const BETWEEN_RACES_MS = 2 * 3_600_000;
+/** How long a finished match keeps its panel. */
+export const FINISHED_SHOWN_MS = 3_600_000;
+
+export type LiveState = "live" | "between" | "finished";
+
+/** A match on air: the event page's live zone gives it a panel. */
+export interface LiveMatch {
+  stage: EventStage;
+  state: LiveState;
+  /** The running race ("live"), the next race when attached ("between"), else null. */
+  race: EventStageRace | null;
+}
+
+/** The latest `finished_at` of a stage's finished races, or null when none has one. */
+export function lastFinishedAt(stage: EventStage): string | null {
+  let latest: string | null = null;
+  for (const entry of stage.races) {
+    const ended =
+      entry.race.status === "finished" ? entry.race.finished_at : null;
+    if (ended && (latest === null || Date.parse(ended) > Date.parse(latest))) {
+      latest = ended;
+    }
+  }
+  return latest;
+}
+
+/**
+ * The first race slot of a stage not played yet, in slot order, with its
+ * attached race (null while none is attached); null once every slot is played.
+ */
+export function nextSlot(
+  stage: EventStage,
+): { index: number; entry: EventStageRace | null } | null {
+  const slots = fillSlots(stage.races, stage.races_expected);
+  const i = slots.findIndex(
+    (entry) => entry === null || entry.race.status === "setup",
+  );
+  return i < 0 ? null : { index: i + 1, entry: slots[i] };
+}
+
+/**
+ * The matches on air, every bracket's: one with a race running (`live`); one
+ * between two races (`between`): a race played, the match not over, its last
+ * race ended less than BETWEEN_RACES_MS ago or its next race due within as
+ * long (a late start counts), so a match spread over two evenings is off air
+ * between them; one complete less than FINISHED_SHOWN_MS ago (`finished`).
+ * Walkovers never are. Running and in-progress matches come first, in stage
+ * order (bracket, then stage), the finished ones after them in the same
+ * order, so the panels never swap places between two refreshes.
+ */
+export function liveMatches(stages: EventStage[], now: Date): LiveMatch[] {
+  const t = now.getTime();
+  const onAir: LiveMatch[] = [];
+  const finished: LiveMatch[] = [];
+  for (const stage of stages) {
+    if (stage.walkover) continue;
+    const endedAt = lastFinishedAt(stage);
+    const sinceEnd = endedAt === null ? Infinity : t - Date.parse(endedAt);
+    if (stage.complete) {
+      if (sinceEnd < FINISHED_SHOWN_MS) {
+        finished.push({ stage, state: "finished", race: null });
+      }
+      continue;
+    }
+    const running = [...stage.races]
+      .sort((a, b) => a.index - b.index)
+      .find((entry) => entry.race.status === "running");
+    if (running) {
+      onAir.push({ stage, state: "live", race: running });
+      continue;
+    }
+    if (!stage.races.some((entry) => entry.race.status === "finished")) {
+      continue;
+    }
+    const next = nextSlot(stage);
+    const nextAt = next?.entry?.race.scheduled_at;
+    const untilNext = nextAt ? Date.parse(nextAt) - t : Infinity;
+    if (sinceEnd < BETWEEN_RACES_MS || untilNext <= BETWEEN_RACES_MS) {
+      onAir.push({ stage, state: "between", race: next?.entry ?? null });
+    }
+  }
+  return [...onAir, ...finished];
 }
 
 /** A bracket's stages, in bracket order. */
@@ -564,17 +651,20 @@ const STAGE_DAY_WINDOW_MS = 12 * 3_600_000;
 
 /**
  * How often the page refreshes its data, or null for never: every minute while
- * a stage race is live, every five minutes around a stage's date, or around
- * any of its attached races' own `scheduled_at` (so a page left open on the
- * second evening of a two-evening match still polls), nothing otherwise (the
- * qualifier ladder moves on reload).
+ * a match is on (a race running, or between two of its races), every five
+ * minutes around a stage's date, or around any of its attached races' own
+ * `scheduled_at` (so a page left open on the second evening of a two-evening
+ * match still polls), nothing otherwise (the qualifier ladder moves on
+ * reload). A finished panel needs no refresh: the page's clock drops it.
  */
 export function pollIntervalMs(
-  detail: Pick<EventDetail, "live_race" | "phase" | "stages">,
+  detail: Pick<EventDetail, "phase" | "stages">,
   now: Date,
 ): number | null {
   if (detail.phase !== "playoffs") return null;
-  if (detail.live_race !== null) return LIVE_POLL_MS;
+  if (liveMatches(detail.stages, now).some((m) => m.state !== "finished")) {
+    return LIVE_POLL_MS;
+  }
   const isNear = (iso: string) =>
     Math.abs(new Date(iso).getTime() - now.getTime()) <= STAGE_DAY_WINDOW_MS;
   const near = detail.stages.some(

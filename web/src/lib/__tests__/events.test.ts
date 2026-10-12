@@ -16,6 +16,7 @@ import {
   formatEventDate,
   formatEventDay,
   linkPath,
+  liveMatches,
   liveStage,
   newcomersPlans,
   nextStageLabels,
@@ -1141,6 +1142,145 @@ describe("liveStage", () => {
   });
 });
 
+describe("liveMatches", () => {
+  const now = new Date("2026-10-18T17:25:00Z");
+  const at = (minutes: number) =>
+    new Date(now.getTime() + minutes * 60_000).toISOString();
+  const entry = (
+    index: number,
+    race: Partial<Race> = {},
+  ): EventStage["races"][number] => ({
+    slot: `s:${index}`,
+    index,
+    race: {
+      id: `r${index}`,
+      status: "setup",
+      scheduled_at: null,
+      started_at: null,
+      finished_at: null,
+      ...race,
+    } as Race,
+    points: {},
+    live: [],
+  });
+  const match = (
+    key: string,
+    races: EventStage["races"],
+    overrides: Partial<EventStage> = {},
+  ) => stageFixture({ key, label: key, races, ...overrides });
+  const states = (stages: EventStage[]) =>
+    liveMatches(stages, now).map((m) => [m.stage.key, m.state]);
+
+  it("puts a stage with a running race on air, with that race", () => {
+    const stage = match("group_h", [
+      entry(1, { status: "finished", finished_at: at(-30) }),
+      entry(2, { status: "running" }),
+    ]);
+    const [m] = liveMatches([stage], now);
+    expect(m.state).toBe("live");
+    expect(m.race?.index).toBe(2);
+  });
+
+  it("keeps a match on air between two races, by its last finish or its next race's schedule", () => {
+    const byFinish = match("a", [
+      entry(1, { status: "finished", finished_at: at(-119) }),
+      entry(2),
+    ]);
+    const bySchedule = match("b", [
+      entry(1, { status: "finished", finished_at: at(-300) }),
+      entry(2, { scheduled_at: at(120) }),
+    ]);
+    const lateStart = match("c", [
+      entry(1, { status: "finished", finished_at: at(-300) }),
+      entry(2, { scheduled_at: at(-15) }),
+    ]);
+    const off = match("d", [
+      entry(1, { status: "finished", finished_at: at(-121) }),
+      entry(2, { scheduled_at: at(121) }),
+    ]);
+    expect(states([byFinish, bySchedule, lateStart, off])).toEqual([
+      ["a", "between"],
+      ["b", "between"],
+      ["c", "between"],
+    ]);
+  });
+
+  it("takes a match spread over two evenings off air between them", () => {
+    const stage = match("g", [
+      entry(1, { status: "finished", finished_at: at(-2 * 24 * 60) }),
+      entry(2, { scheduled_at: at(24 * 60) }),
+      entry(3, { scheduled_at: at(25 * 60) }),
+    ]);
+    expect(liveMatches([stage], now)).toEqual([]);
+  });
+
+  it("names the next race between two races, or none while it is not attached", () => {
+    const attached = match("a", [
+      entry(1, { status: "finished", finished_at: at(-10) }),
+      entry(2, { id: "next" }),
+    ]);
+    // Slot 2 has no race yet; slot 3 does, but it is not the next one.
+    const missing = match("b", [
+      entry(1, { status: "finished", finished_at: at(-10) }),
+      entry(3),
+    ]);
+    const [a, b] = liveMatches([attached, missing], now);
+    expect(a.race?.race.id).toBe("next");
+    expect(b.state).toBe("between");
+    expect(b.race).toBeNull();
+  });
+
+  it("shows a finished match for an hour after its last race, never a walkover", () => {
+    const done = (key: string, minutes: number) =>
+      match(
+        key,
+        [
+          entry(1, { status: "finished", finished_at: at(-minutes - 60) }),
+          entry(2, { status: "finished", finished_at: at(-minutes) }),
+        ],
+        { complete: true, races_expected: 2 },
+      );
+    const walkover = stageFixture({ key: "w", complete: true, walkover: true });
+    expect(states([done("fresh", 59), done("old", 61), walkover])).toEqual([
+      ["fresh", "finished"],
+    ]);
+  });
+
+  it("ignores a finished race without its end time", () => {
+    const started = match("x", [
+      entry(1, { status: "finished", finished_at: null }),
+      entry(2),
+    ]);
+    const complete = match(
+      "y",
+      [entry(1, { status: "finished", finished_at: null })],
+      { complete: true, races_expected: 1 },
+    );
+    expect(liveMatches([started, complete], now)).toEqual([]);
+  });
+
+  it("orders the matches on air by bracket and stage, the finished ones last", () => {
+    const live = (key: string, bracket: string) =>
+      match(key, [entry(1, { status: "running" })], { bracket });
+    const done = match(
+      "done",
+      [entry(1, { status: "finished", finished_at: at(-5) })],
+      { complete: true, races_expected: 1 },
+    );
+    expect(
+      liveMatches(
+        [
+          done,
+          live("group_d", "main"),
+          live("group_h", "main"),
+          live("newcomers_semi_a", "newcomers"),
+        ],
+        now,
+      ).map((m) => m.stage.key),
+    ).toEqual(["group_d", "group_h", "newcomers_semi_a", "done"]);
+  });
+});
+
 describe("racesSection", () => {
   const fmt = (iso: string) => `D(${iso})`;
   afterEach(() => vi.unstubAllEnvs());
@@ -1433,13 +1573,28 @@ describe("pollIntervalMs and ordinal", () => {
     ] as unknown as EventDetail["stages"];
   const sunday = new Date("2026-10-04T19:00:00Z");
 
-  it("polls every minute while a stage race is live during the playoffs", () => {
-    expect(
-      pollIntervalMs(
-        detailWith({ phase: "playoffs", live_race: { id: "x" } as Race }),
-        sunday,
-      ),
-    ).toBe(60_000);
+  it("polls every minute while a match is on, between two races included", () => {
+    const race = (status: string, extra: Partial<Race> = {}) => ({
+      slot: "semi_a:1",
+      index: 1,
+      race: { status, ...extra } as Race,
+      points: {},
+      live: [],
+    });
+    const running = detailWith({
+      phase: "playoffs",
+      stages: [stageFixture({ races: [race("running")] })],
+    });
+    expect(pollIntervalMs(running, sunday)).toBe(60_000);
+    const between = detailWith({
+      phase: "playoffs",
+      stages: [
+        stageFixture({
+          races: [race("finished", { finished_at: "2026-10-04T18:30:00Z" })],
+        }),
+      ],
+    });
+    expect(pollIntervalMs(between, sunday)).toBe(60_000);
   });
   it("polls every five minutes around a stage's date so the page sees it go live", () => {
     const detail = detailWith({
