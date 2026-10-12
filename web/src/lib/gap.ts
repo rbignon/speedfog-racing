@@ -90,20 +90,19 @@ export interface GapSide {
  * difference of two leader gaps, it keeps the arrival delay between two
  * runners of a layer both overran the leader's time on.
  *
- * A value contradicting the ranking stays negative between runners still
- * racing or finished: the IGT leaves out load fades, so over a live race the
- * runners' IGTs drift apart, and `behind`, on a shallower layer, can be ahead
- * on the IGT the race is decided on until its IGT passes the one at which
- * `ahead` left that layer. With a DNF in the pair it is an arrival ahead of the
- * other's that the DNF's depth outranks (it reached the layer first, then
- * quit): null.
+ * A value contradicting the ranking stays negative, as against the leader: the
+ * IGT leaves out load fades, so over a live race the runners' IGTs drift apart,
+ * and `behind`, on a shallower layer, can be ahead on the IGT the race is
+ * decided on until its IGT passes the one at which `ahead` left that layer. A
+ * DNF's arrival on its deepest layer can likewise precede the other's, the DNF
+ * ranking behind on depth.
  */
 export function computeGapBetween(
   behind: GapSide,
   ahead: GapSide,
 ): number | null {
   if (!ahead.splits) return null;
-  const gap = computeGap({
+  return computeGap({
     status: behind.status,
     igtMs: behind.igtMs,
     currentLayer: behind.currentLayer,
@@ -113,8 +112,6 @@ export function computeGapBetween(
     leaderIgtMs: ahead.igtMs,
     leaderFinished: ahead.status === "finished",
   });
-  const hasDnf = behind.status === "abandoned" || ahead.status === "abandoned";
-  return gap !== null && gap < 0 && hasDnf ? null : gap;
 }
 
 /**

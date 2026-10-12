@@ -192,23 +192,20 @@ impl<'a> GapRunner<'a> {
 /// runner on the same layer, which the difference of two leader gaps loses
 /// once both have overrun the leader's time there. The local row shows none.
 ///
-/// A value contradicting the ranking keeps its sign between runners still
-/// racing or finished: the IGT leaves out load fades, so over a live race the
-/// runners' IGTs drift apart, and one on a shallower layer can be ahead on the
-/// IGT the race is decided on until its IGT passes the one at which the other
-/// left that layer. With a DNF in the pair it is an arrival ahead of the
-/// other's that the DNF's depth outranks (it reached the layer first, then
-/// quit): no gap.
+/// A value contradicting the ranking keeps its sign, as against the leader:
+/// the IGT leaves out load fades, so over a live race the runners' IGTs drift
+/// apart, and one on a shallower layer can be ahead on the IGT the race is
+/// decided on until its IGT passes the one at which the other left that
+/// layer. A DNF's arrival on its deepest layer can likewise precede the
+/// other's, the DNF ranking behind on depth.
 pub fn gap_from_player(
     row: &GapRunner,
     row_index: usize,
     me: &GapRunner,
     my_index: usize,
 ) -> Option<i32> {
-    let has_dnf =
-        row.status == ParticipantStatus::Abandoned || me.status == ParticipantStatus::Abandoned;
     let between = |behind: &GapRunner, ahead: &GapRunner| {
-        let gap = compute_gap(
+        compute_gap(
             behind.igt_ms,
             behind.current_layer,
             behind.layer_entry_igt,
@@ -217,12 +214,7 @@ pub fn gap_from_player(
             behind.status,
             ahead.igt_ms,
             ahead.status == ParticipantStatus::Finished,
-        )?;
-        if gap < 0 && has_dnf {
-            None
-        } else {
-            Some(gap)
-        }
+        )
     };
     match row_index.cmp(&my_index) {
         std::cmp::Ordering::Equal => None,
@@ -1081,13 +1073,16 @@ mod tests {
     }
 
     #[test]
-    fn test_gap_from_player_hides_a_dnf_arrival_that_contradicts_the_rank() {
+    fn test_gap_from_player_signs_a_dnf_arrival_ahead_of_the_other() {
         // Reached layer 3 five minutes before me, then quit: it ranks behind
-        // on depth, so an arrival ahead of mine is no gap to show.
+        // on depth, its arrival ahead of mine all the same.
         let mine = HashMap::from([(0, 0), (3, 25 * MIN), (4, 30 * MIN)]);
         let dnf = HashMap::from([(0, 0), (3, 20 * MIN)]);
         let me = playing(50 * MIN, 4, Some(&mine));
-        assert_eq!(gap_from_player(&abandoned(3, &dnf), 3, &me, 1), None);
+        assert_eq!(
+            gap_from_player(&abandoned(3, &dnf), 3, &me, 1),
+            Some(-5 * MIN)
+        );
         // Mirror: I quit on layer 5, reached 5:00 before a runner still racing
         // deeper, who ranks ahead of me.
         let mine = HashMap::from([(0, 0), (5, 40 * MIN)]);
@@ -1095,7 +1090,7 @@ mod tests {
         let me = abandoned(5, &mine);
         assert_eq!(
             gap_from_player(&playing(60 * MIN, 7, Some(&racing)), 0, &me, 1),
-            None
+            Some(5 * MIN)
         );
     }
 

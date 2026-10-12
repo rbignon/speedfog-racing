@@ -179,19 +179,20 @@ describe("computeGapBetween", () => {
     expect(computeGapBetween(playing(42 * MIN, 4, splits), deeper)).toBe(MIN);
   });
 
-  it("shows no gap for a DNF's arrival ahead of the runner it ranks behind", () => {
+  it("reads negative for a DNF's arrival ahead of the runner it ranks behind", () => {
+    // Quit on layer 3, reached at 20:00, a minute before the runner ahead.
     const dnf: GapSide = {
       ...playing(0, 3, { 0: 0, 3: 20 * MIN }),
       status: "abandoned",
     };
-    expect(computeGapBetween(dnf, ahead)).toBeNull();
+    expect(computeGapBetween(dnf, ahead)).toBe(-MIN);
     // Between two DNFs, ranked on depth: the deeper one reached layer 3 at
     // 25:00, five minutes after the one that quit there.
     const deeper: GapSide = {
       ...playing(0, 5, { 0: 0, 3: 25 * MIN, 5: 40 * MIN }),
       status: "abandoned",
     };
-    expect(computeGapBetween(dnf, deeper)).toBeNull();
+    expect(computeGapBetween(dnf, deeper)).toBe(-5 * MIN);
   });
 
   it("is unknown without the splits of the runner ahead", () => {

@@ -251,7 +251,7 @@ For playing and abandoned players during a running race, the mod recomputes gaps
 
 When a player finishes or the race ends, the mod uses the server-computed `gap_ms` (frozen at the time of the last leaderboard update) instead of recomputing client-side. This prevents gap drift from game memory IGT continuing to tick after finish. For the same reason, gaps against a finished local player leading the race use their server-recorded final IGT, never the game's, so a runner on the last layer gains the overrun of the leader's actual time there.
 
-In the centered leaderboard layout (the default), the mod instead measures every gap between the local player and each runner with the same formula, the one of the pair ranked ahead standing in for the leader and its own splits (`layer_entry_igts`) for `leader_splits`, so runners ahead read negative and runners behind positive, the other way round while their IGTs have drifted apart (see [Gap Timing](PROTOCOL.md#gap-timing)).
+In the centered leaderboard layout (the default), the mod instead measures every gap between the local player and each runner with the same formula, the one of the pair ranked ahead standing in for the leader and its own splits (`layer_entry_igts`) for `leader_splits`, so runners ahead read negative and runners behind positive, the other way round while their IGTs have drifted apart, or for a DNF that reached its deepest layer before the other (see [Gap Timing](PROTOCOL.md#gap-timing)).
 
 Gaps are color-coded: green for negative (ahead of the pace measured against), soft red for positive (behind it).
 
