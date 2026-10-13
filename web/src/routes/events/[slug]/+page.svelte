@@ -125,12 +125,41 @@
   let onAir = $derived(liveMatches(detail.stages, now));
   // The selected bracket's next matches, the ones on air left out.
   let upcoming = $derived(upcomingMatches(view.stages, now, onAir));
-  // The Up next list's scrollbar gutter (none for an overlay scrollbar),
-  // which its right margin gives back.
+  // The Up next list stops halfway down its third match, the cut telling
+  // there is more (the bracket can stop it sooner, above the boxes under
+  // it), and fades out at the bottom while more lies below. Its right margin
+  // gives back the scrollbar's gutter (none for an overlay scrollbar).
   let upNextList = $state<HTMLElement | null>(null);
   let gutter = $state(0);
+  let upNextCap = $state<number | null>(null);
+  let upNextMore = $state(false);
+  function upNextScrolled() {
+    if (!upNextList) return;
+    const { scrollTop, clientHeight, scrollHeight } = upNextList;
+    upNextMore = scrollTop + clientHeight < scrollHeight - 1;
+  }
   $effect(() => {
-    if (upNextList) gutter = upNextList.offsetWidth - upNextList.clientWidth;
+    // Runs again with the matches, observing the blocks rendered for them.
+    if (!upNextList || upcoming.length === 0) return;
+    const list = upNextList;
+    const measure = () => {
+      gutter = list.offsetWidth - list.clientWidth;
+      const third = list.children[2] as HTMLElement | undefined;
+      upNextCap = third
+        ? third.getBoundingClientRect().top -
+          list.getBoundingClientRect().top +
+          list.scrollTop +
+          third.offsetHeight / 2
+        : null;
+      // Read before a new cap applies: the list's own resize notification
+      // reads it again once it has.
+      upNextScrolled();
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(list);
+    for (const block of list.children) observer.observe(block);
+    return () => observer.disconnect();
   });
   // The lock's day under the bracket title, while the draw can still change:
   // a bound the organizers close by hand once every runner confirmed, so the
@@ -290,7 +319,14 @@
   {#snippet upNextSection()}
     <div class="up-next-box">
       <SectionTitle>Up next</SectionTitle>
-      <div class="up-next" bind:this={upNextList} style:--gutter="{gutter}px">
+      <div
+        class="up-next"
+        class:more={upNextMore}
+        bind:this={upNextList}
+        style:--gutter="{gutter}px"
+        style:max-height={upNextCap === null ? null : `${upNextCap}px`}
+        onscroll={upNextScrolled}
+      >
         {#each upcoming as match (match.stage.key)}
           <EventUpNext
             {match}
@@ -1266,6 +1302,22 @@
     margin: -7px calc(-2px - var(--gutter, 0px)) 0 -10px;
     padding: 7px 2px 0 10px;
     scrollbar-gutter: stable;
+    /* A link focused by keyboard scrolls clear of the fade. */
+    scroll-padding-bottom: 4rem;
+  }
+  /* More below: the blocks fade out at the bottom, the scrollbar's gutter
+   * kept whole by a second, opaque mask layer over it. */
+  .up-next.more {
+    mask-image:
+      linear-gradient(to bottom, #000 calc(100% - 4rem), transparent),
+      linear-gradient(#000, #000);
+    mask-size:
+      100% 100%,
+      var(--gutter, 0px) 100%;
+    mask-position:
+      0 0,
+      100% 0;
+    mask-repeat: no-repeat;
   }
   /* Too narrow to hold both ends apart: the right-hand side joins the signal
    * on the left, wrapping under it when it does not fit. */

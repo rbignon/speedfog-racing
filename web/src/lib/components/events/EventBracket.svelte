@@ -50,9 +50,9 @@
   // column then sits empty above the final (the final is centred on the
   // first round), so the Up next box spreads over it too.
   let wideAside = $derived(layout.tall && depth >= 4);
-  // Beside a tall tree the Up next box runs down to the first box under it:
-  // the Final when it spreads over the final's column, else the Champion
-  // (the tree's foot without a final), its list scrolling past that. Both
+  // Beside a tall tree the Up next box runs down to the first box under it at
+  // most: the Final when it spreads over the final's column, else the
+  // Champion (the tree's foot without a final), its list scrolling. Both
   // are centred on the whole tree, so no grid line marks their top: the room
   // is measured, again whenever the grid or those boxes change size.
   let grid = $state<HTMLElement | null>(null);

@@ -675,14 +675,16 @@ one begun on another evening at its next race. Each block shows the date in
 brass with the viewer's timezone and how far ahead it is, the runners with
 their seats, "Cast by" and the casters with their language ("Casters to be
 announced" without any), then one chip per race with its start time, linking
-to the race once attached. It lists every such match. Beside a tall tree it
-runs down to the first box under it (the Final when it spreads over the
-final's column, else the Champion; the tree's foot without a final), measured
-since both sit halfway down the tree, and its list scrolls past that, the
-title staying; it takes no room in the grid, so a long list never stretches
-the tree. Under 900px, above the rounds, the box stops at 60% of the
-viewport's height, its list scrolling. Beside a shorter tree (two semis) it lists them all
-unbounded. Nothing is next, no box.
+to the race once attached. It lists every such match, the list scrolling
+under the title: it stops halfway down its third match (measured, the blocks'
+heights vary), the cut telling there is more, and fades out at the bottom
+while more lies below. Beside a tall tree it also stops above the first box
+under it if that comes sooner (the Final when the box spreads over the
+final's column, else the Champion; the tree's foot without a final),
+measured since both sit halfway down the tree; the box takes no room in the
+grid, so a long list never stretches the tree. Under 900px, above the
+rounds, it stops at 60% of the viewport's height at most. Nothing is next,
+no box.
 
 A bracket box whose match is between two races reads `In progress` in amber,
 its route line ember without the travelling dot.
