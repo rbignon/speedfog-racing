@@ -1,15 +1,21 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, fireEvent } from "@testing-library/svelte";
+import { render, fireEvent, waitFor } from "@testing-library/svelte";
 import CastSetup from "$lib/components/cast/CastSetup.svelte";
-import type { RaceDetail } from "$lib/api";
+import {
+  fetchEvent,
+  fetchEvents,
+  type EventDetail,
+  type EventSummary,
+  type RaceDetail,
+} from "$lib/api";
 import { copyToClipboard } from "$lib/utils/clipboard";
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
   return {
     ...actual,
-    fetchEvents: vi.fn().mockResolvedValue([]),
-    fetchEvent: vi.fn().mockResolvedValue({ stages: [], showcases: [] }),
+    fetchEvents: vi.fn(),
+    fetchEvent: vi.fn(),
   };
 });
 
@@ -34,9 +40,14 @@ function fakeParticipant(id: string, username: string, colorIndex: number) {
   };
 }
 
-function fakeRace(id = "race-1"): RaceDetail {
+function fakeRace(
+  id = "race-1",
+  event: { event_slug: string; event_slot: string } | null = null,
+): RaceDetail {
   return {
     id,
+    event_slug: event?.event_slug ?? null,
+    event_slot: event?.event_slot ?? null,
     participants: [
       fakeParticipant("p1", "alice", 0),
       fakeParticipant("p2", "bob", 1),
@@ -49,6 +60,12 @@ function fakeRace(id = "race-1"): RaceDetail {
 
 beforeEach(() => {
   vi.mocked(copyToClipboard).mockClear();
+  // No event on the bill unless a test serves one (see serveSeasonOne).
+  vi.mocked(fetchEvents).mockResolvedValue([]);
+  vi.mocked(fetchEvent).mockResolvedValue({
+    stages: [],
+    showcases: [],
+  } as unknown as EventDetail);
   try {
     localStorage.clear();
   } catch {
@@ -272,6 +289,106 @@ describe("CastSetup: duel scene", () => {
       .value;
     expect(url).toContain("/overlay/cast/race/race-6/duel");
     expect(url).not.toContain("p3=");
+  });
+});
+
+// The two calls the panel makes for its co-brand and stage pickers, answered
+// for one event, Season One, with a stage and a showcase.
+function serveSeasonOne({ onTheBill }: { onTheBill: boolean }) {
+  vi.mocked(fetchEvents).mockResolvedValue(
+    (onTheBill
+      ? [{ slug: "season-one", name: "Season One" }]
+      : []) as unknown as EventSummary[],
+  );
+  vi.mocked(fetchEvent).mockResolvedValue({
+    slug: "season-one",
+    name: "Season One",
+    stages: [{ key: "semi_b", label: "Semi B" }],
+    showcases: [{ key: "ignite_showcase", label: "Ignite showcase" }],
+  } as unknown as EventDetail);
+}
+
+describe("CastSetup: prefill from the race's event", () => {
+  it.each([
+    ["a stage", "semi_b:2", "semi_b", "Semi B"],
+    ["a showcase", "ignite_showcase:1", "ignite_showcase", "Ignite showcase"],
+  ])(
+    "co-brands with the race's event and picks its stage on %s race",
+    async (_, slot, stage, label) => {
+      serveSeasonOne({ onTheBill: true });
+      const race = fakeRace(`race-${stage}`, {
+        event_slug: "season-one",
+        event_slot: slot,
+      });
+      const { container } = render(CastSetup, {
+        props: { race, onClose: () => {} },
+      });
+
+      expect(urlInputValue(container)).toContain("event=season-one");
+      await selectScenePill(container, "Talk");
+      expect(urlInputValue(container)).toContain(
+        `/overlay/cast/event/season-one/${stage}/talk`,
+      );
+      const stagePicker = [
+        ...container.querySelectorAll<HTMLSelectElement>("select"),
+      ].find((s) =>
+        [...s.options].some((o) => o.textContent === "Select a stage"),
+      )!;
+      await waitFor(() =>
+        expect(stagePicker.selectedOptions[0]?.textContent).toBe(label),
+      );
+    },
+  );
+
+  it("co-brands a qualifier race but leaves the talk scene's stage to pick", async () => {
+    serveSeasonOne({ onTheBill: true });
+    const race = fakeRace("race-q", {
+      event_slug: "season-one",
+      event_slot: "qualifier:standard:1",
+    });
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+
+    expect(urlInputValue(container)).toContain("event=season-one");
+    await selectScenePill(container, "Talk");
+    expect(container.querySelector(".url-input")).toBeNull();
+  });
+
+  it("keeps a setup already saved for the race, a cleared co-brand included", async () => {
+    serveSeasonOne({ onTheBill: true });
+    const race = fakeRace("race-saved", {
+      event_slug: "season-one",
+      event_slot: "semi_b:1",
+    });
+    localStorage.setItem(
+      "cast-setup:race-saved",
+      JSON.stringify({ scene: "quad", eventSlug: "", stageKey: "" }),
+    );
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+
+    expect(urlInputValue(container)).not.toContain("event=");
+  });
+
+  it("names the race's own event in the co-brand picker once it is off the bill", async () => {
+    serveSeasonOne({ onTheBill: false });
+    const race = fakeRace("race-past", {
+      event_slug: "season-one",
+      event_slot: "final:1",
+    });
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+
+    const coBrand = () =>
+      [...container.querySelectorAll<HTMLSelectElement>("select")].find((s) =>
+        [...s.options].some((o) => o.textContent === "None"),
+      )!;
+    await waitFor(() =>
+      expect(coBrand().selectedOptions[0]?.textContent).toBe("Season One"),
+    );
   });
 });
 

@@ -426,6 +426,7 @@ class RaceResponse(BaseModel):
     race_duration_minutes: int | None = None
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
+    igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
     custom_rules: str | None = None
@@ -517,6 +518,7 @@ class RaceDetailResponse(BaseModel):
     race_duration_minutes: int | None = None
     registration_closes_at: datetime | None = None
     race_ends_at: datetime | None = None
+    igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
     custom_rules: str | None = None
@@ -533,6 +535,9 @@ class RaceDetailResponse(BaseModel):
     pool_config: PoolConfig | None = None
     event_id: UUID | None = None
     event_slot: str | None = None
+    # The attached event's slug: clients address events by slug, and no
+    # public endpoint resolves an event id.
+    event_slug: str | None = None
 
 
 class RaceListResponse(BaseModel):

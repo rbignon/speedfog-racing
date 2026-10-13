@@ -61,6 +61,18 @@
     return [0, 1, 2, 3].map((i) => ordered[i]?.user.twitch_username ?? null);
   }
 
+  /** The talk scene's stage a race attached to an event names in its slot
+   * (`<stage>:<n>`, a showcase's key the same way). A qualifier slot
+   * (`qualifier:<mode>:<n>`) names none: talk introduces playoff evenings. */
+  function stageKeyOf(slot: string | null): string {
+    if (!slot || slot.startsWith("qualifier:")) return "";
+    const end = slot.lastIndexOf(":");
+    return end < 0 ? "" : slot.slice(0, end);
+  }
+
+  /** What a first visit to the panel for this race starts from. A setup
+   * already saved for it wins, a cleared co-brand included (see
+   * `loadSettings`). */
   function defaultSettings(): StoredSettings {
     return {
       scene: "quad",
@@ -70,8 +82,8 @@
       caster1: race.casters[0]?.user.twitch_username ?? "",
       caster2: race.casters[1]?.user.twitch_username ?? "",
       delayS: 0,
-      eventSlug: "",
-      stageKey: "",
+      eventSlug: race.event_slug ?? "",
+      stageKey: stageKeyOf(race.event_slot),
     };
   }
 
@@ -203,15 +215,24 @@
     slots[i] = name;
   }
 
-  // The co-brand picker (fetchEvents returns slug + name, nothing a race
-  // exposes client-side maps to). A failed fetch just leaves the list
-  // empty: casting a race outside an event is the common case, not an
-  // error.
-  let events = $state<EventSummary[]>([]);
-  onMount(() => {
-    fetchEvents()
-      .then((list) => (events = list))
-      .catch(() => {});
+  // The co-brand picker. A failed fetch just leaves the list empty: casting
+  // a race outside an event is the common case, not an error. fetchEvents
+  // only holds the events on the bill, so a race of an older season adds
+  // its own event, fetched by slug: the picker then names the co-brand
+  // prefilled from it rather than showing "None" while the URL carries it.
+  let events = $state<Pick<EventSummary, "slug" | "name">[]>([]);
+  onMount(async () => {
+    const list: Pick<EventSummary, "slug" | "name">[] =
+      await fetchEvents().catch(() => []);
+    const own = race.event_slug;
+    if (own && !list.some((ev) => ev.slug === own)) {
+      const detail = await fetchEvent(own).catch(() => null);
+      if (detail) {
+        events = [...list, { slug: detail.slug, name: detail.name }];
+        return;
+      }
+    }
+    events = list;
   });
 
   // The talk scene's stage picker: only the chosen event's own stages (and

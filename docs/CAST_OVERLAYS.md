@@ -536,7 +536,15 @@ It gives a caster, without hand-editing a URL:
   which is freed instead (it can't be cleared from the panel).
 - Cams (0, 1 or 2) and the two caster usernames.
 - An event co-brand picker, and, on the talk scene, a stage picker scoped to
-  the chosen event: its stages, then its showcases.
+  the chosen event: its stages, then its showcases. A race attached to an
+  event starts from that event as its co-brand (the race detail's
+  `event_slug`), and from the stage or showcase its slot names (`<key>:<n>`)
+  as the talk scene's stage, so "Copy all scene URLs" carries the talk URL
+  from the start; a qualifier race starts from its event alone, talk
+  introducing playoff evenings. The picker lists the events on the bill plus
+  the race's own, so a race of an older season still names it. The scenes
+  themselves never fall back to the race's event: a URL with no `event`
+  shows no co-brand.
 - Delay in seconds (race scenes only).
 - The built URL for the current scene, with a copy button, and a "Copy all
   scene URLs" button that copies every race scene's URL plus talk's once an
@@ -552,15 +560,19 @@ It gives a caster, without hand-editing a URL:
 
 Settings are kept per race in `localStorage` under `cast-setup:<raceId>`, so
 reopening the panel for the same race remembers the last setup; a private
-window that refuses storage just does not persist between visits.
+window that refuses storage just does not persist between visits. What is
+saved wins over the prefill from the race's event, a cleared co-brand
+included: a race attached to its event after its panel was first opened
+keeps the setup it had then.
 
 ## Setting up in OBS
 
 1. On the race page, as one of its casters, open Cast Setup.
 2. Pick a scene, set `cams`, optionally pin specific runners into POV holes,
    name the casters, and optionally pick an event co-brand (and, for talk, a
-   stage). Set the delay to roughly how far behind live your own capture
-   runs; leave talk's alone, it has none.
+   stage), both already filled in on a race attached to an event. Set the
+   delay to roughly how far behind live your own capture runs; leave talk's
+   alone, it has none.
 3. In OBS, create a new Scene for this cast scene.
 4. Add the video sources it needs (webcam captures for the cam holes,
    captured Twitch POVs for the runner holes, a capture of your own browser

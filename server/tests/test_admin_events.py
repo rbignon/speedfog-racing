@@ -372,6 +372,36 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
 
 
 @pytest.mark.asyncio
+async def test_race_detail_names_its_event_by_slug(test_client, users, async_session):
+    """The cast setup panel prefills its co-brand from it: the panel works in
+    slugs, and no client endpoint maps an event id to one."""
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(db, orga, "standard", "s1")
+        await db.commit()
+    async with test_client as client:
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
+        assert (await client.get(f"/api/races/{race.id}")).json()["event_slug"] is None
+
+        attached = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "qualifier:standard:1"},
+            headers=ADMIN,
+        )
+        assert attached.status_code == 200
+        detail = (await client.get(f"/api/races/{race.id}")).json()
+        assert detail["event_slug"] == DOC["slug"]
+
+        detached = await client.post(
+            f"/api/admin/races/{race.id}/event", json={"event_id": None}, headers=ADMIN
+        )
+        assert detached.status_code == 200
+        assert (await client.get(f"/api/races/{race.id}")).json()["event_slug"] is None
+
+
+@pytest.mark.asyncio
 async def test_attach_stage_slot_requires_room_for_the_field(test_client, users, async_session):
     _, orga = users
     async with async_session() as db:

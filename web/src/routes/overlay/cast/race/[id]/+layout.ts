@@ -14,10 +14,11 @@ export const load: LayoutLoad = async ({ params, url, fetch }) => {
   }
 
   // The co-brand names whichever event the caster points this scene at
-  // (`?event=<slug>`), not the race's own event_id: there is no client
-  // endpoint that resolves that id to an EventDetail. A wrong or stale slug
-  // degrades to no partner rather than failing the whole scene, since the
-  // race itself is still perfectly valid.
+  // (`?event=<slug>`), never the race's own event by default: a URL says
+  // what it shows, and one with no `event` shows no co-brand (the setup
+  // panel prefills the race's own event into the URLs it builds). A wrong or
+  // stale slug degrades to no partner rather than failing the whole scene,
+  // since the race itself is still perfectly valid.
   let partnerName: string | null = null;
   if (castParams.event) {
     try {

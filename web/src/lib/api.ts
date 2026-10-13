@@ -180,6 +180,9 @@ export interface RaceDetail extends Race {
   participants: Participant[];
   pending_invites: PendingInvite[];
   pool_config: PoolConfig | null;
+  /** The slug of the event the race is attached to (`event_id`): clients
+   * address events by slug, and no public endpoint resolves an event id. */
+  event_slug: string | null;
 }
 
 export interface PoolInfo {

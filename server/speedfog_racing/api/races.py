@@ -194,6 +194,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         race_duration_minutes=race.race_duration_minutes,
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
+        igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
         custom_rules=race.custom_rules,
@@ -210,6 +211,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         pool_config=pool_config,
         event_id=race.event_id,
         event_slot=race.event_slot,
+        event_slug=race.event.slug if race.event else None,
     )
 
 
@@ -222,7 +224,7 @@ async def _get_race_or_404(
 ) -> Race:
     """Get race by ID or raise 404."""
     query = select(Race).where(Race.id == race_id)
-    options = [selectinload(Race.organizer), selectinload(Race.seed)]
+    options = [selectinload(Race.organizer), selectinload(Race.seed), selectinload(Race.event)]
     if load_participants:
         options.append(selectinload(Race.participants).selectinload(Participant.user))
     if load_casters:

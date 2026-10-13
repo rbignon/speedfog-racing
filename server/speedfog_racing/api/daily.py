@@ -61,6 +61,7 @@ def _detail_options() -> tuple[ExecutableOption, ...]:
     return (
         selectinload(Race.organizer),
         selectinload(Race.seed),
+        selectinload(Race.event),
         selectinload(Race.participants).selectinload(Participant.user),
         selectinload(Race.casters).selectinload(Caster.user),
         selectinload(Race.invites),

@@ -995,6 +995,10 @@ fetched is left out rather than replaced by a placeholder.
 - `GET /api/admin/events`, `POST /api/admin/events` (upsert by slug),
   `POST /api/admin/races/{race_id}/event` (`{event_id, slot}` or
   `{event_id: null}`).
+- `GET /api/races/{id}` carries, besides the race's `event_id` and
+  `event_slot`, its event's `event_slug` (null off an event): the cast setup
+  panel prefills its co-brand and talk stage from them (see
+  [CAST_OVERLAYS.md](CAST_OVERLAYS.md)).
 - `GET /api/og/event/{slug}/meta` and `GET /api/og/event/{slug}.png`: the
   Open Graph stub and card, for crawlers only.
 
