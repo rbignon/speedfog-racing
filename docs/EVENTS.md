@@ -361,7 +361,9 @@ within `playoff_cutoff_minutes` of in-game time past its best finished time
 (`playoff_deadline_ms`), to the millisecond. The finish handler keeps that
 deadline on the race as `igt_cutoff_ms` (`update_playoff_cutoff`): the first
 finish sets it, a later, faster one brings it down (the first runner home is
-not always the fastest in game), and each move pushes a `race_info_update`.
+not always the fastest in game), a disqualification or its cancellation
+recomputes it from the finishes still standing (so it can go up, or away),
+and each move pushes a `race_info_update`.
 A run whose recorded in-game time passes it is eliminated on its next
 `status_update` (abandoned, "ran out of time" in the public chat), and a
 finish past it is the same elimination, judged on the finish's own in-game

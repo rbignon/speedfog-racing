@@ -87,7 +87,7 @@ from speedfog_racing.services.calendar_sync import (
     update_calendar_events,
 )
 from speedfog_racing.services.daily_seed_loop import daily_date_for
-from speedfog_racing.services.event_service import leaderboard_points
+from speedfog_racing.services.event_service import leaderboard_points, update_playoff_cutoff
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.sanctions_service import (
@@ -1095,6 +1095,9 @@ async def after_disqualification_change(
     )
 
     race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+    if await update_playoff_cutoff(db, race, only_lower=False):
+        # The playoff deadline runs from the best finish still standing.
+        await broadcast_race_info_update(race)
     if race.daily_date is not None and qualifies_for_streak(participant.zone_history):
         # A disqualified daily earns no streak credit: re-derive the runner's
         # streak without it (or with it again after a cancel). A run that never

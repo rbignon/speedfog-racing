@@ -18,7 +18,7 @@ from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import ValidationError
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import ColumnElement, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -1126,15 +1126,17 @@ async def count_finished_before(
 # --- playoff cutoff ---------------------------------------------------------
 
 
-async def update_playoff_cutoff(db: AsyncSession, race: Race) -> bool:
-    """Bring a stage or showcase race's ``igt_cutoff_ms`` down to its playoff deadline.
+async def update_playoff_cutoff(db: AsyncSession, race: Race, *, only_lower: bool = True) -> bool:
+    """Bring a stage or showcase race's ``igt_cutoff_ms`` to its playoff deadline.
 
-    Called on every finish: the first one sets the deadline
-    (``playoff_deadline_ms``), a later, faster one lowers it. ``race`` must
-    have its participants loaded, the new finisher already FINISHED among
-    them. The write is conditional, so a race that just ended is never
-    broadcast back as running and a lower deadline already stored stands.
-    Returns whether the cutoff moved.
+    Called on every finish with ``only_lower``: the first one sets the
+    deadline (``playoff_deadline_ms``), a later, faster one lowers it, and a
+    lower deadline already stored stands, so concurrent finishes settle on the
+    lowest. A disqualification or its cancellation changes which runs are
+    finished, so it recomputes without ``only_lower``: the deadline can go up,
+    or away once no finished run stands. ``race`` must have its participants
+    loaded. The write is conditional on the race running, so a race that just
+    ended is never broadcast back as running. Returns whether the cutoff moved.
     """
     if not race.is_event_stage or race.event_id is None:
         return False
@@ -1146,15 +1148,18 @@ async def update_playoff_cutoff(db: AsyncSession, race: Race) -> bool:
         logger.warning("Playoff cutoff skipped for race %s: no valid event config", race.id)
         return False
     deadline = playoff_deadline_ms(race, config)
+    moves: ColumnElement[bool]
     if deadline is None:
-        return False
+        if only_lower:
+            return False
+        moves = Race.igt_cutoff_ms.is_not(None)
+    elif only_lower:
+        moves = or_(Race.igt_cutoff_ms.is_(None), Race.igt_cutoff_ms > deadline)
+    else:
+        moves = or_(Race.igt_cutoff_ms.is_(None), Race.igt_cutoff_ms != deadline)
     result = await db.execute(
         update(Race)
-        .where(
-            Race.id == race.id,
-            Race.status == RaceStatus.RUNNING,
-            or_(Race.igt_cutoff_ms.is_(None), Race.igt_cutoff_ms > deadline),
-        )
+        .where(Race.id == race.id, Race.status == RaceStatus.RUNNING, moves)
         .values(igt_cutoff_ms=deadline)
     )
     await db.commit()

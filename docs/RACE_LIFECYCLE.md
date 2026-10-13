@@ -106,8 +106,8 @@ trips it early) passes it is transitioned to `ABANDONED` from the
 `status_update` ingestion path (`handle_igt_cutoff`), and a finish past it
 is the same elimination, judged on the finish's own IGT. Side effects are
 the deathless elimination's, with "ran out of time" as the public chat
-line; the last run out ends the race through the auto-finish check. A reset
-clears it. Event playoff races set it from their finishes (see the Playoff
+line; the last run out ends the race through the auto-finish check. A
+disqualification or its cancellation recomputes it, and a reset clears it. Event playoff races set it from their finishes (see the Playoff
 scoring section of `EVENTS.md`).
 
 ---

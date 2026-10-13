@@ -3,11 +3,13 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.database import Base
+from speedfog_racing.database import Base, get_db
+from speedfog_racing.main import app
 from speedfog_racing.models import (
     ChatMessage,
     Event,
@@ -50,15 +52,17 @@ async def _race(
     slot: str | None,
     igt_cutoff_ms: int | None = None,
     chaser_igt_ms: int = 2_000_000,
+    finishers: tuple[int, ...] = (WINNER,),
 ) -> Race:
-    """A running two-runner race: p0 finished in 40:00 of in-game time, p1 still playing."""
+    """A running race: p0.. finished in ``finishers`` (40:00 of in-game time by
+    default), the last runner still playing."""
     async with session_maker() as db:
         organizer = User(
             twitch_id="org", twitch_username="org", api_token="t0", role=UserRole.ORGANIZER
         )
         runners = [
             User(twitch_id=f"u{i}", twitch_username=f"p{i}", api_token=f"t{i + 1}")
-            for i in range(2)
+            for i in range(len(finishers) + 1)
         ]
         db.add_all([organizer, *runners])
         seed = Seed(
@@ -93,16 +97,19 @@ async def _race(
         await db.flush()
         db.add_all(
             [
-                Participant(
-                    race_id=race.id,
-                    user_id=runners[0].id,
-                    status=ParticipantStatus.FINISHED,
-                    igt_ms=WINNER,
-                    finished_at=START + timedelta(minutes=40, seconds=20),
+                *(
+                    Participant(
+                        race_id=race.id,
+                        user_id=runner.id,
+                        status=ParticipantStatus.FINISHED,
+                        igt_ms=igt_ms,
+                        finished_at=START + timedelta(milliseconds=igt_ms + 20_000),
+                    )
+                    for runner, igt_ms in zip(runners, finishers, strict=False)
                 ),
                 Participant(
                     race_id=race.id,
-                    user_id=runners[1].id,
+                    user_id=runners[-1].id,
                     status=ParticipantStatus.PLAYING,
                     igt_ms=chaser_igt_ms,
                 ),
@@ -288,3 +295,44 @@ async def test_a_deathless_death_past_the_cutoff_is_one_elimination(async_sessio
     )
     died.assert_awaited_once_with(async_session, chaser.id)
     out_of_time.assert_not_awaited()
+
+
+@pytest.fixture
+def client(async_session):
+    async def override_get_db():
+        async with async_session() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    app.dependency_overrides.clear()
+
+
+async def test_a_disqualified_best_time_hands_the_cutoff_to_the_next_best(async_session, client):
+    # The deadline runs from the best time still standing: a disqualified
+    # winner's time stops counting, and a cancel brings it back.
+    race = await _race(
+        async_session, "final:1", igt_cutoff_ms=DEADLINE, finishers=(WINNER, 2_500_000)
+    )
+    best = next(p for p in race.participants if p.igt_ms == WINNER)
+    url = f"/api/races/{race.id}/participants/{best.id}/disqualify"
+    organizer = {"Authorization": "Bearer t0"}
+    async with client:
+        resp = await client.post(url, json={"reason": "Cheat tool detected"}, headers=organizer)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["igt_cutoff_ms"] == 2_500_000 + CUTOFF
+        resp = await client.delete(url, headers=organizer)
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["igt_cutoff_ms"] == DEADLINE
+
+
+async def test_a_recompute_drops_the_cutoff_once_no_finish_stands(async_session):
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE)
+    async with async_session() as db:
+        race = await _load(db, race)
+        winner = next(p for p in race.participants if p.status == ParticipantStatus.FINISHED)
+        winner.status = ParticipantStatus.DISQUALIFIED
+        await db.commit()
+        race = await _load(db, race)
+        assert await update_playoff_cutoff(db, race, only_lower=False) is True
+        assert (await _load(db, race)).igt_cutoff_ms is None

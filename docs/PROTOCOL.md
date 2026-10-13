@@ -470,7 +470,7 @@ A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators 
 - The organizer or an admin issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`, `deathless`, `custom_rules`). No-op PATCHes do not broadcast.
 - The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
 - The seed is rerolled (`POST /races/{id}/reroll-seed`). `race_state` carries the new full seed to spectators, but mods are not on that channel, so the `race_info_update` is what delivers the new `seed_id` to a connected mod, letting it raise the "SEED OUTDATED" banner mid-session (not just at the next `auth_ok`).
-- A finish moves the in-game cutoff of an event's playoff stage or showcase race (`igt_cutoff_ms`): the first finish sets it, a later, faster one brings it down (see the Playoff scoring section of `EVENTS.md`).
+- A finish moves the in-game cutoff of an event's playoff stage or showcase race (`igt_cutoff_ms`): the first finish sets it, a later, faster one brings it down, and a disqualification or its cancellation recomputes it (see the Playoff scoring section of `EVENTS.md`).
 
 ```json
 {
