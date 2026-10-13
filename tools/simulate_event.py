@@ -506,14 +506,7 @@ def fake_race(
                 ),
             )
         )
-    # No deadline: the planned runs ignore the playoff cutoff.
-    return SimpleNamespace(
-        status=status,
-        participants=parts,
-        started_at=None,
-        late_join_window_minutes=None,
-        race_duration_minutes=None,
-    )
+    return SimpleNamespace(status=status, participants=parts)
 
 
 # --- database ---------------------------------------------------------------

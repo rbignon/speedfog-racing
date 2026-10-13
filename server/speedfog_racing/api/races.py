@@ -1911,10 +1911,9 @@ async def reset_race(
             continue
         reset_participant_progress(p)
 
-    # A playoff race's deadline comes from its first finisher (the playoff
-    # cutoff): the replay's first finisher sets a fresh one.
-    if race.is_event_stage:
-        race.race_duration_minutes = None
+    # The IGT cutoff came from the run's finishes: the replay's first finisher
+    # sets a fresh one.
+    race.igt_cutoff_ms = None
 
     await db.commit()
 

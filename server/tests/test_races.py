@@ -1196,11 +1196,10 @@ async def test_reset_race_from_running(test_client, organizer, player, async_ses
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("slot, kept", [("final:1", None), (None, 48)])
-async def test_reset_drops_a_playoff_race_s_cutoff_only(
-    test_client, organizer, player, async_session, slot, kept
+async def test_reset_drops_the_igt_cutoff_and_keeps_the_organizer_s_duration(
+    test_client, organizer, player, async_session
 ):
-    """A playoff race's deadline came from its first finisher: the replay sets a fresh one."""
+    """The cutoff came from the run's finishes: the replay's first finisher sets a fresh one."""
     async with async_session() as db:
         seed = Seed(
             seed_number="s901",
@@ -1218,8 +1217,9 @@ async def test_reset_drops_a_playoff_race_s_cutoff_only(
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=datetime.now(UTC),
-            race_duration_minutes=48,
-            event_slot=slot,
+            race_duration_minutes=90,
+            igt_cutoff_ms=2_820_000,
+            event_slot="final:1",
         )
         db.add(race)
         await db.commit()
@@ -1231,7 +1231,9 @@ async def test_reset_drops_a_playoff_race_s_cutoff_only(
             headers={"Authorization": f"Bearer {organizer.api_token}"},
         )
         assert response.status_code == 200
-        assert response.json()["race_duration_minutes"] == kept
+        body = response.json()
+        assert body["igt_cutoff_ms"] is None
+        assert body["race_duration_minutes"] == 90
 
 
 @pytest.mark.asyncio

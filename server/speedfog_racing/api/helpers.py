@@ -199,6 +199,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         race_duration_minutes=race.race_duration_minutes,
         registration_closes_at=registration_closes_at,
         race_ends_at=race_ends_at,
+        igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
         custom_rules=race.custom_rules,

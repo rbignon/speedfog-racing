@@ -36,7 +36,7 @@ from speedfog_racing.services.daily_streak_service import (
     qualifies_for_streak,
 )
 from speedfog_racing.services.debug_flags import merge_debug_flags
-from speedfog_racing.services.event_service import start_playoff_cutoff
+from speedfog_racing.services.event_service import update_playoff_cutoff
 from speedfog_racing.services.i18n import translate_zone_update
 from speedfog_racing.services.layer_service import (
     compute_zone_update,
@@ -924,7 +924,7 @@ async def handle_finished(
 ) -> None:
     """Handle player finish event."""
     race_transitioned = False
-    cutoff_started = False
+    cutoff_moved = False
 
     async with session_maker() as db:
         participant = await _load_participant(db, participant_id)
@@ -1005,9 +1005,7 @@ async def handle_finished(
                 db, participant.race_id, ChatChannel.PUBLIC, race_finished_msg
             )
         await db.commit()
-        cutoff_started = not race_transitioned and await start_playoff_cutoff(
-            db, participant.race, participant
-        )
+        cutoff_moved = not race_transitioned and await update_playoff_cutoff(db, participant.race)
 
     # Session closed. All broadcasts use detached objects.
 
@@ -1028,8 +1026,8 @@ async def handle_finished(
         # An open qualifier scores its settled runs on the leaderboard: one
         # more finisher moves their points, which only race_state carries.
         await broadcast_race_state_update(participant.race_id, participant.race)
-    if cutoff_started:
-        # The race now ends at the playoff cutoff: every mod counts it down.
+    if cutoff_moved:
+        # The race's IGT cutoff moved: every mod and spectator gets it.
         await broadcast_race_info_update(participant.race)
 
     # Unlock the PUBLIC channel for the finished participant before

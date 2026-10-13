@@ -116,19 +116,8 @@ def _participant(
     )
 
 
-def _race(
-    participants,
-    status=RaceStatus.FINISHED,
-    started_at: datetime | None = None,
-    race_duration_minutes: int | None = None,
-):
-    return SimpleNamespace(
-        status=status,
-        participants=list(participants),
-        started_at=started_at,
-        late_join_window_minutes=None,
-        race_duration_minutes=race_duration_minutes,
-    )
+def _race(participants, status=RaceStatus.FINISHED):
+    return SimpleNamespace(status=status, participants=list(participants))
 
 
 # --- slots ------------------------------------------------------------------
@@ -743,32 +732,20 @@ def test_a_playoff_dnf_scores_nothing_and_counts_the_winner_time_plus_the_cutoff
         assert (entries[user].points, entries[user].igt_total) == (0, 47 * MIN)
 
 
-def test_a_finish_past_the_race_end_is_a_playoff_dnf():
+def test_a_finish_at_the_deadline_scores_and_one_past_it_is_a_dnf():
     cfg = _config()
     stage = cfg.stage("newcomers")
-    start = datetime(2026, 10, 12, 19, tzinfo=UTC)
-    first, late = uuid4(), uuid4()
+    winner, on_time, late = uuid4(), uuid4(), uuid4()
     race = _race(
         [
-            _participant(
-                first,
-                ParticipantStatus.FINISHED,
-                40 * MIN,
-                finished_at=start + timedelta(minutes=41),
-            ),
-            # The hard-close loop polls: a finish can land a few seconds past the deadline.
-            _participant(
-                late,
-                ParticipantStatus.FINISHED,
-                49 * MIN,
-                finished_at=start + timedelta(minutes=52, seconds=5),
-            ),
-        ],
-        started_at=start,
-        race_duration_minutes=52,
+            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
+            # The winner's time plus the cutoff, to the millisecond.
+            _participant(on_time, ParticipantStatus.FINISHED, 50 * MIN),
+            _participant(late, ParticipantStatus.FINISHED, 50 * MIN + 1),
+        ]
     )
     entries = {x.user_id: x for x in compute_stage_results(stage, [race], 0, cfg).entries}
-    assert (entries[first].points, entries[late].points) == (100, 0)
+    assert [entries[u].points for u in (winner, on_time, late)] == [100, 70, 0]
     assert entries[late].igt_total == 50 * MIN
 
 
@@ -850,20 +827,38 @@ def test_a_full_playoff_tie_keeps_one_order_whatever_the_rows_order():
     assert orders[0] == orders[1]
 
 
-def test_a_playoff_dnf_never_counts_faster_than_a_slow_finisher():
+def test_the_cutoff_runs_from_the_best_time_not_the_first_finish():
+    # The first runner home is not always the fastest in game: the deadline
+    # runs from the best time, whoever crossed the line first.
     cfg = _config()
     stage = cfg.stage("newcomers")
-    winner, slow, dnf = uuid4(), uuid4(), uuid4()
+    start = datetime(2026, 10, 12, 19, tzinfo=UTC)
+    first_home, fastest, chaser = uuid4(), uuid4(), uuid4()
     race = _race(
         [
-            _participant(winner, ParticipantStatus.FINISHED, 40 * MIN),
-            # In by the wall-clock deadline, yet past the winner + 10 in game time.
-            _participant(slow, ParticipantStatus.FINISHED, 51 * MIN),
-            _participant(dnf, ParticipantStatus.ABANDONED, 30 * MIN, layer=3),
+            _participant(
+                first_home,
+                ParticipantStatus.FINISHED,
+                45 * MIN,
+                finished_at=start + timedelta(minutes=47),
+            ),
+            _participant(
+                fastest,
+                ParticipantStatus.FINISHED,
+                38 * MIN,
+                finished_at=start + timedelta(minutes=48),
+            ),
+            _participant(
+                chaser,
+                ParticipantStatus.FINISHED,
+                49 * MIN,
+                finished_at=start + timedelta(minutes=52),
+            ),
         ]
     )
     entries = {x.user_id: x for x in compute_stage_results(stage, [race], 0, cfg).entries}
-    assert entries[dnf].igt_total == entries[slow].igt_total == 51 * MIN
+    assert [entries[u].points for u in (fastest, first_home, chaser)] == [100, 70, 0]
+    assert entries[chaser].igt_total == 48 * MIN
 
 
 @pytest.mark.parametrize("points", [[], [100, 120, 40], [100, 70, 0]])

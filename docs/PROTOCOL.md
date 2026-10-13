@@ -469,7 +469,7 @@ A refreshed [RaceInfo](#raceinfo) snapshot broadcast to all mods and spectators 
 - The organizer or an admin issues a `PATCH /races/{id}` that mutates a tracked field (`name`, `is_public`, `open_registration`, `max_participants`, `scheduled_at`, `late_join_window_minutes`, `race_duration_minutes`, `private_dag`, `deathless`, `custom_rules`). No-op PATCHes do not broadcast.
 - The race transitions from `setup` to `running` (`POST /races/{id}/start`). At that point `started_at` becomes non-null and `race_ends_at` becomes computable; the broadcast lets mods that authed in `setup` pick up the new deadlines without reconnecting.
 - The seed is rerolled (`POST /races/{id}/reroll-seed`). `race_state` carries the new full seed to spectators, but mods are not on that channel, so the `race_info_update` is what delivers the new `seed_id` to a connected mod, letting it raise the "SEED OUTDATED" banner mid-session (not just at the next `auth_ok`).
-- The first runner of an event's playoff stage or showcase race finishes. The server sets `race_duration_minutes` to the event's playoff cutoff, so `race_ends_at` becomes the deadline the rest of the field races against (see the Playoff scoring section of `EVENTS.md`).
+- A finish moves the in-game cutoff of an event's playoff stage or showcase race (`igt_cutoff_ms`): the first finish sets it, a later, faster one brings it down (see the Playoff scoring section of `EVENTS.md`).
 
 ```json
 {
@@ -799,7 +799,7 @@ Race status changed. Broadcast to all mods and spectators. On the `setup` -> `ru
 
 #### `race_info_update`
 
-Same payload as the [mod variant](#race_info_update). Broadcast to spectators when a race-level field changes via `PATCH /races`, when the race starts, or when a playoff race's first finisher starts its cutoff. Spectators also receive the same data through `race_state` on transitions that already trigger a full state push (start, finish, seed release), so this message is mostly relevant for in-place edits while the race is live.
+Same payload as the [mod variant](#race_info_update). Broadcast to spectators when a race-level field changes via `PATCH /races`, when the race starts, or when a finish moves a playoff race's in-game cutoff. Spectators also receive the same data through `race_state` on transitions that already trigger a full state push (start, finish, seed release), so this message is mostly relevant for in-place edits while the race is live.
 
 #### `spectator_count`
 
@@ -1145,6 +1145,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch) |
 | `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                 |
 | `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                     |
+| `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none      |
 | `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                   |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
 
@@ -1320,7 +1321,7 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                                                                                                                                                              |
 | `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                                                                                                                                                                   |
 | `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                                                                                                                                                                        |
-| `event_flag` (finish)          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system); `race_state` + status change when it ends the race, `race_state` alone on an open event qualifier; `race_info_update` to both when it starts a playoff cutoff |
+| `event_flag` (finish)          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system); `race_state` + status change when it ends the race, `race_state` alone on an open event qualifier; `race_info_update` to both when it sets or lowers a cutoff |
 | `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                                                                                                                                                               |
 | `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack)                                                                                                                                          |
 | Race starts                    | `race_start` + `zone_update` + `race_status_change` + `race_info_update` | `race_state` + `race_status_change` + `race_info_update`                                                                                                                                                      |

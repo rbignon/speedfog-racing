@@ -1,4 +1,4 @@
-"""The cutoff a playoff race's first finisher sets on the rest of the field."""
+"""A playoff race's in-game cutoff: set by its finishes, enforced on its runs."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -19,7 +19,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.event_service import start_playoff_cutoff
+from speedfog_racing.services.event_service import update_playoff_cutoff
 
 from .event_fixtures import bracketed
 
@@ -29,6 +29,10 @@ CONFIG = {
     "stages": [{"key": "final", "label": "Final", "kind": "final", "races": 3, "seeds": [1, 2]}],
     "playoff_cutoff_minutes": 7,
 }
+CUTOFF = 7 * 60_000
+# The first runner's in-game time, and the deadline it sets.
+WINNER = 2_400_000
+DEADLINE = WINNER + CUTOFF
 
 
 @pytest.fixture
@@ -43,9 +47,10 @@ async def async_session():
 async def _race(
     session_maker: async_sessionmaker[AsyncSession],
     slot: str | None,
-    race_duration_minutes: int | None = None,
+    igt_cutoff_ms: int | None = None,
+    chaser_igt_ms: int = 2_000_000,
 ) -> Race:
-    """A running two-runner race: the first finished 40:20 in, the second still playing."""
+    """A running two-runner race: p0 finished in 40:00 of in-game time, p1 still playing."""
     async with session_maker() as db:
         organizer = User(
             twitch_id="org", twitch_username="org", api_token="t0", role=UserRole.ORGANIZER
@@ -79,7 +84,7 @@ async def _race(
             seed_id=seed.id,
             status=RaceStatus.RUNNING,
             started_at=START,
-            race_duration_minutes=race_duration_minutes,
+            igt_cutoff_ms=igt_cutoff_ms,
             event_id=event.id if slot else None,
             event_slot=slot,
         )
@@ -91,14 +96,14 @@ async def _race(
                     race_id=race.id,
                     user_id=runners[0].id,
                     status=ParticipantStatus.FINISHED,
-                    igt_ms=2_400_000,
+                    igt_ms=WINNER,
                     finished_at=START + timedelta(minutes=40, seconds=20),
                 ),
                 Participant(
                     race_id=race.id,
                     user_id=runners[1].id,
                     status=ParticipantStatus.PLAYING,
-                    igt_ms=2_000_000,
+                    igt_ms=chaser_igt_ms,
                 ),
             ]
         )
@@ -117,37 +122,48 @@ async def _load(db: AsyncSession, race: Race) -> Race:
     ).scalar_one()
 
 
-def _finisher(race: Race) -> Participant:
-    return next(p for p in race.participants if p.status == ParticipantStatus.FINISHED)
+def _chaser(race: Race) -> Participant:
+    return next(p for p in race.participants if p.status == ParticipantStatus.PLAYING)
 
 
-async def test_the_first_finisher_closes_the_race_the_event_s_cutoff_later(async_session):
+async def _finish(db: AsyncSession, race: Race, igt_ms: int) -> Race:
+    """The chaser finishes in ``igt_ms``: the race, reloaded."""
+    chaser = _chaser(race)
+    chaser.status = ParticipantStatus.FINISHED
+    chaser.igt_ms = igt_ms
+    chaser.finished_at = START + timedelta(minutes=45)
+    await db.commit()
+    return await _load(db, race)
+
+
+async def test_the_first_finish_sets_the_cutoff_the_event_s_minutes_past_its_time(
+    async_session,
+):
     race = await _race(async_session, "final:1")
     async with async_session() as db:
         race = await _load(db, race)
-        assert await start_playoff_cutoff(db, race, _finisher(race)) is True
-        # 40:20 in, rounded up to the race clock's next minute, plus the event's 7.
-        assert (await _load(db, race)).race_duration_minutes == 48
-
-
-async def test_a_later_finisher_leaves_the_organizer_s_extension_alone(async_session):
-    race = await _race(async_session, "final:1", race_duration_minutes=90)
-    async with async_session() as db:
+        assert await update_playoff_cutoff(db, race) is True
         race = await _load(db, race)
-        chaser = next(p for p in race.participants if p.status == ParticipantStatus.PLAYING)
-        chaser.status = ParticipantStatus.FINISHED
-        chaser.finished_at = START + timedelta(minutes=45)
-        await db.commit()
-        assert await start_playoff_cutoff(db, race, chaser) is False
-        assert (await _load(db, race)).race_duration_minutes == 90
+        # The finish's in-game time plus the event's 7 minutes, to the millisecond.
+        assert race.igt_cutoff_ms == DEADLINE
+        assert race.race_duration_minutes is None
 
 
-async def test_an_earlier_deadline_already_set_stands(async_session):
-    race = await _race(async_session, "final:1", race_duration_minutes=45)
+async def test_a_faster_later_finish_brings_the_cutoff_down(async_session):
+    # The first runner home is not always the fastest in game.
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE)
     async with async_session() as db:
-        race = await _load(db, race)
-        assert await start_playoff_cutoff(db, race, _finisher(race)) is False
-        assert (await _load(db, race)).race_duration_minutes == 45
+        race = await _finish(db, await _load(db, race), 2_300_000)
+        assert await update_playoff_cutoff(db, race) is True
+        assert (await _load(db, race)).igt_cutoff_ms == 2_300_000 + CUTOFF
+
+
+async def test_a_slower_later_finish_leaves_the_cutoff_alone(async_session):
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE)
+    async with async_session() as db:
+        race = await _finish(db, await _load(db, race), 2_500_000)
+        assert await update_playoff_cutoff(db, race) is False
+        assert (await _load(db, race)).igt_cutoff_ms == DEADLINE
 
 
 @pytest.mark.parametrize("slot", [None, "qualifier:standard:1"])
@@ -155,16 +171,16 @@ async def test_races_outside_the_playoffs_get_no_cutoff(async_session, slot):
     race = await _race(async_session, slot)
     async with async_session() as db:
         race = await _load(db, race)
-        assert await start_playoff_cutoff(db, race, _finisher(race)) is False
-        assert (await _load(db, race)).race_duration_minutes is None
+        assert await update_playoff_cutoff(db, race) is False
+        assert (await _load(db, race)).igt_cutoff_ms is None
 
 
-async def test_a_race_finished_meanwhile_gets_no_deadline(async_session):
+async def test_a_race_finished_meanwhile_gets_no_cutoff(async_session):
     # The last runner's abandon can end the race between the finish and the cutoff.
     race = await _race(async_session, "final:1")
     async with async_session() as db:
         race = await _load(db, race)
         race.status = RaceStatus.FINISHED
         await db.commit()
-        assert await start_playoff_cutoff(db, race, _finisher(race)) is False
-        assert (await _load(db, race)).race_duration_minutes is None
+        assert await update_playoff_cutoff(db, race) is False
+        assert (await _load(db, race)).igt_cutoff_ms is None

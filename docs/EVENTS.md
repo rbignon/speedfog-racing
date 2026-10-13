@@ -27,7 +27,7 @@ computed on each request by `services/event_service.py`.
 | `rules`                  | qualifier rules, shown next to the Take part steps (max 300 chars each)                                               |
 | `playoff_rules`          | playoff rules, shown next to the bracket from the cut on (same cap)                                                   |
 | `playoff_points`         | points per finishing rank in a playoff race (default 100/70/40/20)                                                    |
-| `playoff_cutoff_minutes` | minutes the field has once a playoff race's first runner finishes (default 10)                                        |
+| `playoff_cutoff_minutes` | in-game minutes past a playoff race's best time within which the others must finish (default 10)                      |
 | `facts`                  | optional `[{title, lines}]` tiles for the format block (see below)                                                    |
 | `phase_override`         | force a phase (`upcoming`, `qualifier`, `cut`, `playoffs`, `finished`)                                                |
 | `announced_at`           | the announcement: first timeline stop and newcomer cut (see Timeline)                                                 |
@@ -345,42 +345,40 @@ cannot fill reads "No runner". The API field slot carries the seat's `source`
 ### Playoff scoring
 
 A stage or showcase race scores on the event's own table
-(`score_playoff_race`), never the daily formula. Only the runs finished by
-the race's end score: `playoff_points` by in-game time, equal times sharing a
-rank, the table's last value for every finisher past it (a showcase can field
-more runners than the table has entries). Every other runner of the race is a
-DNF on 0 points: an abandoned run, a run cut off at the race's end, a runner
-who never started, a disqualified runner, and, while the race runs, a run
-still in progress, so the bracket moves at the finish line only. A
-disqualified runner also counts no depth in the tie-break below, so it never
-ranks ahead of another runner on it. The table must be positive and never
-rise down the ranks, so a finish always outscores a DNF.
+(`score_playoff_race`), never the daily formula. Only the runs finished
+within the cutoff below score: `playoff_points` by in-game time, equal times
+sharing a rank, the table's last value for every finisher past it (a
+showcase can field more runners than the table has entries). Every other
+runner of the race is a DNF on 0 points: an abandoned run, a run past the
+cutoff, a runner who never started, a disqualified runner, and, while the
+race runs, a run still in progress, so the bracket moves at the finish line
+only. A disqualified runner also counts no depth in the tie-break below, so
+it never ranks ahead of another runner on it. The table must be positive and
+never rise down the ranks, so a finish always outscores a DNF.
 
-The cutoff: when a race's first runner finishes, the server gives the race a
-`race_duration_minutes` so that `race_ends_at` falls on the first minute of
-the race clock at least `playoff_cutoff_minutes` after that finish
-(`start_playoff_cutoff`, called by the finish handler), and pushes a
-`race_info_update`. The mod counts the time left down, the race page and the
-cast scenes show it, and the hard-close loop then ends the race, turning the
-runs still going into DNFs. The loop polls every 10 seconds, so the finish
-handler rejects a finish landing after `race_ends_at` in the meantime
-(`race_not_running`, as on a closed race), and scoring counts a finish
-recorded after it as a DNF: the countdown is the rule. Only the first
-finisher sets the deadline, so an organizer can still extend it through
-`PATCH /races` (a crashed game, say) without a later finisher shortening it
-back; an earlier deadline already set stands, and a race that ended in the
-meantime gets none. A reset drops the deadline (an organizer's own cap on a
-playoff race included), so the replay's first finisher sets a fresh one. The
-cutoff runs on the wall clock, which the stream shows, while the ranking
-stays on in-game time.
+The cutoff runs on in-game time, like the ranking: a race's runs must finish
+within `playoff_cutoff_minutes` of in-game time past its best finished time
+(`playoff_deadline_ms`), to the millisecond. The finish handler keeps that
+deadline on the race as `igt_cutoff_ms` (`update_playoff_cutoff`): the first
+finish sets it, a later, faster one brings it down (the first runner home is
+not always the fastest in game), and each move pushes a `race_info_update`.
+Scoring applies the same rule to the final rows, so a finish the deadline
+later came down past scores as a DNF. A crash or a save restore costs no
+time against the cutoff: the recorded in-game time holds while a restored
+save replays the lost segment. Nothing bounds the evening on the wall clock:
+a runner who vanishes stays in the race until the organizer finishes it or
+the inactivity monitor abandons them, and the cutoff cannot be extended. A
+reset drops it, so the replay's first finisher sets a fresh one; an
+organizer's own `race_duration_minutes` on a playoff race works as on any
+race.
 
 Evenings sum the points of their races; ties on the summed in-game time, in
-which a DNF counts as its race winner's time plus the cutoff (or the slowest
-finisher's, if slower), however early the run stopped, so abandoning early
-never buys a better tie-break. Runners still tied (two who finished nothing
-all evening share both) rank by the summed layer reached, then by user id: an
-arbitrary but fixed order, so the page never flips between loads, which the
-bracket applies to who advances (the site has no override for a tie settled
+which a DNF counts as its race's deadline (its winner's time plus the
+cutoff), however early the run stopped, so abandoning early never buys a
+better tie-break. Runners still tied (two who finished nothing all evening
+share both) rank by the summed layer reached, then by user id: an arbitrary
+but fixed order, so the page never flips between loads, which the bracket
+applies to who advances (the site has no override for a tie settled
 otherwise). A race nobody has finished lists nobody and counts for nothing,
 not even for the tie-breaks: stage races are created with their runners
 ahead of the evening, and the bracket keeps showing the field until the first

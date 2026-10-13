@@ -197,6 +197,9 @@ class RaceInfo(BaseModel):
     race_duration_minutes: int | None = None
     registration_closes_at: str | None = None
     race_ends_at: str | None = None
+    # In-game time (ms) a run must finish by: past it the server eliminates a
+    # playing runner, and the mod counts the local IGT down to it. None: no cutoff.
+    igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
     countdown_seconds: int = 0
@@ -236,6 +239,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
             registration_closes_at.isoformat() if registration_closes_at else None
         ),
         race_ends_at=race_ends_at.isoformat() if race_ends_at else None,
+        igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
         countdown_seconds=countdown_seconds,

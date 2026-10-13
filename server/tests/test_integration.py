@@ -2861,10 +2861,10 @@ def test_finished_rejected_when_race_not_running(integration_client, race_with_p
         assert resp["code"] == "race_not_running"
 
 
-def test_a_playoff_race_s_first_finish_starts_the_cutoff_countdown(
+def test_a_playoff_race_s_first_finish_sets_its_igt_cutoff(
     integration_client, race_with_participants, integration_db
 ):
-    """The first finisher of a playoff race sets race_ends_at, and the mods hear of it."""
+    """The first finisher of a playoff race sets its in-game cutoff, and the mods hear of it."""
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -2919,9 +2919,9 @@ def test_a_playoff_race_s_first_finish_starts_the_cutoff_countdown(
         mod.receive_until_type("leaderboard_update")
         mod.send_event_flag(9000003, igt_ms=50000)
         info = mod.receive_until_type("race_info_update")
-        # Finished within the race's first minute: that minute plus the event's 7.
-        assert info["race"]["race_duration_minutes"] in (7, 8)
-        assert info["race"]["race_ends_at"] is not None
+        # The finish's in-game time plus the event's 7 minutes, to the millisecond.
+        assert info["race"]["igt_cutoff_ms"] == 50_000 + 7 * 60_000
+        assert info["race"]["race_ends_at"] is None
 
 
 def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(

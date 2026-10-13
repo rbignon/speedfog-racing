@@ -343,6 +343,9 @@ class Race(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     late_join_window_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     race_duration_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # In-game time (ms) a run must finish by: past it, a playing participant
+    # is eliminated. NULL: no cutoff.
+    igt_cutoff_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     custom_rules: Mapped[str | None] = mapped_column(Text, nullable=True)
     private_dag: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
