@@ -28,6 +28,7 @@ function raceWith(overrides: Partial<Race> = {}): Race {
     race_duration_minutes: null,
     registration_closes_at: null,
     race_ends_at: null,
+    igt_cutoff_ms: null,
     private_dag: false,
     deathless: false,
     custom_rules: null,

@@ -367,8 +367,9 @@ A run whose recorded in-game time passes it is eliminated on its next
 finish past it is the same elimination, judged on the finish's own in-game
 time, so a finish replayed after a disconnection counts when it happened in
 game; the race ends once its last run is out. The mod counts the runner's
-own in-game time down to it. Scoring applies the same rule to the final
-rows, so a finish the deadline later came down past scores as a DNF. A crash or a save restore costs no
+own in-game time down to it, and the race page and the cast scenes show it.
+Scoring applies the same rule to the final rows, so a finish the deadline
+later came down past scores as a DNF. A crash or a save restore costs no
 time against the cutoff: the recorded in-game time holds while a restored
 save replays the lost segment. Nothing bounds the evening on the wall clock:
 a runner who vanishes stays in the race until the organizer finishes it or

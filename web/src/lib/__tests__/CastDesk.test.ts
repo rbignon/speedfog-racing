@@ -51,6 +51,19 @@ describe("CastDesk: clock panel", () => {
     expect(zone?.querySelector(".cz-big")).toBeNull();
   });
 
+  it("shows the in-game cutoff under the clock, ahead of a wall-clock deadline", () => {
+    const { container } = renderDesk(
+      fakeRace({
+        igt_cutoff_ms: 4_032_000,
+        race_ends_at: new Date(Date.now() + 20 * 60_000).toISOString(),
+      }),
+    );
+    const zone = container.querySelector(".clock-zone");
+    expect(zone?.querySelector(".cz-end")?.textContent).toBe(
+      "IGT cutoff 1:07:12",
+    );
+  });
+
   it("says Finished in large type once the race is over", () => {
     const { container } = renderDesk(fakeRace({ status: "finished" }));
     const zone = container.querySelector(".clock-zone");

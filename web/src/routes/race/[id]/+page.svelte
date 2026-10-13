@@ -577,6 +577,9 @@
   let liveRaceEndsAt = $derived(
     raceStore.race?.race_ends_at ?? initialRace.race_ends_at,
   );
+  let liveIgtCutoff = $derived(
+    raceStore.race?.igt_cutoff_ms ?? initialRace.igt_cutoff_ms,
+  );
   let livePrivateDag = $derived(
     raceStore.race?.private_dag ?? initialRace.private_dag,
   );
@@ -1184,6 +1187,11 @@
             {#if liveRaceEndsAt && raceStatus === "running"}
               <span class="race-ends-pill">
                 Ends in {formatCountdown(liveRaceEndsAt, now)}
+              </span>
+            {/if}
+            {#if liveIgtCutoff !== null && raceStatus === "running"}
+              <span class="race-ends-pill">
+                IGT cutoff {formatElapsed(Math.floor(liveIgtCutoff / 1000))}
               </span>
             {/if}
             <RaceStatus status={raceStatus} />

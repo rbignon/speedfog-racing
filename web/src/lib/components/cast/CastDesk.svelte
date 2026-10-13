@@ -39,6 +39,9 @@
   let raceEndsAt = $derived(
     raceStore.race?.race_ends_at ?? race?.race_ends_at ?? null,
   );
+  let igtCutoffMs = $derived(
+    raceStore.race?.igt_cutoff_ms ?? race?.igt_cutoff_ms ?? null,
+  );
 
   // The clock lags by the same delay the rest of the scene's data does
   // (raceStore.connect's delay queue), read straight from the URL like the
@@ -70,6 +73,13 @@
   // "Ends in" only means something while the race is actually running.
   let endsInText = $derived(
     status === "running" ? formatCountdown(countdownMs) : null,
+  );
+  // A race with an in-game cutoff ends per runner, never at one instant:
+  // the panel shows the cutoff itself, which the cards' IGTs count up to.
+  let igtCutoffText = $derived(
+    status === "running" && igtCutoffMs !== null
+      ? formatElapsed(igtCutoffMs)
+      : null,
   );
 
   // The race-zone lines come from the organizer-authored name, not from
@@ -129,7 +139,9 @@
          itself takes the clock's place, in large type. -->
     {#if status === "running"}
       <span class="cz-big">{formatElapsed(elapsedMs)}</span>
-      {#if endsInText}
+      {#if igtCutoffText}
+        <span class="cz-end">IGT cutoff <b>{igtCutoffText}</b></span>
+      {:else if endsInText}
         <span class="cz-end">Ends in <b>{endsInText}</b></span>
       {/if}
     {:else if status === "finished"}

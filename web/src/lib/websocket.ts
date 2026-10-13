@@ -58,6 +58,7 @@ export interface WsRaceInfo {
   race_duration_minutes?: number | null;
   registration_closes_at?: string | null;
   race_ends_at?: string | null;
+  igt_cutoff_ms?: number | null;
   private_dag?: boolean;
   deathless?: boolean;
   custom_rules?: string | null;

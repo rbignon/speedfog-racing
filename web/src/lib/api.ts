@@ -72,6 +72,8 @@ export interface Race {
   race_duration_minutes: number | null;
   registration_closes_at: string | null;
   race_ends_at: string | null;
+  /** In-game time (ms) a run must finish by; null on a race without one. */
+  igt_cutoff_ms: number | null;
   private_dag: boolean;
   deathless: boolean;
   custom_rules: string | null;
