@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
+    ChatMessage,
     Event,
     Participant,
     ParticipantStatus,
@@ -184,3 +185,106 @@ async def test_a_race_finished_meanwhile_gets_no_cutoff(async_session):
         await db.commit()
         assert await update_playoff_cutoff(db, race) is False
         assert (await _load(db, race)).igt_cutoff_ms is None
+
+
+async def _loaded_chaser(
+    session_maker: async_sessionmaker[AsyncSession], race: Race
+) -> Participant:
+    """The playing runner, loaded the way the status_update handler holds it."""
+    async with session_maker() as db:
+        return (
+            await db.execute(
+                select(Participant)
+                .where(
+                    Participant.race_id == race.id,
+                    Participant.status == ParticipantStatus.PLAYING,
+                )
+                .options(
+                    selectinload(Participant.race).selectinload(Race.seed),
+                    selectinload(Participant.race).selectinload(Race.participants),
+                )
+            )
+        ).scalar_one()
+
+
+async def test_a_run_past_the_cutoff_runs_out_of_time_and_the_last_one_out_ends_the_race(
+    async_session,
+):
+    from speedfog_racing.websocket.race.mod import handle_igt_cutoff
+
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE, chaser_igt_ms=DEADLINE + 1)
+    chaser_id = _chaser(race).id
+    await handle_igt_cutoff(async_session, chaser_id)
+
+    async with async_session() as db:
+        race = await _load(db, race)
+        messages = (
+            (await db.execute(select(ChatMessage.message).where(ChatMessage.race_id == race.id)))
+            .scalars()
+            .all()
+        )
+    assert next(p for p in race.participants if p.id == chaser_id).status == (
+        ParticipantStatus.ABANDONED
+    )
+    assert race.status == RaceStatus.FINISHED
+    assert "p1 ran out of time." in messages
+
+
+async def test_a_run_at_the_cutoff_to_the_millisecond_keeps_racing(async_session):
+    from speedfog_racing.websocket.race.mod import handle_igt_cutoff
+
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE, chaser_igt_ms=DEADLINE)
+    chaser_id = _chaser(race).id
+    await handle_igt_cutoff(async_session, chaser_id)
+
+    async with async_session() as db:
+        race = await _load(db, race)
+    assert _chaser(race).id == chaser_id
+    assert race.status == RaceStatus.RUNNING
+
+
+async def test_a_status_update_past_the_cutoff_eliminates_the_run(async_session, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    out_of_time = AsyncMock()
+    monkeypatch.setattr(race_mod, "handle_igt_cutoff", out_of_time)
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE, chaser_igt_ms=DEADLINE)
+    chaser = await _loaded_chaser(async_session, race)
+    handler = race_mod.RaceModHandler(MagicMock(), race.id, async_session)
+    handler._participant_id = chaser.id
+
+    await handler._broadcast_after_status_update(
+        chaser, became_active=False, death_delta=0, history_changed=False, weapons=None
+    )
+    out_of_time.assert_not_awaited()
+
+    # The recorded IGT (already clamped non-decreasing), one millisecond past.
+    chaser.igt_ms += 1
+    await handler._broadcast_after_status_update(
+        chaser, became_active=False, death_delta=0, history_changed=False, weapons=None
+    )
+    out_of_time.assert_awaited_once_with(async_session, chaser.id)
+
+
+async def test_a_deathless_death_past_the_cutoff_is_one_elimination(async_session, monkeypatch):
+    # Dying on the very update that crosses the cutoff: the death eliminates, once.
+    from unittest.mock import AsyncMock, MagicMock
+
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    died, out_of_time = AsyncMock(), AsyncMock()
+    monkeypatch.setattr(race_mod, "handle_deathless_death", died)
+    monkeypatch.setattr(race_mod, "handle_igt_cutoff", out_of_time)
+    race = await _race(async_session, "final:1", igt_cutoff_ms=DEADLINE, chaser_igt_ms=DEADLINE + 1)
+    chaser = await _loaded_chaser(async_session, race)
+    chaser.race.deathless = True
+    handler = race_mod.RaceModHandler(MagicMock(), race.id, async_session)
+    handler._participant_id = chaser.id
+
+    await handler._broadcast_after_status_update(
+        chaser, became_active=False, death_delta=1, history_changed=False, weapons=None
+    )
+    died.assert_awaited_once_with(async_session, chaser.id)
+    out_of_time.assert_not_awaited()

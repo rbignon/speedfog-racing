@@ -97,6 +97,19 @@ and "dead" in the in-game leaderboard. Independently of deathless, the
 in-game overlay freezes an abandoned player's own IGT display at the
 server-recorded value and shows it in red.
 
+### IGT cutoff
+
+`igt_cutoff_ms` (int, ms, nullable, set by the server only): the in-game
+time a run must finish by. A PLAYING participant whose recorded IGT (the
+non-decreasing value, so a restored save replaying its lost segment never
+trips it early) passes it is transitioned to `ABANDONED` from the
+`status_update` ingestion path (`handle_igt_cutoff`), and a finish past it
+is the same elimination, judged on the finish's own IGT. Side effects are
+the deathless elimination's, with "ran out of time" as the public chat
+line; the last run out ends the race through the auto-finish check. A reset
+clears it. Event playoff races set it from their finishes (see the Playoff
+scoring section of `EVENTS.md`).
+
 ---
 
 ## Participant Status
@@ -137,13 +150,14 @@ any status, race RUNNING or FINISHED ──→ DISQUALIFIED ──→ status bef
 - Calls `check_race_auto_finish()` for the race.
 - Implementation note: the finish handler uses two separate DB sessions to avoid nested-session deadlocks in SQLite tests. The `event_flag` handler commits progress, exits its session, then calls `handle_finished()` in a new session.
 
-**REGISTERED / READY / PLAYING → ABANDONED**: five paths:
+**REGISTERED / READY / PLAYING → ABANDONED**: six paths:
 
 1. **Inactivity monitor** (PLAYING): background loop checks every 60s for participants with `last_igt_change_at < now - 30min`. Marks them `ABANDONED` and triggers auto-finish check. Daily-seed races are skipped entirely (`Race.daily_date IS NOT NULL`) because their async 24h window makes inactivity meaningless.
 2. **No-show monitor** (REGISTERED/READY): same loop also catches participants who never started playing. The cutoff is per-participant: both `Race.started_at < now - 30min` AND `Participant.created_at < now - 30min` must hold (equivalent to `max(started_at, created_at) < now - 30min`). This ensures a late-joiner is not abandoned the moment they register, and an early registrant is not abandoned the moment the race starts. When `late_join_window_minutes` is set, the `started_at` anchor is pushed to the window close: the participant is abandoned only once `started_at + late_join_window_minutes < now - 30min`, so a registrant who plans to connect during the window is not swept while it is still open. Skipped entirely when `race_duration_minutes` is set: the hard-close loop sweeps non-terminal participants at the deadline via `finalize_race`.
 3. **Hard-close loop** (REGISTERED/READY/PLAYING): when `close_expired_races` or `close_late_join_done_races` finalizes a race, `finalize_race` moves any remaining non-terminal participant to `ABANDONED`.
 4. **Voluntary abandon**: `POST /races/{id}/abandon` (participant). Accepts REGISTERED, READY, or PLAYING status. Triggers auto-finish check.
 5. **Deathless elimination** (PLAYING): on a race with `deathless` set, the first positive death-count delta seen by the `status_update` handler transitions the participant to `ABANDONED` (`handle_deathless_death`). Triggers auto-finish check.
+6. **IGT cutoff elimination** (PLAYING): on a race with `igt_cutoff_ms` set, a `status_update` or a finish whose recorded IGT passes it transitions the participant to `ABANDONED` (`handle_igt_cutoff`). Triggers auto-finish check.
 
 **Any status → DISQUALIFIED**: `POST /races/{id}/participants/{pid}/disqualify` with a required reason, by the race organizer or an admin (on a daily, whose organizer is the system account, admins only), while the race is RUNNING or FINISHED. The participant's status is saved in `status_before_disqualification` and the run data is kept as it is. A ban does the same to the user's participations in running races, with the reason "Account banned". In a running race the auto-finish check runs; in a finished race the win rewards go to the new winner. See the "Sanctions" section of `CHEAT_DETECTION.md` for the effects on results.
 

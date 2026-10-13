@@ -2924,10 +2924,18 @@ def test_a_playoff_race_s_first_finish_sets_its_igt_cutoff(
         assert info["race"]["race_ends_at"] is None
 
 
-def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(
-    integration_client, race_with_participants, integration_db
+@pytest.mark.parametrize(
+    "cutoff_ms, status_after",
+    [(40_000, ParticipantStatus.ABANDONED), (50_000, ParticipantStatus.FINISHED)],
+)
+def test_a_finish_is_judged_on_its_own_igt_against_the_race_s_cutoff(
+    integration_client, race_with_participants, integration_db, cutoff_ms, status_after
 ):
-    """Between the deadline and the hard-close loop's next poll, a finish is too late."""
+    """A finish past the race's in-game cutoff runs out of time; one at it finishes.
+
+    The finish carries the in-game time it happened at, so a finish replayed
+    after a disconnection is judged on when it happened in game.
+    """
     import asyncio
 
     race_id = race_with_participants["race_id"]
@@ -2939,16 +2947,12 @@ def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(
     )
     assert response.status_code == 200
 
-    async def pass_the_deadline():
+    async def set_the_cutoff():
         async with integration_db() as db:
             await db.execute(
                 update(Race)
                 .where(Race.id == uuid.UUID(race_id))
-                .values(
-                    event_slot="final:1",
-                    started_at=datetime.now(UTC) - timedelta(minutes=50),
-                    race_duration_minutes=48,
-                )
+                .values(event_slot="final:1", igt_cutoff_ms=cutoff_ms)
             )
             await db.commit()
 
@@ -2957,10 +2961,9 @@ def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(
         assert mod.auth()["type"] == "auth_ok"
         mod.send_status_update(igt_ms=1000, death_count=0)
         mod.receive_until_type("leaderboard_update")
-        asyncio.run(pass_the_deadline())
-        mod.send_finished(igt_ms=50000)
-        resp = mod.receive_until_type("error")
-        assert resp["code"] == "race_not_running"
+        asyncio.run(set_the_cutoff())
+        mod.send_finished(igt_ms=50_000)
+        mod.receive_until_type("leaderboard_update")
 
     async def status_of_player():
         async with integration_db() as db:
@@ -2973,7 +2976,7 @@ def test_a_finish_past_a_playoff_race_s_cutoff_is_rejected(
                 )
             ).scalar_one()
 
-    assert asyncio.run(status_of_player()) != ParticipantStatus.FINISHED
+    assert asyncio.run(status_of_player()) == status_after
 
 
 def test_event_flag_rejected_during_countdown(

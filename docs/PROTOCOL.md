@@ -201,7 +201,7 @@ Player is in-game and ready to race. Transitions status from `registered` → `r
 
 #### `status_update`
 
-Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT outruns wall-clock time since the last accepted report by more than 60 seconds (wrong save detected). When rejected as a wrong save, the error message is "Wrong save loaded, please reload your race save", and this error is re-sent on every rejected update so the mod's banner remains effectively continuous. Recovery is stateless: the next plausible report is simply accepted. Nothing is recorded from a rejected update.
+Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` if race is running. Rejected with `error` if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT outruns wall-clock time since the last accepted report by more than 60 seconds (wrong save detected). When rejected as a wrong save, the error message is "Wrong save loaded, please reload your race save", and this error is re-sent on every rejected update so the mod's banner remains effectively continuous. Recovery is stateless: the next plausible report is simply accepted. Nothing is recorded from a rejected update. On a race with an `igt_cutoff_ms`, an update whose recorded IGT passes it eliminates the runner (status `abandoned`, with the elimination's `leaderboard_update`, `race_state` and system chat); a finish past it does the same instead of finishing.
 
 ```json
 {
@@ -275,7 +275,7 @@ Sent at loading screen exit when no event_flag was detected (death, respawn, fas
 
 #### `finished`
 
-Player finished the race. Server-side schema only; the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`. The server does accept `finished` if sent directly, but this path is not used by the mod in practice.
+Player finished the race. Server-side schema only; the mod does not send this directly. Instead, finishing is handled automatically when the server receives an `event_flag` matching the seed's `finish_event`. The server does accept `finished` if sent directly, but this path is not used by the mod in practice. A finish whose IGT is past the race's `igt_cutoff_ms` eliminates the runner instead, like a `status_update` past it.
 
 ```json
 {

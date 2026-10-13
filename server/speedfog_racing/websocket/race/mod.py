@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -27,7 +28,6 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
-    compute_late_join_deadlines,
 )
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import (
@@ -602,6 +602,11 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # Eliminate BEFORE the uncommon-path reload below so the
             # subsequent broadcasts already carry the ABANDONED status.
             await handle_deathless_death(self.session_maker, self._participant_id)
+        elif entity.status == ParticipantStatus.PLAYING and past_igt_cutoff(entity.race, entity):
+            # The elimination broadcasts the leaderboard and race_state itself;
+            # a player_update built from this entity would show the run going on.
+            await handle_igt_cutoff(self.session_maker, self._participant_id)
+            return
 
         if not became_active and death_delta <= 0:
             await asyncio.gather(
@@ -813,9 +818,53 @@ async def handle_deathless_death(
     """Eliminate a participant who died in a deathless race.
 
     Server-authoritative counterpart of ``POST /races/{id}/abandon``: the
-    mod only reports the death count in ``status_update``; the guard here
-    re-checks state in-session so concurrent transitions collapse to a
-    no-op.
+    mod only reports the death count in ``status_update``.
+    """
+    await _eliminate(
+        session_maker,
+        participant_id,
+        applies=lambda race, _participant: race.deathless,
+        public_line="{name} died.",
+        log_label="Deathless elimination",
+    )
+
+
+def past_igt_cutoff(race: Race, participant: Participant) -> bool:
+    """Whether ``participant``'s recorded IGT is past ``race``'s IGT cutoff, if it has one."""
+    return race.igt_cutoff_ms is not None and participant.igt_ms > race.igt_cutoff_ms
+
+
+async def handle_igt_cutoff(
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+) -> None:
+    """Eliminate a participant whose recorded IGT is past the race's IGT cutoff.
+
+    Judged on the recorded, non-decreasing IGT, so a restored save replaying
+    its lost segment never trips it early.
+    """
+    await _eliminate(
+        session_maker,
+        participant_id,
+        applies=past_igt_cutoff,
+        public_line="{name} ran out of time.",
+        log_label="IGT cutoff elimination",
+    )
+
+
+async def _eliminate(
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+    *,
+    applies: Callable[[Race, Participant], bool],
+    public_line: str,
+    log_label: str,
+) -> None:
+    """Abandon a playing participant on a rule the server enforces itself.
+
+    ``applies`` is re-checked in-session, with the race running and the
+    participant playing, so concurrent transitions collapse to a no-op.
+    ``public_line`` is the public chat notice, ``{name}`` the runner's name.
     """
     race_transitioned = False
 
@@ -825,26 +874,26 @@ async def handle_deathless_death(
             return
         race = participant.race
         if (
-            not race.deathless
-            or race.status != RaceStatus.RUNNING
+            race.status != RaceStatus.RUNNING
             or participant.status != ParticipantStatus.PLAYING
+            or not applies(race, participant)
         ):
             return
 
         participant.status = ParticipantStatus.ABANDONED
         await db.commit()
-        logger.info("Deathless elimination: %s", participant.id)
+        logger.info("%s: %s", log_label, participant.id)
 
         participant = await _load_participant(db, participant_id)
         if not participant:
             return
 
         display = participant.user.twitch_display_name or participant.user.twitch_username
-        death_public_json = await persist_system_chat(
+        public_json = await persist_system_chat(
             db,
             participant.race_id,
             ChatChannel.PUBLIC,
-            f"{display} died.",
+            public_line.format(name=display),
         )
 
         # Parity with POST /races/{id}/abandon on dailies: settle the streak
@@ -897,7 +946,7 @@ async def handle_deathless_death(
     room = manager.get_room(participant.race_id)
     if room:
         room.set_participant_status(participant.user_id, ParticipantStatus.ABANDONED)
-        await room.broadcast_chat_public(death_public_json, participant.race)
+        await room.broadcast_chat_public(public_json, participant.race)
         if race_finished_public_json is not None:
             await room.broadcast_chat_public(race_finished_public_json, participant.race)
 
@@ -916,13 +965,50 @@ async def handle_deathless_death(
 # ---------------------------------------------------------------------------
 # Standalone handle_finished (complex, used from 2 call sites)
 # ---------------------------------------------------------------------------
+async def _finish_past_igt_cutoff(
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+    msg: dict[str, Any],
+) -> bool:
+    """Record a finish's IGT when it lands past the race's IGT cutoff, and say so.
+
+    Judged on the finish's own IGT, so a finish replayed after a
+    disconnection counts when it happened in game. Anything else (the race
+    not running, a run already over, a finish within the cutoff) is left to
+    ``handle_finished``, with nothing recorded here.
+    """
+    async with session_maker() as db:
+        participant = await _load_participant_no_seed(db, participant_id)
+        if (
+            participant is None
+            or participant.race.status != RaceStatus.RUNNING
+            or participant.status != ParticipantStatus.PLAYING
+        ):
+            return False
+        finished_igt = clamp_igt(msg.get("igt_ms"))
+        if finished_igt is not None:
+            participant.igt_ms = max(participant.igt_ms, finished_igt)
+        if not past_igt_cutoff(participant.race, participant):
+            return False  # the session closes without a commit
+        await db.commit()
+        return True
+
+
 async def handle_finished(
     websocket: WebSocket,
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
     msg: dict[str, Any],
 ) -> None:
-    """Handle player finish event."""
+    """Handle player finish event.
+
+    A finish past the race's IGT cutoff is no finish: the cutoff eliminates
+    the run instead (``_finish_past_igt_cutoff``).
+    """
+    if await _finish_past_igt_cutoff(session_maker, participant_id, msg):
+        await handle_igt_cutoff(session_maker, participant_id)
+        return
+
     race_transitioned = False
     cutoff_moved = False
 
@@ -931,19 +1017,12 @@ async def handle_finished(
         if not participant:
             return
 
-        # A playoff race's deadline is its cutoff: a finish landing between it
-        # and the hard-close loop's next poll is too late, like one after it.
-        _, ends_at = compute_late_join_deadlines(participant.race)
-        past_cutoff = (
-            participant.race.is_event_stage and ends_at is not None and datetime.now(UTC) >= ends_at
-        )
-        if participant.race.status != RaceStatus.RUNNING or past_cutoff:
+        if participant.race.status != RaceStatus.RUNNING:
             logger.warning(
-                "Rejected finished: race=%s participant=%s status=%s past_cutoff=%s",
+                "Rejected finished: race=%s participant=%s status=%s",
                 participant.race_id,
                 participant.id,
                 participant.race.status.value,
-                past_cutoff,
             )
             try:
                 await asyncio.wait_for(
