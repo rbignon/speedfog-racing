@@ -740,7 +740,7 @@ export function formatEventDate(iso: string, withZone = false): string {
   }).format(new Date(iso));
 }
 
-/** "Sun 4 Oct", no time: the bracket's compact date lines. */
+/** "Sun 4 Oct", no time: the compact date lines, and a day without its time. */
 export function formatEventDay(iso: string): string {
   return new Intl.DateTimeFormat("en-GB", {
     weekday: "short",

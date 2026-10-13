@@ -609,7 +609,8 @@ All dates and times render in the viewer's browser timezone, and the instants
 still ahead of the viewer name that timezone too ("Wed 30 Sept, 21:00 CEST"):
 the take-part steps, the seed cards' opening, the qualified groups with the
 `Cut` tile beside them (that block only shows before the cut), and the
-matches of the Up next box. What the viewer can no longer act on
+matches of the Up next box (the bracket boxes, which sit beside it, give
+their time unnamed). What the viewer can no longer act on
 keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
@@ -674,9 +675,14 @@ one begun on another evening at its next race. Each block shows the date in
 brass with the viewer's timezone and how far ahead it is, the runners with
 their seats, "Cast by" and the casters with their language ("Casters to be
 announced" without any), then one chip per race with its start time, linking
-to the race once attached. It holds two matches, one in a tall tree of fewer
-than four rounds, where the Champion shares its column halfway down; a line
-counts the others. Nothing is next, no box.
+to the race once attached. It lists every such match. Beside a tall tree it
+runs down to the first box under it (the Final when it spreads over the
+final's column, else the Champion; the tree's foot without a final), measured
+since both sit halfway down the tree, and its list scrolls past that, the
+title staying; it takes no room in the grid, so a long list never stretches
+the tree. Under 900px, above the rounds, the box stops at 60% of the
+viewport's height, its list scrolling. Beside a shorter tree (two semis) it lists them all
+unbounded. Nothing is next, no box.
 
 A bracket box whose match is between two races reads `In progress` in amber,
 its route line ember without the travelling dot.
@@ -710,7 +716,10 @@ halfway down the first round; the playoff rules run under the whole tree, their
 list in two columns on a wide screen. Under 900px it becomes one column,
 the Up next box first. A shorter tree (two semis) keeps the older
 arrangement: the tree with a narrow Champion column, the Up next box and the
-rules beside it. A stage without a date reads "Date to be agreed".
+rules beside it. A box gives its match's day and start time in the viewer's
+timezone, without naming it ("Wed 14 Oct, 22:00": the Up next box beside it
+names it), its day alone while the time is not set; a stage without a date
+reads "Date to be agreed".
 
 Notes sit under the "Bracket" title on every tab. From the cut until
 `draw_locks_at`, a line says "The draw is provisional until <day, in brass>

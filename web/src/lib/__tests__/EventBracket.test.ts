@@ -1,8 +1,9 @@
 import { render } from "@testing-library/svelte";
 import { createRawSnippet } from "svelte";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import EventBracket from "$lib/components/events/EventBracket.svelte";
 import type { EventStage, Race } from "$lib/api";
+import { formatEventDate, formatEventDay } from "$lib/events";
 
 function raceWith(overrides: Partial<Race> = {}): Race {
   return {
@@ -575,6 +576,25 @@ describe("EventBracket layout", () => {
     expect(getAllByText("Date to be agreed").length).toBe(6);
   });
 
+  it("dates a timed match with its local time, a day without its time by its day alone", () => {
+    const { getByText } = render(EventBracket, {
+      stages: [
+        stage({ key: "semi_a", date: "2026-10-14T20:00:00Z" }),
+        stage({
+          key: "semi_b",
+          label: "Semi B",
+          date: "2026-10-15T12:00:00Z",
+          time_set: false,
+        }),
+        stage({ key: "semi_c", label: "Semi C", walkover: true }),
+      ],
+      formatDay: fmtDay,
+    });
+    expect(getByText(formatEventDate("2026-10-14T20:00:00Z"))).toBeTruthy();
+    expect(getByText(formatEventDay("2026-10-15T12:00:00Z"))).toBeTruthy();
+    expect(getByText("No match")).toBeTruthy();
+  });
+
   it("keeps a two-semis season in two columns", () => {
     const { container } = render(EventBracket, {
       stages: [
@@ -613,38 +633,6 @@ describe("EventBracket layout", () => {
     render: () => "<ul><li>Rule</li></ul>",
   }));
 
-  const capacity = createRawSnippet((fits: () => number) => ({
-    render: () => `<p class="fits">${fits()}</p>`,
-  }));
-
-  it("tells the side box how many matches fit above the Final or the Champion", () => {
-    const fits = (stages: EventStage[]) =>
-      render(EventBracket, {
-        stages,
-        formatDay: fmtDay,
-        aside: capacity,
-      }).container.querySelector(".fits")?.textContent;
-    // Four quarters: the Champion shares the side column, halfway down.
-    expect(fits(season)).toBe("1");
-    // A round of 32: the box spreads over the final's column, the Final
-    // far below.
-    expect(fits(roundSeason)).toBe("2");
-    // Two semis: the box sits in a column of its own.
-    expect(
-      fits([
-        stage({ key: "semi_a" }),
-        stage({ key: "semi_b", label: "Semi B" }),
-        stage({
-          key: "final",
-          label: "Final",
-          kind: "final",
-          from: ["semi_a", "semi_b"],
-          field: [],
-        }),
-      ]),
-    ).toBe("2");
-  });
-
   it("spreads the evening over the final's column in a four-round tree", () => {
     const { container } = render(EventBracket, {
       stages: roundSeason,
@@ -663,6 +651,45 @@ describe("EventBracket layout", () => {
     expect((grid.querySelector(".rules") as HTMLElement).style.gridColumn).toBe(
       "1 / -1",
     );
+  });
+
+  // happy-dom lays nothing out: the boxes' tops are stubbed, the aside's
+  // area running down to 900.
+  function roomOf(stages: EventStage[]): string {
+    const tops: [string, number][] = [
+      [".aside", 0],
+      [".cell.final > *", 500],
+      [".champ", 580],
+    ];
+    const spy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        const top = tops.find(([sel]) => this.matches(sel))?.[1] ?? 0;
+        const bottom = this.matches(".aside") ? 900 : top + 100;
+        return { top, bottom } as DOMRect;
+      });
+    try {
+      const { container } = render(EventBracket, {
+        stages,
+        formatDay: fmtDay,
+        aside: evening,
+      });
+      return (
+        container.querySelector(".aside-room") as HTMLElement
+      ).style.getPropertyValue("--room");
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it("runs the evening down to the Final, the Champion or the tree's foot", () => {
+    // A round of 32: the box spreads over the final's column, the Final
+    // under it before the Champion.
+    expect(roomOf(roundSeason)).toBe("500px");
+    // Four quarters: the Champion shares the side column.
+    expect(roomOf(season)).toBe("580px");
+    // No final: nothing under the box but the tree's foot.
+    expect(roomOf(season.filter((s) => s.kind !== "final"))).toBe("900px");
   });
 
   it("keeps the evening in the side column of a three-round tree", () => {

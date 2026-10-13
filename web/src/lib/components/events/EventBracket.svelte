@@ -6,6 +6,8 @@
     bracketLayout,
     fillSlots,
     forfeitNotes,
+    formatEventDate,
+    formatStageDate,
     linkPath,
     seatCode,
     stageWinner,
@@ -27,8 +29,11 @@
   }: {
     stages: EventStage[];
     formatDay: (iso: string) => string;
-    /** The Up next section, given how many matches fit beside the tree. */
-    aside?: Snippet<[number]>;
+    /**
+     * The Up next section. Beside a tall tree its height is bounded: a flex
+     * column whose list shrinks and scrolls.
+     */
+    aside?: Snippet;
     /** The playoff rules card. */
     rules?: Snippet;
     /** The lock's day, formatted, while the draw can still change. */
@@ -45,12 +50,40 @@
   // column then sits empty above the final (the final is centred on the
   // first round), so the Up next box spreads over it too.
   let wideAside = $derived(layout.tall && depth >= 4);
-  // How many Up next blocks the side box holds without reaching the boxes
-  // under it: a tall tree of fewer than four rounds centres the Champion in
-  // the side column halfway down (one block); from four rounds the box
-  // spreads over the final's column, the Final far below, and a short tree
-  // gives it a column of its own (two).
-  let asideCapacity = $derived(layout.tall && depth < 4 ? 1 : 2);
+  // Beside a tall tree the Up next box runs down to the first box under it:
+  // the Final when it spreads over the final's column, else the Champion
+  // (the tree's foot without a final), its list scrolling past that. Both
+  // are centred on the whole tree, so no grid line marks their top: the room
+  // is measured, again whenever the grid or those boxes change size.
+  let grid = $state<HTMLElement | null>(null);
+  let asideEl = $state<HTMLElement | null>(null);
+  let room = $state<number | null>(null);
+  $effect(() => {
+    // Reads the layout, a new one with every change of stages (a refresh,
+    // another bracket's tab), so those boxes are queried again.
+    if (!grid || !asideEl || !layout.tall) return;
+    const [g, a] = [grid, asideEl];
+    const under = [
+      ...g.querySelectorAll<HTMLElement>(
+        wideAside ? ".cell.final > *, .champ" : ".champ",
+      ),
+    ];
+    const measure = () => {
+      const top = a.getBoundingClientRect().top;
+      const gap = parseFloat(getComputedStyle(g).rowGap) || 0;
+      const floor = under.length
+        ? Math.min(...under.map((el) => el.getBoundingClientRect().top)) - gap
+        : a.getBoundingClientRect().bottom;
+      room = Math.max(0, floor - top);
+    };
+    // At once, not on the observer's first notification, which waits for a
+    // rendering step (none comes while the tab is hidden).
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(g);
+    for (const el of under) observer.observe(el);
+    return () => observer.disconnect();
+  });
   // A tall tree seats the Up next box above the Champion in a side column,
   // narrower from four rounds on so the rounds keep their width; a short one
   // keeps a narrow Champion column, the Up next box beside it.
@@ -79,11 +112,13 @@
   );
   let afterTree = $derived(2 + layout.rounds.flat().length);
 
+  // A match's day and start in the viewer's timezone, unnamed (the Up next
+  // box names it), or its day alone while its time is not set.
   const dayOf = (stage: EventStage) =>
     stage.walkover
       ? "No match"
       : stage.date
-        ? formatDay(stage.date)
+        ? formatStageDate(stage.date, stage.time_set, formatEventDate)
         : DATE_TO_BE_AGREED;
 
   function stateOf(
@@ -250,6 +285,7 @@
 
 {#snippet tree()}
   <div
+    bind:this={grid}
     class="brk"
     class:tall={layout.tall}
     style:grid-template-columns={columns}
@@ -267,12 +303,18 @@
       </div>
       {#if aside}
         <div
+          bind:this={asideEl}
           class="aside"
           style:grid-column={wideAside ? `${side - 2} / span 3` : side}
           style:grid-row="1 / {top + layout.rows}"
           style:--order="0"
         >
-          {@render aside(asideCapacity)}
+          <div
+            class="aside-room"
+            style:--room={room === null ? null : `${room}px`}
+          >
+            {@render aside()}
+          </div>
         </div>
       {/if}
     {/if}
@@ -280,6 +322,7 @@
       <div
         class="cell"
         class:fed={cell.round > 0}
+        class:final={cell.stage.key === layout.final?.stage.key}
         style:grid-column={2 * cell.round + 1}
         style:grid-row="{top + cell.row} / span {cell.span}"
         style:--order={orderOf.get(cell.stage.key)}
@@ -339,7 +382,7 @@
     </div>
     {#if aside || rules}
       <div class="stack">
-        {#if aside}{@render aside(asideCapacity)}{/if}
+        {#if aside}{@render aside()}{/if}
         {#if rules}{@render rules()}{/if}
       </div>
     {/if}
@@ -369,8 +412,20 @@
   .brk > * {
     min-width: 0;
   }
+  /* The Up next box takes no room of its own in the grid (a long list must
+   * not stretch the tree's rows): it hangs from the top of its area, down to
+   * the measured room at most. */
   .aside {
-    align-self: start;
+    position: relative;
+  }
+  .aside-room {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: var(--room, none);
   }
   .cell.fed,
   .champ-cell {
@@ -490,6 +545,11 @@
     }
     .brk.tall .conn {
       display: none;
+    }
+    /* Above the rounds now, the Up next list keeps them within reach. */
+    .brk.tall .aside-room {
+      position: static;
+      max-height: 60vh;
     }
     .split {
       grid-template-columns: 1fr;

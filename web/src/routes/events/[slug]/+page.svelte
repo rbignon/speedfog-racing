@@ -125,6 +125,13 @@
   let onAir = $derived(liveMatches(detail.stages, now));
   // The selected bracket's next matches, the ones on air left out.
   let upcoming = $derived(upcomingMatches(view.stages, now, onAir));
+  // The Up next list's scrollbar gutter (none for an overlay scrollbar),
+  // which its right margin gives back.
+  let upNextList = $state<HTMLElement | null>(null);
+  let gutter = $state(0);
+  $effect(() => {
+    if (upNextList) gutter = upNextList.offsetWidth - upNextList.clientWidth;
+  });
   // The lock's day under the bracket title, while the draw can still change:
   // a bound the organizers close by hand once every runner confirmed, so the
   // day says enough.
@@ -280,11 +287,11 @@
 </div>
 
 <main class="container">
-  {#snippet upNextSection(capacity: number)}
-    <div>
+  {#snippet upNextSection()}
+    <div class="up-next-box">
       <SectionTitle>Up next</SectionTitle>
-      <div class="up-next">
-        {#each upcoming.slice(0, capacity) as match (match.stage.key)}
+      <div class="up-next" bind:this={upNextList} style:--gutter="{gutter}px">
+        {#each upcoming as match (match.stage.key)}
           <EventUpNext
             {match}
             stages={detail.stages}
@@ -293,11 +300,6 @@
           />
         {/each}
       </div>
-      {#if upcoming.length > capacity}
-        <p class="more">
-          {upcoming.length - capacity} more scheduled in the bracket
-        </p>
-      {/if}
     </div>
   {/snippet}
 
@@ -1243,16 +1245,27 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
   }
+  /* Beside a tall tree the bracket bounds the box's height: the title stays,
+   * the list shrinks and scrolls. */
+  .up-next-box {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   .up-next {
     display: flex;
     flex-direction: column;
     gap: 22px;
-  }
-  .more {
-    margin: 14px 0 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-xs);
-    color: var(--color-text-secondary);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* Room inside the scroller for the route strips' markers, which overhang
+     * the blocks, without moving the blocks themselves. On the right the
+     * margin also gives back the scrollbar's gutter, reserved whether the
+     * list scrolls or not, so the blocks keep their column's width. */
+    margin: -7px calc(-2px - var(--gutter, 0px)) 0 -10px;
+    padding: 7px 2px 0 10px;
+    scrollbar-gutter: stable;
   }
   /* Too narrow to hold both ends apart: the right-hand side joins the signal
    * on the left, wrapping under it when it does not fit. */
