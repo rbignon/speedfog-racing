@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.7";
+pub const PROTOCOL_VERSION: &str = "1.8";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -221,9 +221,9 @@ pub struct ParticipantInfo {
 ///
 /// Carries every race-level field the server may push at any time. Only the
 /// fields the mod actually uses are read by the UI today (status, race_ends_at,
-/// countdown_seconds); the rest are kept on the struct so a single payload
-/// shape covers `auth_ok`, `race_state` and `race_info_update` and so the
-/// protocol stays symmetrical with the spectator client.
+/// igt_cutoff_ms, countdown_seconds); the rest are kept on the struct so a
+/// single payload shape covers `auth_ok`, `race_state` and `race_info_update`
+/// and so the protocol stays symmetrical with the spectator client.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RaceInfo {
     pub id: String,
@@ -245,6 +245,11 @@ pub struct RaceInfo {
     pub registration_closes_at: Option<String>,
     #[serde(default)]
     pub race_ends_at: Option<String>,
+    /// In-game time (ms) a run must finish by: past it the server eliminates
+    /// a playing runner, and the overlay counts the local IGT down to it.
+    /// Absent from servers older than protocol 1.8, null on a race without one.
+    #[serde(default)]
+    pub igt_cutoff_ms: Option<u32>,
     #[serde(default)]
     pub private_dag: bool,
     /// Deathless race: the server abandons a participant on their first
@@ -463,7 +468,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.7""#));
+        assert!(json.contains(r#""protocol_version":"1.8""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 

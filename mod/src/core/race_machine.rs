@@ -559,6 +559,18 @@ impl RaceMachine {
         self.race_state.participants.get(idx)
     }
 
+    /// In-game seconds the local runner has left before the race's IGT
+    /// cutoff, given their IGT; negative once past it. `None` when the race
+    /// has no cutoff or the local runner is not playing (a finished run's
+    /// frozen IGT has nothing left to count).
+    pub fn igt_cutoff_seconds_left(&self, igt_ms: u32) -> Option<i64> {
+        let cutoff = self.race_state.race.as_ref()?.igt_cutoff_ms?;
+        if self.my_participant()?.status != ParticipantStatus::Playing {
+            return None;
+        }
+        Some((i64::from(cutoff) - i64::from(igt_ms)) / 1000)
+    }
+
     /// Get current status message if still valid (within 3 seconds).
     pub fn get_status(&self, now: Instant) -> Option<&str> {
         self.status_message.as_ref().and_then(|(msg, time)| {
@@ -864,6 +876,7 @@ impl RaceMachine {
                 self.last_received_debug = Some(format!("race_info_update(name={})", race.name));
                 info!(
                     race_ends_at = ?race.race_ends_at,
+                    igt_cutoff_ms = ?race.igt_cutoff_ms,
                     status = %race.status.as_str(),
                     "[WS] Race info updated"
                 );
@@ -1813,6 +1826,54 @@ mod tests {
             now,
         );
         m
+    }
+
+    /// Machine authed into a running race with an IGT cutoff at 47:00, the
+    /// local participant in `my_status`.
+    fn cutoff_machine(my_status: &str, now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        let race: RaceInfo = serde_json::from_str(
+            r#"{"id":"r1","name":"x","status":"running","igt_cutoff_ms":2820000}"#,
+        )
+        .unwrap();
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race,
+                seed: test_seed(&[100, 200, 900], Some(900), "{}"),
+                participants: vec![test_participant("p1", my_status, 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        m
+    }
+
+    #[test]
+    fn igt_cutoff_counts_the_local_igt_down_in_whole_seconds() {
+        let m = cutoff_machine("playing", Instant::now());
+        assert_eq!(m.igt_cutoff_seconds_left(2_220_000), Some(600));
+        // A partial second reads as the whole seconds below it, like the
+        // wall-clock countdown.
+        assert_eq!(m.igt_cutoff_seconds_left(2_819_001), Some(0));
+        assert_eq!(m.igt_cutoff_seconds_left(2_830_000), Some(-10));
+    }
+
+    #[test]
+    fn igt_cutoff_has_nothing_left_to_count_once_the_run_is_over() {
+        // A finished run's IGT is frozen under the cutoff: no stale countdown.
+        for status in ["finished", "abandoned", "disqualified"] {
+            let m = cutoff_machine(status, Instant::now());
+            assert_eq!(m.igt_cutoff_seconds_left(2_220_000), None, "{status}");
+        }
+    }
+
+    #[test]
+    fn a_race_without_an_igt_cutoff_counts_nothing() {
+        // The race payload of a server older than protocol 1.8.
+        let m = running_machine(Instant::now());
+        assert_eq!(m.igt_cutoff_seconds_left(2_220_000), None);
     }
 
     fn snap_deaths(igt: Option<u32>, deaths: u32) -> FrameSnapshot {

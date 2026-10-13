@@ -554,38 +554,51 @@ impl RaceTracker {
     }
 
     /// Amber countdown shown right-aligned when a running race has less than
-    /// 30 minutes remaining. Only shown while the race is RUNNING and
-    /// race_ends_at is in the future.
+    /// 30 minutes remaining: the local runner's in-game time left before the
+    /// race's IGT cutoff when it has one, otherwise the wall-clock time left
+    /// before race_ends_at.
     fn render_race_ends_warning(
         &self,
         ui: &hudhook::imgui::Ui,
         max_width: f32,
         bufs: &mut RenderBuffers,
     ) {
-        if let Some(race_info) = self.race_info() {
-            if race_info.status == RaceStatus::Running {
-                if let Some(ends_at_dt) = race_info.race_ends_at_dt {
-                    let remaining_seconds = ends_at_dt
-                        .signed_duration_since(chrono::Utc::now())
-                        .num_seconds();
-                    if remaining_seconds > 0 && remaining_seconds < 1800 {
-                        // The text only changes once per second; reformat then.
-                        if bufs.banner_secs != Some(remaining_seconds) {
-                            bufs.banner_secs = Some(remaining_seconds);
-                            bufs.banner_text.clear();
-                            let mins = remaining_seconds / 60;
-                            let secs = remaining_seconds % 60;
-                            write!(bufs.banner_text, "{}:{:02} left", mins, secs).ok();
-                        }
-                        // Countdown is data: mono, like the other right columns
-                        let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
-                        let text_width = ui.calc_text_size(&bufs.banner_text)[0];
-                        let y = ui.cursor_pos()[1];
-                        ui.set_cursor_pos([max_width - text_width, y]);
-                        ui.text_colored(self.cached_colors.gold, &bufs.banner_text);
-                    }
-                }
+        let Some(race_info) = self.race_info() else {
+            return;
+        };
+        if race_info.status != RaceStatus::Running {
+            return;
+        }
+        let remaining_seconds = if race_info.igt_cutoff_ms.is_some() {
+            match self
+                .read_igt()
+                .and_then(|igt| self.machine.igt_cutoff_seconds_left(igt))
+            {
+                Some(secs) => secs,
+                None => return,
             }
+        } else if let Some(ends_at_dt) = race_info.race_ends_at_dt {
+            ends_at_dt
+                .signed_duration_since(chrono::Utc::now())
+                .num_seconds()
+        } else {
+            return;
+        };
+        if remaining_seconds > 0 && remaining_seconds < 1800 {
+            // The text only changes once per second; reformat then.
+            if bufs.banner_secs != Some(remaining_seconds) {
+                bufs.banner_secs = Some(remaining_seconds);
+                bufs.banner_text.clear();
+                let mins = remaining_seconds / 60;
+                let secs = remaining_seconds % 60;
+                write!(bufs.banner_text, "{}:{:02} left", mins, secs).ok();
+            }
+            // Countdown is data: mono, like the other right columns
+            let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
+            let text_width = ui.calc_text_size(&bufs.banner_text)[0];
+            let y = ui.cursor_pos()[1];
+            ui.set_cursor_pos([max_width - text_width, y]);
+            ui.text_colored(self.cached_colors.gold, &bufs.banner_text);
         }
     }
 

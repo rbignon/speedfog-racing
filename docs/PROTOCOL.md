@@ -117,7 +117,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.7**. It is defined in
+release numbers. Current: **1.8**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -129,6 +129,7 @@ Bump rules:
 
 Version history:
 
+- **1.8** - in-game cutoff: optional `igt_cutoff_ms` on the `race` object (RaceInfo), the in-game time a run must finish by. The server eliminates a playing runner past it; the mod counts the local IGT down to it while the local runner plays. Older mods ignore the field (no countdown on such a race), and a newer mod facing an older server keeps the wall-clock countdown.
 - **1.7** - per-runner splits: optional `layer_entry_igts` on `ParticipantInfo` (`leaderboard_update`, `player_update`), each runner's first-arrival IGT per layer. The mod's centered leaderboard measures every gap between the local player and each runner on their own splits (see [Gap Timing](#gap-timing)); older mods ignore the field, and a newer mod facing an older server keeps leader-relative gaps.
 - **1.6** - disqualification: participant status `disqualified` (terminal, ranked last), set by the race organizer or an admin. The mod shows a "DISQUALIFIED" line to the runner concerned and "DQ" in the leaderboard; older mods read it as an unknown status and keep working.
 - **1.5** - cheat detection: optional `debug_flags` list on `status_update` (wire names of the game debug flags seen since the race start, omitted when empty). The server records the first observation of each flag and alerts the race organizer and admins; see `docs/CHEAT_DETECTION.md`.
@@ -1149,7 +1150,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                   |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, `race_ends_at` (countdown warning when less than 1h remains), `deathless` (overlay tag and local death banner), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 
