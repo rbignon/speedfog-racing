@@ -963,29 +963,25 @@ def s7_platform(bundle: Bundle) -> list[Finding]:
     findings: list[Finding] = []
     for race_id, race in bundle.races.items():
         slot = str(race.get("event_slot") or "")
-        started = parse_time(race.get("started_at"))
+        # A playoff race carries its in-game cutoff once a run finishes; one
+        # from before the cutoff ran on in-game time carries the wall-clock
+        # duration its first finisher set instead.
         if (
             not slot
             or slot.startswith("qualifier:")
+            or race.get("igt_cutoff_ms") is not None
             or race.get("race_duration_minutes")
         ):
             continue
         finishers = [r for r in bundle.race_runs(race_id) if r.status == "finished"]
-        finishers = [r for r in finishers if r.finished_at is not None]
-        if started is None or not finishers:
+        if not finishers:
             continue
-        first = min(r.finished_at for r in finishers if r.finished_at is not None)
         event = bundle.events.get(str(race.get("event_id") or ""), {})
         cutoff = int(
             (event.get("config") or {}).get("playoff_cutoff_minutes", S7_DEFAULT_CUTOFF)
         )
-        minutes = math.ceil((first - started).total_seconds() / 60) + cutoff
-        deadline = started + timedelta(minutes=minutes)
-        late = [
-            r
-            for r in finishers
-            if r.finished_at is not None and r.finished_at > deadline
-        ]
+        deadline_ms = min(r.igt_ms for r in finishers) + cutoff * 60_000
+        late = [r for r in finishers if r.igt_ms > deadline_ms]
         findings.append(
             Finding(
                 signature="platform",
@@ -995,18 +991,12 @@ def s7_platform(bundle: Bundle) -> list[Finding]:
                 players=[r.user_id for r in late],
                 evidence={
                     "kind": "cutoff_missing",
-                    "deadline": deadline.isoformat(),
+                    "deadline_igt_ms": deadline_ms,
                     "late_finishers": [
                         {
                             "user_id": r.user_id,
-                            "finished_at": r.finished_at.isoformat()
-                            if r.finished_at
-                            else None,
-                            "late_by_s": round(
-                                (r.finished_at - deadline).total_seconds()
-                            )
-                            if r.finished_at
-                            else None,
+                            "igt_ms": r.igt_ms,
+                            "late_by_s": round((r.igt_ms - deadline_ms) / 1000),
                         }
                         for r in late
                     ],

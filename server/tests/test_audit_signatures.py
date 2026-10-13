@@ -655,48 +655,56 @@ def test_s6_old_account_or_many_runs_is_not_fresh():
 # --- S7 platform and S8 debug_flags -------------------------------------------
 
 
-def test_s7_cutoff_never_applied():
-    start = T0
-    runs = [
-        make_run(
-            [e("start", 0, "spawn")],
-            rid="first",
-            user="u1",
-            race="sc3",
-            finished=start + timedelta(minutes=39, seconds=53),
-        ),
-        make_run(
-            [e("start", 0, "spawn")],
-            rid="ok",
-            user="u2",
-            race="sc3",
-            finished=start + timedelta(minutes=48),
-        ),
-        make_run(
-            [e("start", 0, "spawn")],
-            rid="late",
-            user="u3",
-            race="sc3",
-            finished=start + timedelta(minutes=59, seconds=44),
-        ),
-    ]
-    races = {
+def _s7_race(**fields: object) -> dict[str, dict[str, object]]:
+    return {
         "sc3": {
             "id": "sc3",
             "name": "Showcase 3",
             "event_id": "ev",
             "event_slot": "showcase:3",
             "race_duration_minutes": None,
-            "started_at": start.isoformat(),
+            "igt_cutoff_ms": None,
+            "started_at": T0.isoformat(),
             "organizer_id": "org",
             "is_target": True,
+            **fields,
         }
     }
-    events = {"ev": {"id": "ev", "config": {"playoff_cutoff_minutes": 10}}}
-    findings = sig.s7_platform(make_bundle(runs, {}, races=races, events=events))
+
+
+def _s7_runs() -> list:
+    # Best time 39:00: the deadline is 49:00 of in-game time, whatever the clock.
+    return [
+        make_run(
+            [e("start", 0, "spawn")],
+            rid=rid,
+            user=user,
+            race="sc3",
+            igt_s=igt_s,
+            finished=T0 + timedelta(seconds=igt_s + 60),
+        )
+        for rid, user, igt_s in (("first", "u1", 2340), ("ok", "u2", 2940), ("late", "u3", 2941))
+    ]
+
+
+S7_EVENTS = {"ev": {"id": "ev", "config": {"playoff_cutoff_minutes": 10}}}
+
+
+def test_s7_cutoff_never_applied():
+    findings = sig.s7_platform(make_bundle(_s7_runs(), {}, races=_s7_race(), events=S7_EVENTS))
     (cutoff,) = [f for f in findings if f.evidence.get("kind") == "cutoff_missing"]
     assert cutoff.strength == "medium" and cutoff.players == ["u3"]
-    assert cutoff.evidence["deadline"] == (start + timedelta(minutes=50)).isoformat()
+    assert cutoff.evidence["deadline_igt_ms"] == 2_940_000
+
+
+@pytest.mark.parametrize("fields", [{"igt_cutoff_ms": 2_940_000}, {"race_duration_minutes": 50}])
+def test_s7_a_race_that_carried_its_cutoff_is_not_flagged(fields):
+    # igt_cutoff_ms today; race_duration_minutes on a race from before the
+    # cutoff ran on in-game time.
+    findings = sig.s7_platform(
+        make_bundle(_s7_runs(), {}, races=_s7_race(**fields), events=S7_EVENTS)
+    )
+    assert [f for f in findings if f.evidence.get("kind") == "cutoff_missing"] == []
 
 
 def test_s7_organizer_racing_their_event():

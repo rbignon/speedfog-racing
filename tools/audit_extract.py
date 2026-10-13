@@ -347,6 +347,7 @@ async def export(
                         Race.max_participants,
                         Race.late_join_window_minutes,
                         Race.race_duration_minutes,
+                        Race.igt_cutoff_ms,
                         Race.custom_rules,
                         Race.private_dag,
                         Race.deathless,
