@@ -422,11 +422,10 @@ Metro reads `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but neither
 never called on that page at all. A `p1` or `focus` added to a metro URL is
 silently ignored. Browser reads the same parameters as metro, for the same
 reason: it seats no runner, and its `delay` only shifts the desk's clock.
-Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4`
-or `focus` in its URL is silently ignored), plus `cams`, `c1`, `c2`,
-`delay`, `guides` and `event`. Talk only reads `c1`, `c2`, `cams` and
-`guides` (it has no runners to seat and no live feed to delay; see "Delay"
-below).
+Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4` or `focus` in its
+URL is silently ignored), plus `cams`, `c1`, `c2`, `delay`, `guides` and
+`event`. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no runners
+to seat and no live feed to delay; see "Delay" below).
 
 | Param      | Meaning                                                                                     | Default |
 | ---------- | ------------------------------------------------------------------------------------------- | ------- |
@@ -451,8 +450,9 @@ someone else's video mid-race.
 turn its form into a scene URL, and it does not carry every parameter every
 time:
 
-- `p1`..`p4` only for the slots actually named, race scenes only (`p1`..`p2`
-  on duel, the only holes it has).
+- `p1`..`p4` only for the slots actually named, and only on the scenes that
+  seat runners: one per POV or hero hole the scene's layout cuts (`p1`..`p4`
+  on quad and focus, `p1`..`p2` on duel, none on metro and browser).
 - `focus` only on the focus scene, and only when set.
 - `c1`/`c2` only for the casters actually named.
 - `event` only when a co-brand is chosen, race scenes only.
@@ -526,11 +526,14 @@ It gives a caster, without hand-editing a URL:
   caster name doesn't reload the preview (and reopen its spectator
   WebSocket) on every keystroke; every other field in the panel stays live.
 - A scene picker: Quad, Focus 1 through 4, Duel, Metro, Browser, Talk.
-- Hole assignment (race scenes only): a dropdown per POV hole (two on the
-  duel scene), defaulting to "(auto, join order)"; picking the same runner
-  twice is refused rather than silently hiding another runner, except when
-  the duplicate sits in a hole the duel scene doesn't render, which is
-  freed instead (it can't be cleared from the panel).
+- Hole assignment, on the scenes that seat runners (quad, focus, duel): a
+  dropdown per POV hole (two on the duel scene), pre-filled with the field in
+  join order, "(auto, join order)" for a hole the field doesn't fill or one
+  the caster clears; the panel leaves it out on metro, browser and talk,
+  keeping the seats picked for the next scene that has some. Picking the
+  same runner twice is refused rather than silently hiding another runner,
+  except when the duplicate sits in a hole the duel scene doesn't render,
+  which is freed instead (it can't be cleared from the panel).
 - Cams (0, 1 or 2) and the two caster usernames.
 - An event co-brand picker, and, on the talk scene, a stage picker scoped to
   the chosen event: its stages, then its showcases.

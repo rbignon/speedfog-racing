@@ -31,6 +31,14 @@ describe("buildCastUrl", () => {
     );
   });
 
+  it("carries no seating on the metro and browser scenes, which seat nobody", () => {
+    for (const scene of ["metro", "browser"] as const) {
+      expect(buildCastUrl("https://x.tv", scene, base)).toBe(
+        `https://x.tv/overlay/cast/race/r1/${scene}?c1=fogcaster&c2=nightbell&cams=2&delay=8`,
+      );
+    }
+  });
+
   it("leaves out what is already the default, so the URL stays readable", () => {
     const url = buildCastUrl("https://x.tv", "quad", {
       ...base,

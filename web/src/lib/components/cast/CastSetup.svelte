@@ -190,7 +190,7 @@
         // scene doesn't render (the duel scene shows two of the four, and
         // defaults seat the whole field) can't be freed from the UI, so
         // it is cleared instead.
-        if (scene === "duel" && dupIndex >= 2) {
+        if (dupIndex >= seatCount) {
           slots[dupIndex] = null;
         } else {
           slotErrors[i] = `Already seated in POV ${dupIndex + 1}.`;
@@ -285,6 +285,12 @@
   });
 
   let layout = $derived(sceneLayout(scene, { cams, focus: focusSlot }));
+  // One POV dropdown per POV or hero hole the scene cuts: four on quad and
+  // focus, two on duel, none on metro, browser and talk, which seat nobody
+  // (buildCastUrl carries the same count of p<n>).
+  let seatCount = $derived(
+    layout.holes.filter((h) => h.role === "pov" || h.role === "hero").length,
+  );
   // The map is drawn by the page, not pierced: it is listed in the layout
   // only so the guides mode can print its box (see CastPlate's own
   // `role !== "map"` filter). Printing it here too would tell the caster to
@@ -367,13 +373,13 @@
     {/each}
   </div>
 
-  {#if scene !== "talk"}
+  {#if seatCount > 0}
     <div class="section">
       <h3>Hole assignment</h3>
       <div class="hole-grid">
-        <!-- The duel scene only has two POV holes; a p3/p4 would be dropped
-             from its URL anyway (see buildCastUrl). -->
-        {#each scene === "duel" ? [0, 1] : [0, 1, 2, 3] as i (i)}
+        <!-- Only the scene's own POV holes (two on duel); a slot past them
+             would be dropped from its URL anyway (see buildCastUrl). -->
+        {#each [0, 1, 2, 3].slice(0, seatCount) as i (i)}
           <label class="field">
             <span>POV {i + 1}</span>
             <select

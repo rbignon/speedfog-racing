@@ -87,6 +87,37 @@ describe("CastSetup: hole assignment", () => {
     expect(container.textContent).toContain("Already seated in POV 1.");
   });
 
+  it("offers no hole assignment on a scene that seats nobody", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-12"), onClose: () => {} },
+    });
+    for (const label of ["Metro", "Browser", "Talk"]) {
+      await selectScenePill(container, label);
+      expect(container.querySelectorAll(".hole-grid select")).toHaveLength(0);
+    }
+  });
+
+  it("keeps the seats picked on a scene that seats nobody for the next one", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-13"), onClose: () => {} },
+    });
+    const seats = () =>
+      [
+        ...container.querySelectorAll<HTMLSelectElement>(".hole-grid select"),
+      ].map((s) => s.value);
+    const pov1 =
+      container.querySelector<HTMLSelectElement>(".hole-grid select")!;
+    await fireEvent.change(pov1, { target: { value: "" } });
+    await selectScenePill(container, "Metro");
+    await selectScenePill(container, "Quad");
+
+    // POV 1 freed by hand, the others still the defaults: a reset would
+    // bring alice back, a wipe would leave every hole on auto.
+    expect(seats()).toEqual(["", "bob", "carol", "dave"]);
+    expect(urlInputValue(container)).not.toContain("p1=");
+    expect(urlInputValue(container)).toContain("p2=bob");
+  });
+
   it("accepts the same runner once their old hole is freed first", async () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-3"), onClose: () => {} },
