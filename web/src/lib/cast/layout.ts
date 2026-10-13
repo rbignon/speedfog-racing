@@ -22,7 +22,7 @@ export interface Rect {
 }
 
 /** A hole: the plate is pierced here and OBS shows through. */
-export type CastRole = "pov" | "hero" | "cam" | "map";
+export type CastRole = "pov" | "hero" | "cam" | "map" | "browser";
 
 export interface CastRect extends Rect {
   id: string;
@@ -37,7 +37,13 @@ export interface CastScene {
   panels: Record<string, Rect>;
 }
 
-export type CastSceneId = "quad" | "focus" | "metro" | "duel" | "talk";
+export type CastSceneId =
+  | "quad"
+  | "focus"
+  | "metro"
+  | "duel"
+  | "browser"
+  | "talk";
 
 export interface SceneOptions {
   /** Which slot holds the hero POV on the focus scene (1 to 4). */
@@ -46,7 +52,7 @@ export interface SceneOptions {
   cams?: number;
 }
 
-// --- the desk, shared by the quad, focus, duel and metro scenes ----------
+// --- the desk, shared by every scene but talk ------------------------------
 
 const LOCK_W = 280;
 const LOCK_GAP = 28;
@@ -77,7 +83,8 @@ function desk(h: number): Desk {
   };
 }
 
-/** The full desk of the focus, duel and metro scenes: y 776, cams 384x288. */
+/** The full desk of the focus, duel, metro and browser scenes: y 776, cams
+ * 384x288. */
 const DESK = desk(288);
 /** The quad's thinner desk: y 848, cams 288x216. Its four POVs were too
  * small at a third of the canvas; they take the 72px this desk gives up. Only the quad: the other scenes cannot grow their POVs
@@ -299,7 +306,25 @@ function metroScene(cams: number): CastScene {
   };
 }
 
-// --- scene 5, talk --------------------------------------------------------
+// --- scene 5, browser -----------------------------------------------------
+
+// The caster's own browser, captured in OBS, over the whole main area: what
+// metro draws there (map, log, standings) gives way to a page the caster
+// picks. Meant for web pages, which take any window size, so the hole spans
+// the full width rather than holding a 16:9 shape.
+const BROWSER: Rect = { x: M, y: MAIN_Y, w: CANVAS.w - 2 * M, h: MAIN_H };
+
+function browserScene(cams: number): CastScene {
+  return {
+    holes: [
+      { id: "browser", role: "browser", label: "BROWSER", ...BROWSER },
+      ...deskHoles(cams),
+    ],
+    panels: deskPanels(),
+  };
+}
+
+// --- scene 6, talk --------------------------------------------------------
 
 const TALK_CAM_W = 736;
 const TALK_CAM_H = 552; // 4:3
@@ -371,6 +396,8 @@ export function sceneLayout(
       return metroScene(cams);
     case "duel":
       return duelScene(cams);
+    case "browser":
+      return browserScene(cams);
     case "talk":
       return talkScene(cams);
   }
@@ -386,11 +413,11 @@ export function formatGeo(rect: CastRect): string {
  * (the page draws it itself), and, when the caller says which POV/hero
  * slots hold a seated runner, only those. A `pov`/`hero` hole's id is always
  * `pov<slot>`, so the slot number comes straight off it. `seatedSlots`
- * omitted (metro, talk, or a caller that hasn't resolved seating yet) keeps
- * every non-map hole, so a scene with no POV holes needs no change to keep
- * working. Otherwise a race with fewer than four runners would still
- * broadcast a framed, numbered hole onto whatever sits under the browser
- * source, with nothing seated in it.
+ * omitted (metro, browser, talk, or a caller that hasn't resolved seating
+ * yet) keeps every non-map hole, so a scene with no POV holes needs no
+ * change to keep working. Otherwise a race with fewer than four runners
+ * would still broadcast a framed, numbered hole onto whatever sits under the
+ * browser source, with nothing seated in it.
  */
 export function pierceableHoles(
   holes: CastRect[],

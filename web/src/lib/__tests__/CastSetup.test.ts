@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
 import CastSetup from "$lib/components/cast/CastSetup.svelte";
 import type { RaceDetail } from "$lib/api";
+import { copyToClipboard } from "$lib/utils/clipboard";
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
@@ -11,6 +12,10 @@ vi.mock("$lib/api", async () => {
     fetchEvent: vi.fn().mockResolvedValue({ stages: [], showcases: [] }),
   };
 });
+
+vi.mock("$lib/utils/clipboard", () => ({
+  copyToClipboard: vi.fn().mockResolvedValue(true),
+}));
 
 function fakeParticipant(id: string, username: string, colorIndex: number) {
   return {
@@ -43,6 +48,7 @@ function fakeRace(id = "race-1"): RaceDetail {
 }
 
 beforeEach(() => {
+  vi.mocked(copyToClipboard).mockClear();
   try {
     localStorage.clear();
   } catch {
@@ -103,6 +109,77 @@ function selectScenePill(container: HTMLElement, label: string) {
   if (!btn) throw new Error(`no scene pill labelled ${label}`);
   return fireEvent.click(btn);
 }
+
+function scenePillLabels(container: HTMLElement): string[] {
+  return [...container.querySelectorAll(".scene-picker .pill")].map(
+    (b) => b.textContent?.trim() ?? "",
+  );
+}
+
+function urlInputValue(container: HTMLElement): string {
+  return (container.querySelector(".url-input") as HTMLInputElement).value;
+}
+
+describe("CastSetup: scene list", () => {
+  it("offers the browser scene and builds its URL", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-9"), onClose: () => {} },
+    });
+    await selectScenePill(container, "Browser");
+
+    expect(urlInputValue(container)).toContain(
+      "/overlay/cast/race/race-9/browser?",
+    );
+    const text = container.querySelector(".positions")?.textContent ?? "";
+    expect(text).toContain("BROWSER");
+  });
+
+  it("copies every race scene the picker offers with Copy all", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-10"), onClose: () => {} },
+    });
+    // Talk needs an event and a stage first, so it stays out of Copy all
+    // until then (see the talk scene URL guard below).
+    const offered = new Set<string>();
+    for (const label of scenePillLabels(container)) {
+      if (label === "Talk") continue;
+      await selectScenePill(container, label);
+      offered.add(new URL(urlInputValue(container)).pathname);
+    }
+
+    const copyAll = [...container.querySelectorAll("button")].find(
+      (b) => b.textContent?.trim() === "Copy all scene URLs",
+    ) as HTMLButtonElement;
+    await fireEvent.click(copyAll);
+
+    expect(copyToClipboard).toHaveBeenCalledTimes(1);
+    const copied = vi.mocked(copyToClipboard).mock.calls[0][0];
+    expect(new Set(copied.split("\n").map((u) => new URL(u).pathname))).toEqual(
+      offered,
+    );
+  });
+
+  it("reopens on whichever scene the caster last picked", async () => {
+    const race = fakeRace("race-11");
+    const first = render(CastSetup, { props: { race, onClose: () => {} } });
+    const labels = scenePillLabels(first.container);
+    first.unmount();
+
+    for (const label of labels) {
+      const before = render(CastSetup, { props: { race, onClose: () => {} } });
+      await selectScenePill(before.container, label);
+      before.unmount();
+
+      const after = render(CastSetup, { props: { race, onClose: () => {} } });
+      expect(
+        after.container
+          .querySelector(".scene-picker .pill.active")
+          ?.textContent?.trim(),
+      ).toBe(label);
+      after.unmount();
+    }
+  });
+});
 
 describe("CastSetup: OBS positions", () => {
   it("never lists the metro map as a position to place a video source at", async () => {

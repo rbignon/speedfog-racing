@@ -33,6 +33,7 @@
     { id: "focus", focus: 4, label: "Focus 4" },
     { id: "duel", label: "Duel" },
     { id: "metro", label: "Metro" },
+    { id: "browser", label: "Browser" },
     { id: "talk", label: "Talk" },
   ];
 
@@ -74,7 +75,14 @@
     };
   }
 
-  const SCENE_IDS: CastSceneId[] = ["quad", "focus", "metro", "duel", "talk"];
+  const SCENE_IDS: CastSceneId[] = [
+    "quad",
+    "focus",
+    "metro",
+    "duel",
+    "browser",
+    "talk",
+  ];
 
   // A function, not a top-level const: `race` is a prop, and reading it
   // outside a closure would only ever capture its initial value.
@@ -289,9 +297,9 @@
   // caster has actually picked which stage it introduces: an unconfigured
   // talk URL would just point at a 404.
   let allUrls = $derived.by(() => {
-    const lines = (["quad", "focus", "duel", "metro"] as CastSceneId[]).map(
-      (id) => buildCastUrl(origin, id, urlOpts),
-    );
+    const lines = (
+      ["quad", "focus", "duel", "metro", "browser"] as CastSceneId[]
+    ).map((id) => buildCastUrl(origin, id, urlOpts));
     if (eventSlug && stageKey) {
       lines.push(buildCastUrl(origin, "talk", urlOpts));
     }

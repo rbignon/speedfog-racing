@@ -8,7 +8,14 @@ import {
   type CastSceneId,
 } from "$lib/cast/layout";
 
-const SCENES: CastSceneId[] = ["quad", "focus", "metro", "duel", "talk"];
+const SCENES: CastSceneId[] = [
+  "quad",
+  "focus",
+  "metro",
+  "duel",
+  "browser",
+  "talk",
+];
 
 function overlaps(a: Rect, b: Rect): boolean {
   return (
@@ -127,7 +134,7 @@ describe("sceneLayout", () => {
     const quad = sceneLayout("quad");
     const cam = (scene: CastSceneId) =>
       sceneLayout(scene).holes.find((h) => h.id === "cam1")!;
-    for (const scene of ["focus", "duel", "metro"] as const) {
+    for (const scene of ["focus", "duel", "metro", "browser"] as const) {
       expect(cam("quad").h).toBeLessThan(cam(scene).h);
       expect(sceneLayout(scene).panels.race.h).toBe(cam(scene).h);
     }
@@ -165,6 +172,37 @@ describe("sceneLayout", () => {
     expect(holes.filter((h) => h.role === "map")).toHaveLength(1);
     expect(holes.filter((h) => h.role === "pov")).toHaveLength(0);
   });
+
+  // The caster's browser takes everything metro draws above its desk (map,
+  // log and standings), and the desk stays the one metro shows.
+  it("gives the browser scene metro's desk and one hole over the whole area above it", () => {
+    for (const cams of [0, 1, 2]) {
+      const browser = sceneLayout("browser", { cams });
+      const metro = sceneLayout("metro", { cams });
+      for (const key of ["race", "lockup", "clock"]) {
+        expect(browser.panels[key]).toEqual(metro.panels[key]);
+      }
+      expect(browser.holes.filter((h) => h.role === "cam")).toEqual(
+        metro.holes.filter((h) => h.role === "cam"),
+      );
+      const windows = browser.holes.filter((h) => h.role === "browser");
+      expect(windows).toHaveLength(1);
+      const { x, y, w, h } = windows[0];
+      const above = [
+        metro.holes.find((r) => r.role === "map")!,
+        metro.panels.log,
+        metro.panels.standings,
+      ];
+      const left = Math.min(...above.map((r) => r.x));
+      const top = Math.min(...above.map((r) => r.y));
+      expect({ x, y, w, h }).toEqual({
+        x: left,
+        y: top,
+        w: Math.max(...above.map((r) => r.x + r.w)) - left,
+        h: Math.max(...above.map((r) => r.y + r.h)) - top,
+      });
+    }
+  });
 });
 
 describe("formatGeo", () => {
@@ -189,6 +227,11 @@ describe("pierceableHoles", () => {
     expect(
       pierceableHoles(holes, [1, 2, 3, 4]).some((h) => h.role === "map"),
     ).toBe(false);
+  });
+
+  it("pierces the browser hole, which the caster's own capture fills", () => {
+    const { holes } = sceneLayout("browser");
+    expect(pierceableHoles(holes).some((h) => h.role === "browser")).toBe(true);
   });
 
   it("pierces every POV and cam hole when seatedSlots is omitted", () => {

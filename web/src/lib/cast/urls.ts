@@ -32,10 +32,10 @@ export interface CastUrlOpts {
  * Build one cast scene's URL. Parameters are appended in a fixed order and
  * escaped with `encodeURIComponent`:
  *
- * - race scenes (quad, focus, metro, duel): p1..p4 (p1..p2 on duel, the
- *   only holes it has), then focus (focus scene only), then c1 and c2 when
- *   named, then event when chosen, then cams always, then delay only when
- *   it is not 0.
+ * - race scenes (quad, focus, metro, duel, browser): p1..p4 (p1..p2 on
+ *   duel, the only holes it has), then focus (focus scene only), then c1
+ *   and c2 when named, then event when chosen, then cams always, then delay
+ *   only when it is not 0.
  * - talk: c1, c2, cams. No seating and no delay: that scene has no runner
  *   holes, and no live feed to hold back (it re-reads the event every 30
  *   seconds, between races).

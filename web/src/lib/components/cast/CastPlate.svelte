@@ -16,10 +16,11 @@
     guides?: boolean;
     /** Which POV/hero slots (1-based) currently hold a seated runner, from
      * the same `resolveSlots` result the page renders. Omitted on scenes
-     * with no such holes (metro, talk). A slot missing from this list is
-     * not pierced: with no runner seated there, there is nothing for a
-     * video source to show through, and an unseated hole would otherwise
-     * broadcast an empty, numbered frame over whatever sits beneath it. */
+     * with no such holes (metro, browser, talk). A slot missing from this
+     * list is not pierced: with no runner seated there, there is nothing
+     * for a video source to show through, and an unseated hole would
+     * otherwise broadcast an empty, numbered frame over whatever sits
+     * beneath it. */
     seatedSlots?: number[];
     children: Snippet;
   }

@@ -1,15 +1,17 @@
 # Cast Overlays
 
-Five full-screen OBS scenes for a caster running a broadcast: quad, focus,
-duel, metro and talk. They are a different kind of overlay from the two existing
-ones, `/overlay/race/[id]/dag` and `/overlay/race/[id]/leaderboard`: those are
+Six full-screen OBS scenes for a caster running a broadcast: quad, focus,
+duel, metro, browser and talk. They are a different kind of overlay from the
+two existing ones, `/overlay/race/[id]/dag` and
+`/overlay/race/[id]/leaderboard`: those are
 transparent widgets a caster places anywhere on a scene they build themselves
 (a DAG in one corner, a leaderboard strip along an edge, sized and positioned
 by hand in OBS). A cast scene owns the whole 1920x1080 frame instead. It
 paints an opaque plate over the entire canvas, cuts holes out of that plate at
 fixed positions, and leaves those holes for the caster's own video sources
-(webcams, captured Twitch POVs) to show through from underneath. The browser
-source is the top layer of the OBS scene; everything else sits below it.
+(webcams, captured Twitch POVs, a capture of the caster's own browser) to show
+through from underneath. The browser source is the top layer of the OBS
+scene; everything else sits below it.
 
 ## Composition model
 
@@ -21,9 +23,10 @@ rescale on top of the page's own.
 
 The canvas has two kinds of content:
 
-- **Holes** (`CastRect`, one of the roles `pov`, `hero`, `cam`, or `map`): a
-  rectangle the plate does not paint over. An SVG mask (`maskDataUri`) cuts
-  these out of the opaque plate, so whatever OBS source sits directly beneath
+- **Holes** (`CastRect`, one of the roles `pov`, `hero`, `cam`, `map`, or
+  `browser`): a rectangle the plate does not paint over. An SVG mask
+  (`maskDataUri`) cuts these out of the opaque plate, so whatever OBS source
+  sits directly beneath
   the Browser Source in the scene's source list shows through exactly there.
   The caster places one video source per hole, at that hole's position and
   size, underneath the Browser Source. A `pov`/`hero` hole for a slot nobody
@@ -74,14 +77,15 @@ them show more than the panel's own capacity allows. The quad scene's four
 runner cards seat exactly four runners by construction (see `resolveSlots`)
 and need no cap.
 
-## The five scenes
+## The six scenes
 
-Four of the five scenes (quad, focus, duel, metro) share a **desk** band
-along the bottom (the quad's is thinner, see Quad): a race name panel, a caster lockup
-(the SpeedFog Racing wordmark, crossed with the event's co-brand when one is
-set), a clock panel, and up to two caster cam holes. How many cam holes it cuts depends on the `cams`
-parameter (0, 1 or 2); with 0, the desk still draws its race/lockup/clock
-panels but pierces no cam holes at all. The clock panel shows one element
+Five of the six scenes (quad, focus, duel, metro, browser) share a **desk**
+band along the bottom (the quad's is thinner, see Quad): a race name panel, a
+caster lockup (the SpeedFog Racing wordmark, crossed with the event's
+co-brand when one is set), a clock panel, and up to two caster cam holes.
+How many cam holes it cuts depends on the `cams` parameter (0, 1 or 2); with
+0, the desk still draws its race/lockup/clock panels but pierces no cam holes
+at all. The clock panel shows one element
 per state: the race clock alone while the race runs (its ticking says the
 race is live, so it carries no Live tag; "Ends in" joins it once the race
 has a deadline), and in its place a large "Upcoming" before the start and a
@@ -97,7 +101,8 @@ race's first tick.
 | CAM 1 | 408, 776        | 384 x 288    | `cams >= 1` |
 | CAM 2 | 1128, 776       | 384 x 288    | `cams >= 2` |
 
-That is the full desk, 288px tall, of the focus, duel and metro scenes.
+That is the full desk, 288px tall, of the focus, duel, metro and browser
+scenes.
 
 The desk's own panels (not holes, no OBS source needed): the race-name panel
 at (16, 776), 376 x 288; the lockup at (820, 776), 280 x 288; the clock panel
@@ -288,6 +293,44 @@ allows), the same name and spirit as `/overlay/race/[id]/leaderboard`'s own
 `lines`, letting the caster show fewer rows for a field they'd rather keep
 short. It cannot ask for more rows than the panel actually fits.
 
+### Browser
+
+A web page of the caster's choosing (the race page, the event's bracket, a
+runner's profile, the stats) over the whole main area, for commentary that
+needs to show something the other scenes don't draw. The scene draws nothing
+there: the whole area above the desk is one hole, and the caster's own
+browser, captured in OBS, shows through it. Beneath it sits the full desk,
+the same as metro's, so the race name and the clock stay on screen; the
+clock, the scene's only live data, follows `delay` as on every race scene.
+
+`delay` does not reach the page in the hole, though: it is the caster's own
+browser, live. A race page shown there runs `delay` seconds ahead of the
+delayed captures (a fog gate, a death or a finish on its leaderboard before
+the viewer's video shows it), and its clock ahead of the desk's.
+
+| Hole    | Label   | Position (x, y) | Size (w x h) |
+| ------- | ------- | --------------- | ------------ |
+| browser | BROWSER | 16, 16          | 1888 x 736   |
+
+Plus the shared desk band.
+
+The hole is much wider than 16:9 (about 2.6:1): it is meant for web pages,
+which lay out at whatever size the window gives them, not for 16:9 video,
+which would leave bars on both sides. Two ways to fill it in OBS:
+
+- a Window Capture of the caster's own browser, the window sized so that the
+  page area has the hole's proportions (1888 x 736 at 100% display scaling),
+  and the tabs and address bar cropped off in OBS (Alt + drag on the
+  source's edge, or the crop fields of its Edit Transform). The caster
+  browses as usual and the stream follows; a window kept for the broadcast
+  alone avoids putting another tab, or a logged-in view, on air.
+- a second Browser Source at 1888 x 736, pointed at the page, under the
+  scene's own, with its Custom CSS field cleared: OBS's default
+  (`overflow: hidden`, a transparent background) stops the page from
+  scrolling and can let what sits beneath show through it. No browser
+  chrome to crop, but the caster can only browse through OBS's Interact
+  window.
+
 ### Talk
 
 An intermission or desk scene for a playoff evening: two caster cams,
@@ -377,7 +420,9 @@ Metro reads `cams`, `c1`, `c2`, `delay`, `guides` and `event`, but neither
 `p1`..`p4` nor `focus`: it has no POV holes to seat and no hero, so
 `sceneLayout("metro", ...)` is called with `cams` alone and `resolveSlots` is
 never called on that page at all. A `p1` or `focus` added to a metro URL is
-silently ignored. Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4`
+silently ignored. Browser reads the same parameters as metro, for the same
+reason: it seats no runner, and its `delay` only shifts the desk's clock.
+Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4`
 or `focus` in its URL is silently ignored), plus `cams`, `c1`, `c2`,
 `delay`, `guides` and `event`. Talk only reads `c1`, `c2`, `cams` and
 `guides` (it has no runners to seat and no live feed to delay; see "Delay"
@@ -462,7 +507,8 @@ is showing, not the server's real time. Talk carries no `delay` parameter:
 it holds no live feed, only the event it re-reads every 30 seconds, and it
 is meant for between races. A race ending while it is on air can therefore
 show there (a finisher's time on its card, the standings reordering) before
-a delayed capture does.
+a delayed capture does. The browser scene delays its desk's clock, but not
+the page in its hole: that is the caster's own browser, live (see Browser).
 
 ## The setup panel
 
@@ -479,7 +525,7 @@ It gives a caster, without hand-editing a URL:
   second after the panel's inputs stop changing, so typing a runner or
   caster name doesn't reload the preview (and reopen its spectator
   WebSocket) on every keystroke; every other field in the panel stays live.
-- A scene picker: Quad, Focus 1 through 4, Duel, Metro, Talk.
+- A scene picker: Quad, Focus 1 through 4, Duel, Metro, Browser, Talk.
 - Hole assignment (race scenes only): a dropdown per POV hole (two on the
   duel scene), defaulting to "(auto, join order)"; picking the same runner
   twice is refused rather than silently hiding another runner, except when
@@ -514,8 +560,9 @@ window that refuses storage just does not persist between visits.
    runs; leave talk's alone, it has none.
 3. In OBS, create a new Scene for this cast scene.
 4. Add the video sources it needs (webcam captures for the cam holes,
-   captured Twitch POVs for the runner holes) anywhere in the scene, below
-   where the Browser Source will sit in the source list.
+   captured Twitch POVs for the runner holes, a capture of your own browser
+   for the browser scene's hole) anywhere in the scene, below where the
+   Browser Source will sit in the source list.
 5. Open the setup panel's "Open with position guides" link (or add
    `guides=1` to the scene URL yourself) in a browser window, and resize or
    reposition each video source in OBS until it lines up with its outline.
@@ -525,4 +572,5 @@ window that refuses storage just does not persist between visits.
    except the holes, so only the sources sitting under a hole show through.
 7. Repeat steps 3 to 6 for each additional cast scene the broadcast needs,
    as its own OBS Scene; switch between them in OBS as commentary moves
-   between the quad view, a focused runner, the map, or the talk desk.
+   between the quad view, a focused runner, the map, a web page, or the
+   talk desk.
