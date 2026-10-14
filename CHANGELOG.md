@@ -2,6 +2,44 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.30.0] - 2026-10-13
+
+### Speedfog × Ignite Season One
+
+- **The playoff cutoff now runs on IGT**: every run must finish within **10 in-game minutes of the race's best time**. A crash, a relaunch or a save restore no longer costs you time against it
+- New **Duel** scene: two runners head to head, with the gap between them
+- New **Browser** scene: allows the caster to display the metro map and interact with it (zoom in/out, view node details, display the comparison graph, etc.)
+- Display the players' current weapons
+
+### Seeds
+
+- **Zone durations recalibrated** from data
+- **Ainsel River Main** leaves the zone pool
+- Large bosses no longer land in the **Black Knife Assassin's arena** of Black Knife Catacombs
+- **No more useless pickups**: an item you already hold the maximum of from your starting items or the care package (crystal tears, whetblades, Talisman Pouches, keys, ...) could also lie in the world or sit in a shop, often as a boss drop, where picking it up did nothing. Those copies are now **Rune Arcs**
+- The **Spirit Spring jump at the back of Fort of Reprimand** (behind Edredd's chapel) is available again: the shortcut saves little time and rewards players who know it
+- Fix: **Tarnished Pack owners could buy the Reverse-Bladed Sword** from the Twin Maiden Husks (and some other merchant gear) in every seed, items the other racers never saw. Those shop entries are now gone outside the Tarnished mode
+
+### In-game
+
+- **The leaderboard now centers on you**: the top 3, then the three runners ahead of you and the three behind, each gap measured **between you and that runner** (negative ahead, positive behind). Thanks to @Mitchriz for the idea.
+  - **F10** now cycles between this layout, hidden, and the **top 10**
+  - Pick the layout the overlay starts on in your settings
+- The default **overlay font size** goes from 18 to 20 px
+
+### Races
+
+- **Compare runs depth by depth**: select two or more runners in the leaderboard of a race or a daily, and a **gap chart** follows the map's depths under it, with a **detail panel** setting their times beside the field's at each depth. It shows where you lost time: a slower branch, or a slower clear of the same zone. Thanks to @NPT for the idea.
+
+### Save Backups
+
+- **Restoring the right backup is easier**:
+  - Backups keep a **permanent number**, so restoring one and relaunching no longer shifts the menu
+  - Relaunching no longer erases an earlier launch's backups: **each launch keeps its own last 10**
+  - The recovery menu **groups backups by game launch**, marks those already restored, and reminds you to pick one from before the problem
+  - Your current save is **backed up before a restore**, so a wrong pick can be undone
+  - A backup is **skipped while the save hasn't changed**, so a game stuck on a loading screen no longer fills the menu with copies of the broken save
+
 ## [1.29.0] - 2026-10-02
 
 ### Seeds
