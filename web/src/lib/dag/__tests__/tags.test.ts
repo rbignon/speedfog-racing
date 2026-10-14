@@ -291,6 +291,36 @@ describe("placeTags", () => {
     expect(out.get("a")).toMatchObject({ dir: -1, reach: 47 });
   });
 
+  it("puts a name over a dot rather than over another name once nothing is free", () => {
+    // One tier only: c's slot below lands on a's name, the one above on b's
+    // dot. A name over a dot still reads; two names on top of each other do
+    // not.
+    const out = placeTags(
+      [anchor("a", 480, 260), anchor("c", 500, 150), anchor("b", 505, 95)],
+      VIEW,
+      { ...METRICS, maxTiers: 1 },
+    );
+    expect(out.get("a")).toMatchObject({ dir: -1 });
+    expect(out.get("c")).toMatchObject({ dir: -1, reach: 47 });
+  });
+
+  it("covers the fewest dots of the slots covering no name, once nothing is free", () => {
+    // One tier only, no name in the way: c's slot below lands on two dots
+    // (d1, d2), the one above on one (b). A name laid across a crowd hides
+    // it.
+    const out = placeTags(
+      [
+        anchor("d1", 480, 205),
+        anchor("c", 500, 150),
+        anchor("b", 505, 95),
+        anchor("d2", 520, 205),
+      ],
+      VIEW,
+      { ...METRICS, maxTiers: 1 },
+    );
+    expect(out.get("c")).toMatchObject({ dir: -1, reach: 47 });
+  });
+
   it("keeps every tag once there is no free slot, inside the view", () => {
     const crowd = Array.from({ length: 10 }, (_, i) =>
       anchor(`r${i}`, 100 + i, 90),

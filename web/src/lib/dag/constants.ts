@@ -211,6 +211,11 @@ export const LIVE_TAG_ZONE_FONT_SIZE = 14;
 export const LIVE_TAG_SHADOW_OFFSET = 1.4;
 export const LIVE_TAG_SHADOW_BLUR = 2.75;
 
+/** Width of the halo painted under a name and its zone line, as a share of
+ * their font size: wide enough to hide a connector (LIVE_TAG_LINE_WIDTH)
+ * between two letters it passes behind */
+export const LIVE_TAG_HALO = 0.3;
+
 /** Extra room between stacked names when a tag is pushed a tier out (px) */
 export const LIVE_TAG_TIER_GAP = 3;
 

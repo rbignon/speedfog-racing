@@ -127,6 +127,12 @@ function overlaps(a: Box, b: Box): boolean {
   );
 }
 
+function overlapArea(a: Box, b: Box): number {
+  const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+  const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
 /**
  * Chooses, for each tag, whether its name goes above or below the dot and
  * how far out, so that no name covers another name or another runner's dot,
@@ -147,8 +153,11 @@ function overlaps(a: Box, b: Box): boolean {
  * name fall back over the graph, as without lanes.
  *
  * A dot on the middle follows its own `lean`. If nothing is free within
- * `maxTiers`, the first direction that stays inside the window is kept and
- * the overlap accepted: a tag is never dropped for want of room.
+ * `maxTiers`, the slot inside the window that covers the least of the names
+ * already placed is kept (a name over another runner's dot still reads, two
+ * names on top of each other do not), then the least of the other runners'
+ * dots, the order above deciding between equals, and the overlap accepted:
+ * a tag is never dropped for want of room.
  *
  * A name near the window's left or right edge slides inward rather than
  * being cut, its connector still leaving from the dot. A runner whose spot
@@ -268,6 +277,34 @@ export function placeTags(
       }
     }
     if (!chosen) {
+      // Nothing free: the slot covering the least of the names placed, then
+      // of the other runners' dots (their bare dots, not the stretch kept
+      // toward their names): a name over a dot still reads, but one laid
+      // across a crowd hides it.
+      let least = Infinity;
+      for (const { dir, reach } of candidates) {
+        const box = nameBox(a, dir, reach);
+        if (!inView(box)) continue;
+        let covered = 0;
+        for (const b of placedNames) covered += overlapArea(box, b);
+        for (const o of ordered) {
+          if (o.id === a.id) continue;
+          covered += overlapArea(box, {
+            left: o.x - m.dotRadius,
+            right: o.x + m.dotRadius,
+            top: o.y - m.dotRadius,
+            bottom: o.y + m.dotRadius,
+          });
+        }
+        if (covered < least) {
+          least = covered;
+          chosen = { dir, reach };
+          chosenBox = box;
+        }
+      }
+    }
+    if (!chosen) {
+      // No slot inside the window at all (only with no tiers to try).
       const dirs = lanes ? laneDirs(a) : inwardDirs(a);
       const dir =
         dirs.find((d) => inView(nameBox(a, d, laneReach(a, d)))) ?? dirs[0];

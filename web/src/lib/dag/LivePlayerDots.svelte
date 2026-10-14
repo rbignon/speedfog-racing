@@ -28,6 +28,7 @@
     LIVE_TAG_MAX_TIERS,
     LIVE_TAG_SHADOW_OFFSET,
     LIVE_TAG_SHADOW_BLUR,
+    LIVE_TAG_HALO,
   } from "./constants";
   import {
     estimateNameWidth,
@@ -555,6 +556,7 @@
       dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
       font-size={tg.font}
       fill={tag.color}
+      stroke-width={tg.font * LIVE_TAG_HALO}
       opacity={tag.opacity}
       filter="url(#player-tag-shadow)"
       class="tag-name">{tag.displayName}</text
@@ -566,6 +568,7 @@
         text-anchor="middle"
         dominant-baseline={tag.dir < 0 ? "text-after-edge" : "text-before-edge"}
         font-size={tg.zoneFont}
+        stroke-width={tg.zoneFont * LIVE_TAG_HALO}
         opacity={tag.opacity}
         filter="url(#player-tag-shadow)"
         class="tag-zone">{tag.zone}</text
@@ -616,6 +619,18 @@
   .tag-line,
   .tag-dot {
     pointer-events: none;
+  }
+
+  /* A halo in the page background (--color-bg, like the dot's ring),
+   * painted under the letters: a connector that has to pass a name (one
+   * stacked further out leaves from a dot below it) stops at its letters
+   * instead of striking them through. It assumes an opaque page: on a
+   * transparent overlay the halos would show as dark outlines. */
+  .tag-name,
+  .tag-zone {
+    paint-order: stroke;
+    stroke: var(--color-bg, #0f1923);
+    stroke-linejoin: round;
   }
 
   .tag-name {

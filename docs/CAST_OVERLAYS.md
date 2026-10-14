@@ -270,14 +270,23 @@ connectors reaching past the graph's outer rows (and past the node glyphs
 there), and the free slot with the shortest connector wins: names stack in
 the band nearer their dot until crossing to the other band is shorter. Each
 dot keeps the stretch between itself and its own name free of other names,
-so a name never lands between a dot and that dot's own name on the same
-vertical; only when both bands are full does a name fall back over the graph
+so, while a free slot remains, a name never lands between a dot and that
+dot's own name on the same vertical; only when both bands are full does a
+name fall back over the graph
 (`placeTags`' lanes, in `web/src/lib/dag/tags.ts`). In the follow view, with
 no bands, each name points toward the middle of the window instead, where
 there is room, and a name that would cover another name or another runner's
 dot tries the other side, then one tier further out. A runner on the middle
 row keeps a side of their own (from their colour slot), so a tag doesn't
-flip because someone else moved. Names stay inside the window the viewport
+flip because someone else moved. When no slot is free at all (a field
+bunched in the first layers at the start of a race), a name takes the slot
+in view that covers the least of the names already placed, then the least
+of the other runners' dots: over a dot a name still reads, two names on top
+of each other do not, and a name laid across a crowd would hide it.
+Names stacked in a band leave the outer one's connector passing behind the
+inner one: every name and zone line carries a halo in the plate's colour
+(`LIVE_TAG_HALO`), so a connector stops at its letters instead of striking
+them through. Names stay inside the window the viewport
 shows (`FollowViewport`'s `visibleWindow`): in the follow view a runner on
 the top or bottom row points inward, and a name near the left or right edge
 slides in while its connector still leaves from the dot. A runner whose node
