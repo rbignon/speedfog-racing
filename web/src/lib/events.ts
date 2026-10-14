@@ -380,17 +380,25 @@ export function cutLine(
   ) {
     return null;
   }
-  const labels = [
-    ...new Set(
-      nextStageLabels(stages, stage.key, advance).filter(
-        (label): label is string => label !== null,
-      ),
-    ),
-  ];
   return {
     after: advance - 1,
-    label: `Top ${advance} go on${labels.length > 0 ? `: ${labels.join(" / ")}` : ""}`,
+    label: cutLabel(advance, nextStageLabels(stages, stage.key, advance)),
   };
+}
+
+/**
+ * The words on a stage's cut: how many go on and, each once, the stages
+ * they go on to ("Top 2 go on: Quarter A / Quarter C"). `nextLabels` is
+ * `nextStageLabels`' list, one entry per advancing place.
+ */
+export function cutLabel(
+  advance: number,
+  nextLabels: (string | null)[],
+): string {
+  const labels = [
+    ...new Set(nextLabels.filter((label): label is string => label !== null)),
+  ];
+  return `Top ${advance} go on${labels.length > 0 ? `: ${labels.join(" / ")}` : ""}`;
 }
 
 /**

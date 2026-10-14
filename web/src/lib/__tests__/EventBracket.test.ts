@@ -63,6 +63,7 @@ function stage(overrides: Partial<EventStage> = {}): EventStage {
     modes: [],
     races: [],
     results: [],
+    settled_results: [],
     field: new Array(8).fill(null).map((_, i) => ({
       user: null,
       label: `Seed ${i + 1}`,

@@ -1,11 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import {
-    fetchEvent,
-    type EventShowcase,
-    type EventStage,
-    type UserProfile,
-  } from "$lib/api";
+  import { fetchEvent, type EventShowcase, type EventStage } from "$lib/api";
   import { sceneLayout } from "$lib/cast/layout";
   import {
     fillSlots,
@@ -42,18 +37,6 @@
         : formatEventDay(stage.date),
   );
 
-  function casterLabel(profile: UserProfile | null): string | null {
-    return profile
-      ? profile.twitch_display_name || profile.twitch_username
-      : null;
-  }
-  // A username that didn't resolve to a real user (typo, wrong URL) leaves
-  // that cam unnamed rather than failing the whole scene.
-  let casterNames = $derived<[string | null, string | null]>([
-    casterLabel(data.casters[0] ?? null),
-    casterLabel(data.casters[1] ?? null),
-  ]);
-
   // The stage each advancing place goes on to, named on its chip: the one
   // whose seat takes that place. A final or a showcase feeds none.
   let nextLabels = $derived(
@@ -64,7 +47,9 @@
   // shape the event page's match tables and Up next chips render too.
   let slots = $derived(fillSlots(stage.races, stage.races_expected));
   // Played means finished, as in the event page's match panels: a race
-  // created ahead of the evening is attached long before it counts.
+  // created ahead of the evening is attached long before it counts. The
+  // standings count those same races (`settled_results`): `results` also
+  // scores a live race, its runners still on course on 0.
   let racesPlayed = $derived(
     stage.races.filter((r) => r.race.status === "finished").length,
   );
@@ -124,7 +109,7 @@
     label={stage.label}
     {racesPlayed}
     racesExpected={stage.races_expected}
-    results={stage.results}
+    results={stage.settled_results}
     {nextLabels}
     advance={stage.advance}
     complete={stage.complete}
@@ -133,7 +118,7 @@
   <CastDesk
     scene="talk"
     cams={params.cams}
-    casters={casterNames}
+    casters={data.casters}
     partnerName={data.event.partner_name}
   />
 </CastPlate>

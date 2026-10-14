@@ -159,6 +159,7 @@ function stageFixture(overrides: Partial<EventStage>): EventStage {
     modes: [],
     races: [],
     results: [],
+    settled_results: [],
     field: [],
     ...overrides,
   };
@@ -852,6 +853,7 @@ describe("forfeitNotes", () => {
       field,
       walkover,
       results: [],
+      settled_results: [],
     }) as unknown as EventStage;
 
   it("gives one note per stage with forfeits, the others still in it", () => {
@@ -975,6 +977,7 @@ describe("champions", () => {
         signature_weapon: null,
       },
     ],
+    settled_results: [],
     field: [],
     ...overrides,
   });

@@ -47,6 +47,7 @@ describe("EventUpNext", () => {
         },
       ],
       results: [],
+      settled_results: [],
       field: [],
     };
     const { getByText } = render(EventUpNext, {

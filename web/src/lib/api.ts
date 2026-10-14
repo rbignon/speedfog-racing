@@ -600,6 +600,10 @@ export interface EventStage {
   modes: string[];
   races: EventStageRace[];
   results: EventStageEntry[];
+  /** The same standings over the finished races alone: `results` also
+   * scores a running race, its runners still on course provisionally on 0.
+   * What the talk scene lists under "After N of M races". */
+  settled_results: EventStageEntry[];
   field: EventFieldSlot[];
 }
 

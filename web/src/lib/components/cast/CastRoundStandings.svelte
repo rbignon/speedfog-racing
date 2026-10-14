@@ -3,6 +3,7 @@
   import type { EventStageEntry, User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { rowCapacity, planRows } from "$lib/cast/rows";
+  import { cutLabel } from "$lib/events";
 
   interface Props {
     rect: Rect;
@@ -12,7 +13,8 @@
      * "After N of M races" eyebrow. */
     racesPlayed: number;
     racesExpected: number;
-    /** Already ranked by the server (`stage.results`): row `i` is rank `i + 1`. */
+    /** Already ranked by the server (`stage.settled_results`, the finished
+     * races only): row `i` is rank `i + 1`. */
     results: EventStageEntry[];
     /** The stage each advancing place goes on to ("Quarter A" for the 1st,
      * "Quarter C" for the 2nd), which their chips name; empty for a stage
@@ -53,10 +55,9 @@
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
-  // The cut line names where the runners above it go, each stage once.
-  let cutLabel = $derived(
-    [...new Set(nextLabels.filter((l): l is string => l !== null))].join(" · "),
-  );
+  // The cut line says how many go on and where, each stage once, in the
+  // event page's own words (its match tables' cut).
+  let cutText = $derived(advance === null ? "" : cutLabel(advance, nextLabels));
 
   // The stage's cut, drawn while it is still being raced, under its last
   // runner going on, once someone stands below it.
@@ -138,7 +139,7 @@
       </div>
       {#if i === cutAfter}
         <div class="scut">
-          {#if cutLabel}<span>{cutLabel}</span>{/if}
+          {#if cutText}<span>{cutText}</span>{/if}
         </div>
       {/if}
     {/each}
@@ -275,16 +276,25 @@
       color-mix(in srgb, var(--color-gold) 70%, transparent);
   }
 
+  /* One line, never wrapped onto the row below: "Top 2 go on: Quarter A /
+   * Quarter B" fits the panel at this tracking (0.14em, the chips' own,
+   * pushed its last letter onto a second line), and a longer one ellipsizes
+   * at the panel's width rather than spilling past its left edge. */
   .scut span {
     position: absolute;
     right: 0;
     top: -12px;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding-left: 10px;
     background: var(--color-bg);
     font-family: var(--font-mono);
     font-size: 18px;
     line-height: 22px;
-    letter-spacing: 0.14em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-gold);
   }

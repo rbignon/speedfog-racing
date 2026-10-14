@@ -987,7 +987,10 @@ fetched is left out rather than replaced by a placeholder.
   draws the provisional cut, and each stage race's `live`, its whole field
   in the race page's live order (each runner's preview plus the layer they
   stand on; never capped, unlike the race's five previews; empty once the
-  race is no longer running), which its race card follows. Each stage
+  race is no longer running), which its race card follows. A stage's
+  `settled_results` are its `results` over its finished races alone (a
+  running race left out, not scored provisionally), the standings that
+  scene lists under "After N of M races". Each stage
   carries `bracket` (its bracket's key; null for a showcase), and `brackets`
   lists the brackets in order (`key`, `label`, `entry`, and that bracket's own
   `current_stage_key` and `next_stage`). The detail also carries

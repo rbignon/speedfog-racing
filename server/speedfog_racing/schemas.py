@@ -1476,6 +1476,10 @@ class EventStageResponse(BaseModel):
     modes: list[str]
     races: list[EventStageRaceResponse]
     results: list[EventStageEntryResponse]
+    # The same standings over the stage's finished races alone: `results`
+    # also scores a running race, its runners still on course provisionally
+    # on 0. What a broadcast saying "after N of M races" lists.
+    settled_results: list[EventStageEntryResponse]
     field: list[EventFieldSlotResponse]
 
 

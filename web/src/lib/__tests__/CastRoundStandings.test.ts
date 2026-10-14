@@ -175,8 +175,10 @@ describe("CastRoundStandings: cut line", () => {
         nextLabels: ["Quarter A", "Quarter A"],
       },
     });
+    // Spelled like the event page's own cut: a bare stage name on air does
+    // not say it is the qualifying line.
     const cut = container.querySelector(".scut");
-    expect(cut?.textContent?.trim()).toBe("Quarter A");
+    expect(cut?.textContent?.trim()).toBe("Top 2 go on: Quarter A");
     const rows = [...container.querySelectorAll(".srow")];
     expect(rows[1].nextElementSibling).toBe(cut);
   });
@@ -192,7 +194,7 @@ describe("CastRoundStandings: cut line", () => {
       },
     });
     expect(container.querySelector(".scut")?.textContent?.trim()).toBe(
-      "Quarter A · Quarter C",
+      "Top 2 go on: Quarter A / Quarter C",
     );
   });
 

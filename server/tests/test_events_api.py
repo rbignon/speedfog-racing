@@ -862,6 +862,8 @@ async def test_a_showcase_scores_like_a_stage_off_the_bracket(test_client, async
     ]
     assert duel_result["complete"] is True
     assert not any(r["advances"] for r in duel_result["results"])
+    # Every race over: nothing is provisional, both lists agree.
+    assert duel_result["settled_results"] == duel_result["results"]
     assert all(s["bracket"] is None for s in data["showcases"])
 
 
@@ -934,6 +936,54 @@ async def test_each_stage_race_carries_the_points_it_gave(test_client, async_ses
     assert by_index[1] == {ana_id: 100, bob_id: 70, cleo_id: 0}
     assert by_index[2] == {bob_id: 100, cleo_id: 0}
     assert by_index[3] == {}
+
+
+@pytest.mark.asyncio
+async def test_a_stage_s_settled_results_leave_its_live_race_out(test_client, async_session):
+    """``settled_results`` sums the stage's finished races alone: the live
+    race, where a runner still on course stands provisionally on 0, counts in
+    ``results`` only, so a broadcast saying "after N races" can list them."""
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        event = await _event(db, config={**CONFIG, "phase_override": "playoffs"})
+        first = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi1"),
+            event,
+            "semi_a:1",
+            status=RaceStatus.FINISHED,
+            is_public=True,
+        )
+        await _entry(db, first, ana, ParticipantStatus.FINISHED, 1_000_000)
+        await _entry(db, first, bob, ParticipantStatus.FINISHED, 1_500_000)
+        second = await _race(
+            db,
+            orga,
+            await _seed(db, "standard", "semi2"),
+            event,
+            "semi_a:2",
+            status=RaceStatus.RUNNING,
+            is_public=True,
+        )
+        await _entry(db, second, bob, ParticipantStatus.FINISHED, 1_200_000)
+        await _entry(db, second, ana, ParticipantStatus.PLAYING, 900_000, layer=2)
+        await db.commit()
+
+    async with test_client as client:
+        data = (await client.get("/api/events/season-one")).json()
+
+    semi_a = next(s for s in data["stages"] if s["key"] == "semi_a")
+    assert [(r["user"]["twitch_username"], r["points"]) for r in semi_a["results"]] == [
+        ("bob", 170),
+        ("ana", 100),
+    ]
+    assert [(r["user"]["twitch_username"], r["points"]) for r in semi_a["settled_results"]] == [
+        ("ana", 100),
+        ("bob", 70),
+    ]
 
 
 @pytest.mark.asyncio
@@ -1586,6 +1636,8 @@ async def test_detail_walks_a_stage_over_once_a_forfeit_leaves_it_short(test_cli
     assert [
         (e["user"]["twitch_username"], e["points"], e["advances"]) for e in semi_a["results"]
     ] == [("runner4", 0, True)]
+    # No race left to settle: the settled standings are the walkover's own.
+    assert semi_a["settled_results"] == semi_a["results"]
     # Semi B lost nobody: it still plays, though both its runners go through.
     assert (stages["semi_b"]["walkover"], stages["semi_b"]["complete"]) == (False, False)
 

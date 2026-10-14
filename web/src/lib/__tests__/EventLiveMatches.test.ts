@@ -44,6 +44,7 @@ function stage(key: string, overrides: Partial<EventStage> = {}): EventStage {
     modes: ["Standard", "Boss Rush", "UWYG"],
     races: [],
     results: [],
+    settled_results: [],
     field: [],
     ...overrides,
   };

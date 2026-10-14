@@ -370,9 +370,11 @@ race cards and the standings follow the evening while the source stays up
 in OBS all night, with no reload from the caster. The standings' "After N
 of M races" eyebrow counts the finished races, as the event page's evening
 section does ("N of M races played"), not the attached ones: races created ahead of the evening do not
-count until they are over. A race still running adds the provisional
-points of its runners already finished to the standings without moving that
-count (see the Playoff scoring section of `EVENTS.md`). A stage whose key leaves
+count until they are over. The standings count those same races
+(`settled_results`): a race still running scores provisionally on the event
+page (see the Playoff scoring section of `EVENTS.md`), every runner still on
+its course on 0, which under "After N of M races" would read as runners who
+scored nothing; the race card beside it already follows the live race. A stage whose key leaves
 the event's config mid-evening freezes the scene on its last copy rather
 than blanking it on air; the URL has to follow the new key.
 
@@ -392,8 +394,9 @@ the race reads DNF or DQ there, during the race and after it.
 
 While the stage is still being raced, the standings draw its cut: a dashed
 brass line under the last runner going on (`advance`, the stage's own
-config), naming at its right end the stages they would go on to, once someone
-stands below it. When the stage is complete the line gives way to the
+config), saying at its right end how many go on and where, in the event
+page's own words ("Top 2 go on: Quarter A / Quarter B", `cutLabel`), once
+someone stands below it. When the stage is complete the line gives way to the
 advancing runners' chips.
 
 The same scene can point at one of the event's showcases instead (an
@@ -445,12 +448,17 @@ URL is silently ignored), plus `cams`, `c1`, `c2`, `delay`, `guides` and
 `event`. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no runners
 to seat and no live feed to delay; see "Delay" below).
 
+A caster's name prints under their cam as the URL writes it, whether or not
+they have an account here; the talk scene alone looks the name up and, when
+it is a registered user's Twitch username, shows that user's display name
+instead.
+
 | Param      | Meaning                                                                                     | Default |
 | ---------- | ------------------------------------------------------------------------------------------- | ------- |
 | `p1`..`p4` | Twitch username wanted in that POV hole; a silent slot falls back to join order (see below) | none    |
 | `focus`    | Which slot (1 to 4) is the hero on the focus scene                                          | 1       |
 | `cams`     | How many caster cam holes to cut: 0, 1 or 2                                                 | 2       |
-| `c1`, `c2` | The two caster usernames shown under the cam holes                                          | none    |
+| `c1`, `c2` | The two casters' names shown under the cam holes                                            | none    |
 | `delay`    | Seconds to hold live updates back by, clamped to 0 to 60                                    | 0       |
 | `guides`   | `1` draws the position guides over every hole                                               | off     |
 | `event`    | The event slug whose co-brand the lockup shows                                              | none    |

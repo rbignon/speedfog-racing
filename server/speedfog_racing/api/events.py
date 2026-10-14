@@ -62,6 +62,7 @@ from speedfog_racing.services.event_service import (
     build_timeline,
     compute_ladder,
     compute_qualified,
+    compute_stage_results,
     count_finished_before,
     current_stage_key,
     event_window,
@@ -352,6 +353,19 @@ async def get_event(
             if isinstance(p, Participant)
         ]
 
+    def entries_of(result: StageResult) -> list[EventStageEntryResponse]:
+        return [
+            EventStageEntryResponse(
+                user=UserResponse.model_validate(users[e.user_id]),
+                newcomer=newcomers.get(e.user_id, False),
+                points=e.points,
+                igt_total=e.igt_total,
+                advances=e.advances,
+                signature_weapon=weapon_of(e.user_id),
+            )
+            for e in result.entries
+        ]
+
     def stage_response(
         stage: EventStage | EventShowcase,
         *,
@@ -364,6 +378,20 @@ async def get_event(
         field: list[EventFieldSlotResponse],
         walkover: bool = False,
     ) -> EventStageResponse:
+        # Only a running race scores provisionally: without one, the settled
+        # standings are `result` itself (a walkover's included, which no race
+        # backs). With one, scored like `result`, on the same advance, over
+        # the finished races alone.
+        settled = (
+            compute_stage_results(
+                stage,
+                [r for _, r in races if r.status == RaceStatus.FINISHED],
+                (stage.advance or 0) if isinstance(stage, EventStage) else 0,
+                config,
+            )
+            if any(r.status == RaceStatus.RUNNING for _, r in races)
+            else result
+        )
         return EventStageResponse(
             key=stage.key,
             label=stage.label,
@@ -390,17 +418,8 @@ async def get_event(
                 )
                 for s, r in races
             ],
-            results=[
-                EventStageEntryResponse(
-                    user=UserResponse.model_validate(users[e.user_id]),
-                    newcomer=newcomers.get(e.user_id, False),
-                    points=e.points,
-                    igt_total=e.igt_total,
-                    advances=e.advances,
-                    signature_weapon=weapon_of(e.user_id),
-                )
-                for e in result.entries
-            ],
+            results=entries_of(result),
+            settled_results=entries_of(settled),
             field=field,
         )
 
