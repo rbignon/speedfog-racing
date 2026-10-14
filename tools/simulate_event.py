@@ -115,8 +115,9 @@ STARTS = D("2026-09-23T08:00")
 CUT = D("2026-10-08T08:00")
 ENDS = D("2026-11-01T23:00")
 MATCH_POOLS = ["standard", "boss_rush", "uwyg_major"]
-# key: (evening, pools, dated in the config), in the config's flattened stage order
-# (the Top 32 bracket, then the newcomers bracket). The
+# key: (evening, pools, dated in the config), each stage after the stages it takes
+# runners from (the Top 32 bracket, then the newcomers bracket); the config may
+# order a round's stages differently. The
 # pools are the ones each race's seed is drawn from, in race order; the race is
 # named after the stage's own mode label. Groups, quarters and semis are
 # scheduled with their players: the config leaves their date out and their
@@ -722,11 +723,22 @@ async def simulate(
             mismatch.append(
                 f"seeds_per_mode {config.seeds_per_mode} != {SEEDS_PER_MODE}"
             )
-        if [st.key for st in config.stages] != list(STAGES):
+        # The config may order a round's stages for display; the fed fields
+        # below follow STAGES, which lists every stage after its sources, so
+        # only the set of keys must match.
+        keys = {st.key for st in config.stages}
+        if keys != set(STAGES):
             mismatch.append(
-                f"stages {[st.key for st in config.stages]} != {list(STAGES)}"
+                f"stages missing {sorted(set(STAGES) - keys)}, "
+                f"unexpected {sorted(keys - set(STAGES))}"
             )
         else:
+            order = list(STAGES)
+            for key in order:
+                stage_cfg = config.stage(key)
+                for source in stage_cfg.source_keys if stage_cfg else []:
+                    if order.index(source) > order.index(key):
+                        mismatch.append(f"{key} comes before its source {source}")
             # Each race is named after its stage's mode label, by index.
             for key, (_date, pools, _dated) in STAGES.items():
                 stage_cfg = config.stage(key)
