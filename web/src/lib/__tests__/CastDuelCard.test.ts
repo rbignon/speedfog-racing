@@ -33,11 +33,13 @@ function fakeParticipant(over: Record<string, unknown> = {}) {
 }
 
 describe("CastDuelCard: states", () => {
+  // The duel card has no Gap row to carry the state, so its zone line does,
+  // still naming where the runner stopped.
   it.each([
     ["abandoned", "DNF"],
     ["disqualified", "DQ"],
   ])(
-    "replaces the zone line with %s -> %s once the runner is out",
+    "puts %s's state before the zone the runner stopped in",
     (status, text) => {
       const { container } = render(CastDuelCard, {
         props: {
@@ -46,9 +48,40 @@ describe("CastDuelCard: states", () => {
           zoneNames: new Map([["zone_a", "Stormveil"]]),
         },
       });
-      expect(container.querySelector(".dzone")?.textContent).toBe(text);
+      expect(container.querySelector(".dzone")?.textContent).toBe(
+        `${text} · Stormveil`,
+      );
     },
   );
+
+  it("says DNF alone while the zone is not resolved", () => {
+    const { container } = render(CastDuelCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({
+          status: "abandoned",
+          current_zone: "zone_a",
+        }),
+      },
+    });
+    expect(container.querySelector(".dzone")?.textContent).toBe("DNF");
+  });
+
+  it("reads Finished once the runner has finished", () => {
+    const { container } = render(CastDuelCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({
+          status: "finished",
+          current_zone: "zone_a",
+        }),
+        zoneNames: new Map([["zone_a", "Stormveil"]]),
+      },
+    });
+    const line = container.querySelector(".dzone");
+    expect(line?.textContent).toBe("Finished");
+    expect(line?.classList.contains("finished")).toBe(true);
+  });
 
   it("shows the final time in the finished colour once the runner is done", () => {
     const { container } = render(CastDuelCard, {

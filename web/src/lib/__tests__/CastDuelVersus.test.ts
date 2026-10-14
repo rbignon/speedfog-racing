@@ -6,6 +6,7 @@ const MIN = 60_000;
 
 const baseProps = {
   rect: { x: 468, y: 554, w: 984, h: 198 },
+  raceStatus: "running",
   totalLayers: 35,
   ranks: new Map([
     ["p-1", 1],
@@ -138,6 +139,7 @@ describe("CastDuelVersus: gap", () => {
     const { container } = render(CastDuelVersus, {
       props: {
         ...baseProps,
+        raceStatus: "finished",
         layerSplits: { "p-1": { 0: 0 }, "p-2": { 0: 0 } },
         a: fakeParticipant({ status: "finished", igt_ms: 66 * MIN }),
         b: bob({ status: "finished", igt_ms: 66 * MIN + 42_000 }),
@@ -151,11 +153,48 @@ describe("CastDuelVersus: gap", () => {
     const { container } = render(CastDuelVersus, {
       props: {
         ...baseProps,
+        raceStatus: "finished",
+        ranks: new Map([
+          ["p-2", 1],
+          ["p-1", 2],
+        ]),
         a: fakeParticipant({ status: "abandoned" }),
         b: bob({ status: "finished" }),
       },
     });
     expect(container.querySelector(".vlead")?.textContent).toBe("Bob wins");
+  });
+
+  // Finishers rank by IGT, and a runner still on course elsewhere in the
+  // field may yet finish under the first's time: nobody has won until the
+  // race is over, as the quad cards' Leader/Winner row says too.
+  it("calls no winner while the rest of the field still races", () => {
+    const { container } = render(CastDuelVersus, {
+      props: {
+        ...baseProps,
+        layerSplits: { "p-1": { 0: 0 }, "p-2": { 0: 0 } },
+        a: fakeParticipant({ status: "finished", igt_ms: 66 * MIN }),
+        b: bob({ status: "finished", igt_ms: 66 * MIN + 42_000 }),
+      },
+    });
+    expect(container.querySelector(".vlead")?.textContent).toBe("Alice ahead");
+  });
+
+  // A duel can seat any two runners of the field: only the race's own
+  // winner wins, the better of two others only finished ahead.
+  it("puts the better of two settled runners ahead when neither won the race", () => {
+    const { container } = render(CastDuelVersus, {
+      props: {
+        ...baseProps,
+        ranks: new Map([
+          ["p-1", 3],
+          ["p-2", 4],
+        ]),
+        a: fakeParticipant({ status: "finished", igt_ms: 66 * MIN }),
+        b: bob({ status: "abandoned" }),
+      },
+    });
+    expect(container.querySelector(".vlead")?.textContent).toBe("Alice ahead");
   });
 
   it("names no leader once both sides are out of the race", () => {

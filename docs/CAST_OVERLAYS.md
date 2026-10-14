@@ -118,9 +118,12 @@ cards sit in slot order, not in a ranked list, so the first runner's gap
 row names the role instead of standing blank: Leader while the race runs,
 Winner once it is over (the ranked standings panels keep their usual empty
 cell). A finished runner's IGT takes the finished colour, as on the duel
-cards and in the standings; the focus scene's hero card does the same. A
-card's name keeps one line, ellipsized at the card's width, its badge whole
-beside it or on the next line.
+cards and in the standings, and their zone line reads "Finished" in that
+colour (every finisher stands in the final boss's zone, so the line has
+nothing else left to say); a runner out of the race keeps the zone they
+stopped in, their Gap row reading DNF or DQ. The focus scene's hero card
+does the same. A card's name keeps one line, ellipsized at the card's width,
+its badge whole beside it or on the next line.
 
 The quad has a desk of its own, thinner (216px instead of 288, Ignite's
 pick in October 2026): its four POVs, too small at a third of the canvas
@@ -183,13 +186,19 @@ ahead standing in for the leader and its own splits (`layer_entry_igts`, see
 0:00 once both overran the leader's time on a shared layer. It reads negative
 while the runner behind, on a shallower layer, is ahead on IGT (the runners'
 IGTs drift apart over a live race, see `docs/PROTOCOL.md`). With it comes who
-leads (the one ranked ahead), or who wins once neither side is still racing
-(finished or out); a gap not known yet (splits in flight or held back by the
-caster delay, or a race not started) shows `–`, never a tie. Deaths stay on
-the cards, not repeated in the block. A runner out of the race shows DNF or DQ
-in place of a stale zone and drops out of the gap (the surviving side
-leads), and a finished runner's IGT takes the finished colour, as in the
-standings panels.
+leads (the one ranked ahead), and once neither side is still racing
+(finished or out) who settled it: "wins" for the race's own winner (ranked
+first once the race is over: finishers rank by in-game time, so a runner
+still on course may yet finish under the first's time), "ahead" otherwise,
+since the scene can seat any two runners of the field and the better of the
+3rd and the 4th won nothing. A gap not known yet
+(splits in flight or held back by the caster delay, or a race not started)
+shows `–`, never a tie. Deaths stay on the cards, not repeated in the block.
+The duel cards have no Gap row, so their zone line carries the runner's
+state: a runner out of the race reads DNF or DQ before the zone they stopped
+in ("DNF · Stormveil Castle"), and drops out of the gap (the surviving side
+leads); a finished runner's zone line reads "Finished" and their IGT takes
+the finished colour, as in the standings panels.
 
 | Hole | Label | Position (x, y) | Size (w x h) |
 | ---- | ----- | --------------- | ------------ |
@@ -203,7 +212,7 @@ desk band.
 ### Metro
 
 The seed's whole zone graph, drawn live, with a log of recent zone entries
-and a full standings panel beneath. The map itself is not a hole: it is
+and outcomes beneath it, beside a full standings panel. The map itself is not a hole: it is
 listed in the layout only so the guides mode can draw its box, since it
 carries no video and the page renders it directly in that same rectangle (at
 16, 16, 1888 x 482).
@@ -281,6 +290,14 @@ zone line following the opposite; `fontSize` sets their
 size (default 9, down from the plain `/dag` strip's 11: measured against 7,
 which read thin at broadcast distance, and against 11, which made a 90-node
 seed illegible).
+
+The log beside the standings ("Latest") merges every runner's zone entries,
+newest first by in-game time, a death in a zone marked with a skull. Each
+runner whose race is over also gets one row at their final in-game time:
+"finished" in the finished colour, or DNF (an IGT cutoff included) or DQ in
+the row's secondary tone, above any entry at the same time. `zone_history`
+carries none of these, and they are the moments a caster most needs on the
+feed.
 
 The standings panel beneath the map is a single column, one row per runner
 as the mockup draws it: rank, colour dot, name, zone, deaths, depth and gap.

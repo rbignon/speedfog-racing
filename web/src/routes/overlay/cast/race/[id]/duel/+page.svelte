@@ -114,6 +114,7 @@
     a={seated[0]}
     b={seated[1]}
     rect={layout.panels.versus}
+    {raceStatus}
     {totalLayers}
     {ranks}
     layerEntryIgts={raceStore.layerEntryIgts}

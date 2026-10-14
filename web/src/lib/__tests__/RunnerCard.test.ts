@@ -195,6 +195,40 @@ describe("RunnerCard: zone line", () => {
       "Promised Consort Radahn",
     );
   });
+
+  // Every finisher stands in the final boss's zone, so the line has nothing
+  // left to tell but that the run is over, which the card says nowhere else.
+  it("reads Finished once the runner has finished", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({
+          status: "finished",
+          current_zone: "z1",
+        }),
+        zoneNames: new Map([["z1", "Promised Consort Radahn"]]),
+      },
+    });
+    const line = container.querySelector(".czone");
+    expect(line?.textContent).toBe("Finished");
+    expect(line?.classList.contains("finished")).toBe(true);
+  });
+
+  it("keeps the zone a runner stopped in once out, the Gap row saying DNF", () => {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        participant: fakeParticipant({
+          status: "abandoned",
+          current_zone: "z1",
+        }),
+        zoneNames: new Map([["z1", "Promised Consort Radahn"]]),
+      },
+    });
+    expect(container.querySelector(".czone")?.textContent).toBe(
+      "Promised Consort Radahn",
+    );
+  });
 });
 
 describe("RunnerCard: weapons line", () => {

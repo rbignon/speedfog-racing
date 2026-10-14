@@ -162,7 +162,13 @@
         class="card-badge"
       />{/if}</span
   >
-  <span class="czone">{zoneLabel(participant.current_zone)}</span>
+  <!-- Every finisher stands in the final boss's zone: once the run is over,
+       the line says so instead, the one place on the card that does. -->
+  <span class="czone" class:finished={participant.status === "finished"}
+    >{participant.status === "finished"
+      ? "Finished"
+      : zoneLabel(participant.current_zone)}</span
+  >
   {#if weapons && variant === "tall"}
     <span class="cweap">{weapons}</span>
   {/if}
@@ -337,6 +343,10 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .czone.finished {
+    color: var(--color-info);
   }
 
   .crows {

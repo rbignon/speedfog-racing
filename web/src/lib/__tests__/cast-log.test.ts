@@ -13,11 +13,15 @@ const names = new Map([
 const runner = (
   id: string,
   history: { node: string; igt: number; deaths?: number }[],
+  status = "playing",
+  igt = 0,
 ) => ({
   id,
   twitch_username: id,
   twitch_display_name: id,
   color_index: 0,
+  status,
+  igt_ms: igt,
   zone_history: history.map((h) => ({
     node_id: h.node,
     igt_ms: h.igt,
@@ -84,5 +88,65 @@ describe("buildCastLog", () => {
       10,
     );
     expect(rows).toEqual([]);
+  });
+
+  // A race's outcomes are its biggest moments, and zone_history carries none
+  // of them: each one is logged at the runner's own final IGT.
+  it("logs a finish at the runner's final time", () => {
+    const rows = buildCastLog(
+      [
+        runner("a", [{ node: "n1", igt: 1000 }], "finished", 3000),
+        runner("b", [{ node: "n2", igt: 2000 }]),
+      ],
+      names,
+      10,
+    );
+    expect(rows.map((r) => [r.kind, r.id, r.igtMs])).toEqual([
+      ["finish", "a", 3000],
+      ["zone", "b", 2000],
+      ["zone", "a", 1000],
+    ]);
+  });
+
+  it("logs a DNF and a DQ", () => {
+    const rows = buildCastLog(
+      [
+        runner("a", [{ node: "n1", igt: 1000 }], "abandoned", 4000),
+        runner("b", [{ node: "n2", igt: 2000 }], "disqualified", 3000),
+      ],
+      names,
+      10,
+    );
+    expect(rows.map((r) => [r.kind, r.id, r.igtMs])).toEqual([
+      ["dnf", "a", 4000],
+      ["dq", "b", 3000],
+      ["zone", "b", 2000],
+      ["zone", "a", 1000],
+    ]);
+  });
+
+  it("puts an outcome above an entry at the same time", () => {
+    const rows = buildCastLog(
+      [
+        runner("a", [{ node: "n1", igt: 3000 }]),
+        runner("b", [{ node: "n2", igt: 1000 }], "finished", 3000),
+      ],
+      names,
+      10,
+    );
+    expect(rows.map((r) => [r.kind, r.id])).toEqual([
+      ["finish", "b"],
+      ["zone", "a"],
+      ["zone", "b"],
+    ]);
+  });
+
+  it("logs no outcome for a runner still racing", () => {
+    const rows = buildCastLog(
+      [runner("a", [{ node: "n1", igt: 1000 }], "playing", 5000)],
+      names,
+      10,
+    );
+    expect(rows.map((r) => r.kind)).toEqual(["zone"]);
   });
 });

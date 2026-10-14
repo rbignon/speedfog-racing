@@ -34,14 +34,18 @@
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
   <span class="blk-title">Latest</span>
-  {#each rows as row (row.id + "-" + row.igtMs)}
+  <!-- A runner's outcome can share its IGT with their last entry: the kind
+       keeps the two rows' keys apart. -->
+  {#each rows as row (row.id + "-" + row.kind + "-" + row.igtMs)}
     {@const color = PLAYER_COLORS[row.colorIndex % PLAYER_COLORS.length]}
-    {@const died = (row.deaths ?? 0) > 0}
+    {@const died = row.kind === "zone" && (row.deaths ?? 0) > 0}
     <div class="fl">
       <span class="ft">{formatIgt(row.igtMs)}</span>
       <span class="fn" style="color: {color};">{row.name}</span>
-      <span class="fe" class:dead={died}
-        >{#if died}<SkullIcon size={14} /> died in {row.zone}{:else}&rarr;
+      <span class="fe" class:dead={died} class:finished={row.kind === "finish"}
+        >{#if row.kind === "finish"}finished{:else if row.kind === "dnf"}DNF{:else if row.kind === "dq"}DQ{:else if died}<SkullIcon
+            size={14}
+          /> died in {row.zone}{:else}&rarr;
           {row.zone}{/if}</span
       >
     </div>
@@ -116,5 +120,11 @@
 
   .fe.dead {
     color: var(--color-danger);
+  }
+
+  /* A finish in the finished colour of the standings beside it; a DNF or a
+   * DQ keeps the row's own secondary tone, a state, not an alarm. */
+  .fe.finished {
+    color: var(--color-info);
   }
 </style>

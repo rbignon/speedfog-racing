@@ -12,6 +12,8 @@
     a: WsParticipant | null;
     b: WsParticipant | null;
     rect: Rect;
+    /** The race's own status: only a race that is over has a winner. */
+    raceStatus: string;
     totalLayers: number | null;
     /** Each runner's rank (1 = leader), which orders the pair. */
     ranks: Map<string, number>;
@@ -21,8 +23,16 @@
     layerSplits: Record<string, Record<number, number>>;
   }
 
-  let { a, b, rect, totalLayers, ranks, layerEntryIgts, layerSplits }: Props =
-    $props();
+  let {
+    a,
+    b,
+    rect,
+    raceStatus,
+    totalLayers,
+    ranks,
+    layerEntryIgts,
+    layerSplits,
+  }: Props = $props();
 
   function displayName(p: WsParticipant): string {
     return p.twitch_display_name || p.twitch_username;
@@ -59,7 +69,7 @@
   // reads negative while the side behind, on a shallower layer, is ahead on
   // IGT, the side ahead on depth still leading. A side out of the race has no
   // live gap to show, and the surviving side leads by default. Once neither
-  // side is still racing, the side ahead has won rather than leads.
+  // side is still racing, the side ahead has settled it (see leadLine).
   let duel = $derived.by(() => {
     if (!a || !b) return null;
     const settled = done(a) && done(b);
@@ -83,6 +93,17 @@
     if (gap === 0) return { gapText: "0:00", leader: null, settled };
     return { gapText: formatGap(gap), leader: ahead, settled };
   });
+
+  // A settled side ahead has won only if it is the race's own winner: first
+  // once the race is over, like the quad cards' Winner (finishers rank by
+  // IGT, so a runner still on course elsewhere may yet finish under the
+  // first's time). Otherwise it only finished ahead of the other seat: the
+  // scene can seat any two runners of the field, the 3rd and the 4th too.
+  function leadLine(leader: WsParticipant, settled: boolean): string {
+    const won = raceStatus === "finished" && ranks.get(leader.id) === 1;
+    const verb = !settled ? "leads" : won ? "wins" : "ahead";
+    return `${displayName(leader)} ${verb}`;
+  }
 </script>
 
 <div
@@ -103,7 +124,7 @@
       <span class="vgap">{duel.gapText}</span>
       {#if duel.leader}
         <span class="vlead" style="--c: {colorOf(duel.leader)};"
-          >{displayName(duel.leader)} {duel.settled ? "wins" : "leads"}</span
+          >{leadLine(duel.leader, duel.settled)}</span
         >
       {/if}
     </div>

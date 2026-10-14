@@ -106,16 +106,24 @@
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
 
-  // A stale zone under a runner who is out reads as if they were still
-  // racing there: the out-of-race state replaces it, in the same quiet
-  // secondary tone the standings use for DNF/DQ.
-  let zoneLine = $derived(
-    participant.status === "disqualified"
-      ? "DQ"
-      : participant.status === "abandoned"
-        ? "DNF"
-        : zoneLabel(participant.current_zone),
-  );
+  // The card has no Gap row to carry a runner's state, so the zone line
+  // does. A bare zone under a runner who is out would read as if they were
+  // still racing there: their DNF/DQ goes before it, in the same quiet
+  // secondary tone the standings use, the zone still saying where they
+  // stopped. Every finisher stands in the final boss's zone, so a finish
+  // replaces it.
+  let zoneLine = $derived.by(() => {
+    if (participant.status === "finished") return "Finished";
+    const zone = zoneLabel(participant.current_zone);
+    const state =
+      participant.status === "disqualified"
+        ? "DQ"
+        : participant.status === "abandoned"
+          ? "DNF"
+          : null;
+    if (!state) return zone;
+    return zone ? `${state} · ${zone}` : state;
+  });
 </script>
 
 <div
@@ -139,8 +147,10 @@
             class="dbadge"
           />{/if}</span
       >
-      <span class="dzone" class:out={isOutOfRace(participant.status)}
-        >{zoneLine}</span
+      <span
+        class="dzone"
+        class:out={isOutOfRace(participant.status)}
+        class:finished={participant.status === "finished"}>{zoneLine}</span
       >
     </div>
     <span class="drk">{ranked ? rank : ""}</span>
@@ -261,6 +271,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .dzone.finished {
+    color: var(--color-info);
   }
 
   .drk {
