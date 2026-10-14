@@ -85,6 +85,7 @@ from speedfog_racing.services.event_service import (  # noqa: E402
     compute_qualified,
     compute_stage_results,
     fed_field,
+    playoff_deadline_ms,
     resolve_withdrawn,
 )
 
@@ -911,11 +912,14 @@ async def simulate(
             .values(event_id=None, event_slot=None)
         )
 
-        def add_participants(race: Race, runs: list[Run], slot: str) -> None:
+        def add_participants(race: Race, runs: list[Run], slot: str) -> list[State]:
+            """Write the runs' participant rows; returns their projected states."""
+            states = []
             for run in runs:
                 st = project(run, vnow, graph_of(race), slot)
                 if st is None:
                     continue
+                states.append(st)
                 db.add(
                     Participant(
                         race_id=race.id,
@@ -936,6 +940,7 @@ async def simulate(
                         color_index=run.color_index,
                     )
                 )
+            return states
 
         # Qualifier races: attached from the announcement on, except in the
         # bare "announce" scenario where the event page has nothing yet.
@@ -944,6 +949,8 @@ async def simulate(
             race.event_id = event.id if attach_qual else None
             race.event_slot = slot if attach_qual else None
             race.scheduled_at = T(STARTS)
+            # A qualifier has no in-game cutoff; clear one a live run left.
+            race.igt_cutoff_ms = None
             if vnow < STARTS:
                 race.status = RaceStatus.SETUP
                 race.started_at = None
@@ -992,8 +999,16 @@ async def simulate(
                     race.started_at = T(start)
                     race.seeds_released_at = T(start - timedelta(minutes=10))
                     race.finished_at = T(end) if vnow >= end else None
+                # The server sets a playoff race's IGT cutoff from its finishes;
+                # project it the same way, and clear one a live run left on a
+                # race put back in setup.
+                race.igt_cutoff_ms = None
                 if created:
-                    add_participants(race, runs, slot)
+                    states = add_participants(race, runs, slot)
+                    if race.status != RaceStatus.SETUP:
+                        race.igt_cutoff_ms = playoff_deadline_ms(
+                            SimpleNamespace(participants=states), config
+                        )
                     for caster in casters:
                         db.add(Caster(race_id=race.id, user_id=caster.id))
 

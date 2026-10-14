@@ -858,6 +858,32 @@ tool clears the participants again.
 The states before the cut also sign up the viewer and a dozen runners, so the
 ladder's signup rows and the upcoming card's avatar row show. A withdrawal
 listed in the event's `withdrawn` is honoured when the tool draws the groups.
+A playoff race it projects with a finisher carries the IGT cutoff the server
+would have set from it; a race it puts back in setup carries none.
+
+`tools/simulate_match.py <stage>` then plays that stage's races live on the
+local server, one after the other, the way the runners' mods would: each
+runner's mod connects with the participant's own token, the organizer starts
+the race over the API, and the in-game time runs `--speed` times faster than
+the wall clock (30 by default; the wrong-save guard caps it near 60) through
+fog gates, deaths, a weapon swap and the finish. Race 1 sees its slowest
+runner eliminated by the playoff IGT cutoff, race 2 a full field of finishers,
+race 3 a disqualification by the organizer, and so on cycling. Every update
+travels the real path (mod WebSocket, REST, spectator broadcasts), so it is
+the way to check the cast scenes over a whole evening: with `--shots <dir>`
+(run it with `uv run --with playwright`; Playwright's own Chromium, or the
+installed Chrome when it is not downloaded), the scenes stay open in a
+headless browser at 1920x1080 as OBS browser sources would, the talk scene
+all evening and each race's scenes from its setup until the next race, and
+are captured at each checkpoint, the pages' errors logged beside the
+captures.
+The stage's races must be in setup with their field registered (for instance
+`simulate_event.py newcomers_done --slug sim-season`, Group B tonight), and the
+event must hold no real run, as for `simulate_event.py`; each race's runs lose
+their last IGT change once it is over (or the run aborted), so
+`simulate_event.py` can project the event again. An aborted run leaves its
+race running: project the event again to put it back in setup. Do not write files under `server/` while it runs: the dev
+server's `--reload` restarts on any change there and drops every WebSocket.
 
 ## Home page and navbar
 
