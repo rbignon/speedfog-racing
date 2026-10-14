@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { raceStore } from "$lib/stores/race.svelte";
+  import { sceneStatus } from "$lib/cast/scene-status.svelte";
   import { sceneLayout } from "$lib/cast/layout";
   import { resolveSlots } from "$lib/cast/params";
   import { parseDagGraph } from "$lib/dag";
@@ -32,7 +33,13 @@
   let ranks = $derived(
     new Map(raceStore.leaderboard.map((p, i) => [p.id, i + 1])),
   );
-  let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
+  // "setup" until the start countdown is over: see sceneStatus.
+  const shownStatus = sceneStatus(() => ({
+    status: raceStore.race?.status ?? data.race.status,
+    startedAt: raceStore.race?.started_at ?? data.race.started_at,
+    delayMs: params.delayMs,
+  }));
+  let raceStatus = $derived(shownStatus.current);
   let avatars = $derived(
     new Map(
       data.race.participants.map((p) => [p.id, p.user.twitch_avatar_url]),

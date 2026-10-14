@@ -90,12 +90,18 @@ per state: the race clock alone while the race runs (its ticking says the
 race is live, so it carries no Live tag; "IGT cutoff" joins it on a race
 with an in-game cutoff, otherwise "Ends in" once the race has a deadline),
 and in its place a large "Upcoming" before the start and a large "Finished",
-in the finished colour, once it is over.
+in the finished colour, once it is over. The server runs a race from the
+organizer's start command on, its start (`started_at`) a countdown later:
+through that countdown the panel stays "Upcoming", with "Starts in 0:07"
+under it, rather than a clock frozen at 0:00.
 
 Before the start, the field stands in join order, the only order there is:
 no runner card (quad, focus, duel) shows a rank digit or the leader's brass,
-and the standings panels (metro, focus) number no row. Ranks appear with the
-race's first tick.
+the standings panels (metro, focus) number no row, and the metro map stays
+hidden. The start countdown still counts as before the start (each scene
+reads the race status through `sceneStatus`, which shows a race still
+counting down as setup, its own `delay` included): ranks, the leader and the
+map appear the moment the countdown ends.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |

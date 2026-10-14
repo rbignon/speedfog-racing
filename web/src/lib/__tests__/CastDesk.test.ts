@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { flushSync } from "svelte";
 import { render } from "@testing-library/svelte";
 import type { RaceDetail } from "$lib/api";
+import { raceStore } from "$lib/stores/race.svelte";
 
 vi.mock("$app/state", () => ({
   page: { url: new URL("http://localhost/overlay/cast/race/r-1/quad") },
@@ -32,6 +34,11 @@ function renderDesk(race: RaceDetail) {
   });
 }
 
+afterEach(() => {
+  raceStore.race = null;
+  vi.useRealTimers();
+});
+
 describe("CastDesk: clock panel", () => {
   // One element per state: the ticking clock says the race is live on its
   // own, so it needs no Live tag; before and after, a word says the state.
@@ -49,6 +56,39 @@ describe("CastDesk: clock panel", () => {
     const zone = container.querySelector(".clock-zone");
     expect(zone?.querySelector(".cz-state")?.textContent).toBe("Upcoming");
     expect(zone?.querySelector(".cz-big")).toBeNull();
+  });
+
+  // The server runs the race from the start command on, its start
+  // (`started_at`) a countdown later: until then the desk keeps its pre-start
+  // word, with the time left under it, rather than a clock frozen at 0:00.
+  it("keeps Upcoming with the time left during the start countdown", () => {
+    const { container } = renderDesk(
+      fakeRace({ started_at: new Date(Date.now() + 7_000).toISOString() }),
+    );
+    const zone = container.querySelector(".clock-zone");
+    expect(zone?.querySelector(".cz-state")?.textContent).toBe("Upcoming");
+    expect(zone?.querySelector(".cz-end")?.textContent).toMatch(
+      /^Starts in 0:0[78]$/,
+    );
+    expect(zone?.querySelector(".cz-big")).toBeNull();
+  });
+
+  it("counts a start arriving under a desk mounted long before from its full length", () => {
+    vi.useFakeTimers({ now: Date.parse("2026-10-14T19:00:00Z") });
+    const { container } = renderDesk(
+      fakeRace({ status: "setup", started_at: null }),
+    );
+    vi.setSystemTime(Date.parse("2026-10-14T19:45:00Z"));
+    raceStore.race = {
+      status: "running",
+      started_at: "2026-10-14T19:45:10Z",
+    } as unknown as typeof raceStore.race;
+    flushSync();
+    const zone = container.querySelector(".clock-zone");
+    expect(zone?.querySelector(".cz-end")?.textContent).toBe("Starts in 0:10");
+    vi.advanceTimersByTime(10_010);
+    flushSync();
+    expect(zone?.querySelector(".cz-big")?.textContent).toBe("0:00");
   });
 
   it("shows the in-game cutoff under the clock, ahead of a wall-clock deadline", () => {

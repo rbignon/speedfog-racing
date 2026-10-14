@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import { raceStore } from "$lib/stores/race.svelte";
+  import { sceneStatus } from "$lib/cast/scene-status.svelte";
   import { sceneLayout } from "$lib/cast/layout";
   import { parseDagGraph, MetroDagFull } from "$lib/dag";
   import { buildCastLog } from "$lib/cast/log";
@@ -18,7 +19,13 @@
   // page draws the map itself, inside that same rectangle.
   let mapRect = $derived(layout.holes.find((h) => h.id === "map")!);
 
-  let raceStatus = $derived(raceStore.race?.status ?? data.race.status);
+  // "setup" until the start countdown is over: see sceneStatus.
+  const shownStatus = sceneStatus(() => ({
+    status: raceStore.race?.status ?? data.race.status,
+    startedAt: raceStore.race?.started_at ?? data.race.started_at,
+    delayMs: params.delayMs,
+  }));
+  let raceStatus = $derived(shownStatus.current);
   let totalLayers = $derived(
     raceStore.seed?.total_layers ?? data.race.seed_total_layers,
   );

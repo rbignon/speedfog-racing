@@ -3,7 +3,11 @@
   import { raceStore } from "$lib/stores/race.svelte";
   import { sceneLayout, type CastSceneId } from "$lib/cast/layout";
   import { parseCastParams } from "$lib/cast/params";
-  import { formatElapsed, formatCountdown } from "$lib/cast/clock";
+  import {
+    formatElapsed,
+    formatCountdown,
+    formatStartsIn,
+  } from "$lib/cast/clock";
   import { splitRaceName } from "$lib/cast/race-name";
   import type { RaceDetail } from "$lib/api";
 
@@ -57,10 +61,27 @@
   let now = $state(Date.now());
   $effect(() => {
     if (!panels.clock || status !== "running") return;
-    const id = setInterval(() => {
+    // Fresh at once: the start can arrive under a desk mounted long before,
+    // whose last reading would count a long way down for a second.
+    now = Date.now();
+    // Then tick on the race's own seconds, so the countdown ends and the
+    // clock turns over when the race's second does, with the cards that
+    // sceneStatus wakes at the start, not up to a second later.
+    const phase = startedAt
+      ? (((Date.parse(startedAt) - (Date.now() - delayMs)) % 1000) + 1000) %
+        1000
+      : 0;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    const timeout = setTimeout(() => {
       now = Date.now();
-    }, 1000);
-    return () => clearInterval(id);
+      interval = setInterval(() => {
+        now = Date.now();
+      }, 1000);
+    }, phase + 5);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+    };
   });
   let shiftedNow = $derived(now - delayMs);
 
@@ -136,8 +157,13 @@
   >
     <!-- One element per state: a ticking clock says the race is live on
          its own, so it carries no Live tag; before and after, the state
-         itself takes the clock's place, in large type. -->
-    {#if status === "running"}
+         itself takes the clock's place, in large type. The server runs the
+         race from the start command on, its start a countdown later: until
+         then the desk stays Upcoming, the time left under it. -->
+    {#if status === "running" && elapsedMs < 0}
+      <span class="cz-state">Upcoming</span>
+      <span class="cz-end">Starts in <b>{formatStartsIn(-elapsedMs)}</b></span>
+    {:else if status === "running"}
       <span class="cz-big">{formatElapsed(elapsedMs)}</span>
       {#if igtCutoffText}
         <span class="cz-end">IGT cutoff <b>{igtCutoffText}</b></span>
