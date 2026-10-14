@@ -11,6 +11,7 @@
   } from "$lib/api";
   import { sceneLayout, formatGeo, type CastSceneId } from "$lib/cast/layout";
   import { buildCastUrl, type CastUrlOpts } from "$lib/cast/urls";
+  import { resolveSlots } from "$lib/cast/params";
 
   interface Props {
     race: RaceDetail;
@@ -49,18 +50,6 @@
     stageKey: string;
   }
 
-  /** Whoever joined earliest sits POV 1: `color_index` is assigned by the
-   * server as max + 1 on join, so sorting by it is join order (see
-   * `resolveSlots`'s own reasoning in cast/params.ts). Fixing the seats to
-   * these usernames up front, rather than leaving them blank, keeps a
-   * hole's runner stable even if a caster later reorders the field. */
-  function joinOrderDefaults(): (string | null)[] {
-    const ordered = [...race.participants].sort(
-      (a, b) => a.color_index - b.color_index,
-    );
-    return [0, 1, 2, 3].map((i) => ordered[i]?.user.twitch_username ?? null);
-  }
-
   /** The talk scene's stage a race attached to an event names in its slot
    * (`<stage>:<n>`, a showcase's key the same way). A qualifier slot
    * (`qualifier:<mode>:<n>`) names none: talk introduces playoff evenings. */
@@ -72,12 +61,18 @@
 
   /** What a first visit to the panel for this race starts from. A setup
    * already saved for it wins, a cleared co-brand included (see
-   * `loadSettings`). */
+   * `loadSettings`). Every hole starts silent, so its URL leaves it to the
+   * scene's own join-order fallback (`resolveSlots` in cast/params.ts):
+   * naming the field as it stands when the panel opens would freeze a
+   * field still forming, and a runner who later leaves would keep a hole
+   * nobody fills. The price: a pick takes its runner out of that pool, so
+   * the auto holes after it shift (see "The setup panel" in
+   * docs/CAST_OVERLAYS.md). */
   function defaultSettings(): StoredSettings {
     return {
       scene: "quad",
       focusSlot: 1,
-      slots: joinOrderDefaults(),
+      slots: [null, null, null, null],
       cams: 2,
       caster1: race.casters[0]?.user.twitch_username ?? "",
       caster2: race.casters[1]?.user.twitch_username ?? "",
@@ -200,8 +195,8 @@
         // The refusal protects holes actually on screen from silently
         // losing their runner; a duplicate sitting in a hole the current
         // scene doesn't render (the duel scene shows two of the four, and
-        // defaults seat the whole field) can't be freed from the UI, so
-        // it is cleared instead.
+        // a quad or focus pick keeps the other two) can't be freed from
+        // the UI, so it is cleared instead.
         if (dupIndex >= seatCount) {
           slots[dupIndex] = null;
         } else {
@@ -312,6 +307,26 @@
   let seatCount = $derived(
     layout.holes.filter((h) => h.role === "pov" || h.role === "hero").length,
   );
+  // Each hole's auto option names whoever the scene would seat there with
+  // that hole silent: the same resolveSlots the scenes run, over the same
+  // holes they read (two on duel). A pick moves the auto holes after it,
+  // and this is where the caster sees it. `race` is refetched whenever the
+  // field changes, so the names follow joins and leaves.
+  let autoLabels = $derived.by(() => {
+    const pool = race.participants.map((p) => ({
+      twitch_username: p.user.twitch_username,
+      color_index: p.color_index,
+      name: p.user.twitch_display_name || p.user.twitch_username,
+    }));
+    const wanted = slots.slice(0, seatCount);
+    return wanted.map((_, i) => {
+      const seated = resolveSlots(
+        pool,
+        wanted.map((s, j) => (j === i ? null : s)),
+      )[i];
+      return seated ? `(auto: ${seated.name})` : "(auto: nobody)";
+    });
+  });
   // The map is drawn by the page, not pierced: it is listed in the layout
   // only so the guides mode can print its box (see CastPlate's own
   // `role !== "map"` filter). Printing it here too would tell the caster to
@@ -407,7 +422,7 @@
               value={slots[i] ?? ""}
               onchange={(e) => handleSlotChange(i, e)}
             >
-              <option value="">(auto, join order)</option>
+              <option value="">{autoLabels[i]}</option>
               {#each race.participants as p (p.id)}
                 <option value={p.user.twitch_username}
                   >{p.user.twitch_display_name ||

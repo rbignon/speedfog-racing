@@ -553,10 +553,18 @@ It gives a caster, without hand-editing a URL:
   WebSocket) on every keystroke; every other field in the panel stays live.
 - A scene picker: Quad, Focus 1 through 4, Duel, Metro, Browser, Talk.
 - Hole assignment, on the scenes that seat runners (quad, focus, duel): a
-  dropdown per POV hole (two on the duel scene), pre-filled with the field in
-  join order, "(auto, join order)" for a hole the field doesn't fill or one
-  the caster clears; the panel leaves it out on metro, browser and talk,
-  keeping the seats picked for the next scene that has some. Picking the
+  dropdown per POV hole (two on the duel scene), every one starting on auto,
+  so the URL carries no `p<n>` and the scene seats the live field (a field
+  still forming when the panel first opens is not frozen into it); the
+  caster picks a runner only to override a hole. Each auto option names the
+  runner the scene would seat there ("(auto: alice)", "(auto: nobody)" past
+  the field), worked out by the scenes' own `resolveSlots`. Picking one
+  takes that runner out of the join-order pool, so the auto holes after it
+  shift (on a field of five, the fifth picked in POV 2 moves the second and
+  third to POV 3 and 4), and their options say so: a caster who needs a
+  seat to hold picks it too. The panel leaves hole assignment out on metro,
+  browser and talk, keeping the seats picked for the next scene that has
+  some. Picking the
   same runner twice is refused rather than silently hiding another runner,
   except when the duplicate sits in a hole the duel scene doesn't render,
   which is freed instead (it can't be cleared from the panel).

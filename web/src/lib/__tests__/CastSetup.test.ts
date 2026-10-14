@@ -74,19 +74,17 @@ beforeEach(() => {
 });
 
 describe("CastSetup: hole assignment", () => {
-  it("seats the field in join order by default", () => {
+  it("leaves every hole to the scene's join-order fallback by default", () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace(), onClose: () => {} },
     });
     const selects =
       container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
     expect(selects).toHaveLength(4);
-    expect([...selects].map((s) => s.value)).toEqual([
-      "alice",
-      "bob",
-      "carol",
-      "dave",
-    ]);
+    expect([...selects].map((s) => s.value)).toEqual(["", "", "", ""]);
+    // No p<n> at all: the scene seats the live field, not the field as it
+    // stood when the panel was first opened.
+    expect(urlInputValue(container)).not.toMatch(/[?&]p\d=/);
   });
 
   it("refuses to seat a runner already seated in another hole", async () => {
@@ -95,12 +93,15 @@ describe("CastSetup: hole assignment", () => {
     });
     const selects =
       container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
+    await fireEvent.change(selects[0], { target: { value: "alice" } });
+    await fireEvent.change(selects[1], { target: { value: "bob" } });
 
-    // POV 1 already holds alice; naming her again in POV 2 is refused
-    // rather than silently leaving bob unshown.
+    // POV 1 holds alice; naming her again in POV 2 is refused rather than
+    // silently leaving bob unshown, and POV 2 keeps bob.
     await fireEvent.change(selects[1], { target: { value: "alice" } });
 
     expect(selects[1].value).toBe("bob");
+    expect(urlInputValue(container)).toContain("p2=bob");
     expect(container.textContent).toContain("Already seated in POV 1.");
   });
 
@@ -122,17 +123,46 @@ describe("CastSetup: hole assignment", () => {
       [
         ...container.querySelectorAll<HTMLSelectElement>(".hole-grid select"),
       ].map((s) => s.value);
-    const pov1 =
-      container.querySelector<HTMLSelectElement>(".hole-grid select")!;
-    await fireEvent.change(pov1, { target: { value: "" } });
+    const pov2 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[1];
+    await fireEvent.change(pov2, { target: { value: "bob" } });
     await selectScenePill(container, "Metro");
     await selectScenePill(container, "Quad");
 
-    // POV 1 freed by hand, the others still the defaults: a reset would
-    // bring alice back, a wipe would leave every hole on auto.
-    expect(seats()).toEqual(["", "bob", "carol", "dave"]);
+    // POV 2 picked by hand, the others still on auto: a reset would wipe
+    // bob, a reshuffle would move him.
+    expect(seats()).toEqual(["", "bob", "", ""]);
     expect(urlInputValue(container)).not.toContain("p1=");
     expect(urlInputValue(container)).toContain("p2=bob");
+  });
+
+  it("names who each auto hole seats, shifted by a pick", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-14"), onClose: () => {} },
+    });
+    const selects =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
+
+    await fireEvent.change(selects[0], { target: { value: "dave" } });
+
+    // dave leaves the join-order pool: the silent holes seat the rest in
+    // order, and POV 1's own auto option says who clearing it would seat.
+    expect(autoOptionLabels(container)).toEqual([
+      "(auto: alice)",
+      "(auto: alice)",
+      "(auto: bob)",
+      "(auto: carol)",
+    ]);
+  });
+
+  it("names nobody in an auto hole past the field", () => {
+    const race = fakeRace("race-15");
+    race.participants = race.participants.slice(0, 3);
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+
+    expect(autoOptionLabels(container)[3]).toBe("(auto: nobody)");
   });
 
   it("accepts the same runner once their old hole is freed first", async () => {
@@ -142,6 +172,7 @@ describe("CastSetup: hole assignment", () => {
     const selects =
       container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
 
+    await fireEvent.change(selects[0], { target: { value: "alice" } });
     await fireEvent.change(selects[0], { target: { value: "" } });
     await fireEvent.change(selects[1], { target: { value: "alice" } });
 
@@ -162,6 +193,12 @@ function scenePillLabels(container: HTMLElement): string[] {
   return [...container.querySelectorAll(".scene-picker .pill")].map(
     (b) => b.textContent?.trim() ?? "",
   );
+}
+
+function autoOptionLabels(container: HTMLElement): string[] {
+  return [
+    ...container.querySelectorAll<HTMLSelectElement>(".hole-grid select"),
+  ].map((s) => s.options[0].textContent?.trim() ?? "");
 }
 
 function urlInputValue(container: HTMLElement): string {
@@ -248,17 +285,27 @@ describe("CastSetup: duel scene", () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-7"), onClose: () => {} },
     });
+    const pov3 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[2];
+    await fireEvent.change(pov3, { target: { value: "carol" } });
     await selectScenePill(container, "Duel");
     const selects =
       container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
 
-    // carol sits in slot 3 by default, a hole the duel scene doesn't render
-    // (and so can't be freed from): seating her in POV 1 must clear that
-    // hidden slot, not refuse with an error about an invisible dropdown.
+    // carol was seated in slot 3 on quad, a hole the duel scene doesn't
+    // render (and so can't be freed from): seating her in POV 1 must clear
+    // that hidden slot, not refuse with an error about an invisible dropdown.
     await fireEvent.change(selects[0], { target: { value: "carol" } });
 
     expect(selects[0].value).toBe("carol");
     expect(container.textContent).not.toContain("Already seated");
+
+    // Back on quad, she sits in POV 1 only.
+    await selectScenePill(container, "Quad");
+    const quadSeats = [
+      ...container.querySelectorAll<HTMLSelectElement>(".hole-grid select"),
+    ].map((s) => s.value);
+    expect(quadSeats).toEqual(["carol", "", "", ""]);
   });
 
   it("still refuses a duplicate between the duel scene's own two holes", async () => {
@@ -269,9 +316,10 @@ describe("CastSetup: duel scene", () => {
     const selects =
       container.querySelectorAll<HTMLSelectElement>(".hole-grid select");
 
+    await fireEvent.change(selects[0], { target: { value: "alice" } });
     await fireEvent.change(selects[1], { target: { value: "alice" } });
 
-    expect(selects[1].value).toBe("bob");
+    expect(selects[1].value).toBe("");
     expect(container.textContent).toContain("Already seated in POV 1.");
   });
 
@@ -279,6 +327,9 @@ describe("CastSetup: duel scene", () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-6"), onClose: () => {} },
     });
+    const pov3 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[2];
+    await fireEvent.change(pov3, { target: { value: "carol" } });
     await selectScenePill(container, "Duel");
 
     const labels = [
@@ -289,6 +340,23 @@ describe("CastSetup: duel scene", () => {
       .value;
     expect(url).toContain("/overlay/cast/race/race-6/duel");
     expect(url).not.toContain("p3=");
+  });
+
+  it("leaves a hidden slot's pick out of the duel's auto holes", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-16"), onClose: () => {} },
+    });
+    const pov3 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[2];
+    await fireEvent.change(pov3, { target: { value: "alice" } });
+    await selectScenePill(container, "Duel");
+
+    // The duel scene reads p1 and p2 only, so alice, picked for quad's
+    // POV 3, is still the first runner its silent holes seat.
+    expect(autoOptionLabels(container)).toEqual([
+      "(auto: alice)",
+      "(auto: bob)",
+    ]);
   });
 });
 
