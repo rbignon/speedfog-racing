@@ -840,11 +840,15 @@ impl RaceTracker {
         &self.machine.race_state.participants
     }
 
+    /// Local IGT for the overlay, held through a menu reload while playing
+    /// (`display_igt_ms`).
     pub fn read_igt(&self) -> Option<u32> {
-        self.machine
-            .frame_snapshot
-            .igt_ms
-            .or_else(|| self.game_state.read_igt())
+        self.machine.display_igt_ms(
+            self.machine
+                .frame_snapshot
+                .igt_ms
+                .or_else(|| self.game_state.read_igt()),
+        )
     }
 
     pub fn read_deaths(&self) -> Option<u32> {

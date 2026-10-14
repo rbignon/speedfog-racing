@@ -470,20 +470,39 @@ impl RaceMachine {
             .unwrap_or(false)
     }
 
-    /// Configured quit-out penalty, 0 when no race is known (nothing to
-    /// penalize outside a race anyway).
-    /// IGT for outgoing wire values: the frame value, falling back to the
-    /// last good observation when the frame read is the transient 0 of a
-    /// repopulating menu reload. Status updates deliberately do NOT use
-    /// this: there, 0 means "not in game, skip the send".
+    /// IGT for outgoing wire values: the frame value, held through the
+    /// transient 0 of a repopulating menu reload. Status updates
+    /// deliberately do NOT use this: there, 0 means "not in game, skip the
+    /// send".
     fn effective_igt_ms(&self) -> u32 {
-        self.frame_snapshot
-            .igt_ms
-            .filter(|&v| v > 0)
-            .or(self.last_good_igt)
-            .unwrap_or(0)
+        self.held_igt_ms(self.frame_snapshot.igt_ms).unwrap_or(0)
     }
 
+    /// An IGT reading, falling back to the last good observation when it is
+    /// zero or missing: the game reads 0, then nothing, while a menu reload
+    /// repopulates GameDataMan, and its clock is stopped meanwhile. `None`
+    /// until a first good observation since the race start.
+    pub fn held_igt_ms(&self, reading: Option<u32>) -> Option<u32> {
+        reading.filter(|&v| v > 0).or(self.last_good_igt)
+    }
+
+    /// The local IGT the overlay shows, given the game's reading: held
+    /// (`held_igt_ms`) while the local runner plays; otherwise the reading,
+    /// a zero one counting as none (a runner not yet playing may still be on
+    /// another save, whose IGT is no race clock to hold).
+    pub fn display_igt_ms(&self, reading: Option<u32>) -> Option<u32> {
+        if self
+            .my_participant()
+            .is_some_and(|p| p.status == ParticipantStatus::Playing)
+        {
+            self.held_igt_ms(reading)
+        } else {
+            reading.filter(|&v| v > 0)
+        }
+    }
+
+    /// Configured quit-out penalty, 0 when no race is known (nothing to
+    /// penalize outside a race anyway).
     fn quit_out_penalty_ms(&self) -> u32 {
         self.race_state
             .race
@@ -863,7 +882,7 @@ impl RaceMachine {
                 // leaderboard_update on events, not on every status_update).
                 // `current_igt` is a fresh read injected by the shell.
                 if status == RaceStatus::Finished && !self.am_i_finished() {
-                    self.frozen_igt_ms = current_igt;
+                    self.frozen_igt_ms = self.display_igt_ms(current_igt);
                     self.frame_snapshot.igt_ms = self.frozen_igt_ms;
                     info!(frozen_igt_ms = ?self.frozen_igt_ms, "[WS] Froze game IGT (race ended, player not finished)");
                 }
@@ -2108,6 +2127,44 @@ mod tests {
     }
 
     #[test]
+    fn held_igt_bridges_a_menu_reload() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        assert_eq!(m.held_igt_ms(Some(0)), None);
+        m.tick(tick_in(snap(Some(2_220_000), true), true, None), now);
+        assert_eq!(m.held_igt_ms(Some(0)), Some(2_220_000));
+        assert_eq!(m.held_igt_ms(None), Some(2_220_000));
+        assert_eq!(m.held_igt_ms(Some(2_221_000)), Some(2_221_000));
+    }
+
+    #[test]
+    fn held_igt_keeps_the_race_save_through_a_wrong_save_reload() {
+        // A menu reload out of a wrong save holds the race save's IGT, not
+        // the wrong save's.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        reload_to(&mut m, 7_200_000, now);
+        assert!(m.wrong_save);
+        assert_eq!(m.held_igt_ms(Some(0)), Some(10_000));
+    }
+
+    #[test]
+    fn display_igt_holds_only_a_playing_runners_clock() {
+        // Still ready at the start, in the world on an old save, then off to
+        // the title for a New Game: the old save's IGT is no race clock.
+        let now = Instant::now();
+        let mut m = cutoff_machine("ready", now);
+        m.tick(tick_in(snap(Some(2_832_000), true), true, None), now);
+        assert_eq!(m.display_igt_ms(None), None);
+        assert_eq!(m.display_igt_ms(Some(0)), None);
+        assert_eq!(m.display_igt_ms(Some(5_000)), Some(5_000));
+
+        let mut m = cutoff_machine("playing", now);
+        m.tick(tick_in(snap(Some(2_832_000), true), true, None), now);
+        assert_eq!(m.display_igt_ms(None), Some(2_832_000));
+    }
+
+    #[test]
     fn forward_jump_across_unload_freezes() {
         let now = Instant::now();
         let mut m = running_machine(now);
@@ -2842,6 +2899,21 @@ mod tests {
         // Reconnect resets the freeze.
         m.handle_message(auth_ok("running", &[100], Some(900)), now + secs(61));
         assert!(m.frozen_igt_ms.is_none());
+    }
+
+    #[test]
+    fn race_end_during_a_menu_reload_freezes_the_last_good_igt() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(4242), true), true, None), now);
+        m.handle_message(
+            MachineMessage::RaceStatusChange {
+                status: RaceStatus::Finished,
+                current_igt: Some(0),
+            },
+            now + secs(60),
+        );
+        assert_eq!(m.frozen_igt_ms, Some(4242));
     }
 
     #[test]
