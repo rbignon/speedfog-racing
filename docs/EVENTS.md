@@ -983,14 +983,15 @@ fetched is left out rather than replaced by a placeholder.
 - `GET /api/events/{slug}`: everything the page renders (`EventDetailResponse`),
   plus the showcases, which only the talk cast scene reads. Two stage fields
   serve that scene and the event page's match panels: a stage's `advance` (how many of its runners go on,
-  null for a stage nobody takes from and for a showcase), under which it
-  draws the provisional cut, and each stage race's `live`, its whole field
+  null for a stage nobody takes from and for a showcase), under which the
+  match panels draw the provisional cut and the talk scene marks the runners
+  above it as going on, and each stage race's `live`, its whole field
   in the race page's live order (each runner's preview plus the layer they
   stand on; never capped, unlike the race's five previews; empty once the
   race is no longer running), which its race card follows. A stage's
   `settled_results` are its `results` over its finished races alone (a
   running race left out, not scored provisionally), the standings that
-  scene lists under "After N of M races". Each stage
+  scene lists, "Provisional" until the stage is complete. Each stage
   carries `bracket` (its bracket's key; null for a showcase), and `brackets`
   lists the brackets in order (`key`, `label`, `entry`, and that bracket's own
   `current_stage_key` and `next_stage`). The detail also carries

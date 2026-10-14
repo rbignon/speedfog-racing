@@ -46,13 +46,6 @@
   // fillSlots keeps a stage slot with no race yet in its place as null, the
   // shape the event page's match tables and Up next chips render too.
   let slots = $derived(fillSlots(stage.races, stage.races_expected));
-  // Played means finished, as in the event page's match panels: a race
-  // created ahead of the evening is attached long before it counts. The
-  // standings count those same races (`settled_results`): `results` also
-  // scores a live race, its runners still on course on 0.
-  let racesPlayed = $derived(
-    stage.races.filter((r) => r.race.status === "finished").length,
-  );
 
   // The scene stays up in OBS all evening and holds no WebSocket: re-read
   // the event so the race cards and the standings follow the races without
@@ -107,8 +100,6 @@
   <CastRoundStandings
     rect={layout.panels.standings}
     label={stage.label}
-    {racesPlayed}
-    racesExpected={stage.races_expected}
     results={stage.settled_results}
     {nextLabels}
     advance={stage.advance}

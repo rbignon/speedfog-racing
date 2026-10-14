@@ -367,16 +367,18 @@ than an empty list under a title that would read as broken.
 
 Having no WebSocket, the scene re-reads the event every 30 seconds, so the
 race cards and the standings follow the evening while the source stays up
-in OBS all night, with no reload from the caster. The standings' "After N
-of M races" eyebrow counts the finished races, as the event page's evening
-section does ("N of M races played"), not the attached ones: races created ahead of the evening do not
-count until they are over. The standings count those same races
-(`settled_results`): a race still running scores provisionally on the event
-page (see the Playoff scoring section of `EVENTS.md`), every runner still on
-its course on 0, which under "After N of M races" would read as runners who
-scored nothing; the race card beside it already follows the live race. A stage whose key leaves
-the event's config mid-evening freezes the scene on its last copy rather
-than blanking it on air; the URL has to follow the new key.
+in OBS all night, with no reload from the caster. The standings count the
+finished races only (`settled_results`), not the attached ones: races
+created ahead of the evening do not count until they are over, and a race
+still running, which scores provisionally on the event page (see the
+Playoff scoring section of `EVENTS.md`) with every runner still on its
+course on 0, would read as runners who scored nothing; the race card beside
+it already follows the live race. The standings' eyebrow says how far to
+trust them: "Provisional" while the stage is raced, "Final" once it is
+complete, and nothing before the first result. It does not count the races
+played, which the race cards beside it already show. A stage whose key
+leaves the event's config mid-evening freezes the scene on its last copy
+rather than blanking it on air; the URL has to follow the new key.
 
 Each race card also shows the points that race itself gave, in the result
 row's gold cell (on the talk scene a gold number is always a points value,
@@ -392,12 +394,12 @@ true top rows and "+ N more"), each runner still on the course at the depth
 reached ("17/35") in the time cell, one yet to start blank. A runner out of
 the race reads DNF or DQ there, during the race and after it.
 
-While the stage is still being raced, the standings draw its cut: a dashed
-brass line under the last runner going on (`advance`, the stage's own
-config), saying at its right end how many go on and where, in the event
-page's own words ("Top 2 go on: Quarter A / Quarter B", `cutLabel`), once
-someone stands below it. When the stage is complete the line gives way to the
-advancing runners' chips.
+While the stage is still being raced, the runners standing above its cut
+(`advance`, the stage's own config) already wear the advancing mark, the
+brass rule and the chip naming where their place goes on: the same
+presentation as once the stage is complete, the "Provisional" eyebrow saying
+it can still change. Once the stage is complete, the server's verdict
+(`advances`) alone decides who carries it.
 
 The same scene can point at one of the event's showcases instead (an
 evening outside the bracket, see "Showcases" in [EVENTS.md](EVENTS.md)), at
@@ -415,11 +417,10 @@ count aren't something a caster usefully chooses. The stage standings
 panel's own row is 56px tall with a 36px avatar (down from the mockup's
 72px/46px), measured against a real 10-runner stage where the original
 size only fit 3 of them in the panel's 412px height; the brass chip and
-the advancing runner's rule stay exactly as they were. Once the stage is
-complete, the chip on each advancing runner names the stage their place goes
-on to ("Quarter A" for a group's winner, "Quarter C" for its runner-up when
-the places are crossed): the talk page finds it as the stage whose seat takes
-that place.
+the advancing runner's rule stay exactly as they were. The chip on each
+advancing runner names the stage their place goes on to ("Quarter A" for a
+group's winner, "Quarter C" for its runner-up when the places are crossed):
+the talk page finds it as the stage whose seat takes that place.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |

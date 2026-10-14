@@ -3,16 +3,11 @@
   import type { EventStageEntry, User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { rowCapacity, planRows } from "$lib/cast/rows";
-  import { cutLabel } from "$lib/events";
 
   interface Props {
     rect: Rect;
     /** The stage's own label ("Semi B"), for the "Semi B standings" title. */
     label: string;
-    /** How many of the evening's races are finished, for the
-     * "After N of M races" eyebrow. */
-    racesPlayed: number;
-    racesExpected: number;
     /** Already ranked by the server (`stage.settled_results`, the finished
      * races only): row `i` is rank `i + 1`. */
     results: EventStageEntry[];
@@ -22,16 +17,15 @@
     nextLabels?: (string | null)[];
     /** How many runners go on (`stage.advance`); null when nobody does. */
     advance?: number | null;
-    /** Whether the stage is over (`stage.complete`): until then the cut is a
-     * line under the last runner going on, after it the chips say who did. */
+    /** Whether the stage is over (`stage.complete`): until then the runners
+     * above the cut carry the advancing mark provisionally, after it the
+     * server says who went on (`advances`). */
     complete?: boolean;
   }
 
   let {
     rect,
     label,
-    racesPlayed,
-    racesExpected,
     results,
     nextLabels = [],
     advance = null,
@@ -55,16 +49,20 @@
   const ROW_HEIGHT = 56;
   let capacity = $derived(rowCapacity(rect.h, HEADER_RESERVE, ROW_HEIGHT));
   let plan = $derived(planRows(results, capacity));
-  // The cut line says how many go on and where, each stage once, in the
-  // event page's own words (its match tables' cut).
-  let cutText = $derived(advance === null ? "" : cutLabel(advance, nextLabels));
 
-  // The stage's cut, drawn while it is still being raced, under its last
-  // runner going on, once someone stands below it.
-  let cutAfter = $derived(
-    !complete && advance !== null && results.length > advance
-      ? advance - 1
-      : null,
+  // While the stage is raced, whoever stands above the cut wears the same
+  // mark as a runner through, the eyebrow saying it is provisional; once it
+  // is complete, the server's verdict alone decides.
+  function goesOn(entry: EventStageEntry, i: number): boolean {
+    if (complete) return entry.advances;
+    return advance !== null && i < advance;
+  }
+
+  // Nothing is provisional before the first result: the eyebrow keeps its
+  // line (HEADER_RESERVE counts it), so the title never moves, but says
+  // nothing over the empty panel.
+  let eyebrow = $derived(
+    results.length === 0 ? " " : complete ? "Final" : "Provisional",
   );
 
   function displayName(u: User): string {
@@ -116,13 +114,14 @@
   class="standings"
   style="left: {rect.x}px; top: {rect.y}px; width: {rect.w}px; height: {rect.h}px;"
 >
-  <span class="seyebrow">After {racesPlayed} of {racesExpected} races</span>
+  <span class="seyebrow">{eyebrow}</span>
   <span class="stitle">{label} standings</span>
   {#if results.length === 0}
     <span class="sempty">Standings arrive after the first race finishes.</span>
   {:else}
     {#each plan.visible as entry, i (entry.user.id)}
-      <div class="srow" class:adv={entry.advances}>
+      {@const through = goesOn(entry, i)}
+      <div class="srow" class:adv={through}>
         <span class="srk">{i + 1}</span>
         {#if entry.user.twitch_avatar_url}
           <img class="sav" src={entry.user.twitch_avatar_url} alt="" />
@@ -132,16 +131,10 @@
         <span class="sn" style={nameStyleFor(entry.user)}
           >{displayName(entry.user)}</span
         >
-        {#if entry.advances && nextLabels[i]}<span class="stag"
-            >{nextLabels[i]}</span
+        {#if through && nextLabels[i]}<span class="stag">{nextLabels[i]}</span
           >{/if}
         <span class="sp">{entry.points}</span>
       </div>
-      {#if i === cutAfter}
-        <div class="scut">
-          {#if cutText}<span>{cutText}</span>{/if}
-        </div>
-      {/if}
     {/each}
     {#if plan.hiddenCount > 0}
       <div class="srow more">
@@ -260,43 +253,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* The provisional cut: no height of its own (the row count above holds),
-   * a dashed brass line on the boundary with the stage it leads to named at
-   * its right end, and no plain border on the row below it. */
-  .scut {
-    position: relative;
-    height: 0;
-    /* The border takes no room either: the rows below keep their place. */
-    margin-bottom: -2px;
-    /* Literal fallback first; see the note on .srow + .srow above. */
-    border-top: 2px dashed rgba(200, 164, 78, 0.7);
-    border-top: 2px dashed
-      color-mix(in srgb, var(--color-gold) 70%, transparent);
-  }
-
-  /* One line, never wrapped onto the row below: "Top 2 go on: Quarter A /
-   * Quarter B" fits the panel at this tracking (0.14em, the chips' own,
-   * pushed its last letter onto a second line), and a longer one ellipsizes
-   * at the panel's width rather than spilling past its left edge. */
-  .scut span {
-    position: absolute;
-    right: 0;
-    top: -12px;
-    max-width: 100%;
-    box-sizing: border-box;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    padding-left: 10px;
-    background: var(--color-bg);
-    font-family: var(--font-mono);
-    font-size: 18px;
-    line-height: 22px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-gold);
   }
 
   .stag {

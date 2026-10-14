@@ -6,8 +6,6 @@ import type { EventStageEntry, User } from "$lib/api";
 const baseProps = {
   rect: { x: 0, y: 0, w: 484, h: 412 },
   label: "Semi B",
-  racesPlayed: 2,
-  racesExpected: 3,
 };
 
 function fakeUser(over: Partial<User> = {}): User {
@@ -94,7 +92,9 @@ describe("CastRoundStandings: advancing mark", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
-        nextLabels: ["Quarter A", "Quarter A"],
+        nextLabels: ["Quarter A"],
+        advance: 1,
+        complete: true,
         results: [
           fakeEntry({ user: fakeUser({ id: "u1" }), advances: true }),
           fakeEntry({ user: fakeUser({ id: "u2" }), advances: false }),
@@ -148,42 +148,45 @@ describe("CastRoundStandings: rank", () => {
 });
 
 describe("CastRoundStandings: eyebrow", () => {
-  it("reports races played against the stage's expected count", () => {
+  it("calls the standings provisional while the stage is still raced", () => {
     const { container } = render(CastRoundStandings, {
-      props: { ...baseProps, racesPlayed: 0, racesExpected: 3, results: [] },
+      props: { ...baseProps, complete: false, results: [fakeEntry()] },
     });
     expect(container.querySelector(".seyebrow")?.textContent).toBe(
-      "After 0 of 3 races",
+      "Provisional",
     );
+  });
+
+  it("calls them final once the stage is complete", () => {
+    const { container } = render(CastRoundStandings, {
+      props: { ...baseProps, complete: true, results: [fakeEntry()] },
+    });
+    expect(container.querySelector(".seyebrow")?.textContent).toBe("Final");
+  });
+
+  it("says nothing before the first result, keeping its line", () => {
+    const { container } = render(CastRoundStandings, {
+      props: { ...baseProps, complete: false, results: [] },
+    });
+    expect(container.querySelector(".seyebrow")?.textContent).toBe("\u00a0");
   });
 });
 
-describe("CastRoundStandings: cut line", () => {
+describe("CastRoundStandings: provisional qualifiers", () => {
   function results(n: number) {
     return Array.from({ length: n }, (_, i) =>
       fakeEntry({ user: fakeUser({ id: `u-${i}` }) }),
     );
   }
 
-  it("draws the stage's cut under its last runner going on while it runs", () => {
-    const { container } = render(CastRoundStandings, {
-      props: {
-        ...baseProps,
-        results: results(4),
-        advance: 2,
-        complete: false,
-        nextLabels: ["Quarter A", "Quarter A"],
-      },
-    });
-    // Spelled like the event page's own cut: a bare stage name on air does
-    // not say it is the qualifying line.
-    const cut = container.querySelector(".scut");
-    expect(cut?.textContent?.trim()).toBe("Top 2 go on: Quarter A");
-    const rows = [...container.querySelectorAll(".srow")];
-    expect(rows[1].nextElementSibling).toBe(cut);
-  });
+  function marks(container: Element) {
+    return [...container.querySelectorAll(".srow:not(.more)")].map((row) => ({
+      adv: row.classList.contains("adv"),
+      tag: row.querySelector(".stag")?.textContent ?? null,
+    }));
+  }
 
-  it("joins the distinct next stages of a cross-fed round on the cut line", () => {
+  it("marks the runners above the cut while the stage runs, each with its place's next stage", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
@@ -193,41 +196,15 @@ describe("CastRoundStandings: cut line", () => {
         nextLabels: ["Quarter A", "Quarter C"],
       },
     });
-    expect(container.querySelector(".scut")?.textContent?.trim()).toBe(
-      "Top 2 go on: Quarter A / Quarter C",
-    );
+    expect(marks(container)).toEqual([
+      { adv: true, tag: "Quarter A" },
+      { adv: true, tag: "Quarter C" },
+      { adv: false, tag: null },
+      { adv: false, tag: null },
+    ]);
   });
 
-  it("still draws the cut on the last row shown above the hidden-count line", () => {
-    // 10 runners in a panel of 6 rows: 5 shown, then "+ 5 more".
-    const { container } = render(CastRoundStandings, {
-      props: {
-        ...baseProps,
-        results: results(10),
-        advance: 5,
-        complete: false,
-        nextLabels: ["Final", "Final"],
-      },
-    });
-    const rows = [...container.querySelectorAll(".srow:not(.more)")];
-    expect(rows).toHaveLength(5);
-    expect(rows[4].nextElementSibling?.classList.contains("scut")).toBe(true);
-  });
-
-  it("draws no cut once the stage is complete, its chips say who went on", () => {
-    const { container } = render(CastRoundStandings, {
-      props: {
-        ...baseProps,
-        results: results(4),
-        advance: 2,
-        complete: true,
-        nextLabels: ["Quarter A", "Quarter A"],
-      },
-    });
-    expect(container.querySelector(".scut")).toBeNull();
-  });
-
-  it("draws no cut on a stage nobody goes on from", () => {
+  it("marks nobody on a stage nobody goes on from", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
@@ -236,19 +213,22 @@ describe("CastRoundStandings: cut line", () => {
         complete: false,
       },
     });
-    expect(container.querySelector(".scut")).toBeNull();
+    expect(marks(container).some((m) => m.adv)).toBe(false);
   });
 
-  it("draws no cut with nobody below it yet", () => {
+  // Pins the contract rather than a state the server sends today: once
+  // complete, `advances` decides, so goesOn must not fall back to the row
+  // order.
+  it("follows the server's verdict once the stage is complete, not the row order", () => {
     const { container } = render(CastRoundStandings, {
       props: {
         ...baseProps,
-        results: results(2),
+        results: results(3),
         advance: 2,
-        complete: false,
-        nextLabels: ["Quarter A", "Quarter A"],
+        complete: true,
+        nextLabels: ["Quarter A", "Quarter C"],
       },
     });
-    expect(container.querySelector(".scut")).toBeNull();
+    expect(marks(container).some((m) => m.adv)).toBe(false);
   });
 });
