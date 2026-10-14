@@ -157,11 +157,11 @@ describe("CastRoundStandings: eyebrow", () => {
     );
   });
 
-  it("calls them final once the stage is complete", () => {
+  it("calls them complete once the stage is over", () => {
     const { container } = render(CastRoundStandings, {
       props: { ...baseProps, complete: true, results: [fakeEntry()] },
     });
-    expect(container.querySelector(".seyebrow")?.textContent).toBe("Final");
+    expect(container.querySelector(".seyebrow")?.textContent).toBe("Complete");
   });
 
   it("says nothing before the first result, keeping its line", () => {

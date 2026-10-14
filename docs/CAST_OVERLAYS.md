@@ -374,8 +374,8 @@ still running, which scores provisionally on the event page (see the
 Playoff scoring section of `EVENTS.md`) with every runner still on its
 course on 0, would read as runners who scored nothing; the race card beside
 it already follows the live race. The standings' eyebrow says how far to
-trust them: "Provisional" while the stage is raced, "Final" once it is
-complete, and nothing before the first result. It does not count the races
+trust them: "Provisional" while the stage is raced, "Complete" once its
+last race is over, and nothing before the first result. It does not count the races
 played, which the race cards beside it already show. A stage whose key
 leaves the event's config mid-evening freezes the scene on its last copy
 rather than blanking it on air; the URL has to follow the new key.

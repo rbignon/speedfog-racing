@@ -62,7 +62,7 @@
   // line (HEADER_RESERVE counts it), so the title never moves, but says
   // nothing over the empty panel.
   let eyebrow = $derived(
-    results.length === 0 ? " " : complete ? "Final" : "Provisional",
+    results.length === 0 ? " " : complete ? "Complete" : "Provisional",
   );
 
   function displayName(u: User): string {
