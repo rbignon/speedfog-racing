@@ -238,6 +238,8 @@ Participants are sorted for display using a stable sort with composite key:
 
 The layer entry IGT is the first arrival on `current_layer` (the deepest layer reached), so a DNF who played on there before abandoning keeps its place. See "Leaderboard Sorting" in `PROTOCOL.md`.
 
+Arrival order is join order: the `Race.participants` relationship is ordered by `Participant.created_at`, then `color_index` (assigned max + 1 on join, the join order the cast overlays use) for rows sharing a timestamp, such as those backfilled when `created_at` was added. It also sets the order of the REST race detail's `participants`, which the race page's setup list renders as is.
+
 ---
 
 ## Broadcast Sequencing

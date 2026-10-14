@@ -1176,10 +1176,10 @@ Participants in `leaderboard_update` are pre-sorted by priority:
 
 1. **Finished**: by `igt_ms` ascending (fastest first)
 2. **Playing**: by `current_layer` descending (furthest first), then layer entry IGT ascending
-3. **Ready**
-4. **Registered**
+3. **Ready**: join order
+4. **Registered**: join order
 5. **Abandoned**: like Playing, by `current_layer` descending, then layer entry IGT ascending (the first arrival on the deepest layer, whatever the branch), so playing on before abandoning never costs a place
-6. **Disqualified**
+6. **Disqualified**: join order
 
 Both the in-game mod and the web frontend render participants in this server-provided order; neither re-sorts. The server is the single source of ranking truth, which keeps the two displays consistent and avoids the tie-break flicker a client-side re-sort on the ever-changing total `igt_ms` would cause for near-tied playing rows.
 

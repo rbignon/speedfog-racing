@@ -625,6 +625,53 @@ async def test_get_race_success(test_client, organizer, seed):
         assert data["seed_total_layers"] == 10
 
 
+@pytest.mark.asyncio
+async def test_get_race_lists_participants_in_join_order(test_client, organizer, async_session):
+    """Participants come back oldest first, whatever order the rows were read in.
+
+    Rows sharing a created_at (backfilled by the migration that added it) fall
+    back to color_index, assigned max + 1 on join.
+    """
+    joined = datetime(2026, 1, 1, tzinfo=UTC)
+    async with async_session() as db:
+        race = Race(name="Join Order", organizer_id=organizer.id, status=RaceStatus.SETUP)
+        db.add(race)
+        await db.flush()
+
+        # Neither insertion order nor user_id order (the (race_id, user_id)
+        # index scan order) matches join order.
+        for name, user_int, minutes, color in [
+            ("third", 1, 10, 2),
+            ("second", 2, 0, 1),
+            ("first", 3, 0, 0),
+        ]:
+            user = User(
+                id=uuid.UUID(int=user_int),
+                twitch_id=name,
+                twitch_username=name,
+                api_token=f"token_{name}",
+            )
+            db.add(user)
+            await db.flush()
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=user.id,
+                    color_index=color,
+                    created_at=joined + timedelta(minutes=minutes),
+                )
+            )
+            await db.flush()
+        await db.commit()
+        race_id = race.id
+
+    async with test_client as client:
+        response = await client.get(f"/api/races/{race_id}")
+        assert response.status_code == 200
+        usernames = [p["user"]["twitch_username"] for p in response.json()["participants"]]
+        assert usernames == ["first", "second", "third"]
+
+
 # =============================================================================
 # Participant Management Tests
 # =============================================================================

@@ -370,7 +370,9 @@ class Race(Base):
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
     seed: Mapped["Seed | None"] = relationship(back_populates="races")
     participants: Mapped[list["Participant"]] = relationship(
-        back_populates="race", cascade="all, delete-orphan"
+        back_populates="race",
+        order_by="[Participant.created_at, Participant.color_index]",
+        cascade="all, delete-orphan",
     )
     casters: Mapped[list["Caster"]] = relationship(
         back_populates="race", cascade="all, delete-orphan"
