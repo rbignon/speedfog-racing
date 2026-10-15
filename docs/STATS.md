@@ -178,7 +178,9 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 
 Node IDs are cluster IDs from SpeedFog's `clusters.json`. Since `clusters.json` can evolve between seed generations (display_name corrections, type reclassifications), the stats code resolves each node_id's display_name and type from the **most recent seed** that contains it. `_resolve_node_display` computes both a short name (area prefix stripped with `rsplit(" - ", 1)[-1]`, e.g. "Limgrave - Stormveil Castle" becomes "Stormveil Castle") and the unmodified full name: the top-5 panels (`/zones`) show the short name, while the zone codex index and detail sheet (`/zones/index`, `/zones/{node_id}`) show the full name, and merging across cluster variants (below) keys on the full name.
 
-For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`; the resolved short label is precomputed on the seed projection as `NodeDisplay.boss_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries.
+For boss stats specifically, the name resolution uses the `boss_name` field (canonical name from ItemRandomizer's `enemy.txt`), falling back to `display_name`; the resolved short label is precomputed on the seed projection as `NodeDisplay.boss_name`. This ensures consistent naming across seeds with and without boss randomization (e.g., "Sir Gideon Ofnir, the All-Knowing" instead of "Gideon"). Resolution is per-seed (not global), so if the same node has different randomized bosses across seeds, they appear as separate entries; only the label of a known entity comes from the most recent seed (next paragraph).
+
+The generator can rename a boss between seed generations (the early July 2026 switch from enemy.txt `ExtraName` to `Names.Key` turned "Valiant Gargoyles" into "Valiant Gargoyle"; a later change names group fights after the fight, "Crucible Misbegotten Duo" rather than "Crucible Knight", and the gargoyles "Valiant Gargoyles" again), which would split its stats across names. So the projection also records the entity id of the boss fought in each node, `NodeDisplay.boss_id`: the arena's vanilla entity from the node's `defeat_flag` (minus the 200M offset of the Radahn/Fire Giant form), or the placed source from the seed's `enemy_assignments` (graph v4.5+, seeds generated since 2026-09-01) when bosses are randomized. A randomized node of an older seed has none, its graph naming the boss only. The boss aggregation labels a node with a `boss_id` by that entity's `boss_name` in the most recent seed of the window, and a node without one by its own `boss_name`. Rows are keyed by the resulting label, so entities sharing a name (Rennala's two phases, the Golden Shade and Godfrey's first phase) still share a row.
 
 ### Cluster Merging
 
@@ -256,7 +258,7 @@ Visits where the player passed through without fighting (deaths = 0 and the next
 
 ### Sorting
 
-Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed), with merging by resolved name across participants.
+Sorted by `avg_deaths DESC`. Boss name resolution uses `boss_name` (per-seed, or the fought entity's most recent name when the seed names it, see Display Name Resolution above), with merging by resolved name across participants.
 
 ### Boss Weight Calibration
 

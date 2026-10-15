@@ -43,6 +43,9 @@ class NodeDisplay:
     # per seed, so like ``layer`` this must be read from the participant's
     # own SeedNodes, never from the merged node_display.
     boss_name: str
+    # Entity id of the boss fought in the node (see _boss_entity_id), None
+    # when the graph does not say. Per seed, like ``boss_name``.
+    boss_id: int | None
 
 
 @dataclass(frozen=True)
@@ -71,9 +74,39 @@ _seed_nodes_cache: dict[Any, SeedNodes] = {}
 _LOAD_BATCH_SIZE = 50
 
 
+# Some boss defeat flags (Radahn, Fire Giant) are the boss's entity id plus a
+# fixed 200M offset: flags in the 1.2-2.0 billion band are the offset form
+# (mirrors speedfog's enemy_data.resolve_entity_id, which keys
+# enemy_assignments).
+_OFFSET_FLAG_MIN = 1_200_000_000
+_OFFSET_FLAG_MAX = 2_000_000_000
+_DEFEAT_FLAG_OFFSET = 200_000_000
+
+
+def _boss_entity_id(meta: dict[str, Any], enemy_assignments: dict[str, Any]) -> int | None:
+    """Entity id of the boss fought in a graph node, None when the graph does not say.
+
+    A node's ``defeat_flag`` names its arena's vanilla boss entity, and the
+    seed's ``enemy_assignments`` ({arena entity: placed source entity}, graph
+    v4.5+) the boss placed there when bosses are randomized. A randomized node
+    of an older seed (``randomized_bosses`` without an assignment) only names
+    its boss.
+    """
+    flag = meta.get("defeat_flag")
+    if not isinstance(flag, int) or flag <= 0:
+        return None
+    if _OFFSET_FLAG_MIN <= flag < _OFFSET_FLAG_MAX:
+        flag -= _DEFEAT_FLAG_OFFSET
+    placed = enemy_assignments.get(str(flag))
+    if placed is not None:
+        return int(placed)
+    return None if meta.get("randomized_bosses") else flag
+
+
 def project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> SeedNodes:
     """Extract the SeedNodes projection from a raw graph_json."""
     nodes: dict[str, NodeDisplay] = {}
+    enemy_assignments = graph_json.get("enemy_assignments") or {}
     for nid, meta in graph_json.get("nodes", {}).items():
         full_name = meta.get("display_name", nid)
         short_name = full_name.rsplit(" - ", 1)[-1]
@@ -84,6 +117,7 @@ def project_seed_nodes(created_at: datetime, graph_json: dict[str, Any]) -> Seed
             zones=tuple(meta.get("zones", [])),
             layer=meta.get("layer") or 0,
             boss_name=(meta.get("boss_name") or full_name).rsplit(" - ", 1)[-1],
+            boss_id=_boss_entity_id(meta, enemy_assignments),
         )
     return SeedNodes(created_at=created_at, nodes=nodes, total_nodes=graph_json.get("total_nodes"))
 

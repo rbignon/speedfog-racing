@@ -1,6 +1,7 @@
 """Integration tests for stats service and API."""
 
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.api.stats import (
     BOSS_NODE_TYPES,
     DUNGEON_NODE_TYPES,
+    _aggregate_boss_stats,
     _aggregate_zone_stats,
     _load_zone_stats_inputs,
     _resolve_node_display,
@@ -1714,6 +1716,146 @@ class TestBossStatsFiltering:
         # These should NOT appear
         assert "Godskin Noble Boss" not in boss_names
         assert "Gideon" not in boss_names
+
+
+def _boss_seed(
+    created_at: datetime,
+    nodes: dict[str, dict],
+    enemy_assignments: dict[str, str] | None = None,
+):
+    graph: dict = {
+        "nodes": {"start_a1b2": {"type": "start", "display_name": "Chapel", "layer": 0}, **nodes}
+    }
+    if enemy_assignments is not None:
+        graph["enemy_assignments"] = enemy_assignments
+    return project_seed_nodes(created_at, graph)
+
+
+def _boss_fighter(seed_id: str, node_id: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        seed_id=seed_id,
+        status=ParticipantStatus.FINISHED,
+        igt_ms=600_000,
+        zone_history=[
+            {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+            {"node_id": node_id, "igt_ms": 100_000, "deaths": 2},
+        ],
+    )
+
+
+class TestBossStatsEntityNames:
+    """Boss rows follow the fought entity, labelled with its latest name."""
+
+    def test_renamed_entity_stays_one_row_under_its_latest_name(self):
+        # The gargoyles fought in their vanilla arena (entity from the
+        # defeat_flag) and placed in Radahn's (enemy_assignments, keyed by the
+        # entity behind the 200M-offset flag) under a newer name.
+        seeds = {
+            "old": _boss_seed(
+                datetime(2026, 7, 1, tzinfo=UTC),
+                {
+                    "gargoyles_fd23": {
+                        "type": "major_boss",
+                        "display_name": "Nokron - Gargoyles",
+                        "defeat_flag": 12020800,
+                        "boss_name": "Valiant Gargoyle",
+                        "layer": 1,
+                    }
+                },
+            ),
+            "new": _boss_seed(
+                datetime(2026, 10, 1, tzinfo=UTC),
+                {
+                    "radahn_a336": {
+                        "type": "major_boss",
+                        "display_name": "Caelid - Radahn",
+                        "defeat_flag": 1252380800,
+                        "boss_name": "Valiant Gargoyles",
+                        "randomized_bosses": ["Valiant Gargoyles"],
+                        "layer": 1,
+                    }
+                },
+                enemy_assignments={"1052380800": "12020800"},
+            ),
+        }
+        result = _aggregate_boss_stats(
+            [_boss_fighter("old", "gargoyles_fd23"), _boss_fighter("new", "radahn_a336")],
+            seeds,
+        )
+        assert [(b.display_name, b.encounters) for b in result.bosses] == [("Valiant Gargoyles", 2)]
+
+    def test_randomized_node_without_assignments_keeps_its_own_name(self):
+        # A seed older than enemy_assignments names a randomized boss only:
+        # its arena's vanilla entity (Loretta) is not the boss fought there.
+        seeds = {
+            "old": _boss_seed(
+                datetime(2026, 7, 1, tzinfo=UTC),
+                {
+                    "loretta_661f": {
+                        "type": "major_boss",
+                        "display_name": "Caria Manor - Loretta",
+                        "defeat_flag": 1035500800,
+                        "boss_name": "Godskin Noble",
+                        "randomized_bosses": ["Godskin Noble"],
+                        "layer": 1,
+                    }
+                },
+            ),
+            "new": _boss_seed(
+                datetime(2026, 10, 1, tzinfo=UTC),
+                {
+                    "loretta_661f": {
+                        "type": "major_boss",
+                        "display_name": "Caria Manor - Loretta",
+                        "defeat_flag": 1035500800,
+                        "boss_name": "Royal Knight Loretta",
+                        "layer": 1,
+                    }
+                },
+                enemy_assignments={},
+            ),
+        }
+        result = _aggregate_boss_stats(
+            [_boss_fighter("old", "loretta_661f"), _boss_fighter("new", "loretta_661f")],
+            seeds,
+        )
+        assert sorted((b.display_name, b.encounters) for b in result.bosses) == [
+            ("Godskin Noble", 1),
+            ("Royal Knight Loretta", 1),
+        ]
+
+    def test_entities_sharing_a_name_share_a_row(self):
+        # Rennala's two phases are distinct entities under one name: grouping
+        # stays by name, as before entity ids were read.
+        seeds = {
+            "s": _boss_seed(
+                datetime(2026, 10, 1, tzinfo=UTC),
+                {
+                    "academy_58f2": {
+                        "type": "major_boss",
+                        "display_name": "Raya Lucaria - Rennala",
+                        "defeat_flag": 14000800,
+                        "boss_name": "Rennala, Queen of the Full Moon",
+                        "layer": 1,
+                    },
+                    "gaius_3bd7": {
+                        "type": "major_boss",
+                        "display_name": "Scadu Altus - Gaius",
+                        "defeat_flag": 2049480800,
+                        "boss_name": "Rennala, Queen of the Full Moon",
+                        "randomized_bosses": ["Rennala, Queen of the Full Moon"],
+                        "layer": 2,
+                    },
+                },
+                enemy_assignments={"2049480800": "14000801"},
+            )
+        }
+        result = _aggregate_boss_stats(
+            [_boss_fighter("s", "academy_58f2"), _boss_fighter("s", "gaius_3bd7")], seeds
+        )
+        assert [(b.display_name, b.encounters) for b in result.bosses] == [
+            ("Rennala, Queen of the Full Moon", 2)
+        ]
 
 
 class TestBossStatsWindow:

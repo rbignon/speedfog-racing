@@ -610,6 +610,9 @@ def _aggregate_boss_stats(
     # Per participant, collect boss encounter data.
     # Boss names are resolved per-seed via NodeDisplay.boss_name (the
     # node's boss_name when present, else its display_name, pre-stripped).
+    # A node whose seed names the fought entity (NodeDisplay.boss_id) takes
+    # that entity's name in its most recent seed instead, so a boss the
+    # generator renamed stays one row. Rows are keyed by the resulting name.
     # back_ratio: on a player's LAST visit to a boss, did they backtrack?
     # avg_deaths / max_deaths: deaths are summed per participant across fight visits,
     # so a player who fights a boss in 50+40 deaths over two visits is counted once
@@ -620,6 +623,12 @@ def _aggregate_boss_stats(
     merged_backed: dict[str, list[bool]] = {}
     merged_times: dict[str, list[int]] = {}
     merged_type: dict[str, str] = {}
+
+    latest_boss_name: dict[int, str] = {}
+    for seed in sorted(seeds_by_id.values(), key=lambda s: s.created_at):
+        for display in seed.nodes.values():
+            if display.boss_id is not None and display.type in BOSS_NODE_TYPES:
+                latest_boss_name[display.boss_id] = display.boss_name
 
     for participant in participants:
         history = participant.zone_history or []
@@ -686,7 +695,10 @@ def _aggregate_boss_stats(
             time_ms = next_igt - current_igt if current_igt > 0 and next_igt > current_igt else None
 
             # Resolve boss name from this participant's seed
+            boss_id = nodes[nid].boss_id
             boss_name = nodes[nid].boss_name
+            if boss_id is not None:
+                boss_name = latest_boss_name.get(boss_id, boss_name)
             node_type = nodes[nid].type
 
             player_deaths.setdefault(boss_name, []).append(sum(fight_deaths))
@@ -814,7 +826,9 @@ async def get_boss_stats(
     Computed with the zone endpoints from one load (see ``_zone_family``).
     Names and types are resolved from each participant's own seed (bosses are
     randomized per seed), unlike the zone endpoints' most-recent-seed
-    resolution.
+    resolution, except that a node whose seed names the fought entity takes
+    that entity's name in the window's most recent seed (see
+    ``_aggregate_boss_stats``).
     """
     return (await _zone_family(pool, days, db)).bosses
 
