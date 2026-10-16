@@ -629,7 +629,7 @@ describe("CastSetup: OBS scene files", () => {
     ] as unknown as RaceDetail["casters"];
     localStorage.setItem("cast-setup:race-g2", JSON.stringify({ delayS: 9 }));
 
-    for (const race of races) {
+    for (const [i, race] of races.entries()) {
       const { container, unmount } = render(CastSetup, {
         props: { race, onClose: () => {} },
       });
@@ -637,6 +637,7 @@ describe("CastSetup: OBS scene files", () => {
         expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
       );
       await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+      await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(i + 1));
       unmount();
     }
 
@@ -715,6 +716,48 @@ describe("CastSetup: OBS scene files", () => {
     expect(textOf(settled.container)).not.toContain(UNSETTLED);
   });
 
+  // The caster downloads the match file again once a seat's runner is known,
+  // often from a panel left open since before: the file reads the field
+  // afresh, and the hint follows.
+  it("a second match download seats a runner who arrived meanwhile", async () => {
+    serveGroupG(["alice", null, "carol", "dave"]);
+    const { container } = render(CastSetup, {
+      props: { race: inGroupG("race-f1", 1), onClose: () => {} },
+    });
+    await waitFor(() => expect(textOf(container)).toContain(UNSETTLED));
+    await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(1));
+
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(2));
+
+    const calls = vi.mocked(downloadJson).mock.calls as [string, Obj][];
+    expect(plateUrl(calls[0][1], "Quad")).toContain("&p4=-&");
+    expect(plateUrl(calls[1][1], "Quad")).toContain(
+      "?p1=alice&p2=bob&p3=carol&p4=dave&",
+    );
+    expect(textOf(container)).not.toContain(UNSETTLED);
+  });
+
+  it("a match download builds from the field loaded when the refetch fails", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const { container } = render(CastSetup, {
+      props: { race: inGroupG("race-f2", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
+    );
+    vi.mocked(fetchEvent).mockRejectedValue(new Error("offline"));
+    await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(1));
+
+    const collection = vi.mocked(downloadJson).mock.calls[0][1] as Obj;
+    expect(plateUrl(collection, "Quad")).toContain(
+      "?p1=alice&p2=bob&p3=carol&p4=dave&",
+    );
+  });
+
   it("a match file draws its duels from the runners who race", async () => {
     // Five seats, one forfeited: four runners race, so every pair gets its
     // duel, as on any field of four.
@@ -728,6 +771,7 @@ describe("CastSetup: OBS scene files", () => {
       expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
     );
     await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(1));
 
     const collection = vi.mocked(downloadJson).mock.calls[0][1] as Obj;
     const duels = collection.scene_order.filter((s: Obj) =>

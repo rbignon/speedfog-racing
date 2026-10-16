@@ -701,30 +701,34 @@ It gives a caster, without hand-editing a URL:
     showcase slot, else `speedfog-race-<first 8 characters of its id>.json`.
   - **"Download OBS scenes for the match"**: the collection for the whole
     evening, on a race in a stage or showcase slot, once the race's own
-    event detail has loaded (the panel asks for it once, whatever the
-    co-brand and talk pickers say). Its race scenes are keyed by the
-    race's own stage, never the talk picker's
-    (`/overlay/cast/event/<slug>/<stage>/<scene>`, see "Following a stage"
-    above), so they follow its current race on their own and the file
-    names no race. It always opens on that stage's talk scene. On a stage,
-    its seats are the stage's declared field (`stage.field` in the event
-    detail), in field order, with the panel's pins on top (`stageSeats`):
-    the field is the same for every race of the stage and known before any
-    race has runners, so the file is identical whichever race of the match
-    it is downloaded from. A seat whose runner is not known yet (a fed
-    seat whose source stage is not over) seats nobody; while one is left,
-    a hint under the button says "The match's field is not settled yet:
-    seats without a runner stay empty.", and the file is worth downloading
-    again once its runner is known. A seat nobody will ever take seats
-    nobody either, but leaves nothing to wait for: a forfeited one (its
-    runner keeps the seat and races none of the stage's races), and a "No
-    runner" one (a fed seat its finished source stage could not fill, or a
-    seeded seat past the end of a final ladder, see
-    [EVENTS.md](EVENTS.md)). For the duel rule, the stage's field is the
-    seats that will race: every seat but those two kinds, a seat still
-    waiting for its runner included (`stageFieldSize`). A showcase declares no field, so the race the file is downloaded from
-    supplies the runners, as for the race file: a showcase whose races
-    seat different runners needs a race file per race. The file is
+    event detail has loaded (the panel asks for it on opening, whatever the
+    co-brand and talk pickers say, and reads it afresh at each match
+    download). Its race scenes are keyed by the race's own stage, never the
+    talk picker's (`/overlay/cast/event/<slug>/<stage>/<scene>`, see
+    "Following a stage" above), so they follow its current race on their own
+    and the file names no race. It always opens on that stage's talk scene.
+    On a stage, its seats are the stage's declared field (`stage.field` in
+    the event detail), in field order, with the panel's pins on top
+    (`stageSeats`): the field is the same for every race of the stage and
+    known before any race has runners, so the file is identical whichever
+    race of the match it is downloaded from. A seat whose runner is not
+    known yet (a fed seat whose source stage is not over) seats nobody;
+    while one is left, a hint under the button says "The match's field is
+    not settled yet: seats without a runner stay empty.", and the file is
+    worth downloading again once its runner is known. That download reads
+    the field afresh, so the panel can stay open in the meantime (the hint
+    follows the fresh field; the stage settings adoption below does not run
+    again); when the read fails, the file is built from the field already
+    loaded. A seat nobody will ever take seats nobody either, but leaves
+    nothing to wait for: a forfeited one (its runner keeps the seat and
+    races none of the stage's races), and a "No runner" one (a fed seat its
+    finished source stage could not fill, or a seeded seat past the end of a
+    final ladder, see [EVENTS.md](EVENTS.md)). For the duel rule, the
+    stage's field is the seats that will race: every seat but those two
+    kinds, a seat still waiting for its runner included (`stageFieldSize`).
+    A showcase declares no field, so the race the file is downloaded from
+    supplies the runners, as for the race file: a showcase whose races seat
+    different runners needs a race file per race. The file is
     `speedfog-<event>-<stage>.json`.
 - An "OBS positions" table: every hole of the current scene's label,
   position and size (the same `formatGeo` line the guides mode prints), minus

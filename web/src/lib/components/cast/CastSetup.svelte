@@ -449,10 +449,17 @@
   // stage (never the talk picker's) and follow its current race. A stage
   // seats its declared field, the same from any of its races, and sizes it
   // by who races it (the duel rule); a showcase declares none, so this
-  // race's runners stand in.
-  function downloadMatchFile() {
+  // race's runners stand in. The caster downloads it again once a seat's
+  // runner is known, maybe from a panel open since before, so it reads the
+  // race's own event afresh (the hint follows; the settings adoption above
+  // ran once and does not again). A failed read builds from the detail
+  // already loaded.
+  async function downloadMatchFile() {
+    const slug = race.event_slug;
+    if (!ownEvent || !slug) return;
+    ownEvent = (await fetchEvent(slug).catch(() => null)) ?? ownEvent;
     const match = ownStage ?? ownShowcase;
-    if (!ownEvent || !match || !race.event_slug) return;
+    if (!match) return;
     downloadJson(
       obsFileName("match", race),
       buildObsCollection({
@@ -469,7 +476,7 @@
           casters: [caster1 || null, caster2 || null],
           delayS,
           event: eventSlug || null,
-          eventSlug: race.event_slug,
+          eventSlug: slug,
           stageKey: ownStageKey,
           stageKeyed: true,
         },
