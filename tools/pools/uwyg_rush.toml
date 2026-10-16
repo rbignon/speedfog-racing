@@ -9,7 +9,10 @@ description = "\"Use What You Get\" linear boss rush"
 rules = """
 Don't change your equipment (weapons, armor, crystal tears, talismans)
 Choose any starting class freely
-If your starting class comes with multiple weapons, keep only one in your right hand
+If you start WARRIOR you must remove the left hand weapon but keep the shield
+If you start any class that has multiple weapons in their right hand remove all but 1
+You can buy items from the shop however equipment such as weapons and armor will not auto-equip to you and can't be used.
+Any item you pick up in the world could be weapons or talismans, but it's a gamble so pick up at your own risk!
 You can rebirth at a grace to add endurance if necessary
 """
 
