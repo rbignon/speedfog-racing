@@ -22,7 +22,8 @@
      * otherwise broadcast an empty, numbered frame over whatever sits
      * beneath it. */
     seatedSlots?: number[];
-    children: Snippet;
+    /** What the scene draws on the plate. Omitted, the plate stands bare. */
+    children?: Snippet;
   }
 
   let {
@@ -50,7 +51,7 @@
 <div class="fit" style="--s: {scale};">
   <div class="canvas" style="--mask: {mask};">
     <div class="plate"></div>
-    {@render children()}
+    {@render children?.()}
     {#if guides}
       {#each layout.holes as hole (hole.id)}
         <div

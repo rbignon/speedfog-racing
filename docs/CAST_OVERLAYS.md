@@ -462,29 +462,36 @@ reason: it seats no runner, and its `delay` only shifts the desk's clock.
 Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4` or `focus` in its
 URL is silently ignored), plus `cams`, `c1`, `c2`, `delay`, `guides` and
 `event`. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no runners
-to seat and no live feed to delay; see "Delay" below).
+to seat and no live feed to delay; see "Delay" below). Every scene but talk
+also reads `follow` (see "Following a stage" below), which talk does not
+need: it is keyed by its stage already.
 
 A caster's name prints under their cam as the URL writes it, whether or not
 they have an account here; the talk scene alone looks the name up and, when
 it is a registered user's Twitch username, shows that user's display name
 instead.
 
-| Param      | Meaning                                                                                     | Default |
-| ---------- | ------------------------------------------------------------------------------------------- | ------- |
-| `p1`..`p4` | Twitch username wanted in that POV hole; a silent slot falls back to join order (see below) | none    |
-| `focus`    | Which slot (1 to 4) is the hero on the focus scene                                          | 1       |
-| `cams`     | How many caster cam holes to cut: 0, 1 or 2                                                 | 2       |
-| `c1`, `c2` | The two casters' names shown under the cam holes                                            | none    |
-| `delay`    | Seconds to hold live updates back by, clamped to 0 to 60                                    | 0       |
-| `guides`   | `1` draws the position guides over every hole                                               | off     |
-| `event`    | The event slug whose co-brand the lockup shows                                              | none    |
+| Param      | Meaning                                                                                                                             | Default |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `p1`..`p4` | Twitch username wanted in that POV hole, or `-` to keep this hole empty; a silent slot falls back to join order (see below)         | none    |
+| `focus`    | Which slot (1 to 4) is the hero on the focus scene                                                                                  | 1       |
+| `cams`     | How many caster cam holes to cut: 0, 1 or 2                                                                                         | 2       |
+| `c1`, `c2` | The two casters' names shown under the cam holes                                                                                    | none    |
+| `delay`    | Seconds to hold live updates back by, clamped to 0 to 60                                                                            | 0       |
+| `guides`   | `1` draws the position guides over every hole                                                                                       | off     |
+| `event`    | The event slug whose co-brand the lockup shows                                                                                      | none    |
+| `follow`   | `<slug>:<stage>`: the event stage (or showcase) whose current race the scene moves to between races (see "Following a stage" below) | none    |
 
 A named slot (`p1`..`p4`) seats that exact runner; a silent slot is filled
 from the runners nobody named, in join order (`color_index` ascending, which
 the server assigns as max + 1 on join, so it is join order by construction).
 `resolveSlots` deliberately does not reseat a hole as the live leaderboard
 reorders during the race: doing so would put the wrong runner's name over
-someone else's video mid-race.
+someone else's video mid-race. A slot set to `-` (`EMPTY_SEAT`, `p<n>=-`)
+keeps its hole empty: it matches nobody and the join-order fallback does not
+refill it, so the hole stays part of the plate, like a name that matches
+nobody in the race. It is how a URL says "nobody here" explicitly, where a
+silent slot would seat whoever the fallback picks.
 
 ### What a built URL carries
 
@@ -492,9 +499,14 @@ someone else's video mid-race.
 turn its form into a scene URL, and it does not carry every parameter every
 time:
 
-- `p1`..`p4` only for the slots actually named, and only on the scenes that
-  seat runners: one per POV or hero hole the scene's layout cuts (`p1`..`p4`
-  on quad and focus, `p1`..`p2` on duel, none on metro and browser).
+- The path names the race (`/overlay/cast/race/<id>/<scene>`), or, with
+  `stageKeyed`, the event stage
+  (`/overlay/cast/event/<slug>/<stage>/<scene>`, see "Following a stage"
+  below); talk's always names its stage.
+- `p1`..`p4` only for the slots actually named, `-` included (`p<n>=-`, a
+  hole kept empty), and only on the scenes that seat runners: one per POV or
+  hero hole the scene's layout cuts (`p1`..`p4` on quad and focus, `p1`..`p2`
+  on duel, none on metro and browser).
 - `focus` only on the focus scene, and only when set.
 - `c1`/`c2` only for the casters actually named.
 - `event` only when a co-brand is chosen, race scenes only.
@@ -506,6 +518,61 @@ time:
   exactly like no `delay` parameter at all (`parseCastParams` falls back to
   0 either way), so leaving it off the common no-delay case keeps that URL
   shorter without changing what it does.
+- Never `follow`: a stage-keyed URL needs none, and its scene adds it itself
+  when it hands over to a race.
+
+## Following a stage
+
+A playoff evening plays several races of one event stage (or showcase), and
+a caster's OBS scenes should not need a new URL for each. The race scenes
+therefore also exist keyed by the stage, siblings of the talk scene:
+`/overlay/cast/event/<slug>/<stage>/<scene>` for quad, focus, duel, metro and
+browser (`web/src/routes/overlay/cast/event/[slug]/[stage]/[scene=castRaceScene]/`),
+with the same query parameters as the race scenes. Such a URL names no race
+at all, so it survives a race being deleted, detached or recreated before
+the evening.
+
+**The current race** of a stage is the last race by slot index whose status
+is running or finished; while none has started, the race with the lowest
+index. The server answers it, with whether the stage is done (every one of
+its races finished), at `GET /api/events/{slug}/stages/{key}/current-race`
+(see the API section of [EVENTS.md](EVENTS.md)), a light endpoint unlike the
+event detail. A race runs from the organizer's start command, so a scene
+moves to the next race at the start of its countdown, never before it
+starts; between two races, quad and metro still show the previous race's
+final state, for the recap.
+
+**The stage-keyed route** only resolves: it asks for the current race and
+hands over to the same scene of that race,
+`/overlay/cast/race/<current>/<scene>`, with the query string unchanged
+plus `follow=<slug>:<stage>`, replacing the page's address rather than
+adding a history entry. While the stage has no race at all, or the answer
+does not come (server unreachable, an error, a stage key the event does not
+know), it shows the **waiting plate**: the scene's opaque plate with no POV
+hole pierced and nothing drawn on it (no desk; the cam holes, and the
+browser scene's hole, stay cut), never an error page on air. It asks again
+every 5 seconds and hands over as soon as a race exists.
+
+**A race scene with `follow`** (`web/src/routes/overlay/cast/race/[id]/+layout.svelte`)
+keeps following the stage named in its URL, never the shown race's own slot.
+Every 5 seconds, and only while the race it shows is not running (still in
+setup, or finished), it asks for the stage's current race; when that is
+another race, it moves to the same scene of it, query string unchanged
+(replacing the address again), and the layout loads that race and
+reconnects its WebSocket. A running race is never polled for, and never
+left: nothing can replace it before it ends. A failed answer only means
+asking again 5 seconds later. Once the stage is done on the race shown,
+polling stops for good. The status it goes by is the live one, `delay`
+included, so a delayed scene starts asking once its own feed shows the race
+over. The decision is one pure function, `followStep`
+(`web/src/lib/cast/follow.ts`), shared by both routes.
+
+After a hand-over the page's address is the race URL with `follow`, so a
+reload in place lands on that race and follows the stage from there; a
+source given the stage-keyed URL again resolves from scratch.
+
+The talk scene already follows its stage on its own (it re-reads the event,
+see Talk) and takes no `follow`.
 
 ## Wielded weapons
 

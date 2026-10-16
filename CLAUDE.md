@@ -82,7 +82,7 @@ Game event flags map to map zones. The frontend renders a DAG (directed acyclic 
 
 ### Frontend routing
 
-SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (race page, with its Cast Setup panel and the layer comparison under the map, see `docs/LAYER_COMPARISON.md`), `/overlay/race/[id]/leaderboard` and `/overlay/race/[id]/dag` (transparent OBS widget overlays), `/overlay/cast/race/[id]/{quad,focus,duel,metro,browser}` and `/overlay/cast/event/[slug]/[stage]/talk` (full-screen OBS caster scenes, see `docs/CAST_OVERLAYS.md`), `/stats` (leaderboards), `/training/[id]` (solo sessions), `/events/[slug]` (tournament event page), `/admin` (admin panel). API client in `lib/api.ts`, WebSocket client in `lib/websocket.ts`.
+SvelteKit file-based routing under `web/src/routes/`. Key paths: `/race/[id]` (race page, with its Cast Setup panel and the layer comparison under the map, see `docs/LAYER_COMPARISON.md`), `/overlay/race/[id]/leaderboard` and `/overlay/race/[id]/dag` (transparent OBS widget overlays), `/overlay/cast/race/[id]/{quad,focus,duel,metro,browser}` and `/overlay/cast/event/[slug]/[stage]/{talk,quad,focus,duel,metro,browser}` (full-screen OBS caster scenes; the stage-keyed race scenes hand over to the stage's current race and follow it, see `docs/CAST_OVERLAYS.md`), `/stats` (leaderboards), `/training/[id]` (solo sessions), `/events/[slug]` (tournament event page), `/admin` (admin panel). API client in `lib/api.ts`, WebSocket client in `lib/websocket.ts`.
 
 ### Mod architecture
 
