@@ -531,7 +531,8 @@ A playoff evening plays several races of one event stage (or showcase), and
 a caster's OBS scenes should not need a new URL for each. The race scenes
 therefore also exist keyed by the stage, siblings of the talk scene:
 `/overlay/cast/event/<slug>/<stage>/<scene>` for quad, focus, duel, metro and
-browser (`web/src/routes/overlay/cast/event/[slug]/[stage]/[scene=castRaceScene]/`),
+browser
+(`web/src/routes/overlay/cast/event/[slug]/[stage]/[scene=castRaceScene]/`),
 with the same query parameters as the race scenes. Such a URL names no race
 at all, so it survives a race being deleted, detached or recreated before
 the evening.
@@ -543,8 +544,10 @@ its races finished), at `GET /api/events/{slug}/stages/{key}/current-race`
 (see the API section of [EVENTS.md](EVENTS.md)), a light endpoint unlike the
 event detail. A race runs from the organizer's start command, so a scene
 moves to the next race at the start of its countdown, never before it
-starts; between two races, quad and metro still show the previous race's
-final state, for the recap.
+starts; between two races, every race scene stays on the previous race, its
+final state up for the recap. With `delay`, a scene still switches at the
+next race's real start, so the plate can run up to `delay` seconds ahead of
+the caster's video at the hand-over.
 
 **The stage-keyed route** only resolves: it asks for the current race and
 hands over to the same scene of that race,
@@ -557,21 +560,22 @@ hole pierced and nothing drawn on it (no desk; the cam holes, and the
 browser scene's hole, stay cut), never an error page on air. It asks again
 every 5 seconds and hands over as soon as a race exists.
 
-**A race scene with `follow`** (`web/src/routes/overlay/cast/race/[id]/+layout.svelte`)
-keeps following the stage named in its URL, never the shown race's own slot.
-Every 5 seconds, and only while the race it shows is not running (still in
-setup, or finished), it asks for the stage's current race; when that is
-another race, it moves to the same scene of it, query string unchanged
-(replacing the address again), and the layout loads that race and
-reconnects its WebSocket. The co-brand's partner name is read from the
-event detail once for the page's life, not again at every hand-over (a
-failed read is retried by the next load). A running race is never polled for, and never
-left: nothing can replace it before it ends. A failed answer only means
-asking again 5 seconds later. Once the stage is done on the race shown,
-polling stops for good. The status it goes by is the live one, `delay`
-included, so a delayed scene starts asking once its own feed shows the race
-over. The decision is one pure function, `followStep`
-(`web/src/lib/cast/follow.ts`), shared by both routes.
+**A race scene with `follow`**
+(`web/src/routes/overlay/cast/race/[id]/+layout.svelte`) keeps following the
+stage named in its URL, never the shown race's own slot. Every 5 seconds,
+and only while the race it shows is not running (still in setup, or
+finished), it asks for the stage's current race; when that is another race,
+it moves to the same scene of it, query string unchanged (replacing the
+address again), and the layout loads that race and reconnects its WebSocket.
+The co-brand's partner name is read from the event detail once for the
+page's life, not again at every hand-over (a failed read is retried by the
+next load). A running race is never polled for, and never left: nothing can
+replace it before it ends. A failed answer only means asking again 5 seconds
+later. Once the stage is done on the race shown, polling stops for good. The
+status it goes by is the live one, `delay` included, so a delayed scene
+starts asking once its own feed shows the race over. The decision is one
+pure function, `followStep` (`web/src/lib/cast/follow.ts`), shared by both
+routes.
 
 After a hand-over the page's address is the race URL with `follow`, not the
 stage-keyed URL: an OBS refresh reloads that race URL, which keeps following
@@ -818,7 +822,11 @@ after the import:
 
 - **Cam 1** and **Cam 2**: empty nested scenes. The caster adds their webcam
   (or the co-caster's Discord capture) inside once, and every scene with
-  that cam hole follows.
+  that cam hole follows. OBS adds a new source at its native size in the
+  scene's top-left corner: fit it to the Cam scene (right-click, Transform >
+  Fit to screen) with the face centred. A cam hole is 4:3 while the Cam
+  scene is a 16:9 canvas, scaled to cover the hole and cropped evenly on
+  both sides, so the hole shows the scene's central 4:3.
 - **Browser capture**: a Window Capture with no window chosen. The caster
   picks their browser window and crops its tabs and address bar off (see
   Browser).
@@ -855,7 +863,8 @@ so a stray drag cannot move a source off its hole.
 4. In OBS, Scene Collection > Import: add the file, import it, then switch
    to the new collection from the Scene Collection menu.
 5. Fill the placeholders once: your webcam (and the co-caster's capture)
-   inside the Cam 1 and Cam 2 scenes, your browser window in "Browser
+   inside the Cam 1 and Cam 2 scenes, each fitted to its scene (Transform >
+   Fit to screen) with the face centred, your browser window in "Browser
    capture", your microphone and the Discord and music applications in the
    Audio scene's sources (on macOS or Linux, your platform's own sources in
    their place).
