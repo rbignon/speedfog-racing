@@ -9,6 +9,7 @@ import {
   type RaceDetail,
 } from "$lib/api";
 import { copyToClipboard } from "$lib/utils/clipboard";
+import { downloadJson } from "$lib/cast/obs-export";
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
@@ -22,6 +23,14 @@ vi.mock("$lib/api", async () => {
 vi.mock("$lib/utils/clipboard", () => ({
   copyToClipboard: vi.fn().mockResolvedValue(true),
 }));
+
+// The real seats and file names; only the browser download is captured.
+vi.mock("$lib/cast/obs-export", async () => {
+  const actual = await vi.importActual<typeof import("$lib/cast/obs-export")>(
+    "$lib/cast/obs-export",
+  );
+  return { ...actual, downloadJson: vi.fn() };
+});
 
 function fakeParticipant(id: string, username: string, colorIndex: number) {
   return {
@@ -46,6 +55,7 @@ function fakeRace(
 ): RaceDetail {
   return {
     id,
+    name: `Race ${id}`,
     event_slug: event?.event_slug ?? null,
     event_slot: event?.event_slot ?? null,
     participants: [
@@ -60,6 +70,7 @@ function fakeRace(
 
 beforeEach(() => {
   vi.mocked(copyToClipboard).mockClear();
+  vi.mocked(downloadJson).mockClear();
   // No event on the bill unless a test serves one (see serveSeasonOne).
   vi.mocked(fetchEvents).mockResolvedValue([]);
   vi.mocked(fetchEvent).mockResolvedValue({
@@ -371,8 +382,10 @@ function serveSeasonOne({ onTheBill }: { onTheBill: boolean }) {
   vi.mocked(fetchEvent).mockResolvedValue({
     slug: "season-one",
     name: "Season One",
-    stages: [{ key: "semi_b", label: "Semi B" }],
-    showcases: [{ key: "ignite_showcase", label: "Ignite showcase" }],
+    stages: [{ key: "semi_b", label: "Semi B", field: [] }],
+    showcases: [
+      { key: "ignite_showcase", label: "Ignite showcase", field: [] },
+    ],
   } as unknown as EventDetail);
 }
 
@@ -472,6 +485,269 @@ describe("CastSetup: talk scene URL guard", () => {
     expect(container.querySelector(".url-input")).toBeNull();
     expect(container.textContent).toContain(
       "Pick an event and stage above to get this scene's URL.",
+    );
+  });
+});
+
+type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+// The race's own event as the OBS files read it: Season One, whose Group G
+// seats `field` (null: a seat whose runner is not known yet), plus a
+// showcase, which declares no field.
+function serveGroupG(field: (string | null)[]) {
+  vi.mocked(fetchEvent).mockResolvedValue({
+    slug: "season-one",
+    name: "Season One",
+    stages: [
+      {
+        key: "group_g",
+        label: "Group G",
+        field: field.map((username) => ({
+          user: username
+            ? {
+                id: `u-${username}`,
+                twitch_username: username,
+                twitch_display_name: null,
+                twitch_avatar_url: null,
+              }
+            : null,
+          label: "1st of Group A",
+          forfeited: false,
+          source: null,
+          place: null,
+        })),
+      },
+    ],
+    showcases: [
+      { key: "ignite_showcase", label: "Ignite showcase", field: [] },
+    ],
+  } as unknown as EventDetail);
+}
+
+const RACE_FILE = "Download OBS scenes";
+const MATCH_FILE = "Download OBS scenes for the match";
+const UNSETTLED =
+  "The match's field is not settled yet: seats without a runner stay empty.";
+
+function buttonLabelled(container: HTMLElement, label: string) {
+  return [...container.querySelectorAll("button")].find(
+    (b) => b.textContent?.trim() === label,
+  );
+}
+
+function casterInputs(container: HTMLElement) {
+  return container.querySelectorAll<HTMLInputElement>(
+    'input[placeholder="twitch username"]',
+  );
+}
+
+function inGroupG(id: string, n: number) {
+  return fakeRace(id, { event_slug: "season-one", event_slot: `group_g:${n}` });
+}
+
+/** The panel's text with its markup's line wraps collapsed. */
+function textOf(container: HTMLElement): string {
+  return (container.textContent ?? "").replace(/\s+/g, " ");
+}
+
+/** Lets every pending request answer and the panel render what it got. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** The plate URL of the scene a downloaded collection names `scene`. */
+function plateUrl(collection: Obj, scene: string): string {
+  const items: Obj[] = collection.sources.find((s: Obj) => s.name === scene)
+    .settings.items;
+  const top = items[items.length - 1];
+  return collection.sources.find((s: Obj) => s.uuid === top.source_uuid)
+    .settings.url;
+}
+
+describe("CastSetup: OBS scene files", () => {
+  it("offers the match file only on a stage or showcase slot", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    for (const race of [
+      fakeRace("race-o1", {
+        event_slug: "season-one",
+        event_slot: "qualifier:standard:1",
+      }),
+      fakeRace("race-o2"),
+    ]) {
+      const { container, unmount } = render(CastSetup, {
+        props: { race, onClose: () => {} },
+      });
+      await settle();
+      expect(buttonLabelled(container, RACE_FILE)).toBeDefined();
+      expect(buttonLabelled(container, MATCH_FILE)).toBeUndefined();
+      unmount();
+    }
+
+    for (const slot of ["group_g:2", "ignite_showcase:1"]) {
+      const { container, unmount } = render(CastSetup, {
+        props: {
+          race: fakeRace(`race-${slot}`, {
+            event_slug: "season-one",
+            event_slot: slot,
+          }),
+          onClose: () => {},
+        },
+      });
+      await waitFor(() =>
+        expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
+      );
+      unmount();
+    }
+  });
+
+  it("the match file is the same from any race of the stage", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    localStorage.setItem(
+      "cast-setup:stage:season-one:group_g",
+      JSON.stringify({
+        scene: "quad",
+        focusSlot: 1,
+        slots: [null, "carol", null, null],
+        cams: 1,
+        caster1: "ann",
+        caster2: "",
+        delayS: 4,
+        eventSlug: "season-one",
+        stageKey: "group_g",
+      }),
+    );
+    // Race 2 joined in another order, has its own caster, and kept a setup
+    // of its own from before the stage's.
+    const races = [inGroupG("race-g1", 1), inGroupG("race-g2", 2)];
+    races[1].participants = [...races[1].participants]
+      .reverse()
+      .map((p, i) => ({ ...p, color_index: i }));
+    races[1].casters = [
+      { user: { twitch_username: "otto" } },
+    ] as unknown as RaceDetail["casters"];
+    localStorage.setItem("cast-setup:race-g2", JSON.stringify({ delayS: 9 }));
+
+    for (const race of races) {
+      const { container, unmount } = render(CastSetup, {
+        props: { race, onClose: () => {} },
+      });
+      await waitFor(() =>
+        expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
+      );
+      await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+      unmount();
+    }
+
+    const calls = vi.mocked(downloadJson).mock.calls;
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(calls[0]);
+    // Keyed by the stage, it names neither race.
+    expect(JSON.stringify(calls[0])).not.toMatch(/race-g\d/);
+  });
+
+  it("settings are shared across a stage's races", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const first = render(CastSetup, {
+      props: { race: inGroupG("race-s1", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(first.container, MATCH_FILE)).toBeDefined(),
+    );
+    await fireEvent.input(casterInputs(first.container)[0], {
+      target: { value: "ann" },
+    });
+    first.unmount();
+
+    const second = render(CastSetup, {
+      props: { race: inGroupG("race-s2", 2), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(casterInputs(second.container)[0].value).toBe("ann"),
+    );
+  });
+
+  it("a showcase keeps its settings per race", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const showcaseRace = (id: string, n: number) =>
+      fakeRace(id, {
+        event_slug: "season-one",
+        event_slot: `ignite_showcase:${n}`,
+      });
+    const first = render(CastSetup, {
+      props: { race: showcaseRace("race-c1", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(first.container, MATCH_FILE)).toBeDefined(),
+    );
+    await fireEvent.input(casterInputs(first.container)[0], {
+      target: { value: "ann" },
+    });
+    first.unmount();
+
+    const second = render(CastSetup, {
+      props: { race: showcaseRace("race-c2", 2), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(second.container, MATCH_FILE)).toBeDefined(),
+    );
+    expect(casterInputs(second.container)[0].value).toBe("");
+  });
+
+  it("warns while the field is not settled", async () => {
+    serveGroupG(["alice", null, "carol", "dave"]);
+    const unsettled = render(CastSetup, {
+      props: { race: inGroupG("race-u1", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(textOf(unsettled.container)).toContain(UNSETTLED),
+    );
+    unsettled.unmount();
+
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const settled = render(CastSetup, {
+      props: { race: inGroupG("race-u2", 2), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(settled.container, MATCH_FILE)).toBeDefined(),
+    );
+    expect(textOf(settled.container)).not.toContain(UNSETTLED);
+  });
+
+  it("the race file names every seat, under the race's own URLs", async () => {
+    const { container } = render(CastSetup, {
+      props: { race: fakeRace("race-file"), onClose: () => {} },
+    });
+    const pov2 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[1];
+    await fireEvent.change(pov2, { target: { value: "dave" } });
+    await fireEvent.click(buttonLabelled(container, RACE_FILE)!);
+
+    const [fileName, collection] = vi.mocked(downloadJson).mock.calls[0] as [
+      string,
+      Obj,
+    ];
+    expect(fileName).toBe("speedfog-race-race-fil.json");
+    // The auto holes are written out, so the plate seats exactly the runners
+    // whose POV sources sit under it, whoever joins later.
+    expect(plateUrl(collection, "Quad")).toContain(
+      "/overlay/cast/race/race-file/quad?p1=alice&p2=dave&p3=bob&p4=carol&",
+    );
+    // No event and stage chosen: no talk scene, Quad opens the file.
+    expect(collection.scene_order[0].name).toBe("Quad");
+  });
+
+  it("the race file opens on talk once the panel has an event and a stage", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const { container } = render(CastSetup, {
+      props: { race: inGroupG("race-t1", 1), onClose: () => {} },
+    });
+    await fireEvent.click(buttonLabelled(container, RACE_FILE)!);
+
+    const collection = vi.mocked(downloadJson).mock.calls[0][1] as Obj;
+    expect(collection.scene_order[0].name).toBe("Talk");
+    expect(plateUrl(collection, "Talk")).toContain(
+      "/overlay/cast/event/season-one/group_g/talk?",
+    );
+    expect(plateUrl(collection, "Quad")).toContain(
+      "/overlay/cast/race/race-t1/quad?",
     );
   });
 });

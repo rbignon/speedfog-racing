@@ -685,6 +685,39 @@ It gives a caster, without hand-editing a URL:
   position guides" link below, each replaced with a hint to pick an event
   and stage first: none of the three are valid URLs yet (an unconfigured
   talk URL would only point at a 404).
+- Next to it, two buttons that download a ready-to-import OBS scene
+  collection (see "The OBS scene collection" below), built in the browser
+  from the panel as it stands: its co-brand, casters, cams, delay and
+  pinned seats.
+  - **"Download OBS scenes"**: the collection for this race, its scenes
+    named by the race (`/overlay/cast/race/<id>/<scene>`). Its seats are
+    the race's runners, exactly as the hole dropdowns' "(auto: ...)"
+    options name them (`raceSeats` in `web/src/lib/cast/obs-export.ts`).
+    It opens on talk under the same rule as "Copy all scene URLs" (an
+    event and a stage both chosen, the talk picker's), else on quad. The
+    file is `speedfog-<event>-<stage>-<n>.json` for a race in a stage or
+    showcase slot, else `speedfog-race-<first 8 characters of its id>.json`.
+  - **"Download OBS scenes for the match"**: the collection for the whole
+    evening, on a race in a stage or showcase slot, once the race's own
+    event detail has loaded (the panel asks for it once, whatever the
+    co-brand and talk pickers say). Its race scenes are keyed by the
+    race's own stage, never the talk picker's
+    (`/overlay/cast/event/<slug>/<stage>/<scene>`, see "Following a stage"
+    above), so they follow its current race on their own and the file
+    names no race. It always opens on that stage's talk scene. On a stage,
+    its seats are the stage's declared field (`stage.field` in the event
+    detail), in field order, with the panel's pins on top (`stageSeats`):
+    the field is the same for every race of the stage and known before any
+    race has runners, so the file is identical whichever race of the match
+    it is downloaded from. A seat whose runner is not known yet (a fed
+    seat whose source stage is not over) seats nobody, and so does a
+    forfeited one (its runner races none of the stage's races); until
+    every seat has its runner, a hint under the button says "The match's
+    field is not settled yet: seats without a runner stay empty." A
+    showcase declares no field, so the race the file is downloaded from
+    supplies the runners, as for the race file: a showcase whose races
+    seat different runners needs a race file per race. The file is
+    `speedfog-<event>-<stage>.json`.
 - An "OBS positions" table: every hole of the current scene's label,
   position and size (the same `formatGeo` line the guides mode prints), minus
   the metro scene's map, which is never a video source (see "Composition
@@ -697,27 +730,140 @@ saved wins over the prefill from the race's event, a cleared co-brand
 included: a race attached to its event after its panel was first opened
 keeps the setup it had then.
 
+A stage's races share their settings instead, so the match file does not
+differ from one race's panel to the next. Once the race's own event detail
+shows its slot is a stage, the panel moves to the stage's entry,
+`cast-setup:stage:<event slug>:<stage key>`, once: it adopts what an
+earlier race of the stage saved there, or else seeds it with its own
+settings (loaded from `cast-setup:<raceId>` until then); every change from
+then on is saved there. Every setting is stage-wide (seats by username,
+cams, casters, delay, co-brand, talk stage): a stage's field is fixed. A
+showcase, and any race in no stage slot, keeps `cast-setup:<raceId>`: a
+showcase's races may seat different runners, and a pin carried to a race
+its runner is absent from would leave that hole empty.
+
+## The OBS scene collection
+
+The setup panel's two download buttons (see "The setup panel" above) write
+an OBS scene collection, a JSON file OBS imports with Scene Collection >
+Import, built by `buildObsCollection` (`web/src/lib/cast/obs.ts`). Its
+scenes, in this order, the first being the one OBS opens on:
+
+1. **Talk**: always on the match file; on the race file once the panel has
+   an event and a stage chosen.
+2. **Quad**.
+3. **Focus: <runner>**, one per seated runner in slot order, that runner the
+   hero.
+4. **Duel: <runner> vs <runner>**, one per pair of seated runners in slot
+   order (1-2, 1-3, 1-4, 2-3, 2-4, 3-4) when the field has at most four
+   runners; above four, only the pair seated in POV 1 and 2.
+5. **Metro**.
+6. **Browser**.
+7. The placeholder scenes: **Cam 1** and **Cam 2** (as many as `cams`), then
+   **Audio**.
+
+Scene and source names carry the runner's display name, or every runner's
+Twitch login when two display names would read the same (OBS wants every
+name unique). The collection is named "SpeedFog · <race name>", or
+"SpeedFog · <event name> · <stage label>" for a match.
+
+**Every seat is written out.** Each plate URL names every seat, the auto
+ones included: the runner's username, or `-` (`p<n>=-`, see "URL
+parameters") for a seat nobody fills. The plate's cards and the source
+under each hole therefore always agree, on every race of the evening, and
+a runner who joins after the download is never seated over a hole with no
+source under it. A caster downloads the file again once the field changes.
+
+**In each cast scene**, from the top:
+
+- the plate: a Browser Source at 1920x1080 on the scene's URL
+  (`buildCastUrl`, from the panel's settings), muted and hidden from the
+  audio mixer;
+- one source per hole the plate pierces for the seated field
+  (`pierceableHoles`: a quad on a three-runner race gets nothing under
+  POV 4, and the metro map, never a hole, gets nothing): the runner's POV
+  under a POV or hero hole, the Cam 1 or Cam 2 scene under a cam hole,
+  "Browser capture" under the browser scene's hole;
+- the Audio scene, nested at the bottom.
+
+**POVs** are Browser Sources on Twitch's popout player
+(`https://player.twitch.tv/?channel=<login>&parent=twitch.tv&player=popout`),
+one per runner, shared by every scene showing them (OBS loads a shared
+source once). Their audio goes through OBS: they start muted, but stay in
+the mixer under OBS's control, so a caster can unmute one runner on
+purpose, and a muted runner stays silent.
+
+**Placeholders** stand in for what only the caster can provide, filled once
+after the import:
+
+- **Cam 1** and **Cam 2**: empty nested scenes. The caster adds their webcam
+  (or the co-caster's Discord capture) inside once, and every scene with
+  that cam hole follows.
+- **Browser capture**: a Window Capture with no window chosen. The caster
+  picks their browser window and crops its tabs and address bar off (see
+  Browser).
+- **Audio**: a nested scene holding a microphone, "Mic" (the default input
+  device), and two application audio captures with no application chosen,
+  "Discord" and "Music".
+
+The window capture, the microphone and the application audio captures are
+Windows source types (`window_capture`, `wasapi_input_capture`,
+`wasapi_process_output_capture`). On macOS or Linux they load as missing
+sources, which the caster replaces with their platform's own.
+
+**Placement.** Every source sits in a bounding box equal to its hole's rect
+(`sceneLayout`, the rects the plate cuts), scaled to cover the box (OBS's
+"Scale to outer bounds") and cropped to it, top-left aligned: any source
+fills its hole exactly, whatever its own resolution or aspect ratio (a 720p
+stream, a 4:3 webcam inside a 16:9 nested scene). OBS reads that crop since
+30.1; an older one ignores it, and the overflow stays under the opaque
+plate. Positions are written both ways, as OBS saves them: in canvas pixels
+for OBS up to 30, and relative to the canvas for OBS 31+, which then keeps
+the layout on any 16:9 canvas (1280x720, 2560x1440). Every item is locked,
+so a stray drag cannot move a source off its hole.
+
 ## Setting up in OBS
 
 1. On the race page, as one of its casters, open Cast Setup.
-2. Pick a scene, set `cams`, optionally pin specific runners into POV holes,
-   name the casters, and optionally pick an event co-brand (and, for talk, a
-   stage), both already filled in on a race attached to an event. Set the
-   delay to roughly how far behind live your own capture runs; leave talk's
-   alone, it has none.
-3. In OBS, create a new Scene for this cast scene.
-4. Add the video sources it needs (webcam captures for the cam holes,
+2. Set `cams`, name the casters, optionally pin specific runners into POV
+   holes, and optionally pick an event co-brand (and talk's stage), both
+   already filled in on a race attached to an event. Set the delay to
+   roughly how far behind live your own capture runs.
+3. Download the collection: "Download OBS scenes for the match" for a
+   playoff evening (one file serves all of its races), else "Download OBS
+   scenes".
+4. In OBS, Scene Collection > Import: add the file, import it, then switch
+   to the new collection from the Scene Collection menu.
+5. Fill the placeholders once: your webcam (and the co-caster's capture)
+   inside the Cam 1 and Cam 2 scenes, your browser window in "Browser
+   capture", your microphone and the Discord and music applications in the
+   Audio scene's sources (on macOS or Linux, your platform's own sources in
+   their place).
+6. Switch between the scenes in OBS as commentary moves between the talk
+   desk, the quad view, a focused runner, a duel, the map, or a web page.
+   A match file's race scenes move to the stage's next race on their own;
+   download again once the field changes (and a race file for each race).
+
+### By hand
+
+Without the import (another tool than OBS, or a single cast scene added to
+a collection of your own), build each scene yourself:
+
+1. In Cast Setup, pick a scene and set it up as in step 2 above; leave
+   talk's delay alone, it has none.
+2. In OBS, create a new Scene for this cast scene.
+3. Add the video sources it needs (webcam captures for the cam holes,
    captured Twitch POVs for the runner holes, a capture of your own browser
    for the browser scene's hole) anywhere in the scene, below where the
    Browser Source will sit in the source list.
-5. Open the setup panel's "Open with position guides" link (or add
+4. Open the setup panel's "Open with position guides" link (or add
    `guides=1` to the scene URL yourself) in a browser window, and resize or
-   reposition each video source in OBS until it lines up with its outline.
-6. Add a Browser Source at exactly 1920x1080, pointed at the plain scene URL
+   reposition each video source in OBS until it lines up with its outline
+   (or give it the hole's position and size, from the panel's "OBS
+   positions", as a bounding box in its Edit Transform).
+5. Add a Browser Source at exactly 1920x1080, pointed at the plain scene URL
    from the "Copy" button (no `guides=1`), and place it above every video
    source in the scene's source list: it paints the opaque plate everywhere
    except the holes, so only the sources sitting under a hole show through.
-7. Repeat steps 3 to 6 for each additional cast scene the broadcast needs,
-   as its own OBS Scene; switch between them in OBS as commentary moves
-   between the quad view, a focused runner, the map, a web page, or the
-   talk desk.
+6. Repeat steps 2 to 5 for each additional cast scene the broadcast needs,
+   as its own OBS Scene.

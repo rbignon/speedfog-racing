@@ -5,13 +5,22 @@
     fetchEvents,
     fetchEvent,
     type RaceDetail,
+    type EventDetail,
     type EventSummary,
     type EventShowcase,
     type EventStage,
   } from "$lib/api";
   import { sceneLayout, formatGeo, type CastSceneId } from "$lib/cast/layout";
   import { buildCastUrl, type CastUrlOpts } from "$lib/cast/urls";
-  import { resolveSlots } from "$lib/cast/params";
+  import { buildObsCollection } from "$lib/cast/obs";
+  import {
+    downloadJson,
+    obsFileName,
+    raceSeats,
+    stageFieldSettled,
+    stageKeyOf,
+    stageSeats,
+  } from "$lib/cast/obs-export";
 
   interface Props {
     race: RaceDetail;
@@ -50,15 +59,6 @@
     stageKey: string;
   }
 
-  /** The talk scene's stage a race attached to an event names in its slot
-   * (`<stage>:<n>`, a showcase's key the same way). A qualifier slot
-   * (`qualifier:<mode>:<n>`) names none: talk introduces playoff evenings. */
-  function stageKeyOf(slot: string | null): string {
-    if (!slot || slot.startsWith("qualifier:")) return "";
-    const end = slot.lastIndexOf(":");
-    return end < 0 ? "" : slot.slice(0, end);
-  }
-
   /** What a first visit to the panel for this race starts from. A setup
    * already saved for it wins, a cleared co-brand included (see
    * `loadSettings`). Every hole starts silent, so its URL leaves it to the
@@ -91,19 +91,25 @@
     "talk",
   ];
 
+  // Where the settings are saved: under the race, until the race's own
+  // event detail shows its slot is a stage (see below), whose races then
+  // share one entry.
+  let stageSettingsKey = $state<string | null>(null);
+
   // A function, not a top-level const: `race` is a prop, and reading it
   // outside a closure would only ever capture its initial value.
   function storageKey(): string {
-    return `cast-setup:${race.id}`;
+    return stageSettingsKey ?? `cast-setup:${race.id}`;
   }
 
-  /** A private window throws on any `localStorage` access, and the panel
-   * must still open: every read and write here is wrapped. */
-  function loadSettings(): StoredSettings {
+  /** The settings saved under `key`, each field checked; null when nothing
+   * is saved there. A private window throws on any `localStorage` access,
+   * and the panel must still open: every read and write here is wrapped. */
+  function loadSettings(key: string): StoredSettings | null {
     const fallback = defaultSettings();
     try {
-      const raw = localStorage.getItem(storageKey());
-      if (!raw) return fallback;
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
       const saved = JSON.parse(raw) as Partial<StoredSettings>;
       return {
         scene: SCENE_IDS.includes(saved.scene as CastSceneId)
@@ -139,11 +145,11 @@
             : fallback.stageKey,
       };
     } catch {
-      return fallback;
+      return null;
     }
   }
 
-  const initial = loadSettings();
+  const initial = loadSettings(storageKey()) ?? defaultSettings();
 
   let scene = $state<CastSceneId>(initial.scene);
   let focusSlot = $state(initial.focusSlot);
@@ -210,6 +216,54 @@
     slots[i] = name;
   }
 
+  // The race's own event detail, asked for once whatever the co-brand and
+  // talk pickers say: the match file is built from the race's own stage (or
+  // showcase), and a stage's races share their settings. Only a race in a
+  // stage or showcase slot asks, and the pickers below reuse this request
+  // for the same event: the detail is heavy (every race's zone history). A
+  // failed request just leaves the match file out.
+  function requestOwnEvent(): Promise<EventDetail | null> | null {
+    const slug = race.event_slug;
+    if (!slug || !stageKeyOf(race.event_slot)) return null;
+    return fetchEvent(slug).catch(() => null);
+  }
+  const ownEventRequest = requestOwnEvent();
+
+  let ownEvent = $state<EventDetail | null>(null);
+  let ownStageKey = $derived(stageKeyOf(race.event_slot));
+  let ownStage = $derived(
+    ownEvent?.stages.find((st) => st.key === ownStageKey) ?? null,
+  );
+  let ownShowcase = $derived(
+    ownEvent?.showcases.find((sc) => sc.key === ownStageKey) ?? null,
+  );
+
+  // On a stage, the settings move to the stage's entry, once: the panel
+  // adopts what an earlier race of the stage saved there, or else seeds it
+  // with its own. From then on the save effect writes there. A showcase
+  // keeps its settings per race: its races may seat different runners, and
+  // a pin naming someone absent would leave its hole empty.
+  onMount(() => {
+    ownEventRequest?.then((detail) => {
+      ownEvent = detail;
+      if (!detail?.stages.some((st) => st.key === ownStageKey)) return;
+      const key = `cast-setup:stage:${detail.slug}:${ownStageKey}`;
+      const saved = loadSettings(key);
+      if (saved) {
+        scene = saved.scene;
+        focusSlot = saved.focusSlot;
+        slots = saved.slots;
+        cams = saved.cams;
+        caster1 = saved.caster1;
+        caster2 = saved.caster2;
+        delayS = saved.delayS;
+        eventSlug = saved.eventSlug;
+        stageKey = saved.stageKey;
+      }
+      stageSettingsKey = key;
+    });
+  });
+
   // The co-brand picker. A failed fetch just leaves the list empty: casting
   // a race outside an event is the common case, not an error. fetchEvents
   // only holds the events on the bill, so a race of an older season adds
@@ -221,7 +275,8 @@
       await fetchEvents().catch(() => []);
     const own = race.event_slug;
     if (own && !list.some((ev) => ev.slug === own)) {
-      const detail = await fetchEvent(own).catch(() => null);
+      const detail = await (ownEventRequest ??
+        fetchEvent(own).catch(() => null));
       if (detail) {
         events = [...list, { slug: detail.slug, name: detail.name }];
         return;
@@ -240,13 +295,15 @@
       return;
     }
     let cancelled = false;
-    fetchEvent(slug)
-      .then((detail) => {
-        if (!cancelled) stages = [...detail.stages, ...detail.showcases];
-      })
-      .catch(() => {
-        if (!cancelled) stages = [];
-      });
+    // Untracked: a refetched race prop must not refetch the event.
+    const request =
+      ownEventRequest && slug === untrack(() => race.event_slug)
+        ? ownEventRequest
+        : fetchEvent(slug).catch(() => null);
+    request.then((detail) => {
+      if (!cancelled)
+        stages = detail ? [...detail.stages, ...detail.showcases] : [];
+    });
     return () => {
       cancelled = true;
     };
@@ -308,20 +365,16 @@
     layout.holes.filter((h) => h.role === "pov" || h.role === "hero").length,
   );
   // Each hole's auto option names whoever the scene would seat there with
-  // that hole silent: the same resolveSlots the scenes run, over the same
-  // holes they read (two on duel). A pick moves the auto holes after it,
-  // and this is where the caster sees it. `race` is refetched whenever the
-  // field changes, so the names follow joins and leaves.
+  // that hole silent: the same resolveSlots the scenes run (through
+  // raceSeats, which seats the race file too), over the same holes they
+  // read (two on duel). A pick moves the auto holes after it, and this is
+  // where the caster sees it. `race` is refetched whenever the field
+  // changes, so the names follow joins and leaves.
   let autoLabels = $derived.by(() => {
-    const pool = race.participants.map((p) => ({
-      twitch_username: p.user.twitch_username,
-      color_index: p.color_index,
-      name: p.user.twitch_display_name || p.user.twitch_username,
-    }));
     const wanted = slots.slice(0, seatCount);
     return wanted.map((_, i) => {
-      const seated = resolveSlots(
-        pool,
+      const seated = raceSeats(
+        race,
         wanted.map((s, j) => (j === i ? null : s)),
       )[i];
       return seated ? `(auto: ${seated.name})` : "(auto: nobody)";
@@ -362,6 +415,63 @@
     if (!(await copyToClipboard(allUrls.join("\n")))) return;
     allCopied = true;
     setTimeout(() => (allCopied = false), 2000);
+  }
+
+  // The OBS scene collections (see "The OBS scene collection" in
+  // docs/CAST_OVERLAYS.md). Both take the co-brand, casters, cams, delay and
+  // pins from the panel as it stands, and write every seat out by name.
+  // The race file names this race, and opens on talk under the same rule
+  // as allUrls.
+  function downloadRaceFile() {
+    downloadJson(
+      obsFileName("race", race),
+      buildObsCollection({
+        origin,
+        collectionName: `SpeedFog · ${race.name}`,
+        seats: raceSeats(race, slots),
+        fieldSize: race.participants.length,
+        url: {
+          raceId: race.id,
+          cams,
+          casters: [caster1 || null, caster2 || null],
+          delayS,
+          event: eventSlug || null,
+          eventSlug,
+          stageKey,
+        },
+        includeTalk: !!eventSlug && !!stageKey,
+      }),
+    );
+  }
+
+  // The match file names no race: its scenes are keyed by the race's own
+  // stage (never the talk picker's) and follow its current race. A stage
+  // seats its declared field, the same from any of its races; a showcase
+  // declares none, so this race's runners stand in.
+  function downloadMatchFile() {
+    const match = ownStage ?? ownShowcase;
+    if (!ownEvent || !match || !race.event_slug) return;
+    downloadJson(
+      obsFileName("match", race),
+      buildObsCollection({
+        origin,
+        collectionName: `SpeedFog · ${ownEvent.name} · ${match.label}`,
+        seats: ownStage
+          ? stageSeats(ownStage.field, slots)
+          : raceSeats(race, slots),
+        fieldSize: ownStage ? ownStage.field.length : race.participants.length,
+        url: {
+          cams,
+          casters: [caster1 || null, caster2 || null],
+          delayS,
+          event: eventSlug || null,
+          eventSlug: race.event_slug,
+          stageKey: ownStageKey,
+          stageKeyed: true,
+        },
+        includeTalk: true,
+      }),
+    );
   }
 </script>
 
@@ -509,9 +619,24 @@
     {:else}
       <p class="hint">Pick an event and stage above to get this scene's URL.</p>
     {/if}
-    <button class="btn btn-outline" onclick={copyAllUrls}>
-      {allCopied ? "Copied!" : "Copy all scene URLs"}
-    </button>
+    <div class="url-actions">
+      <button class="btn btn-outline" onclick={copyAllUrls}>
+        {allCopied ? "Copied!" : "Copy all scene URLs"}
+      </button>
+      <button class="btn btn-outline" onclick={downloadRaceFile}>
+        Download OBS scenes
+      </button>
+      {#if ownStage || ownShowcase}
+        <button class="btn btn-outline" onclick={downloadMatchFile}>
+          Download OBS scenes for the match
+        </button>
+      {/if}
+    </div>
+    {#if ownStage && !stageFieldSettled(ownStage.field)}
+      <p class="hint url-actions-hint">
+        The match's field is not settled yet: seats without a runner stay empty.
+      </p>
+    {/if}
   </div>
 
   <div class="section">
@@ -674,6 +799,16 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     min-width: 0;
+  }
+
+  .url-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .url-actions-hint {
+    margin-top: 0.5rem;
   }
 
   .positions {
