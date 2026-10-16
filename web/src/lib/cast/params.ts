@@ -1,6 +1,11 @@
+/** The slot value (`p<n>=-`) that keeps a hole empty instead of filling it. */
+export const EMPTY_SEAT = "-";
+
 /** Everything a cast scene reads from its URL. */
 export interface CastParams {
-  /** Twitch usernames wanted in slots 1 to 4, null where the URL is silent. */
+  /** Twitch usernames wanted in slots 1 to 4, null where the URL is silent.
+   * `EMPTY_SEAT` ("-") means "keep this hole empty": it matches nobody and
+   * the join-order fallback does not refill it. */
   slots: (string | null)[];
   cams: number;
   casters: [string | null, string | null];
@@ -9,6 +14,23 @@ export interface CastParams {
   guides: boolean;
   /** The event slug the co-brand is drawn from, null off an event. */
   event: string | null;
+  /** The event stage whose current race the scene follows, null when the URL
+   * names none. */
+  follow: { slug: string; stage: string } | null;
+}
+
+/** The `follow` query value for an event stage: `<slug>:<stage>`. */
+export function followParam(slug: string, stage: string): string {
+  return `${slug}:${stage}`;
+}
+
+function parseFollow(raw: string | null): CastParams["follow"] {
+  if (!raw) return null;
+  const i = raw.indexOf(":");
+  if (i < 0) return null;
+  const slug = raw.slice(0, i);
+  const stage = raw.slice(i + 1);
+  return slug && stage ? { slug, stage } : null;
 }
 
 /** Longest delay a caster can plausibly be running behind, in seconds. */
@@ -36,12 +58,14 @@ export function parseCastParams(url: URL): CastParams {
     focus: clampInt(q.get("focus"), 1, 4, 1),
     guides: q.get("guides") === "1",
     event: q.get("event") || null,
+    follow: parseFollow(q.get("follow")),
   };
 }
 
 /**
  * Seat the runners: a named slot takes that runner, the slots left open take
- * the runners nobody named, in join order. Join order is the default on
+ * the runners nobody named, in join order. A slot set to `EMPTY_SEAT` (or any
+ * name that matches nobody) stays empty and is not refilled. Join order is the default on
  * purpose: the live ranking moves during the race, and a hole that changed
  * runner mid-race would name the wrong player over someone else's video.
  * The fallback pool is sorted by `color_index`, which the server assigns as

@@ -115,4 +115,40 @@ describe("buildCastUrl", () => {
     });
     expect(url).toContain("p1=a%20b");
   });
+
+  it("stage-keyed race scenes name the stage, not the race", () => {
+    const url = buildCastUrl("https://x.tv", "quad", {
+      ...base,
+      stageKeyed: true,
+      eventSlug: "season-one",
+      stageKey: "group_g",
+    });
+    expect(url).toContain("/overlay/cast/event/season-one/group_g/quad?");
+    expect(url).not.toContain("r1");
+  });
+
+  it("stage-keyed scenes keep the race scenes' query", () => {
+    const opts = { ...base, event: "season-one" };
+    const query = (u: string) => u.slice(u.indexOf("?"));
+    expect(
+      query(
+        buildCastUrl("https://x.tv", "quad", {
+          ...opts,
+          stageKeyed: true,
+          eventSlug: "season-one",
+          stageKey: "group_g",
+        }),
+      ),
+    ).toBe(query(buildCastUrl("https://x.tv", "quad", opts)));
+  });
+
+  it("an empty seat is written as p<n>=-", () => {
+    const url = buildCastUrl("https://x.tv", "quad", {
+      cams: 2,
+      raceId: "r1",
+      slots: ["a", "-", null, null],
+    });
+    expect(url).toContain("p2=-");
+    expect(url).not.toContain("p3");
+  });
 });

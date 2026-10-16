@@ -14,7 +14,32 @@ describe("parseCastParams", () => {
       focus: 1,
       guides: false,
       event: null,
+      follow: null,
     });
+  });
+
+  it("parses follow as slug and stage", () => {
+    expect(parseCastParams(url("?follow=season-one:group_g")).follow).toEqual({
+      slug: "season-one",
+      stage: "group_g",
+    });
+  });
+
+  it("ignores a malformed follow", () => {
+    for (const qs of ["?follow=season-one", "?follow=:x", "?follow=x:"]) {
+      expect(parseCastParams(url(qs)).follow).toBeNull();
+    }
+  });
+
+  it("an empty seat stays empty", () => {
+    const wanted = parseCastParams(url("?p3=-")).slots;
+    expect(wanted[2]).toBe("-");
+    const runners = [1, 2, 3].map((i) => ({
+      twitch_username: `r${i}`,
+      color_index: i,
+    }));
+    const seated = resolveSlots(runners, [null, null, "-", null]);
+    expect(seated.map((r) => r?.color_index ?? null)).toEqual([1, 2, null, 3]);
   });
 
   it("reads the four slot names in order", () => {

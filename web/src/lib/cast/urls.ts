@@ -9,7 +9,8 @@ export interface CastUrlOpts {
   /** Which race's scenes these are. Required for every scene but `talk`. */
   raceId?: string;
   /** Twitch usernames wanted in POV holes 1 to 4; null (or absent) leaves
-   * that hole to the scene's own join-order fallback. Ignored on metro,
+   * that hole to the scene's own join-order fallback, and "-" (`EMPTY_SEAT`)
+   * keeps it empty. Ignored on metro,
    * browser and talk, which seat nobody. */
   slots?: (string | null)[];
   /** How many caster cams the desk shows: 0, 1 or 2. */
@@ -22,14 +23,21 @@ export interface CastUrlOpts {
   focus?: number;
   /** The event whose co-brand a race scene shows. Null/absent shows none. */
   event?: string | null;
-  /** The event slug the `talk` scene's path names. Ignored otherwise. */
+  /** The event slug the `talk` scene's path names and, with `stageKeyed`,
+   * the race scenes' path. Ignored otherwise. */
   eventSlug?: string;
-  /** The stage key the `talk` scene's path names. Ignored otherwise. */
+  /** The stage key the `talk` scene's path names and, with `stageKeyed`,
+   * the race scenes' path. Ignored otherwise. */
   stageKey?: string;
+  /** Key the race scenes by the event stage instead of the race. `talk` keeps
+   * its path either way. */
+  stageKeyed?: boolean;
 }
 
 /**
- * Build one cast scene's URL. Parameters are appended in a fixed order and
+ * Build one cast scene's URL. The path is `/overlay/cast/race/<raceId>/<scene>`
+ * for a race scene, `/overlay/cast/event/<eventSlug>/<stageKey>/<scene>` for
+ * `talk` and for any race scene when `stageKeyed` is set. Parameters are appended in a fixed order and
  * escaped with `encodeURIComponent`:
  *
  * - race scenes (quad, focus, metro, duel, browser): one p<n> per POV or
@@ -47,8 +55,8 @@ export function buildCastUrl(
   opts: CastUrlOpts,
 ): string {
   const path =
-    scene === "talk"
-      ? `/overlay/cast/event/${encodeURIComponent(opts.eventSlug ?? "")}/${encodeURIComponent(opts.stageKey ?? "")}/talk`
+    scene === "talk" || opts.stageKeyed
+      ? `/overlay/cast/event/${encodeURIComponent(opts.eventSlug ?? "")}/${encodeURIComponent(opts.stageKey ?? "")}/${scene}`
       : `/overlay/cast/race/${encodeURIComponent(opts.raceId ?? "")}/${scene}`;
 
   const params: string[] = [];

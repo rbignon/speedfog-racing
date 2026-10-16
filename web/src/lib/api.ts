@@ -2596,6 +2596,27 @@ export async function fetchEvent(
   return handleResponse<EventDetail>(response);
 }
 
+/** Where an event stage stands: its current race, and whether it is over. */
+export interface StageCurrentRace {
+  race_id: string | null;
+  done: boolean;
+}
+
+/** The race an event stage is on now, for scenes that follow a stage. */
+export async function fetchStageCurrentRace(
+  slug: string,
+  stageKey: string,
+  customFetch: typeof fetch = fetch,
+): Promise<StageCurrentRace> {
+  const response = await customFetch(
+    `${API_BASE}/events/${encodeURIComponent(slug)}/stages/${encodeURIComponent(stageKey)}/current-race`,
+    {
+      headers: getAuthHeaders(),
+    },
+  );
+  return handleResponse<StageCurrentRace>(response);
+}
+
 /** Say you are in for an event: the ladder lists you before you run. */
 export async function signUpForEvent(slug: string): Promise<void> {
   const response = await fetch(
