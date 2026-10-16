@@ -157,12 +157,12 @@ describe("stage-keyed scene load", () => {
 
 // The race scenes' layout load, against an API where race r1 will not load
 // (deleted, or the server failing).
-async function loadRace(query: string) {
+async function loadRace(query: string, path = "/overlay/cast/race/r1/quad") {
   const fetch = async (): Promise<Response> =>
     new Response("boom", { status: 500 });
   return loadRaceLayout({
     params: { id: "r1" },
-    url: new URL(`http://localhost/overlay/cast/race/r1/quad?${query}`),
+    url: new URL(`http://localhost${path}?${query}`),
     fetch,
   } as never);
 }
@@ -181,8 +181,77 @@ describe("race scene load", () => {
     expect(url.searchParams.get("hold")).toBe("r1");
   });
 
+  // A pasted URL can end in a slash: the scene is still the last segment, not
+  // an empty one that would land on no route.
+  it("keeps the scene of a URL with a trailing slash", async () => {
+    const thrown = await loadRace(
+      "follow=season-one:group_g",
+      "/overlay/cast/race/r1/duel/",
+    ).catch((e: unknown) => e);
+    expect(isRedirect(thrown)).toBe(true);
+    const url = new URL((thrown as { location: string }).location, "http://x");
+    expect(url.pathname).toBe("/overlay/cast/event/season-one/group_g/duel");
+  });
+
   it("is a 404 without a stage to follow", async () => {
     const thrown = await loadRace("p1=a&cams=2").catch((e: unknown) => e);
     expect(isHttpError(thrown, 404)).toBe(true);
+  });
+});
+
+// The race layout load of race `raceId` with `?event=<slug>`, against an API
+// that serves any race and answers the event detail with `eventAnswer`;
+// `calls` counts the event detail requests.
+async function loadCoBranded(
+  raceId: string,
+  slug: string,
+  eventAnswer: () => Response,
+  calls: { event: number },
+) {
+  const fetch = async (input: RequestInfo | URL): Promise<Response> => {
+    const path = String(input);
+    if (path === `/api/events/${slug}`) {
+      calls.event += 1;
+      return eventAnswer();
+    }
+    if (path.startsWith("/api/races/")) {
+      return Response.json({ id: path.split("/").pop(), status: "setup" });
+    }
+    return new Response("not found", { status: 404 });
+  };
+  return loadRaceLayout({
+    params: { id: raceId },
+    url: new URL(
+      `http://localhost/overlay/cast/race/${raceId}/quad?event=${slug}`,
+    ),
+    fetch,
+  } as never);
+}
+
+describe("race scene co-brand", () => {
+  // Every follow hand-over re-runs the layout load in the same page: the
+  // heavy event detail is read once for the page's life, not once per race.
+  it("reads the event detail once across hand-overs", async () => {
+    const calls = { event: 0 };
+    const answer = () => Response.json({ partner_name: "Ignite" });
+    const first = await loadCoBranded("r1", "memo-once", answer, calls);
+    const second = await loadCoBranded("r2", "memo-once", answer, calls);
+    expect(calls.event).toBe(1);
+    expect(first).toMatchObject({ partnerName: "Ignite" });
+    expect(second).toMatchObject({ partnerName: "Ignite" });
+  });
+
+  it("retries the event detail after a failure", async () => {
+    const calls = { event: 0 };
+    const answers = [
+      () => new Response("boom", { status: 500 }),
+      () => Response.json({ partner_name: "Ignite" }),
+    ];
+    const answer = () => answers[calls.event - 1]();
+    const first = await loadCoBranded("r1", "memo-retry", answer, calls);
+    const second = await loadCoBranded("r2", "memo-retry", answer, calls);
+    expect(calls.event).toBe(2);
+    expect(first).toMatchObject({ partnerName: null });
+    expect(second).toMatchObject({ partnerName: "Ignite" });
   });
 });

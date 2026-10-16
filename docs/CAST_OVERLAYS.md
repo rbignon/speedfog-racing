@@ -563,7 +563,9 @@ Every 5 seconds, and only while the race it shows is not running (still in
 setup, or finished), it asks for the stage's current race; when that is
 another race, it moves to the same scene of it, query string unchanged
 (replacing the address again), and the layout loads that race and
-reconnects its WebSocket. A running race is never polled for, and never
+reconnects its WebSocket. The co-brand's partner name is read from the
+event detail once for the page's life, not again at every hand-over (a
+failed read is retried by the next load). A running race is never polled for, and never
 left: nothing can replace it before it ends. A failed answer only means
 asking again 5 seconds later. Once the stage is done on the race shown,
 polling stops for good. The status it goes by is the live one, `delay`

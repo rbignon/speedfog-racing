@@ -4,6 +4,12 @@ import { parseCastParams } from "$lib/cast/params";
 import { fallbackTarget } from "$lib/cast/follow";
 import type { LayoutLoad } from "./$types";
 
+// Partner names by event slug, kept for the page's life: a scene following a
+// stage re-runs this load at every hand-over, and the event detail it reads
+// them from is heavy. Only answers are kept, so a failed read is retried by
+// the next load; an OBS refresh starts afresh.
+const partnerNames = new Map<string, string | null>();
+
 export const load: LayoutLoad = async ({ params, url, fetch }) => {
   const castParams = parseCastParams(url);
 
@@ -19,7 +25,7 @@ export const load: LayoutLoad = async ({ params, url, fetch }) => {
     // which retries this race, rather than an error page on air.
     const follow = castParams.follow;
     if (follow) {
-      const scene = url.pathname.split("/").pop() ?? "";
+      const scene = url.pathname.split("/").filter(Boolean).pop() ?? "";
       throw redirect(
         307,
         fallbackTarget(params.id, scene, url.searchParams, follow),
@@ -35,9 +41,13 @@ export const load: LayoutLoad = async ({ params, url, fetch }) => {
   // stale slug degrades to no partner rather than failing the whole scene,
   // since the race itself is still perfectly valid.
   let partnerName: string | null = null;
-  if (castParams.event) {
+  const slug = castParams.event;
+  if (slug && partnerNames.has(slug)) {
+    partnerName = partnerNames.get(slug) ?? null;
+  } else if (slug) {
     try {
-      partnerName = (await fetchEvent(castParams.event, fetch)).partner_name;
+      partnerName = (await fetchEvent(slug, fetch)).partner_name;
+      partnerNames.set(slug, partnerName);
     } catch {
       partnerName = null;
     }
