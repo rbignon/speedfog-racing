@@ -61,6 +61,18 @@ export function stageSeats(
   return resolveSlots(pool, pins).map((p) => p?.runner ?? null);
 }
 
+/** The pair the duel holes seat, under the same resolution as `seatsFor`
+ * (`raceSeats` or `stageSeats` over the file's runners), over POV 1 and 2's
+ * pins alone: the duel scene reads only p1 and p2, and the panel's duel
+ * holes name their auto runners the same way, so a runner pinned in POV 3
+ * or 4 can auto-fill a duel hole. The collection's duel above four runners. */
+export function duelHoleSeats(
+  seatsFor: (pins: (string | null)[]) => (ObsRunner | null)[],
+  pins: (string | null)[],
+): (ObsRunner | null)[] {
+  return seatsFor(pins.slice(0, 2)).slice(0, 2);
+}
+
 /** Whether no seat of the field still waits for its runner (a fed seat
  * gets one once its source stage is over). A forfeited seat is settled, as
  * is a "No runner" seat: nobody will ever take either. */

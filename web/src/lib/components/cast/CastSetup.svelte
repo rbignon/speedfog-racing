@@ -15,6 +15,7 @@
   import { buildObsCollection } from "$lib/cast/obs";
   import {
     downloadJson,
+    duelHoleSeats,
     obsFileName,
     raceSeats,
     stageFieldSettled,
@@ -430,6 +431,7 @@
         origin,
         collectionName: `SpeedFog · ${race.name}`,
         seats: raceSeats(race, slots),
+        duelSeats: duelHoleSeats((pins) => raceSeats(race, pins), slots),
         fieldSize: race.participants.length,
         url: {
           raceId: race.id,
@@ -460,17 +462,17 @@
     ownEvent = (await fetchEvent(slug).catch(() => null)) ?? ownEvent;
     const match = ownStage ?? ownShowcase;
     if (!match) return;
+    const field = ownStage?.field;
+    const seatsFor = (pins: (string | null)[]) =>
+      field ? stageSeats(field, pins) : raceSeats(race, pins);
     downloadJson(
       obsFileName("match", race),
       buildObsCollection({
         origin,
         collectionName: `SpeedFog · ${ownEvent.name} · ${match.label}`,
-        seats: ownStage
-          ? stageSeats(ownStage.field, slots)
-          : raceSeats(race, slots),
-        fieldSize: ownStage
-          ? stageFieldSize(ownStage.field)
-          : race.participants.length,
+        seats: seatsFor(slots),
+        duelSeats: duelHoleSeats(seatsFor, slots),
+        fieldSize: field ? stageFieldSize(field) : race.participants.length,
         url: {
           cams,
           casters: [caster1 || null, caster2 || null],

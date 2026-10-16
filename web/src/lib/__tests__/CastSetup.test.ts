@@ -780,6 +780,43 @@ describe("CastSetup: OBS scene files", () => {
     expect(duels).toHaveLength(6);
   });
 
+  // Above four runners the one duel is the pair the panel's duel holes
+  // seat, resolved over POV 1 and 2's pins alone: alice, pinned in POV 3,
+  // auto-fills POV 1 there, as the duel scene itself would seat her.
+  it("both files' duel above four is the duel holes' pair", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave", "erin"]);
+    const race = inGroupG("race-d5", 1);
+    race.participants = [
+      ...race.participants,
+      fakeParticipant("p5", "erin", 4),
+    ] as RaceDetail["participants"];
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
+    );
+    const pov3 =
+      container.querySelectorAll<HTMLSelectElement>(".hole-grid select")[2];
+    await fireEvent.change(pov3, { target: { value: "alice" } });
+    await fireEvent.click(buttonLabelled(container, RACE_FILE)!);
+    await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(2));
+
+    for (const [, collection] of vi.mocked(downloadJson).mock.calls as [
+      string,
+      Obj,
+    ][]) {
+      const duels = collection.scene_order
+        .map((s: Obj) => s.name)
+        .filter((n: string) => n.startsWith("Duel"));
+      expect(duels).toEqual(["Duel: alice vs bob"]);
+      expect(plateUrl(collection, "Duel: alice vs bob")).toContain(
+        "?p1=alice&p2=bob&",
+      );
+    }
+  });
+
   it("the race file names every seat, under the race's own URLs", async () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-file"), onClose: () => {} },

@@ -27,21 +27,33 @@ export interface ObsExportInput {
   collectionName: string;
   /** The four seats in slot order; null is an empty seat. */
   seats: (ObsRunner | null)[];
+  /** The pair the duel holes seat (POV 1 and 2), for a field above four
+   * runners: the duel scene resolves its two holes over their own pins
+   * alone, so it can differ from `seats` 1-2 (see `duelHoleSeats` in
+   * ./obs-export). Defaults to `seats` 1-2. */
+  duelSeats?: (ObsRunner | null)[];
   fieldSize: number;
   url: Omit<CastUrlOpts, "slots" | "focus">;
   includeTalk: boolean;
 }
 
-/** Every pair of seated slots (1-based) a duel scene is built for. */
+/** The runner pairs a duel scene is built for: every pair of seated slots
+ * in slot order (1-2, 1-3, ... 3-4) when the field has at most four
+ * runners; above four, only `duelSeats` (both seated). */
 export function duelPairs(
   seats: (ObsRunner | null)[],
   fieldSize: number,
-): [number, number][] {
-  if (fieldSize > 4) return seats[0] && seats[1] ? [[1, 2]] : [];
-  const pairs: [number, number][] = [];
-  for (let a = 1; a <= 4; a++) {
-    for (let b = a + 1; b <= 4; b++) {
-      if (seats[a - 1] && seats[b - 1]) pairs.push([a, b]);
+  duelSeats: (ObsRunner | null)[] = seats.slice(0, 2),
+): [ObsRunner, ObsRunner][] {
+  if (fieldSize > 4) {
+    const [a, b] = duelSeats;
+    return a && b ? [[a, b]] : [];
+  }
+  const pairs: [ObsRunner, ObsRunner][] = [];
+  for (let a = 0; a < 4; a++) {
+    for (let b = a + 1; b < 4; b++) {
+      const [ra, rb] = [seats[a], seats[b]];
+      if (ra && rb) pairs.push([ra, rb]);
     }
   }
   return pairs;
@@ -205,24 +217,35 @@ export function buildObsCollection(
     origin,
     collectionName: C,
     seats,
+    duelSeats,
     fieldSize,
     url,
     includeTalk,
   } = input;
+  const duels = duelPairs(seats, fieldSize, duelSeats);
 
-  const runners = seats.filter((s): s is ObsRunner => s !== null);
-  const lower = runners.map((r) => r.name.toLowerCase());
+  const runners = new Map<string, ObsRunner>();
+  for (const r of [...seats, ...duels.flat()]) {
+    if (r) runners.set(r.username, r);
+  }
+  const lower = [...runners.values()].map((r) => r.name.toLowerCase());
   const collides = lower.some((n, i) => lower.indexOf(n) !== i);
   const label = (r: ObsRunner) => (collides ? r.username : r.name);
 
+  // OBS keys sources by name: a second source under a taken name would be
+  // lost, and a scene item could then show another source than the one
+  // meant. A runner's POV source is shared on purpose, by username, by every
+  // scene that seats them; any other repeat is a bug and fails the export.
   const sources: Obj[] = [];
   const sceneNames: string[] = [];
   const seen = new Set<string>();
   const add = (s: Obj) => {
-    if (seen.has(s.name as string)) return;
-    seen.add(s.name as string);
+    const name = s.name as string;
+    if (seen.has(name)) throw new Error(`OBS source named twice: ${name}`);
+    seen.add(name);
     sources.push(s);
   };
+  const povs = new Set<string>();
 
   const seatedAll = seats.flatMap((s, i) => (s ? [i + 1] : []));
   const slotsOf = (list: (ObsRunner | null)[]) =>
@@ -252,7 +275,10 @@ export function buildObsCollection(
         const runner = holders[Number(hole.id.slice(3)) - 1];
         if (!runner) continue;
         holeSource = `POV ${label(runner)}`;
-        add(browser(C, holeSource, twitchPlayerUrl(runner.username), false));
+        if (!povs.has(runner.username)) {
+          povs.add(runner.username);
+          add(browser(C, holeSource, twitchPlayerUrl(runner.username), false));
+        }
       }
       items.push(item(C, items.length + 1, holeSource, hole));
     }
@@ -282,10 +308,9 @@ export function buildObsCollection(
       slot,
     );
   }
-  for (const [a, b] of duelPairs(seats, fieldSize)) {
-    const pair = [seats[a - 1], seats[b - 1]];
+  for (const pair of duels) {
     castScene(
-      `Duel: ${label(pair[0]!)} vs ${label(pair[1]!)}`,
+      `Duel: ${label(pair[0])} vs ${label(pair[1])}`,
       "duel",
       { ...url, slots: slotsOf(pair) },
       [1, 2],

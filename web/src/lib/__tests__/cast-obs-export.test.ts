@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EventFieldSlot, RaceDetail } from "$lib/api";
 import {
+  duelHoleSeats,
   obsFileName,
   raceSeats,
   stageFieldSettled,
@@ -156,6 +157,33 @@ describe("raceSeats", () => {
       "bob",
       "carol",
     ]);
+  });
+});
+
+describe("duelHoleSeats", () => {
+  // The duel holes read POV 1 and 2's pins alone: alice, pinned in POV 3,
+  // is the first runner nobody pinned there, so the duel seats her in POV 1
+  // where the four-seat resolution has her in POV 3.
+  it("resolves the duel holes over POV 1 and 2's pins alone", () => {
+    const pins = [null, null, "alice", null];
+    const r = race({
+      participants: ["alice", "bob", "carol", "dave", "erin"].map((n, i) =>
+        participant(n, i),
+      ),
+    } as Partial<RaceDetail>);
+    expect(logins(raceSeats(r, pins).slice(0, 2))).toEqual(["bob", "carol"]);
+    expect(logins(duelHoleSeats((p) => raceSeats(r, p), pins))).toEqual([
+      "alice",
+      "bob",
+    ]);
+    const field = ["alice", "bob", "carol", "dave", "erin"].map((n) => seat(n));
+    expect(logins(duelHoleSeats((p) => stageSeats(field, p), pins))).toEqual([
+      "alice",
+      "bob",
+    ]);
+    expect(
+      logins(duelHoleSeats((p) => raceSeats(r, p), ["dave", null, "alice"])),
+    ).toEqual(["dave", "alice"]);
   });
 });
 

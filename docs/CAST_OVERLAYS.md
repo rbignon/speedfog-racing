@@ -769,7 +769,11 @@ scenes, in this order, the first being the one OBS opens on:
 4. **Duel: <runner> vs <runner>**, one per pair of seated runners in slot
    order (1-2, 1-3, 1-4, 2-3, 2-4, 3-4) when the field has at most four
    runners (on a stage's match file, the seats that will race, see "The
-   setup panel" above); above four, only the pair seated in POV 1 and 2.
+   setup panel" above); above four, only the pair the panel's duel holes
+   seat. Those resolve over POV 1 and 2's pins alone, as the duel scene
+   does (it reads `p1` and `p2` only), so a runner pinned in POV 3 or 4 can
+   auto-fill a duel hole and the pair can differ from the four-seat POV 1
+   and 2 (`duelHoleSeats` in `web/src/lib/cast/obs-export.ts`).
 5. **Metro**.
 6. **Browser**.
 7. The placeholder scenes: **Cam 1** and **Cam 2** (as many as `cams`), then
@@ -777,7 +781,10 @@ scenes, in this order, the first being the one OBS opens on:
 
 Scene and source names carry the runner's display name, or every runner's
 Twitch login when two display names would read the same (OBS wants every
-name unique). The collection is named "SpeedFog · <race name>", or
+name unique). A runner's POV source is one source shared by every scene
+that seats them; any other name met twice fails the export with an error
+rather than writing a file whose scene could show the wrong source. The
+collection is named "SpeedFog · <race name>", or
 "SpeedFog · <event name> · <stage label>" for a match.
 
 **Every seat is written out.** Each plate URL names every seat, the auto

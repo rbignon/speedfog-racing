@@ -220,6 +220,99 @@ describe("buildObsCollection", () => {
     expect(names).toContain("Focus: ana_a");
   });
 
+  // The guard against the wrong runner under a hole: whatever the seating,
+  // the POV source under hole pov<n> plays the runner the plate names p<n>.
+  it("the runner under each POV hole is the plate's own seat", () => {
+    const gapped = [runner("alice"), null, runner("cleo"), null];
+    for (const over of [
+      {},
+      { seats: gapped, fieldSize: 2 },
+      { fieldSize: 6, duelSeats: [runner("cleo"), runner("alice")] },
+    ] as Partial<ObsExportInput>[]) {
+      const c = buildObsCollection(input(over));
+      let povHoles = 0;
+      for (const s of scenesOf(c)) {
+        const kind = sceneKind(c, s);
+        if (!kind) continue;
+        const plate = new URL(byName(c, `${s.name} plate`).settings.url);
+        const holes = sceneLayout(kind.id, {
+          cams: 2,
+          focus: kind.focus,
+        }).holes;
+        for (const it of s.settings.items as Obj[]) {
+          if (!it.name.startsWith("POV ")) continue;
+          const hole = holes.find(
+            (h) =>
+              h.x === it.pos.x &&
+              h.y === it.pos.y &&
+              h.w === it.bounds.x &&
+              h.h === it.bounds.y,
+          )!;
+          const pov = sourcesOf(c).find((x) => x.uuid === it.source_uuid)!;
+          const channel = new URL(pov.settings.url).searchParams.get("channel");
+          expect(channel).toBe(plate.searchParams.get(`p${hole.id.slice(3)}`));
+          povHoles += 1;
+        }
+      }
+      expect(povHoles).toBeGreaterThan(0);
+    }
+    // The gapped field's one duel seats slots 1 and 3.
+    const c = buildObsCollection(input({ seats: gapped, fieldSize: 2 }));
+    expect(byName(c, "Duel: alice vs cleo plate").settings.url).toContain(
+      "p1=alice&p2=cleo",
+    );
+  });
+
+  it("above four runners, the one duel is the duel holes' pair", () => {
+    const c: Obj = buildObsCollection(
+      input({ fieldSize: 6, duelSeats: [runner("cleo"), runner("alice")] }),
+    );
+    const duels = c.scene_order
+      .map((s: Obj) => s.name)
+      .filter((n: string) => n.startsWith("Duel"));
+    expect(duels).toEqual(["Duel: cleo vs alice"]);
+    expect(byName(c, "Duel: cleo vs alice plate").settings.url).toContain(
+      "p1=cleo&p2=alice",
+    );
+  });
+
+  it("scene_order lists every scene exactly once", () => {
+    for (const over of [
+      {},
+      { includeTalk: false, url: { ...url, cams: 0 } },
+    ] as Partial<ObsExportInput>[]) {
+      const c: Obj = buildObsCollection(input(over));
+      const order = c.scene_order.map((s: Obj) => s.name);
+      expect(new Set(order).size).toBe(order.length);
+      expect(new Set(order)).toEqual(new Set(scenesOf(c).map((s) => s.name)));
+    }
+  });
+
+  // OBS keys its sources by name: a second source under a taken name would
+  // be dropped, and a scene could end up listing someone else's video.
+  it("refuses to name two sources alike", () => {
+    expect(() =>
+      buildObsCollection(
+        input({ seats: [runner("a1", "Ana"), runner("a2", "Ana plate")] }),
+      ),
+    ).toThrow(/Focus: Ana plate/);
+  });
+
+  it("a race with no runner still exports", () => {
+    const c: Obj = buildObsCollection(
+      input({ seats: [null, null, null, null], fieldSize: 0 }),
+    );
+    expect(sourcesOf(c).some((s) => s.name.startsWith("POV "))).toBe(false);
+    expect(byName(c, "Quad plate").settings.url).toContain(
+      "p1=-&p2=-&p3=-&p4=-",
+    );
+    expect(
+      c.scene_order
+        .map((s: Obj) => s.name)
+        .filter((n: string) => /^(Focus|Duel)/.test(n)),
+    ).toEqual([]);
+  });
+
   it("names keep spaces and accents", () => {
     const c = buildObsCollection(
       input({
@@ -236,21 +329,28 @@ describe("buildObsCollection", () => {
 
 describe("duelPairs", () => {
   const seat = (n: number) => four.map((r, i) => (i < n ? r : null));
+  const logins = (pairs: [ObsRunner, ObsRunner][]) =>
+    pairs.map(([a, b]) => `${a.username}-${b.username}`);
   it("covers every pair up to four runners", () => {
-    expect(duelPairs(seat(4), 4)).toEqual([
-      [1, 2],
-      [1, 3],
-      [1, 4],
-      [2, 3],
-      [2, 4],
-      [3, 4],
+    expect(logins(duelPairs(seat(4), 4))).toEqual([
+      "alice-bob",
+      "alice-cleo",
+      "alice-dan",
+      "bob-cleo",
+      "bob-dan",
+      "cleo-dan",
     ]);
     expect(duelPairs(seat(3), 3)).toHaveLength(3);
     expect(duelPairs(seat(2), 2)).toHaveLength(1);
     expect(duelPairs(seat(1), 1)).toHaveLength(0);
   });
-  it("keeps only slots 1 and 2 above four", () => {
-    expect(duelPairs(seat(4), 6)).toEqual([[1, 2]]);
-    expect(duelPairs([null, runner("bob"), null, null], 6)).toEqual([]);
+  // Above four, the duel holes resolve over POV 1 and 2's pins alone, so a
+  // runner pinned in POV 3 can auto-fill POV 1: the pair is given as such.
+  it("keeps only the duel holes' pair above four", () => {
+    expect(logins(duelPairs(seat(4), 6, [four[2], four[0]]))).toEqual([
+      "cleo-alice",
+    ]);
+    expect(duelPairs(seat(4), 6, [null, four[1]])).toEqual([]);
+    expect(logins(duelPairs(seat(4), 6))).toEqual(["alice-bob"]);
   });
 });
