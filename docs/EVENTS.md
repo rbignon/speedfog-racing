@@ -1023,6 +1023,14 @@ fetched is left out rather than replaced by a placeholder.
   `current_stage_key` and `next_stage`). The detail also carries
   `caster_languages`, the config's map resolved to the attached casters' user
   ids, and every race carries `finished_at`.
+- `GET /api/events/{slug}/stages/{key}/current-race`: which race of a stage
+  (or showcase) the cast scenes show, `{race_id, done}` (`StageCurrentRaceResponse`;
+  404 for an unknown event or a key that is neither). Public and light (the
+  event row and the stage's races only), since the scenes poll it between
+  races. The current race is the latest slot that has started (running or
+  finished), so a finished race stays up until the next one starts; before any
+  start it is the first slot, and `race_id` is null while nothing is attached.
+  `done` once every slot of the stage has a finished race.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

@@ -1546,6 +1546,13 @@ class EventLiveRaceResponse(BaseModel):
     races_expected: int
 
 
+class StageCurrentRaceResponse(BaseModel):
+    """The race of a stage or showcase a cast scene shows now (null before any is attached)."""
+
+    race_id: UUID | None
+    done: bool
+
+
 class EventSummaryBracketResponse(BaseModel):
     key: str
     label: str

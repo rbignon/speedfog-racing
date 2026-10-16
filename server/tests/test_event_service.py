@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import ValidationError
 
-from speedfog_racing.models import ParticipantStatus, RaceStatus
+from speedfog_racing.models import ParticipantStatus, Race, RaceStatus
 from speedfog_racing.schemas import EventConfig
 from speedfog_racing.services.event_service import (
     NO_RUNNER,
@@ -25,6 +25,7 @@ from speedfog_racing.services.event_service import (
     compute_qualified,
     compute_stage_results,
     current_stage_key,
+    current_stage_race,
     fed_field,
     leaderboard_points,
     newcomer_flags,
@@ -1800,3 +1801,50 @@ def test_a_place_a_complete_source_cannot_fill_reads_no_runner():
     # Quarter A went through without a match with one runner.
     field = fed_field(cfg.stage("semi_b"), cfg, {"quarter_a": _played(a1, advance=1)})
     assert (field[0].user_id, field[0].label, field[0].place) == (None, NO_RUNNER, 2)
+
+
+def _stage_races(*statuses: tuple[int, RaceStatus]) -> list[tuple[Slot, Race]]:
+    return [
+        (Slot(kind="stage", key="semi_a", index=i), Race(status=status)) for i, status in statuses
+    ]
+
+
+def test_current_stage_race_is_none_without_races():
+    assert current_stage_race([], 3) == (None, False)
+
+
+def test_current_stage_race_is_the_first_before_any_start():
+    pairs = _stage_races((2, RaceStatus.SETUP), (1, RaceStatus.SETUP))
+    race, done = current_stage_race(pairs, 3)
+    assert race is pairs[1][1]
+    assert not done
+
+
+def test_current_stage_race_is_the_running_one():
+    pairs = _stage_races((1, RaceStatus.RUNNING), (2, RaceStatus.SETUP))
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
+
+
+def test_current_stage_race_holds_the_finished_one_until_the_next_starts():
+    pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.SETUP))
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
+
+
+def test_current_stage_race_moves_on_when_the_next_starts():
+    pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.RUNNING))
+    assert current_stage_race(pairs, 3)[0] is pairs[1][1]
+
+
+def test_current_stage_race_skips_a_missing_slot():
+    pairs = _stage_races((1, RaceStatus.FINISHED), (3, RaceStatus.SETUP))
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
+    pairs = _stage_races((1, RaceStatus.FINISHED), (3, RaceStatus.RUNNING))
+    assert current_stage_race(pairs, 3)[0] is pairs[1][1]
+
+
+def test_current_stage_race_is_done_once_every_expected_slot_finished():
+    pairs = _stage_races(*((i, RaceStatus.FINISHED) for i in (1, 2, 3)))
+    race, done = current_stage_race(pairs, 3)
+    assert race is pairs[2][1]
+    assert done
+    assert not current_stage_race(pairs[:2], 3)[1]

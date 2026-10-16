@@ -48,6 +48,7 @@ from speedfog_racing.schemas import (
     EventSummaryResponse,
     EventTimelineStopResponse,
     EventWeaponResponse,
+    StageCurrentRaceResponse,
     UserResponse,
 )
 from speedfog_racing.services.event_service import (
@@ -65,6 +66,7 @@ from speedfog_racing.services.event_service import (
     compute_stage_results,
     count_finished_before,
     current_stage_key,
+    current_stage_race,
     event_window,
     fed_field,
     is_event_joinable,
@@ -72,6 +74,7 @@ from speedfog_racing.services.event_service import (
     load_featured_events,
     newcomer_flags,
     next_stage_key,
+    parse_slot,
     resolve_caster_languages,
     resolve_stages,
     resolve_withdrawn,
@@ -579,6 +582,41 @@ async def get_event(
         next_stage=next_stage,
         caster_languages=resolve_caster_languages(config.caster_languages, event.races),
     )
+
+
+@router.get("/{slug}/stages/{key}/current-race", response_model=StageCurrentRaceResponse)
+async def get_stage_current_race(
+    slug: str,
+    key: str,
+    db: AsyncSession = Depends(get_db),
+) -> StageCurrentRaceResponse:
+    """Which race of a stage (or showcase) the cast scenes show; polled between races."""
+    event = (await db.execute(select(Event).where(Event.slug == slug))).scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    config = EventConfig.model_validate(event.config)
+    stage = config.stage(key) or config.showcase(key)
+    if stage is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stage not found")
+    rows = (
+        (
+            await db.execute(
+                select(Race).where(Race.event_id == event.id, Race.event_slot.startswith(f"{key}:"))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pairs = []
+    for race in rows:
+        try:
+            slot = parse_slot(race.event_slot or "")
+        except ValueError:
+            continue
+        if slot.kind == "stage" and slot.key == key:
+            pairs.append((slot, race))
+    current, done = current_stage_race(pairs, stage.races)
+    return StageCurrentRaceResponse(race_id=current.id if current else None, done=done)
 
 
 async def _joinable_event(db: AsyncSession, slug: str) -> Event:

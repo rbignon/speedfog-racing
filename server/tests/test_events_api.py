@@ -1728,3 +1728,78 @@ async def test_detail_gives_each_attached_caster_its_language(test_client, async
         data = (await client.get("/api/events/season-one")).json()
 
     assert data["caster_languages"] == expected
+
+
+async def _current_race(client, key: str, slug: str = "season-one"):
+    return await client.get(f"/api/events/{slug}/stages/{key}/current-race")
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_follows_the_evening(test_client, async_session):
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(db)
+        first = await _race(
+            db, orga, await _seed(db, "standard", "s1"), event, "semi_a:1", RaceStatus.FINISHED
+        )
+        second = await _race(
+            db, orga, await _seed(db, "standard", "s2"), event, "semi_a:2", RaceStatus.SETUP
+        )
+        await db.commit()
+    async with test_client as client:
+        data = (await _current_race(client, "semi_a")).json()
+        assert data == {"race_id": str(first.id), "done": False}
+        async with async_session() as db:
+            (await db.get(Race, second.id)).status = RaceStatus.RUNNING
+            await db.commit()
+        data = (await _current_race(client, "semi_a")).json()
+        assert data == {"race_id": str(second.id), "done": False}
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_reads_a_showcase(test_client, async_session):
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(db, config={**CONFIG, "showcases": [SHOWCASE]})
+        race = await _race(db, orga, await _seed(db, "standard", "s1"), event, "showcase:1")
+        await db.commit()
+    async with test_client as client:
+        data = (await _current_race(client, "showcase")).json()
+        assert data == {"race_id": str(race.id), "done": False}
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_is_null_with_no_race(test_client, async_session):
+    async with async_session() as db:
+        await _event(db)
+        await db.commit()
+    async with test_client as client:
+        response = await _current_race(client, "semi_a")
+        assert response.status_code == 200
+        assert response.json() == {"race_id": None, "done": False}
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_404s_an_unknown_stage_or_event(test_client, async_session):
+    async with async_session() as db:
+        await _event(db)
+        await db.commit()
+    async with test_client as client:
+        assert (await _current_race(client, "nope")).status_code == 404
+        assert (await _current_race(client, "semi_a", slug="nope")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_ignores_other_stages_and_qualifiers(test_client, async_session):
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        event = await _event(db)
+        await _race(db, orga, await _seed(db, "standard", "s1"), event, "semi_b:1")
+        await _race(db, orga, await _seed(db, "standard", "s2"), event, "qualifier:standard:1")
+        mine = await _race(
+            db, orga, await _seed(db, "standard", "s3"), event, "semi_a:1", RaceStatus.SETUP
+        )
+        await db.commit()
+    async with test_client as client:
+        data = (await _current_race(client, "semi_a")).json()
+        assert data == {"race_id": str(mine.id), "done": False}
