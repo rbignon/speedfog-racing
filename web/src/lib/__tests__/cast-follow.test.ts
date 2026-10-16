@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isRedirect } from "@sveltejs/kit";
+import { isHttpError, isRedirect } from "@sveltejs/kit";
 import { followStep, followTarget } from "$lib/cast/follow";
 import { load } from "../../routes/overlay/cast/event/[slug]/[stage]/[scene=castRaceScene]/+page";
+import { load as loadRaceLayout } from "../../routes/overlay/cast/race/[id]/+layout";
 
 describe("followStep", () => {
   it("navigates when the stage names another race", () => {
@@ -59,11 +60,25 @@ describe("followTarget", () => {
     expect(url.searchParams.get("cams")).toBe("2");
     expect(url.searchParams.getAll("follow")).toEqual(["season-one:group_g"]);
   });
+
+  // `hold` only marks a stage URL the race layout fell back to; the race URL
+  // that retries the held race must not carry it on.
+  it("followTarget drops the hold of a fallback", () => {
+    const result = followTarget(
+      "r1",
+      "quad",
+      new URLSearchParams("p1=a&hold=r1&cams=2"),
+      { slug: "season-one", stage: "group_g" },
+    );
+    const url = new URL(result, "http://x");
+    expect(url.searchParams.has("hold")).toBe(false);
+    expect(url.searchParams.get("cams")).toBe("2");
+  });
 });
 
 // The stage-keyed scene's load, against a fake API answering the stage's
 // current race with `answer` (a Response, or a thrown network error).
-async function loadStage(answer: () => Response) {
+async function loadStage(answer: () => Response, query = "p1=a&cams=2") {
   const fetch = async (input: RequestInfo | URL): Promise<Response> => {
     if (
       String(input) === "/api/events/season-one/stages/group_g/current-race"
@@ -75,7 +90,7 @@ async function loadStage(answer: () => Response) {
   return load({
     params: { slug: "season-one", stage: "group_g", scene: "quad" },
     url: new URL(
-      "http://localhost/overlay/cast/event/season-one/group_g/quad?p1=a&cams=2",
+      `http://localhost/overlay/cast/event/season-one/group_g/quad?${query}`,
     ),
     fetch,
   } as never);
@@ -114,5 +129,60 @@ describe("stage-keyed scene load", () => {
       slug: "season-one",
       stage: "group_g",
     });
+  });
+
+  // The race layout fell back here because race r1 would not load: going
+  // straight back would bounce between the two routes, so the plate waits
+  // and its poll retries r1 a beat later.
+  it("waits on the plate when the stage names the race it holds", async () => {
+    expect(
+      await loadStage(
+        () => Response.json({ race_id: "r1", done: false }),
+        "p1=a&cams=2&hold=r1",
+      ),
+    ).toMatchObject({ scene: "quad" });
+  });
+
+  it("hands over at once when the stage names another race than the one held", async () => {
+    const thrown = await loadStage(
+      () => Response.json({ race_id: "r2", done: false }),
+      "p1=a&cams=2&hold=r1",
+    ).catch((e: unknown) => e);
+    expect(isRedirect(thrown)).toBe(true);
+    const url = new URL((thrown as { location: string }).location, "http://x");
+    expect(url.pathname).toBe("/overlay/cast/race/r2/quad");
+    expect(url.searchParams.has("hold")).toBe(false);
+  });
+});
+
+// The race scenes' layout load, against an API where race r1 will not load
+// (deleted, or the server failing).
+async function loadRace(query: string) {
+  const fetch = async (): Promise<Response> =>
+    new Response("boom", { status: 500 });
+  return loadRaceLayout({
+    params: { id: "r1" },
+    url: new URL(`http://localhost/overlay/cast/race/r1/quad?${query}`),
+    fetch,
+  } as never);
+}
+
+describe("race scene load", () => {
+  it("falls back to the followed stage's plate when its race cannot load", async () => {
+    const thrown = await loadRace(
+      "p1=a&follow=season-one:group_g&cams=2",
+    ).catch((e: unknown) => e);
+    expect(isRedirect(thrown)).toBe(true);
+    const url = new URL((thrown as { location: string }).location, "http://x");
+    expect(url.pathname).toBe("/overlay/cast/event/season-one/group_g/quad");
+    expect(url.searchParams.get("p1")).toBe("a");
+    expect(url.searchParams.get("cams")).toBe("2");
+    expect(url.searchParams.has("follow")).toBe(false);
+    expect(url.searchParams.get("hold")).toBe("r1");
+  });
+
+  it("is a 404 without a stage to follow", async () => {
+    const thrown = await loadRace("p1=a&cams=2").catch((e: unknown) => e);
+    expect(isHttpError(thrown, 404)).toBe(true);
   });
 });

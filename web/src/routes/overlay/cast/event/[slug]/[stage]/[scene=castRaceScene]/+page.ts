@@ -18,8 +18,10 @@ export const load: PageLoad = async ({ params, url, fetch }) => {
   } catch {
     answer = null;
   }
+  // `hold` names a race whose scene just fell back here because it would not
+  // load: the page's poll retries it a beat later, not this load at once.
   const { navigateTo } = followStep(null, null, answer);
-  if (navigateTo) {
+  if (navigateTo && navigateTo !== url.searchParams.get("hold")) {
     throw redirect(
       307,
       followTarget(navigateTo, scene, url.searchParams, { slug, stage }),

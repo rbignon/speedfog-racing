@@ -1,6 +1,7 @@
 import { fetchRace, fetchEvent } from "$lib/api";
-import { error } from "@sveltejs/kit";
+import { error, redirect } from "@sveltejs/kit";
 import { parseCastParams } from "$lib/cast/params";
+import { fallbackTarget } from "$lib/cast/follow";
 import type { LayoutLoad } from "./$types";
 
 export const load: LayoutLoad = async ({ params, url, fetch }) => {
@@ -10,6 +11,20 @@ export const load: LayoutLoad = async ({ params, url, fetch }) => {
   try {
     race = await fetchRace(params.id, fetch);
   } catch {
+    race = null;
+  }
+  if (!race) {
+    // A scene following a stage (reloaded in place after a hand-over, or
+    // handed a race that went away) falls back to the stage's waiting plate,
+    // which retries this race, rather than an error page on air.
+    const follow = castParams.follow;
+    if (follow) {
+      const scene = url.pathname.split("/").pop() ?? "";
+      throw redirect(
+        307,
+        fallbackTarget(params.id, scene, url.searchParams, follow),
+      );
+    }
     throw error(404, "Race not found");
   }
 

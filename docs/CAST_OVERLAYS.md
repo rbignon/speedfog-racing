@@ -493,6 +493,10 @@ refill it, so the hole stays part of the plate, like a name that matches
 nobody in the race. It is how a URL says "nobody here" explicitly, where a
 silent slot would seat whoever the fallback picks.
 
+A stage-keyed URL may also carry `hold=<race id>`: it is internal, set by
+the follow mode's fallback (see "Following a stage" below), never written by
+a caster.
+
 ### What a built URL carries
 
 `buildCastUrl` (`web/src/lib/cast/urls.ts`) is what the setup panel uses to
@@ -567,9 +571,20 @@ included, so a delayed scene starts asking once its own feed shows the race
 over. The decision is one pure function, `followStep`
 (`web/src/lib/cast/follow.ts`), shared by both routes.
 
-After a hand-over the page's address is the race URL with `follow`, so a
-reload in place lands on that race and follows the stage from there; a
-source given the stage-keyed URL again resolves from scratch.
+After a hand-over the page's address is the race URL with `follow`, not the
+stage-keyed URL: an OBS refresh reloads that race URL, which keeps following
+the stage from there, and only a source given the stage-keyed URL again
+resolves from scratch. When that race cannot load (the server unreachable
+during the refresh, the race deleted), the scene does not show an error
+page: the race layout falls back to the same scene's stage-keyed URL, query
+kept, `follow` dropped and `hold=<that race>` added, so the waiting plate
+takes over. While the stage still names the held race, that route does not
+hand straight back to it (two routes bouncing on a race that will not
+load); its poll retries the race 5 seconds later, and a race that still
+fails falls back again, a 5-second retry with the plate up. A stage naming
+another race hands over at once, as usual. `fallbackTarget`
+(`web/src/lib/cast/follow.ts`) builds that URL, `followTarget` drops `hold`
+from the race URL it builds.
 
 The talk scene already follows its stage on its own (it re-reads the event,
 see Talk) and takes no `follow`.

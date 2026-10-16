@@ -36,7 +36,8 @@ export function followStep(
 }
 
 /** The same scene of race `raceId`, with the query string kept as is and
- * `follow` set to the stage being followed. */
+ * `follow` set to the stage being followed (`hold`, the stage URL's own
+ * marker, dropped: see `fallbackTarget`). */
 export function followTarget(
   raceId: string,
   scene: string,
@@ -44,6 +45,26 @@ export function followTarget(
   follow: { slug: string; stage: string },
 ): string {
   const query = new URLSearchParams(search);
+  query.delete("hold");
   query.set("follow", followParam(follow.slug, follow.stage));
   return `/overlay/cast/race/${encodeURIComponent(raceId)}/${scene}?${query}`;
+}
+
+/**
+ * The same scene keyed by the followed stage, for a race scene whose race
+ * `raceId` will not load: the stage URL's waiting plate takes over instead of
+ * an error page. The query is kept, `follow` dropped (the path names the
+ * stage), and `hold` names the race, which that route then retries only
+ * after a poll interval rather than bouncing straight back to it.
+ */
+export function fallbackTarget(
+  raceId: string,
+  scene: string,
+  search: URLSearchParams,
+  follow: { slug: string; stage: string },
+): string {
+  const query = new URLSearchParams(search);
+  query.delete("follow");
+  query.set("hold", raceId);
+  return `/overlay/cast/event/${encodeURIComponent(follow.slug)}/${encodeURIComponent(follow.stage)}/${scene}?${query}`;
 }

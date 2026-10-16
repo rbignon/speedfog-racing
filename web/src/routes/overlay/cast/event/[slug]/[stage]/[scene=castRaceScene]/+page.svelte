@@ -8,9 +8,11 @@
   let { data } = $props();
   let params = $derived(data.castParams);
 
-  // The load found no race to hand over to (none yet, or no answer): ask
-  // again until one exists, one request at a time, then move to it. A
-  // navigation that did not take the page away (aborted) resumes polling.
+  // The load found no race to hand over to (none yet, no answer, or only the
+  // `hold` race that just failed to load): ask again until the stage names
+  // one, one request at a time, then move to it, a held race included, which
+  // is how it gets retried. A navigation that did not take the page away
+  // (aborted) resumes polling.
   $effect(() => {
     const { slug, stage, scene } = data;
     let timer: ReturnType<typeof setTimeout> | undefined;
