@@ -1803,3 +1803,15 @@ async def test_stage_current_race_ignores_other_stages_and_qualifiers(test_clien
     async with test_client as client:
         data = (await _current_race(client, "semi_a")).json()
         assert data == {"race_id": str(mine.id), "done": False}
+
+
+@pytest.mark.asyncio
+async def test_stage_current_race_outlasts_the_default_rate_limit(test_client, async_session):
+    """Every race plate of a caster's OBS collection polls it from one IP between
+    races: the default 60/minute would hold the hand-over back."""
+    async with async_session() as db:
+        await _event(db)
+        await db.commit()
+    async with test_client as client:
+        statuses = {(await _current_race(client, "semi_a")).status_code for _ in range(70)}
+    assert statuses == {200}

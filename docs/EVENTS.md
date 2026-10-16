@@ -1030,7 +1030,9 @@ fetched is left out rather than replaced by a placeholder.
   races. The current race is the latest slot that has started (running or
   finished), so a finished race stays up until the next one starts; before any
   start it is the first slot, and `race_id` is null while nothing is attached.
-  `done` once every slot of the stage has a finished race.
+  `done` once every slot of the stage has a finished race. Its own per-IP limit
+  is 600 requests a minute instead of the default 60: every race plate of a
+  caster's OBS collection (13 for a 4-runner match) polls it every 5 s.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:
   the viewer's own signup (see Signups).
 - `GET /api/pools?type=training`: the practice cards' seed counts, the page's

@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from speedfog_racing.models import (
     User,
     compute_late_join_deadlines,
 )
+from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
     EventBracketResponse,
     EventConfig,
@@ -585,12 +586,18 @@ async def get_event(
 
 
 @router.get("/{slug}/stages/{key}/current-race", response_model=StageCurrentRaceResponse)
+@limiter.limit("600/minute")
 async def get_stage_current_race(
+    request: Request,
     slug: str,
     key: str,
     db: AsyncSession = Depends(get_db),
 ) -> StageCurrentRaceResponse:
-    """Which race of a stage (or showcase) the cast scenes show; polled between races."""
+    """Which race of a stage (or showcase) the cast scenes show; polled between races.
+
+    Its own per-IP limit: every race plate of a caster's OBS collection polls it
+    every 5 s, about 156 requests a minute from one machine for a 4-runner match.
+    """
     event = (await db.execute(select(Event).where(Event.slug == slug))).scalar_one_or_none()
     if event is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
