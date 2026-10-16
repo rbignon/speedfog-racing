@@ -4,6 +4,7 @@
  */
 
 import type { EventFieldSlot, RaceDetail, User } from "$lib/api";
+import { NO_RUNNER } from "$lib/events";
 import type { ObsRunner } from "./obs";
 import { resolveSlots } from "./params";
 
@@ -60,10 +61,19 @@ export function stageSeats(
   return resolveSlots(pool, pins).map((p) => p?.runner ?? null);
 }
 
-/** Whether every seat of the field has its runner (a fed seat gets one once
- * its source stage is over; a forfeited seat is settled, nobody replaces it). */
+/** Whether no seat of the field still waits for its runner (a fed seat
+ * gets one once its source stage is over). A forfeited seat is settled, as
+ * is a "No runner" seat: nobody will ever take either. */
 export function stageFieldSettled(field: EventFieldSlot[]): boolean {
-  return field.every((slot) => slot.user !== null);
+  return field.every((slot) => slot.user !== null || slot.label === NO_RUNNER);
+}
+
+/** How many runners the stage races, for the duel rule: every seat but a
+ * forfeited one and a "No runner" one; a seat still waiting for its runner
+ * counts, since a runner will take it. */
+export function stageFieldSize(field: EventFieldSlot[]): number {
+  return field.filter((slot) => !slot.forfeited && slot.label !== NO_RUNNER)
+    .length;
 }
 
 /** `speedfog-<event>-<stage>.json` for a match; for a race,

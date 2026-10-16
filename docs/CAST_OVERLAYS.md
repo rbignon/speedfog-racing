@@ -710,11 +710,17 @@ It gives a caster, without hand-editing a URL:
     the field is the same for every race of the stage and known before any
     race has runners, so the file is identical whichever race of the match
     it is downloaded from. A seat whose runner is not known yet (a fed
-    seat whose source stage is not over) seats nobody, and so does a
-    forfeited one (its runner races none of the stage's races); until
-    every seat has its runner, a hint under the button says "The match's
-    field is not settled yet: seats without a runner stay empty." A
-    showcase declares no field, so the race the file is downloaded from
+    seat whose source stage is not over) seats nobody; while one is left,
+    a hint under the button says "The match's field is not settled yet:
+    seats without a runner stay empty.", and the file is worth downloading
+    again once its runner is known. A seat nobody will ever take seats
+    nobody either, but leaves nothing to wait for: a forfeited one (its
+    runner keeps the seat and races none of the stage's races), and a "No
+    runner" one (a fed seat its finished source stage could not fill, or a
+    seeded seat past the end of a final ladder, see
+    [EVENTS.md](EVENTS.md)). For the duel rule, the stage's field is the
+    seats that will race: every seat but those two kinds, a seat still
+    waiting for its runner included (`stageFieldSize`). A showcase declares no field, so the race the file is downloaded from
     supplies the runners, as for the race file: a showcase whose races
     seat different runners needs a race file per race. The file is
     `speedfog-<event>-<stage>.json`.
@@ -756,7 +762,8 @@ scenes, in this order, the first being the one OBS opens on:
    hero.
 4. **Duel: <runner> vs <runner>**, one per pair of seated runners in slot
    order (1-2, 1-3, 1-4, 2-3, 2-4, 3-4) when the field has at most four
-   runners; above four, only the pair seated in POV 1 and 2.
+   runners (on a stage's match file, the seats that will race, see "The
+   setup panel" above); above four, only the pair seated in POV 1 and 2.
 5. **Metro**.
 6. **Browser**.
 7. The placeholder scenes: **Cam 1** and **Cam 2** (as many as `cams`), then

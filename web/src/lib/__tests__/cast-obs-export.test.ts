@@ -4,9 +4,11 @@ import {
   obsFileName,
   raceSeats,
   stageFieldSettled,
+  stageFieldSize,
   stageSeats,
 } from "$lib/cast/obs-export";
 import type { ObsRunner } from "$lib/cast/obs";
+import { NO_RUNNER } from "$lib/events";
 
 function user(username: string, display: string | null = null) {
   return {
@@ -89,6 +91,43 @@ describe("stageSeats", () => {
       null,
     ]);
     expect(stageFieldSettled(field)).toBe(true);
+  });
+
+  it("a seat nobody will fill seats nobody, yet the field is settled", () => {
+    // A fed seat its finished source stage could not fill, or a seeded seat
+    // past the end of a final ladder: empty for good, nothing to wait for.
+    const field = [
+      seat("a"),
+      seat(null, { label: NO_RUNNER }),
+      seat("c"),
+      seat("d"),
+    ];
+    expect(logins(stageSeats(field, [null, null, null, null]))).toEqual([
+      "a",
+      "c",
+      "d",
+      null,
+    ]);
+    expect(stageFieldSettled(field)).toBe(true);
+  });
+});
+
+describe("stageFieldSize", () => {
+  it("counts the seats that will race", () => {
+    const five = ["a", "b", "c", "d", "e"].map((n) => seat(n));
+    expect(stageFieldSize(five)).toBe(5);
+    // A forfeited runner and a seat nobody will fill race nothing...
+    const withForfeit = five.map((s, i) =>
+      i === 1 ? { ...s, forfeited: true } : s,
+    );
+    expect(stageFieldSize(withForfeit)).toBe(4);
+    const withNoRunner = five.map((s, i) =>
+      i === 3 ? seat(null, { label: NO_RUNNER }) : s,
+    );
+    expect(stageFieldSize(withNoRunner)).toBe(4);
+    // ...but a seat still waiting for its runner will.
+    const withUndecided = five.map((s, i) => (i === 2 ? seat(null) : s));
+    expect(stageFieldSize(withUndecided)).toBe(5);
   });
 });
 

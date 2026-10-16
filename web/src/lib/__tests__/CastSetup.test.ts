@@ -492,9 +492,13 @@ describe("CastSetup: talk scene URL guard", () => {
 type Obj = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // The race's own event as the OBS files read it: Season One, whose Group G
-// seats `field` (null: a seat whose runner is not known yet), plus a
-// showcase, which declares no field.
-function serveGroupG(field: (string | null)[]) {
+// seats `field` (null: a seat whose runner is not known yet; `forfeited`
+// names who withdrew after the lock), plus a showcase, which declares no
+// field.
+function serveGroupG(
+  field: (string | null)[],
+  { forfeited = [] }: { forfeited?: string[] } = {},
+) {
   vi.mocked(fetchEvent).mockResolvedValue({
     slug: "season-one",
     name: "Season One",
@@ -512,7 +516,7 @@ function serveGroupG(field: (string | null)[]) {
               }
             : null,
           label: "1st of Group A",
-          forfeited: false,
+          forfeited: username !== null && forfeited.includes(username),
           source: null,
           place: null,
         })),
@@ -709,6 +713,27 @@ describe("CastSetup: OBS scene files", () => {
       expect(buttonLabelled(settled.container, MATCH_FILE)).toBeDefined(),
     );
     expect(textOf(settled.container)).not.toContain(UNSETTLED);
+  });
+
+  it("a match file draws its duels from the runners who race", async () => {
+    // Five seats, one forfeited: four runners race, so every pair gets its
+    // duel, as on any field of four.
+    serveGroupG(["alice", "bob", "carol", "dave", "erin"], {
+      forfeited: ["bob"],
+    });
+    const { container } = render(CastSetup, {
+      props: { race: inGroupG("race-d1", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(container, MATCH_FILE)).toBeDefined(),
+    );
+    await fireEvent.click(buttonLabelled(container, MATCH_FILE)!);
+
+    const collection = vi.mocked(downloadJson).mock.calls[0][1] as Obj;
+    const duels = collection.scene_order.filter((s: Obj) =>
+      s.name.startsWith("Duel"),
+    );
+    expect(duels).toHaveLength(6);
   });
 
   it("the race file names every seat, under the race's own URLs", async () => {

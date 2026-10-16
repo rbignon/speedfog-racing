@@ -620,6 +620,11 @@ export interface ForfeitNote {
   walkover: boolean;
 }
 
+/** The label of a field seat nobody will ever hold (the server's NO_RUNNER):
+ * a fed seat its finished source stage could not fill, or a seeded seat past
+ * the end of a final ladder. */
+export const NO_RUNNER = "No runner";
+
 /**
  * One note per stage with forfeits, in stage order. A forfeited seat whose
  * runner raced the stage is not told: the stage was played with them.
@@ -639,7 +644,7 @@ export function forfeitNotes(stages: EventStage[]): ForfeitNote[] {
         present: standing
           .filter((slot) => slot.user !== null)
           .map((slot) => slot.user as User),
-        remaining: standing.filter((slot) => slot.label !== "No runner").length,
+        remaining: standing.filter((slot) => slot.label !== NO_RUNNER).length,
         walkover: stage.walkover,
       },
     ];

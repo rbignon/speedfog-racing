@@ -18,6 +18,7 @@
     obsFileName,
     raceSeats,
     stageFieldSettled,
+    stageFieldSize,
     stageKeyOf,
     stageSeats,
   } from "$lib/cast/obs-export";
@@ -446,8 +447,9 @@
 
   // The match file names no race: its scenes are keyed by the race's own
   // stage (never the talk picker's) and follow its current race. A stage
-  // seats its declared field, the same from any of its races; a showcase
-  // declares none, so this race's runners stand in.
+  // seats its declared field, the same from any of its races, and sizes it
+  // by who races it (the duel rule); a showcase declares none, so this
+  // race's runners stand in.
   function downloadMatchFile() {
     const match = ownStage ?? ownShowcase;
     if (!ownEvent || !match || !race.event_slug) return;
@@ -459,7 +461,9 @@
         seats: ownStage
           ? stageSeats(ownStage.field, slots)
           : raceSeats(race, slots),
-        fieldSize: ownStage ? ownStage.field.length : race.participants.length,
+        fieldSize: ownStage
+          ? stageFieldSize(ownStage.field)
+          : race.participants.length,
         url: {
           cams,
           casters: [caster1 || null, caster2 || null],
