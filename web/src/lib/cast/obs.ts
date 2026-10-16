@@ -187,7 +187,7 @@ function browser(
       url,
       width: CANVAS.w,
       height: CANVAS.h,
-      ...(plate ? { reroute_audio: true } : {}),
+      reroute_audio: true,
     },
     {
       muted: true,

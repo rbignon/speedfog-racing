@@ -118,6 +118,16 @@ describe("buildObsCollection", () => {
     }
   });
 
+  it("OBS controls the audio of every browser source", () => {
+    const c = buildObsCollection(input());
+    const browsers = sourcesOf(c).filter((s) => s.id === "browser_source");
+    expect(browsers.length).toBeGreaterThan(0);
+    for (const s of browsers) {
+      expect(s.settings.reroute_audio).toBe(true);
+      expect(s.muted).toBe(true);
+    }
+  });
+
   it("the plate is each cast scene's top item and Audio its bottom one", () => {
     const c = buildObsCollection(input());
     const castScenes = scenesOf(c).filter((s) => sceneKind(c, s));
