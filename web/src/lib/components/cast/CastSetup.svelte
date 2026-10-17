@@ -297,11 +297,14 @@
       return;
     }
     let cancelled = false;
-    // Untracked: a refetched race prop must not refetch the event.
+    // Untracked: a refetched race prop must not refetch the event. A shared
+    // read that failed is asked again rather than reused, so a passing
+    // network error does not leave the picker empty until a reload.
+    const fresh = () => fetchEvent(slug).catch(() => null);
     const request =
       ownEventRequest && slug === untrack(() => race.event_slug)
-        ? ownEventRequest
-        : fetchEvent(slug).catch(() => null);
+        ? ownEventRequest.then((detail) => detail ?? fresh())
+        : fresh();
     request.then((detail) => {
       if (!cancelled)
         stages = detail ? [...detail.stages, ...detail.showcases] : [];

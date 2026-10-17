@@ -71,6 +71,7 @@ function fakeRace(
 beforeEach(() => {
   vi.mocked(copyToClipboard).mockClear();
   vi.mocked(downloadJson).mockClear();
+  vi.mocked(fetchEvent).mockClear();
   // No event on the bill unless a test serves one (see serveSeasonOne).
   vi.mocked(fetchEvents).mockResolvedValue([]);
   vi.mocked(fetchEvent).mockResolvedValue({
@@ -418,8 +419,32 @@ describe("CastSetup: prefill from the race's event", () => {
       await waitFor(() =>
         expect(stagePicker.selectedOptions[0]?.textContent).toBe(label),
       );
+      // The heavy event detail is read once, shared by every picker.
+      expect(fetchEvent).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("asks the race's event again for the stage picker when the first read failed", async () => {
+    serveSeasonOne({ onTheBill: true });
+    vi.mocked(fetchEvent).mockRejectedValueOnce(new Error("offline"));
+    const race = fakeRace("race-retry", {
+      event_slug: "season-one",
+      event_slot: "semi_b:1",
+    });
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+
+    await selectScenePill(container, "Talk");
+    const stagePicker = [
+      ...container.querySelectorAll<HTMLSelectElement>("select"),
+    ].find((s) =>
+      [...s.options].some((o) => o.textContent === "Select a stage"),
+    )!;
+    await waitFor(() =>
+      expect(stagePicker.selectedOptions[0]?.textContent).toBe("Semi B"),
+    );
+  });
 
   it("co-brands a qualifier race but leaves the talk scene's stage to pick", async () => {
     serveSeasonOne({ onTheBill: true });
