@@ -76,3 +76,4 @@ allcraft = true
 enabled = true
 ambushes = false
 greeters = false
+jumpscares = 0  # explicit: gameplay, not theme (writers before the opt-in default armed 3)
