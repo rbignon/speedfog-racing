@@ -537,17 +537,26 @@ with the same query parameters as the race scenes. Such a URL names no race
 at all, so it survives a race being deleted, detached or recreated before
 the evening.
 
-**The current race** of a stage is the last race by slot index whose status
-is running or finished; while none has started, the race with the lowest
-index. The server answers it, with whether the stage is done (every one of
-its races finished), at `GET /api/events/{slug}/stages/{key}/current-race`
-(see the API section of [EVENTS.md](EVENTS.md)), a light endpoint unlike the
-event detail. A race runs from the organizer's start command, so a scene
-moves to the next race at the start of its countdown, never before it
-starts; between two races, every race scene stays on the previous race, its
-final state up for the recap. With `delay`, a scene still switches at the
-next race's real start, so the plate can run up to `delay` seconds ahead of
-the caster's video at the hand-over.
+**The current race** of a stage is, in this order: the race that is
+running; else the next race (the lowest slot index not finished) once its
+seeds are released; else the last race by slot index that finished; while
+none of these exists, the race with the lowest index. The server answers
+it, with whether the stage is done (every one of its races finished), at
+`GET /api/events/{slug}/stages/{key}/current-race` (see the API section of
+[EVENTS.md](EVENTS.md)), a light endpoint unlike the event detail. A scene
+therefore moves to the next race when the organizer releases its seeds, so
+the race scenes show it while its runners download the seed, make their
+character, pick their weapons and wait for the countdown; between a finish
+and the next release, every race scene stays on the previous race, its
+final state up for the recap. A race reset to setup keeps its seeds
+released, so the scenes stay on it. Seeds released ahead of time (an
+organizer checking a seed before the evening, or during the previous race)
+make the next race take over as soon as the previous one ends (a running
+race is never left, see below), so that final state then gets no recap on
+the race scenes. Seeds released early for a later race count only once it
+is the next one: the scenes never skip a race nor run ahead and back. With
+`delay`, a scene still switches on the server's clock, so the plate can run
+up to `delay` seconds ahead of the caster's video at the hand-over.
 
 **The stage-keyed route** only resolves: it asks for the current race and
 hands over to the same scene of that race,

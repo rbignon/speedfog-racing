@@ -1803,9 +1803,17 @@ def test_a_place_a_complete_source_cannot_fill_reads_no_runner():
     assert (field[0].user_id, field[0].label, field[0].place) == (None, NO_RUNNER, 2)
 
 
-def _stage_races(*statuses: tuple[int, RaceStatus]) -> list[tuple[Slot, Race]]:
+def _stage_races(
+    *statuses: tuple[int, RaceStatus], released: tuple[int, ...] = ()
+) -> list[tuple[Slot, Race]]:
+    """The stage's races by slot index; ``released`` names those whose seeds are out."""
+    out = datetime(2026, 10, 18, 20, 0, tzinfo=UTC)
     return [
-        (Slot(kind="stage", key="semi_a", index=i), Race(status=status)) for i, status in statuses
+        (
+            Slot(kind="stage", key="semi_a", index=i),
+            Race(status=status, seeds_released_at=out if i in released else None),
+        )
+        for i, status in statuses
     ]
 
 
@@ -1825,14 +1833,42 @@ def test_current_stage_race_is_the_running_one():
     assert current_stage_race(pairs, 3)[0] is pairs[0][1]
 
 
-def test_current_stage_race_holds_the_finished_one_until_the_next_starts():
+def test_current_stage_race_holds_the_finished_one_until_the_next_seeds_are_out():
     pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.SETUP))
     assert current_stage_race(pairs, 3)[0] is pairs[0][1]
 
 
-def test_current_stage_race_moves_on_when_the_next_starts():
-    pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.RUNNING))
+def test_current_stage_race_moves_on_when_the_next_seeds_are_out():
+    # Also a race reset to setup after a false start: its seeds stay out.
+    pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.SETUP), released=(2,))
     assert current_stage_race(pairs, 3)[0] is pairs[1][1]
+
+
+def test_current_stage_race_moves_on_when_the_next_starts():
+    pairs = _stage_races((1, RaceStatus.FINISHED), (2, RaceStatus.RUNNING), released=(2,))
+    assert current_stage_race(pairs, 3)[0] is pairs[1][1]
+
+
+def test_current_stage_race_keeps_the_running_one_over_released_seeds():
+    pairs = _stage_races((1, RaceStatus.RUNNING), (2, RaceStatus.SETUP), released=(1, 2))
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
+
+
+def test_current_stage_race_takes_the_next_of_several_released():
+    pairs = _stage_races(
+        (3, RaceStatus.SETUP), (1, RaceStatus.FINISHED), (2, RaceStatus.SETUP), released=(1, 2, 3)
+    )
+    assert current_stage_race(pairs, 3)[0] is pairs[2][1]
+
+
+def test_current_stage_race_ignores_seeds_released_early_for_a_later_race():
+    # Race 3 checked ahead: the scenes neither skip race 2 nor run ahead to 3.
+    pairs = _stage_races(
+        (1, RaceStatus.FINISHED), (2, RaceStatus.SETUP), (3, RaceStatus.SETUP), released=(3,)
+    )
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
+    pairs = _stage_races((1, RaceStatus.SETUP), (2, RaceStatus.SETUP), released=(2,))
+    assert current_stage_race(pairs, 3)[0] is pairs[0][1]
 
 
 def test_current_stage_race_skips_a_missing_slot():

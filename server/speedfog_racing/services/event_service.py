@@ -989,17 +989,29 @@ def _stage_days(stage: EventStage, resolved: ResolvedStages) -> set[date]:
 def current_stage_race(races: list[tuple[Slot, Race]], expected: int) -> tuple[Race | None, bool]:
     """The race of a stage a cast scene should show, and whether the stage is done.
 
-    The latest slot that has started (running or finished) holds the scene, so a
-    finished race stays up until the next one starts; before any start it is the
-    first slot. ``done`` once every slot 1..``expected`` has a finished race.
+    A running race holds the scene. Otherwise the next race, the lowest slot not
+    finished, takes it once its seeds are out, so the scenes move on while its
+    runners get ready (download, character, weapons) rather than at its start,
+    and a race reset to setup keeps it. Only the next race counts: seeds released
+    early for a later slot (an organizer checking a seed) neither skip it nor
+    pull the scenes ahead and back. Failing that, the latest finished slot keeps
+    the scene, so a finished race stays up until the next one's seeds are out;
+    before any of that it is the first slot. ``done`` once every slot
+    1..``expected`` has a finished race.
     """
     if not races:
         return None, False
     ordered = sorted(races, key=lambda item: item[0].index)
-    started = [race for _, race in ordered if race.status != RaceStatus.SETUP]
     finished = {slot.index for slot, race in ordered if race.status == RaceStatus.FINISHED}
     done = all(i in finished for i in range(1, expected + 1))
-    return (started[-1] if started else ordered[0][1]), done
+    running = [race for _, race in ordered if race.status == RaceStatus.RUNNING]
+    if running:
+        return running[-1], done
+    upcoming = [race for _, race in ordered if race.status == RaceStatus.SETUP]
+    if upcoming and upcoming[0].seeds_released_at is not None:
+        return upcoming[0], done
+    ended = [race for _, race in ordered if race.status == RaceStatus.FINISHED]
+    return (ended[-1] if ended else ordered[0][1]), done
 
 
 def current_stage_key(

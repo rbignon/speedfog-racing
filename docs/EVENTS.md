@@ -1027,11 +1027,13 @@ fetched is left out rather than replaced by a placeholder.
   (or showcase) the cast scenes show, `{race_id, done}`
   (`StageCurrentRaceResponse`; 404 for an unknown event or a key that is
   neither). Public and light (the event row and the stage's races only), since
-  the scenes poll it between races. The current race is the latest slot that
-  has started (running or finished), so a finished race stays up until the
-  next one starts; before any start it is the first slot, and `race_id` is
-  null while nothing is attached. `done` once every slot of the stage has a
-  finished race. Its own per-IP limit is 600 requests a minute instead of the
+  the scenes poll it between races. The current race is the running slot,
+  else the next slot (the lowest not finished) once its seeds are released
+  (the scenes move on while its runners get ready), else the latest finished
+  slot, so a finished race stays up until the next one's seeds are out;
+  before any of that it is the first slot, and `race_id` is null while
+  nothing is attached. `done` once every slot of the stage has a finished
+  race. Its own per-IP limit is 600 requests a minute instead of the
   default 60: every race plate of a caster's OBS collection (13 for a 4-runner
   match) polls it every 5 s.
 - `POST /api/events/{slug}/signup` and `DELETE /api/events/{slug}/signup`:

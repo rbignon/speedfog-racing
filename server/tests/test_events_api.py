@@ -1750,6 +1750,11 @@ async def test_stage_current_race_follows_the_evening(test_client, async_session
         data = (await _current_race(client, "semi_a")).json()
         assert data == {"race_id": str(first.id), "done": False}
         async with async_session() as db:
+            (await db.get(Race, second.id)).seeds_released_at = datetime.now(UTC)
+            await db.commit()
+        data = (await _current_race(client, "semi_a")).json()
+        assert data == {"race_id": str(second.id), "done": False}
+        async with async_session() as db:
             (await db.get(Race, second.id)).status = RaceStatus.RUNNING
             await db.commit()
         data = (await _current_race(client, "semi_a")).json()
