@@ -28,12 +28,13 @@ const OUTCOMES: Partial<Record<string, Exclude<CastLogKind, "zone">>> = {
  *
  * `zone_history` entries carry only `node_id` and `igt_ms` (see
  * `ZoneHistoryEntry` in `$lib/zone-history`); there is no zone name on the
- * wire. `nodeNames` is the seed's own node id -> display name map (see
- * `parseDagGraph`), the same one the quad and focus scenes build from
- * `raceStore.seed.graph_json`. A miss falls back to the raw node id rather
- * than an empty string: unlike a card's current-zone line (which would
- * rather show nothing than a raw id for a moment), a log row that names no
- * runner activity at all reads as broken, not as "not yet resolved".
+ * wire. `nodeNames` is the seed's own node id -> label name map (see
+ * `parseDagGraph`, `DagNode.labelName`), the same one the quad and focus
+ * scenes build from `raceStore.seed.graph_json`. A miss falls back to the
+ * raw node id rather than an empty string: unlike a card's current-zone line
+ * (which would rather show nothing than a raw id for a moment), a log row
+ * that names no runner activity at all reads as broken, not as "not yet
+ * resolved".
  *
  * A `zone_history` of `null` means that participant's history has not
  * arrived yet and contributes no rows.

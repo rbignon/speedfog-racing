@@ -7,7 +7,16 @@ function makeNode(
   type: DagNode["type"] = "mini_dungeon",
   layer = 1,
 ): DagNode {
-  return { id, type, displayName: id, zones: [], layer, tier: 1, weight: 1 };
+  return {
+    id,
+    type,
+    displayName: id,
+    labelName: id,
+    zones: [],
+    layer,
+    tier: 1,
+    weight: 1,
+  };
 }
 
 // Simple graph: start -> A -> B, start -> C

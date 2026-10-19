@@ -374,6 +374,26 @@ class TestTranslateGraphJson:
         assert entrance["text"] == "à l'entrée depuis Altus Occulte"
         assert entrance["to_text"] == "Altus Occulte"
 
+    def test_translates_boss_names(self, fr_data: TranslationData) -> None:
+        """Boss names go through the bosses table, phase by phase, and are
+        formatted like a display_name segment: the web swaps one in for a boss
+        arena's last leg."""
+        graph = {
+            "nodes": {
+                "gael_123": {
+                    "display_name": "Caelid - Gael Tunnel - Magma Wyrm",
+                    "type": "boss_arena",
+                    "boss_name": "Black Knife Assassin",
+                    "randomized_bosses": ["Black Knife Assassin", "Unknown Boss XYZ"],
+                }
+            }
+        }
+        result = translate_graph_json(graph, "fr")
+        node = result["nodes"]["gael_123"]
+        assert node["display_name"] == "Caelid - Galerie de Gael - Dragon du magma"
+        assert node["randomized_bosses"] == ["Assassin des Couteaux noirs", "Unknown Boss XYZ"]
+        assert node["boss_name"] == "Assassin des Couteaux noirs"
+
     def test_original_not_mutated_graph(self, fr_data: TranslationData) -> None:
         graph = {
             "nodes": {

@@ -283,14 +283,16 @@
       ? raceStore.race.seeds_released_at !== null
       : initialRace.seeds_released_at !== null,
   );
-  // Build node ID -> display name map so the leaderboard can show competitors'
-  // current zones once the viewer has finished or the daily has ended.
+  // Build node ID -> label name map so the leaderboard can show competitors'
+  // current zones once the viewer has finished or the daily has ended (a
+  // boss arena reads as the boss actually fought there, see
+  // DagNode.labelName).
   let zoneNames: Map<string, string> | null = $derived.by(() => {
     if (!graphJson) return null;
     const graph = parseDagGraph(graphJson);
     const map = new Map<string, string>();
     for (const node of graph.nodes) {
-      map.set(node.id, node.displayName);
+      map.set(node.id, node.labelName);
     }
     return map;
   });

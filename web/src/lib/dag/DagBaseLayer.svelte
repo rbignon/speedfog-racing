@@ -74,7 +74,7 @@
     data-type={node.type}
     data-node-id={node.id}
   >
-    <title>{node.displayName}</title>
+    <title>{node.labelName}</title>
 
     <g class="dag-node-shape">
       {#if node.type === "start"}
@@ -156,7 +156,7 @@
       class="dag-label"
       transform="rotate(-30, {labelX(node)}, {labelY(node)})"
     >
-      {truncateLabel(node.displayName)}
+      {truncateLabel(node.labelName)}
     </text>
   </g>
 {/each}

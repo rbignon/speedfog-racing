@@ -20,6 +20,7 @@ function makeNode(id: string, x: number, y: number, layer = 0): PositionedNode {
     y,
     type: "mini_dungeon",
     displayName: id,
+    labelName: id,
     zones: [],
     layer,
     tier: 0,

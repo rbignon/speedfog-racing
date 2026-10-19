@@ -19,6 +19,11 @@ export interface DagNode {
   type: DagNodeType;
   displayType?: string; // Translated type label from server (e.g. "donjon majeur")
   displayName: string;
+  /** The name the map labels, leaderboards and cast scenes show: the display
+   * name, except that a boss arena's last leg (the arena's own boss) gives
+   * way to the boss actually fought there. The node popup keeps displayName,
+   * next to its own boss line. */
+  labelName: string;
   zones: string[];
   layer: number;
   tier: number;
@@ -82,6 +87,28 @@ const VALID_NODE_TYPES = new Set<string>([
 ]);
 
 /**
+ * A boss arena's display name ends with the arena's own boss ("Caelid - Gael
+ * Tunnel - Magma Wyrm"): when the seed randomizes it, swap that last leg for
+ * the boss(es) actually fought there. A boss arena left alone keeps its
+ * name, which already names its boss: its boss_name is no fallback, since
+ * older seeds carry the generator's raw names there ("Magma Wyrm Boss"),
+ * with no translation either. Boss names never contain " - ", so the label
+ * still splits into the same legs.
+ */
+function bossArenaLabel(
+  displayName: string,
+  randomizedBosses: string[] | undefined,
+): string {
+  const bosses = (randomizedBosses ?? []).filter(
+    (b) => typeof b === "string" && b,
+  );
+  if (bosses.length === 0) return displayName;
+  const boss = bosses.join(", ");
+  const cut = displayName.lastIndexOf(" - ");
+  return cut === -1 ? boss : displayName.slice(0, cut + 3) + boss;
+}
+
+/**
  * Parse raw graph.json (v3) server data into typed DagGraph.
  */
 export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
@@ -95,18 +122,24 @@ export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
     if (!VALID_NODE_TYPES.has(nodeType)) {
       continue;
     }
+    const displayName = (raw.display_name as string) ?? id;
+    const randomizedBosses = Array.isArray(raw.randomized_bosses)
+      ? (raw.randomized_bosses as string[])
+      : undefined;
     nodes.push({
       id,
       type: nodeType as DagNodeType,
       displayType: (raw.display_type as string) ?? undefined,
-      displayName: (raw.display_name as string) ?? id,
+      displayName,
+      labelName:
+        nodeType === "boss_arena"
+          ? bossArenaLabel(displayName, randomizedBosses)
+          : displayName,
       zones: (raw.zones as string[]) ?? [],
       layer: (raw.layer as number) ?? 0,
       tier: (raw.tier as number) ?? 0,
       weight: (raw.weight as number) ?? 1,
-      randomizedBosses: Array.isArray(raw.randomized_bosses)
-        ? (raw.randomized_bosses as string[])
-        : undefined,
+      randomizedBosses,
     });
   }
 

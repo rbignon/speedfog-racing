@@ -28,7 +28,7 @@
      * (join order is the only order there is), the leader's gap row reads
      * Leader while it runs and Winner once it is over. */
     raceStatus: string;
-    /** Node id -> display name, from the seed's own graph
+    /** Node id -> label name (`DagNode.labelName`), from the seed's own graph
      * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
      * wire is a graph node id, never a display string. On a miss (the seed
      * hasn't resolved it yet) the zone line is left blank, same as

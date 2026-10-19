@@ -234,16 +234,21 @@
       : initialRace.seeds_released_at !== null,
   );
 
-  // Build node ID → display name map for leaderboard zone labels
-  let zoneNames: Map<string, string> | null = $derived.by(() => {
+  // Node ID → name maps, from one parse: label names for the leaderboard's
+  // zone labels (a boss arena reads as the boss actually fought there, see
+  // DagNode.labelName), display names for the cheat detections panel, which
+  // names a zone the way the /admin Cheat tab and the Discord alert do.
+  let nodeNameMaps = $derived.by(() => {
     if (!liveSeed?.graph_json) return null;
-    const graph = parseDagGraph(liveSeed.graph_json);
-    const map = new Map<string, string>();
-    for (const node of graph.nodes) {
-      map.set(node.id, node.displayName);
-    }
-    return map;
+    const nodes = parseDagGraph(liveSeed.graph_json).nodes;
+    return {
+      labels: new Map(nodes.map((n) => [n.id, n.labelName])),
+      displayNames: new Map(nodes.map((n) => [n.id, n.displayName])),
+    };
   });
+  let zoneNames: Map<string, string> | null = $derived(
+    nodeNameMaps?.labels ?? null,
+  );
 
   // Merge REST participants with WS live status
   let mergedParticipants = $derived.by(() => {
@@ -1373,7 +1378,7 @@
         <CheatDetectionsPanel
           detections={debugFlags}
           participants={raceStore.participants}
-          {zoneNames}
+          zoneNames={nodeNameMaps?.displayNames ?? null}
           onDisqualify={(id, reason) => (disqualifyTarget = { id, reason })}
         />
         {#if disqualifyTarget}

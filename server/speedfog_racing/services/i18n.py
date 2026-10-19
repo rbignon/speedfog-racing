@@ -409,7 +409,7 @@ def translate_graph_json(graph_json: dict[str, Any], locale: str) -> dict[str, A
 
 
 def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[str, Any]:
-    """Deep-copy graph_json and translate node display_name, type, exits, and entrances."""
+    """Deep-copy graph_json and translate node display_name, boss names, type, exits, entrances."""
     data = _translations.get(locale)
     if data is None:
         return graph_json
@@ -425,6 +425,19 @@ def _translate_graph_json_impl(graph_json: dict[str, Any], locale: str) -> dict[
         display_name = node_data.get("display_name")
         if isinstance(display_name, str):
             node_data["display_name"] = _format_display_name(_translate_name(display_name, data))
+
+        # Translate boss names one by one (one per arena phase; a name may
+        # itself contain ", "), formatted like a display_name segment: the
+        # frontend swaps them in for a boss arena's last leg.
+        randomized = node_data.get("randomized_bosses")
+        if isinstance(randomized, list):
+            node_data["randomized_bosses"] = [
+                _format_display_name(_translate_name(b, data)) if isinstance(b, str) else b
+                for b in randomized
+            ]
+        boss_name = node_data.get("boss_name")
+        if isinstance(boss_name, str):
+            node_data["boss_name"] = _format_display_name(_translate_name(boss_name, data))
 
         # Add translated display_type (e.g. "legacy_dungeon" → "donjon majeur").
         # Keep original "type" intact; the frontend uses it for rendering logic.

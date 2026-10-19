@@ -9,6 +9,7 @@ function fakeNode(over: Partial<PositionedNode> = {}): PositionedNode {
     id: "n1",
     type: "mini_dungeon",
     displayName: "Some Zone",
+    labelName: "Some Zone",
     zones: [],
     layer: 1,
     tier: 1,
@@ -139,10 +140,13 @@ describe("LivePlayerDots: zone line on the tags", () => {
       "n1",
       fakeNode({
         displayName: "Liurnia - Academy Crystal Cave - Crystalian Duo",
+        labelName: "Liurnia - Academy Crystal Cave - Godefroy the Grafted",
       }),
     ],
   ]);
 
+  // The leg comes from the label name, so a boss arena's tag names the boss
+  // actually fought there rather than the arena's own.
   it("puts the leg a runner stands on under their name", () => {
     const { container } = render(LivePlayerDots, {
       props: {
@@ -153,7 +157,7 @@ describe("LivePlayerDots: zone line on the tags", () => {
       },
     });
     expect(container.querySelector(".tag-zone")?.textContent).toBe(
-      "Crystalian Duo",
+      "Godefroy the Grafted",
     );
   });
 

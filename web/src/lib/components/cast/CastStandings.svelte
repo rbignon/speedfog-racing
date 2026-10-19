@@ -15,7 +15,7 @@
      * without special-casing the first row. */
     participants: WsParticipant[];
     totalLayers: number | null;
-    /** Node id -> display name, from the seed's own graph
+    /** Node id -> label name (`DagNode.labelName`), from the seed's own graph
      * (`parseDagGraph(raceStore.seed.graph_json)`): `current_zone` on the
      * wire is a graph node id, never a display string. */
     zoneNames: Map<string, string>;

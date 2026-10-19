@@ -297,18 +297,18 @@
     maxTiers: LIVE_TAG_MAX_TIERS,
   });
 
-  // A node's display name is a whole route label ("Liurnia - Academy
+  // A node's label name is a whole route label ("Liurnia - Academy
   // Crystal Cave - Crystalian Duo"): the tag keeps its last leg, the place
-  // the runner actually stands, as the cast cards do. Cut once per map, not
-  // on every runner update.
+  // the runner actually stands (a boss arena's actual boss), as the cast
+  // cards do. Cut once per map, not on every runner update.
   let zoneLegs = $derived(
     new Map(
       tagZones
         ? [...nodeMap.values()].map((n) => [
             n.id,
-            n.displayName.includes(" - ")
-              ? n.displayName.split(" - ").pop()!
-              : n.displayName,
+            n.labelName.includes(" - ")
+              ? n.labelName.split(" - ").pop()!
+              : n.labelName,
           ])
         : [],
     ),

@@ -19,9 +19,10 @@
     /** The race's own status: before the start the card carries no rank
      * and no leader brass (join order is the only order there is). */
     raceStatus: string;
-    /** Node id -> display name, from the seed's own graph: `current_zone`
-     * on the wire is a graph node id, never a display string. On a miss the
-     * zone line is left blank, same as RunnerCard's zoneLabel. */
+    /** Node id -> label name (`DagNode.labelName`), from the seed's own
+     * graph: `current_zone` on the wire is a graph node id, never a display
+     * string. On a miss the zone line is left blank, same as RunnerCard's
+     * zoneLabel. */
     zoneNames?: Map<string, string> | null;
     /** What the runner is wielding, already resolved to display names
      * ("Moonveil + Misericorde"); empty hides the line (catalogue still

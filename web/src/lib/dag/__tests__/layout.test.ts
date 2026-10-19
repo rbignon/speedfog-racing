@@ -26,6 +26,7 @@ function makeNode(
     id,
     type,
     displayName: id,
+    labelName: id,
     zones: [id],
     layer,
     tier: layer,
@@ -116,6 +117,100 @@ describe("parseDagGraph", () => {
     const graph = parseDagGraph(raw);
     expect(graph.nodes).toHaveLength(1);
     expect(graph.nodes[0].id).toBe("b");
+  });
+
+  describe("labelName", () => {
+    function labelOf(node: Record<string, unknown>): string {
+      const graph = parseDagGraph({
+        total_layers: 1,
+        nodes: { n: { zones: ["n"], layer: 0, tier: 1, weight: 1, ...node } },
+        edges: [],
+      });
+      return graph.nodes[0].labelName;
+    }
+
+    it("swaps a boss arena's last leg for its randomized boss", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Caelid - Gael Tunnel - Magma Wyrm",
+          boss_name: "Black Knife Assassin",
+          randomized_bosses: ["Black Knife Assassin"],
+        }),
+      ).toBe("Caelid - Gael Tunnel - Black Knife Assassin");
+    });
+
+    it("prefers randomized_bosses over a disagreeing boss_name", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Limgrave Tunnels - Stonedigger Troll",
+          boss_name: "Stonedigger Troll",
+          randomized_bosses: ["Erdtree Avatar Duo"],
+        }),
+      ).toBe("Limgrave Tunnels - Erdtree Avatar Duo");
+    });
+
+    // Older seeds carry the generator's raw boss_name ("Magma Wyrm Boss"):
+    // an arena left alone keeps its own name, which already names its boss.
+    it("ignores boss_name when the arena isn't randomized", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Caelid - Gael Tunnel - Magma Wyrm",
+          boss_name: "Magma Wyrm Boss",
+        }),
+      ).toBe("Caelid - Gael Tunnel - Magma Wyrm");
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Caelid - Gael Tunnel - Magma Wyrm",
+          boss_name: "Magma Wyrm Boss",
+          randomized_bosses: [],
+        }),
+      ).toBe("Caelid - Gael Tunnel - Magma Wyrm");
+    });
+
+    it("joins a multi-phase fight's bosses", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Volcano Manor - Abductor Virgins",
+          randomized_bosses: ["Mohg, Lord of Blood", "Runebear"],
+        }),
+      ).toBe("Volcano Manor - Mohg, Lord of Blood, Runebear");
+    });
+
+    it("replaces a single-leg arena name whole", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Ancestor Spirit",
+          randomized_bosses: ["Elder Lion"],
+        }),
+      ).toBe("Elder Lion");
+    });
+
+    it("keeps the display name when no randomized boss is usable", () => {
+      expect(
+        labelOf({
+          type: "boss_arena",
+          display_name: "Caelid - Gael Tunnel - Magma Wyrm",
+          randomized_bosses: [""],
+        }),
+      ).toBe("Caelid - Gael Tunnel - Magma Wyrm");
+    });
+
+    it("only renames boss arenas", () => {
+      expect(
+        labelOf({
+          type: "major_boss",
+          display_name: "Stormveil Castle - Godrick",
+          boss_name: "Rennala",
+          randomized_bosses: ["Rennala"],
+        }),
+      ).toBe("Stormveil Castle - Godrick");
+    });
   });
 });
 

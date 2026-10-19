@@ -807,7 +807,7 @@
       data-type={anonymous ? undefined : node.type}
       data-node-id={node.id}
     >
-      {#if !anonymous}<title>{node.displayName}</title>{/if}
+      {#if !anonymous}<title>{node.labelName}</title>{/if}
 
       <g class="dag-node-shape" style="--node-scale: {nodeScale};">
         {#if anonymous}
@@ -916,7 +916,7 @@
           class:transparent-label={transparent}
           transform="rotate(-30, {labelX(node)}, {labelY(node)})"
         >
-          {truncateLabel(node.displayName)}
+          {truncateLabel(node.labelName)}
         </text>
       {/if}
     </g>

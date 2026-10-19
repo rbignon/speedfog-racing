@@ -39,13 +39,14 @@
 
   // WsParticipant.current_zone is a graph node id, never a display string
   // (see RunnerCard's zoneLabel): resolve it from the seed's own graph, the
-  // same nodeNames pattern the metro scene's log builds.
+  // same nodeNames pattern the metro scene's log builds. Label names, so a
+  // boss arena reads as the boss actually fought there (DagNode.labelName).
   let zoneNames = $derived(
     new Map(
       raceStore.seed?.graph_json
         ? parseDagGraph(raceStore.seed.graph_json).nodes.map((n) => [
             n.id,
-            n.displayName,
+            n.labelName,
           ])
         : [],
     ),

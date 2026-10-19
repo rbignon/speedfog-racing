@@ -115,6 +115,16 @@ The desk's own panels (not holes, no OBS source needed): the race-name panel
 at (16, 776), 376 x 288; the lockup at (820, 776), 280 x 288; the clock panel
 at (1528, 776), 376 x 288.
 
+Wherever a scene names a zone (a card's zone line and splits, the standings,
+the log, the map's labels and tags), it reads the node's label name
+(`DagNode.labelName`, set by `parseDagGraph`): a boss arena the seed
+randomizes is named after the boss actually fought there, in place of the
+route label's last leg, the arena's own boss ("Caelid - Gael Tunnel - Black
+Knife Assassin" rather than "... - Magma Wyrm"); an arena left alone keeps
+its name. The race, daily and training maps (replays included) and the race
+and daily leaderboards read the same name; the node popup and the layer
+comparison's column headers keep the arena's, next to their Boss line.
+
 ### Quad
 
 Four runners in a 2x2 grid, filling the main area above the desk. Each POV

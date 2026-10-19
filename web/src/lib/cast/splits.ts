@@ -32,7 +32,7 @@ function zoneLabel(name: string): string {
  * runner currently stands in never becomes a split, since it isn't finished
  * yet (`RunnerCard` already shows it as the current zone, not a split).
  *
- * `nodeNames` is the same node id -> display name map the quad page builds
+ * `nodeNames` is the same node id -> label name map the quad page builds
  * from the seed's graph (`parseDagGraph(...).nodes`); a miss (the graph
  * hasn't resolved that id yet) resolves to an empty zone name, matching
  * `RunnerCard.zoneLabel`'s own miss case rather than printing a raw node id.

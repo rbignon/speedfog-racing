@@ -57,7 +57,7 @@
       raceStore.seed?.graph_json
         ? parseDagGraph(raceStore.seed.graph_json).nodes.map((n) => [
             n.id,
-            n.displayName,
+            n.labelName,
           ])
         : [],
     ),

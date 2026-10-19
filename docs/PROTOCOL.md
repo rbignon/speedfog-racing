@@ -758,7 +758,7 @@ Sent immediately on connection (after optional auth). Full race state. Also re-s
 }
 ```
 
-`seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). `total_nodes` and `total_paths` are always included. `event_ids`, `finish_event`, and `spawn_items` are **not** included for spectators (mod-only).
+`seed.graph_json` is `null` if the viewer lacks DAG access (see [DAG Access Rules](#dag-access-rules)). For a viewer connected with a non-English `?locale=`, it comes translated: node display names, boss names (`randomized_bosses`, `boss_name`), a translated `display_type` beside each `type`, and exit and entrance texts. `total_nodes` and `total_paths` are always included. `event_ids`, `finish_event`, and `spawn_items` are **not** included for spectators (mod-only).
 
 `zone_history` is always included (as a list, possibly empty) in `race_state` for every participant. It seeds the client's local history store, which is then kept in sync via `zone_history` snapshot messages. See [zone_history updates](#zone_history-updates).
 
