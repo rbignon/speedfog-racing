@@ -2,9 +2,9 @@
   // The event on the bill, as the home page and the dashboard feature it:
   // the event page's lockup, a phase signal with one line of state, and the
   // buttons; the lockup and buttons lead there (or to the live race), and from
-  // the cut on a row of qualified avatars per bracket, the eliminated greyed in
-  // their seat. Signing up stays on the event page, which owns the Twitch
-  // intent flow.
+  // the cut on a row of qualified avatars per bracket, the eliminated and the
+  // forfeits greyed in their seat. Signing up stays on the event page, which
+  // owns the Twitch intent flow.
   import type { EventSummary, User } from "$lib/api";
   import { eventBand, formatEventDate } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
@@ -20,8 +20,9 @@
     user.twitch_display_name || user.twitch_username;
 </script>
 
-{#snippet avatar(user: User, out = false)}
-  {@const label = out ? `${nameOf(user)} (eliminated)` : nameOf(user)}
+<!-- `out` names why the runner left the bracket, greying their avatar. -->
+{#snippet avatar(user: User, out: string | null = null)}
+  {@const label = out ? `${nameOf(user)} (${out})` : nameOf(user)}
   {#if user.twitch_avatar_url}
     <img
       src={user.twitch_avatar_url}
@@ -78,6 +79,7 @@
       {#each state.brackets as bracket (bracket.key)}
         {#if bracket.qualified.length > 0}
           {@const eliminated = new Set(bracket.eliminated)}
+          {@const forfeited = new Set(bracket.forfeited)}
           <div class="bracket-row">
             <span class="bracket-label">{bracket.label}</span>
             <div
@@ -86,7 +88,14 @@
               aria-label="{bracket.label}: {bracket.qualified.length} qualified"
             >
               {#each bracket.qualified as user (user.id)}
-                {@render avatar(user, eliminated.has(user.id))}
+                {@render avatar(
+                  user,
+                  forfeited.has(user.id)
+                    ? "forfeit"
+                    : eliminated.has(user.id)
+                      ? "eliminated"
+                      : null,
+                )}
               {/each}
             </div>
           </div>
@@ -242,7 +251,7 @@
     flex-wrap: wrap;
     row-gap: 4px;
   }
-  /* Knocked out by a complete stage: the avatar keeps its seat, greyed. */
+  /* Out of the bracket (knocked out or forfeit): the avatar keeps its seat, greyed. */
   .avatar.out {
     filter: grayscale(1);
     opacity: 0.45;

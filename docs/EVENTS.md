@@ -333,8 +333,8 @@ several brackets, each bracket's boxes sit under its label.
 
 A runner listed in `forfeits` (withdrew from `draw_locks_at` on) keeps their
 seat and nobody replaces them: the field slot and the ladder entry carry
-`forfeited`, and the draw rows of the home band and the share card leave
-them out. A fed stage whose runner forfeits is left one short.
+`forfeited`, the home band greys them in their seat, and the share card's
+draw rows leave them out. A fed stage whose runner forfeits is left one short.
 
 A fed stage seats one place of its sources at a time, each seat labelled by it
 ("1st of Group A"); a whole source (a stage key alone in `from`) gives all its
@@ -907,7 +907,9 @@ upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
 final is complete, `my_signup`, and from the cut until the playoffs are over
 `brackets`: each bracket's label and its qualified runners in seed order, a
-seat nobody holds, or held by a forfeit, left out, with `eliminated` (the ids
+seat nobody holds left out, with `forfeited` (the ids of the forfeits among
+them, also in `eliminated` once a complete stage knocks them out) and
+`eliminated` (the ids
 of those a complete stage knocked out: the rest of the field of a complete
 stage that sends runners on, a seat that never raced included, and all but
 the winner of a complete final; a stage still being played knocks out
@@ -936,7 +938,9 @@ beyond the previews), while the event can be joined and someone is. From the
 cut until the playoffs are over the same avatars line up under the line, one
 row per bracket behind its label (the config's: "Top 32", then
 "Newcomers" for Season One), every qualified runner shown, the eliminated
-greyed in their seat (seed order holds, "(eliminated)" on hover), and a
+and the forfeits greyed in their seat (seed order holds, "(eliminated)" or
+"(forfeit)" on hover, a forfeit reading "(forfeit)" even once knocked out),
+and a
 bracket nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
 on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
@@ -978,8 +982,8 @@ the line-up, as on the draw card.
 
 The draw is the card the qualified are announced with, before any match is
 scheduled, and the one shown again whenever no evening is current or next
-during the playoffs: the same runners as the home band's rows (each
-bracket's seated runners in seed order, forfeits left out, a bracket nobody
+during the playoffs: the home band's rows less its forfeits (each
+bracket's seated runners in seed order, a bracket nobody
 holds a seat in left out), as whole avatars in rows of at most 16, split
 evenly (Season One's Top 32 on two rows of 16, its newcomers on one of 8), up
 to two rows per bracket, the last cell a `+N` chip beyond that. The avatars

@@ -711,6 +711,8 @@ export interface EventSummaryBracket {
   qualified: User[];
   /** The ids of the qualified a complete stage knocked out, in seed order. */
   eliminated: string[];
+  /** The ids of the qualified who withdrew once the draw locked, in seed order. */
+  forfeited: string[];
 }
 
 export interface AdminEvent {

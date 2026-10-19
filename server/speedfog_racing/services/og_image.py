@@ -603,7 +603,9 @@ def summarize_event(
     brackets: list[EventOgBracket] = []
     if phase in ("cut", "playoffs") and stage is None:
         for bracket, seated in bracket_draw(config, qualified):
-            runners = [users[user_id] for user_id in seated if user_id in users]
+            runners = [
+                users[user_id] for user_id in seated if user_id in users and user_id not in forfeits
+            ]
             if runners:
                 brackets.append(_draw_bracket(bracket.label, runners))
         # A single bracket always fits: only an extra one can push the avatars

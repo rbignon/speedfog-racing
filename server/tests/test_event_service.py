@@ -1037,12 +1037,12 @@ def test_a_forfeit_keeps_their_seat_flagged_and_nobody_replaces_them():
     assert not any(s.forfeited for s in groups["quarter_b"])
 
 
-def test_the_band_draw_leaves_forfeits_out():
+def test_the_draw_keeps_a_forfeits_seat():
     cfg = _quarters_config()
     u = [uuid4() for _ in range(20)]
-    groups = compute_qualified(_ladder_of(*u), cfg, {}, forfeits={u[15]})
+    groups = compute_qualified(_ladder_of(*u), cfg, {}, forfeits={u[7]})
     (_, seated), _ = bracket_draw(cfg, groups)
-    assert u[15] not in seated and len(seated) == 15
+    assert seated == u[:16]
 
 
 def test_a_seat_nobody_can_fill_reads_tbd_then_no_runner():

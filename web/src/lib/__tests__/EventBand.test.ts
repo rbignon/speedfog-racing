@@ -94,7 +94,7 @@ describe("EventBand", () => {
     expect(container.querySelector(".avatar-stack")).toBeNull();
   });
 
-  it("greys the eliminated in their seat, the others untouched", () => {
+  it("greys the eliminated and the forfeits in their seat, the others untouched", () => {
     const qualified = [
       {
         id: "u1",
@@ -114,6 +114,12 @@ describe("EventBand", () => {
         twitch_display_name: "Cid",
         twitch_avatar_url: "https://cdn.test/cid.png",
       },
+      {
+        id: "u4",
+        twitch_username: "dee",
+        twitch_display_name: "Dee",
+        twitch_avatar_url: null,
+      },
     ] as User[];
     const { container } = render(EventBand, {
       event: summaryWith({
@@ -124,6 +130,8 @@ describe("EventBand", () => {
             label: "Top 32",
             qualified,
             eliminated: ["u2", "u1"],
+            // bob withdrew, then sat out the stage that knocked him out.
+            forfeited: ["u4", "u2"],
           },
         ],
       }),
@@ -132,13 +140,15 @@ describe("EventBand", () => {
     // Seed order holds; the server's order of the ids does not matter.
     expect(seats.map((s) => s.getAttribute("title"))).toEqual([
       "Ana (eliminated)",
-      "bob (eliminated)",
+      "bob (forfeit)",
       "Cid",
+      "Dee (forfeit)",
     ]);
     expect(seats.map((s) => s.classList.contains("out"))).toEqual([
       true,
       true,
       false,
+      true,
     ]);
   });
 

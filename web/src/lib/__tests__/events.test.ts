@@ -2058,8 +2058,15 @@ describe("eventBand", () => {
         label: "Top 32",
         qualified: [{ id: "u1" } as User],
         eliminated: [],
+        forfeited: [],
       },
-      { key: "newcomers", label: "Newcomers", qualified: [], eliminated: [] },
+      {
+        key: "newcomers",
+        label: "Newcomers",
+        qualified: [],
+        eliminated: [],
+        forfeited: [],
+      },
     ];
     const live = {
       race: { id: "r7", casters: [] },

@@ -452,8 +452,8 @@ def bracket_draw(
 ) -> list[tuple[EventBracket, list[UUID]]]:
     """Each bracket with the runners ``compute_qualified`` seated in it, best seed first.
 
-    Seeds are ladder positions. A seat nobody holds, or held by a forfeit, is
-    left out: a bracket nobody holds a seat in yet comes with an empty list.
+    Seeds are ladder positions; a forfeit keeps their seat. A seat nobody holds
+    is left out: a bracket nobody holds a seat in yet comes with an empty list.
     """
     draw: list[tuple[EventBracket, list[UUID]]] = []
     for bracket in config.brackets:
@@ -464,7 +464,7 @@ def bracket_draw(
         draw.append(
             (
                 bracket,
-                [s.user_id for s in seats if s.user_id is not None and not s.forfeited],
+                [s.user_id for s in seats if s.user_id is not None],
             )
         )
     return draw
