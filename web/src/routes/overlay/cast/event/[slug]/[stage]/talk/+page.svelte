@@ -22,7 +22,7 @@
   let layout = $derived(sceneLayout("talk", { cams: params.cams }));
   // A showcase is no playoff round: its label stands alone.
   let toplineLabel = $derived(
-    stage.kind === "showcase" ? stage.label : `${stage.label} · Playoff night`,
+    stage.kind === "showcase" ? stage.label : `${stage.label} · Playoff`,
   );
 
   // Rendered in the viewer's own timezone, like every other date on the
