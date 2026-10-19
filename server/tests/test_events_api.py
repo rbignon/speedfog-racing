@@ -1488,6 +1488,64 @@ async def test_listing_rows_follow_the_events_own_draw_through_a_strike(test_cli
 
 
 @pytest.mark.asyncio
+async def test_listing_flags_the_runners_a_complete_stage_knocked_out(test_client, async_session):
+    now = datetime.now(UTC)
+    starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=26))
+    # One runner of each semi goes on to the final.
+    config["stages"] = [
+        {**stage, "advance": 1} if stage["kind"] == "semi" else stage for stage in config["stages"]
+    ]
+    async with async_session() as db:
+        # Both semis and the newcomers' final are behind, the final is ahead.
+        event = await _event(
+            db,
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config=config,
+        )
+        await _ranked_runners(db, event, 7, RaceStatus.FINISHED)
+        users = {u.twitch_username: u for u in (await db.execute(select(User))).scalars()}
+
+        async def play(slot: str, results: list[tuple[str, int]]) -> None:
+            seed = await _seed(db, "standard", slot)
+            race = await _race(
+                db, users["orga"], seed, event, slot, status=RaceStatus.FINISHED, is_public=True
+            )
+            for name, igt_ms in results:
+                await _entry(db, race, users[name], ParticipantStatus.FINISHED, igt_ms)
+
+        # Semi A is played out without its top seed: runner4 races alone.
+        for i in (1, 2, 3):
+            await play(f"semi_a:{i}", [("runner4", 1_000_000)])
+        # Semi B has one race left: nobody is out of it yet.
+        for i in (1, 2):
+            await play(f"semi_b:{i}", [("runner2", 1_000_000), ("runner3", 1_200_000)])
+        # The newcomers' final is over: runner6 beat runner5 twice.
+        for i in (1, 2):
+            await play(f"newcomers:{i}", [("runner6", 1_000_000), ("runner5", 1_200_000)])
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    assert summary["phase"] == "playoffs"
+    names = {u["id"]: u["twitch_username"] for b in summary["brackets"] for u in b["qualified"]}
+    rows = {
+        b["key"]: (
+            [u["twitch_username"] for u in b["qualified"]],
+            [names[user_id] for user_id in b["eliminated"]],
+        )
+        for b in summary["brackets"]
+    }
+    # The no-show and the final's runner-up are out; the winners and the
+    # runners of the unfinished semi keep their seat, all in seed order.
+    assert rows == {
+        "main": (["runner1", "runner2", "runner3", "runner4"], ["runner1"]),
+        "newcomers": (["runner5", "runner6"], ["runner5"]),
+    }
+
+
+@pytest.mark.asyncio
 async def test_listing_carries_the_live_playoff_race_and_its_stage(test_client, async_session):
     now = datetime.now(UTC)
     async with async_session() as db:

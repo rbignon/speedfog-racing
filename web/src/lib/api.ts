@@ -709,6 +709,8 @@ export interface EventSummaryBracket {
   key: string;
   label: string;
   qualified: User[];
+  /** The ids of the qualified a complete stage knocked out, in seed order. */
+  eliminated: string[];
 }
 
 export interface AdminEvent {

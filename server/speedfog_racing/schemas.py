@@ -1558,6 +1558,8 @@ class EventSummaryBracketResponse(BaseModel):
     label: str
     # The bracket's qualified runners in seed order; a seat nobody holds is left out.
     qualified: list[UserResponse]
+    # The ids of those a complete stage knocked out, in the same order.
+    eliminated: list[UUID]
 
 
 class EventSummaryResponse(BaseModel):
@@ -1566,7 +1568,7 @@ class EventSummaryResponse(BaseModel):
     The phase, the player count and previews under the Open Graph card's rule
     (the ladder orders them, best first), the next stage, the live playoff
     race, the champion once the final is complete, and from the cut until the
-    playoffs are over each bracket's qualified runners.
+    playoffs are over each bracket's qualified runners, the eliminated flagged.
     """
 
     slug: str

@@ -677,6 +677,38 @@ def fed_field(
     return slots
 
 
+def eliminated_runners(
+    config: EventConfig,
+    results: dict[str, StageResult],
+    qualified: Mapping[str, list[QualifiedSlot]],
+) -> set[UUID]:
+    """The runners a complete stage knocked out of their bracket.
+
+    A complete stage that sends runners on knocks out the rest of its field, a
+    seat that never raced included; a complete final knocks out all but its
+    winner. A stage still being played knocks out nobody yet, and neither does
+    a closing stage that is no final: it crowns nobody. ``results`` must hold
+    the walkovers (``apply_walkovers``).
+    """
+    out: set[UUID] = set()
+    for stage in config.stages:
+        result = results[stage.key]
+        if not result.complete:
+            continue
+        if stage.kind == "final":
+            kept = {result.entries[0].user_id} if result.entries else set()
+        elif stage.advance is not None:
+            kept = {e.user_id for e in result.entries if e.advances}
+        else:
+            continue
+        if stage.from_:
+            seated = [slot.user_id for slot in fed_field(stage, config, results)]
+        else:
+            seated = [slot.user_id for slot in qualified.get(stage.key, [])]
+        out.update(user_id for user_id in seated if user_id is not None and user_id not in kept)
+    return out
+
+
 def showcase_field(showcase: EventShowcase, races: list[Race]) -> list[FieldSlot]:
     """A showcase's field: whoever joined one of its races, by username."""
     users = {p.user_id: p.user for race in races for p in race.participants}

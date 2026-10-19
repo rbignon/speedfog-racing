@@ -907,7 +907,11 @@ upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
 final is complete, `my_signup`, and from the cut until the playoffs are over
 `brackets`: each bracket's label and its qualified runners in seed order, a
-seat nobody holds, or held by a forfeit, left out. It skips the signature weapons, and it reads the
+seat nobody holds, or held by a forfeit, left out, with `eliminated` (the ids
+of those a complete stage knocked out: the rest of the field of a complete
+stage that sends runners on, a seat that never raced included, and all but
+the winner of a complete final; a stage still being played knocks out
+nobody yet, nor does a bracket's last stage when it is no final). It skips the signature weapons, and it reads the
 newcomer flags (the detail's only database work beyond the load), which a
 newcomers bracket's draw needs, only in those two phases. An
 event whose stored config no longer validates is left out rather than
@@ -931,8 +935,9 @@ a runner without an avatar, the name on hover, a `+N` chip for the players
 beyond the previews), while the event can be joined and someone is. From the
 cut until the playoffs are over the same avatars line up under the line, one
 row per bracket behind its label (the config's: "Top 32", then
-"Newcomers" for Season One), every qualified runner shown, and a bracket
-nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
+"Newcomers" for Season One), every qualified runner shown, the eliminated
+greyed in their seat (seed order holds, "(eliminated)" on hover), and a
+bracket nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
 on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
 next to the `Event page` button. The watch link is a live caster's own

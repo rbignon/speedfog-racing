@@ -2053,8 +2053,13 @@ describe("eventBand", () => {
 
   it("lines up each bracket's qualified from the cut until the playoffs are over", () => {
     const brackets = [
-      { key: "main", label: "Top 32", qualified: [{ id: "u1" } as User] },
-      { key: "newcomers", label: "Newcomers", qualified: [] },
+      {
+        key: "main",
+        label: "Top 32",
+        qualified: [{ id: "u1" } as User],
+        eliminated: [],
+      },
+      { key: "newcomers", label: "Newcomers", qualified: [], eliminated: [] },
     ];
     const live = {
       race: { id: "r7", casters: [] },

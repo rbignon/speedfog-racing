@@ -68,6 +68,7 @@ from speedfog_racing.services.event_service import (
     count_finished_before,
     current_stage_key,
     current_stage_race,
+    eliminated_runners,
     event_window,
     fed_field,
     is_event_joinable,
@@ -171,9 +172,10 @@ async def list_events(
             players, previews = 0, []
 
         # From the cut until the playoffs are over, each bracket's qualified
-        # runners. A newcomers bracket draws on the newcomer flags: the one
-        # query the summary runs beyond the load, only in these phases and
-        # only for an event that has such a bracket.
+        # runners, and those a complete stage knocked out. A newcomers bracket
+        # draws on the newcomer flags: the one query the summary runs beyond
+        # the load, only in these phases and only for an event that has such
+        # a bracket.
         brackets: list[EventSummaryBracketResponse] = []
         if phase in ("cut", "playoffs"):
             newcomers: dict[UUID, bool] = {}
@@ -188,16 +190,15 @@ async def list_events(
             forfeits = resolve_withdrawn(config.forfeits, users)
             qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
             apply_walkovers(config, resolved, qualified, forfeits)
+            out = eliminated_runners(config, resolved.results, qualified)
             for bracket, seated in bracket_draw(config, qualified):
+                shown = [user_id for user_id in seated if user_id in users]
                 brackets.append(
                     EventSummaryBracketResponse(
                         key=bracket.key,
                         label=bracket.label,
-                        qualified=[
-                            UserResponse.model_validate(users[user_id])
-                            for user_id in seated
-                            if user_id in users
-                        ],
+                        qualified=[UserResponse.model_validate(users[u]) for u in shown],
+                        eliminated=[u for u in shown if u in out],
                     )
                 )
 

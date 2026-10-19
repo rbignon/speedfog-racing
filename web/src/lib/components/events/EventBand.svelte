@@ -2,8 +2,9 @@
   // The event on the bill, as the home page and the dashboard feature it:
   // the event page's lockup, a phase signal with one line of state, and the
   // buttons; the lockup and buttons lead there (or to the live race), and from
-  // the cut on a row of qualified avatars per bracket. Signing up stays on the
-  // event page, which owns the Twitch intent flow.
+  // the cut on a row of qualified avatars per bracket, the eliminated greyed in
+  // their seat. Signing up stays on the event page, which owns the Twitch
+  // intent flow.
   import type { EventSummary, User } from "$lib/api";
   import { eventBand, formatEventDate } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
@@ -19,20 +20,23 @@
     user.twitch_display_name || user.twitch_username;
 </script>
 
-{#snippet avatar(user: User)}
+{#snippet avatar(user: User, out = false)}
+  {@const label = out ? `${nameOf(user)} (eliminated)` : nameOf(user)}
   {#if user.twitch_avatar_url}
     <img
       src={user.twitch_avatar_url}
-      alt={nameOf(user)}
-      title={nameOf(user)}
+      alt={label}
+      title={label}
       class="avatar"
+      class:out
     />
   {:else}
     <span
       class="avatar avatar-placeholder"
+      class:out
       role="img"
-      aria-label={nameOf(user)}
-      title={nameOf(user)}>{nameOf(user).charAt(0).toUpperCase()}</span
+      aria-label={label}
+      title={label}>{nameOf(user).charAt(0).toUpperCase()}</span
     >
   {/if}
 {/snippet}
@@ -73,6 +77,7 @@
       </div>
       {#each state.brackets as bracket (bracket.key)}
         {#if bracket.qualified.length > 0}
+          {@const eliminated = new Set(bracket.eliminated)}
           <div class="bracket-row">
             <span class="bracket-label">{bracket.label}</span>
             <div
@@ -81,7 +86,7 @@
               aria-label="{bracket.label}: {bracket.qualified.length} qualified"
             >
               {#each bracket.qualified as user (user.id)}
-                {@render avatar(user)}
+                {@render avatar(user, eliminated.has(user.id))}
               {/each}
             </div>
           </div>
@@ -194,6 +199,9 @@
     align-items: center;
   }
   .avatar {
+    /* Positioned, so a greyed avatar (its own stacking context) still
+     * overlaps in DOM order like the others. */
+    position: relative;
     width: 26px;
     height: 26px;
     border-radius: 50%;
@@ -233,6 +241,11 @@
   .bracket-row .avatar-stack {
     flex-wrap: wrap;
     row-gap: 4px;
+  }
+  /* Knocked out by a complete stage: the avatar keeps its seat, greyed. */
+  .avatar.out {
+    filter: grayscale(1);
+    opacity: 0.45;
   }
   .band-right {
     display: flex;

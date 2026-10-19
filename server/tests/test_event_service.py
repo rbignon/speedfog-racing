@@ -26,6 +26,7 @@ from speedfog_racing.services.event_service import (
     compute_stage_results,
     current_stage_key,
     current_stage_race,
+    eliminated_runners,
     fed_field,
     leaderboard_points,
     newcomer_flags,
@@ -1801,6 +1802,31 @@ def test_a_place_a_complete_source_cannot_fill_reads_no_runner():
     # Quarter A went through without a match with one runner.
     field = fed_field(cfg.stage("semi_b"), cfg, {"quarter_a": _played(a1, advance=1)})
     assert (field[0].user_id, field[0].label, field[0].place) == (None, NO_RUNNER, 2)
+
+
+def test_eliminated_runners_follow_the_crossed_bracket_down_to_its_champion():
+    cfg = _crossed_quarters()
+    u = [uuid4() for _ in range(16)]  # u[n - 1] holds seed n
+    qualified = compute_qualified(_ladder_of(*u), cfg, {}, ladder_final=True)
+    results = {stage.key: StageResult(complete=False) for stage in cfg.stages}
+    # Quarter A [1, 8, 9, 16]: seed 16 never raced.
+    results["quarter_a"] = _played(u[0], u[7], u[8])
+    results["quarter_b"] = _played(u[4], u[3], u[11], u[12])
+    results["quarter_c"] = _played(u[1], u[6], u[9], u[14])
+    results["quarter_d"] = _played(u[2], u[5], u[10], u[13])
+    # Semi A seats 1st A (seed 1), 2nd B, 1st C, 2nd D: seed 1 falls there.
+    results["semi_a"] = _played(u[3], u[1], u[0], u[5])
+    # Semi B is still being played: its field is all still in.
+    results["semi_b"] = StageResult(
+        complete=False, entries=[StageEntry(u[7], 100, 0, False), StageEntry(u[4], 70, 0, False)]
+    )
+    quarters_out = {u[8], u[15], u[11], u[12], u[9], u[14], u[10], u[13]}
+    assert eliminated_runners(cfg, results, qualified) == quarters_out | {u[0], u[5]}
+
+    results["semi_b"] = _played(u[7], u[4], u[6], u[2])
+    results["final"] = _played(u[4], u[3], u[1], u[7], advance=0)
+    # The final knocks out all but its winner: the champion alone is left.
+    assert eliminated_runners(cfg, results, qualified) == set(u) - {u[4]}
 
 
 def _stage_races(

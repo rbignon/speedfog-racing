@@ -94,6 +94,54 @@ describe("EventBand", () => {
     expect(container.querySelector(".avatar-stack")).toBeNull();
   });
 
+  it("greys the eliminated in their seat, the others untouched", () => {
+    const qualified = [
+      {
+        id: "u1",
+        twitch_username: "ana",
+        twitch_display_name: "Ana",
+        twitch_avatar_url: "https://cdn.test/ana.png",
+      },
+      {
+        id: "u2",
+        twitch_username: "bob",
+        twitch_display_name: null,
+        twitch_avatar_url: null,
+      },
+      {
+        id: "u3",
+        twitch_username: "cid",
+        twitch_display_name: "Cid",
+        twitch_avatar_url: "https://cdn.test/cid.png",
+      },
+    ] as User[];
+    const { container } = render(EventBand, {
+      event: summaryWith({
+        phase: "playoffs",
+        brackets: [
+          {
+            key: "main",
+            label: "Top 32",
+            qualified,
+            eliminated: ["u2", "u1"],
+          },
+        ],
+      }),
+    });
+    const seats = [...container.querySelectorAll(".bracket-row .avatar")];
+    // Seed order holds; the server's order of the ids does not matter.
+    expect(seats.map((s) => s.getAttribute("title"))).toEqual([
+      "Ana (eliminated)",
+      "bob (eliminated)",
+      "Cid",
+    ]);
+    expect(seats.map((s) => s.classList.contains("out"))).toEqual([
+      true,
+      true,
+      false,
+    ]);
+  });
+
   it("crowns the champion as a link to their profile", () => {
     const champion = {
       id: "u1",
