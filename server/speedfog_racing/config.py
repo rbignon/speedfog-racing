@@ -59,9 +59,10 @@ class Settings(BaseSettings):
 
     # Site-wide announcement shown as a banner on every web page (served via
     # /health so it can change without a frontend deploy). None hides it; the
-    # optional URL adds a "Read more" link.
+    # optional URL adds a link, labelled "Read more" unless a link text is set.
     announcement: str | None = None
     announcement_url: str | None = None
+    announcement_link_text: str | None = None
 
     # Server
     log_level: str = "INFO"

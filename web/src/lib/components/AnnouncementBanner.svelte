@@ -1,8 +1,17 @@
 <script lang="ts">
   // Site-wide notice fed by the ANNOUNCEMENT server setting. Dismissal is
   // remembered per message text, so a new announcement shows up again for
-  // everyone while the previous one stays hidden.
-  let { text, url }: { text: string | null; url: string | null } = $props();
+  // everyone while the previous one stays hidden. The link label defaults
+  // to "Read more" (ANNOUNCEMENT_LINK_TEXT overrides it).
+  let {
+    text,
+    url,
+    linkText = null,
+  }: {
+    text: string | null;
+    url: string | null;
+    linkText?: string | null;
+  } = $props();
 
   const DISMISSED_KEY = "speedfog_announcement_dismissed";
   let dismissedText = $state(
@@ -25,7 +34,7 @@
     <p>
       {text}
       {#if url}
-        <a href={url}>Read more</a>
+        <a href={url}>{linkText || "Read more"}</a>
       {/if}
     </p>
     <button class="announcement-close" onclick={dismiss} aria-label="Dismiss"

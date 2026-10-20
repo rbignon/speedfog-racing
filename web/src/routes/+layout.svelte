@@ -278,6 +278,7 @@
     <AnnouncementBanner
       text={appUpdate.announcement}
       url={appUpdate.announcementUrl}
+      linkText={appUpdate.announcementLinkText}
     />
     <BannedBanner />
 

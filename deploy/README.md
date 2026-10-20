@@ -108,7 +108,8 @@ The script:
 ## Site announcement
 
 To show a banner on every page (game patch warnings, maintenance...), set
-`ANNOUNCEMENT` (and optionally `ANNOUNCEMENT_URL`) in `.env` on the VPS and
+`ANNOUNCEMENT` (and optionally `ANNOUNCEMENT_URL`, whose link reads "Read
+more" unless `ANNOUNCEMENT_LINK_TEXT` says otherwise) in `.env` on the VPS and
 `sudo systemctl restart speedfog-racing`. No deploy needed; open tabs pick it
 up within 15 minutes. Comment the variables out and restart to remove it.
 

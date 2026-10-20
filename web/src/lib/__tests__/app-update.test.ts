@@ -110,4 +110,43 @@ describe("AppUpdateStore announcement", () => {
     await store.check();
     expect(store.announcement).toBeNull();
   });
+
+  it("exposes the trimmed link text", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Notice",
+      announcement_url: "/help",
+      announcement_link_text: "  What to do ",
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcementLinkText).toBe("What to do");
+  });
+
+  it("a blank link text means the default label", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Notice",
+      announcement_url: "/help",
+      announcement_link_text: "   ",
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcementLinkText).toBeNull();
+  });
+
+  it("drops the link text when there is no link", async () => {
+    stubHealth({
+      status: "ok",
+      version: __APP_VERSION__,
+      announcement: "Notice",
+      announcement_url: null,
+      announcement_link_text: "What to do",
+    });
+    const store = new AppUpdateStore();
+    await store.check();
+    expect(store.announcementLinkText).toBeNull();
+  });
 });

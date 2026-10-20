@@ -27,4 +27,22 @@ describe("AnnouncementBanner", () => {
     const second = render(AnnouncementBanner, { text: "Notice B", url: null });
     expect(second.container.querySelector(BANNER)).not.toBeNull();
   });
+
+  it("a configured label replaces Read more, which is the fallback", () => {
+    const custom = render(AnnouncementBanner, {
+      text: "Notice",
+      url: "/help",
+      linkText: "What to do",
+    });
+    expect(screen.getByRole("link", { name: "What to do" })).not.toBeNull();
+    expect(screen.queryByRole("link", { name: "Read more" })).toBeNull();
+    custom.unmount();
+
+    render(AnnouncementBanner, {
+      text: "Notice",
+      url: "/help",
+      linkText: null,
+    });
+    expect(screen.getByRole("link", { name: "Read more" })).not.toBeNull();
+  });
 });

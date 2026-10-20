@@ -6,11 +6,11 @@ Reference document for API endpoints and WebSocket messages.
 
 ### System
 
-| Method | Endpoint  | Auth | Description                                                                                             |
-| ------ | --------- | ---- | ------------------------------------------------------------------------------------------------------- |
-| GET    | `/health` | -    | Health check (`{ status, version, announcement, announcement_url }`), exempt from the per-IP rate limit |
+| Method | Endpoint  | Auth | Description                                                                                                                     |
+| ------ | --------- | ---- | ------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/health` | -    | Health check (`{ status, version, announcement, announcement_url, announcement_link_text }`), exempt from the per-IP rate limit |
 
-`announcement` and `announcement_url` mirror the `ANNOUNCEMENT` / `ANNOUNCEMENT_URL` settings (null when unset) and feed the site-wide web banner.
+`announcement`, `announcement_url` and `announcement_link_text` mirror the `ANNOUNCEMENT` / `ANNOUNCEMENT_URL` / `ANNOUNCEMENT_LINK_TEXT` settings (null when unset) and feed the site-wide web banner; the link reads "Read more" unless a link text is set.
 
 ### Authentication
 

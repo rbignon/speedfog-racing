@@ -183,6 +183,7 @@ async def health_check() -> dict[str, str | None]:
         "version": __version__,
         "announcement": settings.announcement,
         "announcement_url": settings.announcement_url,
+        "announcement_link_text": settings.announcement_link_text,
     }
 
 

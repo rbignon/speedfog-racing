@@ -8,6 +8,8 @@ export class AppUpdateStore {
   /** Site-wide announcement (ANNOUNCEMENT setting), null when none is set. */
   announcement = $state<string | null>(null);
   announcementUrl = $state<string | null>(null);
+  /** Label of the announcement link, null for the banner's default. */
+  announcementLinkText = $state<string | null>(null);
   #started = false;
 
   /** Begin polling /health; safe to call more than once. */
@@ -29,6 +31,7 @@ export class AppUpdateStore {
         version?: string;
         announcement?: string | null;
         announcement_url?: string | null;
+        announcement_link_text?: string | null;
       };
       if (data.version && isNewerVersion(data.version, __APP_VERSION__)) {
         this.updateAvailable = true;
@@ -37,6 +40,9 @@ export class AppUpdateStore {
       this.announcement = text ? text : null;
       const url = data.announcement_url?.trim();
       this.announcementUrl = text && url ? url : null;
+      const linkText = data.announcement_link_text?.trim();
+      this.announcementLinkText =
+        this.announcementUrl && linkText ? linkText : null;
     } catch {
       // Network hiccups are irrelevant; the next poll retries.
     }
