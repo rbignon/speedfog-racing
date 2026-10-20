@@ -2,6 +2,30 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.31.0] - 2026-10-20
+
+### Elden Ring 1.17.2
+
+- **SpeedFog now runs on Elden Ring 1.17.2**
+
+### In-game
+
+- Fix: while the game reloaded the menu, the status line flashed 00:00:00 then --:--:--, the playoff cutoff countdown restarted from zero and the leaderboard gaps measured you at 0. The overlay now holds your last in-game time until your save is back
+
+### Website
+
+- **Duo and trio bosses are now named after the group** rather than one of its members (e.g. "Putrid Crystalian Trio" instead of "Putrid Crystalian (Staff)")
+- A randomized boss arena is now named after the boss you fight there
+
+### Casting
+
+- **Download a ready-to-import OBS scene collection** from the Cast Setup panel: one file for the race, or one for the whole match that follows the stage from race to race. It carries every scene (Quad, Focus, Duel, Metro, Browser, and Talk once the panel knows the event and the stage), the runners' POV sources, placeholder scenes for your webcam(s) and the browser capture, and an audio scene (mic, Discord, music). The POVs' audio goes through OBS's mixer: they start muted, and a runner you mute stays silent
+- **Match scenes follow their stage**. Between two races the scene stays on the previous one, then hands over to the next race once its seeds are released.
+
+### Save Backups
+
+- **Mid-warp saves are detected**: Elden Ring writes its save at the start of every fog-gate warp, in a state it cannot load back (infinite loading screen). A periodic backup now **waits for the warp to settle** (up to 45 s). When the game hangs mid-warp, the backup is **tagged warp** in the recovery menu, never offered as the default pick.
+
 ## [1.30.0] - 2026-10-13
 
 ### Speedfog × Ignite Season One
