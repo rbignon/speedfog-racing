@@ -42,6 +42,11 @@
       label: "Top 10",
       hint: "The top 10, or the top 9 then your own row if you rank lower; gaps count from the leader",
     },
+    {
+      value: "hidden",
+      label: "Hidden",
+      hint: "No leaderboard until you press F10",
+    },
   ];
 
   let savingOverlay = $state(false);
@@ -191,8 +196,9 @@
       <div class="setting-field">
         <span class="field-label">Leaderboard</span>
         <p class="field-description">
-          Layout the leaderboard starts on. F10 cycles it in game: this layout,
-          hidden, then the other one.
+          What the leaderboard starts as. F10 cycles it in game: from a layout,
+          hidden, then the other layout; from hidden, centered on you, then the
+          top 10.
         </p>
         <div class="choice-list">
           {#each leaderboardModes as mode (mode.value)}

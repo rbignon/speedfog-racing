@@ -367,7 +367,7 @@ impl RaceTracker {
 
         let config_seed_id = config.server.seed_id.clone();
         let config_training = config.server.training;
-        let leaderboard_mode = config.overlay.leaderboard_mode;
+        let leaderboard_view = config.overlay.leaderboard_mode;
 
         // Create WebSocket client
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
@@ -396,7 +396,7 @@ impl RaceTracker {
             show_ui: true,
             #[cfg(debug_assertions)]
             show_debug: false,
-            leaderboard_view: LeaderboardView::Shown(leaderboard_mode),
+            leaderboard_view,
             tracking_disabled: false,
             overlay_panicked: false,
             consecutive_update_panics: 0,

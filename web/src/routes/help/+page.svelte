@@ -508,7 +508,8 @@
           <li>
             <kbd>F10</kbd>: Cycle the leaderboard: the layout picked in your
             <a href="/settings">settings</a> (centered on you by default), hidden,
-            then the other layout
+            then the other layout. With the leaderboard hidden by default: centered
+            on you, then the top 10, then hidden again
           </li>
         </ul>
       </div>
@@ -537,8 +538,8 @@
           </li>
           <li>
             <strong>Leaderboard</strong>: start on the layout centered on you
-            (the top 3, then you between the three runners ahead and behind) or
-            on the top 10
+            (the top 3, then you between the three runners ahead and behind), on
+            the top 10, or hidden until you press F10
           </li>
           <li>
             <strong>Zone language</strong>: display zone names in your language

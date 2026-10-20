@@ -21,10 +21,10 @@ from speedfog_racing.models import Participant, Race, TrainingSession
 logger = logging.getLogger(__name__)
 
 OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 20.0}
-# Leaderboard layouts the mod knows (its LeaderboardMode). Only these reach the
-# TOML: the mod reads an unknown one as centered, but a stray quote in the
-# value would break the whole config.
-LeaderboardMode = Literal["centered", "top"]
+# Leaderboard views the mod knows (its LeaderboardView: a layout, or hidden).
+# Only these reach the TOML: the mod reads an unknown one as centered, but a
+# stray quote in the value would break the whole config.
+LeaderboardMode = Literal["centered", "top", "hidden"]
 DEFAULT_LEADERBOARD_MODE: LeaderboardMode = "centered"
 CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
 
@@ -37,7 +37,7 @@ def _get_overlay_setting(user_settings: dict[str, Any] | None, key: str) -> floa
 
 
 def _get_leaderboard_mode(user_settings: dict[str, Any] | None) -> str:
-    """Get the user's leaderboard layout, the default for anything the mod would not parse."""
+    """Get the user's leaderboard start view, the default for anything the mod would not parse."""
     mode = (user_settings or {}).get("leaderboard_mode")
     return str(mode) if mode in get_args(LeaderboardMode) else DEFAULT_LEADERBOARD_MODE
 
@@ -439,10 +439,12 @@ anchor = "top-right"
 font_path = ""
 # Font size in pixels (20.0 recommended for 1080p, 40.0 for 4K)
 font_size = {_get_overlay_setting(participant.user.overlay_settings, "font_size")}
-# Leaderboard layout the overlay starts on (F10 cycles it, hidden, then the other):
+# Leaderboard view the overlay starts on. F10 cycles it: from a layout, hidden,
+# then the other layout; from hidden, centered, then top.
 #   "centered": top 3, then you between the three runners ahead and behind,
 #               gaps relative to you
 #   "top": top 10, gaps relative to the leader
+#   "hidden": no leaderboard until you press F10
 leaderboard_mode = "{_get_leaderboard_mode(participant.user.overlay_settings)}"
 # Background color and opacity
 background_color = "#0F1923"

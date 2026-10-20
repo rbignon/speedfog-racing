@@ -4,7 +4,8 @@ use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::Range;
 
-use serde::{Deserialize, Serialize};
+use serde::de::IntoDeserializer;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::core::protocol::{ParticipantInfo, ParticipantStatus};
 
@@ -246,21 +247,56 @@ impl LeaderboardMode {
 }
 
 /// What the leaderboard hotkey cycles through: hidden or one of the layouts.
+/// Also the view the overlay starts on, as the config names it: a layout, or
+/// `"hidden"`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LeaderboardView {
     Hidden,
     Shown(LeaderboardMode),
 }
 
-impl LeaderboardView {
-    /// The view after a hotkey press: the configured `default` layout, then
-    /// hidden, then the other layout, then the default again, so one press
-    /// always hides the board from its starting view.
-    pub fn next(self, default: LeaderboardMode) -> Self {
+impl Default for LeaderboardView {
+    fn default() -> Self {
+        Self::Shown(LeaderboardMode::default())
+    }
+}
+
+impl Serialize for LeaderboardView {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         match self {
-            Self::Shown(mode) if mode == default => Self::Hidden,
-            Self::Hidden => Self::Shown(default.other()),
-            Self::Shown(_) => Self::Shown(default),
+            Self::Hidden => serializer.serialize_str("hidden"),
+            Self::Shown(mode) => mode.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LeaderboardView {
+    /// `"hidden"`, or a layout name; a name this build does not know reads as
+    /// the default layout (see `LeaderboardMode::Centered`).
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(deserializer)?;
+        if name == "hidden" {
+            return Ok(Self::Hidden);
+        }
+        LeaderboardMode::deserialize(name.into_deserializer()).map(Self::Shown)
+    }
+}
+
+impl LeaderboardView {
+    /// The view after a hotkey press, cycling through the three views from
+    /// the configured `default`: from a layout, hidden, then the other
+    /// layout, so one press always hides the board from its starting view;
+    /// from hidden, centered, then top, so one press always shows it.
+    pub fn next(self, default: Self) -> Self {
+        match (self, default) {
+            (Self::Shown(mode), Self::Shown(start)) if mode == start => Self::Hidden,
+            (Self::Hidden, Self::Shown(start)) => Self::Shown(start.other()),
+            (Self::Shown(_), Self::Shown(start)) => Self::Shown(start),
+            (Self::Hidden, Self::Hidden) => Self::Shown(LeaderboardMode::Centered),
+            (Self::Shown(LeaderboardMode::Centered), Self::Hidden) => {
+                Self::Shown(LeaderboardMode::Top)
+            }
+            (Self::Shown(LeaderboardMode::Top), Self::Hidden) => Self::Hidden,
         }
     }
 }
@@ -828,14 +864,34 @@ mod tests {
         assert_eq!(layout.footer_more, 0);
     }
 
+    /// The config's `leaderboard_mode` line, parsed as the config is (toml).
+    fn parse_view(value: &str) -> LeaderboardView {
+        #[derive(Deserialize)]
+        struct Overlay {
+            leaderboard_mode: LeaderboardView,
+        }
+        let overlay: Overlay = toml::from_str(&format!("leaderboard_mode = \"{value}\"")).unwrap();
+        overlay.leaderboard_mode
+    }
+
     #[test]
-    fn test_leaderboard_mode_unknown_value_reads_as_centered() {
-        // A newer server may write a layout this build does not know: it must
+    fn test_leaderboard_view_reads_config_value() {
+        // The config names the view the board starts on: a layout, or hidden.
+        assert_eq!(parse_view("hidden"), LeaderboardView::Hidden);
+        assert_eq!(
+            parse_view("top"),
+            LeaderboardView::Shown(LeaderboardMode::Top)
+        );
+    }
+
+    #[test]
+    fn test_leaderboard_view_unknown_value_reads_as_centered() {
+        // A newer server may write a view this build does not know: it must
         // fall back to the default rather than reject the whole config.
-        let mode: LeaderboardMode = serde_json::from_str("\"compact\"").unwrap();
-        assert_eq!(mode, LeaderboardMode::Centered);
-        let mode: LeaderboardMode = serde_json::from_str("\"top\"").unwrap();
-        assert_eq!(mode, LeaderboardMode::Top);
+        assert_eq!(
+            parse_view("compact"),
+            LeaderboardView::Shown(LeaderboardMode::Centered)
+        );
     }
 
     #[test]
@@ -878,12 +934,24 @@ mod tests {
                 LeaderboardMode::Top => LeaderboardMode::Centered,
             };
             let start = LeaderboardView::Shown(default);
-            let hidden = start.next(default);
+            let hidden = start.next(start);
             assert_eq!(hidden, LeaderboardView::Hidden);
-            let alt = hidden.next(default);
+            let alt = hidden.next(start);
             assert_eq!(alt, LeaderboardView::Shown(other));
-            assert_eq!(alt.next(default), start);
+            assert_eq!(alt.next(start), start);
         }
+    }
+
+    #[test]
+    fn test_view_cycle_from_hidden_default() {
+        // Hidden, then centered, then top, then hidden again: one press shows
+        // the board, the next changes its layout, the third hides it.
+        let start = LeaderboardView::Hidden;
+        let centered = start.next(start);
+        assert_eq!(centered, LeaderboardView::Shown(LeaderboardMode::Centered));
+        let top = centered.next(start);
+        assert_eq!(top, LeaderboardView::Shown(LeaderboardMode::Top));
+        assert_eq!(top.next(start), start);
     }
 
     #[test]

@@ -24,8 +24,8 @@ export interface ParticipantPreview extends User {
   igt_ms: number | null;
 }
 
-/** Leaderboard layout the in-game overlay starts on (F10 cycles it). */
-export type LeaderboardMode = "centered" | "top";
+/** Leaderboard the in-game overlay starts on: a layout, or hidden (F10 cycles it). */
+export type LeaderboardMode = "centered" | "top" | "hidden";
 
 export interface OverlaySettings {
   font_size?: number;

@@ -167,11 +167,12 @@ def test_generate_player_config_uses_default_font_size(mock_participant, mock_ra
     assert f"font_size = {OVERLAY_DEFAULTS['font_size']}" in config
 
 
-def test_generate_player_config_uses_user_leaderboard_mode(mock_participant, mock_race):
-    """Config should carry the user's leaderboard layout."""
-    mock_participant.user.overlay_settings = {"leaderboard_mode": "top"}
+@pytest.mark.parametrize("mode", ["top", "hidden"])
+def test_generate_player_config_uses_user_leaderboard_mode(mock_participant, mock_race, mode):
+    """Config should carry the user's leaderboard layout, or that it starts hidden."""
+    mock_participant.user.overlay_settings = {"leaderboard_mode": mode}
     config = tomllib.loads(generate_player_config(mock_participant, mock_race))
-    assert config["overlay"]["leaderboard_mode"] == "top"
+    assert config["overlay"]["leaderboard_mode"] == mode
 
 
 def test_generate_player_config_leaderboard_mode_defaults_to_centered(mock_participant, mock_race):

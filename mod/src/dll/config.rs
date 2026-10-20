@@ -11,7 +11,7 @@ use windows::Win32::Foundation::{HINSTANCE, HMODULE};
 use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
 use super::hotkey::{deserialize_optional_hotkey, serialize_optional_hotkey, Hotkey};
-use crate::core::format::LeaderboardMode;
+use crate::core::format::LeaderboardView;
 
 /// Server connection settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -118,12 +118,13 @@ pub struct OverlaySettings {
     #[serde(default = "default_fullscreen_countdown")]
     pub fullscreen_countdown: bool,
 
-    /// Leaderboard layout the overlay starts on: "centered" (top 3, then the
+    /// Leaderboard view the overlay starts on: "centered" (top 3, then the
     /// player between the three runners ahead and behind, gaps relative to
-    /// the player) or "top" (top 10, gaps relative to the leader). The
-    /// leaderboard hotkey cycles from it.
+    /// the player), "top" (top 10, gaps relative to the leader) or "hidden"
+    /// (no board until the leaderboard hotkey shows one). The hotkey cycles
+    /// from it.
     #[serde(default)]
-    pub leaderboard_mode: LeaderboardMode,
+    pub leaderboard_mode: LeaderboardView,
 }
 
 fn default_enabled() -> bool {
@@ -179,7 +180,7 @@ impl Default for OverlaySettings {
             position_offset_x: default_position_offset_x(),
             position_offset_y: default_position_offset_y(),
             fullscreen_countdown: default_fullscreen_countdown(),
-            leaderboard_mode: LeaderboardMode::default(),
+            leaderboard_mode: LeaderboardView::default(),
         }
     }
 }
@@ -205,8 +206,8 @@ pub struct KeyBindings {
         serialize_with = "serialize_optional_hotkey"
     )]
     pub toggle_debug: Option<Hotkey>,
-    /// Cycle the leaderboard: starting layout, hidden, the other layout
-    /// (default: F10, "none" to disable)
+    /// Cycle the leaderboard from its starting view, see
+    /// `OverlaySettings::leaderboard_mode` (default: F10, "none" to disable)
     #[serde(
         default = "default_toggle_leaderboard",
         deserialize_with = "deserialize_optional_hotkey",

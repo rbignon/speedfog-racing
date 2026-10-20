@@ -133,6 +133,20 @@ async def test_update_overlay_settings_rejects_unknown_leaderboard_mode(
 
 
 @pytest.mark.asyncio
+async def test_update_overlay_settings_accepts_hidden_leaderboard(test_client, user_with_token):
+    """PATCH /users/me/settings takes "hidden": the overlay starts with no leaderboard."""
+    _, token = user_with_token
+    async with test_client as client:
+        response = await client.patch(
+            "/api/users/me/settings",
+            json={"leaderboard_mode": "hidden"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["overlay_settings"]["leaderboard_mode"] == "hidden"
+
+
+@pytest.mark.asyncio
 async def test_update_overlay_settings_merges(test_client, user_with_token):
     """PATCH /users/me/settings merges with existing settings."""
     _, token = user_with_token
