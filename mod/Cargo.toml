@@ -41,9 +41,9 @@ crossbeam-channel = "0.5"
 # =============================================================================
 
 [target.'cfg(windows)'.dependencies]
-# --- libeldenring from upstream (veeenu) ---
-# Point at the rbignon fork again only when a patch is needed ahead of upstream.
-libeldenring = { git = "https://github.com/veeenu/eldenring-practice-tool", rev = "54e8e5071ac0315803f72a98d169dcd8ae3e2148" }
+# --- libeldenring from the rbignon fork (2.7.2 support ahead of upstream) ---
+# Point back at upstream veeenu/eldenring-practice-tool once it merges 2.7.2.
+libeldenring = { git = "https://github.com/rbignon/eldenring-practice-tool", rev = "6fe3797cd20ad7ab97886b3be7e32b013111b566" }
 
 # --- hudhook for ImGui overlay (includes imgui as transitive dependency) ---
 hudhook = { version = "0.9.1", features = ["dx12", "inject"], default-features = false }
