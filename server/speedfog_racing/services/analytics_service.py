@@ -349,13 +349,29 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     race_grid = [[0] * 7 for _ in range(12)]
     solo_grid = [[0] * 7 for _ in range(12)]
 
-    for r in races:
-        if r.started_at is None or r.status not in (RaceStatus.RUNNING, RaceStatus.FINISHED):
+    # One count per participation that actually played, at the moment the
+    # runner joined: the race start for those registered before it, their
+    # own join time for late joiners. A long race with a late-join window
+    # (an event qualifier) then spreads over when people really played
+    # instead of piling up on its opening cell. A race opened before the
+    # window still counts the runners who joined inside it.
+    race_player_rows = (
+        await db.execute(
+            select(Race.started_at, Participant.created_at)
+            .join(Participant, Participant.race_id == Race.id)
+            .where(
+                Race.daily_date.is_(None),
+                Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
+                or_(Race.started_at >= window_cutoff, Participant.created_at >= window_cutoff),
+                daily_qualified_filter,
+            )
+        )
+    ).all()
+    for started_at, joined_at in race_player_rows:
+        if started_at is None:
             continue
-        started = _ensure_utc(r.started_at)
-        bucket = _hour_to_bucket(started.hour)
-        col = started.weekday()
-        race_grid[bucket][col] += race_participant_counts.get(str(r.id), 0)
+        played = max(_ensure_utc(started_at), _ensure_utc(joined_at))
+        race_grid[_hour_to_bucket(played.hour)][played.weekday()] += 1
 
     for ts in training_sessions:
         if ts.created_at is None:
@@ -662,14 +678,17 @@ async def compute_public_heatmap(
 ) -> dict[str, Any]:
     """Public activity heatmap: 12 rows (2-hour buckets) x 7 columns (Mon-Sun).
 
-    Counts all race participations (public and private; anonymous aggregate),
-    weighted by participant count at the race's started_at, training sessions
-    (at created_at), and finished daily participations (at the participant's
-    real finished_at) over the last ``PUBLIC_STATS_WEEKS`` ISO weeks. Daily
-    races are excluded at the race level: started_at is the synthetic
-    08:00 UTC rotation time. Their participants still count, but at their
-    own finish moment instead; abandoned daily runs without a finish time
-    stay uncounted.
+    Counts every race participation that actually played (public and
+    private, dailies included; anonymous aggregate), and training sessions
+    (at created_at), over the last ``PUBLIC_STATS_WEEKS`` ISO weeks. A race
+    participation counts once, at the moment the runner joined: the race
+    start for those registered before it, their own join time for late
+    joiners. A long race with a late-join window (an event qualifier, a
+    Daily Seed whose started_at is the synthetic 08:00 UTC rotation time)
+    then spreads over when people really played instead of piling up on its
+    opening cell. "Actually played" is the ``qualifies_for_streak`` bar (at
+    least two zone entries): no-shows count nothing, abandons after playing
+    count.
 
     Each event's UTC timestamp is converted to ``tz_name`` before bucketing,
     so a window spanning a DST change buckets every event at its true local
@@ -695,22 +714,23 @@ async def compute_public_heatmap(
         local = dt_utc.astimezone(tz)
         grid[_hour_to_bucket(local.hour)][local.weekday()] += weight
 
+    # A race opened before the window still counts the runners who joined
+    # inside it.
     race_rows = (
         await db.execute(
-            select(Race.started_at, func.count(Participant.id))
+            select(Race.started_at, Participant.created_at)
             .join(Participant, Participant.race_id == Race.id)
             .where(
-                Race.daily_date.is_(None),
                 Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
-                Race.started_at >= window_cutoff,
+                or_(Race.started_at >= window_cutoff, Participant.created_at >= window_cutoff),
+                qualifies_for_streak_sql(),
             )
-            .group_by(Race.id, Race.started_at)
         )
     ).all()
-    for started_at, participant_count in race_rows:
+    for started_at, joined_at in race_rows:
         if started_at is None:
             continue
-        add(_ensure_utc(started_at), int(participant_count))
+        add(max(_ensure_utc(started_at), _ensure_utc(joined_at)), 1)
 
     solo_rows = (
         await db.execute(
@@ -721,26 +741,5 @@ async def compute_public_heatmap(
         if created_at is None:
             continue
         add(_ensure_utc(created_at), 1)
-
-    # Daily participations at the participant's real finish moment: the
-    # race-level started_at is the synthetic 08:00 UTC rotation time, but
-    # finished_at reflects when the person actually played. Abandoned runs
-    # without a finish time stay uncounted. The status filter is
-    # defense-in-depth (finished_at is only ever set alongside the FINISHED
-    # transition today) rather than a currently-reachable branch.
-    daily_rows = (
-        await db.execute(
-            select(Participant.finished_at)
-            .join(Race, Race.id == Participant.race_id)
-            .where(
-                Race.daily_date.is_not(None),
-                Participant.status == ParticipantStatus.FINISHED,
-                Participant.finished_at.is_not(None),
-                Participant.finished_at >= window_cutoff,
-            )
-        )
-    ).all()
-    for (finished_at,) in daily_rows:
-        add(_ensure_utc(finished_at), 1)
 
     return {"timezone": resolved, "grid": grid, "weeks": PUBLIC_STATS_WEEKS}

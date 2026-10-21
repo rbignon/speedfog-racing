@@ -1,9 +1,8 @@
 """GET /stats/heatmap: public activity grid, bucketed in the requested timezone."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
@@ -45,9 +44,14 @@ def _user(i: int) -> User:
     )
 
 
+# A participation that actually played: two zone entries (spawn + first fog).
+PLAYED = [{"node_id": "a", "type": "spawn"}, {"node_id": "b", "type": "fog"}]
+
+
 async def _race_with_participants(
     db, organizer, users, *, started_at, is_public=True, daily_date=None, finished_at=None
 ) -> Race:
+    """Race whose participants all registered before the start and played."""
     race = Race(
         name="R",
         organizer_id=organizer.id,
@@ -67,6 +71,9 @@ async def _race_with_participants(
                 status=ParticipantStatus.FINISHED,
                 igt_ms=1000,
                 finished_at=finished_at,
+                zone_history=PLAYED,
+                # Explicit: the server_default would use the real clock.
+                created_at=started_at - timedelta(hours=1),
             )
         )
     return race
@@ -114,7 +121,7 @@ async def test_dst_boundary_buckets_at_true_local_hour(async_session):
     assert data["grid"][7][2] == 1  # 14:00 CEST -> 14-16 bucket, Wednesday
 
 
-async def test_scope_weighting_and_daily_start_exclusion(async_session):
+async def test_scope_weighting_and_daily_join_time(async_session):
     started = datetime(2026, 7, 13, 10, 0, tzinfo=UTC)  # Monday 10:00 UTC
     async with async_session() as db:
         a, b, c, org = _user(1), _user(2), _user(3), _user(99)
@@ -122,48 +129,41 @@ async def test_scope_weighting_and_daily_start_exclusion(async_session):
         await db.flush()
         # Public non-daily race with 3 participants: +3.
         await _race_with_participants(db, org, [a, b, c], started_at=started)
-        # Daily race: the race-level started_at (synthetic 08:00 UTC rotation
-        # time) stays excluded entirely, but a's real finish moment counts.
-        daily_race = await _race_with_participants(
-            db, org, [a, b], started_at=started, daily_date=started.date()
-        )
-        daily_participant_a = (
-            await db.execute(
-                select(Participant).where(
-                    Participant.race_id == daily_race.id, Participant.user_id == a.id
-                )
-            )
-        ).scalar_one()
-        daily_participant_a.finished_at = datetime(2026, 7, 13, 19, 0, tzinfo=UTC)
-        # b is ABANDONED but has a finished_at set (should never happen via the
-        # app's own code paths, which only set finished_at alongside the
-        # FINISHED transition; exercises the defensive status filter anyway).
-        daily_participant_b = (
-            await db.execute(
-                select(Participant).where(
-                    Participant.race_id == daily_race.id, Participant.user_id == b.id
-                )
-            )
-        ).scalar_one()
-        daily_participant_b.status = ParticipantStatus.ABANDONED
-        daily_participant_b.finished_at = datetime(2026, 7, 13, 20, 0, tzinfo=UTC)
-        # Private non-daily race: now included (anonymous aggregate), +1.
+        # Private non-daily race: included (anonymous aggregate), +1.
         await _race_with_participants(db, org, [a], started_at=started, is_public=False)
-        # Private daily race: now included (anonymous aggregate) at participant finish.
-        # c gets finished_at at the same moment as daily a (same pattern as above).
-        # Use a different date (2026-07-14) to avoid unique constraint on daily_date.
-        private_daily_date = datetime(2026, 7, 14, tzinfo=UTC).date()
-        private_daily_race = await _race_with_participants(
-            db, org, [c], started_at=started, is_public=False, daily_date=private_daily_date
+        # Daily race: the race-level started_at is the synthetic 08:00 UTC
+        # rotation time, so each runner counts when they joined. b joined
+        # at 19:00 and finished, c joined at 20:30 and abandoned after
+        # playing: both count, at their join time, not at their finish.
+        daily_race = Race(
+            name="D",
+            organizer_id=org.id,
+            status=RaceStatus.RUNNING,
+            daily_date=started.date(),
+            exclude_from_stats=True,
+            started_at=datetime(2026, 7, 13, 8, 0, tzinfo=UTC),
         )
-        private_daily_participant_c = (
-            await db.execute(
-                select(Participant).where(
-                    Participant.race_id == private_daily_race.id, Participant.user_id == c.id
-                )
-            )
-        ).scalar_one()
-        private_daily_participant_c.finished_at = datetime(2026, 7, 13, 19, 0, tzinfo=UTC)
+        db.add(daily_race)
+        await db.flush()
+        db.add_all(
+            [
+                Participant(
+                    race_id=daily_race.id,
+                    user_id=b.id,
+                    status=ParticipantStatus.FINISHED,
+                    zone_history=PLAYED,
+                    created_at=datetime(2026, 7, 13, 19, 0, tzinfo=UTC),
+                    finished_at=datetime(2026, 7, 13, 23, 0, tzinfo=UTC),
+                ),
+                Participant(
+                    race_id=daily_race.id,
+                    user_id=c.id,
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=PLAYED,
+                    created_at=datetime(2026, 7, 13, 20, 30, tzinfo=UTC),
+                ),
+            ]
+        )
         # Training session: +1. Explicit created_at (server_default would use
         # the real clock, outside the injected window in future runs).
         seed = Seed(
@@ -189,11 +189,108 @@ async def test_scope_weighting_and_daily_start_exclusion(async_session):
 
     # 10-12 bucket, Monday: 3 public racers + 1 private racer + 1 solo
     assert data["grid"][5][0] == 5
-    # 18-20 bucket, Monday: public daily's a + private daily's c
-    assert data["grid"][9][0] == 2
-    # 20-22 bucket: b's ABANDONED finish doesn't count
-    assert data["grid"][10][0] == 0
+    # Daily: b at 18-20, c at 20-22; the 08:00 rotation start and b's
+    # 23:00 finish count nothing.
+    assert data["grid"][9][0] == 1
+    assert data["grid"][10][0] == 1
+    assert data["grid"][4][0] == 0
+    assert data["grid"][11][0] == 0
     assert sum(v for row in data["grid"] for v in row) == 7
+
+
+async def test_late_joiner_counts_at_join_time(async_session):
+    # A long race (an event qualifier) opened Monday 08:00 UTC: an early
+    # registrant counts at the opening, a runner who joined Wednesday
+    # 15:00 counts on Wednesday, not on top of the opening cell.
+    started = datetime(2026, 7, 13, 8, 0, tzinfo=UTC)
+    async with async_session() as db:
+        a, b, org = _user(1), _user(2), _user(99)
+        db.add_all([a, b, org])
+        await db.flush()
+        race = await _race_with_participants(db, org, [a], started_at=started)
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=b.id,
+                status=ParticipantStatus.FINISHED,
+                zone_history=PLAYED,
+                created_at=datetime(2026, 7, 15, 15, 0, tzinfo=UTC),
+            )
+        )
+        await db.commit()
+        data = await compute_public_heatmap(db, None, now=NOW)
+
+    assert data["grid"][4][0] == 1  # a: 08-10, Monday
+    assert data["grid"][7][2] == 1  # b: 14-16, Wednesday
+    assert sum(v for row in data["grid"] for v in row) == 2
+
+
+async def test_late_joiner_of_race_opened_before_window_counts(async_session):
+    # The race opened before the 20-week window, but the runner joined
+    # (and played) inside it.
+    async with async_session() as db:
+        a, org = _user(1), _user(99)
+        db.add_all([a, org])
+        await db.flush()
+        race = await _race_with_participants(
+            db, org, [], started_at=datetime(2026, 1, 5, 8, 0, tzinfo=UTC)
+        )
+        db.add(
+            Participant(
+                race_id=race.id,
+                user_id=a.id,
+                status=ParticipantStatus.FINISHED,
+                zone_history=PLAYED,
+                created_at=datetime(2026, 7, 13, 10, 0, tzinfo=UTC),
+            )
+        )
+        await db.commit()
+        data = await compute_public_heatmap(db, None, now=NOW)
+
+    assert data["grid"][5][0] == 1  # 10-12, Monday
+    assert sum(v for row in data["grid"] for v in row) == 1
+
+
+async def test_participants_who_never_played_are_excluded(async_session):
+    # Registered but never got past the spawn (no-shows swept to ABANDONED,
+    # or a single zone entry): not counted. An abandon after playing counts.
+    started = datetime(2026, 7, 13, 10, 0, tzinfo=UTC)
+    async with async_session() as db:
+        a, b, c, org = _user(1), _user(2), _user(3), _user(99)
+        db.add_all([a, b, c, org])
+        await db.flush()
+        race = await _race_with_participants(db, org, [], started_at=started)
+        joined = started - timedelta(hours=1)
+        db.add_all(
+            [
+                Participant(
+                    race_id=race.id,
+                    user_id=a.id,
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=None,
+                    created_at=joined,
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=b.id,
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=PLAYED[:1],
+                    created_at=joined,
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=c.id,
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=PLAYED,
+                    created_at=joined,
+                ),
+            ]
+        )
+        await db.commit()
+        data = await compute_public_heatmap(db, None, now=NOW)
+
+    assert data["grid"][5][0] == 1  # only c
+    assert sum(v for row in data["grid"] for v in row) == 1
 
 
 async def test_invalid_timezone_falls_back_to_utc(async_session):

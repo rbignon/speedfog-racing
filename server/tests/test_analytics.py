@@ -219,17 +219,22 @@ async def analytics_data(async_session):
         db.add(race)
         await db.flush()
 
+        # Both registered before the start and played (two zone entries).
         p1 = Participant(
             race_id=race.id,
             user_id=user1.id,
             mod_token=generate_token(),
             status=ParticipantStatus.FINISHED,
+            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+            created_at=race_started_at - timedelta(hours=1),
         )
         p2 = Participant(
             race_id=race.id,
             user_id=user2.id,
             mod_token=generate_token(),
             status=ParticipantStatus.FINISHED,
+            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+            created_at=race_started_at - timedelta(hours=1),
         )
         db.add_all([p1, p2])
 
@@ -356,6 +361,88 @@ async def test_compute_analytics_heatmaps(analytics_data, async_session):
     total_solo = sum(cell for row in solo_grid for cell in row)
     assert total_race == 2  # 2 participants in the one race
     assert total_solo == 2  # 2 training sessions
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_session):
+    """Race Players heatmap: each runner who played counts when they joined
+    (the race start if they registered before it), so a long race with
+    late joiners spreads over their real times instead of piling up on its
+    opening cell; a registrant who never played counts nothing. A race
+    opened before the window still counts the runners who joined inside it."""
+    started = datetime(2026, 7, 13, 8, 0, tzinfo=UTC)  # Monday 08:00 UTC
+    played = [{"node_id": "a"}, {"node_id": "b"}]
+    async with async_session() as db:
+        organizer = User(twitch_id="hm_org", twitch_username="hmorg", api_token=generate_token())
+        early = User(twitch_id="hm_e", twitch_username="hme", api_token=generate_token())
+        late = User(twitch_id="hm_l", twitch_username="hml", api_token=generate_token())
+        no_show = User(twitch_id="hm_n", twitch_username="hmn", api_token=generate_token())
+        old_race_joiner = User(twitch_id="hm_o", twitch_username="hmo", api_token=generate_token())
+        db.add_all([organizer, early, late, no_show, old_race_joiner])
+        await db.flush()
+        race = Race(
+            name="long race",
+            organizer_id=organizer.id,
+            status=RaceStatus.FINISHED,
+            started_at=started,
+        )
+        # Opened 15 weeks before NOW, outside the 13-week load window.
+        old_race = Race(
+            name="old long race",
+            organizer_id=organizer.id,
+            status=RaceStatus.RUNNING,
+            started_at=NOW - timedelta(weeks=15),
+        )
+        db.add_all([race, old_race])
+        await db.flush()
+        db.add_all(
+            [
+                Participant(
+                    race_id=race.id,
+                    user_id=early.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                    zone_history=played,
+                    created_at=started - timedelta(days=1),
+                ),
+                # Joined Wednesday 15:00, abandoned after playing.
+                Participant(
+                    race_id=race.id,
+                    user_id=late.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=played,
+                    created_at=datetime(2026, 7, 15, 15, 0, tzinfo=UTC),
+                ),
+                Participant(
+                    race_id=race.id,
+                    user_id=no_show.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.ABANDONED,
+                    zone_history=[],
+                    created_at=started - timedelta(days=1),
+                ),
+                # Joined the old race on Tuesday 10:00, inside the window.
+                Participant(
+                    race_id=old_race.id,
+                    user_id=old_race_joiner.id,
+                    mod_token=generate_token(),
+                    status=ParticipantStatus.FINISHED,
+                    zone_history=played,
+                    created_at=datetime(2026, 7, 14, 10, 0, tzinfo=UTC),
+                ),
+            ]
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        result = await compute_analytics(db, now=NOW)
+
+    grid = result["heatmaps"]["race_players"]
+    assert grid[4][0] == 1  # early: 08-10, Monday
+    assert grid[7][2] == 1  # late: 14-16, Wednesday
+    assert grid[5][1] == 1  # old race joiner: 10-12, Tuesday
+    assert sum(cell for row in grid for cell in row) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -765,6 +852,7 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
                     user_id=player.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
+                    zone_history=zh_qualified,
                 ),
                 # Today's daily: one qualified runner (counts), one not yet (excluded).
                 Participant(
