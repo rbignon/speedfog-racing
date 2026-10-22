@@ -32,6 +32,7 @@ from speedfog_racing.services.seed_service import _load_pool_config_from_disk
 from speedfog_racing.services.training_service import (
     create_training_session,
     get_played_seed_counts,
+    get_pool_play_progress,
     get_training_seed,
 )
 
@@ -547,6 +548,67 @@ async def test_get_played_seed_counts_multiple_pools(
     async with async_session() as db:
         counts = await get_played_seed_counts(db, training_user.id)
         assert counts == {"training_standard": 1, "training_sprint": 1}
+
+
+@pytest.mark.asyncio
+async def test_get_pool_play_progress(async_session, sample_graph_json):
+    """Per pool: the furthest users' distinct played seeds, ties, and who ran out."""
+    async with async_session() as db:
+
+        def seed(number: str, pool: str, status: SeedStatus = SeedStatus.AVAILABLE) -> Seed:
+            return Seed(
+                seed_number=number,
+                pool_name=pool,
+                graph_json=sample_graph_json,
+                total_layers=10,
+                folder_path=f"/tmp/{number}.zip",
+                status=status,
+            )
+
+        def user(name: str, display_name: str | None = None) -> User:
+            return User(
+                twitch_id=f"id_{name}",
+                twitch_username=name,
+                twitch_display_name=display_name,
+                api_token=generate_token(),
+                role=UserRole.USER,
+            )
+
+        s1, s2 = seed("s1", "training_standard"), seed("s2", "training_standard")
+        s3 = seed("s3", "training_standard", SeedStatus.DISCARDED)
+        t1, t2 = seed("t1", "training_sprint"), seed("t2", "training_sprint")
+        alice, bob, carol = user("alice", "Alice"), user("bob"), user("carol")
+        # "Erin" sorts after "dave" only case-insensitively
+        dave, erin = user("dave"), user("erin", "Erin")
+        db.add_all([s1, s2, s3, t1, t2, alice, bob, carol, dave, erin])
+        await db.flush()
+        for player, played in [
+            # alice replays s1: still 2 distinct seeds, i.e. every available one
+            (alice, s1),
+            (alice, s2),
+            (alice, s1),
+            # bob's discarded seed no longer counts toward the pool
+            (bob, s1),
+            (bob, s3),
+            (carol, s2),
+            (dave, t1),
+            (erin, t2),
+        ]:
+            db.add(TrainingSession(user_id=player.id, seed_id=played.id))
+        await db.commit()
+
+    async with async_session() as db:
+        progress = await get_pool_play_progress(db)
+
+    assert set(progress) == {"training_standard", "training_sprint"}
+    standard = progress["training_standard"]
+    assert standard.max_played == 2
+    assert standard.top_players == ("Alice",)
+    assert standard.exhausted_users == 1
+    sprint = progress["training_sprint"]
+    assert sprint.max_played == 1
+    assert sprint.top_players == ("dave", "Erin")
+    assert sprint.exhausted_users == 0
 
 
 # =============================================================================

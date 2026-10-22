@@ -459,6 +459,21 @@
     }
   }
 
+  // Hover text of a solo pool's Consumed cell: who played it the most, and
+  // how many users have no unseen seed left.
+  function soloProgressTitle(pool: AdminPool): string {
+    const solo = pool.solo;
+    if (!solo) return "Nobody has played the current seeds yet";
+    const names = solo.top_players.slice(0, 3).join(", ");
+    const more =
+      solo.top_players.length > 3 ? ` +${solo.top_players.length - 3}` : "";
+    const done =
+      solo.exhausted_users === 0
+        ? "Nobody has played every seed yet"
+        : `${solo.exhausted_users} user${solo.exhausted_users === 1 ? " has" : "s have"} played every seed, their next seeds repeat`;
+    return `Most played: ${solo.max_played}/${pool.available} by ${names}${more}\n${done}`;
+  }
+
   async function loadActivity() {
     activityLoading = true;
     try {
@@ -1386,7 +1401,11 @@
               <th>Pool Name</th>
               <th>Visible</th>
               <th class="num-col">Available</th>
-              <th class="num-col">Consumed</th>
+              <th
+                class="num-col"
+                title="Solo pools: most seeds played by one user / pool size, then how many users played them all"
+                >Consumed</th
+              >
               <th class="num-col">Reported</th>
               <th class="num-col">Discarded</th>
               <th>Actions</th>
@@ -1417,7 +1436,23 @@
                   </label>
                 </td>
                 <td class="num-cell">{pool.available}</td>
-                <td class="num-cell">{pool.consumed}</td>
+                {#if pool.type === "training"}
+                  <!-- Solo seeds are never consumed: show how close the
+                       furthest users are to running out of unseen seeds. -->
+                  {@const played = pool.solo?.max_played ?? 0}
+                  {@const exhausted = pool.solo?.exhausted_users ?? 0}
+                  <td
+                    class="num-cell solo-progress"
+                    class:solo-exhausted={exhausted > 0}
+                    title={soloProgressTitle(pool)}
+                  >
+                    {played}/{pool.available}{exhausted > 0
+                      ? ` · ${exhausted} done`
+                      : ""}
+                  </td>
+                {:else}
+                  <td class="num-cell">{pool.consumed}</td>
+                {/if}
                 <td class="num-cell">{pool.reported}</td>
                 <td class="num-cell">{pool.discarded}</td>
                 <td class="actions-cell">
@@ -2428,6 +2463,15 @@
   .num-cell {
     text-align: center;
     font-family: var(--font-mono);
+  }
+
+  .solo-progress {
+    white-space: nowrap;
+  }
+
+  /* Somebody has played every seed of this solo pool: time to add seeds. */
+  .solo-exhausted {
+    color: var(--color-warning);
   }
 
   /* Why the stored document no longer validates, under the name it belongs to:

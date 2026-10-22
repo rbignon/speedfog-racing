@@ -1189,6 +1189,51 @@ async def test_admin_list_pools_includes_disabled(test_client, admin_user, seede
 
 
 @pytest.mark.asyncio
+async def test_admin_pools_report_solo_progress(
+    test_client, admin_user, regular_user, async_session, seeded_pools
+):
+    """Played solo pools carry how far their furthest users got, on the list
+    and on the toggle response the admin UI swaps into the row."""
+    async with async_session() as db:
+        seeds = [
+            Seed(
+                seed_number=f"solo_{i}",
+                pool_name="solo_practice",
+                graph_json={"total_layers": 5, "nodes": {}},
+                total_layers=5,
+                folder_path=f"/test/solo_{i}",
+                status=SeedStatus.AVAILABLE,
+            )
+            for i in range(2)
+        ]
+        db.add_all(seeds)
+        await db.flush()
+        db.add_all(
+            [
+                TrainingSession(user_id=regular_user.id, seed_id=seeds[0].id),
+                TrainingSession(user_id=regular_user.id, seed_id=seeds[1].id),
+                TrainingSession(user_id=admin_user.id, seed_id=seeds[0].id),
+            ]
+        )
+        await db.commit()
+
+    expected = {"max_played": 2, "top_players": ["regular_user"], "exhausted_users": 1}
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        response = await client.get("/api/admin/pools", headers=headers)
+        assert response.status_code == 200
+        pools_by_name = {p["name"]: p for p in response.json()}
+        assert pools_by_name["solo_practice"]["solo"] == expected
+        assert pools_by_name["standard"]["solo"] is None
+
+        response = await client.patch(
+            "/api/admin/pools/solo_practice", headers=headers, json={"enabled": True}
+        )
+        assert response.status_code == 200
+        assert response.json()["solo"] == expected
+
+
+@pytest.mark.asyncio
 async def test_admin_list_pools_requires_admin(test_client, regular_user):
     async with test_client as client:
         response = await client.get(

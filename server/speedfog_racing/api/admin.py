@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Response, status
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import case, delete, func, literal, select, union_all
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +69,7 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services import (
     discard_pool,
     get_pool,
+    get_pool_play_progress,
     get_pool_stats,
     list_pools,
     scan_pool,
@@ -182,6 +183,17 @@ async def discard_seeds(
 # =============================================================================
 
 
+class SoloPoolProgress(BaseModel):
+    """How far the users who played a training pool the most got through it
+    (built from ``training_service.PoolPlayProgress``)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    max_played: int
+    top_players: list[str]
+    exhausted_users: int
+
+
 class AdminPoolResponse(BaseModel):
     """Admin view of a pool row."""
 
@@ -194,6 +206,8 @@ class AdminPoolResponse(BaseModel):
     consumed: int = 0
     discarded: int = 0
     reported: int = 0
+    # None until somebody plays the pool, so always None for race pools.
+    solo: SoloPoolProgress | None = None
 
 
 class UpdatePoolRequest(BaseModel):
@@ -210,6 +224,7 @@ async def admin_list_pools(
     """List every pool (enabled and disabled) with seed counts."""
     pools = await list_pools(db, include_disabled=True)
     stats = await get_pool_stats(db)
+    progress = await get_pool_play_progress(db)
     return [
         AdminPoolResponse(
             name=p.name,
@@ -218,6 +233,9 @@ async def admin_list_pools(
             enabled=p.enabled,
             last_scanned_at=p.last_scanned_at,
             **stats.get(p.name, {}),
+            solo=(
+                SoloPoolProgress.model_validate(progress[p.name]) if p.name in progress else None
+            ),
         )
         for p in pools
     ]
@@ -236,6 +254,7 @@ async def admin_update_pool(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     stats = (await get_pool_stats(db)).get(pool.name, {})
+    progress = (await get_pool_play_progress(db)).get(pool.name)
     return AdminPoolResponse(
         name=pool.name,
         display_name=format_pool_display_name(pool),
@@ -243,6 +262,7 @@ async def admin_update_pool(
         enabled=pool.enabled,
         last_scanned_at=pool.last_scanned_at,
         **stats,
+        solo=SoloPoolProgress.model_validate(progress) if progress else None,
     )
 
 

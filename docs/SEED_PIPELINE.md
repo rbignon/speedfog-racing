@@ -141,6 +141,21 @@ admin pools list also exposes each pool's `type` (`race` / `training`,
 read from `Pool.config`) so the admin UI can suffix training pools with
 " (Solo)".
 
+Training seeds are never consumed: `get_training_seed` only skips the
+seeds the requesting user already opened a session on, and once they have
+played every available seed it picks among all of them again (repeats).
+To show when a solo pool needs more seeds, the admin pools list carries a
+`solo` object per played training pool, from
+`training_service.get_pool_play_progress`: `max_played` (most distinct
+available seeds played by one user), `top_players` (everyone tied at that
+count) and `exhausted_users` (users who played them all). It counts the
+same way as `get_played_seed_counts`, so a regenerated pool starts back at
+zero; it is `null` for race pools and for training pools whose current
+seeds nobody has played.
+The Seeds tab shows it in the Consumed cell of solo pools as
+`max_played/available`, plus `· N done` in the warning color once someone
+has run out.
+
 ---
 
 ## 3. On-Demand Seed Pack Generation (`services/seed_pack_service.py`)

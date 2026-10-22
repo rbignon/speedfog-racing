@@ -1647,6 +1647,15 @@ export async function unbanUser(userId: string): Promise<AdminUser> {
   return handleResponse<AdminUser>(response);
 }
 
+/** How far the users who played a solo pool the most got through it. */
+export interface SoloPoolProgress {
+  max_played: number;
+  /** Everyone tied at `max_played`, sorted. */
+  top_players: string[];
+  /** Users who played every available seed: their next seeds repeat. */
+  exhausted_users: number;
+}
+
 export interface AdminPool {
   name: string;
   display_name: string;
@@ -1657,6 +1666,8 @@ export interface AdminPool {
   consumed: number;
   discarded: number;
   reported: number;
+  /** Null until somebody plays the pool, so always null for race pools. */
+  solo: SoloPoolProgress | null;
 }
 
 export interface AnalyticsKpis {
