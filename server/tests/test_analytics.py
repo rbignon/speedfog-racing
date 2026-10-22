@@ -219,13 +219,13 @@ async def analytics_data(async_session):
         db.add(race)
         await db.flush()
 
-        # Both registered before the start and played (two zone entries).
+        # Both registered before the start and played (IGT recorded).
         p1 = Participant(
             race_id=race.id,
             user_id=user1.id,
             mod_token=generate_token(),
             status=ParticipantStatus.FINISHED,
-            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+            igt_ms=60_000,
             created_at=race_started_at - timedelta(hours=1),
         )
         p2 = Participant(
@@ -233,7 +233,7 @@ async def analytics_data(async_session):
             user_id=user2.id,
             mod_token=generate_token(),
             status=ParticipantStatus.FINISHED,
-            zone_history=[{"node_id": "a"}, {"node_id": "b"}],
+            igt_ms=60_000,
             created_at=race_started_at - timedelta(hours=1),
         )
         db.add_all([p1, p2])
@@ -371,7 +371,6 @@ async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_
     opening cell; a registrant who never played counts nothing. A race
     opened before the window still counts the runners who joined inside it."""
     started = datetime(2026, 7, 13, 8, 0, tzinfo=UTC)  # Monday 08:00 UTC
-    played = [{"node_id": "a"}, {"node_id": "b"}]
     async with async_session() as db:
         organizer = User(twitch_id="hm_org", twitch_username="hmorg", api_token=generate_token())
         early = User(twitch_id="hm_e", twitch_username="hme", api_token=generate_token())
@@ -402,7 +401,7 @@ async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_
                     user_id=early.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
-                    zone_history=played,
+                    igt_ms=60_000,
                     created_at=started - timedelta(days=1),
                 ),
                 # Joined Wednesday 15:00, abandoned after playing.
@@ -411,7 +410,7 @@ async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_
                     user_id=late.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=played,
+                    igt_ms=60_000,
                     created_at=datetime(2026, 7, 15, 15, 0, tzinfo=UTC),
                 ),
                 Participant(
@@ -419,7 +418,7 @@ async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_
                     user_id=no_show.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=[],
+                    igt_ms=0,
                     created_at=started - timedelta(days=1),
                 ),
                 # Joined the old race on Tuesday 10:00, inside the window.
@@ -428,7 +427,7 @@ async def test_compute_analytics_race_heatmap_counts_players_at_join_time(async_
                     user_id=old_race_joiner.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
-                    zone_history=played,
+                    igt_ms=60_000,
                     created_at=datetime(2026, 7, 14, 10, 0, tzinfo=UTC),
                 ),
             ]
@@ -852,7 +851,7 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
                     user_id=player.id,
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
-                    zone_history=zh_qualified,
+                    igt_ms=60_000,
                 ),
                 # Today's daily: one qualified runner (counts), one not yet (excluded).
                 Participant(
@@ -861,6 +860,7 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
                     mod_token=generate_token(),
                     status=ParticipantStatus.PLAYING,
                     zone_history=zh_qualified,
+                    igt_ms=60_000,
                 ),
                 Participant(
                     race_id=daily_race_today.id,
@@ -877,6 +877,7 @@ async def test_compute_analytics_daily_qualified_participants(async_session):
                     mod_token=generate_token(),
                     status=ParticipantStatus.FINISHED,
                     zone_history=zh_qualified,
+                    igt_ms=60_000,
                 ),
                 Participant(
                     race_id=daily_race_yesterday.id,

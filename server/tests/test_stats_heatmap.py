@@ -44,10 +44,6 @@ def _user(i: int) -> User:
     )
 
 
-# A participation that actually played: two zone entries (spawn + first fog).
-PLAYED = [{"node_id": "a", "type": "spawn"}, {"node_id": "b", "type": "fog"}]
-
-
 async def _race_with_participants(
     db, organizer, users, *, started_at, is_public=True, daily_date=None, finished_at=None
 ) -> Race:
@@ -71,7 +67,6 @@ async def _race_with_participants(
                 status=ParticipantStatus.FINISHED,
                 igt_ms=1000,
                 finished_at=finished_at,
-                zone_history=PLAYED,
                 # Explicit: the server_default would use the real clock.
                 created_at=started_at - timedelta(hours=1),
             )
@@ -151,7 +146,7 @@ async def test_scope_weighting_and_daily_join_time(async_session):
                     race_id=daily_race.id,
                     user_id=b.id,
                     status=ParticipantStatus.FINISHED,
-                    zone_history=PLAYED,
+                    igt_ms=60_000,
                     created_at=datetime(2026, 7, 13, 19, 0, tzinfo=UTC),
                     finished_at=datetime(2026, 7, 13, 23, 0, tzinfo=UTC),
                 ),
@@ -159,7 +154,7 @@ async def test_scope_weighting_and_daily_join_time(async_session):
                     race_id=daily_race.id,
                     user_id=c.id,
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=PLAYED,
+                    igt_ms=60_000,
                     created_at=datetime(2026, 7, 13, 20, 30, tzinfo=UTC),
                 ),
             ]
@@ -213,7 +208,7 @@ async def test_late_joiner_counts_at_join_time(async_session):
                 race_id=race.id,
                 user_id=b.id,
                 status=ParticipantStatus.FINISHED,
-                zone_history=PLAYED,
+                igt_ms=60_000,
                 created_at=datetime(2026, 7, 15, 15, 0, tzinfo=UTC),
             )
         )
@@ -240,7 +235,7 @@ async def test_late_joiner_of_race_opened_before_window_counts(async_session):
                 race_id=race.id,
                 user_id=a.id,
                 status=ParticipantStatus.FINISHED,
-                zone_history=PLAYED,
+                igt_ms=60_000,
                 created_at=datetime(2026, 7, 13, 10, 0, tzinfo=UTC),
             )
         )
@@ -252,8 +247,9 @@ async def test_late_joiner_of_race_opened_before_window_counts(async_session):
 
 
 async def test_participants_who_never_played_are_excluded(async_session):
-    # Registered but never got past the spawn (no-shows swept to ABANDONED,
-    # or a single zone entry): not counted. An abandon after playing counts.
+    # A registrant who never got in game (no IGT: a no-show swept to
+    # ABANDONED) is not counted. Any IGT counts, even a run quit before the
+    # first fog (spawn entry only), and so does an abandon after playing.
     started = datetime(2026, 7, 13, 10, 0, tzinfo=UTC)
     async with async_session() as db:
         a, b, c, org = _user(1), _user(2), _user(3), _user(99)
@@ -267,21 +263,22 @@ async def test_participants_who_never_played_are_excluded(async_session):
                     race_id=race.id,
                     user_id=a.id,
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=None,
+                    igt_ms=0,
                     created_at=joined,
                 ),
                 Participant(
                     race_id=race.id,
                     user_id=b.id,
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=PLAYED[:1],
+                    igt_ms=30_000,
+                    zone_history=[{"node_id": "a", "type": "spawn"}],
                     created_at=joined,
                 ),
                 Participant(
                     race_id=race.id,
                     user_id=c.id,
                     status=ParticipantStatus.ABANDONED,
-                    zone_history=PLAYED,
+                    igt_ms=60_000,
                     created_at=joined,
                 ),
             ]
@@ -289,8 +286,8 @@ async def test_participants_who_never_played_are_excluded(async_session):
         await db.commit()
         data = await compute_public_heatmap(db, None, now=NOW)
 
-    assert data["grid"][5][0] == 1  # only c
-    assert sum(v for row in data["grid"] for v in row) == 1
+    assert data["grid"][5][0] == 2  # b and c
+    assert sum(v for row in data["grid"] for v in row) == 2
 
 
 async def test_invalid_timezone_falls_back_to_utc(async_session):

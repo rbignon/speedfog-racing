@@ -186,7 +186,7 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     # Per-daily-race qualified participant counts, restricted to the 13-week
     # window so the weekly bucketing has the rows it needs. Kept separate
     # from the ``races`` load above because that load filters out dailies
-    # for the heatmap / ``avg_participants`` / pool_usage paths.
+    # for the weekly races / ``avg_participants`` paths.
     daily_qualified_rows = (
         await db.execute(
             select(Race.started_at, func.count(Participant.id))
@@ -304,7 +304,7 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     # Daily and non-daily participations are one query: the only difference
     # between them (``daily_date``) is irrelevant to "did this user play",
     # and the qualification bar is identical. ``daily_qualified_filter`` is
-    # reused here as the generic "actually played" predicate (zone_history >= 2).
+    # reused here as the "actually played" predicate (zone_history >= 2).
     play_rows = (
         await db.execute(
             select(Participant.user_id, Race.started_at)
@@ -354,7 +354,9 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     # own join time for late joiners. A long race with a late-join window
     # (an event qualifier) then spreads over when people really played
     # instead of piling up on its opening cell. A race opened before the
-    # window still counts the runners who joined inside it.
+    # window still counts the runners who joined inside it. Same rule as
+    # ``compute_public_heatmap``, whose docstring says why "played" is any
+    # IGT recorded here rather than the zone count used above.
     race_player_rows = (
         await db.execute(
             select(Race.started_at, Participant.created_at)
@@ -363,7 +365,7 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
                 Race.daily_date.is_(None),
                 Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
                 or_(Race.started_at >= window_cutoff, Participant.created_at >= window_cutoff),
-                daily_qualified_filter,
+                Participant.igt_ms > 0,
             )
         )
     ).all()
@@ -686,9 +688,11 @@ async def compute_public_heatmap(
     joiners. A long race with a late-join window (an event qualifier, a
     Daily Seed whose started_at is the synthetic 08:00 UTC rotation time)
     then spreads over when people really played instead of piling up on its
-    opening cell. "Actually played" is the ``qualifies_for_streak`` bar (at
-    least two zone entries): no-shows count nothing, abandons after playing
-    count.
+    opening cell. "Actually played" means any IGT recorded (``igt_ms > 0``):
+    no-shows count nothing, abandons after playing count. It is a column
+    check rather than the ``qualifies_for_streak`` zone count, which would
+    parse every participant's zone history (an order of magnitude slower on
+    a query recomputed per requested timezone) for a few runs of difference.
 
     Each event's UTC timestamp is converted to ``tz_name`` before bucketing,
     so a window spanning a DST change buckets every event at its true local
@@ -723,7 +727,7 @@ async def compute_public_heatmap(
             .where(
                 Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
                 or_(Race.started_at >= window_cutoff, Participant.created_at >= window_cutoff),
-                qualifies_for_streak_sql(),
+                Participant.igt_ms > 0,
             )
         )
     ).all()
