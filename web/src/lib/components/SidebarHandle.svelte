@@ -9,19 +9,21 @@
   let label = $derived(collapsed ? "Show sidebar" : "Hide sidebar");
 </script>
 
-<!-- Tab hanging off the right edge of a left sidebar, at mid-height. The
-     sidebar must be `position: relative` and owns its collapsed layout:
-     when collapsed it hides every child except `.sidebar-handle`. -->
+<!-- Fold chevron of a left sidebar: in the right padding at mid-height while
+     open, the whole band once folded. The sidebar must be `position:
+     relative` and owns its folded layout: it hides every child except
+     `.sidebar-handle`. -->
 <button
   type="button"
   class="sidebar-handle"
+  class:collapsed
   onclick={onToggle}
   title={label}
   aria-label={label}
 >
   <svg
-    width="12"
-    height="12"
+    width="14"
+    height="14"
     viewBox="0 0 24 24"
     fill="none"
     stroke="currentColor"
@@ -39,37 +41,48 @@
 </button>
 
 <style>
-  /* Starts on the sidebar's border and covers it, so the tab reads as part
-     of the rail rather than a button floating over the page. */
   .sidebar-handle {
     position: absolute;
     top: 50%;
-    right: -16px;
+    right: 2px;
     transform: translateY(-50%);
-    z-index: 2;
-    width: 16px;
+    z-index: 1;
+    width: 20px;
     height: 44px;
     padding: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-left: none;
-    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
     color: var(--color-text-secondary);
     cursor: pointer;
-    transition:
-      color var(--transition),
-      background var(--transition);
+    transition: color var(--transition);
   }
 
   .sidebar-handle:hover {
     color: var(--color-text);
-    background: var(--color-surface-elevated);
   }
 
-  /* On mobile the sidebar stacks above the page: nothing to collapse. */
+  /* Drawn inside: the sidebar clips what crosses its edges. */
+  .sidebar-handle:focus-visible {
+    outline: 2px solid var(--color-purple);
+    outline-offset: -2px;
+  }
+
+  /* The chevron stays on the right edge, so it follows the edge while the
+     band slides, and ends centered in the 44px band. */
+  .sidebar-handle.collapsed {
+    inset: 0;
+    width: auto;
+    height: auto;
+    transform: none;
+    justify-content: flex-end;
+    padding-right: 15px;
+  }
+
+  /* On mobile the sidebar stacks above the page: nothing to fold. */
   @media (max-width: 768px) {
     .sidebar-handle {
       display: none;

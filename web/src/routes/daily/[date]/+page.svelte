@@ -944,10 +944,23 @@
 
   /* Desktop only: on mobile the sidebar stacks above the page and the
      handle is hidden, so a collapse made on a wide window must not stick.
-     No width transition: the content would wrap while the rail widens. */
+     The width slides like the chat sidebar's; the content keeps its open
+     width and is clipped meanwhile instead of wrapping. */
   @media not all and (max-width: 768px) {
+    .sidebar {
+      overflow-x: clip;
+      transition:
+        width var(--transition),
+        padding var(--transition);
+    }
+
+    /* Open content width: the rail minus its padding and border. */
+    .sidebar > :global(:not(.sidebar-handle)) {
+      min-width: calc(280px - 3rem - 1px);
+    }
+
     .sidebar.collapsed {
-      width: 12px;
+      width: 44px;
       padding: 0;
     }
 
