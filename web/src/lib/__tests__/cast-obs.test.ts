@@ -30,7 +30,7 @@ function input(over: Partial<ObsExportInput> = {}): ObsExportInput {
     seats: four,
     fieldSize: 4,
     url,
-    includeTalk: true,
+    includeEvening: true,
     ...over,
   };
 }
@@ -131,7 +131,9 @@ describe("buildObsCollection", () => {
   it("the plate is each cast scene's top item and Audio its bottom one", () => {
     const c = buildObsCollection(input());
     const castScenes = scenesOf(c).filter((s) => sceneKind(c, s));
-    expect(castScenes.length).toBe(1 + 1 + 4 + 6 + 1 + 1);
+    // The four evening scenes, quad, a focus per seat, six duels, metro
+    // and browser.
+    expect(castScenes.length).toBe(4 + 1 + 4 + 6 + 1 + 1);
     for (const s of castScenes) {
       const items: Obj[] = s.settings.items;
       expect(items[0].name).toBe("Audio");
@@ -193,15 +195,28 @@ describe("buildObsCollection", () => {
     }
   });
 
-  it("talk is first only when included, and current_scene follows", () => {
-    const withTalk: Obj = buildObsCollection(input());
-    expect(withTalk.scene_order[0].name).toBe("Talk");
-    expect(withTalk.current_scene).toBe("Talk");
-    expect(withTalk.current_program_scene).toBe("Talk");
-    const without: Obj = buildObsCollection(input({ includeTalk: false }));
+  // OBS opens on the first scene: the broadcast opens on the intro, and the
+  // evening's own scenes stay together ahead of the race scenes.
+  it("the evening scenes open the file only when included, and current_scene follows", () => {
+    const withEvening: Obj = buildObsCollection(
+      input({
+        url: { ...url, eventSlug: "season-one", stageKey: "group_g" },
+      }),
+    );
+    expect(withEvening.scene_order.slice(0, 5).map((s: Obj) => s.name)).toEqual(
+      ["Intro", "Talk", "Pause", "End", "Quad"],
+    );
+    expect(withEvening.current_scene).toBe("Intro");
+    expect(withEvening.current_program_scene).toBe("Intro");
+    expect(byName(withEvening, "Pause plate").settings.url).toBe(
+      "https://speedfog.racing/overlay/cast/event/season-one/group_g/pause",
+    );
+    const without: Obj = buildObsCollection(input({ includeEvening: false }));
     expect(without.scene_order[0].name).toBe("Quad");
     expect(without.current_scene).toBe("Quad");
-    expect(scenesOf(without).some((s) => s.name === "Talk")).toBe(false);
+    for (const name of ["Intro", "Talk", "Pause", "End"]) {
+      expect(scenesOf(without).some((s) => s.name === name)).toBe(false);
+    }
   });
 
   it("the same input builds the same file", () => {
@@ -279,7 +294,7 @@ describe("buildObsCollection", () => {
   it("scene_order lists every scene exactly once", () => {
     for (const over of [
       {},
-      { includeTalk: false, url: { ...url, cams: 0 } },
+      { includeEvening: false, url: { ...url, cams: 0 } },
     ] as Partial<ObsExportInput>[]) {
       const c: Obj = buildObsCollection(input(over));
       const order = c.scene_order.map((s: Obj) => s.name);

@@ -8,6 +8,7 @@ import type {
   EventQualified,
   EventQualifiedGroup,
   EventStage,
+  EventStageEntry,
   EventStageRace,
   EventSummary,
   EventSummaryBracket,
@@ -1495,4 +1496,20 @@ export function nextStageLabels(
         s.field.some((f) => f.source === stageKey && f.place === i + 1),
       )?.label ?? null,
   );
+}
+
+/**
+ * Whether the runner ranked `index` (0 is the 1st) in a stage's standings
+ * goes on: while the stage is raced, whoever stands above the cut
+ * (`advance`), provisionally; once it is complete, the server's verdict
+ * (`advances`) alone.
+ */
+export function stageGoesOn(
+  entry: Pick<EventStageEntry, "advances">,
+  index: number,
+  advance: number | null,
+  complete: boolean,
+): boolean {
+  if (complete) return entry.advances;
+  return advance !== null && index < advance;
 }

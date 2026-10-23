@@ -193,6 +193,9 @@ describe("CastSetup: hole assignment", () => {
   });
 });
 
+/** The scenes keyed by an event stage rather than by the race. */
+const EVENING_PILLS = ["Intro", "Talk", "Pause", "End"];
+
 function selectScenePill(container: HTMLElement, label: string) {
   const btn = [...container.querySelectorAll(".scene-picker .pill")].find(
     (b) => b.textContent?.trim() === label,
@@ -235,11 +238,11 @@ describe("CastSetup: scene list", () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-10"), onClose: () => {} },
     });
-    // Talk needs an event and a stage first, so it stays out of Copy all
-    // until then (see the talk scene URL guard below).
+    // The evening scenes need an event and a stage first, so they stay out
+    // of Copy all until then (see the evening scene URL guard below).
     const offered = new Set<string>();
     for (const label of scenePillLabels(container)) {
-      if (label === "Talk") continue;
+      if (EVENING_PILLS.includes(label)) continue;
       await selectScenePill(container, label);
       offered.add(new URL(urlInputValue(container)).pathname);
     }
@@ -498,19 +501,61 @@ describe("CastSetup: prefill from the race's event", () => {
   });
 });
 
-describe("CastSetup: talk scene URL guard", () => {
-  it("withholds the copyable URL and the preview until an event and stage are chosen", async () => {
-    const { container } = render(CastSetup, {
-      props: { race: fakeRace("race-5"), onClose: () => {} },
-    });
-    await selectScenePill(container, "Talk");
+describe("CastSetup: evening scene URL guard", () => {
+  it.each(EVENING_PILLS)(
+    "withholds %s's copyable URL and preview until an event and stage are chosen",
+    async (label) => {
+      const { container } = render(CastSetup, {
+        props: { race: fakeRace("race-5"), onClose: () => {} },
+      });
+      await selectScenePill(container, label);
 
-    expect(container.querySelector("iframe.preview")).toBeNull();
-    expect(container.querySelector(".preview-empty")).not.toBeNull();
-    expect(container.querySelector(".url-input")).toBeNull();
-    expect(container.textContent).toContain(
-      "Pick an event and stage above to get this scene's URL.",
+      expect(container.querySelector("iframe.preview")).toBeNull();
+      expect(container.querySelector(".preview-empty")).not.toBeNull();
+      expect(container.querySelector(".url-input")).toBeNull();
+      expect(container.textContent).toContain(
+        "Pick an event and stage above to get this scene's URL.",
+      );
+    },
+  );
+
+  it("copies the four evening scenes with Copy all once an event and stage are chosen", async () => {
+    serveSeasonOne({ onTheBill: true });
+    const race = fakeRace("race-all", {
+      event_slug: "season-one",
+      event_slot: "semi_b:1",
+    });
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+    await fireEvent.click(buttonLabelled(container, "Copy all scene URLs")!);
+
+    const copied = vi.mocked(copyToClipboard).mock.calls[0][0];
+    const paths = copied.split("\n").map((u) => new URL(u).pathname);
+    expect(paths.slice(-4)).toEqual(
+      ["intro", "talk", "pause", "end"].map(
+        (scene) => `/overlay/cast/event/season-one/semi_b/${scene}`,
+      ),
     );
+  });
+
+  // A slate shows the stage alone: no delay to hold it back, and its URL
+  // names nothing but the stage, whatever else the panel holds.
+  it("builds a slate's URL from the stage alone, with no delay to set", async () => {
+    serveSeasonOne({ onTheBill: true });
+    const race = fakeRace("race-slate", {
+      event_slug: "season-one",
+      event_slot: "semi_b:2",
+    });
+    const { container } = render(CastSetup, {
+      props: { race, onClose: () => {} },
+    });
+    await selectScenePill(container, "Pause");
+
+    expect(new URL(urlInputValue(container)).href).toBe(
+      `${window.location.origin}/overlay/cast/event/season-one/semi_b/pause`,
+    );
+    expect(textOf(container)).not.toContain("Delay");
   });
 });
 
@@ -861,11 +906,11 @@ describe("CastSetup: OBS scene files", () => {
     expect(plateUrl(collection, "Quad")).toContain(
       "/overlay/cast/race/race-file/quad?p1=alice&p2=dave&p3=bob&p4=carol&",
     );
-    // No event and stage chosen: no talk scene, Quad opens the file.
+    // No event and stage chosen: no evening scene, Quad opens the file.
     expect(collection.scene_order[0].name).toBe("Quad");
   });
 
-  it("the race file opens on talk once the panel has an event and a stage", async () => {
+  it("the race file opens on the evening scenes once the panel has an event and a stage", async () => {
     serveGroupG(["alice", "bob", "carol", "dave"]);
     const { container } = render(CastSetup, {
       props: { race: inGroupG("race-t1", 1), onClose: () => {} },
@@ -873,9 +918,17 @@ describe("CastSetup: OBS scene files", () => {
     await fireEvent.click(buttonLabelled(container, RACE_FILE)!);
 
     const collection = vi.mocked(downloadJson).mock.calls[0][1] as Obj;
-    expect(collection.scene_order[0].name).toBe("Talk");
+    expect(collection.scene_order.slice(0, 4).map((s: Obj) => s.name)).toEqual([
+      "Intro",
+      "Talk",
+      "Pause",
+      "End",
+    ]);
     expect(plateUrl(collection, "Talk")).toContain(
       "/overlay/cast/event/season-one/group_g/talk?",
+    );
+    expect(plateUrl(collection, "Intro")).toMatch(
+      /\/overlay\/cast\/event\/season-one\/group_g\/intro$/,
     );
     expect(plateUrl(collection, "Quad")).toContain(
       "/overlay/cast/race/race-t1/quad?",

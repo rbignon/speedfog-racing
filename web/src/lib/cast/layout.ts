@@ -43,7 +43,25 @@ export type CastSceneId =
   | "metro"
   | "duel"
   | "browser"
-  | "talk";
+  | "talk"
+  | "intro"
+  | "pause"
+  | "end";
+
+/** The slates: full-frame cards for the start of an evening, a break and
+ * its end, which show the stage and no video at all. */
+export const SLATE_SCENES = ["intro", "pause", "end"] as const;
+export type SlateSceneId = (typeof SLATE_SCENES)[number];
+
+export function isSlateScene(scene: string): scene is SlateSceneId {
+  return (SLATE_SCENES as readonly string[]).includes(scene);
+}
+
+/** Whether a scene is about an evening rather than one race (talk and the
+ * slates): its path names an event stage, never a race. */
+export function isEveningScene(scene: CastSceneId): boolean {
+  return scene === "talk" || isSlateScene(scene);
+}
 
 export interface SceneOptions {
   /** Which slot holds the hero POV on the focus scene (1 to 4). */
@@ -365,8 +383,18 @@ function talkScene(cams: number): CastScene {
     });
   }
   const panels: Record<string, Rect> = {
-    topline: { x: M, y: M, w: CANVAS.w - 2 * M, h: 44 },
+    ...eveningPanels(),
     lockup: { x: TALK_LOCK_X, y: TALK_Y, w: TALK_LOCK_W, h: TALK_CAM_H },
+  };
+  return { holes, panels };
+}
+
+/** The topline and the evening row (three race cards, the stage
+ * standings), the same on talk and on every slate, so a cut between them
+ * leaves both in place. */
+function eveningPanels(): Record<string, Rect> {
+  const panels: Record<string, Rect> = {
+    topline: { x: M, y: M, w: CANVAS.w - 2 * M, h: 44 },
     separator: { x: TALK_SEP_X, y: EVE_Y, w: 1, h: EVE_H },
     standings: { x: 1420, y: EVE_Y, w: 484, h: EVE_H },
   };
@@ -378,7 +406,26 @@ function talkScene(cams: number): CastScene {
       h: EVE_H,
     };
   }
-  return { holes, panels };
+  return panels;
+}
+
+// --- scenes 7 to 9, the intro, pause and end slates -------------------------
+
+/** Talk without its cams: the band they and the lockup take becomes the
+ * slate's own `hero` panel, and nothing is pierced. */
+function slateScene(): CastScene {
+  return {
+    holes: [],
+    panels: {
+      ...eveningPanels(),
+      hero: {
+        x: TALK_CAM1_X,
+        y: TALK_Y,
+        w: TALK_CAM2_X + TALK_CAM_W - TALK_CAM1_X,
+        h: TALK_CAM_H,
+      },
+    },
+  };
 }
 
 /** The layout of one scene. `focus` and `cams` default to slot 1 and two cams. */
@@ -400,6 +447,10 @@ export function sceneLayout(
       return browserScene(cams);
     case "talk":
       return talkScene(cams);
+    case "intro":
+    case "pause":
+    case "end":
+      return slateScene();
   }
 }
 

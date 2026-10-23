@@ -15,6 +15,9 @@ const SCENES: CastSceneId[] = [
   "duel",
   "browser",
   "talk",
+  "intro",
+  "pause",
+  "end",
 ];
 
 function overlaps(a: Rect, b: Rect): boolean {
@@ -202,6 +205,50 @@ describe("sceneLayout", () => {
         h: Math.max(...above.map((r) => r.y + r.h)) - top,
       });
     }
+  });
+});
+
+// The intro, pause and end slates stand in for talk at the top of the
+// frame: cutting from one to the other must leave the evening row (race
+// cards, standings) exactly where it was, and nothing shows through.
+describe("slate scenes", () => {
+  it("cut no hole, whatever the cams", () => {
+    for (const scene of ["intro", "pause", "end"] as CastSceneId[]) {
+      for (const cams of [0, 1, 2]) {
+        expect(sceneLayout(scene, { cams }).holes).toEqual([]);
+      }
+    }
+  });
+
+  it("keep talk's topline and evening row in place", () => {
+    const talk = sceneLayout("talk").panels;
+    for (const scene of ["intro", "pause", "end"] as CastSceneId[]) {
+      const { panels } = sceneLayout(scene);
+      for (const key of [
+        "topline",
+        "race1",
+        "race2",
+        "race3",
+        "separator",
+        "standings",
+      ]) {
+        expect(panels[key]).toEqual(talk[key]);
+      }
+    }
+  });
+
+  it("give their own content the whole band talk gives its cams and lockup", () => {
+    const talk = sceneLayout("talk", { cams: 2 });
+    const top = [...talk.holes, talk.panels.lockup];
+    const left = Math.min(...top.map((r) => r.x));
+    const y = Math.min(...top.map((r) => r.y));
+    const hero = sceneLayout("intro").panels.hero;
+    expect(hero).toEqual({
+      x: left,
+      y,
+      w: Math.max(...top.map((r) => r.x + r.w)) - left,
+      h: Math.max(...top.map((r) => r.y + r.h)) - y,
+    });
   });
 });
 

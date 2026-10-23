@@ -3,6 +3,7 @@
   import type { EventStageEntry, User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { rowCapacity, planRows } from "$lib/cast/rows";
+  import { stageGoesOn } from "$lib/events";
 
   interface Props {
     rect: Rect;
@@ -52,10 +53,10 @@
 
   // While the stage is raced, whoever stands above the cut wears the same
   // mark as a runner through, the eyebrow saying it is provisional; once it
-  // is complete, the server's verdict alone decides.
+  // is complete, the server's verdict alone decides. The end slate's hero
+  // picks its runners by the same rule.
   function goesOn(entry: EventStageEntry, i: number): boolean {
-    if (complete) return entry.advances;
-    return advance !== null && i < advance;
+    return stageGoesOn(entry, i, advance, complete);
   }
 
   // Nothing is provisional before the first result: the eyebrow keeps its

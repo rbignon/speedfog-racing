@@ -1,7 +1,7 @@
 # Cast Overlays
 
-Six full-screen OBS scenes for a caster running a broadcast: quad, focus,
-duel, metro, browser and talk. They are a different kind of overlay from the
+Nine full-screen OBS scenes for a caster running a broadcast: quad, focus,
+duel, metro, browser, talk, and three slates (intro, pause and end). They are a different kind of overlay from the
 two existing ones, `/overlay/race/[id]/dag` and
 `/overlay/race/[id]/leaderboard`: those are
 transparent widgets a caster places anywhere on a scene they build themselves
@@ -70,16 +70,16 @@ past the panel's bottom. Once the field doesn't fit, the panel's last row is
 given up to a quiet "+ N more" line, the same phrasing the in-game overlay's
 own leaderboard footer uses for the same situation (`mod/src/dll/ui.rs`).
 Four panels do this: `CastStandings` (metro), `CastMiniStandings` (focus),
-`CastRoundStandings` and `CastRaceCard` (talk). The metro scene's
+`CastRoundStandings` and `CastRaceCard` (talk and the slates). The metro scene's
 `CastStandings` additionally takes a `lines` URL parameter (see below)
 letting the caster show fewer rows than the panel fits; nothing lets any of
 them show more than the panel's own capacity allows. The quad scene's four
 runner cards seat exactly four runners by construction (see `resolveSlots`)
 and need no cap.
 
-## The six scenes
+## The scenes
 
-Five of the six scenes (quad, focus, duel, metro, browser) share a **desk**
+The five race scenes (quad, focus, duel, metro, browser) share a **desk**
 band along the bottom (the quad's is thinner, see Quad): a race name panel, a
 caster lockup (the SpeedFog Racing wordmark, crossed with the event's
 co-brand when one is set), a clock panel, and up to two caster cam holes.
@@ -384,9 +384,9 @@ carries no live race data of its own; it is pointed at an event stage rather
 than at a race, via its own path
 (`/overlay/cast/event/<slug>/<stage>/talk`).
 
-This is the scene a broadcast typically opens on and returns to between
-races, so it holds the frame longest before the stage's first race has a
-result. Before then, the standings panel shows its title with a line of
+This is the scene a broadcast typically returns to between races (it
+opens on the intro slate, see below), so it holds the frame longest before
+the stage's first race has a result. Before then, the standings panel shows its title with a line of
 muted copy underneath saying results arrive after the first race, rather
 than an empty list under a title that would read as broken.
 
@@ -445,7 +445,7 @@ size only fit 3 of them in the panel's 412px height; the brass chip and
 the advancing runner's rule stay exactly as they were. The chip on each
 advancing runner names the stage their place goes on to ("Quarter A" for a
 group's winner, "Quarter C" for its runner-up when the places are crossed):
-the talk page finds it as the stage whose seat takes that place.
+the scene finds it as the stage whose seat takes that place.
 
 | Hole  | Position (x, y) | Size (w x h) | Shown when  |
 | ----- | --------------- | ------------ | ----------- |
@@ -456,6 +456,48 @@ Panels: the topline at (16, 16), 1888 x 44; a lockup between the two cams at
 (780, 76), 360 x 552; three race cards at (16, 652), (468, 652) and (920,
 652), each 436 x 412; a 1px-wide separator at (1388, 652), 1 x 412; the stage
 standings at (1420, 652), 484 x 412.
+
+### Intro, pause and end
+
+Three slates for the moments of an evening with no cam on air: before it
+starts, a break, and its close. Each is the talk scene with the band its
+cams and lockup take (`hero`, 1888 x 552) given to a card of its own, so a
+cut between talk and a slate leaves the topline, the race cards and the
+standings where they were: the three share talk's panels and its 30-second
+re-read of the event (`CastEvening`). A slate pierces no hole and shows no
+caster, so its URL carries no parameter at all
+(`/overlay/cast/event/<slug>/<stage>/<intro|pause|end>`), and OBS puts
+nothing under it but the Audio scene.
+
+- **Intro**: the lockup (SpeedFog Racing, crossed with the event's
+  co-brand), the event's name very large, the stage's label in gold with
+  "Playoff" beside it (a showcase's label stands alone, as on talk's
+  topline), and under them a countdown, "Starts in 12:34", to the stage's
+  date (`introClock` in `web/src/lib/cast/slates.ts`). It reads rounded up
+  like the race scenes' start countdown and ticks as its own second turns
+  over. Once the start has passed it reads "Starting soon"; a stage whose
+  day alone is set (its date then stands at noon UTC) shows that day
+  instead of counting down to a time nobody set; a stage with no date shows
+  nothing there, the topline already saying "Date to be agreed".
+- **Pause**: "Be right back" very large, a gold rule, the event's name and
+  the stage's label, and the lockup.
+- **End**: the runners going on, each with their Twitch avatar, name (in
+  their equipped name template, as in the standings), points and a chip
+  naming the stage their place goes on to, under "<event> · <stage> ·
+  Qualified" (`endHeadline`). They are the runners the standings panel
+  beneath marks as going on, by the same rule (`stageGoesOn` in
+  `web/src/lib/events.ts`): above the cut while the stage is raced, the
+  server's verdict once it is complete, so the two never disagree. A stage
+  nobody goes on from shows its winner alone: "Champion" on a final,
+  "Winner" on anything else (a showcase). While the stage is still raced,
+  a "Provisional" eyebrow sits above the line, as on the standings; before
+  any result, the card keeps that line alone, the standings beneath already
+  saying results arrive after the first race. A stage sending more than two
+  on narrows the columns (and their avatars) to fit the band, and the line
+  above them never wraps.
+
+The slates show no video: the event trailer was tried as a backdrop and
+beside the title, and left out because it clashed with the plate.
 
 ## URL parameters
 
@@ -472,9 +514,10 @@ reason: it seats no runner, and its `delay` only shifts the desk's clock.
 Duel reads `p1` and `p2` (its only two holes; a `p3`, `p4` or `focus` in its
 URL is silently ignored), plus `cams`, `c1`, `c2`, `delay`, `guides` and
 `event`. Talk only reads `c1`, `c2`, `cams` and `guides` (it has no runners
-to seat and no live feed to delay; see "Delay" below). Every scene but talk
-also reads `follow` (see "Following a stage" below), which talk does not
-need: it is keyed by its stage already.
+to seat and no live feed to delay; see "Delay" below). The slates read none
+of them: the stage their path names is all they show. Every race scene also
+reads `follow` (see "Following a stage" below), which the evening scenes
+(talk and the slates) do not need: they are keyed by their stage already.
 
 A caster's name prints under their cam as the URL writes it, whether or not
 they have an account here; the talk scene alone looks the name up and, when
@@ -516,7 +559,10 @@ time:
 - The path names the race (`/overlay/cast/race/<id>/<scene>`), or, with
   `stageKeyed`, the event stage
   (`/overlay/cast/event/<slug>/<stage>/<scene>`, see "Following a stage"
-  below); talk's always names its stage.
+  below); an evening scene's path (talk or a slate) always names its
+  stage.
+- Nothing else on a slate (intro, pause, end): it shows no caster, no cam
+  and no runner, so its URL is its path alone.
 - `p1`..`p4` only for the slots actually named, `-` included (`p<n>=-`, a
   hole kept empty), and only on the scenes that seat runners: one per POV or
   hero hole the scene's layout cuts (`p1`..`p4` on quad and focus, `p1`..`p2`
@@ -524,8 +570,8 @@ time:
 - `focus` only on the focus scene, and only when set.
 - `c1`/`c2` only for the casters actually named.
 - `event` only when a co-brand is chosen, race scenes only.
-- `cams` always, on every scene, whatever its value, even when it is the
-  default of 2. `cams` changes which holes exist at all, so a saved or
+- `cams` always, on every scene but the slates, whatever its value, even
+  when it is the default of 2. `cams` changes which holes exist at all, so a saved or
   shared URL needs to say so explicitly rather than lean on a default that
   could change independently of the URL.
 - `delay` only when it is not 0, race scenes only. A delay of 0 behaves
@@ -652,9 +698,9 @@ milliseconds before applying it (`web/src/lib/cast/delay.ts`): a `setTimeout`
 per message, so messages sent in order still apply in order. The scene's own
 clock (`CastDesk`) reads the same delay from the URL directly, so the
 elapsed time and the countdown it shows always match what the delayed video
-is showing, not the server's real time. Talk carries no `delay` parameter:
-it holds no live feed, only the event it re-reads every 30 seconds, and it
-is meant for between races. A race ending while it is on air can therefore
+is showing, not the server's real time. Talk and the slates carry no
+`delay` parameter: they hold no live feed, only the event they re-read every
+30 seconds, and they are meant for between races. A race ending while it is on air can therefore
 show there (a finisher's time on its card, the standings reordering) before
 a delayed capture does. The browser scene delays its desk's clock, but not
 the page in its hole: that is the caster's own browser, live (see Browser).
@@ -674,7 +720,8 @@ It gives a caster, without hand-editing a URL:
   second after the panel's inputs stop changing, so typing a runner or
   caster name doesn't reload the preview (and reopen its spectator
   WebSocket) on every keystroke; every other field in the panel stays live.
-- A scene picker: Quad, Focus 1 through 4, Duel, Metro, Browser, Talk.
+- A scene picker: Quad, Focus 1 through 4, Duel, Metro, Browser, then the
+  evening scenes, Intro, Talk, Pause and End.
 - Hole assignment, on the scenes that seat runners (quad, focus, duel): a
   dropdown per POV hole (two on the duel scene), every one starting on auto,
   so the URL carries no `p<n>` and the scene seats the live field (a field
@@ -686,30 +733,32 @@ It gives a caster, without hand-editing a URL:
   shift (on a field of five, the fifth picked in POV 2 moves the second and
   third to POV 3 and 4), and their options say so: a caster who needs a
   seat to hold picks it too. The panel leaves hole assignment out on metro,
-  browser and talk, keeping the seats picked for the next scene that has
-  some. Picking the
+  browser and the evening scenes, keeping the seats picked for the next
+  scene that has some. Picking the
   same runner twice is refused rather than silently hiding another runner,
   except when the duplicate sits in a hole the duel scene doesn't render,
   which is freed instead (it can't be cleared from the panel).
-- Cams (0, 1 or 2) and the two caster usernames.
-- An event co-brand picker, and, on the talk scene, a stage picker scoped to
-  the chosen event: its stages, then its showcases. A race attached to an
-  event starts from that event as its co-brand (the race detail's
-  `event_slug`), and from the stage or showcase its slot names (`<key>:<n>`)
-  as the talk scene's stage, so "Copy all scene URLs" carries the talk URL
-  from the start; a qualifier race starts from its event alone, talk
-  introducing playoff evenings. The picker lists the events on the bill plus
+- Cams (0, 1 or 2) and the two caster usernames, left out on the slates,
+  which show neither (the setting stays, for the other scenes and the
+  downloads).
+- An event co-brand picker, and, on the evening scenes, a stage picker
+  scoped to the chosen event: its stages, then its showcases. A race
+  attached to an event starts from that event as its co-brand (the race
+  detail's `event_slug`), and from the stage or showcase its slot names
+  (`<key>:<n>`) as the evening scenes' stage, so "Copy all scene URLs"
+  carries their URLs from the start; a qualifier race starts from its event
+  alone, the evening scenes introducing playoff evenings. The picker lists the events on the bill plus
   the race's own, so a race of an older season still names it. The scenes
   themselves never fall back to the race's event: a URL with no `event`
   shows no co-brand.
 - Delay in seconds (race scenes only).
 - The built URL for the current scene, with a copy button, and a "Copy all
-  scene URLs" button that copies every race scene's URL plus talk's once an
-  event and stage are both chosen. Selecting the talk scene before then
-  withholds the preview, the URL and its copy button, and the "Open with
-  position guides" link below, each replaced with a hint to pick an event
-  and stage first: none of the three are valid URLs yet (an unconfigured
-  talk URL would only point at a 404).
+  scene URLs" button that copies every race scene's URL plus the four
+  evening scenes' once an event and stage are both chosen. Selecting an
+  evening scene before then withholds the preview, the URL and its copy
+  button, and the "Open with position guides" link below, each replaced
+  with a hint to pick an event and stage first: none of the three are valid
+  URLs yet (an unconfigured evening URL would only point at a 404).
 - Next to it, two buttons that download a ready-to-import OBS scene
   collection (see "The OBS scene collection" below), built in the browser
   from the panel as it stands: its co-brand, casters, cams, delay and
@@ -718,18 +767,20 @@ It gives a caster, without hand-editing a URL:
     named by the race (`/overlay/cast/race/<id>/<scene>`). Its seats are
     the race's runners, exactly as the hole dropdowns' "(auto: ...)"
     options name them (`raceSeats` in `web/src/lib/cast/obs-export.ts`).
-    It opens on talk under the same rule as "Copy all scene URLs" (an
-    event and a stage both chosen, the talk picker's), else on quad. The
+    It opens on the evening scenes (Intro first) under the same rule as
+    "Copy all scene URLs" (an event and a stage both chosen, the stage
+    picker's), else on quad. The
     file is `speedfog-<event>-<stage>-<n>.json` for a race in a stage or
     showcase slot, else `speedfog-race-<first 8 characters of its id>.json`.
   - **"Download OBS scenes for the match"**: the collection for the whole
     evening, on a race in a stage or showcase slot, once the race's own
     event detail has loaded (the panel asks for it on opening, whatever the
-    co-brand and talk pickers say, and reads it afresh at each match
+    co-brand and stage pickers say, and reads it afresh at each match
     download). Its race scenes are keyed by the race's own stage, never the
-    talk picker's (`/overlay/cast/event/<slug>/<stage>/<scene>`, see
+    stage picker's (`/overlay/cast/event/<slug>/<stage>/<scene>`, see
     "Following a stage" above), so they follow its current race on their own
-    and the file names no race. It always opens on that stage's talk scene.
+    and the file names no race. It always opens on that stage's evening
+    scenes, Intro first.
     On a stage, its seats are the stage's declared field (`stage.field` in
     the event detail), in field order, with the panel's pins on top
     (`stageSeats`): the field is the same for every race of the stage and
@@ -772,7 +823,7 @@ shows its slot is a stage, the panel moves to the stage's entry,
 earlier race of the stage saved there, or else seeds it with its own
 settings (loaded from `cast-setup:<raceId>` until then); every change from
 then on is saved there. Every setting is stage-wide (seats by username,
-cams, casters, delay, co-brand, talk stage): a stage's field is fixed. A
+cams, casters, delay, co-brand, evening stage): a stage's field is fixed. A
 showcase, and any race in no stage slot, keeps `cast-setup:<raceId>`: a
 showcase's races may seat different runners, and a pin carried to a race
 its runner is absent from would leave that hole empty.
@@ -784,8 +835,9 @@ an OBS scene collection, a JSON file OBS imports with Scene Collection >
 Import, built by `buildObsCollection` (`web/src/lib/cast/obs.ts`). Its
 scenes, in this order, the first being the one OBS opens on:
 
-1. **Talk**: always on the match file; on the race file once the panel has
-   an event and a stage chosen.
+1. **Intro**, **Talk**, **Pause** and **End**, the evening scenes, in
+   that order: always on the match file; on the race file once the panel
+   has an event and a stage chosen.
 2. **Quad**.
 3. **Focus: <runner>**, one per seated runner in slot order, that runner the
    hero.
@@ -826,7 +878,8 @@ source under it. A caster downloads the file again once the field changes.
   (`pierceableHoles`: a quad on a three-runner race gets nothing under
   POV 4, and the metro map, never a hole, gets nothing): the runner's POV
   under a POV or hero hole, the Cam 1 or Cam 2 scene under a cam hole,
-  "Browser capture" under the browser scene's hole;
+  "Browser capture" under the browser scene's hole (a slate pierces none,
+  so it has nothing between its plate and Audio);
 - the Audio scene, nested at the bottom.
 
 **POVs** are Browser Sources on Twitch's popout player
@@ -873,7 +926,8 @@ so a stray drag cannot move a source off its hole.
 
 1. On the race page, as one of its casters, open Cast Setup.
 2. Set `cams`, name the casters, optionally pin specific runners into POV
-   holes, and optionally pick an event co-brand (and talk's stage), both
+   holes, and optionally pick an event co-brand (and the evening scenes'
+   stage), both
    already filled in on a race attached to an event. Set the delay to
    roughly how far behind live your own capture runs.
 3. Download the collection: "Download OBS scenes for the match" for a
@@ -887,8 +941,9 @@ so a stray drag cannot move a source off its hole.
    capture", your microphone and the Discord and music applications in the
    Audio scene's sources (on macOS or Linux, your platform's own sources in
    their place).
-6. Switch between the scenes in OBS as commentary moves between the talk
-   desk, the quad view, a focused runner, a duel, the map, or a web page.
+6. Switch between the scenes in OBS as commentary moves between the intro,
+   the talk desk, the quad view, a focused runner, a duel, the map, a web
+   page, a pause and the end.
    A match file's race scenes move to the stage's next race on their own;
    download again once the field changes (and a race file for each race).
 
@@ -897,8 +952,8 @@ so a stray drag cannot move a source off its hole.
 Without the import (another tool than OBS, or a single cast scene added to
 a collection of your own), build each scene yourself:
 
-1. In Cast Setup, pick a scene and set it up as in step 2 above; leave
-   talk's delay alone, it has none.
+1. In Cast Setup, pick a scene and set it up as in step 2 above; talk and
+   the slates have no delay to set.
 2. In OBS, create a new Scene for this cast scene.
 3. Add the video sources it needs (webcam captures for the cam holes,
    captured Twitch POVs for the runner holes, a capture of your own browser

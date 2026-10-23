@@ -1,4 +1,9 @@
-import { sceneLayout, type CastSceneId } from "./layout";
+import {
+  isEveningScene,
+  isSlateScene,
+  sceneLayout,
+  type CastSceneId,
+} from "./layout";
 
 /**
  * Everything the setup panel knows that a cast scene's URL might carry.
@@ -6,7 +11,8 @@ import { sceneLayout, type CastSceneId } from "./layout";
  * `buildCastUrl`.
  */
 export interface CastUrlOpts {
-  /** Which race's scenes these are. Required for every scene but `talk`. */
+  /** Which race's scenes these are. Required for every scene but the
+   * evening ones (talk and the slates). */
   raceId?: string;
   /** Twitch usernames wanted in POV holes 1 to 4; null (or absent) leaves
    * that hole to the scene's own join-order fallback, and "-" (`EMPTY_SEAT`)
@@ -23,21 +29,22 @@ export interface CastUrlOpts {
   focus?: number;
   /** The event whose co-brand a race scene shows. Null/absent shows none. */
   event?: string | null;
-  /** The event slug the `talk` scene's path names and, with `stageKeyed`,
+  /** The event slug the evening scenes' path names and, with `stageKeyed`,
    * the race scenes' path. Ignored otherwise. */
   eventSlug?: string;
-  /** The stage key the `talk` scene's path names and, with `stageKeyed`,
+  /** The stage key the evening scenes' path names and, with `stageKeyed`,
    * the race scenes' path. Ignored otherwise. */
   stageKey?: string;
-  /** Key the race scenes by the event stage instead of the race. `talk` keeps
-   * its path either way. */
+  /** Key the race scenes by the event stage instead of the race. The
+   * evening scenes keep their path either way. */
   stageKeyed?: boolean;
 }
 
 /**
  * Build one cast scene's URL. The path is `/overlay/cast/race/<raceId>/<scene>`
  * for a race scene, `/overlay/cast/event/<eventSlug>/<stageKey>/<scene>` for
- * `talk` and for any race scene when `stageKeyed` is set. Parameters are appended in a fixed order and
+ * the evening scenes (talk and the slates) and for any race scene when
+ * `stageKeyed` is set. Parameters are appended in a fixed order and
  * escaped with `encodeURIComponent`:
  *
  * - race scenes (quad, focus, metro, duel, browser): one p<n> per POV or
@@ -48,6 +55,8 @@ export interface CastUrlOpts {
  * - talk: c1, c2, cams. No seating and no delay: that scene has no runner
  *   holes, and no live feed to hold back (it re-reads the event every 30
  *   seconds, between races).
+ * - the slates (intro, pause, end): nothing. They show no caster, no cam
+ *   and no runner video, so the stage in the path is all they read.
  */
 export function buildCastUrl(
   origin: string,
@@ -55,9 +64,12 @@ export function buildCastUrl(
   opts: CastUrlOpts,
 ): string {
   const path =
-    scene === "talk" || opts.stageKeyed
+    isEveningScene(scene) || opts.stageKeyed
       ? `/overlay/cast/event/${encodeURIComponent(opts.eventSlug ?? "")}/${encodeURIComponent(opts.stageKey ?? "")}/${scene}`
       : `/overlay/cast/race/${encodeURIComponent(opts.raceId ?? "")}/${scene}`;
+  if (isSlateScene(scene)) {
+    return `${origin}${path}`;
+  }
 
   const params: string[] = [];
 

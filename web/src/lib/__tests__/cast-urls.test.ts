@@ -108,6 +108,22 @@ describe("buildCastUrl", () => {
     expect(url).not.toContain("delay=");
   });
 
+  // A slate shows no caster, no cam and no runner: whatever the panel
+  // holds, its URL names the stage alone.
+  it("names the stage alone on the intro, pause and end slates", () => {
+    for (const scene of ["intro", "pause", "end"] as const) {
+      expect(
+        buildCastUrl("https://x.tv", scene, {
+          ...base,
+          raceId: "r1",
+          event: "season-one",
+          eventSlug: "season-one",
+          stageKey: "semi_b",
+        }),
+      ).toBe(`https://x.tv/overlay/cast/event/season-one/semi_b/${scene}`);
+    }
+  });
+
   it("escapes a username that needs it", () => {
     const url = buildCastUrl("https://x.tv", "quad", {
       ...base,

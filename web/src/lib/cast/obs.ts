@@ -34,7 +34,9 @@ export interface ObsExportInput {
   duelSeats?: (ObsRunner | null)[];
   fieldSize: number;
   url: Omit<CastUrlOpts, "slots" | "focus">;
-  includeTalk: boolean;
+  /** Whether the file carries the evening scenes (intro, talk, pause, end),
+   * which need `url.eventSlug` and `url.stageKey`. */
+  includeEvening: boolean;
 }
 
 /** The runner pairs a duel scene is built for: every pair of seated slots
@@ -220,7 +222,7 @@ export function buildObsCollection(
     duelSeats,
     fieldSize,
     url,
-    includeTalk,
+    includeEvening,
   } = input;
   const duels = duelPairs(seats, fieldSize, duelSeats);
 
@@ -288,8 +290,13 @@ export function buildObsCollection(
     sceneNames.push(name);
   };
 
-  if (includeTalk) {
+  // The evening's own scenes open the file, in broadcast order: OBS opens
+  // on the first one.
+  if (includeEvening) {
+    castScene("Intro", "intro", { ...url }, [], []);
     castScene("Talk", "talk", { ...url }, [], []);
+    castScene("Pause", "pause", { ...url }, [], []);
+    castScene("End", "end", { ...url }, [], []);
   }
   castScene(
     "Quad",

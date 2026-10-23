@@ -1,6 +1,7 @@
 import type { ParamMatcher } from "@sveltejs/kit";
 
-/** The cast scenes that show one race: every scene but `talk`. */
+/** The cast scenes that show one race: every scene but the evening ones
+ * (talk and the slates). */
 export const match = ((
   param: string,
 ): param is "quad" | "focus" | "duel" | "metro" | "browser" =>

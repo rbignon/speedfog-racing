@@ -10,7 +10,14 @@
     type EventShowcase,
     type EventStage,
   } from "$lib/api";
-  import { sceneLayout, formatGeo, type CastSceneId } from "$lib/cast/layout";
+  import {
+    sceneLayout,
+    formatGeo,
+    isEveningScene,
+    isSlateScene,
+    SLATE_SCENES,
+    type CastSceneId,
+  } from "$lib/cast/layout";
   import { buildCastUrl, type CastUrlOpts } from "$lib/cast/urls";
   import { buildObsCollection } from "$lib/cast/obs";
   import {
@@ -46,7 +53,10 @@
     { id: "duel", label: "Duel" },
     { id: "metro", label: "Metro" },
     { id: "browser", label: "Browser" },
+    { id: "intro", label: "Intro" },
     { id: "talk", label: "Talk" },
+    { id: "pause", label: "Pause" },
+    { id: "end", label: "End" },
   ];
 
   interface StoredSettings {
@@ -91,6 +101,7 @@
     "duel",
     "browser",
     "talk",
+    ...SLATE_SCENES,
   ];
 
   // Where the settings are saved: under the race, until the race's own
@@ -219,7 +230,7 @@
   }
 
   // The race's own event detail, asked for once whatever the co-brand and
-  // talk pickers say: the match file is built from the race's own stage (or
+  // stage pickers say: the match file is built from the race's own stage (or
   // showcase), and a stage's races share their settings. Only a race in a
   // stage or showcase slot asks, and the pickers below reuse this request
   // for the same event: the detail is heavy (every race's zone history). A
@@ -287,8 +298,8 @@
     events = list;
   });
 
-  // The talk scene's stage picker: only the chosen event's own stages (and
-  // showcases) are valid, so this refetches whenever eventSlug changes.
+  // The evening scenes' stage picker: only the chosen event's own stages
+  // (and showcases) are valid, so this refetches whenever eventSlug changes.
   let stages = $state<(EventStage | EventShowcase)[]>([]);
   $effect(() => {
     const slug = eventSlug;
@@ -340,13 +351,18 @@
     `${castUrl}${castUrl.includes("?") ? "&" : "?"}guides=1`,
   );
 
-  // Selecting the talk scene before an event and stage are both chosen
-  // builds a URL with an empty path segment
+  // Selecting an evening scene (talk or a slate) before an event and stage
+  // are both chosen builds a URL with an empty path segment
   // (`/overlay/cast/event//talk?...`), which 404s: nothing derived from
   // castUrl should be handed to the caster as if it were usable until then.
-  // Every other scene's URL is always valid, whatever slots or casters are
+  // Every race scene's URL is always valid, whatever slots or casters are
   // filled in.
-  let castUrlReady = $derived(scene !== "talk" || (!!eventSlug && !!stageKey));
+  let castUrlReady = $derived(
+    !isEveningScene(scene) || (!!eventSlug && !!stageKey),
+  );
+  // The slates show no caster and no cam: the panel's cam settings say
+  // nothing about them.
+  let isSlate = $derived(isSlateScene(scene));
 
   // The iframe's own `src` only settles a moment after typing stops, so a
   // caster typing a caster or runner name doesn't reload the preview (and
@@ -364,7 +380,8 @@
 
   let layout = $derived(sceneLayout(scene, { cams, focus: focusSlot }));
   // One POV dropdown per POV or hero hole the scene cuts: four on quad and
-  // focus, two on duel, none on metro, browser and talk, which seat nobody
+  // focus, two on duel, none on metro, browser and the evening scenes,
+  // which seat nobody
   // (buildCastUrl carries the same count of p<n>).
   let seatCount = $derived(
     layout.holes.filter((h) => h.role === "pov" || h.role === "hero").length,
@@ -393,17 +410,13 @@
     layout.holes.filter((h) => h.role !== "map").map(formatGeo),
   );
 
-  // Every race scene this race can show, plus the talk scene once the
-  // caster has actually picked which stage it introduces: an unconfigured
-  // talk URL would just point at a 404.
+  // Every race scene this race can show, plus the evening scenes once the
+  // caster has actually picked which stage they show: an unconfigured
+  // evening URL would just point at a 404.
   let allUrls = $derived.by(() => {
-    const lines = (
-      ["quad", "focus", "duel", "metro", "browser"] as CastSceneId[]
-    ).map((id) => buildCastUrl(origin, id, urlOpts));
-    if (eventSlug && stageKey) {
-      lines.push(buildCastUrl(origin, "talk", urlOpts));
-    }
-    return lines;
+    const ids: CastSceneId[] = ["quad", "focus", "duel", "metro", "browser"];
+    if (eventSlug && stageKey) ids.push("intro", "talk", "pause", "end");
+    return ids.map((id) => buildCastUrl(origin, id, urlOpts));
   });
 
   let urlCopied = $state(false);
@@ -425,8 +438,8 @@
   // The OBS scene collections (see "The OBS scene collection" in
   // docs/CAST_OVERLAYS.md). Both take the co-brand, casters, cams, delay and
   // pins from the panel as it stands, and write every seat out by name.
-  // The race file names this race, and opens on talk under the same rule
-  // as allUrls.
+  // The race file names this race, and opens on the evening scenes under
+  // the same rule as allUrls.
   function downloadRaceFile() {
     downloadJson(
       obsFileName("race", race),
@@ -445,13 +458,13 @@
           eventSlug,
           stageKey,
         },
-        includeTalk: !!eventSlug && !!stageKey,
+        includeEvening: !!eventSlug && !!stageKey,
       }),
     );
   }
 
   // The match file names no race: its scenes are keyed by the race's own
-  // stage (never the talk picker's) and follow its current race. A stage
+  // stage (never the stage picker's) and follow its current race. A stage
   // seats its declared field, the same from any of its races, and sizes it
   // by who races it (the duel rule); a showcase declares none, so this
   // race's runners stand in. The caster downloads it again once a seat's
@@ -485,7 +498,7 @@
           stageKey: ownStageKey,
           stageKeyed: true,
         },
-        includeTalk: true,
+        includeEvening: true,
       }),
     );
   }
@@ -516,7 +529,7 @@
       ></iframe>
     {:else}
       <div class="preview preview-empty">
-        Pick an event and stage below to preview the talk scene.
+        Pick an event and stage below to preview this scene.
       </div>
     {/if}
   </div>
@@ -565,29 +578,31 @@
     </div>
   {/if}
 
-  <div class="section">
-    <h3>Cams</h3>
-    <div class="pill-group">
-      {#each [0, 1, 2] as n (n)}
-        <button
-          type="button"
-          class="pill"
-          class:active={cams === n}
-          onclick={() => (cams = n)}
-        >
-          {n}
-        </button>
-      {/each}
+  {#if !isSlate}
+    <div class="section">
+      <h3>Cams</h3>
+      <div class="pill-group">
+        {#each [0, 1, 2] as n (n)}
+          <button
+            type="button"
+            class="pill"
+            class:active={cams === n}
+            onclick={() => (cams = n)}
+          >
+            {n}
+          </button>
+        {/each}
+      </div>
+      <label class="field">
+        <span>Caster 1</span>
+        <input type="text" bind:value={caster1} placeholder="twitch username" />
+      </label>
+      <label class="field">
+        <span>Caster 2</span>
+        <input type="text" bind:value={caster2} placeholder="twitch username" />
+      </label>
     </div>
-    <label class="field">
-      <span>Caster 1</span>
-      <input type="text" bind:value={caster1} placeholder="twitch username" />
-    </label>
-    <label class="field">
-      <span>Caster 2</span>
-      <input type="text" bind:value={caster2} placeholder="twitch username" />
-    </label>
-  </div>
+  {/if}
 
   <div class="section">
     <h3>Event</h3>
@@ -600,7 +615,7 @@
         {/each}
       </select>
     </label>
-    {#if scene === "talk"}
+    {#if isEveningScene(scene)}
       <label class="field">
         <span>Stage</span>
         <select bind:value={stageKey} disabled={!eventSlug}>
@@ -613,7 +628,7 @@
     {/if}
   </div>
 
-  {#if scene !== "talk"}
+  {#if !isEveningScene(scene)}
     <div class="section">
       <h3>Delay</h3>
       <label class="field">
@@ -655,25 +670,30 @@
     {/if}
   </div>
 
-  <div class="section">
-    <h3>OBS positions</h3>
-    <p class="hint">
-      Add a Browser source at 1920&times;1080 and place the video sources
-      underneath at these positions.
-    </p>
-    <div class="positions">
-      {#each positionLines as line (line)}
-        <div class="position-row">{line}</div>
-      {/each}
+  <!-- A slate pierces no hole: nothing to place under it. -->
+  {#if !isSlate}
+    <div class="section">
+      <h3>OBS positions</h3>
+      <p class="hint">
+        Add a Browser source at 1920&times;1080 and place the video sources
+        underneath at these positions.
+      </p>
+      <div class="positions">
+        {#each positionLines as line (line)}
+          <div class="position-row">{line}</div>
+        {/each}
+      </div>
+      {#if castUrlReady}
+        <a href={guidesUrl} target="_blank" rel="noopener noreferrer"
+          >Open with position guides</a
+        >
+      {:else}
+        <span class="hint"
+          >Pick an event and stage above to open this link.</span
+        >
+      {/if}
     </div>
-    {#if castUrlReady}
-      <a href={guidesUrl} target="_blank" rel="noopener noreferrer"
-        >Open with position guides</a
-      >
-    {:else}
-      <span class="hint">Pick an event and stage above to open this link.</span>
-    {/if}
-  </div>
+  {/if}
 </div>
 
 <style>
