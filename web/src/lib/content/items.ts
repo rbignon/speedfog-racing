@@ -725,6 +725,17 @@ export const CONTENT_ITEMS: ContentItem[] = [
     },
   },
   {
+    id: "rauhbase-forge-skip2",
+    kind: "skip",
+    zoneIds: ["rauhbase_forge"],
+    difficulty: 2,
+    title: "Taylew Forge Skip",
+    short: "",
+    video: {
+      youtubeId: "Q1QruRcGh80",
+    },
+  },
+  {
     id: "nokron-hard-skip",
     kind: "skip",
     zoneIds: ["siofra_nokron"],
@@ -732,7 +743,7 @@ export const CONTENT_ITEMS: ContentItem[] = [
     title: "Fingerslayer Blade Skip",
     short: "",
     video: {
-      youtubeId: "FxMK3S7WIbc",
+      youtubeId: "gWe7T5xCVF4",
     },
   },
   {
@@ -799,6 +810,30 @@ export const CONTENT_ITEMS: ContentItem[] = [
     short: "",
     video: {
       youtubeId: "qhByf8BHb6I",
+    },
+  },
+  {
+    id: "ensis-backwards",
+    kind: "skip",
+    zoneIds: ["ensis"],
+    difficulty: 1,
+    title: "Backwards crack route",
+    short: "",
+    video: {
+      youtubeId: "gk1j32g_Yno",
+    },
+  },
+  {
+    id: "academy-rennala-skip",
+    kind: "skip",
+    zoneIds: ["academy_courtyard"],
+    difficulty: 1,
+    title: "Rennala Skip",
+    short: "",
+    video: {
+      twitchClipId: "VainCogentWoodpeckerBudBlast-ZyD_tMIBEY4CtZYo",
+      thumbnail:
+        "https://static-cdn.jtvnw.net/twitch-video-assets/twitch-vap-video-assets-prod-us-west-2/fe4cb841-ebec-42c1-99bf-ef94fb1f0b5c/landscape/thumb/thumb-0000000000-480x272.jpg",
     },
   },
 ];
