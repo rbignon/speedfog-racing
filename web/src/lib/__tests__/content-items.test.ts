@@ -122,10 +122,19 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("uses valid YouTube ids on skip videos", () => {
+  it("uses valid YouTube ids, or Twitch clip slugs with an image thumbnail, on skip videos", () => {
     for (const item of CONTENT_ITEMS) {
-      if (item.video) {
-        expect(item.video.youtubeId, item.id).toMatch(/^[A-Za-z0-9_-]{11}$/);
+      const video = item.video;
+      if (!video) continue;
+      if (video.twitchClipId !== undefined) {
+        // A slug, not the pasted clip URL.
+        expect(video.twitchClipId, item.id).toMatch(/^[A-Za-z0-9_-]+$/);
+        // The og:image URL, not the clip page's.
+        expect(video.thumbnail, item.id).toMatch(
+          /^https:\/\/[^\s]+\.(jpe?g|png|webp)$/,
+        );
+      } else {
+        expect(video.youtubeId, item.id).toMatch(/^[A-Za-z0-9_-]{11}$/);
       }
     }
   });

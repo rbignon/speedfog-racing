@@ -184,11 +184,7 @@
               <p class="credit">video by {skip.credit}</p>
             {/if}
             {#if skip.video}
-              <VideoLink
-                youtubeId={skip.video.youtubeId}
-                title={skip.title}
-                start={skip.video.start}
-              />
+              <VideoLink video={skip.video} title={skip.title} />
             {/if}
           </div>
         {/each}

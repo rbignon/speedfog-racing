@@ -1,28 +1,36 @@
 <script lang="ts">
+  import type { ContentVideo } from "$lib/content/types";
+
   interface Props {
-    youtubeId: string;
+    video: ContentVideo;
     title: string;
-    start?: number;
   }
 
-  let { youtubeId, title, start = 0 }: Props = $props();
+  let { video, title }: Props = $props();
 
-  const thumbnail = $derived(
-    `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`,
-  );
-  const watchUrl = $derived(
-    `https://www.youtube.com/watch?v=${youtubeId}${start ? `&t=${start}s` : ""}`,
+  const link = $derived(
+    video.twitchClipId !== undefined
+      ? {
+          site: "Twitch",
+          thumbnail: video.thumbnail,
+          url: `https://clips.twitch.tv/${video.twitchClipId}`,
+        }
+      : {
+          site: "YouTube",
+          thumbnail: `https://i.ytimg.com/vi/${video.youtubeId}/hqdefault.jpg`,
+          url: `https://www.youtube.com/watch?v=${video.youtubeId}${video.start ? `&t=${video.start}s` : ""}`,
+        },
   );
 </script>
 
 <a
   class="video-link"
-  href={watchUrl}
+  href={link.url}
   target="_blank"
   rel="noopener noreferrer"
-  aria-label={`Watch on YouTube (opens in new tab): ${title}`}
+  aria-label={`Watch on ${link.site} (opens in new tab): ${title}`}
 >
-  <img src={thumbnail} alt="" loading="lazy" />
+  <img src={link.thumbnail} alt="" loading="lazy" />
   <span class="play-icon" aria-hidden="true"></span>
 </a>
 

@@ -20,12 +20,24 @@ export const CATEGORY_LABELS: Record<GameChangeCategory, string> = {
   qol: "Quality of life",
 };
 
-export interface ContentVideo {
-  /** YouTube video id (11 chars). */
-  youtubeId: string;
-  /** Optional start offset in seconds. */
-  start?: number;
-}
+/** A video shown as a thumbnail linking out to its site: YouTube or a Twitch clip. */
+export type ContentVideo =
+  | {
+      /** YouTube video id (11 chars). */
+      youtubeId: string;
+      /** Optional start offset in seconds. */
+      start?: number;
+      twitchClipId?: never;
+      thumbnail?: never;
+    }
+  | {
+      /** Twitch clip slug, the last segment of the clip URL (twitch.tv/<channel>/clip/<slug> or clips.twitch.tv/<slug>). */
+      twitchClipId: string;
+      /** Clip thumbnail URL, copied from the clip page's og:image meta tag: unlike YouTube's, it can't be derived from the id. Prefer the `-480x272.jpg` variant (swap the `-1920x1080.jpg` suffix), the same size class as YouTube's thumbnail and about 7x lighter. */
+      thumbnail: string;
+      youtubeId?: never;
+      start?: never;
+    };
 
 export interface ContentItem {
   /** Stable kebab-case identifier, used for seen-recently tracking. */
