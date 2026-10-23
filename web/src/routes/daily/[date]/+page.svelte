@@ -44,6 +44,7 @@
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
+  import SidebarHandle from "$lib/components/SidebarHandle.svelte";
   import DailyWeekGrid from "$lib/components/DailyWeekGrid.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
@@ -66,6 +67,7 @@
     typeof window !== "undefined" ? window.innerWidth < 1600 : true,
   );
   let chatActiveTab = $state<"participants" | "public">("participants");
+  let sidebarCollapsed = $state(false);
   let zoneSheetTarget = $state<{
     nodeId: string;
     displayName: string;
@@ -549,7 +551,12 @@
   </div>
 {:else}
   <div class="daily-page">
-    <aside class="sidebar">
+    <aside class="sidebar" class:collapsed={sidebarCollapsed}>
+      <SidebarHandle
+        collapsed={sidebarCollapsed}
+        onToggle={() => (sidebarCollapsed = !sidebarCollapsed)}
+      />
+
       <div class="sidebar-section">
         <div class="leaderboard-header">
           <h2>Leaderboard</h2>
@@ -923,6 +930,7 @@
   }
 
   .sidebar {
+    position: relative;
     width: 280px;
     background: var(--color-surface);
     border-right: 1px solid var(--color-border);
@@ -932,6 +940,20 @@
     flex-direction: column;
     gap: 1rem;
     min-height: 0;
+  }
+
+  /* Desktop only: on mobile the sidebar stacks above the page and the
+     handle is hidden, so a collapse made on a wide window must not stick.
+     No width transition: the content would wrap while the rail widens. */
+  @media not all and (max-width: 768px) {
+    .sidebar.collapsed {
+      width: 12px;
+      padding: 0;
+    }
+
+    .sidebar.collapsed > :global(:not(.sidebar-handle)) {
+      display: none;
+    }
   }
 
   .sidebar-section {

@@ -196,6 +196,7 @@ Vertical list, one entry per participant:
 - Second row in mono: IGT, delta (`+13:36`), deaths (skull + count, ember) right-aligned; `DNF` for abandons, entry at `0.55` opacity.
 - `● LIVE` ember signal; `✓` verdigris check for finished dailies.
 - Click-to-filter mode: checkboxes appear per entry, checked state filled with the player's line color.
+- Fold tab (`SidebarHandle`): a surface tab hanging off the rail's right edge at mid-height, elevated on hover, that folds the rail into a 12px band to give the map room (race page while running or finished, daily page always). Desktop only; the fold is instant, since the content would wrap in a narrowing rail.
 
 ### Forms
 

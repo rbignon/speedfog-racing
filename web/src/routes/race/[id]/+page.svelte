@@ -24,6 +24,7 @@
   import ShareButtons from "$lib/components/ShareButtons.svelte";
   import AddToCalendar from "$lib/components/AddToCalendar.svelte";
   import ChatSidebar from "$lib/components/ChatSidebar.svelte";
+  import SidebarHandle from "$lib/components/SidebarHandle.svelte";
   import type {
     ParticipantStatus as ApiParticipantStatus,
     RaceStatus as ApiRaceStatus,
@@ -104,6 +105,7 @@
     typeof window !== "undefined" ? window.innerWidth < 1600 : true,
   );
   let chatActiveTab = $state<"participants" | "public">("participants");
+  let sidebarCollapsed = $state(false);
   let zoneSheetTarget = $state<{
     nodeId: string;
     displayName: string;
@@ -205,6 +207,12 @@
     initialRace.event_slot?.startsWith("qualifier:") ?? false,
   );
   let raceStatus = $derived(liveRace?.status ?? initialRace.status);
+  // The sidebar folds away to give the map room while a race is followed.
+  // In setup it holds the actions (download, leave, invite), so it always
+  // shows there, even when a reset sends a collapsed race back to setup.
+  let sidebarCollapsible = $derived(
+    raceStatus === "running" || raceStatus === "finished",
+  );
   let liveCustomRules = $derived(
     raceStore.race
       ? (raceStore.race.custom_rules ?? null)
@@ -967,7 +975,17 @@
   </div>
 {:else}
   <div class="race-page">
-    <aside class="sidebar">
+    <aside
+      class="sidebar"
+      class:collapsed={sidebarCollapsible && sidebarCollapsed}
+    >
+      {#if sidebarCollapsible}
+        <SidebarHandle
+          collapsed={sidebarCollapsed}
+          onToggle={() => (sidebarCollapsed = !sidebarCollapsed)}
+        />
+      {/if}
+
       {#if raceStatus === "running"}
         <WatchLive casters={initialRace.casters.filter((c) => c.is_live)} />
       {/if}
@@ -1760,6 +1778,7 @@
   }
 
   .sidebar {
+    position: relative;
     width: 280px;
     background: var(--color-surface);
     border-right: 1px solid var(--color-border);
@@ -1768,6 +1787,20 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+
+  /* Desktop only: on mobile the sidebar stacks above the page and the
+     handle is hidden, so a collapse made on a wide window must not stick.
+     No width transition: the content would wrap while the rail widens. */
+  @media not all and (max-width: 768px) {
+    .sidebar.collapsed {
+      width: 12px;
+      padding: 0;
+    }
+
+    .sidebar.collapsed > :global(:not(.sidebar-handle)) {
+      display: none;
+    }
   }
 
   .sidebar-section {
