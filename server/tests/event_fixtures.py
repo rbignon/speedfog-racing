@@ -8,6 +8,7 @@ produces. New tests write brackets directly.
 from __future__ import annotations
 
 import importlib.util
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -40,3 +41,24 @@ def bracketed(config: dict[str, Any]) -> dict[str, Any]:
 def stages_of(raw: dict[str, Any]) -> list[dict[str, Any]]:
     """Every stage dict of a dumped bracketed config, bracket order then stage order."""
     return [stage for bracket in raw["brackets"] for stage in bracket["stages"]]
+
+
+KINDLED = {"name_templates": ["season_one_qualifier"]}
+CHAMPION = {
+    "name_templates": ["season_one_champion"],
+    "badges": ["season_one_champion"],
+    "phantom_skins": ["violet-aura"],
+}
+
+
+def rewarded(config: dict[str, Any]) -> dict[str, Any]:
+    """``config`` bracketed, with Season One's rewards on its two brackets.
+
+    The reward sets are copies, so a test editing its config never edits another's.
+    """
+    wrapped = bracketed(config)
+    wrapped["brackets"][0]["rewards"] = deepcopy({"seated": KINDLED, "champion": CHAMPION})
+    wrapped["brackets"][1]["rewards"] = deepcopy(
+        {"seated": KINDLED, "champion": {"phantom_skins": ["violet-aura"]}}
+    )
+    return wrapped
