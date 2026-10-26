@@ -36,8 +36,16 @@ computed on each request by `services/event_service.py`.
 | `draw_locks_at`          | the end of the redraws, one instant for the event; unset, every withdrawal redraws                                    |
 | `caster_languages`       | Twitch username -> the language a caster casts in (`EN`, `FR`: 2 or 3 capitals), shown beside them on the event page  |
 
-A bracket: `key`, `label`, `entry` (`all` or `newcomers`, see Brackets) and
-its `stages`, at least one. A stage: `key`, `label`, `kind` (`round`,
+A bracket: `key`, `label`, `entry` (`all` or `newcomers`, see Brackets), its
+`stages`, at least one, and an optional `rewards`. `rewards` holds `seated` and
+`champion`, each a set of `badges`, `name_templates` and `phantom_skins` ids
+(at most 8 per list): seated is every runner the draw seats in the bracket (a
+forfeit included, a withdrawn runner not), champion is the winner of the
+bracket's closing stage. They are granted from the admin Events tab, one block
+at a time (see Running an event). The schema checks the shape only (no blank or
+repeated id); the admin save checks the ids against the catalog (an unknown id,
+a transient badge, the `default` template and the `none` and `random` skins are
+refused), so a later catalog change never invalidates a stored config. A stage: `key`, `label`, `kind` (`round`,
 `quarter`, `semi`, `final`), `date` (optional: see below), `races` (per
 evening), `modes` (display labels, not pool keys: one chip per race in the
 bracket boxes and qualified groups, linking to the race page once a race is

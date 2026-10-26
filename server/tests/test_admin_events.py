@@ -698,3 +698,56 @@ async def test_upsert_refuses_a_forfeits_name_that_matches_no_user(test_client, 
         response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
     assert response.status_code == 422
     assert "ghost" in response.text
+
+
+def _with_rewards(rewards: dict[str, Any]) -> dict[str, Any]:
+    doc = _upsert(DOC)
+    doc["config"]["brackets"][0]["rewards"] = rewards
+    return doc
+
+
+@pytest.mark.asyncio
+async def test_upsert_keeps_a_brackets_rewards(test_client, users):
+    rewards = {
+        "seated": {"name_templates": ["season_one_qualifier"]},
+        "champion": {"badges": ["season_one_champion"], "phantom_skins": ["violet-aura"]},
+    }
+    async with test_client as client:
+        response = await client.post(
+            "/api/admin/events", json=_with_rewards(rewards), headers=ADMIN
+        )
+        assert response.status_code == 200, response.text
+        listed = await client.get("/api/admin/events", headers=ADMIN)
+    stored = listed.json()[0]["config"]["brackets"][0]["rewards"]
+    assert stored["champion"]["phantom_skins"] == ["violet-aura"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "field, reward_id",
+    [
+        ("badges", "nope"),
+        ("badges", "weekly_daily_champion"),
+        ("name_templates", "default"),
+        ("phantom_skins", "random"),
+        ("phantom_skins", "none"),
+    ],
+)
+async def test_upsert_refuses_rewards_the_catalog_cannot_grant(
+    test_client, users, field, reward_id
+):
+    doc = _with_rewards({"seated": {field: [reward_id]}})
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 422
+    assert reward_id in response.text
+    assert "brackets.0.rewards.seated" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("ids", [[""], ["  "], ["violet-aura", "violet-aura"]])
+async def test_upsert_refuses_a_blank_or_repeated_reward_id(test_client, users, ids):
+    doc = _with_rewards({"champion": {"phantom_skins": ids}})
+    async with test_client as client:
+        response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
+    assert response.status_code == 422

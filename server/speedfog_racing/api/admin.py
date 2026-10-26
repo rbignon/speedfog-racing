@@ -76,6 +76,7 @@ from speedfog_racing.services import (
     set_pool_enabled,
 )
 from speedfog_racing.services.analytics_service import compute_analytics
+from speedfog_racing.services.event_rewards import reward_catalog_errors
 from speedfog_racing.services.event_service import (
     compute_phase,
     event_window,
@@ -1433,6 +1434,12 @@ async def admin_upsert_event(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"config.modes keys must be pool names, unknown: {unknown}",
+        )
+    reward_errors = reward_catalog_errors(request.config)
+    if reward_errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"config.rewards names rewards it cannot grant: {reward_errors}",
         )
     caster_names = list(request.config.caster_languages)
     listed = [*request.config.withdrawn, *request.config.forfeits, *caster_names]

@@ -1084,6 +1084,34 @@ class EventStage(BaseModel):
         return self
 
 
+class EventRewardSet(BaseModel):
+    """Catalog ids an event grants together: shape only, the admin save checks the catalog.
+
+    The ids are never looked up here, so a later catalog change cannot make a
+    stored config fail validation (which would hide the public event page).
+    """
+
+    badges: list[str] = Field(default_factory=list, max_length=8)
+    name_templates: list[str] = Field(default_factory=list, max_length=8)
+    phantom_skins: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("badges", "name_templates", "phantom_skins")
+    @classmethod
+    def _ids_are_filled_and_distinct(cls, ids: list[str]) -> list[str]:
+        if any(not i.strip() for i in ids):
+            raise ValueError("reward ids must not be blank")
+        if len(set(ids)) != len(ids):
+            raise ValueError("reward ids must not repeat")
+        return ids
+
+
+class EventBracketRewards(BaseModel):
+    """What a bracket grants: to every runner it seats, and to its champion."""
+
+    seated: EventRewardSet | None = None
+    champion: EventRewardSet | None = None
+
+
 class EventBracket(BaseModel):
     """A chain of stages drawing its runners from one pool of the ladder.
 
@@ -1096,6 +1124,7 @@ class EventBracket(BaseModel):
     # Who the pool holds: every ranked runner, or the newcomers only.
     entry: Literal["all", "newcomers"]
     stages: list[EventStage] = Field(min_length=1)
+    rewards: EventBracketRewards | None = None
 
     def final_stage(self) -> EventStage | None:
         return next((s for s in self.stages if s.kind == "final"), None)

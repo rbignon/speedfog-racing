@@ -1881,3 +1881,15 @@ async def test_stage_current_race_outlasts_the_default_rate_limit(test_client, a
     async with test_client as client:
         statuses = {(await _current_race(client, "semi_a")).status_code for _ in range(70)}
     assert statuses == {200}
+
+
+@pytest.mark.asyncio
+async def test_detail_reads_a_config_whose_rewards_name_a_retired_id(test_client, async_session):
+    config = bracketed(CONFIG)
+    config["brackets"][0]["rewards"] = {"seated": {"name_templates": ["retired_template"]}}
+    async with async_session() as db:
+        await _event(db, config=config)
+        await db.commit()
+    async with test_client as client:
+        response = await client.get("/api/events/season-one")
+    assert response.status_code == 200
