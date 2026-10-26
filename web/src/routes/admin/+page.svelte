@@ -1622,7 +1622,12 @@
         </div>
       {:else if eventDoc}
         <div class="events-editor">
-          <label for="event-doc">Event document (JSON)</label>
+          <div class="events-head">
+            <h3><label for="event-doc">Event document (JSON)</label></h3>
+            <button class="btn btn-outline" onclick={() => (eventDoc = "")}
+              >Close</button
+            >
+          </div>
           <textarea
             id="event-doc"
             bind:value={eventDoc}
