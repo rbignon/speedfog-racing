@@ -157,6 +157,11 @@
     padding: 1.5rem;
     max-width: 500px;
     width: 90%;
+    /* Long rule lists can outgrow the viewport: the whole modal scrolls as
+       one, so the Download button stays below every rule. */
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .modal-header {
