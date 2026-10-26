@@ -85,6 +85,11 @@
     padding: 1.5rem;
     max-width: 420px;
     width: 90%;
+    /* Content taller than the viewport scrolls inside the modal instead of
+       being clipped out of reach by the centering backdrop. */
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
   }
 
   .modal-header {
