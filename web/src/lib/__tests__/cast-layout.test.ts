@@ -130,6 +130,25 @@ describe("sceneLayout", () => {
     }
   });
 
+  // The duel's clock keeps the column the other full-desk scenes give it,
+  // and the standings take the rest of that column beneath it.
+  it("stacks the duel's standings under the clock, in the desk's right column", () => {
+    for (const cams of [0, 1, 2]) {
+      const { panels } = sceneLayout("duel", { cams });
+      const desk = sceneLayout("focus", { cams }).panels.clock;
+      const { clock, standings } = panels;
+      expect({ x: clock.x, y: clock.y, w: clock.w }).toEqual({
+        x: desk.x,
+        y: desk.y,
+        w: desk.w,
+      });
+      expect(standings.x).toBe(desk.x);
+      expect(standings.w).toBe(desk.w);
+      expect(standings.y).toBeGreaterThan(clock.y + clock.h);
+      expect(standings.y + standings.h).toBe(desk.y + desk.h);
+    }
+  });
+
   // The quad's four POVs were too small at a third of the canvas, so its
   // desk alone is thinner and its POVs take the height the desk gives up;
   // the other race scenes keep the full desk.

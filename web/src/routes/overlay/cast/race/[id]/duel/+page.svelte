@@ -16,6 +16,7 @@
   import CastPov from "$lib/components/cast/CastPov.svelte";
   import CastDuelCard from "$lib/components/cast/CastDuelCard.svelte";
   import CastDuelVersus from "$lib/components/cast/CastDuelVersus.svelte";
+  import CastMiniStandings from "$lib/components/cast/CastMiniStandings.svelte";
 
   let { data } = $props();
   let params = $derived(data.castParams);
@@ -126,6 +127,11 @@
     {ranks}
     layerEntryIgts={raceStore.layerEntryIgts}
     layerSplits={raceStore.layerSplits}
+  />
+  <CastMiniStandings
+    participants={raceStore.leaderboard}
+    rect={layout.panels.standings}
+    {raceStatus}
   />
   <CastDesk
     scene="duel"

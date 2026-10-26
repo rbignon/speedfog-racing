@@ -158,10 +158,12 @@
     flex-shrink: 0;
   }
 
-  /* No depth cell here any more: the focus scene's own POVs already show
-   * what each runner is doing, the same reasoning that dropped
-   * CastStandings' depth column, and this panel is only 320px wide, so a
-   * cell that only restates the map/POV was the weakest use of its width.
+  /* No depth cell here any more: this panel ranks the field by its gap to
+   * the leader, while the scene around it (POVs, cards, versus block) shows
+   * what the runners on screen are doing, the same reasoning that dropped
+   * CastStandings' depth column; and the focus scene gives this panel only
+   * 320px, so a cell that only restates the map/POV was the weakest use of
+   * its width.
    * .gap below is also trimmed (60px to 42px) so this cell clears the
    * budget rather than getting the leftovers: measured on a real field,
    * SeriousChallenges (17 characters) clipped at the old ~174px budget;

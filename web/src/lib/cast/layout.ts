@@ -263,8 +263,23 @@ const DUEL_STRIP_H = MAIN_Y + MAIN_H - DUEL_STRIP_Y;
 const DUEL_CARD_W = 436; // same width as the talk scene's race cards
 const DUEL_VS_X = M + DUEL_CARD_W + G;
 const DUEL_VS_W = CANVAS.w - M - DUEL_CARD_W - G - DUEL_VS_X;
+// The cards and the versus block only follow the two seated runners, so the
+// desk's clock panel gives up its lower part to the field's standings: the
+// clock keeps its column and type size, at the top of the desk rather than
+// centred in it (its tallest state, the clock over its "IGT cutoff" or
+// "Ends in" line, fits 92px), and five standings rows fit beneath it, a
+// four-runner group whole.
+const DUEL_CLOCK_H = 92;
 
 function duelScene(cams: number): CastScene {
+  const base = deskPanels();
+  const clock: Rect = { ...base.clock, h: DUEL_CLOCK_H };
+  const standings: Rect = {
+    x: base.clock.x,
+    y: clock.y + clock.h + G,
+    w: base.clock.w,
+    h: base.clock.h - clock.h - G,
+  };
   const holes: CastRect[] = [
     {
       id: "pov1",
@@ -288,7 +303,9 @@ function duelScene(cams: number): CastScene {
   return {
     holes: [...holes, ...deskHoles(cams)],
     panels: {
-      ...deskPanels(),
+      ...base,
+      clock,
+      standings,
       duel1: { x: M, y: DUEL_STRIP_Y, w: DUEL_CARD_W, h: DUEL_STRIP_H },
       versus: { x: DUEL_VS_X, y: DUEL_STRIP_Y, w: DUEL_VS_W, h: DUEL_STRIP_H },
       duel2: {

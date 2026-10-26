@@ -69,13 +69,13 @@ typed constant, so a bigger field (or a rect that changes) can never print
 past the panel's bottom. Once the field doesn't fit, the panel's last row is
 given up to a quiet "+ N more" line, the same phrasing the in-game overlay's
 own leaderboard footer uses for the same situation (`mod/src/dll/ui.rs`).
-Four panels do this: `CastStandings` (metro), `CastMiniStandings` (focus),
-`CastRoundStandings` and `CastRaceCard` (talk and the slates). The metro scene's
-`CastStandings` additionally takes a `lines` URL parameter (see below)
-letting the caster show fewer rows than the panel fits; nothing lets any of
-them show more than the panel's own capacity allows. The quad scene's four
-runner cards seat exactly four runners by construction (see `resolveSlots`)
-and need no cap.
+Four panels do this: `CastStandings` (metro), `CastMiniStandings` (focus
+and duel), `CastRoundStandings` and `CastRaceCard` (talk and the slates). The
+metro scene's `CastStandings` additionally takes a `lines` URL parameter
+(see below) letting the caster show fewer rows than the panel fits; nothing
+lets any of them show more than the panel's own capacity allows. The quad
+scene's four runner cards seat exactly four runners by construction (see
+`resolveSlots`) and need no cap.
 
 ## The scenes
 
@@ -97,8 +97,8 @@ under it, rather than a clock frozen at 0:00.
 
 Before the start, the field stands in join order, the only order there is:
 no runner card (quad, focus, duel) shows a rank digit or the leader's brass,
-the standings panels (metro, focus) number no row, and the metro map stays
-hidden. The start countdown still counts as before the start (each scene
+the standings panels (metro, focus, duel) number no row, and the metro map
+stays hidden. The start countdown still counts as before the start (each scene
 reads the race status through `sceneStatus`, which shows a race still
 counting down as setup, its own `delay` included): ranks, the leader and the
 map appear the moment the countdown ends.
@@ -113,7 +113,8 @@ scenes.
 
 The desk's own panels (not holes, no OBS source needed): the race-name panel
 at (16, 776), 376 x 288; the lockup at (820, 776), 280 x 288; the clock panel
-at (1528, 776), 376 x 288.
+at (1528, 776), 376 x 288 (the duel keeps only its top 92px for the clock and
+puts its standings beneath, see Duel).
 
 Wherever a scene names a zone (a card's zone line and splits, the standings,
 the log, the map's labels and tags), it reads the node's label name
@@ -216,6 +217,17 @@ in ("DNF · Stormveil Castle"), and drops out of the gap (the surviving side
 leads); a finished runner's zone line reads "Finished" and their IGT takes
 the finished colour, as in the standings panels.
 
+The cards and the versus block follow the two seated runners only, so the
+desk's clock panel shares its column with the field's standings: the clock
+keeps its column, its right edge and its type size, but sits at the top of
+the desk rather than in its middle (about 98px higher than on focus, metro
+and browser), its tallest state (the clock over its "IGT cutoff" or "Ends
+in" line) filling the 92px it keeps; beneath it, the focus
+scene's mini standings (rank, colour dot, name, and each runner's gap to the
+leader, or their final time once finished) list the whole field, the two
+seated runners included. Five rows fit, a four-runner group whole; a bigger
+field gets the row cap of "Field-size overflow" above.
+
 | Hole | Label | Position (x, y) | Size (w x h) |
 | ---- | ----- | --------------- | ------------ |
 | pov1 | POV 1 | 16, 16          | 928 x 522    |
@@ -223,7 +235,8 @@ the finished colour, as in the standings panels.
 
 Panels: the two runner cards at (16, 554) and (1468, 554), each 436 x 198,
 and the versus block between them at (468, 554), 984 x 198. Plus the shared
-desk band.
+desk band, its clock panel cut down to (1528, 776), 376 x 92, and the
+standings at (1528, 884), 376 x 180.
 
 ### Metro
 
@@ -328,13 +341,14 @@ The standings panel beneath the map is a single column, one row per runner
 as the mockup draws it: rank, colour dot, name, zone, deaths, depth and gap.
 A finished runner's gap cell shows their final time in the finished colour
 instead of a gap that would read as if they were still racing; DNF and DQ
-keep their plain-text marks. The focus scene's mini standings do the same.
-A playoff race seats four runners, which is exactly what the panel fits; a
-bigger field gets the row cap described in "Field-size overflow" above. It
-also reads a `lines` query parameter (default: fit as many rows as the panel
-allows), the same name and spirit as `/overlay/race/[id]/leaderboard`'s own
-`lines`, letting the caster show fewer rows for a field they'd rather keep
-short. It cannot ask for more rows than the panel actually fits.
+keep their plain-text marks. The mini standings of the focus and duel scenes
+do the same. A playoff race seats four runners, which is exactly what the
+panel fits; a bigger field gets the row cap described in "Field-size
+overflow" above. It also reads a `lines` query parameter (default: fit as
+many rows as the panel allows), the same name and spirit as
+`/overlay/race/[id]/leaderboard`'s own `lines`, letting the caster show fewer
+rows for a field they'd rather keep short. It cannot ask for more rows than
+the panel actually fits.
 
 ### Browser
 
