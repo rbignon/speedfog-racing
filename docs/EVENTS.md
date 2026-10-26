@@ -538,7 +538,17 @@ count there. See `daily_points` in
    race yet shows a placeholder named the same way, carrying the stage's
    expected runners as an avatar stack. Start each race as its organizer on
    the evening.
-5. A qualified runner withdraws: before `draw_locks_at`, add their name to
+5. Rewards: add the season's catalog entries (see the checklist in
+   [REWARDS.md](REWARDS.md)) and reference them in each bracket's `rewards`
+   (`seated` for the runners it seats, `champion` for the winner of its
+   final). In the Events tab, open **Rewards** on the event: each block lists
+   its rewards, who would receive them, anyone banned (skipped) and any id the
+   catalog refuses (skipped). Grant a bracket's qualifiers once the draw is
+   locked and a champion once its final is complete, one block at a time with
+   **Grant**; a block that is still waiting, or where everyone already owns
+   everything, has the button disabled. A granted reward revoked later stays
+   revoked as long as that block is not granted again.
+6. A qualified runner withdraws: before `draw_locks_at`, add their name to
    the config's `withdrawn` list and save; the ladder strikes them and the
    groups redraw from the renumbered ranking (the page shows it at once), so
    tell the runners who moved. From `draw_locks_at` on, add the name to
@@ -555,7 +565,7 @@ count there. See `daily_points` in
    name needs `draw_locks_at` cleared for that one save, then restored. These
    lists are unrelated to the signup "Withdraw" button (an intent signal taken
    before the qualifier closes, see "Signups" above).
-6. A showcase (see "Showcases" above) runs the same way: add it to the
+7. A showcase (see "Showcases" above) runs the same way: add it to the
    config's `showcases`, create its races with the chosen runners and the
    casters, named after its label like a stage's ("Ignite Showcase - Race 1 -
    Standard"), and attach them to `<showcase>:<n>`. Its field is read off its

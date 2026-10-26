@@ -43,6 +43,7 @@
   import SectionTitle from "$lib/components/SectionTitle.svelte";
   import SkullIcon from "$lib/components/SkullIcon.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
+  import AdminEventRewards from "$lib/components/events/AdminEventRewards.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import { detectionRows } from "$lib/debugFlags";
   // The page's own formatIgt shows "--:--" at 0 ms; a detection at the
@@ -171,6 +172,7 @@
   let adminEvents: AdminEvent[] = $state([]);
   let eventsLoaded = $state(false);
   let eventDoc = $state("");
+  let rewardsEventId = $state<string | null>(null);
   let eventSaveError = $state<string | null>(null);
   let eventSaveOk = $state(false);
 
@@ -349,6 +351,7 @@
         }
       : EVENT_TEMPLATE;
     eventDoc = JSON.stringify(doc, null, 2);
+    rewardsEventId = null;
     eventSaveError = null;
     eventSaveOk = false;
   }
@@ -1594,6 +1597,13 @@
                     ><button
                       class="btn btn-outline"
                       onclick={() => editEvent(ev)}>Edit</button
+                    >
+                    <button
+                      class="btn btn-outline"
+                      onclick={() => {
+                        eventDoc = "";
+                        rewardsEventId = ev.id;
+                      }}>Rewards</button
                     ></td
                   >
                 </tr>
@@ -1602,7 +1612,16 @@
           </table>
         {/if}
       </div>
-      {#if eventDoc}
+      {#if rewardsEventId}
+        <div class="events-editor">
+          {#key rewardsEventId}
+            <AdminEventRewards
+              eventId={rewardsEventId}
+              onClose={() => (rewardsEventId = null)}
+            />
+          {/key}
+        </div>
+      {:else if eventDoc}
         <div class="events-editor">
           <label for="event-doc">Event document (JSON)</label>
           <textarea

@@ -715,6 +715,49 @@ export interface EventSummaryBracket {
   forfeited: string[];
 }
 
+/** One catalog reward an event bracket block grants. */
+export interface EventRewardItem {
+  kind: "badge" | "name_template" | "phantom_skin";
+  id: string;
+  name: string;
+}
+
+export interface EventRewardRecipient {
+  user: User;
+  /** The block's `kind:id` refs this user already owns. */
+  owned: string[];
+}
+
+/** One bracket's rewards for one role, and who they would go to. */
+export interface EventRewardBlock {
+  bracket_key: string;
+  bracket_label: string;
+  role: "seated" | "champion";
+  waiting:
+    | "ladder_provisional"
+    | "draw_not_locked"
+    | "stage_incomplete"
+    | "no_champion"
+    | null;
+  rewards: EventRewardItem[];
+  /** `kind:id` refs the catalog refuses: listed, never granted. */
+  unknown_rewards: string[];
+  recipients: EventRewardRecipient[];
+  banned: User[];
+  /** Recipient x reward pairs not owned yet. */
+  new_grants: number;
+}
+
+export interface EventRewards {
+  blocks: EventRewardBlock[];
+}
+
+export interface EventRewardGrant {
+  granted: number;
+  /** The block recomputed after the grant. */
+  block: EventRewardBlock;
+}
+
 export interface AdminEvent {
   id: string;
   slug: string;
@@ -2677,6 +2720,29 @@ export async function upsertAdminEvent(
     body: JSON.stringify(doc),
   });
   return handleResponse<AdminEvent>(response);
+}
+
+/** Preview every reward block of an event: who would get what, and what waits. */
+export async function fetchAdminEventRewards(
+  eventId: string,
+): Promise<EventRewards> {
+  const response = await fetch(`${API_BASE}/admin/events/${eventId}/rewards`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<EventRewards>(response);
+}
+
+/** Grant one reward block (a bracket's seated runners or its champion). */
+export async function grantAdminEventRewards(
+  eventId: string,
+  bracketKey: string,
+  role: "seated" | "champion",
+): Promise<EventRewardGrant> {
+  const response = await fetch(
+    `${API_BASE}/admin/events/${eventId}/rewards/${bracketKey}/${role}`,
+    { method: "POST", headers: getAuthHeaders() },
+  );
+  return handleResponse<EventRewardGrant>(response);
 }
 
 /** Attach a race to an event slot, or detach it with a null event id. */

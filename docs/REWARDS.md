@@ -503,7 +503,8 @@ When a template combines `gradient` (rendered via `background-clip: text` + `col
 5. For name templates: validate the `color`/`gradient`, `name_css`, and `background_css` against dark surfaces (`#162032`, `#1C2A3F`) using a real leaderboard preview. Confirm `name_css` properties stay within the [allowlist](#name_css-allowlist).
 6. If the reward has an automatic source: wire the detector in the appropriate service (`race_lifecycle.py`, `daily_seed_loop.py`, etc.) using `RewardsService.refresh_*` or `sync_transient_holders`.
 7. If permanent and historically applicable: extend `scripts/backfill_rewards.py`.
-8. Update this document's catalog tables.
+8. For a reward an event grants: a season adds its own ids (`season_<n>_qualifier`, `season_<n>_champion`) and references them from the event config's bracket `rewards` instead of wiring a detector; an admin grants them from the Events tab (see [EVENTS.md](EVENTS.md)).
+9. Update this document's catalog tables.
 
 ---
 
