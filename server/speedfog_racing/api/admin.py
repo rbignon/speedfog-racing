@@ -1572,10 +1572,10 @@ async def _reward_block_response(db: AsyncSession, block: RewardBlock) -> EventR
 
 
 async def _reward_blocks(db: AsyncSession, event_id: uuid.UUID) -> tuple[Event, list[RewardBlock]]:
-    admin_event = await _load_admin_event(db, event_id)
-    if admin_event is None:
+    slug = (await db.execute(select(Event.slug).where(Event.id == event_id))).scalar_one_or_none()
+    if slug is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
-    event = await load_event(db, admin_event.slug)
+    event = await load_event(db, slug)
     assert event is not None
     try:
         return event, await compute_reward_blocks(db, event, datetime.now(UTC))

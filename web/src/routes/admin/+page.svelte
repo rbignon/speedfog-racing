@@ -1601,7 +1601,6 @@
                     <button
                       class="btn btn-outline"
                       onclick={() => {
-                        eventDoc = "";
                         rewardsEventId = ev.id;
                       }}>Rewards</button
                     ></td

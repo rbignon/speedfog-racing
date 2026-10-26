@@ -101,6 +101,9 @@ describe("AdminEventRewards", () => {
     });
     render(AdminEventRewards, { eventId: "ev-1", onClose: () => {} });
     await screen.findByText("Main: qualifiers");
+    expect(grantButton("Main: qualifiers").textContent).toContain(
+      "Grant (3 new)",
+    );
     await fireEvent.click(grantButton("Main: qualifiers"));
     await screen.findByText("Granted 3");
     expect(grantAdminEventRewards).toHaveBeenCalledTimes(1);
@@ -112,5 +115,22 @@ describe("AdminEventRewards", () => {
     await waitFor(() =>
       expect(fetchAdminEventRewards).toHaveBeenCalledTimes(2),
     );
+  });
+
+  it("does not mark recipients as owning a block that grants nothing", async () => {
+    vi.mocked(fetchAdminEventRewards).mockResolvedValue({
+      blocks: [
+        block({
+          rewards: [],
+          unknown_rewards: ["badge:gone"],
+          recipients: [{ user: fakeUser("alice"), owned: [] }],
+          new_grants: 0,
+        }),
+      ],
+    });
+    render(AdminEventRewards, { eventId: "ev-1", onClose: () => {} });
+    await screen.findByText("Main: qualifiers");
+    expect(screen.queryByText("already owned")).toBeNull();
+    expect(grantButton("Main: qualifiers").disabled).toBe(true);
   });
 });

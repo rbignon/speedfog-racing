@@ -2739,7 +2739,7 @@ export async function grantAdminEventRewards(
   role: "seated" | "champion",
 ): Promise<EventRewardGrant> {
   const response = await fetch(
-    `${API_BASE}/admin/events/${eventId}/rewards/${bracketKey}/${role}`,
+    `${API_BASE}/admin/events/${eventId}/rewards/${encodeURIComponent(bracketKey)}/${role}`,
     { method: "POST", headers: getAuthHeaders() },
   );
   return handleResponse<EventRewardGrant>(response);

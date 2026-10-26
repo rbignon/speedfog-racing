@@ -64,7 +64,10 @@
   }
 
   function ownsAll(b: EventRewardBlock, owned: string[]): boolean {
-    return b.rewards.every((r) => owned.includes(`${r.kind}:${r.id}`));
+    return (
+      b.rewards.length > 0 &&
+      b.rewards.every((r) => owned.includes(`${r.kind}:${r.id}`))
+    );
   }
 
   onMount(load);
@@ -121,7 +124,7 @@
           disabled={b.waiting !== null ||
             b.new_grants === 0 ||
             busyKey !== null}
-          onclick={() => grant(b)}>Grant</button
+          onclick={() => grant(b)}>Grant ({b.new_grants} new)</button
         >
         {#if grantedCounts[keyOf(b)] !== undefined}
           <span class="signal signal-open"
