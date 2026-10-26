@@ -7,14 +7,36 @@ single values (uniqueness, derivation rules, structural constraints).
 """
 
 import dataclasses
+from pathlib import Path
 
 from speedfog_racing.rewards.catalog import (
     BADGES,
     DEFAULT_PHANTOM_SKIN_ID,
+    NAME_TEMPLATES,
     PHANTOM_SKINS,
     PSEUDO_PHANTOM_SKIN_IDS,
     RANDOM_PHANTOM_SKIN_ID,
 )
+
+BADGE_DIR = Path(__file__).resolve().parents[2] / "web" / "static" / "badges"
+
+
+def test_every_badge_icon_ships_with_the_web_app():
+    """A catalog badge whose SVG is missing renders a broken image everywhere."""
+    missing = [
+        b.icon_filename for b in BADGES.values() if not (BADGE_DIR / b.icon_filename).is_file()
+    ]
+    assert missing == []
+
+
+def test_badge_sort_order_unique():
+    orders = [b.sort_order for b in BADGES.values()]
+    assert len(orders) == len(set(orders))
+
+
+def test_name_template_sort_order_unique():
+    orders = [t.sort_order for t in NAME_TEMPLATES.values()]
+    assert len(orders) == len(set(orders))
 
 
 def test_pseudo_skins_are_exactly_the_two_choice_entries():

@@ -60,6 +60,14 @@ BADGES: dict[str, Badge] = {
         lifecycle="permanent",
         sort_order=5,
     ),
+    "season_one_champion": Badge(
+        id="season_one_champion",
+        name="Season One Champion",
+        description="Won the SpeedFog x Ignite Season One playoffs.",
+        icon_filename="season_one_champion.svg",
+        lifecycle="permanent",
+        sort_order=1,
+    ),
 }
 
 DEFAULT_TEMPLATE_ID: Final = "default"
@@ -162,6 +170,35 @@ NAME_TEMPLATES: dict[str, NameTemplate] = {
             " rgba(124, 58, 237, 0.18), transparent 70%)"
         ),
         sort_order=40,
+    ),
+    "season_one_qualifier": NameTemplate(
+        id="season_one_qualifier",
+        name="Kindled",
+        description="Qualified for the SpeedFog x Ignite Season One playoffs.",
+        gradient=("#FFB48A", "#E0562F"),
+        name_css="font-weight: 600; text-shadow: 0 0 5px rgba(224, 86, 47, 0.30);",
+        background_css=(
+            "radial-gradient(ellipse 65% 100% at 25% 50%, rgba(224, 92, 52, 0.30), transparent 72%)"
+        ),
+        sort_order=45,
+    ),
+    "season_one_champion": NameTemplate(
+        id="season_one_champion",
+        name="Phoenix",
+        description="Won the SpeedFog x Ignite Season One playoffs.",
+        gradient=("#FFDC8A", "#E8562A"),
+        name_css=(
+            'font-family: Georgia, "Times New Roman", Times, serif;'
+            " font-style: italic;"
+            " font-weight: 600;"
+            " letter-spacing: 0.02em;"
+            " text-shadow: 0 0 8px rgba(232, 86, 42, 0.45);"
+        ),
+        background_css=(
+            "radial-gradient(ellipse 70% 100% at 25% 50%,"
+            " rgba(236, 104, 48, 0.40), transparent 74%)"
+        ),
+        sort_order=50,
     ),
 }
 
