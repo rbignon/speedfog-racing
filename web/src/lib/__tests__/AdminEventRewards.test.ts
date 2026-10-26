@@ -82,6 +82,8 @@ describe("AdminEventRewards", () => {
     render(AdminEventRewards, { eventId: "ev-1", onClose: () => {} });
     await screen.findByText("Main: champion");
     expect(grantButton("Main: champion").disabled).toBe(true);
+    // No count while waiting: "0 new" would read as "everyone owns it".
+    expect(grantButton("Main: champion").textContent?.trim()).toBe("Grant");
     expect(
       screen.getByText("Waiting: the bracket's last stage is not complete."),
     ).toBeTruthy();

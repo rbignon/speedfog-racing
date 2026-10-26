@@ -545,9 +545,10 @@ count there. See `daily_points` in
    its rewards, who would receive them, anyone banned (skipped) and any id the
    catalog refuses (skipped). Grant a bracket's qualifiers once the draw is
    locked and a champion once its final is complete, one block at a time with
-   **Grant**; a block that is still waiting, or where everyone already owns
-   everything, has the button disabled. A granted reward revoked later stays
-   revoked as long as that block is not granted again.
+   **Grant**, which counts the new grants (`Grant (32 new)`); a block that is
+   still waiting (its button reads just `Grant`), or where everyone already
+   owns everything, has the button disabled. A granted reward revoked later
+   stays revoked as long as that block is not granted again.
 6. A qualified runner withdraws: before `draw_locks_at`, add their name to
    the config's `withdrawn` list and save; the ladder strikes them and the
    groups redraw from the renumbered ranking (the page shows it at once), so

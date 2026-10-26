@@ -124,7 +124,8 @@
           disabled={b.waiting !== null ||
             b.new_grants === 0 ||
             busyKey !== null}
-          onclick={() => grant(b)}>Grant ({b.new_grants} new)</button
+          onclick={() => grant(b)}
+          >{b.waiting ? "Grant" : `Grant (${b.new_grants} new)`}</button
         >
         {#if grantedCounts[keyOf(b)] !== undefined}
           <span class="signal signal-open"
@@ -170,8 +171,20 @@
     margin: 0.4rem 0;
   }
 
+  .recipients {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+    gap: 0.2rem 1rem;
+  }
+
+  .recipients li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 0.5rem;
+  }
+
   .owned {
-    margin-left: 0.5rem;
     font-size: var(--font-size-xs);
     color: var(--color-text-secondary);
   }
