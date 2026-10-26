@@ -609,6 +609,19 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
 (`stats_service.recalculate_all_stats`); it has no effect on the event's own
 ladder, on the race listings, or on the event page.
 
+### Granting a bracket's rewards
+
+`GET /api/admin/events/{event_id}/rewards` previews every reward block (a
+bracket's `seated` or `champion` set, see `REWARDS.md`): who it would reward,
+which of its rewards each recipient already owns, and how many grants are new.
+`POST /api/admin/events/{event_id}/rewards/{bracket_key}/{role}` (`role` is
+`seated` or `champion`) grants one block and answers with the count granted and
+the recomputed block. Both answer 404 for an unknown event, 422 when the stored
+config no longer parses (the validation errors as detail); the POST also
+answers 404 when the bracket or role has no rewards, and 409 while the block is
+waiting (the detail is its waiting code: `ladder_provisional`,
+`draw_not_locked`, `stage_incomplete` or `no_champion`).
+
 ## The event page
 
 `/events/[slug]` polls `GET /api/events/{slug}` every 60 seconds while a

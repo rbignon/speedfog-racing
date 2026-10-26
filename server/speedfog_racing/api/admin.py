@@ -43,6 +43,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.rewards.catalog import BADGES, NAME_TEMPLATES, PHANTOM_SKINS
 from speedfog_racing.rewards.service import (
     LifecycleMismatchError,
     RewardsService,
@@ -57,6 +58,11 @@ from speedfog_racing.schemas import (
     AttachRaceToEventRequest,
     DailyParticipantActivity,
     EventConfig,
+    EventRewardBlockResponse,
+    EventRewardGrantResponse,
+    EventRewardItemResponse,
+    EventRewardRecipientResponse,
+    EventRewardsResponse,
     EventUpsertRequest,
     RaceCasterActivity,
     RaceListResponse,
@@ -76,12 +82,20 @@ from speedfog_racing.services import (
     set_pool_enabled,
 )
 from speedfog_racing.services.analytics_service import compute_analytics
-from speedfog_racing.services.event_rewards import reward_catalog_errors
+from speedfog_racing.services.event_rewards import (
+    RewardBlock,
+    RewardRole,
+    compute_reward_blocks,
+    grant_reward_block,
+    owned_refs,
+    reward_catalog_errors,
+)
 from speedfog_racing.services.event_service import (
     compute_phase,
     event_window,
     first_config_date,
     is_event_joinable,
+    load_event,
     parse_slot,
     validate_slot,
 )
@@ -1524,6 +1538,86 @@ async def admin_upsert_event(
     reloaded = await _load_admin_event(db, event.id)
     assert reloaded is not None
     return _admin_event_response(reloaded)
+
+
+async def _reward_block_response(db: AsyncSession, block: RewardBlock) -> EventRewardBlockResponse:
+    """One block with what each recipient already owns of it."""
+    owned = await owned_refs(db, [u.id for u in block.recipients], block.rewards)
+    names = {
+        "badge": {k: v.name for k, v in BADGES.items()},
+        "name_template": {k: v.name for k, v in NAME_TEMPLATES.items()},
+        "phantom_skin": {k: v.name for k, v in PHANTOM_SKINS.items()},
+    }
+    recipients = [
+        EventRewardRecipientResponse(
+            user=UserResponse.model_validate(u),
+            owned=[r.ref for r in block.rewards if r.ref in owned.get(u.id, set())],
+        )
+        for u in block.recipients
+    ]
+    return EventRewardBlockResponse(
+        bracket_key=block.bracket_key,
+        bracket_label=block.bracket_label,
+        role=block.role,
+        waiting=block.waiting,
+        rewards=[
+            EventRewardItemResponse(kind=r.kind, id=r.id, name=names[r.kind][r.id])
+            for r in block.rewards
+        ],
+        unknown_rewards=[r.ref for r in block.unknown],
+        recipients=recipients,
+        banned=[UserResponse.model_validate(u) for u in block.banned],
+        new_grants=sum(len(block.rewards) - len(r.owned) for r in recipients),
+    )
+
+
+async def _reward_blocks(db: AsyncSession, event_id: uuid.UUID) -> tuple[Event, list[RewardBlock]]:
+    admin_event = await _load_admin_event(db, event_id)
+    if admin_event is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+    event = await load_event(db, admin_event.slug)
+    assert event is not None
+    try:
+        return event, await compute_reward_blocks(db, event, datetime.now(UTC))
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=_config_error(exc)
+        ) from exc
+
+
+@router.get("/events/{event_id}/rewards", response_model=EventRewardsResponse)
+async def admin_event_rewards(
+    event_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> EventRewardsResponse:
+    """Every reward block of the event: who it would reward and what is new."""
+    _, blocks = await _reward_blocks(db, event_id)
+    return EventRewardsResponse(blocks=[await _reward_block_response(db, b) for b in blocks])
+
+
+@router.post(
+    "/events/{event_id}/rewards/{bracket_key}/{role}", response_model=EventRewardGrantResponse
+)
+async def admin_grant_event_rewards(
+    event_id: uuid.UUID,
+    bracket_key: str,
+    role: RewardRole,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> EventRewardGrantResponse:
+    """Grant one block's rewards to its recipients; what they own is skipped."""
+    event, blocks = await _reward_blocks(db, event_id)
+    block = next((b for b in blocks if (b.bracket_key, b.role) == (bracket_key, role)), None)
+    if block is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="No rewards for this block"
+        )
+    if block.waiting is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=block.waiting)
+    granted = await grant_reward_block(db, event.name, block, admin.id)
+    await db.commit()
+    return EventRewardGrantResponse(granted=granted, block=await _reward_block_response(db, block))
 
 
 @router.post("/races/{race_id}/event", response_model=RaceResponse)

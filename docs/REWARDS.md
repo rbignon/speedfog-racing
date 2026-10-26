@@ -196,6 +196,7 @@ server/speedfog_racing/
 - **Weekly champion** (`services/daily_seed_loop.py`, unchanged Monday rollup): when generating a daily seed for a Monday, call `refresh_weekly_daily_rewards(week_starting=monday-7d)`. It syncs two transient badges over the prior week's closed dailies: `weekly_daily_champion` to the user(s) with the maximum `total_points` (ties allowed; also granted `gold-aura` + `daily_crown`), and `weekly_daily_winner` to everyone who ranked 1st on at least one daily (the day-winner set, `compute_weekly_daily_winners`). Past weeks before the rollout are not backfilled.
 - **Finished-race milestones** (`services/race_lifecycle.py`): in the same hook (after `grant_race_win_rewards`), iterate every participant who just transitioned to FINISHED and call `check_finish_reward_milestones(user_id)`. The service counts `Participant` rows with `status=FINISHED` for that user across all races (daily seeds included, solo training sessions excluded since they create no `Participant` row). The first finish grants the `frog` badge + `speedfrog` template; once the count reaches `VETERAN_RACE_THRESHOLD` the `veteran` badge + `weathered` template + `crimson-aura` skin are granted. All grants are idempotent, so calling on every race finish is safe.
 - **Daily streak souvenir** (`websocket/race/mod.py`): inside `_apply_daily_streak`, after `apply_qualification_to_user` persists a streak increment, call `RewardsService.check_daily_streak_eligibility(user_id)`. The service reads `users.daily_best_streak` (so the same predicate covers live grants and backfill) and grants `molten-aura` once it reaches `DAILY_STREAK_REWARD_THRESHOLD`.
+- **Event rewards** (`services/event_rewards.py`, `api/admin.py`): a bracket's `rewards` in the event config names catalog entries for its `seated` runners (the draw's seats) and its `champion` (the closing stage's winner). The admin Events tab previews every block and grants one at a time, once it can no longer change. Banned users are skipped, grants unlock only (nothing is equipped), and what a recipient already owns is skipped without a notification. There is no auto-revoke: revoke through the admin endpoints below and do not grant that block again.
 - **Account deletion**: any `delete_user` flow must call `refresh_weekly_daily_rewards(current_week_start)` after the deletion to reseat the weekly champion holder set.
 
 `emerald-aura` is backfill-only (no live detector). `violet-aura` has no automatic detector: it is granted via the admin endpoint, or by an event bracket's `rewards` from the admin Events tab.
@@ -221,6 +222,8 @@ POST   /api/admin/users/{user_id}/templates              body: {template_id, rea
 DELETE /api/admin/users/{user_id}/templates/{template_id}
 POST   /api/admin/users/{user_id}/skins                  body: {skin_id, reason?}
 DELETE /api/admin/users/{user_id}/skins/{skin_id}
+GET    /api/admin/events/{event_id}/rewards              # every event reward block, with what is new
+POST   /api/admin/events/{event_id}/rewards/{bracket_key}/{role}   # grant one block; role: seated | champion
 ```
 
 ### WebSocket protocol

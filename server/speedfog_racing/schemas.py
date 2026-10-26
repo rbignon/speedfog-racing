@@ -1662,6 +1662,48 @@ class EventUpsertRequest(BaseModel):
         return self
 
 
+class EventRewardItemResponse(BaseModel):
+    """One catalog reward a bracket block grants."""
+
+    kind: Literal["badge", "name_template", "phantom_skin"]
+    id: str
+    name: str
+
+
+class EventRewardRecipientResponse(BaseModel):
+    user: UserResponse
+    # The block's ``kind:id`` refs this user already owns.
+    owned: list[str]
+
+
+class EventRewardBlockResponse(BaseModel):
+    """One bracket's rewards for one role, and who they would go to."""
+
+    bracket_key: str
+    bracket_label: str
+    role: Literal["seated", "champion"]
+    waiting: (
+        Literal["ladder_provisional", "draw_not_locked", "stage_incomplete", "no_champion"] | None
+    )
+    rewards: list[EventRewardItemResponse]
+    # ``kind:id`` refs the catalog refuses: listed, never granted.
+    unknown_rewards: list[str]
+    recipients: list[EventRewardRecipientResponse]
+    banned: list[UserResponse]
+    # Recipient x reward pairs not owned yet.
+    new_grants: int
+
+
+class EventRewardsResponse(BaseModel):
+    blocks: list[EventRewardBlockResponse]
+
+
+class EventRewardGrantResponse(BaseModel):
+    granted: int
+    # The block recomputed after the grant.
+    block: EventRewardBlockResponse
+
+
 class AdminEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

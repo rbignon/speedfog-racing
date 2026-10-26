@@ -12,9 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
-from speedfog_racing.models import Event, Pool, Race, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import (
+    Event,
+    NameTemplateUnlock,
+    Pool,
+    Race,
+    RaceStatus,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 
-from .event_fixtures import bracketed, stages_of
+from .event_fixtures import bracketed, rewarded, stages_of
+from .test_events_api import CONFIG as RANKED_CONFIG
+from .test_events_api import _event as _ranked_event
+from .test_events_api import _ranked_runners
 
 T0 = datetime(2026, 9, 23, 8, tzinfo=UTC)
 DOC = {
@@ -174,6 +187,8 @@ async def test_upsert_requires_admin(test_client, users):
     [
         ("GET", "/api/admin/events", None),
         ("POST", f"/api/admin/races/{uuid.uuid4()}/event", {"event_id": None}),
+        ("GET", f"/api/admin/events/{uuid.uuid4()}/rewards", None),
+        ("POST", f"/api/admin/events/{uuid.uuid4()}/rewards/main/seated", None),
     ],
 )
 async def test_events_admin_endpoints_require_admin(test_client, users, method, path, body):
@@ -751,3 +766,132 @@ async def test_upsert_refuses_a_blank_or_repeated_reward_id(test_client, users, 
     async with test_client as client:
         response = await client.post("/api/admin/events", json=doc, headers=ADMIN)
     assert response.status_code == 422
+
+
+@pytest.fixture
+async def reward_admin(async_session):
+    """An admin and the pools the ranked-season helpers seed races from.
+
+    Not ``users``: the helpers create their own ``orga`` organizer.
+    """
+    async with async_session() as db:
+        db.add_all(
+            [
+                User(
+                    twitch_id="a", twitch_username="root", api_token="tok-root", role=UserRole.ADMIN
+                ),
+                Pool(name="boss_rush", config={}),
+            ]
+        )
+        await db.commit()
+
+
+KINDLED_REF = "name_template:season_one_qualifier"
+
+
+async def _ranked_event_with_rewards(async_session, config: dict[str, Any] | None = None) -> str:
+    """A season with 7 finished-ladder runners, runner1 already owning Kindled; its id."""
+    async with async_session() as db:
+        event = await _ranked_event(db, config=config or rewarded(RANKED_CONFIG))
+        await _ranked_runners(db, event, 7, RaceStatus.FINISHED)
+        runner1 = (
+            await db.execute(select(User).where(User.twitch_username == "runner1"))
+        ).scalar_one()
+        db.add(NameTemplateUnlock(user_id=runner1.id, template_id="season_one_qualifier"))
+        await db.commit()
+        return str(event.id)
+
+
+def _block(data: dict[str, Any], key: str, role: str) -> dict[str, Any]:
+    return next(b for b in data["blocks"] if (b["bracket_key"], b["role"]) == (key, role))
+
+
+@pytest.mark.asyncio
+async def test_rewards_preview_lists_each_block_with_what_is_new(
+    test_client, reward_admin, async_session
+):
+    event_id = await _ranked_event_with_rewards(async_session)
+    async with test_client as client:
+        response = await client.get(f"/api/admin/events/{event_id}/rewards", headers=ADMIN)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    seated = _block(data, "main", "seated")
+    assert seated["waiting"] is None
+    assert seated["rewards"] == [
+        {"kind": "name_template", "id": "season_one_qualifier", "name": "Kindled"}
+    ]
+    assert len(seated["recipients"]) == 4
+    owned = {r["user"]["twitch_username"]: r["owned"] for r in seated["recipients"]}
+    assert owned["runner1"] == [KINDLED_REF]
+    assert owned["runner2"] == []
+    assert seated["new_grants"] == 3
+    champion = _block(data, "main", "champion")
+    assert champion["waiting"] == "stage_incomplete"
+    assert champion["recipients"] == []
+
+
+@pytest.mark.asyncio
+async def test_granting_a_block_grants_it_alone(test_client, reward_admin, async_session):
+    event_id = await _ranked_event_with_rewards(async_session)
+    url = f"/api/admin/events/{event_id}/rewards"
+    async with test_client as client:
+        granted = await client.post(f"{url}/main/seated", headers=ADMIN)
+        assert granted.status_code == 200, granted.text
+        assert granted.json()["granted"] == 3
+        assert granted.json()["block"]["new_grants"] == 0
+        again = await client.post(f"{url}/main/seated", headers=ADMIN)
+        assert again.json()["granted"] == 0
+        preview = (await client.get(url, headers=ADMIN)).json()
+    # The newcomers block is its own grant: still waiting on its click.
+    assert _block(preview, "newcomers", "seated")["new_grants"] == 2
+
+
+@pytest.mark.asyncio
+async def test_granting_a_waiting_block_is_a_conflict(test_client, reward_admin, async_session):
+    event_id = await _ranked_event_with_rewards(async_session)
+    async with test_client as client:
+        response = await client.post(
+            f"/api/admin/events/{event_id}/rewards/main/champion", headers=ADMIN
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "stage_incomplete"
+    async with async_session() as db:
+        count = (await db.execute(select(NameTemplateUnlock))).scalars().all()
+    assert len(count) == 1  # runner1's pre-existing unlock only
+
+
+@pytest.mark.asyncio
+async def test_granting_a_block_without_rewards_is_not_found(
+    test_client, reward_admin, async_session
+):
+    config = rewarded(RANKED_CONFIG)
+    config["brackets"][1]["rewards"] = {"champion": {"phantom_skins": ["violet-aura"]}}
+    event_id = await _ranked_event_with_rewards(async_session, config)
+    url = f"/api/admin/events/{event_id}/rewards"
+    async with test_client as client:
+        preview = (await client.get(url, headers=ADMIN)).json()
+        assert [b["role"] for b in preview["blocks"] if b["bracket_key"] == "newcomers"] == [
+            "champion"
+        ]
+        assert (await client.post(f"{url}/newcomers/seated", headers=ADMIN)).status_code == 404
+        assert (await client.post(f"{url}/nope/seated", headers=ADMIN)).status_code == 404
+        assert (await client.post(f"{url}/main/finalists", headers=ADMIN)).status_code == 422
+        missing = await client.get(f"/api/admin/events/{uuid.uuid4()}/rewards", headers=ADMIN)
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_rewards_of_an_invalid_stored_config_answer_422(
+    test_client, reward_admin, async_session
+):
+    event_id = await _ranked_event_with_rewards(async_session)
+    async with async_session() as db:
+        event = await db.get(Event, uuid.UUID(event_id))
+        event.config = dict(event.config, brackets="broken")
+        await db.commit()
+    url = f"/api/admin/events/{event_id}/rewards"
+    async with test_client as client:
+        got = await client.get(url, headers=ADMIN)
+        posted = await client.post(f"{url}/main/seated", headers=ADMIN)
+    assert got.status_code == 422, got.text
+    assert posted.status_code == 422, posted.text
