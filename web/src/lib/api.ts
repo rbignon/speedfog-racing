@@ -2247,6 +2247,54 @@ export interface WeaponStatsResponse {
   combos: WeaponComboStat[];
 }
 
+/** speedrun.fog: the speedrun.com parody tab of /stats. */
+export type SpeedrunRunType = "race" | "daily" | "event";
+
+export interface SpeedrunCategory {
+  pool: string;
+  name: string;
+  retired: boolean;
+  subcategories: ("any" | "deathless")[];
+  description: string | null;
+  estimated_duration: string | null;
+  rules: string | null;
+}
+
+export interface SpeedrunRun {
+  user: User;
+  /** Null for an obsolete run (not its player's best) and history entries. */
+  rank: number | null;
+  igt_ms: number;
+  finished_at: string;
+  race_id: string;
+  race_name: string;
+  daily_date: string | null;
+  seed_number: string;
+  layers: number;
+  deaths: number;
+  weapon: number[] | null;
+}
+
+/** A recent run; `rank` carries its place on its board. */
+export interface SpeedrunRecentRun extends SpeedrunRun {
+  pool: string;
+  category: string;
+  deathless: boolean;
+}
+
+export interface SpeedrunOverviewResponse {
+  categories: SpeedrunCategory[];
+  runs: number;
+  players: number;
+  recent_runs: SpeedrunRecentRun[];
+}
+
+export interface SpeedrunBoardResponse {
+  runs: SpeedrunRun[];
+  /** Successive records, oldest first. */
+  history: SpeedrunRun[];
+}
+
 export interface BossStatEntry {
   display_name: string;
   type: string;
@@ -2386,6 +2434,27 @@ export async function fetchPlayerProfiles(): Promise<PlayerProfilesResponse> {
 export async function fetchWeaponStats(): Promise<WeaponStatsResponse> {
   const response = await fetch(`${API_BASE}/stats/weapons`);
   return handleResponse<WeaponStatsResponse>(response);
+}
+
+export async function fetchSpeedrunOverview(): Promise<SpeedrunOverviewResponse> {
+  const response = await fetch(`${API_BASE}/stats/speedrun`);
+  return handleResponse<SpeedrunOverviewResponse>(response);
+}
+
+/** Params equal to the API defaults are left out of the query. */
+export async function fetchSpeedrunBoard(
+  pool: string,
+  opts: { deathless: boolean; types: SpeedrunRunType[]; obsolete: boolean },
+): Promise<SpeedrunBoardResponse> {
+  const params = new URLSearchParams();
+  if (opts.deathless) params.set("deathless", "true");
+  if (opts.types.length < 3) params.set("types", opts.types.join(","));
+  if (opts.obsolete) params.set("obsolete", "true");
+  const query = params.toString();
+  const response = await fetch(
+    `${API_BASE}/stats/speedrun/${encodeURIComponent(pool)}${query ? `?${query}` : ""}`,
+  );
+  return handleResponse<SpeedrunBoardResponse>(response);
 }
 
 /**
