@@ -13,6 +13,7 @@
     type SpeedrunParams,
     type SpeedrunSub,
   } from "$lib/speedrun";
+  import SpeedrunHistory from "./SpeedrunHistory.svelte";
   import SpeedrunTable from "./SpeedrunTable.svelte";
 
   let {
@@ -322,6 +323,8 @@
       <p class="message error">{error}</p>
     {:else if board === null}
       <p class="message">Loading runs...</p>
+    {:else if params.view === "history"}
+      <SpeedrunHistory records={board.history} />
     {:else if board.runs.length === 0}
       <p class="message">No runs match these filters.</p>
     {:else}
