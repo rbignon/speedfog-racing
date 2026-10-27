@@ -145,3 +145,20 @@ async def test_board_unknown_pool_404(test_client, sprint_runs):
     response = await test_client.get("/api/stats/speedrun/nope")
 
     assert response.status_code == 404
+
+
+async def test_board_cache_holds_serialized_json(test_client, sprint_runs):
+    """A board can hold thousands of rows (obsolete runs) and lives in the
+    cache for good: kept as one JSON bytes object, it adds nothing to the GC's
+    tracked objects, unlike a model graph."""
+    from speedfog_racing.api.stats import _stats_cache
+
+    response = await test_client.get("/api/stats/speedrun/sprint?obsolete=true")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    assert [r["rank"] for r in response.json()["runs"]] == [1, 2]
+    boards = [
+        value for key, (_, value) in _stats_cache.items() if key.startswith("speedrun:board:")
+    ]
+    assert boards and all(isinstance(value, bytes) for value in boards)

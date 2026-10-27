@@ -10,7 +10,7 @@ from time import monotonic
 from typing import Any, TypeVar, cast
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -100,7 +100,9 @@ T = TypeVar("T")
 # In-process stale-while-revalidate TTL cache for the public aggregation
 # endpoints. Values are response models (a few KB each), or the responses of
 # the zone endpoints and /bosses built together (``_ZoneFamily``, a few
-# hundred KB).
+# hundred KB). speedrun.fog boards are the exception: one can list thousands
+# of runs (obsolete runs shown), so each is cached as its serialized JSON
+# bytes, an object the GC does not track and a hit does not re-serialize.
 # Cold misses are single-flight per key so concurrent first hits compute once
 # instead of stampeding the aggregation; once a key holds a value, requests
 # past its TTL are served the stale value immediately while a background task
@@ -962,7 +964,7 @@ async def get_speedrun_board(
     types: str = Query(default=",".join(SPEEDRUN_RUN_TYPES)),
     obsolete: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
-) -> SpeedrunBoardResponse:
+) -> Response:
     """speedrun.fog: one board (pool, Any% or Deathless, run types) with its
     record history."""
     requested = {t.strip() for t in types.split(",") if t.strip()}
@@ -978,11 +980,12 @@ async def get_speedrun_board(
     if not any(r.pool == pool for r in await _cached("speedrun:runs", load_counted_runs, db)):
         raise HTTPException(status_code=404, detail="Unknown category")
 
-    async def _compute(db: AsyncSession) -> SpeedrunBoardResponse:
+    async def _compute(db: AsyncSession) -> bytes:
         runs = await _cached("speedrun:runs", load_counted_runs, db)
-        return await build_board(
+        board = await build_board(
             db, runs, pool=pool, deathless=deathless, types=run_types, include_obsolete=obsolete
         )
+        return board.model_dump_json().encode()
 
     key = f"speedrun:board:{pool}:{int(deathless)}:{','.join(sorted(run_types))}:{int(obsolete)}"
-    return await _cached(key, _compute, db)
+    return Response(content=await _cached(key, _compute, db), media_type="application/json")
