@@ -974,6 +974,55 @@ class WeaponStatsResponse(BaseModel):
     combos: list[WeaponComboStat]
 
 
+# speedrun.fog: the speedrun.com parody tab of /stats (see docs/STATS.md).
+
+
+class SpeedrunCategory(BaseModel):
+    pool: str
+    name: str
+    retired: bool
+    subcategories: list[Literal["any", "deathless"]]
+    description: str | None = None
+    estimated_duration: str | None = None
+    rules: str | None = None
+
+
+class SpeedrunRun(BaseModel):
+    user: UserResponse
+    # None for an obsolete run (not its player's best) and for history entries.
+    rank: int | None
+    igt_ms: int
+    finished_at: datetime
+    race_id: UUID
+    race_name: str
+    daily_date: date | None
+    seed_number: str
+    layers: int
+    deaths: int
+    weapon: list[int] | None
+
+
+class SpeedrunRecentRun(SpeedrunRun):
+    """A recent run; ``rank`` carries its place on its board."""
+
+    pool: str
+    category: str
+    deathless: bool
+
+
+class SpeedrunOverviewResponse(BaseModel):
+    categories: list[SpeedrunCategory]
+    runs: int
+    players: int
+    recent_runs: list[SpeedrunRecentRun]
+
+
+class SpeedrunBoardResponse(BaseModel):
+    runs: list[SpeedrunRun]
+    # Successive records, oldest first.
+    history: list[SpeedrunRun]
+
+
 # =============================================================================
 # Events
 # =============================================================================
