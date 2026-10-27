@@ -1,0 +1,177 @@
+<script lang="ts">
+  import { onMount, untrack } from "svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
+  import {
+    fetchSpeedrunOverview,
+    type SpeedrunOverviewResponse,
+  } from "$lib/api";
+  import { DISCORD_URL } from "$lib/links";
+  import {
+    parseSpeedrunParams,
+    writeSpeedrunParams,
+    type SpeedrunParams,
+  } from "$lib/speedrun";
+  import { loadCatalogue } from "$lib/stores/weaponsCatalogue.svelte";
+  import SpeedrunBoard from "./SpeedrunBoard.svelte";
+  import SpeedrunSidebar from "./SpeedrunSidebar.svelte";
+
+  // Read once: from then on the tab owns its state and mirrors it into the
+  // URL, so a board can be shared.
+  let params = $state<SpeedrunParams>(
+    untrack(() => parseSpeedrunParams(page.url.searchParams)),
+  );
+  let overview = $state<SpeedrunOverviewResponse | null>(null);
+  let error = $state<string | null>(null);
+
+  onMount(async () => {
+    try {
+      const [data] = await Promise.all([
+        fetchSpeedrunOverview(),
+        loadCatalogue(),
+      ]);
+      overview = data;
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to load runs.";
+    }
+  });
+
+  function update(next: SpeedrunParams) {
+    params = next;
+    const url = new URL(page.url);
+    writeSpeedrunParams(url, next);
+    goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+  }
+</script>
+
+<div class="speedrun">
+  <section class="sr-panel game-header">
+    <img class="cover" src="/screenshots/fog-gate.webp" alt="" />
+    <div>
+      <h2 class="title">SpeedFog Racing <span class="year">[2026]</span></h2>
+      <p class="series">Souls Series</p>
+      <div class="chips"><span class="chip">PC</span></div>
+      <div class="links">
+        <a class="link" href={DISCORD_URL} target="_blank" rel="noopener"
+          >Discord</a
+        >
+        <a class="link" href="/about">Website</a>
+      </div>
+    </div>
+  </section>
+
+  {#if error}
+    <p class="message error">{error}</p>
+  {:else if overview === null}
+    <p class="message">Loading runs...</p>
+  {:else}
+    <div class="grid">
+      <SpeedrunBoard
+        categories={overview.categories}
+        {params}
+        onchange={update}
+      />
+      <SpeedrunSidebar
+        {overview}
+        onpick={(pool, sub) => update({ ...params, pool, sub })}
+      />
+    </div>
+  {/if}
+</div>
+
+<style>
+  .speedrun :global(.sr-panel) {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+  }
+
+  .game-header {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 1rem;
+  }
+
+  .cover {
+    flex-shrink: 0;
+    width: 68px;
+    height: 92px;
+    object-fit: cover;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+  }
+
+  .title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.6rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+  }
+
+  .year {
+    margin-left: 0.25rem;
+    color: var(--color-text-secondary);
+    font-size: 1.2rem;
+    font-weight: 600;
+  }
+
+  .series {
+    margin: 0.25rem 0 0.45rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .chips,
+  .links {
+    display: flex;
+    gap: 0.35rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .chip {
+    padding: 0.1rem 0.35rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    font-size: 0.68rem;
+  }
+
+  .link {
+    padding: 0.2rem 0.55rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    text-decoration: none;
+  }
+
+  .link:hover {
+    color: var(--color-purple);
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .message {
+    color: var(--color-text-secondary);
+  }
+
+  .message.error {
+    color: var(--color-danger);
+  }
+
+  @media (max-width: 768px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
+</style>

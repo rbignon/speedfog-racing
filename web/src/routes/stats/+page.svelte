@@ -7,11 +7,19 @@
   import BossesTab from "$lib/components/stats/BossesTab.svelte";
   import PlayersTab from "$lib/components/stats/PlayersTab.svelte";
   import WeaponsTab from "$lib/components/stats/WeaponsTab.svelte";
+  import SpeedrunTab from "$lib/components/stats/speedrun/SpeedrunTab.svelte";
 
-  type TabId = "overview" | "zones" | "bosses" | "players" | "weapons";
+  type TabId =
+    | "overview"
+    | "speedrun"
+    | "zones"
+    | "bosses"
+    | "players"
+    | "weapons";
 
   const TABS: { id: TabId; label: string }[] = [
     { id: "overview", label: "Overview" },
+    { id: "speedrun", label: "speedrun.fog" },
     { id: "zones", label: "Zones" },
     { id: "bosses", label: "Major Bosses" },
     { id: "players", label: "Play Styles" },
@@ -71,6 +79,11 @@
     {#if mountedTabs.has("overview")}
       <div class="tab-panel" class:tab-hidden={activeTab !== "overview"}>
         <OverviewTab />
+      </div>
+    {/if}
+    {#if mountedTabs.has("speedrun")}
+      <div class="tab-panel" class:tab-hidden={activeTab !== "speedrun"}>
+        <SpeedrunTab />
       </div>
     {/if}
     {#if mountedTabs.has("zones")}
@@ -171,6 +184,12 @@
   @media (max-width: 640px) {
     .stats-page {
       padding: 1rem;
+    }
+
+    /* Six tabs outgrow a phone's width: wrap like EventBracketTabs
+       instead of pushing the last ones off-screen. */
+    .tab-bar {
+      flex-wrap: wrap;
     }
 
     .tab-btn {
