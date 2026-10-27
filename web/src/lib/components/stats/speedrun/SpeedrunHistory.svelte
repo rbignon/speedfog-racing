@@ -1,14 +1,13 @@
 <script lang="ts">
   import type { SpeedrunCategory, SpeedrunRun } from "$lib/api";
   import {
-    historyPolyline,
     historyTimeline,
     speedrunDay,
     speedrunDaysLater,
     speedrunRaceHref,
     type SpeedrunView,
   } from "$lib/speedrun";
-  import { formatIgt } from "$lib/utils/training";
+  import SpeedrunHistoryChart from "./SpeedrunHistoryChart.svelte";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
   import SpeedrunTime from "./SpeedrunTime.svelte";
 
@@ -25,38 +24,7 @@
     onview: (view: Exclude<SpeedrunView, "board">) => void;
   } = $props();
 
-  const HEIGHT = 180;
-  const PAD_X = 16;
-  const PAD_Y = 18;
-
-  let width = $state(0);
-  // The current record's line runs until the moment the view was opened.
-  const nowMs = Date.now();
-
-  let points = $derived(historyPolyline(records, nowMs));
-  let tMin = $derived(points.length > 0 ? points[0][0] : nowMs);
-  let slowest = $derived(Math.max(...records.map((r) => r.igt_ms)));
-  let fastest = $derived(Math.min(...records.map((r) => r.igt_ms)));
   let timeline = $derived(historyTimeline(records));
-
-  function x(t: number): number {
-    const span = nowMs - tMin;
-    return span > 0 ? PAD_X + ((t - tMin) / span) * (width - 2 * PAD_X) : PAD_X;
-  }
-
-  // Faster is lower, as on speedrun.com's record chart.
-  function y(igt: number): number {
-    const span = slowest - fastest;
-    return span > 0
-      ? PAD_Y + ((slowest - igt) / span) * (HEIGHT - 2 * PAD_Y)
-      : HEIGHT / 2;
-  }
-
-  let path = $derived(
-    points
-      .map(([t, igt], i) => `${i === 0 ? "M" : "L"}${x(t)},${y(igt)}`)
-      .join(" "),
-  );
 </script>
 
 <div class="history">
@@ -98,37 +66,7 @@
   {#if records.length === 0}
     <p class="message">No record yet for these filters.</p>
   {:else if view === "history-chart"}
-    <!-- Bound on an unpadded box so the SVG matches the space it gets. -->
-    <div class="chart">
-      <div bind:clientWidth={width}>
-        {#if width > 0}
-          <svg
-            {width}
-            height={HEIGHT}
-            viewBox="0 0 {width} {HEIGHT}"
-            role="img"
-            aria-label="Record over time"
-          >
-            <path d={path} class="line" />
-            {#each records as record (`${record.race_id}:${record.user.id}`)}
-              <circle
-                class="dot"
-                cx={x(new Date(record.finished_at).getTime())}
-                cy={y(record.igt_ms)}
-                r="3.5"
-              />
-            {/each}
-            <text x={PAD_X} y={12} class="axis">{formatIgt(slowest)}</text>
-            {#if fastest !== slowest}
-              <text x={PAD_X} y={HEIGHT - 4} class="axis"
-                >{formatIgt(fastest)}</text
-              >
-            {/if}
-            <text x={width - PAD_X} y={HEIGHT - 4} class="axis end">Today</text>
-          </svg>
-        {/if}
-      </div>
-    </div>
+    <SpeedrunHistoryChart {records} />
   {:else}
     <ol class="timeline">
       {#if category.released_at}
@@ -205,36 +143,6 @@
   .segmented button.on {
     background: var(--color-surface-elevated);
     color: var(--color-text);
-  }
-
-  .chart {
-    padding: 0.6rem 0.55rem 0.2rem;
-  }
-
-  svg {
-    display: block;
-  }
-
-  .line {
-    fill: none;
-    stroke: var(--color-gold);
-    stroke-width: 2;
-  }
-
-  circle.dot {
-    fill: var(--color-gold);
-    stroke: var(--color-surface);
-    stroke-width: 1.5;
-  }
-
-  .axis {
-    fill: var(--color-text-secondary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-  }
-
-  .axis.end {
-    text-anchor: end;
   }
 
   /* speedrun.com's history list: a vertical rail, a big dot per new
