@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { speedrunTimeParts } from "$lib/speedrun";
+  import { speedrunGainParts, speedrunTimeParts } from "$lib/speedrun";
   import { formatIgt } from "$lib/utils/training";
 
-  let { ms }: { ms: number } = $props();
+  /** `gain`: a record gain, which can be under a second. */
+  let { ms, gain = false }: { ms: number; gain?: boolean } = $props();
 
-  let parts = $derived(speedrunTimeParts(ms));
+  let parts = $derived(gain ? speedrunGainParts(ms) : speedrunTimeParts(ms));
   let full = $derived(`${formatIgt(ms)}.${String(ms % 1000).padStart(3, "0")}`);
 </script>
 

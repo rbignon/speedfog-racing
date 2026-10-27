@@ -21,6 +21,7 @@ function category(
     description: null,
     estimated_duration: null,
     rules: null,
+    released_at: null,
   };
 }
 

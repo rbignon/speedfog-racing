@@ -2258,6 +2258,8 @@ export interface SpeedrunCategory {
   description: string | null;
   estimated_duration: string | null;
   rules: string | null;
+  /** First seed at the pool's current layer count: this version's release. */
+  released_at: string | null;
 }
 
 export interface SpeedrunRun {
@@ -2270,7 +2272,6 @@ export interface SpeedrunRun {
   race_name: string;
   daily_date: string | null;
   seed_number: string;
-  layers: number;
   deaths: number;
   weapon: number[] | null;
 }

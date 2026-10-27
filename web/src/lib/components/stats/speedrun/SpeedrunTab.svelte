@@ -47,7 +47,7 @@
 <div class="speedrun">
   <section class="sr-panel game-header">
     <img class="cover" src="/screenshots/fog-gate.webp" alt="" />
-    <div>
+    <div class="info">
       <h2 class="title">SpeedFog Racing <span class="year">[2026]</span></h2>
       <p class="series">Souls Series</p>
       <div class="chips"><span class="chip">PC</span></div>
@@ -93,13 +93,22 @@
     padding: 1rem;
   }
 
+  /* The cover spans the info column's height, as on speedrun.com: both
+     share one fixed height, and the info column spreads its rows over it. */
   .cover {
     flex-shrink: 0;
-    width: 68px;
-    height: 92px;
+    width: 88px;
+    height: 120px;
     object-fit: cover;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
+  }
+
+  .info {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 120px;
   }
 
   .title {
@@ -128,7 +137,6 @@
   .links {
     display: flex;
     gap: 0.35rem;
-    margin-bottom: 0.45rem;
   }
 
   .chip {
@@ -172,6 +180,17 @@
   @media (max-width: 768px) {
     .grid {
       grid-template-columns: minmax(0, 1fr);
+    }
+  }
+
+  /* Keeps the title on one line next to the cover, so both stay level. */
+  @media (max-width: 640px) {
+    .title {
+      font-size: 1.3rem;
+    }
+
+    .year {
+      font-size: 1rem;
     }
   }
 </style>

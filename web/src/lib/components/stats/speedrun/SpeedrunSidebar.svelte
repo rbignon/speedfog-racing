@@ -1,9 +1,8 @@
 <script lang="ts">
   import type { SpeedrunOverviewResponse } from "$lib/api";
   import { ordinal } from "$lib/events";
-  import type { SpeedrunSub } from "$lib/speedrun";
+  import { speedrunAgo, type SpeedrunSub } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
-  import { timeAgo } from "$lib/utils/time";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
   import SpeedrunTime from "./SpeedrunTime.svelte";
@@ -16,6 +15,8 @@
     overview: SpeedrunOverviewResponse;
     onpick: (pool: string, sub: SpeedrunSub) => void;
   } = $props();
+
+  const now = Date.now();
 </script>
 
 <aside class="sr-side">
@@ -39,7 +40,7 @@
           >{run.category}</button
         >
         <div class="details">
-          {run.deathless ? "Deathless" : "Any%"} ({run.layers} layers, {run.weapon
+          {run.deathless ? "Deathless" : "Any%"} ({run.weapon
             ? formatCombo(run.weapon, getWeaponName)
             : "–"})
         </div>
@@ -52,7 +53,7 @@
           </span>
           <SpeedrunPlayer user={run.user} />
           <SpeedrunTime ms={run.igt_ms} />
-          <span class="ago">{timeAgo(run.finished_at)}</span>
+          <span class="ago">{speedrunAgo(run.finished_at, now)}</span>
         </div>
       </div>
     {:else}

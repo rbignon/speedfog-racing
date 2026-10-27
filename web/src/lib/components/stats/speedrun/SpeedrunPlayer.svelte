@@ -3,13 +3,17 @@
   import UserLink from "$lib/components/UserLink.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
 
-  let { user, raceName }: { user: User; raceName?: string } = $props();
+  let {
+    user,
+    raceName,
+    inline = false,
+  }: { user: User; raceName?: string; inline?: boolean } = $props();
 
   // The equipped badge stands where speedrun.com shows a country flag.
   let badge = $derived(rewards.lookupBadge(user.equipped_badge_id ?? null));
 </script>
 
-<span class="sr-player">
+<span class="sr-player" class:inline>
   {#if badge}
     <img
       class="flag"
@@ -17,7 +21,8 @@
       alt={badge.name}
       title={badge.name}
     />
-  {:else}
+  {:else if !inline}
+    <!-- Keeps names aligned in a column; a sentence needs no gap. -->
     <span class="flag" aria-hidden="true"></span>
   {/if}
   <span class="name"><UserLink {user} /></span>
@@ -41,6 +46,12 @@
     align-items: center;
     gap: 0.4rem;
     min-width: 0;
+  }
+
+  .sr-player.inline {
+    display: inline-flex;
+    vertical-align: middle;
+    gap: 0.3rem;
   }
 
   .flag {

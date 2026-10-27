@@ -199,8 +199,9 @@
       </button>
       <button
         type="button"
-        class:on={params.view === "history"}
-        onclick={() => change({ view: "history" })}
+        class:on={params.view !== "board"}
+        onclick={() =>
+          params.view === "board" && change({ view: "history-chart" })}
       >
         <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
           <circle
@@ -285,7 +286,8 @@
       </svg>
       Rules
     </button>
-    <button type="button" class="tool submit">
+    <!-- A run is "submitted" by racing it. -->
+    <a class="tool submit" href="/race/new">
       <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
         <circle cx="12" cy="12" r="10" fill="currentColor" />
         <path
@@ -295,7 +297,7 @@
         />
       </svg>
       Submit run
-    </button>
+    </a>
   </div>
 
   {#if rulesOpen && category}
@@ -323,8 +325,13 @@
       <p class="message error">{error}</p>
     {:else if board === null}
       <p class="message">Loading runs...</p>
-    {:else if params.view === "history"}
-      <SpeedrunHistory records={board.history} />
+    {:else if params.view !== "board" && category}
+      <SpeedrunHistory
+        records={board.history}
+        {category}
+        view={params.view}
+        onview={(view) => change({ view })}
+      />
     {:else if board.runs.length === 0}
       <p class="message">No runs match these filters.</p>
     {:else}
@@ -480,9 +487,15 @@
   }
 
   .tool.submit {
+    text-decoration: none;
     background: var(--color-gold);
     border-color: var(--color-gold);
     color: var(--color-ink-on-accent);
+  }
+
+  .tool.submit:hover {
+    background: var(--color-gold-hover);
+    border-color: var(--color-gold-hover);
   }
 
   .filters {

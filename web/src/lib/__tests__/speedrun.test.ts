@@ -1,10 +1,15 @@
 import { describe, it, expect } from "vitest";
-import type { SpeedrunCategory } from "$lib/api";
+import type { SpeedrunCategory, SpeedrunRun } from "$lib/api";
 import {
   RUN_TYPES,
   historyPolyline,
+  historyTimeline,
   parseSpeedrunParams,
   resolveCategory,
+  speedrunAgo,
+  speedrunDay,
+  speedrunDaysLater,
+  speedrunGainParts,
   speedrunRaceHref,
   speedrunTimeParts,
   toggleRunType,
@@ -36,6 +41,7 @@ function cat(
     description: null,
     estimated_duration: null,
     rules: null,
+    released_at: null,
   };
 }
 
@@ -93,7 +99,7 @@ describe("parseSpeedrunParams", () => {
     expect(
       parseSpeedrunParams(
         new URLSearchParams(
-          "pool=boss_rush&sub=deathless&types=daily,race&obsolete=1&view=history",
+          "pool=boss_rush&sub=deathless&types=daily,race&obsolete=1&view=history-list",
         ),
       ),
     ).toEqual({
@@ -101,7 +107,7 @@ describe("parseSpeedrunParams", () => {
       sub: "deathless",
       types: ["race", "daily"],
       obsolete: true,
-      view: "history",
+      view: "history-list",
     });
   });
 
@@ -128,7 +134,7 @@ describe("writeSpeedrunParams", () => {
       sub: "deathless",
       types: ["race", "event"],
       obsolete: true,
-      view: "history",
+      view: "history-chart",
     });
     writeSpeedrunParams(url, p);
     expect(parseSpeedrunParams(url.searchParams)).toEqual(p);
@@ -184,6 +190,131 @@ describe("historyPolyline", () => {
       [40, 500],
       [40, 450],
       [100, 450],
+    ]);
+  });
+});
+
+const NOW = Date.UTC(2026, 9, 27, 12, 0, 0);
+const ago = (ms: number) => new Date(NOW - ms).toISOString();
+const MIN = 60_000;
+const DAY = 86_400_000;
+
+describe("speedrunAgo", () => {
+  it("counts minutes and hours, singular and plural", () => {
+    expect(speedrunAgo(ago(59_000), NOW)).toBe("just now");
+    expect(speedrunAgo(ago(MIN), NOW)).toBe("1 minute ago");
+    expect(speedrunAgo(ago(59 * MIN), NOW)).toBe("59 minutes ago");
+    expect(speedrunAgo(ago(2 * 60 * MIN), NOW)).toBe("2 hours ago");
+  });
+
+  it("switches to days, months then years", () => {
+    expect(speedrunAgo(ago(DAY), NOW)).toBe("1 day ago");
+    expect(speedrunAgo(ago(29 * DAY), NOW)).toBe("29 days ago");
+    expect(speedrunAgo(ago(30 * DAY), NOW)).toBe("1 month ago");
+    expect(speedrunAgo(ago(364 * DAY), NOW)).toBe("12 months ago");
+    expect(speedrunAgo(ago(365 * DAY), NOW)).toBe("1 year ago");
+    expect(speedrunAgo(ago(800 * DAY), NOW)).toBe("2 years ago");
+  });
+});
+
+it("speedrunDaysLater words the gap between two records", () => {
+  expect(speedrunDaysLater(0)).toBe("same day");
+  expect(speedrunDaysLater(1)).toBe("1 day later");
+  expect(speedrunDaysLater(4)).toBe("4 days later");
+});
+
+function record(user: string, igt: number, day: number): SpeedrunRun {
+  return {
+    user: {
+      id: user,
+      twitch_username: user,
+      twitch_display_name: null,
+      twitch_avatar_url: null,
+    },
+    rank: null,
+    igt_ms: igt,
+    finished_at: new Date(NOW + day * DAY + 3_600_000).toISOString(),
+    race_id: `r-${user}-${day}`,
+    race_name: "R",
+    daily_date: null,
+    seed_number: "abc",
+    deaths: 0,
+    weapon: null,
+  };
+}
+
+describe("historyTimeline", () => {
+  it("tells a new holder from a holder improving their own record", () => {
+    const timeline = historyTimeline([
+      record("a", 900, 0),
+      record("a", 850, 4),
+      record("b", 800, 4),
+    ]);
+    expect(
+      timeline.map((e) => [e.kind, e.daysLater, e.improvedBy, e.run.user.id]),
+    ).toEqual([
+      ["new", null, null, "a"],
+      ["improved", 4, null, "a"],
+      ["new", 0, 50, "b"],
+    ]);
+  });
+
+  it("is empty without records", () => {
+    expect(historyTimeline([])).toEqual([]);
+  });
+});
+
+describe("history list dates", () => {
+  // Built with the local Date constructor: the list shows the viewer's
+  // calendar days, so gaps must be counted in those days, not in 24h steps.
+  const local = (day: number, hour: number, minute: number) =>
+    new Date(2026, 4, day, hour, minute).toISOString();
+  const at = (user: string, igt: number, finished: string): SpeedrunRun => ({
+    ...record(user, igt, 0),
+    finished_at: finished,
+  });
+
+  it("prints the viewer's calendar day", () => {
+    expect(speedrunDay(local(4, 23, 30))).toBe("2026-05-04");
+  });
+
+  it("counts calendar days between records", () => {
+    const acrossMidnight = historyTimeline([
+      at("a", 900, local(4, 23, 30)),
+      at("b", 800, local(5, 0, 30)),
+    ]);
+    expect(acrossMidnight[1].daysLater).toBe(1);
+    const sameDay = historyTimeline([
+      at("a", 900, local(4, 0, 10)),
+      at("b", 800, local(4, 23, 50)),
+    ]);
+    expect(sameDay[1].daysLater).toBe(0);
+  });
+});
+
+describe("record gains", () => {
+  it("match the difference of the times as shown", () => {
+    const timeline = historyTimeline([
+      record("a", 5_324_900, 0),
+      record("b", 4_470_100, 1),
+    ]);
+    // 1h 28m 44s to 1h 14m 30s: 14m 14s, though the raw gap is 14m 14.8s.
+    expect(timeline[1].improvedBy).toBe(854_000);
+  });
+
+  it("fall back to milliseconds when the shown times are equal", () => {
+    const timeline = historyTimeline([
+      record("a", 1_768_380, 0),
+      record("b", 1_768_000, 1),
+    ]);
+    expect(timeline[1].improvedBy).toBe(380);
+  });
+
+  it("print milliseconds under a second, speedrun.com minutes otherwise", () => {
+    expect(speedrunGainParts(380)).toEqual([{ value: "380", unit: "ms" }]);
+    expect(speedrunGainParts(16_000)).toEqual([
+      { value: "0", unit: "m" },
+      { value: "16", unit: "s" },
     ]);
   });
 });

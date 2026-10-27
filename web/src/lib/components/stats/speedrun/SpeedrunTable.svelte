@@ -1,8 +1,7 @@
 <script lang="ts">
   import type { SpeedrunRun } from "$lib/api";
-  import { speedrunRaceHref } from "$lib/speedrun";
+  import { speedrunAgo, speedrunRaceHref } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
-  import { timeAgo } from "$lib/utils/time";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
   import SpeedrunTime from "./SpeedrunTime.svelte";
@@ -14,6 +13,8 @@
   let { runs }: { runs: SpeedrunRun[] } = $props();
 
   let shown = $state(PAGE_SIZE);
+  // Relative dates are computed once per board, like a page load would.
+  const now = Date.now();
   let visible = $derived(runs.slice(0, shown));
 </script>
 
@@ -26,14 +27,13 @@
         <th>Time</th>
         <th>Date</th>
         <th>Seed</th>
-        <th>Layers</th>
-        <th>Weapon</th>
+        <th>Route</th>
         <th>Deaths</th>
       </tr>
     </thead>
     <tbody>
       {#each visible as run (`${run.race_id}:${run.user.id}`)}
-        {@const weapon = run.weapon
+        {@const route = run.weapon
           ? formatCombo(run.weapon, getWeaponName)
           : "–"}
         <tr class:obsolete={run.rank === null}>
@@ -49,17 +49,14 @@
           </td>
           <td><SpeedrunTime ms={run.igt_ms} /></td>
           <td title={new Date(run.finished_at).toLocaleString()}
-            >{timeAgo(run.finished_at)}</td
+            >{speedrunAgo(run.finished_at, now)}</td
           >
           <td>
             <a class="seed" href={speedrunRaceHref(run)}
               >{run.seed_number.slice(0, 6)}</a
             >
           </td>
-          <td>{run.layers}</td>
-          <td class="weapon" title={run.weapon ? weapon : undefined}
-            >{weapon}</td
-          >
+          <td class="route" title={run.weapon ? route : undefined}>{route}</td>
           <td>{run.deaths}</td>
         </tr>
       {/each}
@@ -154,7 +151,7 @@
     color: var(--color-purple-hover);
   }
 
-  .weapon {
+  .route {
     max-width: 10rem;
     overflow: hidden;
     text-overflow: ellipsis;
