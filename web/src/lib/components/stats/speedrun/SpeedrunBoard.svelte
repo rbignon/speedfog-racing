@@ -162,20 +162,20 @@
     {/if}
   </div>
 
-  {#if category && category.subcategories.length > 1}
+  <!-- Shown whenever the pool has deathless runs, so a deathless board is
+       always labelled, even for a pool without any Any% run. -->
+  {#if category && category.subcategories.includes("deathless")}
     <div class="subcategories">
       <div class="label">{category.name} - Subcategories</div>
       <div class="segmented">
-        <button
-          type="button"
-          class:on={resolved?.sub === "any"}
-          onclick={() => selectSub("any")}>Any%</button
-        >
-        <button
-          type="button"
-          class:on={resolved?.sub === "deathless"}
-          onclick={() => selectSub("deathless")}>Deathless</button
-        >
+        {#each category.subcategories as sub (sub)}
+          <button
+            type="button"
+            class:on={resolved?.sub === sub}
+            onclick={() => selectSub(sub)}
+            >{sub === "deathless" ? "Deathless" : "Any%"}</button
+          >
+        {/each}
       </div>
     </div>
   {/if}
