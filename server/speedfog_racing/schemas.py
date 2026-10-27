@@ -985,6 +985,9 @@ class SpeedrunCategory(BaseModel):
     description: str | None = None
     estimated_duration: str | None = None
     rules: str | None = None
+    # First seed of the pool at its current layer count: when this "version"
+    # of the category came out.
+    released_at: datetime | None = None
 
 
 class SpeedrunRun(BaseModel):
@@ -997,7 +1000,6 @@ class SpeedrunRun(BaseModel):
     race_name: str
     daily_date: date | None
     seed_number: str
-    layers: int
     deaths: int
     weapon: list[int] | None
 

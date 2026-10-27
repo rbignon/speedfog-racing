@@ -12,7 +12,7 @@ from datetime import date, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import (
@@ -55,7 +55,6 @@ class CountedRun:
     race_name: str
     daily_date: date | None
     seed_number: str
-    layers: int
     deaths: int
 
 
@@ -71,12 +70,23 @@ def _opt_str(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
+def _layers_count(config: dict[str, Any]) -> int | None:
+    """The pool's current layer count, None when its config does not say."""
+    value = config.get("layers_count")
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
 async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races,
     banned users left out, races excluded from stats left out unless they are
-    Daily Seeds or event races, training pools left out."""
+    Daily Seeds or event races, training pools left out, and seeds from an
+    older version of their pool (another layer count than its config) left
+    out."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
+    layer_counts = {
+        p.name: count for p in pools if (count := _layers_count(_pool_config(p))) is not None
+    }
 
     stmt = (
         select(
@@ -120,6 +130,9 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     for row in (await db.execute(stmt)).all():
         if row.pool_name in training_pools:
             continue
+        current_layers = layer_counts.get(row.pool_name)
+        if current_layers is not None and row.total_layers != current_layers:
+            continue
         user = users.get(row.user_id)
         if user is None:
             user = UserResponse(
@@ -152,7 +165,6 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 race_name=row.race_name,
                 daily_date=row.daily_date,
                 seed_number=row.seed_number,
-                layers=row.total_layers,
                 deaths=row.death_count,
             )
         )
@@ -168,6 +180,16 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
     if not flags:
         return []
     pools = (await db.execute(select(Pool).where(Pool.name.in_(flags)))).scalars().all()
+    # Earliest seed per (pool, layer count); a pool's release is the earliest
+    # one at its current layer count (any count when its config has none).
+    first_seeds = await db.execute(
+        select(Seed.pool_name, Seed.total_layers, func.min(Seed.created_at))
+        .where(Seed.pool_name.in_(flags))
+        .group_by(Seed.pool_name, Seed.total_layers)
+    )
+    seed_dates: dict[str, list[tuple[int, datetime]]] = {}
+    for pool_name, total_layers, created_at in first_seeds.all():
+        seed_dates.setdefault(pool_name, []).append((total_layers, created_at))
 
     def order(pool: Pool) -> tuple[bool, bool, float, str]:
         sort_order = _pool_config(pool).get("sort_order")
@@ -192,6 +214,14 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
                 description=_opt_str(config.get("description")),
                 estimated_duration=_opt_str(config.get("estimated_duration")),
                 rules=_opt_str(config.get("rules")),
+                released_at=min(
+                    (
+                        created_at
+                        for layers, created_at in seed_dates.get(pool.name, [])
+                        if _layers_count(config) in (None, layers)
+                    ),
+                    default=None,
+                ),
             )
         )
     return categories
@@ -308,7 +338,6 @@ def _run_fields(
         "race_name": run.race_name,
         "daily_date": run.daily_date,
         "seed_number": run.seed_number,
-        "layers": run.layers,
         "deaths": run.deaths,
         "weapon": weapons.get(run.participant_id),
     }

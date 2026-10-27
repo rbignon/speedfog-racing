@@ -56,7 +56,10 @@ async def pools(async_session):
     async with async_session() as db:
         db.add_all(
             [
-                Pool(name="sprint", config={"name": "Sprint", "type": "race", "sort_order": 20}),
+                Pool(
+                    name="sprint",
+                    config={"name": "Sprint", "type": "race", "sort_order": 20, "layers_count": 15},
+                ),
                 Pool(name="training_sprint", config={"name": "Sprint", "type": "training"}),
                 Pool(
                     name="retired",
@@ -112,6 +115,7 @@ async def _add_run(
     exclude: bool = False,
     zone_history: list[dict[str, Any]] | None = None,
     finished: bool = True,
+    layers: int = 15,
 ) -> Participant:
     """One race on its own seed with a single participant."""
     tag = uuid.uuid4().hex[:10]
@@ -119,9 +123,10 @@ async def _add_run(
         seed_number=f"seed{tag}",
         pool_name=pool,
         graph_json={"nodes": {}},
-        total_layers=15,
+        total_layers=layers,
         folder_path=f"/t/{tag}",
         status=SeedStatus.CONSUMED,
+        created_at=BASE + timedelta(minutes=minute - 60),
     )
     db.add(seed)
     await db.flush()
@@ -183,7 +188,6 @@ def _run(
         race_name="R",
         daily_date=None,
         seed_number="abc",
-        layers=15,
         deaths=0,
     )
 
@@ -357,3 +361,33 @@ async def test_build_overview_recent_runs_and_places(async_session, pools):
     assert [r.igt_ms for r in ov.recent_runs] == [1500, 1900, 2000, 1050, 1100]
     assert [r.rank for r in ov.recent_runs] == [1, 1, 2, 2, 3]
     assert (ov.recent_runs[0].category, ov.recent_runs[0].deathless) == ("Sprint", True)
+
+
+async def test_load_counted_runs_keeps_the_current_layer_count_only(async_session, pools):
+    """A seed from an older version of its pool (another layer count than the
+    pool's config) does not count; a pool without layers_count keeps all."""
+    async with async_session() as db:
+        a = await _user(db, "a")
+        current = await _add_run(db, user=a, igt_ms=1000, minute=1)
+        await _add_run(db, user=a, igt_ms=500, minute=2, layers=12)
+        unversioned = await _add_run(db, user=a, igt_ms=900, minute=3, pool="standard", layers=17)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    assert {r.participant_id for r in runs} == {current.id, unversioned.id}
+
+
+async def test_category_release_is_the_first_seed_at_the_current_layer_count(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_run(db, user=a, igt_ms=500, minute=1, layers=12)
+        await _add_run(db, user=a, igt_ms=1000, minute=5)
+        await _add_run(db, user=a, igt_ms=1100, minute=9)
+        await db.commit()
+
+        cats = await load_categories(db, await load_counted_runs(db))
+
+    assert [(c.pool, _naive(c.released_at)) for c in cats] == [
+        ("sprint", _naive(BASE + timedelta(minutes=5 - 60)))
+    ]
