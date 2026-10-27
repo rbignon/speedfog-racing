@@ -28,7 +28,7 @@ Computed by `compute_public_overview` in `services/analytics_service.py`. The wi
 
 Below the KPI cards, the tab shows four teaser cards (deadliest boss, deadliest zone, top weapon combo, most common play style) that reuse the sibling tabs' endpoints client-side and link to the matching tab, plus the activity heatmap.
 
-The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`) sit behind a 15-minute, stale-while-revalidate, in-process TTL cache in `api/stats.py` (the aggregations span weeks of races, and a refresh of a heavy key decodes thousands of zone histories on the event loop). Cold hits (first computation of a key since process start) are single-flight: concurrent requests compute once instead of each paying the full aggregation cost, and error responses are never cached. Once a key holds a value, requests past its TTL are served the stale value immediately while a background task (at most one per key, with its own DB session) recomputes it, so no request ever waits on a refresh; a failed refresh keeps the stale value and is retried on the next hit past the TTL. The exception is a refresh raising `HTTPException` (the data legitimately no longer resolves): the entry is evicted so the next request surfaces the error instead of stale data. The zone endpoints and `/bosses` are not cached per endpoint: their responses are built together, once per `(pool, days)` and refresh (see Input Loading below), so a zone sheet opened for any node costs a lookup. A zone detail's 404 also comes from that cached computation: a zone raced for the first time since the last refresh answers 404 until the next one.
+The public aggregation endpoints (`overview`, `heatmap`, `zones`, `zones/index`, `zones/{node_id}`, `bosses`, `weapons`, `players`, `speedrun`, `speedrun/{pool}`) sit behind a 15-minute, stale-while-revalidate, in-process TTL cache in `api/stats.py` (the aggregations span weeks of races, and a refresh of a heavy key decodes thousands of zone histories on the event loop). Cold hits (first computation of a key since process start) are single-flight: concurrent requests compute once instead of each paying the full aggregation cost, and error responses are never cached. Once a key holds a value, requests past its TTL are served the stale value immediately while a background task (at most one per key, with its own DB session) recomputes it, so no request ever waits on a refresh; a failed refresh keeps the stale value and is retried on the next hit past the TTL. The exception is a refresh raising `HTTPException` (the data legitimately no longer resolves): the entry is evicted so the next request surfaces the error instead of stale data. The zone endpoints and `/bosses` are not cached per endpoint: their responses are built together, once per `(pool, days)` and refresh (see Input Loading below), so a zone sheet opened for any node costs a lookup. A zone detail's 404 also comes from that cached computation: a zone raced for the first time since the last refresh answers 404 until the next one.
 
 ---
 
@@ -261,6 +261,22 @@ compare bosses rather than the conditions they were met in, and only a
 boss's own sensitivity to scaling varies across bands. Run it
 from `server/`; `--write` updates the weights in the sibling speedfog
 checkout.
+
+---
+
+## speedrun.fog
+
+The `speedrun.fog` tab of `/stats` is a parody of a speedrun.com game page: the same layout (game header card, category pills, subcategories, ranking table, side column with game stats and recent runs) in SpeedFog's colors. It carries no competitive value, since times on different seeds do not compare; the point is recognising the layout.
+
+**Which runs count.** A participant with status FINISHED in a race that has a seed and is itself FINISHED, whose user is not banned. Races flagged `exclude_from_stats` stay out, except Daily Seeds and event races (qualifiers and playoff races), which count. Public and private races both count. Pools whose config `type` is `training` never appear, and solo sessions are not runs here. Requiring a finished race keeps a running Daily Seed or an open qualifier out until it ends, so the board never reveals the deaths or weapons a running daily hides.
+
+**Categories.** One per pool with at least one counted run: enabled pools by `sort_order` (pools without one last), then disabled (retired) pools in the same order. Subcategories are "Any%" (races without the deathless option) and "Deathless" (`Race.deathless`), disjoint, listed only when the pool has runs of that kind.
+
+**Ranking.** A board is a pool, a subcategory and a set of run types (`race`, `daily`, `event`). Each player keeps their best run (lowest IGT, the earliest on a tie). Equal IGT shares a rank and the next rank skips (1, 2, 2, 4). With obsolete runs requested, every run of the board is listed by time and the runs that are not their player's best carry no rank. The record history lists, in date order, each run strictly faster than every earlier one. A recent run's place is 1 + the number of other players whose best on its board (all run types) is strictly faster.
+
+**Weapon.** The combo held for the most ticks over the run (summed `zone_history` weapon ticks, base ids), the same id coercion as `/weapons`. Runs from before weapon tracking have none. It is decoded only for the rows a response returns, never for the whole run list.
+
+**Endpoints.** `GET /api/stats/speedrun` returns the categories, the run and player counts and the five most recent runs. `GET /api/stats/speedrun/{pool}?deathless=<bool>&types=<race,daily,event>&obsolete=<bool>` returns one board and its record history; `types` must be a non-empty subset of the three (422 otherwise) and a pool without counted runs answers 404. Both sit behind the stats cache; the counted run list itself is cached once (`speedrun:runs`, light columns only) and every board key (`speedrun:board:<pool>:<deathless>:<types>:<obsolete>`) derives from it. Computed in `services/speedrun_service.py`.
 
 ---
 

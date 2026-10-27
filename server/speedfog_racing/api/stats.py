@@ -29,6 +29,8 @@ from speedfog_racing.schemas import (
     BossStatsResponse,
     HeatmapResponse,
     PlayerProfilesResponse,
+    SpeedrunBoardResponse,
+    SpeedrunOverviewResponse,
     StatsOverviewResponse,
     TraitPlayerEntry,
     WeaponComboStat,
@@ -42,6 +44,12 @@ from speedfog_racing.schemas import (
     ZoneTimeEntry,
 )
 from speedfog_racing.services.seed_nodes import NodeDisplay, SeedNodes, load_seed_nodes
+from speedfog_racing.services.speedrun_service import RUN_TYPES as SPEEDRUN_RUN_TYPES
+from speedfog_racing.services.speedrun_service import (
+    build_board,
+    build_overview,
+    load_counted_runs,
+)
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
 logger = logging.getLogger(__name__)
@@ -934,3 +942,47 @@ async def get_weapon_stats(
         return WeaponStatsResponse(combos=combos_out)
 
     return await _cached(f"weapons:{pool}:{days}", _compute, db)
+
+
+@router.get("/speedrun", response_model=SpeedrunOverviewResponse)
+async def get_speedrun_overview(db: AsyncSession = Depends(get_db)) -> SpeedrunOverviewResponse:
+    """speedrun.fog: categories, game stats and recent runs."""
+
+    async def _compute(db: AsyncSession) -> SpeedrunOverviewResponse:
+        runs = await _cached("speedrun:runs", load_counted_runs, db)
+        return await build_overview(db, runs)
+
+    return await _cached("speedrun:overview", _compute, db)
+
+
+@router.get("/speedrun/{pool}", response_model=SpeedrunBoardResponse)
+async def get_speedrun_board(
+    pool: str,
+    deathless: bool = Query(default=False),
+    types: str = Query(default=",".join(SPEEDRUN_RUN_TYPES)),
+    obsolete: bool = Query(default=False),
+    db: AsyncSession = Depends(get_db),
+) -> SpeedrunBoardResponse:
+    """speedrun.fog: one board (pool, Any% or Deathless, run types) with its
+    record history."""
+    requested = {t.strip() for t in types.split(",") if t.strip()}
+    if not requested or not requested <= set(SPEEDRUN_RUN_TYPES):
+        raise HTTPException(
+            status_code=422,
+            detail=f"types must be a non-empty subset of {','.join(SPEEDRUN_RUN_TYPES)}",
+        )
+    run_types = frozenset(t for t in SPEEDRUN_RUN_TYPES if t in requested)
+
+    # Checked before the board cache so an unknown pool never gets a cache
+    # key (nor a lock) of its own.
+    if not any(r.pool == pool for r in await _cached("speedrun:runs", load_counted_runs, db)):
+        raise HTTPException(status_code=404, detail="Unknown category")
+
+    async def _compute(db: AsyncSession) -> SpeedrunBoardResponse:
+        runs = await _cached("speedrun:runs", load_counted_runs, db)
+        return await build_board(
+            db, runs, pool=pool, deathless=deathless, types=run_types, include_obsolete=obsolete
+        )
+
+    key = f"speedrun:board:{pool}:{int(deathless)}:{','.join(sorted(run_types))}:{int(obsolete)}"
+    return await _cached(key, _compute, db)
