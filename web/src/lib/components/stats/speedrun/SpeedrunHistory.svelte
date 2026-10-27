@@ -46,65 +46,70 @@
   <p class="message">No record yet for these filters.</p>
 {:else}
   <div class="history">
-    <div class="chart" bind:clientWidth={width}>
-      {#if width > 0}
-        <svg
-          {width}
-          height={HEIGHT}
-          viewBox="0 0 {width} {HEIGHT}"
-          role="img"
-          aria-label="Record over time"
-        >
-          <path d={path} class="line" />
-          {#each records as record (`${record.race_id}:${record.user.id}`)}
-            <circle
-              class="dot"
-              cx={x(new Date(record.finished_at).getTime())}
-              cy={y(record.igt_ms)}
-              r="3.5"
-            />
-          {/each}
-          <text x={PAD_X} y={12} class="axis">{formatIgt(slowest)}</text>
-          {#if fastest !== slowest}
-            <text x={PAD_X} y={HEIGHT - 4} class="axis"
-              >{formatIgt(fastest)}</text
-            >
-          {/if}
-          <text x={width - PAD_X} y={HEIGHT - 4} class="axis end">Today</text>
-        </svg>
-      {/if}
+    <div class="chart">
+      <!-- Bound on an unpadded box so the SVG matches the space it gets. -->
+      <div bind:clientWidth={width}>
+        {#if width > 0}
+          <svg
+            {width}
+            height={HEIGHT}
+            viewBox="0 0 {width} {HEIGHT}"
+            role="img"
+            aria-label="Record over time"
+          >
+            <path d={path} class="line" />
+            {#each records as record (`${record.race_id}:${record.user.id}`)}
+              <circle
+                class="dot"
+                cx={x(new Date(record.finished_at).getTime())}
+                cy={y(record.igt_ms)}
+                r="3.5"
+              />
+            {/each}
+            <text x={PAD_X} y={12} class="axis">{formatIgt(slowest)}</text>
+            {#if fastest !== slowest}
+              <text x={PAD_X} y={HEIGHT - 4} class="axis"
+                >{formatIgt(fastest)}</text
+              >
+            {/if}
+            <text x={width - PAD_X} y={HEIGHT - 4} class="axis end">Today</text>
+          </svg>
+        {/if}
+      </div>
     </div>
 
-    <table class="records">
-      <thead>
-        <tr>
-          <th class="left">Date</th>
-          <th class="left">Player</th>
-          <th>Time</th>
-          <th>Seed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {#each newestFirst as record (`${record.race_id}:${record.user.id}`)}
+    <div class="table-wrap">
+      <table class="records">
+        <thead>
           <tr>
-            <td class="left date"
-              >{new Date(record.finished_at).toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}</td
-            >
-            <td class="left"><SpeedrunPlayer user={record.user} /></td>
-            <td><SpeedrunTime ms={record.igt_ms} /></td>
-            <td>
-              <a class="seed" href={speedrunRaceHref(record)}
-                >{record.seed_number.slice(0, 6)}</a
-              >
-            </td>
+            <th class="left">Date</th>
+            <th class="left">Player</th>
+            <th>Time</th>
+            <th>Seed</th>
           </tr>
-        {/each}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {#each newestFirst as record (`${record.race_id}:${record.user.id}`)}
+            <tr>
+              <td class="left date"
+                >{new Date(record.finished_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}</td
+              >
+              <td class="left"><SpeedrunPlayer user={record.user} /></td>
+              <td><SpeedrunTime ms={record.igt_ms} /></td>
+              <td>
+                <a class="seed" href={speedrunRaceHref(record)}
+                  >{record.seed_number.slice(0, 6)}</a
+                >
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   </div>
 {/if}
 
@@ -138,6 +143,10 @@
 
   .axis.end {
     text-anchor: end;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
   }
 
   .records {
