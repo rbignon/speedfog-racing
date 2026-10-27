@@ -56,7 +56,9 @@
               >{run.seed_number.slice(0, 6)}</a
             >
           </td>
-          <td class="route" title={run.weapon ? route : undefined}>{route}</td>
+          <td class="route-cell" title={run.weapon ? route : undefined}
+            >{route}</td
+          >
           <td>{run.deaths}</td>
         </tr>
       {/each}
@@ -151,7 +153,9 @@
     color: var(--color-purple-hover);
   }
 
-  .route {
+  /* Not .route: app.css owns that global class (the cards' route strip,
+     which turns pointer events off and would kill this cell's tooltip). */
+  .route-cell {
     max-width: 10rem;
     overflow: hidden;
     text-overflow: ellipsis;

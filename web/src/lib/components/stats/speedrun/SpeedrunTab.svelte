@@ -50,6 +50,7 @@
     <div class="info">
       <h2 class="title">SpeedFog Racing <span class="year">[2026]</span></h2>
       <p class="series">Souls Series</p>
+      <!-- .chip is the site-wide chip (app.css). -->
       <div class="chips"><span class="chip">PC</span></div>
       <div class="links">
         <a class="link" href={DISCORD_URL} target="_blank" rel="noopener"
@@ -137,15 +138,6 @@
   .links {
     display: flex;
     gap: 0.35rem;
-  }
-
-  .chip {
-    padding: 0.1rem 0.35rem;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    color: var(--color-text-secondary);
-    font-size: 0.68rem;
   }
 
   .link {
