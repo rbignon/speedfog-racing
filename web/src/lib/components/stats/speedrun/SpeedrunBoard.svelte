@@ -14,6 +14,7 @@
     type SpeedrunSub,
   } from "$lib/speedrun";
   import SpeedrunHistory from "./SpeedrunHistory.svelte";
+  import SpeedrunOverlayModal from "./SpeedrunOverlayModal.svelte";
   import SpeedrunTable from "./SpeedrunTable.svelte";
 
   let {
@@ -38,6 +39,7 @@
   let filtersOpen = $state(false);
   let rulesOpen = $state(false);
   let moreOpen = $state(false);
+  let overlayOpen = $state(false);
   let filtersEl = $state<HTMLElement | null>(null);
 
   let resolved = $derived(resolveCategory(params, categories));
@@ -270,6 +272,19 @@
 
     <span class="spacer"></span>
 
+    {#if resolved && category}
+      <button type="button" class="tool" onclick={() => (overlayOpen = true)}>
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+          <path
+            d="M3 4h18v12H3V4Zm5 16h8M12 16v4"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+        </svg>
+        OBS overlay
+      </button>
+    {/if}
     <button
       type="button"
       class="tool"
@@ -341,6 +356,16 @@
     {/if}
   </div>
 </div>
+
+{#if overlayOpen && resolved && category}
+  <SpeedrunOverlayModal
+    pool={resolved.pool}
+    categoryName={category.name}
+    sub={resolved.sub}
+    types={params.types}
+    onClose={() => (overlayOpen = false)}
+  />
+{/if}
 
 <style>
   .board {

@@ -1021,6 +1021,12 @@
           Both use a <strong>transparent background</strong> and work as OBS Browser
           Sources. Also available for solo sessions.
         </p>
+        <p>
+          The <strong>speedrun.fog</strong> tab of Stats has an
+          <strong>OBS overlay</strong> button too: a leaderboard of the board on screen,
+          with the top players fixed, the next ones cycling, and your own personal
+          best pinned at the bottom (recommended: 400 x 300).
+        </p>
       </div>
     {/if}
   </section>

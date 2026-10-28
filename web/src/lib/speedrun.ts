@@ -216,3 +216,102 @@ export function historyTimeline(
         };
   });
 }
+
+/** The OBS overlay of a board (`/overlay/speedrun/<pool>`): the board's own
+ * `sub` and `types`, plus the rows to show and the player to pin. */
+export interface SpeedrunOverlayParams {
+  sub: SpeedrunSub;
+  types: SpeedrunRunType[];
+  /** Rows always shown, from the first place. */
+  top: number;
+  /** Rows paging through the players after the top. */
+  cycle: number;
+  /** The last rank the cycling rows reach. */
+  until: number;
+  /** Twitch username whose row stays pinned; null for none. */
+  player: string | null;
+}
+
+export const SPEEDRUN_OVERLAY_DEFAULTS = { top: 3, cycle: 3, until: 20 };
+
+function rowCount(raw: string | null, fallback: number): number {
+  if (raw === null || !/^\d+$/.test(raw)) return fallback;
+  return parseInt(raw, 10);
+}
+
+export function parseSpeedrunOverlayParams(
+  search: URLSearchParams,
+): SpeedrunOverlayParams {
+  const { sub, types } = parseSpeedrunParams(search);
+  return {
+    sub,
+    types,
+    top: rowCount(search.get("top"), SPEEDRUN_OVERLAY_DEFAULTS.top),
+    cycle: rowCount(search.get("cycle"), SPEEDRUN_OVERLAY_DEFAULTS.cycle),
+    until: rowCount(search.get("until"), SPEEDRUN_OVERLAY_DEFAULTS.until),
+    player: search.get("player")?.trim() || null,
+  };
+}
+
+/** The overlay's URL, default values left out. */
+export function speedrunOverlayUrl(
+  origin: string,
+  pool: string,
+  p: SpeedrunOverlayParams,
+): string {
+  const url = new URL(`/overlay/speedrun/${encodeURIComponent(pool)}`, origin);
+  writeSpeedrunParams(url, {
+    pool: null,
+    sub: p.sub,
+    types: p.types,
+    obsolete: false,
+    view: "board",
+  });
+  for (const key of ["top", "cycle", "until"] as const) {
+    if (p[key] !== SPEEDRUN_OVERLAY_DEFAULTS[key]) {
+      url.searchParams.set(key, String(p[key]));
+    }
+  }
+  if (p.player) url.searchParams.set("player", p.player);
+  return url.toString();
+}
+
+export interface SpeedrunOverlayRows {
+  top: SpeedrunRun[];
+  /** The cycling rows, `cycle` per page (the last one may be shorter). */
+  pages: SpeedrunRun[][];
+  /** The pinned row: the player's, unless it already shows in the top. */
+  self: SpeedrunRun | null;
+  /** The player's user id, to highlight their row wherever it shows. */
+  selfId: string | null;
+}
+
+/** Splits a ranked board (best runs only) into the overlay's rows: the top,
+ * the pages cycling through the next players up to rank `until`, and the
+ * player's pinned row, which never also shows in the cycle. */
+export function speedrunOverlayRows(
+  runs: SpeedrunRun[],
+  o: Pick<SpeedrunOverlayParams, "top" | "cycle" | "until" | "player">,
+): SpeedrunOverlayRows {
+  const player = o.player?.toLowerCase() ?? null;
+  const index =
+    player === null
+      ? -1
+      : runs.findIndex((r) => r.user.twitch_username.toLowerCase() === player);
+  const self = index >= o.top ? runs[index] : null;
+  const pool = runs
+    .slice(o.top)
+    .filter((r) => r !== self && r.rank !== null && r.rank <= o.until);
+  const pages: SpeedrunRun[][] = [];
+  if (o.cycle > 0) {
+    for (let i = 0; i < pool.length; i += o.cycle) {
+      pages.push(pool.slice(i, i + o.cycle));
+    }
+  }
+  return {
+    top: runs.slice(0, o.top),
+    pages,
+    self,
+    selfId: index >= 0 ? runs[index].user.id : null,
+  };
+}

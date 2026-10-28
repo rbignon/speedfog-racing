@@ -4,16 +4,20 @@ import {
   RUN_TYPES,
   historyPolyline,
   historyTimeline,
+  parseSpeedrunOverlayParams,
   parseSpeedrunParams,
   resolveCategory,
   speedrunAgo,
   speedrunDay,
   speedrunDaysLater,
   speedrunGainParts,
+  speedrunOverlayRows,
+  speedrunOverlayUrl,
   speedrunRaceHref,
   speedrunTimeParts,
   toggleRunType,
   writeSpeedrunParams,
+  type SpeedrunOverlayParams,
   type SpeedrunParams,
 } from "$lib/speedrun";
 
@@ -316,5 +320,149 @@ describe("record gains", () => {
       { value: "0", unit: "m" },
       { value: "16", unit: "s" },
     ]);
+  });
+});
+
+/** A board of `ranks.length` players named p1, p2...; `ranks[i]` is the
+ * rank shown for the i-th row (ties repeat a rank). */
+function board(ranks: number[]): SpeedrunRun[] {
+  return ranks.map((rank, i) => ({
+    ...record(`p${i + 1}`, 1_500_000 + i * 1000, 0),
+    rank,
+  }));
+}
+
+const names = (runs: SpeedrunRun[]) => runs.map((r) => r.user.twitch_username);
+
+describe("speedrunOverlayRows", () => {
+  const twentyFive = board(Array.from({ length: 25 }, (_, i) => i + 1));
+  const opts = { top: 3, cycle: 3, until: 20, player: null };
+
+  it("pins the top rows and pages through the next ones up to the limit", () => {
+    const rows = speedrunOverlayRows(twentyFive, opts);
+    expect(names(rows.top)).toEqual(["p1", "p2", "p3"]);
+    expect(rows.pages.map(names)).toEqual([
+      ["p4", "p5", "p6"],
+      ["p7", "p8", "p9"],
+      ["p10", "p11", "p12"],
+      ["p13", "p14", "p15"],
+      ["p16", "p17", "p18"],
+      ["p19", "p20"],
+    ]);
+    expect(rows.self).toBeNull();
+    expect(rows.selfId).toBeNull();
+  });
+
+  it("keeps every player tied at the limit rank", () => {
+    const rows = speedrunOverlayRows(board([1, 2, 3, 4, 5, 5, 7]), {
+      ...opts,
+      until: 5,
+    });
+    expect(rows.pages.flat().map((r) => r.rank)).toEqual([4, 5, 5]);
+  });
+
+  it("highlights a player in the top in place, without a pinned row", () => {
+    const rows = speedrunOverlayRows(twentyFive, { ...opts, player: "p2" });
+    expect(rows.self).toBeNull();
+    expect(rows.selfId).toBe("p2");
+    expect(rows.pages[0].map((r) => r.user.id)).toEqual(["p4", "p5", "p6"]);
+  });
+
+  it("pins a player from the cycling range and takes them out of it", () => {
+    const rows = speedrunOverlayRows(twentyFive, { ...opts, player: "p5" });
+    expect(rows.self?.user.id).toBe("p5");
+    expect(rows.selfId).toBe("p5");
+    expect(rows.pages[0].map((r) => r.user.id)).toEqual(["p4", "p6", "p7"]);
+    expect(rows.pages.flat()).toHaveLength(16);
+  });
+
+  it("pins a player past the limit and leaves the cycle as is", () => {
+    const rows = speedrunOverlayRows(twentyFive, { ...opts, player: "p24" });
+    expect(rows.self?.user.id).toBe("p24");
+    expect(rows.pages.flat()).toHaveLength(17);
+  });
+
+  it("matches the player whatever the case", () => {
+    const rows = speedrunOverlayRows(
+      twentyFive.map((r) =>
+        r.user.id === "p9"
+          ? { ...r, user: { ...r.user, twitch_username: "kemist_c10h15n" } }
+          : r,
+      ),
+      { ...opts, player: "KEMIST_C10H15N" },
+    );
+    expect(rows.self?.user.id).toBe("p9");
+  });
+
+  it("shows no pinned row for a player without a run on the board", () => {
+    const rows = speedrunOverlayRows(twentyFive, {
+      ...opts,
+      player: "stranger",
+    });
+    expect(rows.self).toBeNull();
+    expect(rows.selfId).toBeNull();
+  });
+
+  it("has no pages without cycling rows or below a limit inside the top", () => {
+    expect(
+      speedrunOverlayRows(twentyFive, { ...opts, cycle: 0 }).pages,
+    ).toEqual([]);
+    expect(
+      speedrunOverlayRows(twentyFive, { ...opts, until: 3 }).pages,
+    ).toEqual([]);
+  });
+
+  it("copes with a board shorter than the top", () => {
+    const rows = speedrunOverlayRows(board([1, 2]), opts);
+    expect(names(rows.top)).toEqual(["p1", "p2"]);
+    expect(rows.pages).toEqual([]);
+  });
+});
+
+describe("speedrun overlay URL", () => {
+  const DEFAULT_OVERLAY: SpeedrunOverlayParams = {
+    sub: "any",
+    types: ["race", "daily", "event"],
+    top: 3,
+    cycle: 3,
+    until: 20,
+    player: null,
+  };
+
+  it("leaves the defaults out", () => {
+    expect(
+      speedrunOverlayUrl("https://x.test", "standard", DEFAULT_OVERLAY),
+    ).toBe("https://x.test/overlay/speedrun/standard");
+  });
+
+  it("reads back what it writes", () => {
+    const options: SpeedrunOverlayParams = {
+      sub: "deathless",
+      types: ["race", "daily"],
+      top: 5,
+      cycle: 2,
+      until: 50,
+      player: "wospince",
+    };
+    const url = new URL(
+      speedrunOverlayUrl("https://x.test", "sprint", options),
+    );
+    expect(url.pathname).toBe("/overlay/speedrun/sprint");
+    expect(parseSpeedrunOverlayParams(url.searchParams)).toEqual(options);
+  });
+
+  it("falls back to the defaults on missing or malformed numbers", () => {
+    const parsed = parseSpeedrunOverlayParams(
+      new URLSearchParams("top=abc&cycle=-2&until=&player="),
+    );
+    expect(parsed).toEqual(DEFAULT_OVERLAY);
+  });
+
+  it("accepts zero rows, so the overlay can drop the top or the cycle", () => {
+    const parsed = parseSpeedrunOverlayParams(
+      new URLSearchParams("top=0&cycle=0"),
+    );
+    expect(parsed.top).toBe(0);
+    expect(parsed.cycle).toBe(0);
   });
 });
