@@ -1716,8 +1716,12 @@ export interface AdminPool {
 export interface AnalyticsKpis {
   total_users: number;
   new_users_this_month: number;
-  active_users_30d: number;
-  active_users_pct: number;
+  /** Users the site saw (Twitch login or a logged-in race page), played or not. */
+  visitors_30d: number;
+  visitors_pct: number;
+  /** Users who played a race (qualified) or a training session, seen or not. */
+  active_players_30d: number;
+  active_players_pct: number;
   total_races_finished: number;
   total_daily_participants: number;
   avg_participants: number;

@@ -16,9 +16,9 @@ Each seed receives an intrinsic difficulty score at ingestion time, computed fro
 
 ## Community Overview
 
-`GET /api/stats/overview` powers the default tab of `/stats`. Public finished races only, Daily Seeds included (the KPIs describe total racing activity).
+`GET /api/stats/overview` powers the default tab of `/stats`. Public finished races only, Daily Seeds included (the KPIs describe total racing activity), except for active players, which count people rather than race volume.
 
-**KPIs:** `total_races`, `active_players` (distinct participants over the last 30 days; the UI label does not mention the window), `total_deaths` and `hours_raced` (summed over FINISHED participants and ABANDONED participants with `igt_ms > 0`).
+**KPIs:** `total_races`, `active_players` (distinct users who played over the last 30 days, by the same rule as the weekly `active_users` series below, private races and training included; the UI label does not mention the window), `total_deaths` and `hours_raced` (summed over FINISHED participants and ABANDONED participants with `igt_ms > 0`). The `active_players` value and the weekly series come from the same loaded rows, so the tile's number and its sparkline cannot disagree. It is the same computation as the admin dashboard's "Players (30D)" KPI, though `/stats` serves it from a cache that can lag up to 15 minutes.
 
 **Weekly series** (last `PUBLIC_STATS_WEEKS` ISO weeks, oldest first, labels `W{iso_week}` like the admin analytics): `races`, `deaths`, `hours` bucket public finished races by `started_at`; `active_users` counts distinct users per week with a qualified race participation (`zone_history` length >= 2) or a created training session, mirroring the admin `active_users` series.
 

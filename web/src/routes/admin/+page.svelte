@@ -1663,9 +1663,16 @@
           </div>
         </div>
         <div class="kpi-card">
-          <div class="kpi-label">Active (30d)</div>
-          <div class="kpi-value">{analytics.kpis.active_users_30d}</div>
-          <div class="kpi-sub">{analytics.kpis.active_users_pct}% of total</div>
+          <div class="kpi-label">Visitors (30d)</div>
+          <div class="kpi-value">{analytics.kpis.visitors_30d}</div>
+          <div class="kpi-sub">{analytics.kpis.visitors_pct}% of total</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Players (30d)</div>
+          <div class="kpi-value">{analytics.kpis.active_players_30d}</div>
+          <div class="kpi-sub">
+            {analytics.kpis.active_players_pct}% of total
+          </div>
         </div>
         <div class="kpi-card">
           <div class="kpi-label">Races (finished)</div>
@@ -2919,9 +2926,10 @@
     text-decoration: underline;
   }
 
+  /* Two rows of three: people (users, visitors, players), then activity. */
   .kpi-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 0.75rem;
     margin-bottom: 1.5rem;
   }

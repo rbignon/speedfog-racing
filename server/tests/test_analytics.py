@@ -275,8 +275,12 @@ async def test_compute_analytics_kpis(analytics_data, async_session):
     # are NOT present here since analytics_data uses its own async_session)
     assert kpis["total_users"] == 3
     assert kpis["new_users_this_month"] == 3  # all created this month
-    assert kpis["active_users_30d"] == 2  # user1 & user2; user3 last_seen > 30d
-    assert kpis["active_users_pct"] == round(2 / 3 * 100, 1)
+    assert kpis["visitors_30d"] == 2  # user1 & user2; user3 last_seen > 30d
+    assert kpis["visitors_pct"] == round(2 / 3 * 100, 1)
+    # Race participations have no zone history (unqualified): only the two
+    # training sessions make user1 and user2 players.
+    assert kpis["active_players_30d"] == 2
+    assert kpis["active_players_pct"] == round(2 / 3 * 100, 1)
     assert kpis["total_races_finished"] == 1
     assert kpis["total_daily_participants"] == 0
     assert kpis["avg_participants"] == 2.0
@@ -1054,3 +1058,104 @@ async def test_compute_analytics_active_users(async_session):
     assert active["counts"][-1] == 3
     # No other week has activity, so the whole 26-week series sums to 3.
     assert sum(active["counts"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_compute_analytics_active_players_30d(async_session):
+    """active_players_30d counts distinct users who played over the last 30
+    days, independently of last_seen: a qualified participation in any race
+    (private and still-running ones included) or a training session."""
+    async with async_session() as db:
+        organizer = User(twitch_id="ap_org", twitch_username="aporg", api_token=generate_token())
+        names = ["private", "running", "solo", "both", "old", "unqualified", "visitor"]
+        users = {
+            n: User(
+                twitch_id=f"ap_{n}",
+                twitch_username=f"ap{n}",
+                api_token=generate_token(),
+                # Only the visitor was seen recently: playing must not depend on it.
+                last_seen=NOW - timedelta(days=1) if n == "visitor" else None,
+            )
+            for n in names
+        }
+        db.add(organizer)
+        db.add_all(users.values())
+        await db.flush()
+
+        seed = Seed(
+            seed_number="901",
+            pool_name="standard",
+            graph_json={},
+            total_layers=1,
+            folder_path="/seeds/901",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+
+        private_race = Race(
+            name="private",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            is_public=False,
+            started_at=NOW - timedelta(days=10),
+        )
+        running_race = Race(
+            name="running",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=NOW - timedelta(days=2),
+        )
+        old_race = Race(
+            name="old",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.FINISHED,
+            started_at=NOW - timedelta(days=40),
+        )
+        db.add_all([private_race, running_race, old_race])
+        await db.flush()
+
+        qualified = [{"node_id": "a"}, {"node_id": "b"}]
+
+        def part(race: Race, user: User, zones: list[dict[str, str]]) -> Participant:
+            return Participant(
+                race_id=race.id,
+                user_id=user.id,
+                mod_token=generate_token(),
+                status=ParticipantStatus.FINISHED,
+                zone_history=zones,
+            )
+
+        def solo(user: User, days_ago: int) -> TrainingSession:
+            return TrainingSession(
+                user_id=user.id,
+                seed_id=seed.id,
+                mod_token=generate_token(),
+                status=TrainingSessionStatus.FINISHED,
+                created_at=NOW - timedelta(days=days_ago),
+            )
+
+        db.add_all(
+            [
+                part(private_race, users["private"], qualified),
+                part(running_race, users["running"], qualified),
+                part(running_race, users["both"], qualified),
+                part(old_race, users["old"], qualified),
+                part(running_race, users["unqualified"], [{"node_id": "a"}]),
+                solo(users["solo"], 5),
+                solo(users["both"], 3),
+                solo(users["old"], 35),
+            ]
+        )
+        await db.commit()
+
+    async with async_session() as db:
+        kpis = (await compute_analytics(db, now=NOW))["kpis"]
+
+    # private, running, solo and both (once); old is out of the window,
+    # unqualified never played, visitor only browsed.
+    assert kpis["active_players_30d"] == 4
+    assert kpis["visitors_30d"] == 1

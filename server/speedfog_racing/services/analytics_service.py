@@ -80,10 +80,13 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     new_users_this_month = (
         await db.execute(select(func.count(User.id)).where(User.created_at >= first_of_month))
     ).scalar_one()
-    active_users_30d = (
+    # Visitors: anyone the site saw (Twitch login or a logged-in race page),
+    # played or not. The players KPI (anyone who played, seen on the site or
+    # not) comes from the active-players series rows further down.
+    visitors_30d = (
         await db.execute(select(func.count(User.id)).where(User.last_seen >= cutoff_30d))
     ).scalar_one()
-    active_users_pct = round(active_users_30d / total_users * 100, 1) if total_users > 0 else 0.0
+    visitors_pct = round(visitors_30d / total_users * 100, 1) if total_users > 0 else 0.0
 
     # Daily races (daily_date IS NOT NULL) are excluded from admin analytics:
     # they are system-organized and would inflate counts and skew per-race
@@ -217,8 +220,8 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     kpis = {
         "total_users": total_users,
         "new_users_this_month": new_users_this_month,
-        "active_users_30d": active_users_30d,
-        "active_users_pct": active_users_pct,
+        "visitors_30d": visitors_30d,
+        "visitors_pct": visitors_pct,
         "total_races_finished": total_races_finished,
         "total_daily_participants": total_daily_participants,
         "avg_participants": avg_participants,
@@ -295,11 +298,13 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     # Distinct users who actually played a daily, race, or solo in each
     # ISO week. This is a deeper, separate window from the 12-week
     # ``weekly`` section above, so it loads its own rows and keeps its own
-    # week axis; the existing charts are unchanged.
+    # week axis; the existing charts are unchanged. The same rows give the
+    # 30-day players KPI, so the KPI and the series share one definition.
     active_week_keys = _build_week_list(now, 26)
     active_week_set = set(active_week_keys)
     active_window_cutoff = now - timedelta(weeks=27)
     week_active: dict[tuple[int, int], set[uuid.UUID]] = {k: set() for k in active_week_keys}
+    players_30d: set[uuid.UUID] = set()
 
     # Daily and non-daily participations are one query: the only difference
     # between them (``daily_date``) is irrelevant to "did this user play",
@@ -318,9 +323,12 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     for user_id, started_at in play_rows:
         if user_id is None or started_at is None:
             continue
-        wk = _iso_week_key(_ensure_utc(started_at))
+        played_at = _ensure_utc(started_at)
+        wk = _iso_week_key(played_at)
         if wk in active_week_set:
             week_active[wk].add(user_id)
+        if played_at >= cutoff_30d:
+            players_30d.add(user_id)
 
     # Solo: creating a training session is itself a play action.
     solo_rows = (
@@ -333,9 +341,17 @@ async def compute_analytics(db: AsyncSession, *, now: datetime | None = None) ->
     for user_id, created_at in solo_rows:
         if user_id is None or created_at is None:
             continue
-        wk = _iso_week_key(_ensure_utc(created_at))
+        played_at = _ensure_utc(created_at)
+        wk = _iso_week_key(played_at)
         if wk in active_week_set:
             week_active[wk].add(user_id)
+        if played_at >= cutoff_30d:
+            players_30d.add(user_id)
+
+    kpis["active_players_30d"] = len(players_30d)
+    kpis["active_players_pct"] = (
+        round(len(players_30d) / total_users * 100, 1) if total_users > 0 else 0.0
+    )
 
     active_users = {
         "weeks": [f"W{wk[1]}" for wk in active_week_keys],
@@ -541,8 +557,9 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
     """Public /stats overview: community KPIs plus weekly trend series.
 
     Scope is public finished races, dailies included (community KPIs describe
-    total racing activity). The active-players series additionally counts solo
-    training as play activity, mirroring the admin ``active_users`` series.
+    total racing activity). Active players are the exception: the KPI and its
+    weekly series count people who played anything, private races and solo
+    training included, mirroring the admin active-players KPI and series.
     Computed over PUBLIC_STATS_WEEKS ISO weeks.
     """
     now = datetime.now(UTC)
@@ -556,19 +573,9 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
         (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
     )
 
-    # --- KPIs (same definitions as the former /stats/leaderboard block) ---
+    # --- KPIs (definitions of the former /stats/leaderboard block, active players aside) ---
     total_races = (
         await db.execute(select(func.count()).select_from(Race).where(public_finished))
-    ).scalar() or 0
-
-    cutoff_30d = now - timedelta(days=30)
-    active_players = (
-        await db.execute(
-            select(func.count(func.distinct(Participant.user_id)))
-            .select_from(Participant)
-            .join(Race, Participant.race_id == Race.id)
-            .where(public_finished, Race.started_at >= cutoff_30d)
-        )
     ).scalar() or 0
 
     total_deaths = (
@@ -629,39 +636,51 @@ async def compute_public_overview(db: AsyncSession) -> dict[str, Any]:
             week_igt_ms[wk] += int(igt_ms or 0)
 
     # Active players: qualified race participation or a training session,
-    # same predicates as compute_analytics' active_users series.
+    # same predicates as compute_analytics' active_users series. The same
+    # rows give the 30-day KPI, so the tile's value and sparkline agree.
+    # Loading from the earlier of the two cutoffs keeps the KPI whole
+    # whatever PUBLIC_STATS_WEEKS is.
+    cutoff_30d = now - timedelta(days=30)
+    play_cutoff = min(window_cutoff, cutoff_30d)
+    players_30d: set[uuid.UUID] = set()
     play_rows = (
         await db.execute(
             select(Participant.user_id, Race.started_at)
             .join(Race, Race.id == Participant.race_id)
-            .where(Race.started_at >= window_cutoff, qualifies_for_streak_sql())
+            .where(Race.started_at >= play_cutoff, qualifies_for_streak_sql())
         )
     ).all()
     for user_id, started_at in play_rows:
         if user_id is None or started_at is None:
             continue
-        wk = _iso_week_key(_ensure_utc(started_at))
+        played_at = _ensure_utc(started_at)
+        wk = _iso_week_key(played_at)
         if wk in week_set:
             week_active[wk].add(user_id)
+        if played_at >= cutoff_30d:
+            players_30d.add(user_id)
 
     solo_rows = (
         await db.execute(
             select(TrainingSession.user_id, TrainingSession.created_at).where(
-                TrainingSession.created_at >= window_cutoff
+                TrainingSession.created_at >= play_cutoff
             )
         )
     ).all()
     for user_id, created_at in solo_rows:
         if user_id is None or created_at is None:
             continue
-        wk = _iso_week_key(_ensure_utc(created_at))
+        played_at = _ensure_utc(created_at)
+        wk = _iso_week_key(played_at)
         if wk in week_set:
             week_active[wk].add(user_id)
+        if played_at >= cutoff_30d:
+            players_30d.add(user_id)
 
     return {
         "kpis": {
             "total_races": total_races,
-            "active_players": active_players,
+            "active_players": len(players_30d),
             "total_deaths": int(total_deaths),
             "hours_raced": round(total_igt_ms / 3_600_000, 1),
         },

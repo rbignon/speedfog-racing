@@ -197,7 +197,7 @@ Endpoints whose audience is "regular races" filter Daily Seeds out explicitly:
 
 - `GET /api/races` and the joinable subquery: `WHERE Race.daily_date IS NULL`.
 - `services/stats_service.py` `recalculate_all_stats`: `Race.exclude_from_stats.is_(False)` when selecting which players to rescore in the trait rebuild.
-- `services/analytics_service.py` admin dashboard: race-side volume aggregates filter with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only. The one exception is the "Active players per week" series, which measures distinct active people rather than race volume and so counts daily participations too (see [Stats and Analytics Skip](#stats-and-analytics-skip)).
+- `services/analytics_service.py` admin dashboard: race-side volume aggregates filter with `Race.daily_date.is_(None)` so KPIs, weekly trends, heatmaps, pool usage and top organizers reflect community-organized racing only. The exceptions are the "Active players per week" series and the "Players (30D)" KPI derived from it, which measure distinct active people rather than race volume and so count daily participations too (see [Stats and Analytics Skip](#stats-and-analytics-skip)).
 
 The Daily nav indicator on the frontend uses `GET /api/daily/today` rather than `GET /api/races/joinable`, which assumes scheduled races and would not yield the right answer.
 
@@ -232,7 +232,7 @@ Admin analytics (`services/analytics_service.py`) excludes Daily Seeds from race
 
 Daily participation is surfaced on the same dashboard through two dedicated surfaces: the `Daily Participants` KPI (cumulative all-time) and a `daily` series in the "Races, Daily & Solo per Week" chart. Both count qualified participations only (`len(zone_history) >= 2`, the same predicate as `qualifies_for_streak`), across all daily races regardless of `Race.status` or `Participant.status`. A still-running daily contributes its already-qualified runners immediately; participants who joined but never crossed the qualification threshold are not counted.
 
-The "Active players per week" series is the deliberate exception to the Daily exclusion above. It counts distinct users who actually played per ISO week over the last 26 weeks: a qualified participation (`len(zone_history) >= 2`) on any race, daily or community, or any training session, deduplicated by `user_id` across all three modes. Because it measures engaged people rather than community-race volume, daily players count: a user whose only activity that week was the daily is still active. The series keeps its own 26-week window, separate from the 12-week `weekly` trends, and does not touch the unchanged `last_seen`-based "Active (30D)" KPI.
+The "Active players per week" series is the deliberate exception to the Daily exclusion above. It counts distinct users who actually played per ISO week over the last 26 weeks: a qualified participation (`len(zone_history) >= 2`) on any race, daily or community, or any training session, deduplicated by `user_id` across all three modes. Because it measures engaged people rather than community-race volume, daily players count: a user whose only activity that week was the daily is still active. The series keeps its own 26-week window, separate from the 12-week `weekly` trends. Its rows also give the "Players (30D)" KPI (distinct users with such play over the last 30 days), shown next to "Visitors (30D)", the `last_seen`-based count of users the site saw (a Twitch login or a logged-in race page), played or not.
 
 ---
 
