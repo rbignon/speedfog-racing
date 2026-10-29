@@ -80,6 +80,15 @@ class TrainingSessionStatus(enum.Enum):
     CANCELLED = "cancelled"
 
 
+class TrainingSessionMode(enum.Enum):
+    """What a solo session is for: free practice, or a ranked speedrun.fog run
+    on a random seed (SPEEDRUN) or on a chosen one (SET_SEED)."""
+
+    PRACTICE = "practice"
+    SPEEDRUN = "speedrun"
+    SET_SEED = "set_seed"
+
+
 class ChatChannel(enum.StrEnum):
     """Chat channel types."""
 
@@ -361,6 +370,11 @@ class Race(Base):
     exclude_from_stats: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The organizer chose the seed (a speedrun.fog Set Seed replay) instead
+    # of drawing it from the pool.
+    set_seed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Tournament attachment: NULL on ordinary races. The slot names the
     # role inside the event, "qualifier:<mode>:<n>" or "<stage>:<n>".
     event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("events.id"), nullable=True)
@@ -585,6 +599,12 @@ class TrainingSession(Base):
     )
     status: Mapped[TrainingSessionStatus] = mapped_column(
         Enum(TrainingSessionStatus), default=TrainingSessionStatus.ACTIVE
+    )
+    mode: Mapped[TrainingSessionMode] = mapped_column(
+        Enum(TrainingSessionMode),
+        default=TrainingSessionMode.PRACTICE,
+        server_default=TrainingSessionMode.PRACTICE.name,
+        nullable=False,
     )
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)
     death_count: Mapped[int] = mapped_column(Integer, default=0)
