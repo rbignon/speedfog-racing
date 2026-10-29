@@ -8,14 +8,17 @@
   } from "$lib/api";
   import {
     RUN_TYPES,
-    resolveCategory,
+    resolvePool,
+    speedrunSeedHref,
     toggleRunType,
     type SpeedrunParams,
     type SpeedrunSub,
   } from "$lib/speedrun";
   import SpeedrunHistory from "./SpeedrunHistory.svelte";
   import SpeedrunOverlayModal from "./SpeedrunOverlayModal.svelte";
+  import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
   import SpeedrunTable from "./SpeedrunTable.svelte";
+  import SpeedrunTime from "./SpeedrunTime.svelte";
 
   let {
     categories,
@@ -31,7 +34,13 @@
     race: "Races",
     daily: "Daily Seeds",
     event: "Event races",
+    solo: "Solo runs",
   };
+
+  const SUBS: { sub: SpeedrunSub; label: string }[] = [
+    { sub: "set", label: "Set Seed" },
+    { sub: "random", label: "Random Seed" },
+  ];
 
   let board = $state<SpeedrunBoardResponse | null>(null);
   let loading = $state(false);
@@ -42,13 +51,13 @@
   let overlayOpen = $state(false);
   let filtersEl = $state<HTMLElement | null>(null);
 
-  let resolved = $derived(resolveCategory(params, categories));
-  let category = $derived(
-    categories.find((c) => c.pool === resolved?.pool) ?? null,
-  );
+  let pool = $derived(resolvePool(params, categories));
+  let category = $derived(categories.find((c) => c.pool === pool) ?? null);
   let active = $derived(categories.filter((c) => !c.retired));
   let retired = $derived(categories.filter((c) => c.retired));
   let showRetired = $derived(moreOpen || (category?.retired ?? false));
+  // The record's holder: the first ranked row of the board.
+  let recordRun = $derived(board?.runs.find((r) => r.rank !== null) ?? null);
   let ruleLines = $derived(
     (category?.rules ?? "")
       .split("\n")
@@ -59,10 +68,11 @@
   // A string, so the fetch below reruns only when the board itself changes
   // (not when the Leaderboard / History view toggles).
   let queryKey = $derived(
-    resolved
+    pool
       ? [
-          resolved.pool,
-          resolved.sub,
+          pool,
+          params.sub,
+          params.deathless,
           params.types.join(","),
           params.obsolete,
         ].join("|")
@@ -74,14 +84,15 @@
 
   $effect(() => {
     if (!queryKey) return;
-    const target = untrack(() => resolved);
-    const { types, obsolete } = untrack(() => params);
+    const target = untrack(() => pool);
+    const { sub, deathless, types, obsolete } = untrack(() => params);
     if (!target) return;
     const id = ++requestId;
     loading = true;
     error = null;
-    fetchSpeedrunBoard(target.pool, {
-      deathless: target.sub === "deathless",
+    fetchSpeedrunBoard(target, {
+      sub,
+      deathless,
       types,
       obsolete,
     })
@@ -101,12 +112,12 @@
     onchange({ ...params, ...patch });
   }
 
-  function selectPool(pool: string) {
-    change({ pool, sub: params.sub });
+  function selectPool(next: string) {
+    change({ pool: next });
   }
 
   function selectSub(sub: SpeedrunSub) {
-    change({ pool: resolved?.pool ?? null, sub });
+    change({ pool, sub });
   }
 
   function handleWindowClick(e: MouseEvent) {
@@ -128,7 +139,7 @@
       <button
         type="button"
         class="pill"
-        class:on={c.pool === resolved?.pool}
+        class:on={c.pool === pool}
         onclick={() => selectPool(c.pool)}>{c.name}</button
       >
     {/each}
@@ -137,7 +148,7 @@
         <button
           type="button"
           class="pill"
-          class:on={c.pool === resolved?.pool}
+          class:on={c.pool === pool}
           onclick={() => selectPool(c.pool)}>{c.name}</button
         >
       {/each}
@@ -164,21 +175,43 @@
     {/if}
   </div>
 
-  <!-- Shown whenever the pool has deathless runs, so a deathless board is
-       always labelled, even for a pool without any Any% run. -->
-  {#if category && category.subcategories.includes("deathless")}
+  {#if category}
     <div class="subcategories">
       <div class="label">{category.name} - Subcategories</div>
       <div class="segmented">
-        {#each category.subcategories as sub (sub)}
+        {#each SUBS as { sub, label } (sub)}
           <button
             type="button"
-            class:on={resolved?.sub === sub}
-            onclick={() => selectSub(sub)}
-            >{sub === "deathless" ? "Deathless" : "Any%"}</button
+            class:on={params.sub === sub}
+            onclick={() => selectSub(sub)}>{label}</button
           >
         {/each}
       </div>
+    </div>
+  {/if}
+
+  {#if board?.record_seed && recordRun}
+    {@const seedHref = speedrunSeedHref(recordRun)}
+    <div class="wr-seed" data-testid="wr-seed">
+      <span class="chip wr-chip">WR seed</span>
+      {#if seedHref}
+        <a class="seed" href={seedHref}>{board.record_seed.seed_number}</a>
+      {:else}
+        <span class="seed">{board.record_seed.seed_number}</span>
+      {/if}
+      <span class="wr-time"><SpeedrunTime ms={recordRun.igt_ms} /></span>
+      <SpeedrunPlayer user={recordRun.user} />
+      <span
+        class="chip run-chip"
+        class:blind={recordRun.blind}
+        class:replay={!recordRun.blind}
+        >{recordRun.blind ? "Blind" : "Replay"}</span
+      >
+      <span class="wr-runs"
+        >{board.record_seed.runs} run{board.record_seed.runs === 1
+          ? ""
+          : "s"}</span
+      >
     </div>
   {/if}
 
@@ -261,6 +294,14 @@
           <label>
             <input
               type="checkbox"
+              checked={params.deathless}
+              onchange={() => change({ deathless: !params.deathless })}
+            />
+            Deathless only
+          </label>
+          <label>
+            <input
+              type="checkbox"
               checked={params.obsolete}
               onchange={() => change({ obsolete: !params.obsolete })}
             />
@@ -272,7 +313,7 @@
 
     <span class="spacer"></span>
 
-    {#if resolved && category}
+    {#if pool && category}
       <button type="button" class="tool" onclick={() => (overlayOpen = true)}>
         <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
           <path
@@ -351,17 +392,18 @@
       <p class="message">No runs match these filters.</p>
     {:else}
       {#key queryKey}
-        <SpeedrunTable runs={board.runs} />
+        <SpeedrunTable runs={board.runs} showRun={params.sub === "set"} />
       {/key}
     {/if}
   </div>
 </div>
 
-{#if overlayOpen && resolved && category}
+{#if overlayOpen && pool && category}
   <SpeedrunOverlayModal
-    pool={resolved.pool}
+    {pool}
     categoryName={category.name}
-    sub={resolved.sub}
+    sub={params.sub}
+    deathless={params.deathless}
     types={params.types}
     onClose={() => (overlayOpen = false)}
   />
@@ -472,6 +514,58 @@
   .subcategories .segmented button.on {
     background: var(--color-gold);
     color: var(--color-ink-on-accent);
+  }
+
+  .wr-seed {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.8rem;
+    padding: 0.55rem 0.7rem;
+    border-bottom: 1px solid var(--color-border);
+    background: color-mix(in srgb, var(--color-gold) 7%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-gold);
+  }
+
+  .wr-chip {
+    color: var(--color-gold);
+    border-color: color-mix(in srgb, var(--color-gold) 60%, transparent);
+  }
+
+  .wr-seed .seed {
+    padding: 0.3rem 0.6rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+  }
+
+  .wr-seed a.seed:hover {
+    color: var(--color-purple);
+    border-color: var(--color-purple);
+  }
+
+  .wr-time {
+    color: var(--color-gold);
+    font-size: 1.35rem;
+  }
+
+  .run-chip.blind {
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
+  }
+
+  .run-chip.replay {
+    color: var(--color-purple);
+    border-color: color-mix(in srgb, var(--color-purple) 60%, transparent);
+  }
+
+  .wr-runs {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .toolbar .segmented button.on {

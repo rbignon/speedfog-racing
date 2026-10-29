@@ -13,11 +13,12 @@
     pool: string;
     categoryName: string;
     sub: SpeedrunSub;
+    deathless: boolean;
     types: SpeedrunRunType[];
     onClose: () => void;
   }
 
-  let { pool, categoryName, sub, types, onClose }: Props = $props();
+  let { pool, categoryName, sub, deathless, types, onClose }: Props = $props();
 
   let top = $state<number | null>(DEFAULTS.top);
   let cycle = $state<number | null>(DEFAULTS.cycle);
@@ -35,6 +36,7 @@
   let url = $derived(
     speedrunOverlayUrl(window.location.origin, pool, {
       sub,
+      deathless,
       types,
       top: count(top, DEFAULTS.top),
       cycle: count(cycle, DEFAULTS.cycle),
@@ -67,8 +69,9 @@
     <p class="description">
       Add it as a <strong>Browser Source</strong> in OBS with a transparent
       background. It shows the {categoryName}
-      {sub === "deathless" ? "Deathless" : "Any%"} leaderboard (personal bests only)
-      for the run types currently selected.
+      {sub === "set" ? "Set Seed" : "Random Seed"}{deathless
+        ? " (deathless only)"
+        : ""} leaderboard (personal bests only) for the run types currently selected.
     </p>
     <p class="size-hint">Recommended size: 400 &times; 300</p>
 

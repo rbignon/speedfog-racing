@@ -16,7 +16,7 @@
   import SpeedrunBoard from "./SpeedrunBoard.svelte";
   import SpeedrunSidebar from "./SpeedrunSidebar.svelte";
 
-  // Read once: from then on the tab owns its state and mirrors it into the
+  // Read once: from then on the page owns its state and mirrors it into the
   // URL, so a board can be shared.
   let params = $state<SpeedrunParams>(
     untrack(() => parseSpeedrunParams(page.url.searchParams)),
@@ -74,7 +74,7 @@
       />
       <SpeedrunSidebar
         {overview}
-        onpick={(pool, sub) => update({ ...params, pool, sub })}
+        onpick={(pool) => update({ ...params, pool })}
       />
     </div>
   {/if}

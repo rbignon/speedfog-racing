@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { SpeedrunRun } from "$lib/api";
-  import { speedrunAgo, speedrunRaceHref } from "$lib/speedrun";
+  import { speedrunAgo, speedrunSeedHref } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -10,7 +10,8 @@
   // The parent keys this component by board, so `shown` resets per board.
   const PAGE_SIZE = 100;
 
-  let { runs }: { runs: SpeedrunRun[] } = $props();
+  let { runs, showRun = false }: { runs: SpeedrunRun[]; showRun?: boolean } =
+    $props();
 
   let shown = $state(PAGE_SIZE);
   // Relative dates are computed once per board, like a page load would.
@@ -25,6 +26,7 @@
         <th>#</th>
         <th class="left">Player</th>
         <th>Time</th>
+        {#if showRun}<th>Run</th>{/if}
         <th>Date</th>
         <th>Seed</th>
         <th>Route</th>
@@ -32,7 +34,8 @@
       </tr>
     </thead>
     <tbody>
-      {#each visible as run (`${run.race_id}:${run.user.id}`)}
+      {#each visible as run (`${run.race_id ?? run.session_id}:${run.user.id}`)}
+        {@const seedHref = speedrunSeedHref(run)}
         {@const route = run.weapon
           ? formatCombo(run.weapon, getWeaponName)
           : "–"}
@@ -45,16 +48,30 @@
             {/if}
           </td>
           <td class="left player">
-            <SpeedrunPlayer user={run.user} raceName={run.race_name} />
+            <SpeedrunPlayer
+              user={run.user}
+              raceName={run.race_name ?? undefined}
+            />
           </td>
           <td><SpeedrunTime ms={run.igt_ms} /></td>
+          {#if showRun}
+            <td
+              ><span
+                class="chip run-chip"
+                class:blind={run.blind}
+                class:replay={!run.blind}>{run.blind ? "Blind" : "Replay"}</span
+              ></td
+            >
+          {/if}
           <td title={new Date(run.finished_at).toLocaleString()}
             >{speedrunAgo(run.finished_at, now)}</td
           >
           <td>
-            <a class="seed" href={speedrunRaceHref(run)}
-              >{run.seed_number.slice(0, 6)}</a
-            >
+            {#if seedHref}
+              <a class="seed" href={seedHref}>{run.seed_number.slice(0, 6)}</a>
+            {:else}
+              {run.seed_number.slice(0, 6)}
+            {/if}
           </td>
           <td class="route-cell" title={run.weapon ? route : undefined}
             >{route}</td
@@ -72,6 +89,21 @@
 {/if}
 
 <style>
+  .run-chip {
+    padding: 0.1rem 0.4rem;
+    font-size: 0.62rem;
+  }
+
+  .run-chip.blind {
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
+  }
+
+  .run-chip.replay {
+    color: var(--color-purple);
+    border-color: color-mix(in srgb, var(--color-purple) 60%, transparent);
+  }
+
   .table-wrap {
     overflow-x: auto;
   }

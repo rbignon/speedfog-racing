@@ -198,7 +198,7 @@
             y2={BOTTOM}
           />
         {/if}
-        {#each records as record, i (`${record.race_id}:${record.user.id}`)}
+        {#each records as record, i (`${record.race_id ?? record.session_id}:${record.user.id}`)}
           <circle
             class="dot"
             class:on={i === active}

@@ -6,7 +6,7 @@ import {
   historyTimeline,
   parseSpeedrunOverlayParams,
   parseSpeedrunParams,
-  resolveCategory,
+  resolvePool,
   speedrunAgo,
   speedrunDay,
   speedrunDaysLater,
@@ -14,6 +14,7 @@ import {
   speedrunOverlayRows,
   speedrunOverlayUrl,
   speedrunRaceHref,
+  speedrunSeedHref,
   speedrunTimeParts,
   toggleRunType,
   writeSpeedrunParams,
@@ -23,8 +24,9 @@ import {
 
 const DEFAULTS: SpeedrunParams = {
   pool: null,
-  sub: "any",
-  types: ["race", "daily", "event"],
+  sub: "set",
+  deathless: false,
+  types: ["race", "daily", "event", "solo"],
   obsolete: false,
   view: "board",
 };
@@ -33,15 +35,11 @@ function params(overrides: Partial<SpeedrunParams>): SpeedrunParams {
   return { ...DEFAULTS, ...overrides };
 }
 
-function cat(
-  pool: string,
-  subcategories: SpeedrunCategory["subcategories"],
-): SpeedrunCategory {
+function cat(pool: string): SpeedrunCategory {
   return {
     pool,
     name: pool,
     retired: false,
-    subcategories,
     description: null,
     estimated_duration: null,
     rules: null,
@@ -103,16 +101,25 @@ describe("parseSpeedrunParams", () => {
     expect(
       parseSpeedrunParams(
         new URLSearchParams(
-          "pool=boss_rush&sub=deathless&types=daily,race&obsolete=1&view=history-list",
+          "pool=boss_rush&sub=random&deathless=1&types=daily,race,solo&obsolete=1&view=history-list",
         ),
       ),
     ).toEqual({
       pool: "boss_rush",
-      sub: "deathless",
-      types: ["race", "daily"],
+      sub: "random",
+      deathless: true,
+      types: ["race", "daily", "solo"],
       obsolete: true,
       view: "history-list",
     });
+  });
+
+  it("reads the retired Any% and Deathless subcategories as the Set Seed board", () => {
+    for (const sub of ["any", "deathless"]) {
+      const parsed = parseSpeedrunParams(new URLSearchParams(`sub=${sub}`));
+      expect(parsed.sub).toBe("set");
+      expect(parsed.deathless).toBe(false);
+    }
   });
 
   it("falls back to the defaults on garbage", () => {
@@ -126,53 +133,76 @@ describe("parseSpeedrunParams", () => {
 
 describe("writeSpeedrunParams", () => {
   it("omits default values and keeps the tab", () => {
-    const url = new URL("http://x/stats?tab=speedrun&pool=old&obsolete=1");
+    const url = new URL(
+      "http://x/speedrun?x=1&pool=old&obsolete=1&sub=random&deathless=1",
+    );
     writeSpeedrunParams(url, DEFAULTS);
-    expect(url.search).toBe("?tab=speedrun");
+    expect(url.search).toBe("?x=1");
   });
 
   it("round-trips non-default values", () => {
-    const url = new URL("http://x/stats?tab=speedrun");
+    const url = new URL("http://x/speedrun?x=1");
     const p = params({
       pool: "sprint",
-      sub: "deathless",
-      types: ["race", "event"],
+      sub: "random",
+      deathless: true,
+      types: ["race", "event", "solo"],
       obsolete: true,
       view: "history-chart",
     });
     writeSpeedrunParams(url, p);
     expect(parseSpeedrunParams(url.searchParams)).toEqual(p);
-    expect(url.searchParams.get("tab")).toBe("speedrun");
+    expect(url.searchParams.get("x")).toBe("1");
   });
 });
 
-describe("resolveCategory", () => {
-  const cats = [cat("sprint", ["any"]), cat("dl", ["deathless"])];
+describe("resolvePool", () => {
+  const cats = [cat("sprint"), cat("dl")];
 
-  it("falls back to the first category for an unknown pool", () => {
-    expect(resolveCategory(params({ pool: "nope" }), cats)).toEqual({
-      pool: "sprint",
-      sub: "any",
-    });
+  it("returns the asked pool when it exists", () => {
+    expect(resolvePool(params({ pool: "dl" }), cats)).toBe("dl");
   });
 
-  it("falls back to the pool's first subcategory when it lacks the asked one", () => {
-    expect(resolveCategory(params({ pool: "dl", sub: "any" }), cats)).toEqual({
-      pool: "dl",
-      sub: "deathless",
-    });
+  it("falls back to the first category for an unknown or missing pool", () => {
+    expect(resolvePool(params({ pool: "nope" }), cats)).toBe("sprint");
+    expect(resolvePool(params({}), cats)).toBe("sprint");
   });
 
   it("returns null without categories", () => {
-    expect(resolveCategory(params({}), [])).toBeNull();
+    expect(resolvePool(params({}), [])).toBeNull();
+  });
+});
+
+describe("speedrunSeedHref", () => {
+  const run = {
+    race_id: "r1",
+    session_id: null,
+    daily_date: null,
+  } as SpeedrunRun;
+
+  it("links a race run to its race and a daily run to its day", () => {
+    expect(speedrunSeedHref(run)).toBe("/race/r1");
+    expect(speedrunSeedHref({ ...run, daily_date: "2026-10-01" })).toBe(
+      "/daily/2026-10-01",
+    );
+  });
+
+  it("has no link for a solo run", () => {
+    expect(
+      speedrunSeedHref({ ...run, race_id: null, session_id: "s1" }),
+    ).toBeNull();
   });
 });
 
 describe("toggleRunType", () => {
   it("removes and adds a type in canonical order, never emptying the set", () => {
-    expect(toggleRunType([...RUN_TYPES], "daily")).toEqual(["race", "event"]);
+    expect(toggleRunType([...RUN_TYPES], "daily")).toEqual([
+      "race",
+      "event",
+      "solo",
+    ]);
     expect(toggleRunType(["race"], "race")).toEqual(["race"]);
-    expect(toggleRunType(["event"], "race")).toEqual(["race", "event"]);
+    expect(toggleRunType(["solo"], "race")).toEqual(["race", "solo"]);
   });
 });
 
@@ -240,8 +270,10 @@ function record(user: string, igt: number, day: number): SpeedrunRun {
     finished_at: new Date(NOW + day * DAY + 3_600_000).toISOString(),
     race_id: `r-${user}-${day}`,
     race_name: "R",
+    session_id: null,
     daily_date: null,
     seed_number: "abc",
+    blind: true,
     deaths: 0,
     weapon: null,
   };
@@ -421,8 +453,9 @@ describe("speedrunOverlayRows", () => {
 
 describe("speedrun overlay URL", () => {
   const DEFAULT_OVERLAY: SpeedrunOverlayParams = {
-    sub: "any",
-    types: ["race", "daily", "event"],
+    sub: "set",
+    deathless: false,
+    types: ["race", "daily", "event", "solo"],
     top: 3,
     cycle: 3,
     until: 20,
@@ -437,8 +470,9 @@ describe("speedrun overlay URL", () => {
 
   it("reads back what it writes", () => {
     const options: SpeedrunOverlayParams = {
-      sub: "deathless",
-      types: ["race", "daily"],
+      sub: "random",
+      deathless: true,
+      types: ["race", "daily", "solo"],
       top: 5,
       cycle: 2,
       until: 50,
@@ -449,6 +483,18 @@ describe("speedrun overlay URL", () => {
     );
     expect(url.pathname).toBe("/overlay/speedrun/sprint");
     expect(parseSpeedrunOverlayParams(url.searchParams)).toEqual(options);
+  });
+
+  it("writes the sub and deathless keys", () => {
+    expect(
+      speedrunOverlayUrl("https://x.test", "standard@25", {
+        ...DEFAULT_OVERLAY,
+        sub: "random",
+        deathless: true,
+      }),
+    ).toBe(
+      "https://x.test/overlay/speedrun/standard%4025?sub=random&deathless=1",
+    );
   });
 
   it("falls back to the defaults on missing or malformed numbers", () => {

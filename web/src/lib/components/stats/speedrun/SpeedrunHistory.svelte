@@ -4,7 +4,7 @@
     historyTimeline,
     speedrunDay,
     speedrunDaysLater,
-    speedrunRaceHref,
+    speedrunSeedHref,
     type SpeedrunView,
   } from "$lib/speedrun";
   import SpeedrunHistoryChart from "./SpeedrunHistoryChart.svelte";
@@ -76,7 +76,7 @@
           <p class="when">{speedrunDay(category.released_at)}</p>
         </li>
       {/if}
-      {#each timeline as entry (`${entry.run.race_id}:${entry.run.user.id}`)}
+      {#each timeline as entry (`${entry.run.race_id ?? entry.run.session_id}:${entry.run.user.id}`)}
         <li class="entry" class:improved={entry.kind === "improved"}>
           <span class="dot" aria-hidden="true"></span>
           <p class="headline">
@@ -84,9 +84,13 @@
             {entry.kind === "new"
               ? "set a new record time of"
               : "improved their time to"}
-            <a class="time" href={speedrunRaceHref(entry.run)}
-              ><SpeedrunTime ms={entry.run.igt_ms} /></a
-            > !
+            {#if speedrunSeedHref(entry.run)}
+              <a class="time" href={speedrunSeedHref(entry.run)}
+                ><SpeedrunTime ms={entry.run.igt_ms} /></a
+              >
+            {:else}
+              <span class="time"><SpeedrunTime ms={entry.run.igt_ms} /></span>
+            {/if} !
           </p>
           <p class="when">
             {speedrunDay(entry.run.finished_at)}{entry.daysLater !== null

@@ -2258,14 +2258,13 @@ export interface WeaponStatsResponse {
   combos: WeaponComboStat[];
 }
 
-/** speedrun.fog: the speedrun.com parody tab of /stats. */
-export type SpeedrunRunType = "race" | "daily" | "event";
+/** The /speedrun page: speedrun.com style boards. */
+export type SpeedrunRunType = "race" | "daily" | "event" | "solo";
 
 export interface SpeedrunCategory {
   pool: string;
   name: string;
   retired: boolean;
-  subcategories: ("any" | "deathless")[];
   description: string | null;
   estimated_duration: string | null;
   rules: string | null;
@@ -2279,10 +2278,15 @@ export interface SpeedrunRun {
   rank: number | null;
   igt_ms: number;
   finished_at: string;
-  race_id: string;
-  race_name: string;
+  /** Null for a solo run. */
+  race_id: string | null;
+  race_name: string | null;
+  /** The solo session of a solo run; null for a race run. */
+  session_id: string | null;
   daily_date: string | null;
   seed_number: string;
+  /** Played without having seen the seed before (the first run on it). */
+  blind: boolean;
   deaths: number;
   weapon: number[] | null;
 }
@@ -2305,6 +2309,8 @@ export interface SpeedrunBoardResponse {
   runs: SpeedrunRun[];
   /** Successive records, oldest first. */
   history: SpeedrunRun[];
+  /** The record's seed and the runs on it; null on an empty board. */
+  record_seed: { seed_number: string; runs: number } | null;
 }
 
 export interface BossStatEntry {
@@ -2456,11 +2462,17 @@ export async function fetchSpeedrunOverview(): Promise<SpeedrunOverviewResponse>
 /** Params equal to the API defaults are left out of the query. */
 export async function fetchSpeedrunBoard(
   pool: string,
-  opts: { deathless: boolean; types: SpeedrunRunType[]; obsolete: boolean },
+  opts: {
+    sub: "set" | "random";
+    deathless: boolean;
+    types: SpeedrunRunType[];
+    obsolete: boolean;
+  },
 ): Promise<SpeedrunBoardResponse> {
   const params = new URLSearchParams();
+  if (opts.sub !== "set") params.set("sub", opts.sub);
   if (opts.deathless) params.set("deathless", "true");
-  if (opts.types.length < 3) params.set("types", opts.types.join(","));
+  if (opts.types.length < 4) params.set("types", opts.types.join(","));
   if (opts.obsolete) params.set("obsolete", "true");
   const query = params.toString();
   const response = await fetch(

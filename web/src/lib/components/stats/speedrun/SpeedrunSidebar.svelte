@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SpeedrunOverviewResponse } from "$lib/api";
   import { ordinal } from "$lib/events";
-  import { speedrunAgo, type SpeedrunSub } from "$lib/speedrun";
+  import { speedrunAgo } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -13,7 +13,7 @@
     onpick,
   }: {
     overview: SpeedrunOverviewResponse;
-    onpick: (pool: string, sub: SpeedrunSub) => void;
+    onpick: (pool: string) => void;
   } = $props();
 
   const now = Date.now();
@@ -31,16 +31,13 @@
 
   <section class="sr-panel">
     <h3>Recent runs</h3>
-    {#each overview.recent_runs as run (`${run.race_id}:${run.user.id}`)}
+    {#each overview.recent_runs as run (`${run.race_id ?? run.session_id}:${run.user.id}`)}
       <div class="recent">
-        <button
-          type="button"
-          class="category"
-          onclick={() => onpick(run.pool, run.deathless ? "deathless" : "any")}
+        <button type="button" class="category" onclick={() => onpick(run.pool)}
           >{run.category}</button
         >
         <div class="details">
-          {run.deathless ? "Deathless" : "Any%"} ({run.weapon
+          {run.blind ? "Blind" : "Replay"}{run.deathless ? " · Deathless" : ""} ({run.weapon
             ? formatCombo(run.weapon, getWeaponName)
             : "–"})
         </div>

@@ -1,12 +1,14 @@
 /**
- * speedrun.fog (the speedrun.com parody tab of /stats): URL state, time
+ * The /speedrun page (speedrun.com style boards): URL state, time
  * formatting and record history helpers. Pure, unit-tested.
  */
 import type { SpeedrunCategory, SpeedrunRun, SpeedrunRunType } from "$lib/api";
 
-export const RUN_TYPES: SpeedrunRunType[] = ["race", "daily", "event"];
+export const RUN_TYPES: SpeedrunRunType[] = ["race", "daily", "event", "solo"];
 
-export type SpeedrunSub = "any" | "deathless";
+/** Set Seed: every run, whether the seed was chosen or served. Random Seed:
+ * blind runs only. */
+export type SpeedrunSub = "set" | "random";
 
 export type SpeedrunView = "board" | "history-chart" | "history-list";
 
@@ -15,6 +17,8 @@ const HISTORY_VIEWS: SpeedrunView[] = ["history-chart", "history-list"];
 export interface SpeedrunParams {
   pool: string | null;
   sub: SpeedrunSub;
+  /** Deathless only. */
+  deathless: boolean;
   types: SpeedrunRunType[];
   obsolete: boolean;
   /** speedrun.com's own `view` values. */
@@ -31,7 +35,8 @@ export function parseSpeedrunParams(search: URLSearchParams): SpeedrunParams {
   const types = canonicalTypes((search.get("types") ?? "").split(","));
   return {
     pool: search.get("pool") || null,
-    sub: search.get("sub") === "deathless" ? "deathless" : "any",
+    sub: search.get("sub") === "random" ? "random" : "set",
+    deathless: search.get("deathless") === "1",
     types: types.length > 0 ? types : [...RUN_TYPES],
     obsolete: search.get("obsolete") === "1",
     view: HISTORY_VIEWS.find((v) => v === search.get("view")) ?? "board",
@@ -39,14 +44,15 @@ export function parseSpeedrunParams(search: URLSearchParams): SpeedrunParams {
 }
 
 /** Writes the non-default values into `url`, removes the default ones and
- * leaves every other key (such as `tab`) alone. */
+ * leaves every other key alone. */
 export function writeSpeedrunParams(url: URL, p: SpeedrunParams): void {
   const set = (key: string, value: string | null) => {
     if (value === null) url.searchParams.delete(key);
     else url.searchParams.set(key, value);
   };
   set("pool", p.pool);
-  set("sub", p.sub === "deathless" ? "deathless" : null);
+  set("sub", p.sub === "random" ? "random" : null);
+  set("deathless", p.deathless ? "1" : null);
   set(
     "types",
     p.types.length < RUN_TYPES.length
@@ -57,18 +63,13 @@ export function writeSpeedrunParams(url: URL, p: SpeedrunParams): void {
   set("view", p.view === "board" ? null : p.view);
 }
 
-/** The board to show: the asked pool and subcategory when they exist, the
- * first category and the pool's first subcategory otherwise. */
-export function resolveCategory(
+/** The pool to show: the asked one when it exists, the first otherwise. */
+export function resolvePool(
   p: SpeedrunParams,
   categories: SpeedrunCategory[],
-): { pool: string; sub: SpeedrunSub } | null {
+): string | null {
   if (categories.length === 0) return null;
-  const category = categories.find((c) => c.pool === p.pool) ?? categories[0];
-  const sub = category.subcategories.includes(p.sub)
-    ? p.sub
-    : category.subcategories[0];
-  return { pool: category.pool, sub };
+  return (categories.find((c) => c.pool === p.pool) ?? categories[0]).pool;
 }
 
 /** Toggles one run type; the last selected type cannot be removed. */
@@ -111,6 +112,13 @@ export function speedrunRaceHref(run: {
   daily_date: string | null;
 }): string {
   return run.daily_date ? `/daily/${run.daily_date}` : `/race/${run.race_id}`;
+}
+
+/** Where a run's seed links to: its race (or day), nothing for a solo run. */
+export function speedrunSeedHref(run: SpeedrunRun): string | null {
+  return run.race_id === null
+    ? null
+    : speedrunRaceHref({ race_id: run.race_id, daily_date: run.daily_date });
 }
 
 /** The record over time as a step line in data units (`[timeMs, igtMs]`):
@@ -218,9 +226,10 @@ export function historyTimeline(
 }
 
 /** The OBS overlay of a board (`/overlay/speedrun/<pool>`): the board's own
- * `sub` and `types`, plus the rows to show and the player to pin. */
+ * `sub`, `deathless` and `types`, plus the rows to show and the player to pin. */
 export interface SpeedrunOverlayParams {
   sub: SpeedrunSub;
+  deathless: boolean;
   types: SpeedrunRunType[];
   /** Rows always shown, from the first place. */
   top: number;
@@ -242,9 +251,10 @@ function rowCount(raw: string | null, fallback: number): number {
 export function parseSpeedrunOverlayParams(
   search: URLSearchParams,
 ): SpeedrunOverlayParams {
-  const { sub, types } = parseSpeedrunParams(search);
+  const { sub, deathless, types } = parseSpeedrunParams(search);
   return {
     sub,
+    deathless,
     types,
     top: rowCount(search.get("top"), SPEEDRUN_OVERLAY_DEFAULTS.top),
     cycle: rowCount(search.get("cycle"), SPEEDRUN_OVERLAY_DEFAULTS.cycle),
@@ -263,6 +273,7 @@ export function speedrunOverlayUrl(
   writeSpeedrunParams(url, {
     pool: null,
     sub: p.sub,
+    deathless: p.deathless,
     types: p.types,
     obsolete: false,
     view: "board",

@@ -33,13 +33,14 @@
 
   $effect(() => {
     const pool = page.params.pool ?? "";
-    const { sub, types } = options;
+    const { sub, deathless, types } = options;
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const load = async () => {
       try {
         const board = await fetchSpeedrunBoard(pool, {
-          deathless: sub === "deathless",
+          sub,
+          deathless,
           types,
           obsolete: false,
         });

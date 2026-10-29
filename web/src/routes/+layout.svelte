@@ -38,6 +38,7 @@
     page.url.pathname.startsWith("/races") ||
       page.url.pathname.startsWith("/race/"),
   );
+  let speedrunActive = $derived(page.url.pathname.startsWith("/speedrun"));
   let eventActive = $derived(page.url.pathname.startsWith("/events/"));
 
   let userMenuOpen = $state(false);
@@ -122,6 +123,16 @@
   {/if}
 {/snippet}
 
+<!-- The speedrun boards, for every viewer. -->
+{#snippet speedrunLink()}
+  <a
+    href="/speedrun"
+    class="nav-link"
+    class:active={speedrunActive}
+    aria-current={speedrunActive ? "page" : undefined}>Speedrun</a
+  >
+{/snippet}
+
 {#if isOverlay}
   {@render children()}
 {:else}
@@ -198,6 +209,7 @@
                 <span class="nav-dot" aria-label="Daily seed not played"></span>
               {/if}
             </a>
+            {@render speedrunLink()}
             <a
               href="/races"
               class="nav-link"
@@ -265,6 +277,7 @@
             </div>
           {:else}
             {@render eventLink()}
+            {@render speedrunLink()}
             <a
               href={getTwitchLoginUrl()}
               class="btn btn-twitch"
