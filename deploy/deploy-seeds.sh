@@ -158,6 +158,19 @@ if [[ "$DISCARD" == true && "$UPLOAD_ONLY" == false && -z "$COUNT" ]]; then
     exit 0
 fi
 
+# --- Server check ---
+
+# Generated zips no longer bundle the mod: the server appends its DLL to every
+# seed pack at download. Refuse to produce seeds for a server that does not
+# (its packs would have no mod), before spending time on generation.
+APP_DIR="/opt/speedfog-racing"
+# shellcheck disable=SC2029  # APP_DIR is a constant path, expanded here on purpose
+if ! ssh "$SERVER" "test -s $APP_DIR/mod/speedfog_racing.dll && grep -q 'def load_mod_dll' $APP_DIR/server/speedfog_racing/services/seed_pack_service.py"; then
+    echo "Error: the server does not append the mod DLL to seed packs yet."
+    echo "Release the mod (deploy/deploy-mod.sh) and deploy the server (deploy/deploy.sh) first."
+    exit 1
+fi
+
 # --- Generation phase ---
 
 if [[ "$UPLOAD_ONLY" == false ]]; then
