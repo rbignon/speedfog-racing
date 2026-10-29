@@ -22,6 +22,7 @@ from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
     PhantomSkinUnlock,
+    RunMode,
     Seed,
     SeedStatus,
     TrainingSession,
@@ -976,6 +977,30 @@ def test_training_auth_ok_forwards_quit_out_penalty(
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         assert auth_ok["race"]["quit_out_penalty_ms"] == 5000
+
+
+@pytest.mark.parametrize(
+    ("mode", "ranked"),
+    [(RunMode.NORMAL, False), (RunMode.SPEEDRUN, True), (RunMode.SET_SEED, True)],
+)
+def test_training_auth_ok_tells_the_mod_whether_the_run_is_ranked(
+    training_ws_client, training_session_data, async_session, mode, ranked
+):
+    """The mod reads debug flags in a solo session only when auth_ok says it is ranked."""
+
+    async def set_mode() -> None:
+        async with async_session() as db:
+            session = await db.get(TrainingSession, uuid.UUID(training_session_data["session_id"]))
+            session.mode = mode
+            await db.commit()
+
+    asyncio.run(set_mode())
+    sid = training_session_data["session_id"]
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": training_session_data["mod_token"]})
+        auth_ok = ws.receive_json()
+        assert auth_ok["type"] == "auth_ok"
+        assert auth_ok["race"]["ranked"] is ranked
 
 
 def test_training_auth_ok_expands_random_phantom_skin(

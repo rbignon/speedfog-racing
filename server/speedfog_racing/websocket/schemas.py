@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 from pydantic import BaseModel, Field
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import compute_late_join_deadlines
+from speedfog_racing.models import RunMode, compute_late_join_deadlines
 from speedfog_racing.rewards.catalog import DEFAULT_PHANTOM_SKIN_ID, RANDOM_PHANTOM_SKIN_ID
 from speedfog_racing.rewards.service import RewardsService
 
@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.8"
+PROTOCOL_VERSION = "1.9"
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -202,6 +202,9 @@ class RaceInfo(BaseModel):
     igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
+    # Speedrun or Set Seed run. A solo session reads debug flags only when ranked
+    # (races always do).
+    ranked: bool = False
     countdown_seconds: int = 0
     # Current seed FK, so a connected mod can detect that its loaded seed pack
     # went stale after a reroll (it compares this against its config seed_id).
@@ -242,6 +245,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
+        ranked=race.mode != RunMode.NORMAL,
         countdown_seconds=countdown_seconds,
         seed_id=str(race.seed_id) if race.seed_id else None,
         quit_out_penalty_ms=settings.quit_out_penalty_ms,

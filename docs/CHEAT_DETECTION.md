@@ -39,7 +39,7 @@ wire names and carry the same human-readable labels.
 
 ## Flow
 
-1. **Mod.** While racing (not in training, after the countdown, before the
+1. **Mod.** While racing (not in a practice session, after the countdown, before the
    local finish or abandon, on a save the server accepts), the mod reads the
    19 bytes at most every 100 ms (one `ReadProcessMemory` call). When the
    server rejects the save (fresh save required, wrong save), the flags seen
@@ -61,6 +61,8 @@ wire names and carry the same human-readable labels.
    Discord alert titles the run "Solo · <category> · Speedrun" (or "Set Seed")
    and links `/training/<session id>`, and the IGT plausibility check (wrong
    save) runs against `last_igt_change_at`. There is no spectator push.
+   The mod reads the flags in a solo session only when `auth_ok` carries
+   `race.ranked` (protocol 1.9); older mods never read them in solo sessions.
    Normal practice sessions skip all of it.
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists

@@ -527,10 +527,20 @@ impl RaceMachine {
     /// save the server accepts (no local wrong save, no blocking server
     /// condition). Outside it the server ignores the reports anyway.
     fn debug_flags_gate_open(&self, now: Instant) -> bool {
-        !self.training
+        (!self.training || self.is_ranked())
             && !self.am_i_abandoned()
             && self.freeze_gate_open(now)
             && self.get_blocking_condition(now).is_none()
+    }
+
+    /// Ranked run (Speedrun or Set Seed): a solo session of this kind reads
+    /// debug flags like a race; a practice session never does.
+    fn is_ranked(&self) -> bool {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.ranked)
+            .unwrap_or(false)
     }
 
     fn is_deathless(&self) -> bool {
@@ -4013,11 +4023,33 @@ mod tests {
     }
 
     #[test]
-    fn debug_flags_not_read_in_training() {
+    fn debug_flags_not_read_in_normal_training() {
         let now = Instant::now();
         let mut m = RaceMachine::new(1, String::new(), true, now);
         m.handle_message(auth_ok("running", &[100, 200, 900], Some(900)), now);
         assert!(!m.pre_tick(now + secs(1), true, true).debug_flags);
+    }
+
+    #[test]
+    fn debug_flags_read_in_ranked_training() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), true, now);
+        let mut race: RaceInfo =
+            serde_json::from_str(r#"{"id":"r1","name":"x","status":"running","ranked":true}"#)
+                .unwrap();
+        race.reparse_dates();
+        m.handle_message(
+            MachineMessage::AuthOk {
+                participant_id: "p1".to_string(),
+                race,
+                seed: test_seed(&[100, 200, 900], Some(900), "{}"),
+                participants: vec![test_participant("p1", "playing", 1)],
+                phantom_skin: None,
+                latest_mod_version: None,
+            },
+            now,
+        );
+        assert!(m.pre_tick(now + secs(1), true, true).debug_flags);
     }
 
     #[test]

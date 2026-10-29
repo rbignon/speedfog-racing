@@ -119,7 +119,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.8**. It is defined in
+release numbers. Current: **1.9**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -131,6 +131,7 @@ Bump rules:
 
 Version history:
 
+- **1.9** - ranked runs: `ranked` boolean on the `race` object (RaceInfo), default false. True for a race or a solo session in Speedrun or Set Seed mode. The mod reads and sends debug flags in a solo session only when it is true (races always do). Older mods ignore the field (no detection in solo sessions), and a newer mod facing an older server gets false.
 - **1.8** - in-game cutoff: optional `igt_cutoff_ms` on the `race` object (RaceInfo), the in-game time a run must finish by. The server eliminates a playing runner past it; the mod counts the local IGT down to it while the local runner plays. Older mods ignore the field (no countdown on such a race), and a newer mod facing an older server keeps the wall-clock countdown.
 - **1.7** - per-runner splits: optional `layer_entry_igts` on `ParticipantInfo` (`leaderboard_update`, `player_update`), each runner's first-arrival IGT per layer. The mod's centered leaderboard measures every gap between the local player and each runner on their own splits (see [Gap Timing](#gap-timing)); older mods ignore the field, and a newer mod facing an older server keeps leader-relative gaps.
 - **1.6** - disqualification: participant status `disqualified` (terminal, ranked last), set by the race organizer or an admin. The mod shows a "DISQUALIFIED" line to the runner concerned and "DQ" in the leaderboard; older mods read it as an unknown status and keep working.
@@ -1140,17 +1141,18 @@ The mod parses the hex strings to RGBA on receipt and caches the resolved colors
 
 Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full payload is rebroadcast on change rather than diffed, so receivers replace their cached copy wholesale.
 
-| Field               | Type      | Description                                                                                                 |
-| ------------------- | --------- | ----------------------------------------------------------------------------------------------------------- |
-| `id`                | `string`  | Race UUID                                                                                                   |
-| `name`              | `string`  | Race name                                                                                                   |
-| `status`            | `string`  | Race status (see above)                                                                                     |
-| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch) |
-| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                 |
-| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                     |
-| `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none      |
-| `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                   |
-| `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                       |
+| Field               | Type      | Description                                                                                                     |
+| ------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
+| `id`                | `string`  | Race UUID                                                                                                       |
+| `name`              | `string`  | Race name                                                                                                       |
+| `status`            | `string`  | Race status (see above)                                                                                         |
+| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch)     |
+| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                     |
+| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                         |
+| `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none          |
+| `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                       |
+| `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false |
+| `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                           |
 
 **Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 

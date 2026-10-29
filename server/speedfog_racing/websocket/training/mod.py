@@ -215,6 +215,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 status="running",
                 started_at=session.created_at.isoformat() if session.created_at else None,
                 quit_out_penalty_ms=settings.quit_out_penalty_ms,
+                ranked=session.mode != RunMode.NORMAL,
             ),
             seed=SeedInfo(
                 seed_id=str(seed.id) if seed else None,

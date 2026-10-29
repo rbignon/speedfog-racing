@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.8";
+pub const PROTOCOL_VERSION: &str = "1.9";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -256,6 +256,10 @@ pub struct RaceInfo {
     /// in-race death. The mod shows a local death banner and an overlay tag.
     #[serde(default)]
     pub deathless: bool,
+    /// Ranked run (Speedrun or Set Seed mode). A solo session reads debug
+    /// flags only when ranked. Absent from servers older than protocol 1.9.
+    #[serde(default)]
+    pub ranked: bool,
     #[serde(default)]
     pub countdown_seconds: u32,
     /// Current seed id of the race. Lets the mod detect that its loaded seed
@@ -468,7 +472,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.8""#));
+        assert!(json.contains(r#""protocol_version":"1.9""#));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
