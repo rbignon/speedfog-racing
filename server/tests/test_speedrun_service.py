@@ -29,6 +29,7 @@ from speedfog_racing.services.speedrun_service import (
     CountedRun,
     build_board,
     build_overview,
+    filter_board,
     load_categories,
     load_counted_runs,
     load_main_weapons,
@@ -36,6 +37,7 @@ from speedfog_racing.services.speedrun_service import (
     place_of,
     rank_board,
     record_history,
+    record_seed,
 )
 
 BASE = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -216,6 +218,8 @@ def _run(
     *,
     pool: str = "sprint",
     deathless: bool = False,
+    blind: bool = True,
+    seed: str = "abc",
 ) -> CountedRun:
     return CountedRun(
         run_id=uuid.uuid4(),
@@ -229,14 +233,14 @@ def _run(
         category=pool,
         deathless=deathless,
         run_type="race",
-        blind=True,
+        blind=blind,
         igt_ms=igt_ms,
         finished_at=BASE + timedelta(minutes=minute),
         race_id=uuid.uuid4(),
         race_name="R",
         session_id=None,
         daily_date=None,
-        seed_number="abc",
+        seed_number=seed,
         deaths=0,
     )
 
@@ -337,7 +341,7 @@ def test_main_weapon_picks_most_ticks_normalized():
     assert main_weapon(None) is None
 
 
-async def test_categories_order_and_subcategories(async_session, pools):
+async def test_categories_order(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         await _add_run(db, user=a, igt_ms=1000, minute=1, pool="sprint")
@@ -348,10 +352,10 @@ async def test_categories_order_and_subcategories(async_session, pools):
 
         cats = await load_categories(db, await load_counted_runs(db))
 
-    assert [(c.pool, c.name, c.retired, c.subcategories) for c in cats] == [
-        ("sprint", "Sprint", False, ["any", "deathless"]),
-        ("standard", "Standard", False, ["any"]),
-        ("retired", "Retired", True, ["deathless"]),
+    assert [(c.pool, c.name, c.retired) for c in cats] == [
+        ("sprint", "Sprint", False),
+        ("standard", "Standard", False),
+        ("retired", "Retired", True),
     ]
 
 
@@ -368,16 +372,18 @@ async def test_build_board_filters_types_and_attaches_weapons(async_session, poo
         daily_only = await build_board(
             db,
             runs,
-            pool="sprint",
-            deathless=False,
+            category="sprint",
+            sub="set",
+            deathless_only=False,
             types=frozenset({"daily"}),
             include_obsolete=False,
         )
         full = await build_board(
             db,
             runs,
-            pool="sprint",
-            deathless=False,
+            category="sprint",
+            sub="set",
+            deathless_only=False,
             types=frozenset(RUN_TYPES),
             include_obsolete=False,
         )
@@ -408,7 +414,7 @@ async def test_build_overview_recent_runs_and_places(async_session, pools):
 
     assert (ov.runs, ov.players) == (6, 3)
     assert [r.igt_ms for r in ov.recent_runs] == [1500, 1900, 2000, 1050, 1100]
-    assert [r.rank for r in ov.recent_runs] == [1, 1, 2, 2, 3]
+    assert [r.rank for r in ov.recent_runs] == [3, 1, 2, 2, 3]
     assert (ov.recent_runs[0].category, ov.recent_runs[0].deathless) == ("Sprint", True)
 
 
@@ -527,8 +533,9 @@ async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session,
         board = await build_board(
             db,
             runs,
-            pool="sprint",
-            deathless=False,
+            category="sprint",
+            sub="set",
+            deathless_only=False,
             types=frozenset(RUN_TYPES),
             include_obsolete=False,
         )
@@ -537,3 +544,100 @@ async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session,
     assert [(r.race_id, r.race_name, r.igt_ms) for r in board.runs] == [(None, None, 5000)]
     assert [r.race_id for r in board.history] == [None]
     assert [r.race_id for r in overview.recent_runs] == [None]
+
+
+async def _four_runs(db: AsyncSession) -> None:
+    users = [await _user(db, n) for n in "abcd"]
+    await _add_run(db, user=users[0], igt_ms=4000, minute=1)
+    await _add_run(db, user=users[1], igt_ms=3000, minute=2, set_seed=True)
+    await _add_session(db, users[2], "sprint", TrainingSessionMode.SPEEDRUN, 2000)
+    await _add_session(db, users[3], "sprint", TrainingSessionMode.SET_SEED, 1000)
+    await db.commit()
+
+
+async def test_random_board_keeps_blind_runs_only(async_session, pools):
+    async with async_session() as db:
+        await _four_runs(db)
+        runs = await load_counted_runs(db)
+
+    board = filter_board(
+        runs, category="sprint", sub="random", deathless_only=False, types=frozenset(RUN_TYPES)
+    )
+
+    assert sorted(r.igt_ms for r in board) == [2000, 4000]
+
+
+async def test_set_board_keeps_every_run(async_session, pools):
+    async with async_session() as db:
+        await _four_runs(db)
+        runs = await load_counted_runs(db)
+
+    board = filter_board(
+        runs, category="sprint", sub="set", deathless_only=False, types=frozenset(RUN_TYPES)
+    )
+    ranked = rank_board(board, include_obsolete=False)
+
+    assert [(r.user.twitch_username, rank) for r, rank in ranked] == [
+        ("d", 1),
+        ("c", 2),
+        ("b", 3),
+        ("a", 4),
+    ]
+
+
+async def test_deathless_only_keeps_deathless_mode_runs(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1000, minute=1, deathless=True)
+        await _add_run(db, user=b, igt_ms=900, minute=2)
+        await _add_session(db, b, "sprint", TrainingSessionMode.SPEEDRUN, 800)
+        await db.commit()
+        runs = await load_counted_runs(db)
+
+    every = frozenset(RUN_TYPES)
+    default = filter_board(runs, category="sprint", sub="set", deathless_only=False, types=every)
+    only = filter_board(runs, category="sprint", sub="set", deathless_only=True, types=every)
+
+    assert len(default) == 3
+    assert [(r.user.twitch_username, r.run_type) for r in only] == [("a", "race")]
+
+
+def test_record_seed_counts_runs_on_the_record_seed():
+    board = [
+        _run("a", 1000, 1, seed="s1"),
+        _run("a", 1500, 2, seed="s1"),
+        _run("b", 1200, 3, seed="s1"),
+        _run("c", 1100, 4, seed="s2"),
+    ]
+
+    seed = record_seed(board, rank_board(board, include_obsolete=False))
+
+    assert seed is not None
+    assert (seed.seed_number, seed.runs) == ("s1", 3)
+    assert record_seed([], []) is None
+
+
+def test_record_seed_follows_first_ranked_row():
+    board = [_run("a", 1000, 5, seed="late"), _run("b", 1000, 2, seed="early")]
+
+    seed = record_seed(board, rank_board(board, include_obsolete=False))
+
+    assert seed is not None and seed.seed_number == "early"
+
+
+async def test_recent_run_place_is_on_the_set_board(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1000, minute=1, set_seed=True)
+        await _add_session(db, b, "sprint", TrainingSessionMode.SPEEDRUN, 1500, finished_at=BASE)
+        await _add_run(db, user=b, igt_ms=900, minute=3, deathless=True)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    by_igt = {r.igt_ms: r.rank for r in ov.recent_runs}
+    # One shared board: b's deathless 900 leads, a's replay is behind it, and
+    # b's solo 1500 is behind a (never behind b's own faster run).
+    assert by_igt == {900: 1, 1000: 2, 1500: 2}

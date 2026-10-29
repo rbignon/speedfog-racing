@@ -16,6 +16,9 @@ from speedfog_racing.models import (
     RaceStatus,
     Seed,
     SeedStatus,
+    TrainingSession,
+    TrainingSessionMode,
+    TrainingSessionStatus,
     User,
     UserRole,
 )
@@ -52,7 +55,14 @@ def test_client(async_session):
 
 
 async def _add_run(
-    db: AsyncSession, user: User, igt_ms: int, minute: int, *, daily: bool = False
+    db: AsyncSession,
+    user: User,
+    igt_ms: int,
+    minute: int,
+    *,
+    daily: bool = False,
+    set_seed: bool = False,
+    deathless: bool = False,
 ) -> None:
     tag = uuid.uuid4().hex[:10]
     seed = Seed(
@@ -71,6 +81,8 @@ async def _add_run(
         seed_id=seed.id,
         status=RaceStatus.FINISHED,
         started_at=BASE,
+        set_seed=set_seed,
+        deathless=deathless,
         exclude_from_stats=daily,
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if daily else None,
     )
@@ -162,3 +174,76 @@ async def test_board_cache_holds_serialized_json(test_client, sprint_runs):
         value for key, (_, value) in _stats_cache.items() if key.startswith("speedrun:board:")
     ]
     assert boards and all(isinstance(value, bytes) for value in boards)
+
+
+async def test_board_sub_defaults_to_set_and_rejects_others(test_client, sprint_runs):
+    default = await test_client.get("/api/stats/speedrun/sprint")
+    explicit = await test_client.get("/api/stats/speedrun/sprint?sub=set")
+    bad = await test_client.get("/api/stats/speedrun/sprint?sub=any")
+
+    assert bad.status_code == 422
+    assert default.json() == explicit.json()
+
+
+async def test_board_random_seed_empty_when_only_replays(test_client, async_session, sprint_runs):
+    async with async_session() as db:
+        await db.execute(Race.__table__.update().values(set_seed=True))
+        await db.commit()
+
+    response = await test_client.get("/api/stats/speedrun/sprint?sub=random")
+
+    assert response.status_code == 200
+    assert response.json()["runs"] == []
+    assert response.json()["record_seed"] is None
+
+
+async def test_board_types_accept_solo(test_client, async_session, sprint_runs):
+    async with async_session() as db:
+        seed = Seed(
+            seed_number="solo-seed",
+            pool_name="sprint",
+            graph_json={"nodes": {}},
+            total_layers=15,
+            folder_path="/t/solo",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        db.add(
+            TrainingSession(
+                user_id=sprint_runs["a"].id,
+                seed_id=seed.id,
+                mode=TrainingSessionMode.SPEEDRUN,
+                status=TrainingSessionStatus.FINISHED,
+                igt_ms=500,
+                finished_at=BASE,
+            )
+        )
+        await db.commit()
+
+    solo = (await test_client.get("/api/stats/speedrun/sprint?types=solo")).json()
+    races = (await test_client.get("/api/stats/speedrun/sprint?types=race,daily")).json()
+
+    assert [(r["igt_ms"], r["race_id"], r["blind"]) for r in solo["runs"]] == [(500, None, True)]
+    assert solo["runs"][0]["session_id"] is not None
+    assert solo["record_seed"] == {"seed_number": "solo-seed", "runs": 1}
+    assert [r["igt_ms"] for r in races["runs"]] == [1000, 1100]
+
+
+async def test_board_cache_keys_split_by_sub_and_deathless(test_client, async_session, sprint_runs):
+    from speedfog_racing.api.stats import _stats_cache
+
+    async with async_session() as db:
+        await _add_run(db, sprint_runs["a"], 700, 6, deathless=True)
+        await db.commit()
+
+    base = "/api/stats/speedrun/sprint"
+    set_board = (await test_client.get(base)).json()
+    random_board = (await test_client.get(f"{base}?sub=random")).json()
+    deathless = (await test_client.get(f"{base}?deathless=true")).json()
+
+    assert [r["igt_ms"] for r in set_board["runs"]] == [700, 1100]
+    assert [r["igt_ms"] for r in deathless["runs"]] == [700]
+    assert random_board["runs"] == set_board["runs"]
+    keys = [k for k in _stats_cache if k.startswith("speedrun:board:")]
+    assert len(keys) == 3

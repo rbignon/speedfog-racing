@@ -974,14 +974,13 @@ class WeaponStatsResponse(BaseModel):
     combos: list[WeaponComboStat]
 
 
-# speedrun.fog: the speedrun.com parody tab of /stats (see docs/STATS.md).
+# speedrun.fog: the speedrun.com parody tab of /stats (see docs/SPEEDRUN.md).
 
 
 class SpeedrunCategory(BaseModel):
     pool: str
     name: str
     retired: bool
-    subcategories: list[Literal["any", "deathless"]]
     description: str | None = None
     estimated_duration: str | None = None
     rules: str | None = None
@@ -996,8 +995,12 @@ class SpeedrunRun(BaseModel):
     rank: int | None
     igt_ms: int
     finished_at: datetime
+    # None for a solo run (it has a session instead of a race).
     race_id: UUID | None
     race_name: str | None
+    session_id: UUID | None
+    # False for a replay (Set Seed): the runner knew the seed beforehand.
+    blind: bool
     daily_date: date | None
     seed_number: str
     deaths: int
@@ -1019,8 +1022,16 @@ class SpeedrunOverviewResponse(BaseModel):
     recent_runs: list[SpeedrunRecentRun]
 
 
+class SpeedrunRecordSeed(BaseModel):
+    seed_number: str
+    # Runs of the board on that seed, obsolete ones included.
+    runs: int
+
+
 class SpeedrunBoardResponse(BaseModel):
     runs: list[SpeedrunRun]
+    # The record holder's seed; None on an empty board.
+    record_seed: SpeedrunRecordSeed | None
     # Successive records, oldest first.
     history: list[SpeedrunRun]
 

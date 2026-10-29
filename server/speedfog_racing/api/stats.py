@@ -46,6 +46,7 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services.seed_nodes import NodeDisplay, SeedNodes, load_seed_nodes
 from speedfog_racing.services.speedrun_service import RUN_TYPES as SPEEDRUN_RUN_TYPES
 from speedfog_racing.services.speedrun_service import (
+    SpeedrunSub,
     build_board,
     build_overview,
     load_counted_runs,
@@ -957,16 +958,17 @@ async def get_speedrun_overview(db: AsyncSession = Depends(get_db)) -> SpeedrunO
     return await _cached("speedrun:overview", _compute, db)
 
 
-@router.get("/speedrun/{pool}", response_model=SpeedrunBoardResponse)
+@router.get("/speedrun/{category}", response_model=SpeedrunBoardResponse)
 async def get_speedrun_board(
-    pool: str,
+    category: str,
+    sub: SpeedrunSub = Query(default="set"),
     deathless: bool = Query(default=False),
     types: str = Query(default=",".join(SPEEDRUN_RUN_TYPES)),
     obsolete: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """speedrun.fog: one board (pool, Any% or Deathless, run types) with its
-    record history."""
+    """speedrun.fog: one board (category, Set or Random Seed, optionally
+    Deathless only, run types) with its record history."""
     requested = {t.strip() for t in types.split(",") if t.strip()}
     if not requested or not requested <= set(SPEEDRUN_RUN_TYPES):
         raise HTTPException(
@@ -975,17 +977,26 @@ async def get_speedrun_board(
         )
     run_types = frozenset(t for t in SPEEDRUN_RUN_TYPES if t in requested)
 
-    # Checked before the board cache so an unknown pool never gets a cache
+    # Checked before the board cache so an unknown category never gets a cache
     # key (nor a lock) of its own.
-    if not any(r.pool == pool for r in await _cached("speedrun:runs", load_counted_runs, db)):
+    if not any(
+        r.category == category for r in await _cached("speedrun:runs", load_counted_runs, db)
+    ):
         raise HTTPException(status_code=404, detail="Unknown category")
 
     async def _compute(db: AsyncSession) -> bytes:
         runs = await _cached("speedrun:runs", load_counted_runs, db)
         board = await build_board(
-            db, runs, pool=pool, deathless=deathless, types=run_types, include_obsolete=obsolete
+            db,
+            runs,
+            category=category,
+            sub=sub,
+            deathless_only=deathless,
+            types=run_types,
+            include_obsolete=obsolete,
         )
         return board.model_dump_json().encode()
 
-    key = f"speedrun:board:{pool}:{int(deathless)}:{','.join(sorted(run_types))}:{int(obsolete)}"
+    kinds = ",".join(sorted(run_types))
+    key = f"speedrun:board:{category}:{sub}:{int(deathless)}:{kinds}:{int(obsolete)}"
     return Response(content=await _cached(key, _compute, db), media_type="application/json")

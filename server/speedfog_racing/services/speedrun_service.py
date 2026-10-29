@@ -3,7 +3,7 @@
 Every counted run is loaded once with light columns (no ``zone_history``);
 boards, record histories and recent runs are derived from that list in
 memory. Weapons need ``zone_history``, so they are decoded only for the runs
-a response returns. See the "speedrun.fog" section of docs/STATS.md.
+a response returns. See docs/SPEEDRUN.md.
 """
 
 from collections.abc import Collection, Sequence
@@ -32,6 +32,7 @@ from speedfog_racing.schemas import (
     SpeedrunCategory,
     SpeedrunOverviewResponse,
     SpeedrunRecentRun,
+    SpeedrunRecordSeed,
     SpeedrunRun,
     UserResponse,
 )
@@ -40,6 +41,8 @@ from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
 RunType = Literal["race", "daily", "event", "solo"]
 RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
+# Set Seed counts every run; Random Seed only blind ones.
+SpeedrunSub = Literal["set", "random"]
 
 RECENT_RUNS_COUNT = 5
 _WEAPON_QUERY_CHUNK = 500
@@ -243,9 +246,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
 async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[SpeedrunCategory]:
     """One category per pool with at least one counted run: enabled pools
     first, then retired ones, each group by ``sort_order`` (missing last)."""
-    flags: dict[str, set[bool]] = {}
-    for run in runs:
-        flags.setdefault(run.pool, set()).add(run.deathless)
+    flags = {run.pool for run in runs}
     if not flags:
         return []
     pools = (await db.execute(select(Pool).where(Pool.name.in_(flags)))).scalars().all()
@@ -269,17 +270,11 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
     categories: list[SpeedrunCategory] = []
     for pool in sorted(pools, key=order):
         config = _pool_config(pool)
-        subcategories: list[Literal["any", "deathless"]] = []
-        if False in flags[pool.name]:
-            subcategories.append("any")
-        if True in flags[pool.name]:
-            subcategories.append("deathless")
         categories.append(
             SpeedrunCategory(
                 pool=pool.name,
                 name=format_pool_display_name(pool),
                 retired=not pool.enabled,
-                subcategories=subcategories,
                 description=_opt_str(config.get("description")),
                 estimated_duration=_opt_str(config.get("estimated_duration")),
                 rules=_opt_str(config.get("rules")),
@@ -297,9 +292,23 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
 
 
 def filter_board(
-    runs: Sequence[CountedRun], *, pool: str, deathless: bool, types: frozenset[RunType]
+    runs: Sequence[CountedRun],
+    *,
+    category: str,
+    sub: SpeedrunSub,
+    deathless_only: bool,
+    types: frozenset[RunType],
 ) -> list[CountedRun]:
-    return [r for r in runs if r.pool == pool and r.deathless == deathless and r.run_type in types]
+    """Runs of one category's board: Random Seed keeps blind runs, Set Seed
+    every run; ``deathless_only`` keeps runs of Deathless-mode races."""
+    return [
+        r
+        for r in runs
+        if r.category == category
+        and (sub == "set" or r.blind)
+        and (r.deathless or not deathless_only)
+        and r.run_type in types
+    ]
 
 
 def _run_key(run: CountedRun) -> tuple[int, datetime]:
@@ -341,6 +350,19 @@ def record_history(runs: Sequence[CountedRun]) -> list[CountedRun]:
         if not records or run.igt_ms < records[-1].igt_ms:
             records.append(run)
     return records
+
+
+def record_seed(
+    board: Sequence[CountedRun], ranked: Sequence[tuple[CountedRun, int | None]]
+) -> SpeedrunRecordSeed | None:
+    """The first ranked row's seed and how many runs of ``board`` (obsolete
+    ones included) are on it."""
+    if not ranked:
+        return None
+    seed_number = ranked[0][0].seed_number
+    return SpeedrunRecordSeed(
+        seed_number=seed_number, runs=sum(1 for r in board if r.seed_number == seed_number)
+    )
 
 
 def place_of(run: CountedRun, board: Sequence[CountedRun]) -> int:
@@ -418,6 +440,8 @@ def _run_fields(
         "finished_at": run.finished_at,
         "race_id": run.race_id,
         "race_name": run.race_name,
+        "session_id": run.session_id,
+        "blind": run.blind,
         "daily_date": run.daily_date,
         "seed_number": run.seed_number,
         "deaths": run.deaths,
@@ -437,7 +461,13 @@ async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> Speedr
                 run,
                 place_of(
                     run,
-                    filter_board(runs, pool=run.pool, deathless=run.deathless, types=all_types),
+                    filter_board(
+                        runs,
+                        category=run.category,
+                        sub="set",
+                        deathless_only=False,
+                        types=all_types,
+                    ),
                 ),
                 weapons,
             ),
@@ -459,16 +489,20 @@ async def build_board(
     db: AsyncSession,
     runs: Sequence[CountedRun],
     *,
-    pool: str,
-    deathless: bool,
+    category: str,
+    sub: SpeedrunSub,
+    deathless_only: bool,
     types: frozenset[RunType],
     include_obsolete: bool,
 ) -> SpeedrunBoardResponse:
-    board = filter_board(runs, pool=pool, deathless=deathless, types=types)
+    board = filter_board(
+        runs, category=category, sub=sub, deathless_only=deathless_only, types=types
+    )
     ranked = rank_board(board, include_obsolete=include_obsolete)
     history = record_history(board)
     weapons = await _weapons_for(db, [r for r, _ in ranked] + history)
     return SpeedrunBoardResponse(
         runs=[SpeedrunRun(**_run_fields(run, rank, weapons)) for run, rank in ranked],
         history=[SpeedrunRun(**_run_fields(run, None, weapons)) for run in history],
+        record_seed=record_seed(board, ranked),
     )
