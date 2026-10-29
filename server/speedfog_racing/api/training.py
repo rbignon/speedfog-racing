@@ -22,6 +22,7 @@ from speedfog_racing.models import (
     TrainingSession,
     TrainingSessionStatus,
     User,
+    UserRole,
 )
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
@@ -116,7 +117,9 @@ def _build_list_response(
     )
 
 
-def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailResponse:
+def _build_detail_response(
+    session: TrainingSession, *, include_debug_flags: bool = False
+) -> TrainingSessionDetailResponse:
     seed = session.seed
     raw_config = seed.pool.config or None
     return TrainingSessionDetailResponse(
@@ -136,6 +139,9 @@ def _build_detail_response(session: TrainingSession) -> TrainingSessionDetailRes
         seed_total_paths=seed.graph_json.get("total_paths") if seed.graph_json else None,
         graph_json=seed.graph_json,
         pool_config=PoolConfig(**raw_config) if raw_config else None,
+        invalidated=session.invalidated_at is not None,
+        invalidation_reason=session.invalidation_reason,
+        debug_flags=session.debug_flags if include_debug_flags else None,
     )
 
 
@@ -226,11 +232,13 @@ async def list_sessions(
 async def get_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _user: User | None = Depends(get_current_user_optional),
+    user: User | None = Depends(get_current_user_optional),
 ) -> TrainingSessionDetailResponse:
-    """Get training session detail (public read-only)."""
+    """Get training session detail (public read-only; debug flags for admins)."""
     session = await _get_session_or_404_public(db, session_id)
-    return _build_detail_response(session)
+    return _build_detail_response(
+        session, include_debug_flags=user is not None and user.role == UserRole.ADMIN
+    )
 
 
 @router.post("/{session_id}/abandon", response_model=TrainingSessionDetailResponse)

@@ -5,12 +5,27 @@ import random
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.models import Seed, SeedStatus, TrainingSession, User
+from speedfog_racing.models import (
+    RunMode,
+    Seed,
+    SeedStatus,
+    TrainingSession,
+    TrainingSessionStatus,
+    User,
+)
+from speedfog_racing.services.pool_service import get_pool
+from speedfog_racing.services.seed_service import SpeedrunFloorError, draw_speedrun_seed
+from speedfog_racing.services.set_seed_service import (
+    SeedLookupError,
+    resolve_seed,
+    seed_replayability,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -188,4 +203,99 @@ async def create_training_session(
         f"Created training session {session.id} for user {user_id} "
         f"with seed {seed.seed_number} from pool '{pool_name}'"
     )
+    return session
+
+
+SpeedrunStartErrorCode = Literal[
+    "active_session",
+    "unknown_pool",
+    "no_fresh_seed",
+    "unknown_seed",
+    "ambiguous_seed",
+    "not_replayable",
+]
+
+
+class SpeedrunStartError(Exception):
+    """A ranked solo run could not start; ``code`` says why (the API maps it)."""
+
+    def __init__(self, code: SpeedrunStartErrorCode, message: str) -> None:
+        super().__init__(message)
+        self.code: SpeedrunStartErrorCode = code
+        self.message = message
+
+
+async def _require_no_active_session(db: AsyncSession, user_id: uuid.UUID) -> None:
+    # SAFETY: same TOCTOU window as the practice flow (rate-limited, single user).
+    active = await db.execute(
+        select(TrainingSession.id).where(
+            TrainingSession.user_id == user_id,
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+        )
+    )
+    if active.first() is not None:
+        raise SpeedrunStartError("active_session", "You already have an active solo session")
+
+
+async def _add_ranked_session(
+    db: AsyncSession, user_id: uuid.UUID, seed: Seed, mode: RunMode
+) -> TrainingSession:
+    created = TrainingSession(user_id=user_id, seed_id=seed.id, mode=mode)
+    db.add(created)
+    await db.flush()
+    result = await db.execute(
+        select(TrainingSession)
+        .options(selectinload(TrainingSession.user), selectinload(TrainingSession.seed))
+        .where(TrainingSession.id == created.id)
+    )
+    return result.scalar_one()
+
+
+async def create_speedrun_session(
+    db: AsyncSession, user_id: uuid.UUID, pool_name: str
+) -> TrainingSession:
+    """Start a Speedrun-mode solo run on a fresh seed of a race pool.
+
+    The seed is CONSUMED now and never released, even if the session is
+    cancelled, so a player cannot fish for a seed by cancelling.
+
+    Raises:
+        SpeedrunStartError: ``active_session``, ``unknown_pool`` (missing,
+            disabled or training pool) or ``no_fresh_seed`` (pool at its floor).
+    """
+    await _require_no_active_session(db, user_id)
+    pool = await get_pool(db, pool_name)
+    if pool is None or not pool.enabled or (pool.config or {}).get("type", "race") == "training":
+        raise SpeedrunStartError("unknown_pool", "Unknown pool")
+    try:
+        seed = await draw_speedrun_seed(db, pool_name)
+    except SpeedrunFloorError as error:
+        raise SpeedrunStartError("no_fresh_seed", str(error)) from error
+    seed.status = SeedStatus.CONSUMED
+    session = await _add_ranked_session(db, user_id, seed, RunMode.SPEEDRUN)
+    logger.info(f"Created speedrun session {session.id} for user {user_id} on {seed.seed_number}")
+    return session
+
+
+async def create_set_seed_session(
+    db: AsyncSession, user_id: uuid.UUID, seed_text: str
+) -> TrainingSession:
+    """Start a Set Seed solo run on a known, replayable seed (consumes nothing).
+
+    Raises:
+        SpeedrunStartError: ``active_session``, ``unknown_seed``,
+            ``ambiguous_seed`` or ``not_replayable`` (the reason as message).
+    """
+    await _require_no_active_session(db, user_id)
+    try:
+        seed = await resolve_seed(db, seed_text)
+    except SeedLookupError as error:
+        if error.kind == "ambiguous":
+            raise SpeedrunStartError("ambiguous_seed", "Ambiguous seed ID") from error
+        raise SpeedrunStartError("unknown_seed", "Unknown seed") from error
+    replayability = await seed_replayability(db, seed)
+    if not replayability.replayable:
+        raise SpeedrunStartError("not_replayable", replayability.reason or "Not replayable")
+    session = await _add_ranked_session(db, user_id, seed, RunMode.SET_SEED)
+    logger.info(f"Created set seed session {session.id} for user {user_id} on {seed.seed_number}")
     return session

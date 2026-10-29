@@ -206,6 +206,7 @@ AVAILABLE ──→ CONSUMED ──→ AVAILABLE  (reroll)
 
 - **Assignment** (`assign_seed_to_race`): picks a random AVAILABLE seed, marks it CONSUMED, sets `race.seed_id`.
 - **Reroll** (`reroll_seed_for_race`): releases old seed back to AVAILABLE (unless DISCARDED), picks a new one. Excludes the current seed ID.
+- **Speedrun-mode solo** (`create_speedrun_session`): draws a seed of the race pool above the pool's floor and marks it CONSUMED at creation; it is never released, even when the session is cancelled. **Set Seed solo** runs consume nothing and leave the seed's status alone. See `SPEEDRUN.md` ("Starting a ranked run").
 - **Pool discard** (`discard_pool`): marks both AVAILABLE and CONSUMED seeds as DISCARDED in a single UPDATE. This prevents an in-progress race from releasing a seed back into a retired pool via reroll.
 
 ---
@@ -223,7 +224,7 @@ Simpler than race mode:
 - `ACTIVE` on creation. `race_start` is sent immediately after `auth_ok` (no READY phase).
 - `FINISHED` on `finish_event` flag detection.
 - `ABANDONED` on explicit `POST /training/{id}/abandon`.
-- Seeds are **not** marked CONSUMED for training. A per-user exclusion list avoids replaying seeds; when all seeds have been used, the list resets.
+- Seeds are **not** marked CONSUMED for training (practice) sessions; Speedrun-mode sessions do consume theirs (see Seed Status). A per-user exclusion list avoids replaying seeds; when all seeds have been used, the list resets.
 
 ---
 

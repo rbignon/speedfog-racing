@@ -7,21 +7,29 @@ cached, so a finished solo run or a protection shows at once.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api.stats import _cached
+from speedfog_racing.api.training import _build_detail_response
 from speedfog_racing.auth import get_current_user_optional, require_not_banned
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Seed, SeedProtection, User
+from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
     PoolConfig,
+    SpeedrunRecordHolder,
     SpeedrunSeedResponse,
+    SpeedrunSeedSummary,
     SpeedrunSeedViewer,
+    StartSpeedrunSoloRequest,
+    TrainingSessionDetailResponse,
 )
+from speedfog_racing.services import get_pool
+from speedfog_racing.services.seed_service import has_fresh_speedrun_seed
 from speedfog_racing.services.set_seed_service import (
     SeedLookupError,
     has_finished_run,
@@ -36,6 +44,11 @@ from speedfog_racing.services.speedrun_service import (
     load_counted_runs,
     seed_category,
     seed_stats,
+)
+from speedfog_racing.services.training_service import (
+    SpeedrunStartError,
+    create_set_seed_session,
+    create_speedrun_session,
 )
 
 router = APIRouter()
@@ -117,6 +130,74 @@ async def get_seed_page(
         runs=await build_seed_runs(db, shown_runs),
         stats=seed_stats(shown_runs),
     )
+
+
+@router.get("/seeds/{seed}/summary", response_model=SpeedrunSeedSummary)
+async def get_seed_summary(seed: str, db: AsyncSession = Depends(get_db)) -> SpeedrunSeedSummary:
+    """What the Set Seed field shows while a player types: the seed's category,
+    whether it can be replayed and its record. No map. An unplayed seed answers
+    like a typo; a seed with a blind run in progress shows no record."""
+    found = await resolve_seed_or_404(db, seed)
+    replayability = await seed_replayability(db, found)
+    category, category_name = seed_category(found.pool, found.total_layers)
+    record = None
+    if replayability.public:
+        runs = await load_counted_runs(db, seed_id=found.id)
+        if runs:
+            best = min(runs, key=lambda r: (r.igt_ms, r.finished_at))
+            record = SpeedrunRecordHolder(igt_ms=best.igt_ms, user=best.user)
+    return SpeedrunSeedSummary(
+        seed_number=found.seed_number,
+        category=category,
+        category_name=category_name,
+        replayable=replayability.replayable,
+        not_replayable_reason=replayability.reason,
+        record=record,
+    )
+
+
+@router.get("/fresh-seeds")
+async def get_fresh_seeds(
+    pool: str = Query(...), db: AsyncSession = Depends(get_db)
+) -> dict[str, bool]:
+    """Whether a Speedrun-mode run could start on ``pool`` now."""
+    found = await get_pool(db, pool)
+    if found is None or (found.config or {}).get("type", "race") == "training":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown pool")
+    return {"fresh": await has_fresh_speedrun_seed(db, pool)}
+
+
+_START_ERROR_STATUS = {
+    "unknown_pool": status.HTTP_404_NOT_FOUND,
+    "unknown_seed": status.HTTP_404_NOT_FOUND,
+}
+
+
+@router.post(
+    "/solo", response_model=TrainingSessionDetailResponse, status_code=status.HTTP_201_CREATED
+)
+@limiter.limit("10/minute")
+async def start_solo_run(
+    request: Request,
+    body: StartSpeedrunSoloRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_not_banned),
+) -> TrainingSessionDetailResponse:
+    """Start a ranked solo run: Speedrun mode on a fresh seed of ``pool``, or
+    Set Seed on a replayable ``seed``."""
+    try:
+        if body.pool is not None:
+            session = await create_speedrun_session(db, user.id, body.pool)
+        else:
+            assert body.seed is not None  # the schema guarantees exactly one
+            session = await create_set_seed_session(db, user.id, body.seed)
+    except SpeedrunStartError as error:
+        raise HTTPException(
+            status_code=_START_ERROR_STATUS.get(error.code, status.HTTP_409_CONFLICT),
+            detail=error.message,
+        ) from error
+    await db.commit()
+    return _build_detail_response(session)
 
 
 @router.put("/seeds/{seed}/protection", response_model=SpeedrunSeedViewer)

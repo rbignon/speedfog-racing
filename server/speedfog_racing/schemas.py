@@ -734,6 +734,11 @@ class TrainingSessionDetailResponse(BaseModel):
     seed_total_paths: int | None = None
     graph_json: dict[str, Any] | None = None
     pool_config: PoolConfig | None = None
+    # Admin invalidation of a ranked session; the reason is public.
+    invalidated: bool = False
+    invalidation_reason: str | None = None
+    # Admins only (None for everyone else).
+    debug_flags: dict[str, dict[str, Any]] | None = None
 
 
 class GhostResponse(BaseModel):
@@ -1083,6 +1088,38 @@ class SpeedrunSeedViewer(BaseModel):
     # Seed numbers the viewer protects, oldest protection first.
     protected_seeds: list[str]
     protection_limit: int
+
+
+class StartSpeedrunSoloRequest(BaseModel):
+    """Start a ranked solo run: a Speedrun-mode run on a fresh seed of ``pool``,
+    or a Set Seed run on ``seed``. Exactly one is set."""
+
+    pool: str | None = None
+    seed: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> "StartSpeedrunSoloRequest":
+        if (self.pool is None) == (self.seed is None):
+            raise ValueError("Set exactly one of pool and seed")
+        return self
+
+
+class SpeedrunRecordHolder(BaseModel):
+    """The best counted run on a seed."""
+
+    igt_ms: int
+    user: UserResponse
+
+
+class SpeedrunSeedSummary(BaseModel):
+    """What the Set Seed field shows while typing: no map, no run list."""
+
+    seed_number: str
+    category: str
+    category_name: str
+    replayable: bool
+    not_replayable_reason: str | None
+    record: SpeedrunRecordHolder | None
 
 
 class SpeedrunSeedResponse(BaseModel):

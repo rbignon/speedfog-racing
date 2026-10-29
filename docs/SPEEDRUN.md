@@ -92,6 +92,17 @@ Links to the page come from `web/src/lib/speedrun.ts`: `seedPageHref(seed, runId
 
 Where the links appear: the WR seed band (the seed number and an "Open seed" button, both to the record run's page), the board table (the seed cell is the keyboard-reachable link; a click anywhere else on a row navigates to the same page through `goto`, except on the player link or any other link or button, with Ctrl, Cmd or Shift held, or when it ends a text selection), the record history's times, and the `Seed <n>` badge of the race, daily and solo session pages, which is a link only when `raceSeedPageHref` / `sessionSeedPageHref` return one (a running blind race or an active Speedrun session shows plain text). The seed status chip's tooltip opens on hover and on focus (so a tap shows it on a phone) and Escape blurs the chip to close it.
 
+## Starting a ranked run
+
+`POST /api/speedrun/solo` (logged in, not banned, 10 per minute; `services/training_service.py`) starts a ranked solo session and answers 201 with the same detail response as `POST /api/training`, which stays practice-only. The body is `{"pool": ...}` (Speedrun mode) or `{"seed": ...}` (Set Seed), exactly one of them (422 otherwise).
+
+- **Speedrun mode** (`create_speedrun_session`): the pool must exist, be enabled and not be a training pool (404 "Unknown pool"). The seed is drawn by `draw_speedrun_seed` from the race pool, so the pool's floor applies (409 "No fresh seed right now") and a `training_*` seed is never used. The seed is CONSUMED at creation and never released: cancelling the session through `/api/training/{id}/abandon` (CANCELLED, no progress) leaves it CONSUMED, so cancelling cannot fish for a seed.
+- **Set Seed** (`create_set_seed_session`): the seed is found as on the seed page (404 "Unknown seed", also for an unplayed seed; 409 "Ambiguous seed ID") and must be replayable when the run starts (409 with the `not_replayable_reason`). It consumes nothing and touches no seed status.
+- Both refuse with 409 "You already have an active solo session" while the player has any ACTIVE session, whatever its mode.
+- `GET /api/speedrun/fresh-seeds?pool=<pool>` answers `{"fresh": bool}` (`has_fresh_speedrun_seed`; no auth; 404 "Unknown pool" for a missing or training pool), for the Start a run window.
+- `GET /api/speedrun/seeds/{seed}/summary` answers what the Set Seed field shows while the player types: `seed_number`, `category`, `category_name`, `replayable`, `not_replayable_reason` and `record` (`igt_ms` and `user` of the seed's best counted run, the earliest on a tie; null without a run). No map. Lookup errors are the seed page's (404 "Unknown seed", 409 "Ambiguous seed ID"). A known seed with a blind run in progress answers 200 with `replayable: false`, its reason and `record: null`.
+- `TrainingSessionDetailResponse` carries `invalidated` and `invalidation_reason` (public) and `debug_flags` (filled for an admin viewing `GET /api/training/{id}` only).
+
 ## Settings
 
 Env settings in `server/speedfog_racing/config.py`, listed in `server/.env.example`:
