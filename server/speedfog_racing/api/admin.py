@@ -21,6 +21,7 @@ from speedfog_racing.api.races import after_disqualification_change, remove_part
 from speedfog_racing.api.speedrun import resolve_seed_or_404
 from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
+from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.discord import fire_ban_notification
 from speedfog_racing.models import (
@@ -80,7 +81,6 @@ from speedfog_racing.services import (
     get_pool_stats,
     list_pools,
     scan_pool,
-    set_pool_enabled,
 )
 from speedfog_racing.services.analytics_service import compute_analytics
 from speedfog_racing.services.event_rewards import (
@@ -210,6 +210,12 @@ class SoloPoolProgress(BaseModel):
     exhausted_users: int
 
 
+def _effective_floor(pool: Pool) -> int:
+    if pool.speedrun_floor is not None:
+        return pool.speedrun_floor
+    return settings.speedrun_default_floor
+
+
 class AdminPoolResponse(BaseModel):
     """Admin view of a pool row."""
 
@@ -217,6 +223,9 @@ class AdminPoolResponse(BaseModel):
     display_name: str
     type: str = "race"
     enabled: bool
+    # Admin override (None: the default applies) and the value in force.
+    speedrun_floor: int | None = None
+    speedrun_floor_effective: int
     last_scanned_at: datetime | None
     available: int = 0
     consumed: int = 0
@@ -229,7 +238,9 @@ class AdminPoolResponse(BaseModel):
 class UpdatePoolRequest(BaseModel):
     """Request body for PATCH ``/admin/pools/{name}``."""
 
-    enabled: bool
+    enabled: bool | None = None
+    # Sent as null clears the override; not sent leaves it alone.
+    speedrun_floor: int | None = Field(default=None, ge=0)
 
 
 @router.get("/pools", response_model=list[AdminPoolResponse])
@@ -247,6 +258,8 @@ async def admin_list_pools(
             display_name=format_pool_display_name(p),
             type=p.config.get("type", "race"),
             enabled=p.enabled,
+            speedrun_floor=p.speedrun_floor,
+            speedrun_floor_effective=_effective_floor(p),
             last_scanned_at=p.last_scanned_at,
             **stats.get(p.name, {}),
             solo=(
@@ -264,11 +277,18 @@ async def admin_update_pool(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> AdminPoolResponse:
-    """Toggle the ``enabled`` flag on a pool."""
-    try:
-        pool = await set_pool_enabled(db, name, request.enabled)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    """Update a pool's runtime state: ``enabled`` and/or ``speedrun_floor``."""
+    pool = await get_pool(db, name)
+    if pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Pool '{name}' does not exist"
+        )
+    if request.enabled is not None:
+        pool.enabled = request.enabled
+    if "speedrun_floor" in request.model_fields_set:
+        pool.speedrun_floor = request.speedrun_floor
+    await db.commit()
+    await db.refresh(pool)
     stats = (await get_pool_stats(db)).get(pool.name, {})
     progress = (await get_pool_play_progress(db)).get(pool.name)
     return AdminPoolResponse(
@@ -276,6 +296,8 @@ async def admin_update_pool(
         display_name=format_pool_display_name(pool),
         type=pool.config.get("type", "race"),
         enabled=pool.enabled,
+        speedrun_floor=pool.speedrun_floor,
+        speedrun_floor_effective=_effective_floor(pool),
         last_scanned_at=pool.last_scanned_at,
         **stats,
         solo=SoloPoolProgress.model_validate(progress) if progress else None,

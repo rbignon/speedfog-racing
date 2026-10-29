@@ -75,7 +75,7 @@ Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
 Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For each pool directory configured in `SEEDS_POOL_DIR`:
 
-1. Load `<pool>/config.toml`, normalize it via `_normalize_pool_config()`, and upsert the `Pool` row (`config`, `last_scanned_at` refreshed; `enabled` preserved so admin toggles survive rescans).
+1. Load `<pool>/config.toml`, normalize it via `_normalize_pool_config()`, and upsert the `Pool` row (`config`, `last_scanned_at` refreshed; `enabled` and `speedrun_floor` preserved so admin settings survive rescans).
 2. Walk the pool directory for `seed_*.zip` files.
 3. For each zip, extract `graph.json` (root-level or `*/graph.json`).
 4. Parse `total_layers` from `graph_json`.
@@ -228,12 +228,13 @@ Each pool directory on disk is mirrored by a row in the `pools` table.
 The row carries the runtime state that does not belong in the
 filesystem:
 
-| Column            | Purpose                                                                                                                 |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `name`            | Functional key (unique). Matches the directory name and `seeds.pool_name`.                                              |
-| `enabled`         | Admin-managed visibility flag. Disabled pools are hidden from `/api/pools` and training creation rejects them with 400. |
-| `config`          | Normalized snapshot of `config.toml` (`_normalize_pool_config()` output). Refreshed on every scan.                      |
-| `last_scanned_at` | Populated by `scan_pool()`.                                                                                             |
+| Column            | Purpose                                                                                                                                                         |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`            | Functional key (unique). Matches the directory name and `seeds.pool_name`.                                                                                      |
+| `enabled`         | Admin-managed visibility flag. Disabled pools are hidden from `/api/pools` and training creation rejects them with 400.                                         |
+| `speedrun_floor`  | Admin-set speedrun floor (nullable; null falls back to `SPEEDRUN_DEFAULT_FLOOR`). Runtime state like `enabled`: rescans never touch it. See `docs/SPEEDRUN.md`. |
+| `config`          | Normalized snapshot of `config.toml` (`_normalize_pool_config()` output). Refreshed on every scan.                                                              |
+| `last_scanned_at` | Populated by `scan_pool()`.                                                                                                                                     |
 
 `seeds.pool_name` is a foreign key referencing `pools.name`. A migration
 backfills one row per distinct `seed.pool_name` with `enabled=True` and

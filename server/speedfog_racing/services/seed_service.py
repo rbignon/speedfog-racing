@@ -339,6 +339,58 @@ async def get_available_seed(
     return random.choice(available_seeds)
 
 
+class SpeedrunFloorError(ValueError):
+    """A speedrun draw was refused: the pool is at or under its floor."""
+
+    def __init__(self) -> None:
+        super().__init__("No fresh seed right now")
+
+
+async def speedrun_floor(db: AsyncSession, pool_name: str) -> int:
+    """The pool's speedrun floor: its admin override, else the setting's default."""
+    override = (
+        await db.execute(select(Pool.speedrun_floor).where(Pool.name == pool_name))
+    ).scalar_one_or_none()
+    return override if override is not None else settings.speedrun_default_floor
+
+
+async def _available_count(
+    db: AsyncSession, pool_name: str, exclude_id: uuid.UUID | None = None
+) -> int:
+    query = (
+        select(func.count())
+        .select_from(Seed)
+        .where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
+    )
+    if exclude_id is not None:
+        query = query.where(Seed.id != exclude_id)
+    return (await db.execute(query)).scalar_one()
+
+
+async def has_fresh_speedrun_seed(db: AsyncSession, pool_name: str) -> bool:
+    """Whether a speedrun draw from the pool would currently succeed."""
+    return await _available_count(db, pool_name) > await speedrun_floor(db, pool_name)
+
+
+async def draw_speedrun_seed(
+    db: AsyncSession, pool_name: str, *, exclude_id: uuid.UUID | None = None
+) -> Seed:
+    """Pick a random AVAILABLE seed for a speedrun, refusing at or under the floor.
+
+    The count leaves out ``exclude_id`` (a reroll's current seed). Does not
+    change the seed's status: callers do.
+
+    Raises:
+        SpeedrunFloorError: If the pool has ``<= floor`` AVAILABLE seeds.
+    """
+    if await _available_count(db, pool_name, exclude_id) <= await speedrun_floor(db, pool_name):
+        raise SpeedrunFloorError()
+    seed = await get_available_seed(db, pool_name, exclude_id)
+    if seed is None:  # floor 0 and an empty pool
+        raise SpeedrunFloorError()
+    return seed
+
+
 async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "standard") -> Seed:
     """Assign an available seed to a race.
 

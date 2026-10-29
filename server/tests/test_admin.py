@@ -1265,6 +1265,46 @@ async def test_admin_toggle_pool_enabled(test_client, admin_user, seeded_pools):
         assert response.json()["enabled"] is True
 
 
+from speedfog_racing.config import settings  # noqa: E402
+
+
+@pytest.mark.asyncio
+async def test_admin_pool_speedrun_floor_round_trip(test_client, admin_user, seeded_pools):
+    """The floor is set, kept by an unrelated PATCH, cleared by null; negative is 422."""
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/pools/standard", headers=headers, json={"speedrun_floor": 3}
+        )
+        assert response.status_code == 200
+        assert response.json()["speedrun_floor"] == 3
+        assert response.json()["speedrun_floor_effective"] == 3
+
+        # Not sent: untouched.
+        response = await client.patch(
+            "/api/admin/pools/standard", headers=headers, json={"enabled": False}
+        )
+        assert response.json()["speedrun_floor"] == 3
+        assert response.json()["enabled"] is False
+
+        listed = {
+            p["name"]: p for p in (await client.get("/api/admin/pools", headers=headers)).json()
+        }
+        assert listed["standard"]["speedrun_floor"] == 3
+
+        # null clears the override back to the setting's default.
+        response = await client.patch(
+            "/api/admin/pools/standard", headers=headers, json={"speedrun_floor": None}
+        )
+        assert response.json()["speedrun_floor"] is None
+        assert response.json()["speedrun_floor_effective"] == settings.speedrun_default_floor
+
+        response = await client.patch(
+            "/api/admin/pools/standard", headers=headers, json={"speedrun_floor": -1}
+        )
+        assert response.status_code == 422
+
+
 @pytest.mark.asyncio
 async def test_admin_toggle_pool_unknown(test_client, admin_user):
     """PATCH /admin/pools/{unknown} returns 404."""

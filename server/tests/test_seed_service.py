@@ -15,12 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base
 from speedfog_racing.models import Pool, Race, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.seed_service import (
+    SpeedrunFloorError,
     _normalize_pool_config,
     assign_seed_to_race,
     discard_pool,
+    draw_speedrun_seed,
     get_available_seed,
     get_pool_config,
     get_pool_stats,
+    has_fresh_speedrun_seed,
     reroll_seed_for_race,
     scan_pool,
 )
@@ -692,3 +695,78 @@ def test_normalize_pool_config_drops_malformed_archived_layers(raw, expected):
     assert (
         _normalize_pool_config({"display": {"archived_layers": raw}})["archived_layers"] == expected
     )
+
+
+# =============================================================================
+# Speedrun floor
+# =============================================================================
+
+
+async def _add_seeds(db, pool_name: str, count: int) -> list[Seed]:
+    seeds = [
+        Seed(
+            seed_number=f"{pool_name}_{i:03d}",
+            pool_name=pool_name,
+            graph_json={"total_layers": 5},
+            total_layers=5,
+            folder_path=f"/tmp/{pool_name}_{i}.zip",
+            status=SeedStatus.AVAILABLE,
+        )
+        for i in range(count)
+    ]
+    db.add_all(seeds)
+    await db.commit()
+    return seeds
+
+
+@pytest.mark.asyncio
+async def test_draw_speedrun_seed_respects_floor(async_db):
+    """A draw needs strictly more AVAILABLE seeds than the floor (pool override or setting)."""
+    async_db.add(Pool(name="fresh", enabled=True, config={}))
+    async_db.add(Pool(name="tight", enabled=True, config={}, speedrun_floor=2))
+    await async_db.commit()
+
+    # Unset floor falls back to the setting (default 5): 5 refuse, 6 draw.
+    seeds = await _add_seeds(async_db, "fresh", 5)
+    assert not await has_fresh_speedrun_seed(async_db, "fresh")
+    with pytest.raises(SpeedrunFloorError, match="No fresh seed right now"):
+        await draw_speedrun_seed(async_db, "fresh")
+    extra = (await _add_seeds(async_db, "fresh_extra", 1))[0]
+    extra.pool_name = "fresh"
+    await async_db.commit()
+    assert await has_fresh_speedrun_seed(async_db, "fresh")
+    assert (await draw_speedrun_seed(async_db, "fresh")).status == SeedStatus.AVAILABLE
+
+    # exclude_id is left out of the count: excluding one of the 6 leaves 5, at the floor.
+    with pytest.raises(SpeedrunFloorError):
+        await draw_speedrun_seed(async_db, "fresh", exclude_id=seeds[0].id)
+
+    # Pool override: floor 2 draws with 3 and refuses with 2.
+    tight = await _add_seeds(async_db, "tight", 3)
+    assert (await draw_speedrun_seed(async_db, "tight")).pool_name == "tight"
+    with pytest.raises(SpeedrunFloorError):
+        await draw_speedrun_seed(async_db, "tight", exclude_id=tight[0].id)
+    tight[1].status = SeedStatus.CONSUMED
+    await async_db.commit()
+    with pytest.raises(SpeedrunFloorError):
+        await draw_speedrun_seed(async_db, "tight")
+
+    # The setting is the fallback, not a constant.
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.speedrun_default_floor = 0
+        assert (await draw_speedrun_seed(async_db, "fresh")) is not None
+
+
+@pytest.mark.asyncio
+async def test_rescan_keeps_speedrun_floor(async_db, seed_pool_dir):
+    """A rescan refreshes config but never touches the admin-set floor."""
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.seeds_pool_dir = seed_pool_dir
+        await scan_pool(async_db, "standard")
+        pool = (await async_db.execute(select(Pool).where(Pool.name == "standard"))).scalar_one()
+        pool.speedrun_floor = 7
+        await async_db.commit()
+
+        await scan_pool(async_db, "standard")
+        await async_db.refresh(pool)
+        assert pool.speedrun_floor == 7

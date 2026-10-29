@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     seed_protection_limit: int = 3
     # A discarded seed keeps its files this many days after its last race or session.
     seed_purge_grace_days: int = 30
+    # Speedrun draws are refused when a pool has this many AVAILABLE seeds or fewer
+    # (a pool's own Pool.speedrun_floor overrides it).
+    speedrun_default_floor: int = 5
+    # An ACTIVE Speedrun solo session older than this becomes ABANDONED.
+    speedrun_session_ttl_hours: int = 24
 
     # Site-wide announcement shown as a banner on every web page (served via
     # /health so it can change without a frontend deploy). None hides it; the

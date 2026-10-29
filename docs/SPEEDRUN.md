@@ -96,12 +96,16 @@ Where the links appear: the WR seed band (the seed number and an "Open seed" but
 
 Env settings in `server/speedfog_racing/config.py`, listed in `server/.env.example`:
 
-| Setting                   | Default | Meaning                                                                                                                                                                  |
-| ------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SET_SEED_MIN_SEED_DATE`  | unset   | Seeds added (scanned) before this instant are not replayable (`old_game_version`). Raised by hand after a game patch that breaks older seeds; unset disables the cutoff. |
-| `SET_SEED_KEPT_TOP_SEEDS` | 10      | How many of each category's best Set Seed seeds keep their files (the `Top <N> seed` reason).                                                                            |
-| `SEED_PROTECTION_LIMIT`   | 3       | Seeds a player can protect at once.                                                                                                                                      |
-| `SEED_PURGE_GRACE_DAYS`   | 30      | Days a seed keeps its files after its last race or session (the `Played in the last <D> days` reason).                                                                   |
+| Setting                      | Default | Meaning                                                                                                                                                                  |
+| ---------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SET_SEED_MIN_SEED_DATE`     | unset   | Seeds added (scanned) before this instant are not replayable (`old_game_version`). Raised by hand after a game patch that breaks older seeds; unset disables the cutoff. |
+| `SET_SEED_KEPT_TOP_SEEDS`    | 10      | How many of each category's best Set Seed seeds keep their files (the `Top <N> seed` reason).                                                                            |
+| `SEED_PROTECTION_LIMIT`      | 3       | Seeds a player can protect at once.                                                                                                                                      |
+| `SEED_PURGE_GRACE_DAYS`      | 30      | Days a seed keeps its files after its last race or session (the `Played in the last <D> days` reason).                                                                   |
+| `SPEEDRUN_DEFAULT_FLOOR`     | 5       | Speedrun floor for pools without their own override (see below).                                                                                                         |
+| `SPEEDRUN_SESSION_TTL_HOURS` | 24      | Hours before an ACTIVE Speedrun solo session becomes ABANDONED.                                                                                                          |
+
+**Speedrun floor.** Every speedrun seed draw (`seed_service.draw_speedrun_seed`) is refused with "No fresh seed right now" (`SpeedrunFloorError`) when the pool has `<= floor` AVAILABLE seeds, a reroll's current seed left out of the count. The floor is `Pool.speedrun_floor` when set, else `SPEEDRUN_DEFAULT_FLOOR`; `has_fresh_speedrun_seed` answers whether a draw would succeed. Admins set it per pool through `PATCH /api/admin/pools/{name}` (`speedrun_floor`: an integer `>= 0`, `null` clears the override; omitted leaves it alone); `GET /api/admin/pools` returns it with `speedrun_floor_effective`. A rescan never overwrites it. The draw does not change the seed's status: callers consume it.
 
 **Purge.** `deploy/cleanup-seeds.sh` deletes a DISCARDED seed's zip only when these settings allow it (top seed, protected, recently played or in use, or added before the cutoff); see the retention section of `docs/SEED_PIPELINE.md`.
 

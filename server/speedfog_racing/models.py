@@ -180,6 +180,9 @@ class Pool(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    # Admin-set override of the speedrun floor (None: settings.speedrun_default_floor).
+    # Runtime state like ``enabled``: a rescan never touches it.
+    speedrun_floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     last_scanned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -658,9 +661,23 @@ class TrainingSession(Base):
     discord_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Ranked sessions (speedrun, set_seed) only: game debug flags the mod saw
+    # (same shape as Participant.debug_flags) and when the IGT last moved.
+    debug_flags: Mapped[dict[str, dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
+    last_igt_change_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Admin invalidation of a ranked session (reversible, reason required).
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=True
+    )
+    invalidation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     # Relationships
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
     seed: Mapped["Seed"] = relationship()
 
 
