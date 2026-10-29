@@ -28,7 +28,7 @@ from speedfog_racing.models import (
 from speedfog_racing.services.debug_flags import debug_flag_label, merge_debug_flags
 from speedfog_racing.websocket.race.manager import RaceRoom, SpectatorConnection
 from speedfog_racing.websocket.schemas import ParticipantInfo
-from speedfog_racing.websocket.training.mod import TrainingModHandler
+from speedfog_racing.websocket.training.mod import TrainingModHandler, _load_session_no_graph
 
 NOW = datetime(2026, 10, 1, 20, 0, tzinfo=UTC)
 
@@ -121,9 +121,11 @@ async def test_ranked_session_records_debug_flags_and_alerts(df_session) -> None
         entity = TrainingSession(user_id=user.id, seed_id=seed.id, mode=RunMode.SPEEDRUN)
         db.add(entity)
         await db.flush()
-        entity.user = user
-        entity.seed = seed
         entity.current_zone = "node_a"
+        await db.commit()
+        # The cached-graph path of a status_update: the seed brings no graph.
+        entity = await _load_session_no_graph(db, entity.id)
+        assert entity is not None
         handler = _handler(df_session)
         added = handler._record_debug_flags(entity, ["one_shot"], 83000)
 

@@ -3,6 +3,7 @@
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -388,3 +389,37 @@ async def test_expired_speedrun_session_frees_the_seed_page(async_session, pools
         for untouched in (recent, normal, set_seed):
             assert rows[untouched.id].status == TrainingSessionStatus.ACTIVE
         assert (await seed_replayability(db, await db.get(Seed, seed))).public is True
+
+
+async def test_expiry_never_overwrites_a_finished_session(async_session, pools):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        done = await _add_session(db, user, "sprint", RunMode.SPEEDRUN, 5000)
+        done.created_at = BASE - timedelta(hours=40)
+        await db.commit()
+        ids = await expire_speedrun_sessions(db, now=BASE)
+
+    assert ids == []
+    async with async_session() as db:
+        row = await db.get(TrainingSession, done.id)
+        assert row is not None and row.status == TrainingSessionStatus.FINISHED
+
+
+async def test_monitor_expires_and_broadcasts(async_session, pools):
+    from speedfog_racing.services.inactivity_monitor import _expire_speedrun_sessions
+
+    async with async_session() as db:
+        user = await _user(db, "a")
+        old = await _add_session(
+            db, user, "sprint", RunMode.SPEEDRUN, 0,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+        )  # fmt: skip
+        old.created_at = BASE - timedelta(hours=100)
+        await db.commit()
+
+    with patch(
+        "speedfog_racing.websocket.training.mod._broadcast_status_change", new_callable=AsyncMock
+    ) as broadcast:
+        await _expire_speedrun_sessions(async_session)
+
+    broadcast.assert_awaited_once_with(old.id, "abandoned")

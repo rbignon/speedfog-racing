@@ -76,7 +76,7 @@ async def _load_session(db: AsyncSession, session_id: uuid.UUID) -> TrainingSess
 async def _load_session_no_graph(db: AsyncSession, session_id: uuid.UUID) -> TrainingSession | None:
     """Load a session for a caller that already holds its seed graph decoded.
 
-    The seed only brings ``total_layers``: its ``graph_json`` (~120 KB of JSON
+    The seed only brings ``total_layers`` and ``pool_name``: its ``graph_json`` (~120 KB of JSON
     to decode on every 1 Hz status_update otherwise) and pool raise if read,
     so pass the cached graph to whatever needs it.
     """
@@ -85,7 +85,7 @@ async def _load_session_no_graph(db: AsyncSession, session_id: uuid.UUID) -> Tra
         .options(
             selectinload(TrainingSession.user),
             selectinload(TrainingSession.seed).options(
-                load_only(Seed.total_layers, raiseload=True), raiseload(Seed.pool)
+                load_only(Seed.total_layers, Seed.pool_name, raiseload=True), raiseload(Seed.pool)
             ),
         )
         .where(TrainingSession.id == session_id)

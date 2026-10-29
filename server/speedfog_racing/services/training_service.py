@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -311,18 +311,20 @@ async def expire_speedrun_sessions(db: AsyncSession, *, now: datetime) -> list[u
     never expire. Returns the abandoned session ids; the caller broadcasts.
     """
     cutoff = now - timedelta(hours=settings.speedrun_session_ttl_hours)
+    # One conditional UPDATE: a session that finishes meanwhile is not overwritten.
     result = await db.execute(
-        select(TrainingSession).where(
+        update(TrainingSession)
+        .where(
             TrainingSession.status == TrainingSessionStatus.ACTIVE,
             TrainingSession.mode == RunMode.SPEEDRUN,
             TrainingSession.created_at < cutoff,
         )
+        .values(status=TrainingSessionStatus.ABANDONED, finished_at=now)
+        .returning(TrainingSession.id)
+        .execution_options(synchronize_session=False)
     )
     expired = list(result.scalars())
-    for session in expired:
-        session.status = TrainingSessionStatus.ABANDONED
-        session.finished_at = now
-        logger.info(f"Expired speedrun session {session.id}")
-    if expired:
-        await db.commit()
-    return [session.id for session in expired]
+    await db.commit()
+    for session_id in expired:
+        logger.info(f"Expired speedrun session {session_id}")
+    return expired
