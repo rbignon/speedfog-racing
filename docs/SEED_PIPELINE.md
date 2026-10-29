@@ -297,7 +297,7 @@ tools/
 
 ## Zip Internal Structure
 
-Layout of the pool zip on disk. The pack a player downloads is identical except for two entries: `graph.json` is dropped and `lib/speedfog_racing.toml` is added (see section 3).
+Layout of the pack a player downloads. It differs from the pool zip on disk in three entries (see section 3): `graph.json` is dropped, `lib/speedfog_racing.toml` is added, and `lib/speedfog_racing.dll` is the server's current build (pool zips generated since the server appends it carry none; older ones carry the build of their generation day, which is dropped).
 
 ```
 seed_a1b2c3d4e5f6.zip
@@ -313,7 +313,7 @@ seed_a1b2c3d4e5f6.zip
     │       └── tools/
     ├── launch_speedfog.bat        # Windows launcher
     ├── lib/
-    │   ├── speedfog_racing.dll    # Racing overlay mod
+    │   ├── speedfog_racing.dll    # Racing overlay mod, appended at download (server's current build)
     │   ├── MenuInputDelayFix.dll  # Menu input-delay fix (from the speedfog base package)
     │   ├── RandomizerHelper.dll     # Item rando helper
     │   ├── RandomizerHelper_config.ini

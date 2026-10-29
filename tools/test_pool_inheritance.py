@@ -286,3 +286,20 @@ class TestModConfig:
                 "speedfog_abc123def456/modengine2/config_speedfog.toml"
             ).decode("utf-8")
             assert '"..\\\\lib\\\\speedfog_racing.dll"' in config
+
+    def test_process_seed_without_lib_dir(self, tmp_path):
+        """lib/ is no longer created by a DLL copy: the helper config creates it."""
+        seed_dir = tmp_path / "seed"
+        (seed_dir / "modengine2").mkdir(parents=True)
+        (seed_dir / "modengine2" / "config_speedfog.toml").write_text(
+            "[modengine]\nexternal_dlls = []\n", encoding="utf-8"
+        )
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        assert process_seed(seed_dir, out_dir, "abc123def456") is True
+
+        with zipfile.ZipFile(out_dir / "seed_abc123def456.zip") as zf:
+            assert (
+                "speedfog_abc123def456/lib/RandomizerHelper_config.ini" in zf.namelist()
+            )

@@ -410,6 +410,7 @@ def ensure_helper_config(seed_dir: Path) -> None:
     if config_path.exists():
         return
 
+    config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(
         "[settings]\n"
         "autoEquip = false\n"
