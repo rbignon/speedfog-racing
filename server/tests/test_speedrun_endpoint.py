@@ -14,10 +14,10 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     TrainingSession,
-    TrainingSessionMode,
     TrainingSessionStatus,
     User,
     UserRole,
@@ -61,7 +61,7 @@ async def _add_run(
     minute: int,
     *,
     daily: bool = False,
-    set_seed: bool = False,
+    mode: RunMode = RunMode.SPEEDRUN,
     deathless: bool = False,
     layers: int = 15,
     pool: str = "sprint",
@@ -83,7 +83,7 @@ async def _add_run(
         seed_id=seed.id,
         status=RaceStatus.FINISHED,
         started_at=BASE,
-        set_seed=set_seed,
+        mode=mode,
         deathless=deathless,
         exclude_from_stats=daily,
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if daily else None,
@@ -182,7 +182,7 @@ async def test_board_sub_defaults_to_set_and_rejects_others(
     test_client, async_session, sprint_runs
 ):
     async with async_session() as db:
-        await _add_run(db, sprint_runs["a"], 900, 3, set_seed=True)
+        await _add_run(db, sprint_runs["a"], 900, 3, mode=RunMode.SET_SEED)
         await db.commit()
 
     default = await test_client.get("/api/stats/speedrun/sprint")
@@ -198,7 +198,7 @@ async def test_board_sub_defaults_to_set_and_rejects_others(
 
 async def test_board_random_seed_empty_when_only_replays(test_client, async_session, sprint_runs):
     async with async_session() as db:
-        await db.execute(Race.__table__.update().values(set_seed=True))
+        await db.execute(Race.__table__.update().values(mode=RunMode.SET_SEED))
         await db.commit()
 
     response = await test_client.get("/api/stats/speedrun/sprint?sub=random")
@@ -224,7 +224,7 @@ async def test_board_types_accept_solo(test_client, async_session, sprint_runs):
             TrainingSession(
                 user_id=sprint_runs["a"].id,
                 seed_id=seed.id,
-                mode=TrainingSessionMode.SPEEDRUN,
+                mode=RunMode.SPEEDRUN,
                 status=TrainingSessionStatus.FINISHED,
                 igt_ms=500,
                 finished_at=BASE,

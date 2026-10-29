@@ -2291,7 +2291,7 @@ export interface SpeedrunRun {
   /**
    * Played on a seed the runner could not study first: every racer of an
    * ordinary race, daily or event, and Speedrun-mode solo runs. Replays (Set
-   * Seed races and set_seed sessions) are not blind.
+   * Seed mode races and sessions) are not blind.
    */
   blind: boolean;
   deaths: number;

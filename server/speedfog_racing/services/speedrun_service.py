@@ -21,9 +21,9 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     TrainingSession,
-    TrainingSessionMode,
     TrainingSessionStatus,
     User,
 )
@@ -104,11 +104,11 @@ def _category_key(pool: str, layers: int) -> str:
 async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
-    left out, races excluded from stats left out unless they are Daily Seeds
-    or event races, training pools left out, and seeds from an older version
-    of their pool (another layer count than its config) left out, unless that
-    count is declared in the pool's ``archived_layers``: those runs count under
-    the category ``"<pool>@<layers>"``."""
+    left out, community races left out unless their mode is speedrun or
+    set_seed (Daily Seeds and event races count in any mode), training pools
+    left out, and seeds from an older version of their pool (another layer count
+    than its config) left out, unless that count is declared in the pool's
+    ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
     layer_counts = {
@@ -128,7 +128,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             Race.daily_date,
             Race.event_id,
             Race.deathless,
-            Race.set_seed,
+            Race.mode,
             Seed.pool_name,
             Seed.seed_number,
             Seed.total_layers,
@@ -147,7 +147,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             Race.status == RaceStatus.FINISHED,
             User.banned_at.is_(None),
             or_(
-                Race.exclude_from_stats.is_(False),
+                Race.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
                 Race.daily_date.is_not(None),
                 Race.event_id.is_not(None),
             ),
@@ -202,7 +202,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 category=category,
                 deathless=bool(row.deathless),
                 run_type=run_type,
-                blind=not row.set_seed,
+                blind=row.mode != RunMode.SET_SEED,
                 igt_ms=row.igt_ms,
                 # Old rows can lack a finish time; the race start is close enough.
                 finished_at=row.finished_at or row.started_at or row.created_at,
@@ -237,7 +237,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
         .join(User, TrainingSession.user_id == User.id)
         .where(
             TrainingSession.status == TrainingSessionStatus.FINISHED,
-            TrainingSession.mode.in_([TrainingSessionMode.SPEEDRUN, TrainingSessionMode.SET_SEED]),
+            TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
             User.banned_at.is_(None),
         )
     )
@@ -253,7 +253,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 category=category,
                 deathless=False,
                 run_type="solo",
-                blind=row.mode == TrainingSessionMode.SPEEDRUN,
+                blind=row.mode == RunMode.SPEEDRUN,
                 igt_ms=row.igt_ms,
                 finished_at=row.finished_at or row.created_at,
                 race_id=None,

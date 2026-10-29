@@ -15,10 +15,10 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     TrainingSession,
-    TrainingSessionMode,
     TrainingSessionStatus,
     User,
     UserRole,
@@ -118,11 +118,10 @@ async def _add_run(
     kind: str = "race",
     race_status: RaceStatus = RaceStatus.FINISHED,
     status: ParticipantStatus = ParticipantStatus.FINISHED,
-    exclude: bool = False,
     zone_history: list[dict[str, Any]] | None = None,
     finished: bool = True,
     layers: int = 15,
-    set_seed: bool = False,
+    mode: RunMode = RunMode.SPEEDRUN,
 ) -> Participant:
     """One race on its own seed with a single participant."""
     tag = uuid.uuid4().hex[:10]
@@ -144,8 +143,8 @@ async def _add_run(
         status=race_status,
         started_at=BASE + timedelta(minutes=minute - 30),
         deathless=deathless,
-        set_seed=set_seed,
-        exclude_from_stats=exclude or kind in ("daily", "event"),
+        mode=mode,
+        exclude_from_stats=kind in ("daily", "event"),
         # daily_date is unique: one Daily Seed per day.
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if kind == "daily" else None,
         event_id=(await _event(db)).id if kind == "event" else None,
@@ -171,7 +170,7 @@ async def _add_session(
     db: AsyncSession,
     user: User,
     seed_pool: str,
-    mode: TrainingSessionMode,
+    mode: RunMode,
     igt_ms: int,
     *,
     status: TrainingSessionStatus = TrainingSessionStatus.FINISHED,
@@ -258,7 +257,6 @@ async def test_load_counted_runs_inclusion_rules(async_session, pools):
         await _add_run(
             db, user=a, igt_ms=800, minute=7, kind="daily", race_status=RaceStatus.RUNNING
         )
-        await _add_run(db, user=a, igt_ms=800, minute=8, exclude=True)
         await _add_run(db, user=a, igt_ms=800, minute=9, pool="training_sprint")
         await db.commit()
 
@@ -266,6 +264,26 @@ async def test_load_counted_runs_inclusion_rules(async_session, pools):
 
     assert sorted(r.run_type for r in runs) == ["daily", "event", "race"]
     assert {r.run_id for r in runs} == {race_p.id, daily_p.id, event_p.id}
+
+
+async def test_normal_community_races_do_not_count(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL)
+        speedrun = await _add_run(db, user=a, igt_ms=1100, minute=2, mode=RunMode.SPEEDRUN)
+        set_seed = await _add_run(db, user=a, igt_ms=1200, minute=3, mode=RunMode.SET_SEED)
+        daily = await _add_run(db, user=a, igt_ms=1300, minute=4, kind="daily", mode=RunMode.NORMAL)
+        event = await _add_run(db, user=a, igt_ms=1400, minute=5, kind="event", mode=RunMode.NORMAL)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    by_id = {r.run_id: r for r in runs}
+    assert set(by_id) == {speedrun.id, set_seed.id, daily.id, event.id}
+    assert by_id[speedrun.id].blind is True
+    assert by_id[set_seed.id].blind is False
+    assert by_id[daily.id].blind is True
+    assert by_id[event.id].blind is True
 
 
 async def test_finished_at_falls_back_to_race_start(async_session, pools):
@@ -452,20 +470,20 @@ async def test_counted_runs_include_ranked_solo_sessions(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         banned = await _user(db, "banned", banned=True)
-        speedrun = await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000)
-        set_seed = await _add_session(db, a, "sprint", TrainingSessionMode.SET_SEED, 6000)
-        await _add_session(db, a, "sprint", TrainingSessionMode.PRACTICE, 100)
+        speedrun = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000)
+        set_seed = await _add_session(db, a, "sprint", RunMode.SET_SEED, 6000)
+        await _add_session(db, a, "sprint", RunMode.NORMAL, 100)
         await _add_session(
             db,
             a,
             "sprint",
-            TrainingSessionMode.SPEEDRUN,
+            RunMode.SPEEDRUN,
             100,
             status=TrainingSessionStatus.ACTIVE,
         )
-        await _add_session(db, banned, "sprint", TrainingSessionMode.SPEEDRUN, 100)
-        await _add_session(db, a, "training_sprint", TrainingSessionMode.SPEEDRUN, 100)
-        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 100, layers=12)
+        await _add_session(db, banned, "sprint", RunMode.SPEEDRUN, 100)
+        await _add_session(db, a, "training_sprint", RunMode.SPEEDRUN, 100)
+        await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 100, layers=12)
         await db.commit()
 
         runs = await load_counted_runs(db)
@@ -483,7 +501,7 @@ async def test_counted_runs_include_ranked_solo_sessions(async_session, pools):
 async def test_session_finish_time_falls_back_to_creation(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
-        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000, finished_at=None)
+        await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000, finished_at=None)
         await db.commit()
 
         runs = await load_counted_runs(db)
@@ -495,7 +513,7 @@ async def test_session_finish_time_falls_back_to_creation(async_session, pools):
 async def test_set_seed_race_runs_are_replays(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
-        replay = await _add_run(db, user=a, igt_ms=1000, minute=1, set_seed=True)
+        replay = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.SET_SEED)
         ordinary = await _add_run(db, user=a, igt_ms=1100, minute=2)
         daily = await _add_run(db, user=a, igt_ms=1200, minute=3, kind="daily")
         event = await _add_run(db, user=a, igt_ms=1300, minute=4, kind="event")
@@ -513,9 +531,7 @@ async def test_main_weapons_cover_races_and_sessions(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         participant = await _add_run(db, user=a, igt_ms=1000, minute=1, zone_history=history)
-        session = await _add_session(
-            db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000, zone_history=history
-        )
+        session = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000, zone_history=history)
         await db.commit()
 
         weapons = await load_main_weapons(db, [participant.id], [session.id])
@@ -526,7 +542,7 @@ async def test_main_weapons_cover_races_and_sessions(async_session, pools):
 async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
-        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000)
+        await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000)
         await db.commit()
 
         runs = await load_counted_runs(db)
@@ -549,9 +565,9 @@ async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session,
 async def _four_runs(db: AsyncSession) -> None:
     users = [await _user(db, n) for n in "abcd"]
     await _add_run(db, user=users[0], igt_ms=4000, minute=1)
-    await _add_run(db, user=users[1], igt_ms=3000, minute=2, set_seed=True)
-    await _add_session(db, users[2], "sprint", TrainingSessionMode.SPEEDRUN, 2000)
-    await _add_session(db, users[3], "sprint", TrainingSessionMode.SET_SEED, 1000)
+    await _add_run(db, user=users[1], igt_ms=3000, minute=2, mode=RunMode.SET_SEED)
+    await _add_session(db, users[2], "sprint", RunMode.SPEEDRUN, 2000)
+    await _add_session(db, users[3], "sprint", RunMode.SET_SEED, 1000)
     await db.commit()
 
 
@@ -591,7 +607,7 @@ async def test_deathless_only_keeps_deathless_mode_runs(async_session, pools):
         b = await _user(db, "b")
         await _add_run(db, user=a, igt_ms=1000, minute=1, deathless=True)
         await _add_run(db, user=b, igt_ms=900, minute=2)
-        await _add_session(db, b, "sprint", TrainingSessionMode.SPEEDRUN, 800)
+        await _add_session(db, b, "sprint", RunMode.SPEEDRUN, 800)
         await db.commit()
         runs = await load_counted_runs(db)
 
@@ -630,8 +646,8 @@ async def test_recent_run_place_is_on_the_set_board(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         b = await _user(db, "b")
-        await _add_run(db, user=a, igt_ms=1000, minute=1, set_seed=True)
-        await _add_session(db, b, "sprint", TrainingSessionMode.SPEEDRUN, 1500, finished_at=BASE)
+        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.SET_SEED)
+        await _add_session(db, b, "sprint", RunMode.SPEEDRUN, 1500, finished_at=BASE)
         await _add_run(db, user=b, igt_ms=900, minute=3, deathless=True)
         await db.commit()
 

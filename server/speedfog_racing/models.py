@@ -80,11 +80,12 @@ class TrainingSessionStatus(enum.Enum):
     CANCELLED = "cancelled"
 
 
-class TrainingSessionMode(enum.Enum):
-    """What a solo session is for: free practice, or a ranked speedrun.fog run
-    on a random seed (SPEEDRUN) or on a chosen one (SET_SEED)."""
+class RunMode(enum.Enum):
+    """What a race or solo session is for, fixed at creation: an ordinary run
+    (NORMAL), or a ranked speedrun.fog run on a random seed (SPEEDRUN) or on a
+    chosen one (SET_SEED)."""
 
-    PRACTICE = "practice"
+    NORMAL = "normal"
     SPEEDRUN = "speedrun"
     SET_SEED = "set_seed"
 
@@ -370,10 +371,13 @@ class Race(Base):
     exclude_from_stats: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
-    # The organizer chose the seed (a speedrun.fog Set Seed replay) instead
-    # of drawing it from the pool.
-    set_seed: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False
+    # Never changed after creation. Only SPEEDRUN and SET_SEED community races
+    # count for the speedrun.fog boards.
+    mode: Mapped[RunMode] = mapped_column(
+        Enum(RunMode),
+        default=RunMode.NORMAL,
+        server_default=RunMode.NORMAL.name,
+        nullable=False,
     )
     # Tournament attachment: NULL on ordinary races. The slot names the
     # role inside the event, "qualifier:<mode>:<n>" or "<stage>:<n>".
@@ -600,10 +604,10 @@ class TrainingSession(Base):
     status: Mapped[TrainingSessionStatus] = mapped_column(
         Enum(TrainingSessionStatus), default=TrainingSessionStatus.ACTIVE
     )
-    mode: Mapped[TrainingSessionMode] = mapped_column(
-        Enum(TrainingSessionMode),
-        default=TrainingSessionMode.PRACTICE,
-        server_default=TrainingSessionMode.PRACTICE.name,
+    mode: Mapped[RunMode] = mapped_column(
+        Enum(RunMode),
+        default=RunMode.NORMAL,
+        server_default=RunMode.NORMAL.name,
         nullable=False,
     )
     igt_ms: Mapped[int] = mapped_column(Integer, default=0)

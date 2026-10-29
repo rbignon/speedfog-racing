@@ -76,6 +76,10 @@ The deferred-close handoff between auto-finish and hard-close looks like this:
 
 Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_finish`, so concurrent transitions from `/finish`, the inactivity monitor, or the other hard-close path collapse to a single winner without duplicate finalization side effects: chat messages, notifications, and reward grants.
 
+### Run mode
+
+`Race.mode` (`RunMode`: `normal`, `speedrun`, `set_seed`; default `normal`) is set when the race is created and never changes, like `TrainingSession.mode`. Among community races only `speedrun` and `set_seed` ones count for the speedrun.fog boards (Daily Seeds and event races count in any mode); a `set_seed` race is a replay, so its runs are not blind. See `SPEEDRUN.md`.
+
 ### Deathless
 
 `deathless` (bool, default false, editable in SETUP only): when set, the first
