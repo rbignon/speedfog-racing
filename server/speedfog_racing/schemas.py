@@ -1046,11 +1046,22 @@ class SpeedrunRecentRun(SpeedrunRun):
     deathless: bool
 
 
+class SpeedrunPracticedSeed(BaseModel):
+    """A seed practiced in Set Seed over the last 7 days."""
+
+    seed_number: str
+    category: str
+    category_name: str
+    attempts: int
+    players: int
+
+
 class SpeedrunOverviewResponse(BaseModel):
     categories: list[SpeedrunCategory]
     runs: int
     players: int
     recent_runs: list[SpeedrunRecentRun]
+    practiced_seeds: list[SpeedrunPracticedSeed]
 
 
 class SpeedrunRecordSeed(BaseModel):

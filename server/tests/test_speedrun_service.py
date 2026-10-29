@@ -771,3 +771,73 @@ async def test_archived_category_without_runs_is_not_listed(async_session, pools
         cats = await load_categories(db, await load_counted_runs(db))
 
     assert [c.pool for c in cats] == ["veteran"]
+
+
+async def _practice(db, seed, user, *, days_ago=1.0, mode=RunMode.SET_SEED, as_race=False):
+    """One Set Seed attempt on ``seed`` made ``days_ago`` before PRACTICE_NOW."""
+    at = PRACTICE_NOW - timedelta(days=days_ago)
+    if as_race:
+        part = await _add_run(db, user=user, igt_ms=1000, minute=1, mode=mode, seed=seed)
+        part.created_at = at
+        return part
+    session = await _add_session(db, user, "sprint", mode, 1000, seed=seed)
+    session.created_at = at
+    return session
+
+
+PRACTICE_NOW = BASE + timedelta(days=30)
+
+
+async def _seed(db, number, pool="sprint", layers=15):
+    seed = Seed(
+        seed_number=number,
+        pool_name=pool,
+        graph_json={"nodes": {}},
+        total_layers=layers,
+        folder_path=f"/t/{number}",
+        status=SeedStatus.CONSUMED,
+        created_at=BASE,
+    )
+    db.add(seed)
+    await db.flush()
+    return seed
+
+
+async def test_practiced_seeds_count_sessions_and_races_in_the_window(async_session, pools):
+    async with async_session() as db:
+        a, b, banned = await _user(db, "a"), await _user(db, "b"), await _user(db, "z", banned=True)
+        s1 = await _seed(db, "aaaaaa111")
+        s2 = await _seed(db, "bbbbbb222")
+        await _practice(db, s1, a)
+        await _practice(db, s1, a, days_ago=2)
+        await _practice(db, s1, b, as_race=True)
+        await _practice(db, s1, b, days_ago=8)  # too old
+        await _practice(db, s1, banned)  # banned
+        await _practice(db, s1, b, mode=RunMode.SPEEDRUN)  # blind run, not an attempt
+        invalid = await _practice(db, s2, a)
+        invalid.invalidated_at = PRACTICE_NOW
+        await _practice(db, s2, a, days_ago=9)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db), now=PRACTICE_NOW)
+
+    assert [
+        (p.seed_number, p.category, p.category_name, p.attempts, p.players)
+        for p in ov.practiced_seeds
+    ] == [("aaaaaa111", "sprint", "Sprint", 3, 2)]
+
+
+async def test_practiced_seeds_order_and_cap(async_session, pools):
+    async with async_session() as db:
+        users = [await _user(db, f"u{i}") for i in range(3)]
+        # (attempts, players): ties on attempts break on players, then seed number.
+        plan = {"s1": (3, 3), "s2": (3, 1), "s3": (2, 2), "s4": (1, 1), "s5": (1, 1), "s6": (1, 1)}
+        for number, (attempts, players) in plan.items():
+            seed = await _seed(db, number + "xxxxx")
+            for i in range(attempts):
+                await _practice(db, seed, users[i % players])
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db), now=PRACTICE_NOW)
+
+    assert [p.seed_number[:2] for p in ov.practiced_seeds] == ["s1", "s2", "s3", "s4", "s5"]

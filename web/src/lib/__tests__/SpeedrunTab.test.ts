@@ -42,6 +42,7 @@ describe("SpeedrunTab URL sync", () => {
       runs: 0,
       players: 0,
       recent_runs: [],
+      practiced_seeds: [],
     } as never);
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
       runs: [],

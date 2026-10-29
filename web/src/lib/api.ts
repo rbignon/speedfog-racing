@@ -2353,11 +2353,21 @@ export interface SpeedrunRecentRun extends SpeedrunRun {
   deathless: boolean;
 }
 
+export interface SpeedrunPracticedSeed {
+  seed_number: string;
+  category: string;
+  category_name: string;
+  attempts: number;
+  players: number;
+}
+
 export interface SpeedrunOverviewResponse {
   categories: SpeedrunCategory[];
   runs: number;
   players: number;
   recent_runs: SpeedrunRecentRun[];
+  /** Most practiced Set Seed seeds of the last 7 days (top 5). */
+  practiced_seeds: SpeedrunPracticedSeed[];
 }
 
 export interface SpeedrunBoardResponse {

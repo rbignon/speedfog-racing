@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { SpeedrunOverviewResponse } from "$lib/api";
   import { ordinal } from "$lib/events";
-  import { speedrunAgo } from "$lib/speedrun";
+  import { seedPageHref, speedrunAgo } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -17,6 +17,9 @@
   } = $props();
 
   const now = Date.now();
+
+  const plural = (n: number, word: string) =>
+    `${n} ${word}${n === 1 ? "" : "s"}`;
 </script>
 
 <aside class="sr-side">
@@ -28,6 +31,25 @@
       <div>Categories<b>{overview.categories.length}</b></div>
     </div>
   </section>
+
+  {#if overview.practiced_seeds.length > 0}
+    <section class="sr-panel">
+      <h3>Most practiced seeds <span class="window">7 days</span></h3>
+      {#each overview.practiced_seeds as seed (seed.seed_number)}
+        <a class="practiced" href={seedPageHref(seed.seed_number)}>
+          <span class="seed"
+            >{seed.seed_number.slice(0, 6)} · {seed.category_name}</span
+          >
+          <span class="counts"
+            >{plural(seed.attempts, "attempt")} · {plural(
+              seed.players,
+              "player",
+            )}</span
+          >
+        </a>
+      {/each}
+    </section>
+  {/if}
 
   <section class="sr-panel">
     <h3>Recent runs</h3>
@@ -75,6 +97,40 @@
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+
+  .window {
+    margin-left: 0.3rem;
+    color: var(--color-text-secondary);
+    font-family: var(--font-family);
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .practiced {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.55rem 0.8rem;
+    border-top: 1px solid var(--color-border);
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+  }
+
+  .practiced .seed {
+    color: var(--color-gold);
+    font-weight: 700;
+  }
+
+  .practiced:hover .seed {
+    color: var(--color-gold-hover);
+  }
+
+  .practiced .counts {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
   }
 
   .game-stats {

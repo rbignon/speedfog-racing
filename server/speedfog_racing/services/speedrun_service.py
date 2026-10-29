@@ -9,7 +9,7 @@ histories themselves. See docs/SPEEDRUN.md.
 
 from collections.abc import AsyncIterator, Collection, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 from statistics import median_low
 from typing import Any, Literal
 from uuid import UUID
@@ -34,6 +34,7 @@ from speedfog_racing.schemas import (
     SpeedrunBoardResponse,
     SpeedrunCategory,
     SpeedrunOverviewResponse,
+    SpeedrunPracticedSeed,
     SpeedrunRecentRun,
     SpeedrunRecordSeed,
     SpeedrunRun,
@@ -49,6 +50,8 @@ RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
 SpeedrunSub = Literal["set", "random"]
 
 RECENT_RUNS_COUNT = 5
+PRACTICED_SEEDS_COUNT = 5
+PRACTICED_SEEDS_DAYS = 7
 _ZONE_HISTORY_QUERY_CHUNK = 500
 
 
@@ -549,7 +552,68 @@ def _run_fields(
     }
 
 
-async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> SpeedrunOverviewResponse:
+async def load_practiced_seeds(
+    db: AsyncSession, now: datetime | None = None
+) -> list[SpeedrunPracticedSeed]:
+    """The seeds with the most Set Seed attempts in the last
+    ``PRACTICED_SEEDS_DAYS`` days, top ``PRACTICED_SEEDS_COUNT`` by attempts,
+    then players, then seed number. An attempt is a Set Seed session created
+    (invalidated ones out) or a participant of a Set Seed race joined in the
+    window; banned users and training pools are left out."""
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=PRACTICED_SEEDS_DAYS)
+    session_rows = await db.execute(
+        select(TrainingSession.user_id, Seed.seed_number, Seed.pool_name, Seed.total_layers)
+        .join(Seed, TrainingSession.seed_id == Seed.id)
+        .join(User, TrainingSession.user_id == User.id)
+        .where(
+            TrainingSession.mode == RunMode.SET_SEED,
+            TrainingSession.invalidated_at.is_(None),
+            TrainingSession.created_at >= cutoff,
+            User.banned_at.is_(None),
+        )
+    )
+    race_rows = await db.execute(
+        select(Participant.user_id, Seed.seed_number, Seed.pool_name, Seed.total_layers)
+        .join(Race, Participant.race_id == Race.id)
+        .join(Seed, Race.seed_id == Seed.id)
+        .join(User, Participant.user_id == User.id)
+        .where(
+            Race.mode == RunMode.SET_SEED,
+            Participant.created_at >= cutoff,
+            User.banned_at.is_(None),
+        )
+    )
+    pools = {p.name: p for p in (await db.execute(select(Pool))).scalars().all()}
+    attempts: dict[str, int] = {}
+    players: dict[str, set[UUID]] = {}
+    where: dict[str, tuple[str, int]] = {}
+    for user_id, number, pool_name, layers in [*session_rows.all(), *race_rows.all()]:
+        pool = pools.get(pool_name)
+        if pool is None or _is_training(_pool_config(pool)):
+            continue
+        attempts[number] = attempts.get(number, 0) + 1
+        players.setdefault(number, set()).add(user_id)
+        where[number] = (pool_name, layers)
+    top = sorted(attempts, key=lambda n: (-attempts[n], -len(players[n]), n))
+    out: list[SpeedrunPracticedSeed] = []
+    for number in top[:PRACTICED_SEEDS_COUNT]:
+        pool_name, layers = where[number]
+        key, name = seed_category(pools[pool_name], layers)
+        out.append(
+            SpeedrunPracticedSeed(
+                seed_number=number,
+                category=key,
+                category_name=name,
+                attempts=attempts[number],
+                players=len(players[number]),
+            )
+        )
+    return out
+
+
+async def build_overview(
+    db: AsyncSession, runs: Sequence[CountedRun], now: datetime | None = None
+) -> SpeedrunOverviewResponse:
     categories = await load_categories(db, runs)
     names = {c.pool: c.name for c in categories}
     recent = sorted(runs, key=lambda r: r.finished_at, reverse=True)[:RECENT_RUNS_COUNT]
@@ -585,6 +649,7 @@ async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> Speedr
         runs=len(runs),
         players=len({r.user.id for r in runs}),
         recent_runs=recent_runs,
+        practiced_seeds=await load_practiced_seeds(db, now),
     )
 
 
