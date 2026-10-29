@@ -634,22 +634,37 @@ async def _send_admin_webhook(embed: dict[str, object]) -> None:
         logger.warning("Discord admin webhook error: %s", e)
 
 
+def _debug_flags_target(race_id: str | None, session_id: str | None) -> tuple[str, str]:
+    """Alert link and field name: a race page, or a ranked solo session's."""
+    if session_id is not None:
+        return f"{settings.base_url.rstrip('/')}/training/{session_id}", "Run"
+    if race_id is None:
+        raise ValueError("a debug flags alert needs a race_id or a session_id")
+    return _race_url(race_id), "Race"
+
+
 async def notify_debug_flags_detected(
     *,
     race_name: str,
-    race_id: str,
+    race_id: str | None,
     player_name: str,
     flags: list[str],
     igt_ms: int,
     zone_name: str,
+    session_id: str | None = None,
 ) -> None:
-    """Alert the admin channel that a runner's mod saw game debug flags."""
+    """Alert the admin channel that a runner's mod saw game debug flags.
+
+    ``race_name`` names the race, or the ranked solo run when ``session_id``
+    is given (the embed then links ``/training/<session_id>``).
+    """
+    url, name_field = _debug_flags_target(race_id, session_id)
     embed: dict[str, object] = {
         "title": f"🚩 Cheat tool detected: {_escape_discord_md(player_name)}",
-        "url": _race_url(race_id),
+        "url": url,
         "color": 0xDC6A51,
         "fields": [
-            {"name": "Race", "value": _escape_discord_md(race_name), "inline": True},
+            {"name": name_field, "value": _escape_discord_md(race_name), "inline": True},
             {"name": "IGT", "value": _format_igt(igt_ms), "inline": True},
             {"name": "Zone", "value": _escape_discord_md(zone_name), "inline": True},
             {
@@ -665,11 +680,12 @@ async def notify_debug_flags_detected(
 def fire_debug_flags_notification(
     *,
     race_name: str,
-    race_id: str,
+    race_id: str | None,
     player_name: str,
     flags: list[str],
     igt_ms: int,
     zone_name: str,
+    session_id: str | None = None,
 ) -> None:
     """Fire-and-forget wrapper around ``notify_debug_flags_detected``."""
     task = asyncio.create_task(
@@ -680,6 +696,7 @@ def fire_debug_flags_notification(
             flags=flags,
             igt_ms=igt_ms,
             zone_name=zone_name,
+            session_id=session_id,
         )
     )
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

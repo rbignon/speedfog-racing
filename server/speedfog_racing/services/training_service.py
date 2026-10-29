@@ -5,12 +5,14 @@ import random
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.config import settings
 from speedfog_racing.models import (
     RunMode,
     Seed,
@@ -299,3 +301,28 @@ async def create_set_seed_session(
     session = await _add_ranked_session(db, user_id, seed, RunMode.SET_SEED)
     logger.info(f"Created set seed session {session.id} for user {user_id} on {seed.seed_number}")
     return session
+
+
+async def expire_speedrun_sessions(db: AsyncSession, *, now: datetime) -> list[uuid.UUID]:
+    """Abandon ACTIVE Speedrun-mode sessions older than the TTL.
+
+    A blind session left ACTIVE would hide its seed page forever. The seed
+    stays CONSUMED and the zone history is kept. Set Seed and normal sessions
+    never expire. Returns the abandoned session ids; the caller broadcasts.
+    """
+    cutoff = now - timedelta(hours=settings.speedrun_session_ttl_hours)
+    result = await db.execute(
+        select(TrainingSession).where(
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+            TrainingSession.mode == RunMode.SPEEDRUN,
+            TrainingSession.created_at < cutoff,
+        )
+    )
+    expired = list(result.scalars())
+    for session in expired:
+        session.status = TrainingSessionStatus.ABANDONED
+        session.finished_at = now
+        logger.info(f"Expired speedrun session {session.id}")
+    if expired:
+        await db.commit()
+    return [session.id for session in expired]

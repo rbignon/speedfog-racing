@@ -1,5 +1,6 @@
 """Ranked solo runs: POST /api/speedrun/solo, fresh-seeds and the seed summary."""
 
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -22,14 +23,16 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.services.seed_service import SpeedrunFloorError
+from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.training_service import (
     SpeedrunStartError,
     create_set_seed_session,
     create_speedrun_session,
+    expire_speedrun_sessions,
 )
 
 from .test_set_seed_service import _seed
-from .test_speedrun_service import _add_run, _add_session, _user
+from .test_speedrun_service import BASE, _add_run, _add_session, _user
 
 
 @pytest.fixture
@@ -344,3 +347,44 @@ async def test_seed_summary(test_client, async_session, pools, seed_zip):
     assert typo.json()["detail"] == "Unknown seed"
     assert (await test_client.get("/api/speedrun/seeds/5eed/summary")).status_code == 404
     assert Path(seed_zip).is_file()
+
+
+async def test_expired_speedrun_session_frees_the_seed_page(async_session, pools):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        expired = await _add_session(
+            db, user, "sprint", RunMode.SPEEDRUN, 5000, status=TrainingSessionStatus.ACTIVE,
+            finished_at=None, zone_history=[{"node_id": "start", "igt_ms": 0}],
+        )  # fmt: skip
+        recent = await _add_session(
+            db, await _user(db, "b"), "sprint", RunMode.SPEEDRUN, 0,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+        )  # fmt: skip
+        normal = await _add_session(
+            db, await _user(db, "c"), "sprint", RunMode.NORMAL, 0,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+        )  # fmt: skip
+        set_seed = await _add_session(
+            db, await _user(db, "d"), "sprint", RunMode.SET_SEED, 0,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+        )  # fmt: skip
+        expired.created_at = BASE - timedelta(hours=25)
+        recent.created_at = BASE - timedelta(hours=23)
+        normal.created_at = BASE - timedelta(hours=30)
+        set_seed.created_at = BASE - timedelta(hours=30)
+        seed = expired.seed_id
+        await db.commit()
+        before = await seed_replayability(db, await db.get(Seed, seed))
+        assert before.public is False
+
+        ids = await expire_speedrun_sessions(db, now=BASE)
+
+    assert ids == [expired.id]
+    async with async_session() as db:
+        rows = {row.id: row for row in (await db.execute(select(TrainingSession))).scalars().all()}
+        assert rows[expired.id].status == TrainingSessionStatus.ABANDONED
+        assert rows[expired.id].finished_at is not None
+        assert rows[expired.id].zone_history == [{"node_id": "start", "igt_ms": 0}]
+        for untouched in (recent, normal, set_seed):
+            assert rows[untouched.id].status == TrainingSessionStatus.ACTIVE
+        assert (await seed_replayability(db, await db.get(Seed, seed))).public is True

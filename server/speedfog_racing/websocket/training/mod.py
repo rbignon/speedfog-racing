@@ -14,9 +14,14 @@ from sqlalchemy.orm import load_only, raiseload, selectinload
 
 from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
-from speedfog_racing.discord import send_training_live_notification
-from speedfog_racing.models import Seed, TrainingSession, TrainingSessionStatus
+from speedfog_racing.discord import (
+    fire_debug_flags_notification,
+    send_training_live_notification,
+)
+from speedfog_racing.models import Pool, RunMode, Seed, TrainingSession, TrainingSessionStatus
+from speedfog_racing.services.debug_flags import merge_debug_flags
 from speedfog_racing.services.layer_service import (
+    get_display_name_for_node,
     get_layer_for_node,
     get_tier_for_node,
 )
@@ -280,6 +285,60 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                     await _broadcast_participant_update(disc_session, spectator_only=True)
         except Exception:
             pass
+
+    # ------------------------------------------------------------------
+    # Ranked sessions (speedrun, set_seed): the race's anti-cheat checks.
+    # Normal sessions keep skipping them.
+    # ------------------------------------------------------------------
+    def _on_igt_change(self, entity: TrainingSession, igt_ms: int) -> None:
+        # Same rule as the race: bump on any CHANGED report, before the base
+        # clamp mutates igt_ms.
+        if entity.mode != RunMode.NORMAL and igt_ms != entity.igt_ms:
+            entity.last_igt_change_at = datetime.now(UTC)
+        super()._on_igt_change(entity, igt_ms)
+
+    def _wall_reference(self, entity: TrainingSession) -> datetime | None:
+        if entity.mode == RunMode.NORMAL:
+            return None
+        return entity.last_igt_change_at
+
+    def _record_debug_flags(self, entity: TrainingSession, reported: Any, igt_ms: int) -> list[str]:
+        if entity.mode == RunMode.NORMAL:
+            return []
+        merged, added = merge_debug_flags(
+            entity.debug_flags,
+            reported,
+            igt_ms=igt_ms,
+            node_id=entity.current_zone,
+            now=datetime.now(UTC),
+        )
+        if added:
+            entity.debug_flags = merged
+        return added
+
+    async def _on_debug_flags_recorded(self, entity: TrainingSession, added: list[str]) -> None:
+        flags = entity.debug_flags or {}
+        logger.warning(
+            "Debug flags detected: training=%s user=%s flags=%s",
+            entity.id,
+            entity.user_id,
+            ",".join(added),
+        )
+        async with self.session_maker() as db:
+            pool = (
+                await db.execute(select(Pool).where(Pool.name == entity.seed.pool_name))
+            ).scalar_one_or_none()
+        mode_label = "Speedrun" if entity.mode == RunMode.SPEEDRUN else "Set Seed"
+        first = flags[added[0]]
+        fire_debug_flags_notification(
+            race_name=f"Solo \u00b7 {format_pool_display_name(pool)} \u00b7 {mode_label}",
+            race_id=None,
+            session_id=str(entity.id),
+            player_name=entity.user.twitch_display_name or entity.user.twitch_username,
+            flags=added,
+            igt_ms=first["igt_ms"],
+            zone_name=get_display_name_for_node(first.get("node_id"), self._get_graph_json(entity)),
+        )
 
     # ------------------------------------------------------------------
     # Entity loading

@@ -111,6 +111,19 @@ async def abandon_inactive_participants(
     return affected_race_ids, abandoned_participant_ids
 
 
+async def _expire_speedrun_sessions(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> None:
+    """Abandon expired Speedrun solo sessions and tell their connections."""
+    from speedfog_racing.services.training_service import expire_speedrun_sessions
+    from speedfog_racing.websocket.training.mod import _broadcast_status_change
+
+    async with session_maker() as db:
+        expired = await expire_speedrun_sessions(db, now=datetime.now(UTC))
+    for session_id in expired:
+        await _broadcast_status_change(session_id, "abandoned")
+
+
 async def inactivity_monitor_loop(
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -121,6 +134,10 @@ async def inactivity_monitor_loop(
         POLL_INTERVAL,
     )
     while True:
+        try:
+            await _expire_speedrun_sessions(session_maker)
+        except Exception:
+            logger.exception("Speedrun session expiry error")
         try:
             affected, abandoned_ids = await abandon_inactive_participants(session_maker)
             if affected:

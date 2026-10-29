@@ -55,6 +55,13 @@ wire names and carry the same human-readable labels.
 3. **Alerts.** New flags push `debug_flags_detected` to the race's organizer
    and admins over the spectator WebSocket and post to the private admin
    Discord channel (`DISCORD_ADMIN_WEBHOOK_URL`).
+   **Ranked solo sessions.** `speedrun` and `set_seed` sessions get the same
+   server-side checks in `TrainingModHandler`: flags are stored in
+   `training_sessions.debug_flags` (first observation wins), the admin
+   Discord alert titles the run "Solo · <category> · Speedrun" (or "Set Seed")
+   and links `/training/<session id>`, and the IGT plausibility check (wrong
+   save) runs against `last_igt_change_at`. There is no spectator push.
+   Normal practice sessions skip all of it.
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists
    every detection in the Cheat tab (`GET /api/admin/cheat-detections`).

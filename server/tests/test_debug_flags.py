@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -14,10 +15,13 @@ from speedfog_racing.main import app
 from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
+    Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
+    TrainingSession,
     User,
     UserRole,
 )
@@ -72,9 +76,105 @@ def test_merge_keeps_known_names_next_to_unknown_ones() -> None:
     assert merged is not None and set(merged) == {"one_shot"}
 
 
-def test_training_sessions_ignore_debug_flags() -> None:
-    handler = TrainingModHandler(MagicMock(), uuid.uuid4(), MagicMock())
-    assert handler._record_debug_flags(MagicMock(), ["one_shot"], 1000) == []
+def _handler(maker: Any = None) -> TrainingModHandler:
+    return TrainingModHandler(MagicMock(), uuid.uuid4(), maker or MagicMock())
+
+
+def _session(mode: RunMode, **fields: Any) -> TrainingSession:
+    return TrainingSession(mode=mode, igt_ms=fields.pop("igt_ms", 0), **fields)
+
+
+def test_normal_session_ignores_debug_flags() -> None:
+    entity = _session(RunMode.NORMAL)
+    assert _handler()._record_debug_flags(entity, ["one_shot"], 1000) == []
+    assert entity.debug_flags is None
+
+
+@pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
+def test_ranked_session_records_debug_flags_once(mode: RunMode) -> None:
+    entity = _session(mode, current_zone="node_a")
+    handler = _handler()
+
+    assert handler._record_debug_flags(entity, ["one_shot"], 83000) == ["one_shot"]
+    assert handler._record_debug_flags(entity, ["one_shot"], 90000) == []
+    assert entity.debug_flags is not None
+    assert entity.debug_flags["one_shot"]["igt_ms"] == 83000
+    assert entity.debug_flags["one_shot"]["node_id"] == "node_a"
+
+
+async def test_ranked_session_records_debug_flags_and_alerts(df_session) -> None:
+    async with df_session() as db:
+        user = User(twitch_id="t1", twitch_username="runner", twitch_display_name="Runner")
+        db.add(user)
+        db.add(Pool(name="sprint", config={"name": "Sprint", "type": "race"}))
+        await db.flush()
+        seed = Seed(
+            seed_number="s1",
+            pool_name="sprint",
+            graph_json={"nodes": {"node_a": {"display_name": "Gate"}}},
+            total_layers=15,
+            folder_path="/t/s1",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        entity = TrainingSession(user_id=user.id, seed_id=seed.id, mode=RunMode.SPEEDRUN)
+        db.add(entity)
+        await db.flush()
+        entity.user = user
+        entity.seed = seed
+        entity.current_zone = "node_a"
+        handler = _handler(df_session)
+        added = handler._record_debug_flags(entity, ["one_shot"], 83000)
+
+        with patch("speedfog_racing.websocket.training.mod.fire_debug_flags_notification") as fire:
+            await handler._on_debug_flags_recorded(entity, added)
+
+    fire.assert_called_once()
+    kwargs = fire.call_args.kwargs
+    assert kwargs["session_id"] == str(entity.id)
+    assert kwargs["race_id"] is None
+    assert kwargs["race_name"] == "Solo \u00b7 Sprint \u00b7 Speedrun"
+    assert (kwargs["flags"], kwargs["igt_ms"]) == (["one_shot"], 83000)
+
+
+async def test_session_alert_links_the_training_page() -> None:
+    mock_send = AsyncMock()
+    with patch("speedfog_racing.discord._send_admin_webhook", mock_send):
+        await notify_debug_flags_detected(
+            race_name="Solo \u00b7 Sprint \u00b7 Set Seed",
+            race_id=None,
+            session_id="abc",
+            player_name="Runner",
+            flags=["one_shot"],
+            igt_ms=1000,
+            zone_name="Gate",
+        )
+    embed = mock_send.call_args.args[0]
+    assert embed["url"].endswith("/training/abc")
+    assert embed["fields"][0]["name"] == "Run"
+
+
+@pytest.mark.parametrize(
+    ("mode", "accepted"),
+    [(RunMode.SPEEDRUN, False), (RunMode.SET_SEED, False), (RunMode.NORMAL, True)],
+)
+def test_ranked_session_rejects_implausible_igt(mode: RunMode, accepted: bool) -> None:
+    """A forward jump past wall-clock time is a wrong save on a ranked
+    session only; a normal session has no wall reference."""
+    entity = _session(mode, igt_ms=600_000)
+    handler = _handler()
+    handler._on_igt_change(entity, 601_000)  # a changed report starts the reference
+    assert (entity.last_igt_change_at is not None) == (mode != RunMode.NORMAL)
+
+    assert handler._igt_plausible(entity, 601_000 + 7_200_000) is accepted
+    assert handler._igt_plausible(entity, 100_000)  # restores stay plausible
+
+
+def test_equal_igt_report_does_not_move_the_reference() -> None:
+    entity = _session(RunMode.SPEEDRUN, igt_ms=500_000)
+    _handler()._on_igt_change(entity, 500_000)
+    assert entity.last_igt_change_at is None
 
 
 async def test_staff_broadcast_reaches_organizer_and_admins_only() -> None:
