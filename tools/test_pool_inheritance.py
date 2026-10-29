@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import zipfile
+
 import pytest
 from generate_pool import (
     POOLS_DIR,
     add_dll_to_config,
     deep_merge,
+    process_seed,
     resolve_pool_config,
     validate_pool_config,
 )
@@ -261,3 +264,25 @@ class TestModConfig:
 
     def test_add_dll_missing_config_fails(self, tmp_path):
         assert add_dll_to_config(tmp_path) is False
+
+    def test_process_seed_does_not_bundle_the_dll(self, tmp_path):
+        """The server appends the current DLL at download: zips only register it."""
+        seed_dir = tmp_path / "seed"
+        (seed_dir / "modengine2").mkdir(parents=True)
+        (seed_dir / "modengine2" / "config_speedfog.toml").write_text(
+            "[modengine]\nexternal_dlls = []\n", encoding="utf-8"
+        )
+        (seed_dir / "lib").mkdir()
+        (seed_dir / "lib" / "RandomizerHelper.dll").write_bytes(b"helper")
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+
+        assert process_seed(seed_dir, out_dir, "abc123def456") is True
+
+        with zipfile.ZipFile(out_dir / "seed_abc123def456.zip") as zf:
+            names = zf.namelist()
+            assert not [n for n in names if n.endswith("speedfog_racing.dll")]
+            config = zf.read(
+                "speedfog_abc123def456/modengine2/config_speedfog.toml"
+            ).decode("utf-8")
+            assert '"..\\\\lib\\\\speedfog_racing.dll"' in config

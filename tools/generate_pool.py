@@ -11,8 +11,10 @@ Usage:
 
 Requires:
     - SPEEDFOG_PATH environment variable or --speedfog-path argument
-    - speedfog_racing.dll in tools/assets/
     - uv installed (to run speedfog)
+
+The racing mod DLL is not bundled: the server appends its current build to
+every seed pack at download (see docs/SEED_PIPELINE.md).
 """
 
 from __future__ import annotations
@@ -334,29 +336,12 @@ def run_speedfog(
     return None
 
 
-def copy_mod_dll(seed_dir: Path, dll_source: Path) -> bool:
-    """Copy the racing mod DLL to the seed's lib directory.
-
-    Returns True on success, False on failure.
-    """
-    lib_dir = seed_dir / "lib"
-    if not lib_dir.exists():
-        lib_dir.mkdir(parents=True)
-
-    dll_dest = lib_dir / DLL_NAME
-    try:
-        shutil.copy2(dll_source, dll_dest)
-        return True
-    except OSError as e:
-        print(f"  Error copying DLL: {e}")
-        return False
-
-
 def add_dll_to_config(seed_dir: Path) -> bool:
     """Add the racing mod DLL to modengine2/config_speedfog.toml's external_dlls.
 
     The base SpeedFog package only registers its own helper DLLs, so the racing
-    overlay DLL must be appended after it is copied to ``lib/``. Paths are
+    overlay DLL must be appended. The zip does not carry the DLL itself: the
+    server adds it to ``lib/`` in every seed pack at download. Paths are
     resolved by ModEngine 2 against the config file's directory, so use the
     ``..\\lib\\`` prefix to reach the seed root from ``modengine2/``.
     """
@@ -448,19 +433,15 @@ def ensure_helper_config(seed_dir: Path) -> None:
 
 def process_seed(
     seed_dir: Path,
-    dll_source: Path,
     output_pool_dir: Path,
     seed_slug: str,
 ) -> bool:
-    """Post-process a generated seed: add DLL, modify config, zip to output.
+    """Post-process a generated seed: register the mod DLL, zip to output.
 
     Returns True on success, False on failure.
     """
-    # Copy the mod DLL
-    if not copy_mod_dll(seed_dir, dll_source):
-        return False
-
-    # Register the DLL in modengine2/config_speedfog.toml
+    # Register the DLL in modengine2/config_speedfog.toml (the server
+    # provides the file itself at download)
     if not add_dll_to_config(seed_dir):
         return False
 
@@ -488,7 +469,6 @@ def generate_one_seed(
     speedfog_path: Path,
     pool_config: Path,
     game_dir: Path,
-    dll_source: Path,
     output_pool_dir: Path,
     failed_dir: Path,
     *,
@@ -516,7 +496,7 @@ def generate_one_seed(
             print(f"{prefix} Failed: speedfog generation error")
             return SeedResult(pool_name, seed_slug, False, time.monotonic() - t0)
 
-        if process_seed(seed_dir, dll_source, output_pool_dir, seed_slug):
+        if process_seed(seed_dir, output_pool_dir, seed_slug):
             print(f"{prefix} Success: seed_{seed_slug}.zip")
             ok = True
             return SeedResult(pool_name, seed_slug, True, time.monotonic() - t0)
@@ -584,12 +564,6 @@ def main() -> int:
         print(f"Error: Speedfog path does not exist: {speedfog_path}")
         return 1
 
-    dll_source = SCRIPT_DIR / "assets" / DLL_NAME
-    if not dll_source.exists():
-        print(f"Error: DLL not found: {dll_source}")
-        print("Run ./tools/download-mod.sh to fetch it from GitHub Actions")
-        return 1
-
     if not args.game_dir.exists():
         print(f"Error: Game directory does not exist: {args.game_dir}")
         return 1
@@ -633,7 +607,6 @@ def main() -> int:
                     speedfog_path=speedfog_path,
                     pool_config=pool_setup.config_path,
                     game_dir=args.game_dir,
-                    dll_source=dll_source,
                     output_pool_dir=pool_setup.output_dir,
                     failed_dir=pool_setup.failed_dir,
                     verbose=args.verbose,
@@ -654,7 +627,6 @@ def main() -> int:
                     speedfog_path=speedfog_path,
                     pool_config=pool_setup.config_path,
                     game_dir=args.game_dir,
-                    dll_source=dll_source,
                     output_pool_dir=pool_setup.output_dir,
                     failed_dir=pool_setup.failed_dir,
                     verbose=args.verbose,

@@ -14,7 +14,7 @@ generate_pool.py        speedfog-scan-seeds      Player download
       ▼                  Create Seed records      Inject config TOML
                                                   Append current DLL
   Post-process                                    Rewrite central dir
-  (DLL, config, zip)
+  (config, zip)
       │
       ▼
   seed_<slug>.zip
@@ -42,8 +42,7 @@ python tools/generate_pool.py \
 2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --logs --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
 
 3. **Post-process the seed directory**:
-   - Copy `speedfog_racing.dll` from `tools/assets/` to `<seed_dir>/lib/`.
-   - Append the DLL to `modengine2/config_speedfog.toml`'s `external_dlls` array (`"..\\lib\\speedfog_racing.dll"`). The path is resolved by ModEngine 2 against the config's directory, so the `..\` prefix walks back up to the seed root.
+   - Register the racing mod in `modengine2/config_speedfog.toml`'s `external_dlls` array (`"..\\lib\\speedfog_racing.dll"`). The path is resolved by ModEngine 2 against the config's directory, so the `..\` prefix walks back up to the seed root. The zip does not carry the DLL itself: the server appends its current build to every seed pack at download (see section 3), so a mod release needs no pool regeneration.
    - Ensure `RandomizerHelper_config.ini` exists in `lib/` with safe racing defaults (no auto-equip, auto-upgrade enabled). This covers the case where item randomizer was disabled, as the DLL is always present but may lack config.
 
 4. **Create zip**: all files under a top-level `speedfog_<slug>/` directory. Named `seed_<slug>.zip`.
