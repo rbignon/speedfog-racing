@@ -641,3 +641,74 @@ async def test_recent_run_place_is_on_the_set_board(async_session, pools):
     # One shared board: b's deathless 900 leads, a's replay is behind it, and
     # b's solo 1500 is behind a (never behind b's own faster run).
     assert by_igt == {900: 1, 1000: 2, 1500: 2}
+
+
+@pytest.fixture
+async def archived_pool(async_session):
+    async with async_session() as db:
+        db.add(
+            Pool(
+                name="veteran",
+                config={
+                    "name": "Veteran",
+                    "type": "race",
+                    "sort_order": 10,
+                    "layers_count": 30,
+                    "archived_layers": [25],
+                },
+            )
+        )
+        await db.commit()
+
+
+async def test_archived_layer_count_forms_retired_category(async_session, pools, archived_pool):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        current = await _add_run(db, user=a, igt_ms=1000, minute=5, pool="veteran", layers=30)
+        old = await _add_run(db, user=a, igt_ms=900, minute=3, pool="veteran", layers=25)
+        await _add_run(db, user=a, igt_ms=950, minute=4, pool="veteran", layers=25)
+        await _add_run(db, user=a, igt_ms=800, minute=6)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+        cats = await load_categories(db, runs)
+        board = filter_board(
+            runs, category="veteran@25", sub="set", deathless_only=False, types=frozenset(RUN_TYPES)
+        )
+        overview = await build_overview(db, runs)
+
+    assert {r.run_id: r.category for r in runs}[current.id] == "veteran"
+    assert {r.run_id for r in board if r.run_id == old.id} == {old.id}
+    assert len(board) == 2
+    assert [(c.pool, c.name, c.retired) for c in cats] == [
+        ("veteran", "Veteran", False),
+        ("sprint", "Sprint", False),
+        ("veteran@25", "Veteran (25 layers)", True),
+    ]
+    archive = cats[2]
+    assert _naive(archive.released_at) == _naive(BASE + timedelta(minutes=3 - 60))
+    assert {r.category for r in overview.recent_runs} >= {"Veteran (25 layers)"}
+    assert "veteran@25" in {r.pool for r in overview.recent_runs}
+
+
+async def test_unlisted_old_layer_count_stays_out(async_session, pools, archived_pool):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_run(db, user=a, igt_ms=900, minute=3, pool="veteran", layers=25)
+        await _add_run(db, user=a, igt_ms=950, minute=4, pool="veteran", layers=22)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    assert [r.category for r in runs] == ["veteran@25"]
+
+
+async def test_archived_category_without_runs_is_not_listed(async_session, pools, archived_pool):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_run(db, user=a, igt_ms=900, minute=3, pool="veteran", layers=30)
+        await db.commit()
+
+        cats = await load_categories(db, await load_counted_runs(db))
+
+    assert [c.pool for c in cats] == ["veteran"]

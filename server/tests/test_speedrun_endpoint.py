@@ -63,13 +63,15 @@ async def _add_run(
     daily: bool = False,
     set_seed: bool = False,
     deathless: bool = False,
+    layers: int = 15,
+    pool: str = "sprint",
 ) -> None:
     tag = uuid.uuid4().hex[:10]
     seed = Seed(
         seed_number=f"seed{tag}",
-        pool_name="sprint",
+        pool_name=pool,
         graph_json={"nodes": {}},
-        total_layers=15,
+        total_layers=layers,
         folder_path=f"/t/{tag}",
         status=SeedStatus.CONSUMED,
     )
@@ -247,3 +249,24 @@ async def test_board_cache_keys_split_by_sub_and_deathless(test_client, async_se
     assert random_board["runs"] == set_board["runs"]
     keys = [k for k in _stats_cache if k.startswith("speedrun:board:")]
     assert len(keys) == 3
+
+
+async def test_board_archived_category_endpoint(test_client, async_session):
+    async with async_session() as db:
+        db.add(
+            Pool(
+                name="veteran",
+                config={"name": "Veteran", "layers_count": 30, "archived_layers": [25]},
+            )
+        )
+        user = User(twitch_id="id-z", twitch_username="z", api_token="tok-z", role=UserRole.USER)
+        db.add(user)
+        await db.flush()
+        await _add_run(db, user, 1000, 1, layers=25, pool="veteran")
+        await db.commit()
+
+    response = await test_client.get("/api/stats/speedrun/veteran@25")
+
+    assert response.status_code == 200
+    assert [r["igt_ms"] for r in response.json()["runs"]] == [1000]
+    assert (await test_client.get("/api/stats/speedrun/standard")).status_code == 404

@@ -54,7 +54,8 @@ class CountedRun:
     run_id: UUID
     user: UserResponse
     pool: str
-    # The board the run belongs to: the pool name.
+    # The board the run belongs to: the pool name, or "<pool>@<layers>" for a
+    # run on an archived layer count of the pool.
     category: str
     deathless: bool
     run_type: RunType
@@ -88,12 +89,26 @@ def _layers_count(config: dict[str, Any]) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def _archived_layers(config: dict[str, Any]) -> list[int]:
+    """The layer counts the pool declares archived (ints only)."""
+    value = config.get("archived_layers")
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, int) and not isinstance(v, bool)]
+
+
+def _category_key(pool: str, layers: int) -> str:
+    return f"{pool}@{layers}"
+
+
 async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, races excluded from stats left out unless they are Daily Seeds
     or event races, training pools left out, and seeds from an older version
-    of their pool (another layer count than its config) left out."""
+    of their pool (another layer count than its config) left out, unless that
+    count is declared in the pool's ``archived_layers``: those runs count under
+    the category ``"<pool>@<layers>"``."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
     layer_counts = {
@@ -141,11 +156,18 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     users: dict[UUID, UserResponse] = {}
     runs: list[CountedRun] = []
 
-    def counts(row: Any) -> bool:
+    archives = {p.name: _archived_layers(_pool_config(p)) for p in pools}
+
+    def category_of(row: Any) -> str | None:
+        """The board a row's seed counts for, None when it counts for none."""
         if row.pool_name in training_pools:
-            return False
+            return None
         current_layers = layer_counts.get(row.pool_name)
-        return current_layers is None or row.total_layers == current_layers
+        if current_layers is None or row.total_layers == current_layers:
+            return str(row.pool_name)
+        if row.total_layers in archives.get(row.pool_name, []):
+            return _category_key(row.pool_name, row.total_layers)
+        return None
 
     def user_of(row: Any) -> UserResponse:
         user = users.get(row.user_id)
@@ -162,7 +184,8 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
         return user
 
     for row in (await db.execute(stmt)).all():
-        if not counts(row):
+        category = category_of(row)
+        if category is None:
             continue
         run_type: RunType = (
             "daily"
@@ -176,7 +199,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 run_id=row.participant_id,
                 user=user_of(row),
                 pool=row.pool_name,
-                category=row.pool_name,
+                category=category,
                 deathless=bool(row.deathless),
                 run_type=run_type,
                 blind=not row.set_seed,
@@ -219,14 +242,15 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
         )
     )
     for row in (await db.execute(session_stmt)).all():
-        if not counts(row):
+        category = category_of(row)
+        if category is None:
             continue
         runs.append(
             CountedRun(
                 run_id=row.session_id,
                 user=user_of(row),
                 pool=row.pool_name,
-                category=row.pool_name,
+                category=category,
                 deathless=False,
                 run_type="solo",
                 blind=row.mode == TrainingSessionMode.SPEEDRUN,
@@ -244,37 +268,56 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
 
 
 async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[SpeedrunCategory]:
-    """One category per pool with at least one counted run: enabled pools
-    first, then retired ones, each group by ``sort_order`` (missing last)."""
-    flags = {run.pool for run in runs}
-    if not flags:
+    """One category per pool with a counted run at its current layer count,
+    plus one per archived layer count with counted runs (keyed
+    ``"<pool>@<layers>"``, always retired). Enabled pools first, then retired
+    ones, each group by ``sort_order`` (missing last)."""
+    categories_with_runs = {run.category for run in runs}
+    pools_with_runs = {run.pool for run in runs}
+    if not pools_with_runs:
         return []
-    pools = (await db.execute(select(Pool).where(Pool.name.in_(flags)))).scalars().all()
-    # Earliest seed per (pool, layer count); a pool's release is the earliest
-    # one at its current layer count (any count when its config has none).
+    pools = (await db.execute(select(Pool).where(Pool.name.in_(pools_with_runs)))).scalars().all()
+    # Earliest seed per (pool, layer count); a category's release is the
+    # earliest one at its layer count (any count for a pool whose config has none).
     first_seeds = await db.execute(
         select(Seed.pool_name, Seed.total_layers, func.min(Seed.created_at))
-        .where(Seed.pool_name.in_(flags))
+        .where(Seed.pool_name.in_(pools_with_runs))
         .group_by(Seed.pool_name, Seed.total_layers)
     )
     seed_dates: dict[str, list[tuple[int, datetime]]] = {}
     for pool_name, total_layers, created_at in first_seeds.all():
         seed_dates.setdefault(pool_name, []).append((total_layers, created_at))
 
-    def order(pool: Pool) -> tuple[bool, bool, float, str]:
+    def order(entry: tuple[Pool, int | None]) -> tuple[bool, bool, float, str, int]:
+        pool, archived = entry
+        retired = archived is not None or not pool.enabled
         sort_order = _pool_config(pool).get("sort_order")
+        layers = archived or 0
         if isinstance(sort_order, int | float):
-            return (not pool.enabled, False, float(sort_order), pool.name)
-        return (not pool.enabled, True, 0.0, pool.name)
+            return (retired, False, float(sort_order), pool.name, layers)
+        return (retired, True, 0.0, pool.name, layers)
+
+    # (pool, None) is the pool's current category, (pool, n) its archive at n layers.
+    entries: list[tuple[Pool, int | None]] = []
+    for pool in pools:
+        if pool.name in categories_with_runs:
+            entries.append((pool, None))
+        entries.extend(
+            (pool, layers)
+            for layers in _archived_layers(_pool_config(pool))
+            if _category_key(pool.name, layers) in categories_with_runs
+        )
 
     categories: list[SpeedrunCategory] = []
-    for pool in sorted(pools, key=order):
+    for pool, archived in sorted(entries, key=order):
         config = _pool_config(pool)
+        display_name = format_pool_display_name(pool)
+        target_layers = archived if archived is not None else _layers_count(config)
         categories.append(
             SpeedrunCategory(
-                pool=pool.name,
-                name=format_pool_display_name(pool),
-                retired=not pool.enabled,
+                pool=pool.name if archived is None else _category_key(pool.name, archived),
+                name=display_name if archived is None else f"{display_name} ({archived} layers)",
+                retired=archived is not None or not pool.enabled,
                 description=_opt_str(config.get("description")),
                 estimated_duration=_opt_str(config.get("estimated_duration")),
                 rules=_opt_str(config.get("rules")),
@@ -282,7 +325,7 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
                     (
                         created_at
                         for layers, created_at in seed_dates.get(pool.name, [])
-                        if _layers_count(config) in (None, layers)
+                        if target_layers in (None, layers)
                     ),
                     default=None,
                 ),
@@ -471,8 +514,8 @@ async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> Speedr
                 ),
                 weapons,
             ),
-            pool=run.pool,
-            category=names[run.pool],
+            pool=run.category,
+            category=names[run.category],
             deathless=run.deathless,
         )
         for run in recent

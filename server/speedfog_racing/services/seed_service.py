@@ -62,6 +62,15 @@ def _normalize_randomize_bosses(value: Any) -> str | None:
     return result
 
 
+def _normalize_archived_layers(value: Any) -> list[int]:
+    """``[display] archived_layers`` as a list of ints. Racing-only (the seed
+    generator never reads it). A malformed value drops the offending items:
+    a non-list gives ``[]``, non-int items (bools included) are skipped."""
+    if not isinstance(value, list):
+        return []
+    return [v for v in value if isinstance(v, int) and not isinstance(v, bool)]
+
+
 def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
     """Turn a parsed config.toml dict into the curated pool config payload.
 
@@ -164,6 +173,7 @@ def _normalize_pool_config(data: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "name": display.get("name"),
+        "archived_layers": _normalize_archived_layers(display.get("archived_layers")),
         "type": display.get("type", "race"),
         "sort_order": display.get("sort_order", 99),
         "estimated_duration": display.get("estimated_duration"),

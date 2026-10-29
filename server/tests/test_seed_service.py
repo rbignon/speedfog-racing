@@ -676,3 +676,19 @@ def test_pool_config_schema_derives_layers_count_from_legacy_json():
     # New-style rows pass through unchanged.
     cfg2 = PoolConfig.model_validate({"layers_count": 35})
     assert cfg2.layers_count == 35
+
+
+def test_normalize_pool_config_keeps_archived_layers():
+    assert _normalize_pool_config({"display": {"archived_layers": [25, 22]}})[
+        "archived_layers"
+    ] == [25, 22]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("25", []), (25, []), ([25, "x", True, 2.5, 22], [25, 22]), (None, [])],
+)
+def test_normalize_pool_config_drops_malformed_archived_layers(raw, expected):
+    assert (
+        _normalize_pool_config({"display": {"archived_layers": raw}})["archived_layers"] == expected
+    )
