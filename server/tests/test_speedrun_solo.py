@@ -259,6 +259,7 @@ async def test_fresh_seeds(test_client, async_session, pools):
     async with async_session() as db:
         await _available(db, "sprint", 3)
         await _available(db, "training_sprint", 9)
+        await _available(db, "off", 9)
         await db.commit()
 
     fresh = await test_client.get("/api/speedrun/fresh-seeds", params={"pool": "sprint"})
@@ -266,9 +267,12 @@ async def test_fresh_seeds(test_client, async_session, pools):
         "/api/speedrun/fresh-seeds", params={"pool": "training_sprint"}
     )
     missing = await test_client.get("/api/speedrun/fresh-seeds", params={"pool": "nope"})
+    # /solo refuses a disabled pool: so does the window's freshness check.
+    disabled = await test_client.get("/api/speedrun/fresh-seeds", params={"pool": "off"})
 
     assert (fresh.status_code, fresh.json()) == (200, {"fresh": True})
     assert (training.status_code, missing.status_code) == (404, 404)
+    assert (disabled.status_code, disabled.json()["detail"]) == (404, "Unknown pool")
 
     async with async_session() as db:
         pool = (await db.execute(select(Pool).where(Pool.name == "sprint"))).scalar_one()

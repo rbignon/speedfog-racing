@@ -73,9 +73,17 @@ def validate_late_join_durations(
 
 
 class CreateRaceRequest(BaseModel):
-    """Request to create a new race."""
+    """Request to create a new race.
+
+    ``mode`` is fixed at creation (``UpdateRaceRequest`` has no such field). A
+    ``set_seed`` race names its ``seed`` (full number or prefix) and takes its
+    pool from it, ignoring ``pool_name``; the other modes draw from ``pool_name``
+    and refuse a ``seed``.
+    """
 
     name: str = Field(min_length=1, max_length=200)
+    mode: RunMode = RunMode.NORMAL
+    seed: str | None = None
     pool_name: str = "standard"
     config: dict[str, Any] = {}
     organizer_participates: bool = False
@@ -112,6 +120,12 @@ class CreateRaceRequest(BaseModel):
             late_join_window_minutes=self.late_join_window_minutes,
             race_duration_minutes=self.race_duration_minutes,
         )
+        return self
+
+    @model_validator(mode="after")
+    def validate_seed_for_mode(self) -> "CreateRaceRequest":
+        if (self.seed is not None) != (self.mode == RunMode.SET_SEED):
+            raise ValueError("seed is required for a set_seed race and refused otherwise")
         return self
 
 

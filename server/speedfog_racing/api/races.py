@@ -23,6 +23,7 @@ from speedfog_racing.api.helpers import (
     race_response,
     user_response,
 )
+from speedfog_racing.api.speedrun import resolve_seed_or_404
 from speedfog_racing.auth import (
     get_current_user,
     get_current_user_optional,
@@ -47,6 +48,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -102,6 +104,8 @@ from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
+from speedfog_racing.services.seed_service import SpeedrunFloorError, draw_speedrun_seed
+from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 from speedfog_racing.websocket import (
     broadcast_race_info_update,
@@ -303,7 +307,11 @@ async def create_race(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_not_banned),
 ) -> RaceResponse:
-    """Create a new race with a seed from the specified pool."""
+    """Create a new race in its mode: a seed drawn from the specified pool
+    (normal; speedrun under the pool's floor), or the named seed (Set Seed).
+
+    Every refusal is raised before the commit, so it leaves no race behind.
+    """
     if user.role not in {UserRole.ORGANIZER, UserRole.ADMIN}:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -318,6 +326,32 @@ async def create_race(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Scheduled time cannot be in the past",
         )
+
+    # The seed of a speedrun or Set Seed race, chosen before the race exists.
+    seed: Seed | None = None
+    if request.mode == RunMode.SET_SEED:
+        # The seed was played already: its race consumes nothing, and a retired
+        # (disabled) category's seed stays replayable, so no pool guard.
+        assert request.seed is not None  # the schema requires it
+        seed = await resolve_seed_or_404(db, request.seed)
+        replayability = await seed_replayability(db, seed)
+        if not replayability.replayable:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=replayability.reason)
+    else:
+        # Guard: reject unknown or disabled pools so admin toggles aren't
+        # bypassable by an organizer passing the raw pool name directly.
+        pool = await get_pool(db, request.pool_name)
+        if pool is None or not pool.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Mode '{request.pool_name}' is not available",
+            )
+        if request.mode == RunMode.SPEEDRUN:
+            try:
+                seed = await draw_speedrun_seed(db, request.pool_name)
+            except SpeedrunFloorError as e:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
+            seed.status = SeedStatus.CONSUMED
 
     # Create race
     race = Race(
@@ -335,27 +369,33 @@ async def create_race(
         private_dag=request.private_dag,
         deathless=request.deathless,
         custom_rules=(request.custom_rules or "").strip() or None,
+        mode=request.mode,
+        # Ranked races (a replay, or a possibly fished draw) stay out of the
+        # community statistics, which describe blind play.
+        exclude_from_stats=request.mode != RunMode.NORMAL,
     )
+    if seed is not None:
+        race.seed_id = seed.id
+        race.seed = seed
     db.add(race)
     await db.flush()
 
-    # Guard: reject unknown or disabled pools so admin toggles aren't
-    # bypassable by an organizer passing the raw pool name directly.
-    pool = await get_pool(db, request.pool_name)
-    if pool is None or not pool.enabled:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Mode '{request.pool_name}' is not available",
+    if seed is None:
+        # Assign seed from pool
+        try:
+            await assign_seed_to_race(db, race, request.pool_name)
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(e),
+            ) from e
+    else:
+        logger.info(
+            "Race %s created in %s mode on seed %s",
+            race.id,
+            race.mode.value,
+            seed.seed_number,
         )
-
-    # Assign seed from pool
-    try:
-        await assign_seed_to_race(db, race, request.pool_name)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        ) from e
 
     # Auto-add organizer as participant if requested
     if request.organizer_participates:
@@ -385,6 +425,11 @@ async def create_race(
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,
                 scheduled_at=scheduled_str,
+                mode=race.mode,
+                # Only a Set Seed race's seed is public; a drawn one stays secret.
+                seed_number=(
+                    race.seed.seed_number if race.mode == RunMode.SET_SEED and race.seed else None
+                ),
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
@@ -1737,6 +1782,8 @@ async def reroll_seed(
         report_buggy,
         is_daily,
     )
+    # Before the version bump below clears seeds_released_at: the service reads
+    # it to decide whether the old seed goes back to the pool or is burned.
     try:
         await reroll_seed_for_race(
             db,
@@ -1744,6 +1791,8 @@ async def reroll_seed(
             reporter_id=user.id if report_buggy else None,
             report_reason=body.report_reason if body and report_buggy else None,
         )
+    except SpeedrunFloorError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -2082,10 +2131,16 @@ async def delete_race(
     # Delete invites explicitly (belt-and-suspenders with ORM cascade)
     await db.execute(delete(Invite).where(Invite.race_id == race_id))
 
-    # Release seed back to pool only if the race was never started.
-    # Started races (RUNNING/FINISHED) keep their seed consumed so it
-    # cannot be reused (players have already seen it).
-    if race.seed_id and race.status in (RaceStatus.SETUP,):
+    # Release seed back to pool only if no player could have seen it: the race
+    # never started and its seeds were never released. Otherwise it stays
+    # consumed (burned), as on a reroll (see reroll_seed_for_race). A Set Seed
+    # race's seed was never drawn from the pool: its status is left alone.
+    if (
+        race.seed_id
+        and race.status == RaceStatus.SETUP
+        and race.seeds_released_at is None
+        and race.mode != RunMode.SET_SEED
+    ):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
         if seed and seed.status != SeedStatus.DISCARDED:

@@ -21,7 +21,7 @@ from speedfog_racing.discord import (
     set_event_status,
     update_scheduled_event,
 )
-from speedfog_racing.models import Pool
+from speedfog_racing.models import Pool, RunMode
 
 
 def _make_pool(name: str, config: dict | None = None) -> Pool:
@@ -281,6 +281,38 @@ async def test_created_training_notification(created_kwargs):
         embed = payload["embeds"][0]
         assert "New Solo" in embed["title"]
         assert embed["color"] == 0x3B82F6  # blue
+
+
+@pytest.mark.asyncio
+async def test_created_notification_names_the_race_mode(created_kwargs):
+    """Speedrun and Set Seed races say so; only a Set Seed race shows its seed."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+    embeds = []
+
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = "https://discord.com/api/webhooks/test"
+        mock_settings.base_url = "https://speedfog.racing"
+
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        for mode in (RunMode.NORMAL, RunMode.SPEEDRUN, RunMode.SET_SEED):
+            await notify_race_created(**created_kwargs, mode=mode, seed_number="5eed00000001")
+            embeds.append(mock_client.post.call_args[1]["json"]["embeds"][0])
+
+    titles = [embed["title"] for embed in embeds]
+    seeds = [{f["name"]: f["value"] for f in embed["fields"]}.get("Seed") for embed in embeds]
+    assert [t.split(":")[0] for t in titles] == [
+        "📋 New Race",
+        "📋 New Speedrun race",
+        "📋 New Set Seed race",
+    ]
+    assert seeds == [None, None, "5eed00000001"]
 
 
 # --- notify_race_started ---

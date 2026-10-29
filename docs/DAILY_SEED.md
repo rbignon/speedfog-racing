@@ -214,11 +214,11 @@ Branching inside the handler:
 | Allowed status      | `SETUP`                                   | `RUNNING`                                                                                                                                                                                                                   |
 | Permission          | `_require_organizer` (organizer or admin) | Same. Organizer is the system user, so in practice only admins.                                                                                                                                                             |
 | Participant reset   | n/a (no participants yet)                 | All participants except disqualified ones reset to `REGISTERED` (`current_zone`, `current_layer`, `igt_ms`, `death_count`, `finished_at`, `zone_history`, `last_igt_change_at` cleared; `layer_entry_igts` set to `{}`).    |
-| `seeds_released_at` | unchanged (gated until release)           | Set to `now()` so participants can re-download immediately.                                                                                                                                                                 |
+| `seeds_released_at` | cleared (gated until the next release)    | Set to `now()` so participants can re-download immediately.                                                                                                                                                                 |
 | Public chat message | "Seed has been rerolled"                  | "Seed has been rerolled. All previous runs are invalidated."                                                                                                                                                                |
 | Streak rollback     | n/a                                       | Every user whose streak state references this `daily_date` (qualifiers and abandon-trigger freeze-consumers) has their streak re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark. |
 
-Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_race` releases the previous seed back to AVAILABLE (unless DISCARDED) and assigns a fresh one from the same pool. The frontend detects the participant reset via the standard `race_state` push and shows a toast.
+Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_race` assigns a fresh seed from the same pool. A daily's seeds are always released, so its previous seed is burned: it stays CONSUMED (REPORTED with a report, DISCARDED stays), never drawn again (see "Burning" in `RACE_LIFECYCLE.md`). The frontend detects the participant reset via the standard `race_state` push and shows a toast.
 
 ---
 

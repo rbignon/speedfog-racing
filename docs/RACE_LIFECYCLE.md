@@ -80,6 +80,14 @@ Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_f
 
 `Race.mode` (`RunMode`: `normal`, `speedrun`, `set_seed`; default `normal`) is set when the race is created and never changes, like `TrainingSession.mode`. Among community races only `speedrun` and `set_seed` ones count for the speedrun.fog boards (Daily Seeds and event races count in any mode); a `set_seed` race is a replay, so its runs are not blind. See `SPEEDRUN.md`.
 
+`POST /api/races` takes it as `mode`:
+
+- `normal`: a seed drawn from `pool_name` (`assign_seed_to_race`), as before modes existed.
+- `speedrun`: the same pool checks (unknown or disabled pool: 400 "Mode '<pool>' is not available"), then a draw through `draw_speedrun_seed`, so the pool's floor applies (409 "No fresh seed right now"); the seed is CONSUMED.
+- `set_seed`: `seed` names a played seed (full number or prefix) and the race takes its pool from it: `pool_name` is ignored and the pool-enabled check skipped, so a retired category's seed stays playable. The seed is found and checked like a Set Seed solo run (404 "Unknown seed", 409 "Ambiguous seed ID", 409 with the not-replayable reason); the race consumes nothing and leaves the seed's status alone.
+
+`seed` is required for `set_seed` and refused for the other modes (422). Every refusal comes before the commit, so it creates no race. Speedrun and Set Seed races get `exclude_from_stats = True` at creation. `PATCH /api/races/{id}` has no `mode` (nor `exclude_from_stats`): such a key is ignored. The Discord announcement of a public open race says "New Speedrun race" or "New Set Seed race" for those modes, and a Set Seed race's also shows its seed number (a drawn seed is never shown).
+
 ### Deathless
 
 `deathless` (bool, default false, editable in SETUP only): when set, the first
@@ -191,21 +199,24 @@ More broadly, `event_flag` and `zone_query` handlers require `status == PLAYING`
 ## Seed Status
 
 ```
-AVAILABLE ──→ CONSUMED ──→ AVAILABLE  (reroll)
-    │              │
+AVAILABLE ──→ CONSUMED ──→ AVAILABLE  (reroll or deletion before the seeds are released)
+    │              ├──→ REPORTED   (reroll with a report)
     └──→ DISCARDED ←┘  (pool discard)
 ```
 
-| Status    | Description                         |
-| --------- | ----------------------------------- |
-| AVAILABLE | In pool, ready for assignment       |
-| CONSUMED  | Assigned to a race                  |
-| DISCARDED | Pool retired, seed no longer usable |
+| Status    | Description                                                                                            |
+| --------- | ------------------------------------------------------------------------------------------------------ |
+| AVAILABLE | In pool, ready for assignment                                                                          |
+| CONSUMED  | Assigned to a race (or burned: see Rules)                                                              |
+| REPORTED  | Reported as buggy on a reroll; an admin discards or restores it (`POST /api/admin/seeds/{id}/resolve`) |
+| DISCARDED | Pool retired, seed no longer usable                                                                    |
 
 ### Rules
 
-- **Assignment** (`assign_seed_to_race`): picks a random AVAILABLE seed, marks it CONSUMED, sets `race.seed_id`.
-- **Reroll** (`reroll_seed_for_race`): releases old seed back to AVAILABLE (unless DISCARDED), picks a new one. Excludes the current seed ID.
+- **Assignment** (`assign_seed_to_race`): picks a random AVAILABLE seed, marks it CONSUMED, sets `race.seed_id`. A **speedrun race** draws through `draw_speedrun_seed` instead (refused at the pool's floor) and marks its seed CONSUMED; a **Set Seed race** takes a played seed and never changes its status (see Run mode).
+- **Reroll** (`reroll_seed_for_race`): picks a new seed from the same pool, excluding the current seed ID; a speedrun race draws through `draw_speedrun_seed`, so the floor applies to its rerolls too (409 "No fresh seed right now", the race keeps its seed). A Set Seed race is never rerolled (400 "A Set Seed race keeps its seed").
+- **Burning** (every race): the old seed of a reroll goes back AVAILABLE only while the race's seeds were never released (`seeds_released_at` is null, read before the reroll's update clears it). Once released, players may have downloaded it, so it is burned: it stays CONSUMED and is never drawn again. A report still makes it REPORTED; a DISCARDED seed stays DISCARDED. A running Daily Seed's reroll burns its seed too (its seeds are always released). Without this rule an organizer could preview a small pool through rerolls (or recreated races) before a speedrun draw.
+- **Deletion** (`DELETE /api/races/{id}`): the same rule: the seed goes back AVAILABLE only for a SETUP race whose seeds were never released (unless DISCARDED); a started or released race's seed stays CONSUMED. Deleting a Set Seed race never touches its seed (a played seed must not return to a pool for a future blind race).
 - **Speedrun-mode solo** (`create_speedrun_session`): draws a seed of the race pool above the pool's floor and marks it CONSUMED at creation; it is never released, even when the session is cancelled. **Set Seed solo** runs consume nothing and leave the seed's status alone. See `SPEEDRUN.md` ("Starting a ranked run").
 - **Pool discard** (`discard_pool`): marks both AVAILABLE and CONSUMED seeds as DISCARDED in a single UPDATE. This prevents an in-progress race from releasing a seed back into a retired pool via reroll.
 

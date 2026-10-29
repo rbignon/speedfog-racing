@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import httpx
 
 from speedfog_racing.config import settings
+from speedfog_racing.models import RunMode
 from speedfog_racing.services.debug_flags import debug_flag_label
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.twitch_live import twitch_live_service
@@ -256,6 +257,9 @@ def _race_label_and_color(pool: Pool | None) -> tuple[str, int]:
     return label, color
 
 
+_RACE_MODE_LABELS = {RunMode.SPEEDRUN: "Speedrun race", RunMode.SET_SEED: "Set Seed race"}
+
+
 def _race_url(race_id: str) -> str:
     base_url = settings.base_url.rstrip("/")
     return f"{base_url}/race/{race_id}"
@@ -269,9 +273,16 @@ async def notify_race_created(
     organizer_name: str,
     organizer_avatar_url: str | None,
     scheduled_at: str | None = None,
+    mode: RunMode = RunMode.NORMAL,
+    seed_number: str | None = None,
 ) -> None:
-    """Send Discord notification when a race is created."""
+    """Send Discord notification when a race is created.
+
+    A speedrun or Set Seed race says so in the title; a Set Seed race also
+    shows ``seed_number`` (a drawn seed is never shown).
+    """
     label, color = _race_label_and_color(pool)
+    label = _RACE_MODE_LABELS.get(mode, label)
     display_pool = format_pool_display_name(pool)
 
     safe_name = _escape_discord_md(race_name)
@@ -281,6 +292,8 @@ async def notify_race_created(
         {"name": "Mode", "value": display_pool, "inline": True},
         {"name": "Organizer", "value": safe_organizer, "inline": True},
     ]
+    if mode == RunMode.SET_SEED and seed_number:
+        fields.append({"name": "Seed", "value": seed_number, "inline": True})
     if scheduled_at:
         fields.append({"name": "Scheduled", "value": scheduled_at, "inline": True})
 

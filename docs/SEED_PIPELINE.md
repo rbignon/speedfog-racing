@@ -99,8 +99,9 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 **`reroll_seed_for_race(db, race)`**:
 
 - Requires `race.seed` to be eager-loaded.
-- Gets a new AVAILABLE seed from the same pool, excluding the current seed ID.
-- Releases old seed back to AVAILABLE (unless it was already DISCARDED from a pool retirement).
+- Refuses a Set Seed race (`ValueError`, "A Set Seed race keeps its seed").
+- Gets a new AVAILABLE seed from the same pool, excluding the current seed ID; a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed).
+- Releases old seed back to AVAILABLE only while `race.seeds_released_at` is null; once the seeds were released it stays CONSUMED (burned). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Burning" in `RACE_LIFECYCLE.md`.
 - Assigns new seed to race.
 
 ### Pool Discard
@@ -252,7 +253,7 @@ pool from new selection UIs and blocks training creation.
 ```
 AVAILABLE ──assign_seed_to_race──→ CONSUMED
     ↑                                  │
-    └────reroll_seed_for_race──────────┘
+    └────reroll_seed_for_race──────────┘  (only before the seeds are released)
 
 AVAILABLE ──┐
              ├──discard_pool──→ DISCARDED
@@ -263,9 +264,9 @@ DISCARDED ──reroll──→ stays DISCARDED (never released back)
 
 ### Key Invariants
 
-- A race always has exactly one seed assigned (set at creation, changeable via reroll during SETUP).
+- A race always has exactly one seed assigned (set at creation, changeable via reroll during SETUP, or while RUNNING for a Daily Seed; never for a Set Seed race).
 - Seeds released via `POST /races/{id}/release-seeds` sets `seeds_released_at`, and participants can then download. The seed itself stays CONSUMED.
-- Reroll is only allowed in SETUP status and when seeds have NOT been released.
+- Reroll is allowed in SETUP status (a running Daily Seed too, by an admin). A reroll after the release clears `seeds_released_at` and burns the old seed: it stays CONSUMED, as does the seed of a released race that is deleted.
 - Discarded seeds are permanently retired; the guard in `reroll_seed_for_race` prevents them from returning to AVAILABLE.
 
 ### Retention of DISCARDED zips

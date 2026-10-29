@@ -160,9 +160,10 @@ async def get_seed_summary(seed: str, db: AsyncSession = Depends(get_db)) -> Spe
 async def get_fresh_seeds(
     pool: str = Query(...), db: AsyncSession = Depends(get_db)
 ) -> dict[str, bool]:
-    """Whether a Speedrun-mode run could start on ``pool`` now."""
+    """Whether a Speedrun-mode run could start on ``pool`` now (404 for the
+    pools ``/solo`` refuses: missing, disabled or training)."""
     found = await get_pool(db, pool)
-    if found is None or (found.config or {}).get("type", "race") == "training":
+    if found is None or not found.enabled or (found.config or {}).get("type", "race") == "training":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown pool")
     return {"fresh": await has_fresh_speedrun_seed(db, pool)}
 

@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import Pool, Race, Seed, SeedStatus
+from speedfog_racing.models import Pool, Race, RunMode, Seed, SeedStatus
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 
 logger = logging.getLogger(__name__)
@@ -429,25 +429,38 @@ async def reroll_seed_for_race(
     reporter_id: uuid.UUID | None = None,
     report_reason: str | None = None,
 ) -> Seed:
-    """Re-roll the seed for a race, releasing the old one.
+    """Re-roll the seed for a race.
 
-    Picks a new available seed from the same pool, excluding the current seed.
+    Picks a new available seed from the same pool, excluding the current seed;
+    a speedrun race draws through ``draw_speedrun_seed``, so the pool's floor
+    applies. Nothing changes when no seed can be drawn.
 
-    When ``reporter_id`` is provided, the old seed is marked as REPORTED
-    (instead of AVAILABLE) and the report fields are populated.
+    The old seed goes back AVAILABLE only while the race's seeds were never
+    released (``race.seeds_released_at`` is None, read before the caller
+    resets it): once released, players may have seen it, so it stays CONSUMED
+    (burned). When ``reporter_id`` is provided, it is marked REPORTED instead
+    and the report fields are populated. A DISCARDED seed stays DISCARDED.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
 
     Raises:
-        ValueError: If no other seeds are available in the pool
+        SpeedrunFloorError: A speedrun race's pool is at or under its floor.
+        ValueError: A Set Seed race (it keeps its seed), or no other seed
+            available in the pool.
     """
+    if race.mode == RunMode.SET_SEED:
+        raise ValueError("A Set Seed race keeps its seed")
     old_seed = race.seed
     if old_seed is None:
         raise ValueError("Race has no seed assigned")
 
     pool_name = old_seed.pool_name
 
-    new_seed = await get_available_seed(db, pool_name, exclude_id=old_seed.id)
+    new_seed: Seed | None
+    if race.mode == RunMode.SPEEDRUN:
+        new_seed = await draw_speedrun_seed(db, pool_name, exclude_id=old_seed.id)
+    else:
+        new_seed = await get_available_seed(db, pool_name, exclude_id=old_seed.id)
     if new_seed is None:
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
@@ -458,7 +471,7 @@ async def reroll_seed_for_race(
             old_seed.reported_by_id = reporter_id
             old_seed.reported_reason = report_reason
             old_seed.reported_at = datetime.now(UTC)
-        else:
+        elif race.seeds_released_at is None:
             old_seed.status = SeedStatus.AVAILABLE
 
     # Assign new seed
