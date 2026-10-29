@@ -1,6 +1,7 @@
 """Tests for training mode."""
 
 import asyncio
+import io
 import tempfile
 import time
 import uuid
@@ -16,6 +17,7 @@ from sqlalchemy.pool import NullPool
 
 import speedfog_racing.database as db_module
 import speedfog_racing.main as main_module
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
@@ -2474,6 +2476,24 @@ async def test_training_pack_ticket_download_flow(
         assert dl.headers["content-type"] == "application/zip"
         disposition = dl.headers["content-disposition"]
         assert 'filename="speedfog_training_trainer_train_zip.zip"' in disposition
+        with zipfile.ZipFile(io.BytesIO(dl.content)) as zf:
+            assert zf.read("speedfog_train/lib/speedfog_racing.dll") == b"test mod dll"
+
+
+@pytest.mark.asyncio
+async def test_training_pack_ticket_503_without_mod_dll(
+    test_client, training_user, active_training_session, tmp_path, monkeypatch
+):
+    """No DLL on the server: the training ticket fails with a mod message."""
+    monkeypatch.setattr(settings, "mod_dll_path", str(tmp_path / "absent.dll"))
+    session_id = active_training_session.id
+    async with test_client as client:
+        ticket_resp = await client.get(
+            f"/api/training/{session_id}/pack-ticket",
+            headers={"Authorization": f"Bearer {training_user.api_token}"},
+        )
+        assert ticket_resp.status_code == 503
+        assert "mod" in ticket_resp.json()["detail"]
 
 
 @pytest.mark.asyncio

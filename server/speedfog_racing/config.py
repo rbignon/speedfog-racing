@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
     # Seeds
     seeds_pool_dir: str = "/data/seeds"
+    # Mod DLL appended to every seed pack at download (deploy/deploy.sh ships it here)
+    mod_dll_path: str = "/opt/speedfog-racing/mod/speedfog_racing.dll"
     speedfog_path: str = ""  # Path to speedfog repo for seed generation
 
     # OG images

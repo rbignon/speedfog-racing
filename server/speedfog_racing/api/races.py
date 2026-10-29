@@ -96,6 +96,9 @@ from speedfog_racing.services.sanctions_service import (
     reset_participant_progress,
 )
 from speedfog_racing.services.seed_pack_service import (
+    MOD_DLL_UNAVAILABLE_DETAIL,
+    ModDllUnavailableError,
+    load_mod_dll,
     sanitize_filename,
     stream_seed_pack_with_config,
 )
@@ -2147,6 +2150,14 @@ async def create_seed_pack_ticket(
             detail="This seed pack is no longer available."
             " Seed files are removed after a race ends.",
         )
+    try:
+        load_mod_dll(Path(settings.mod_dll_path))
+    except ModDllUnavailableError:
+        logger.exception("Mod DLL unavailable for race %s seed pack", race_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=MOD_DLL_UNAVAILABLE_DETAIL,
+        )
     ticket = sign_download_ticket("race", user.id, race_id, datetime.now(UTC))
     return DownloadTicketResponse(ticket=ticket)
 
@@ -2219,7 +2230,15 @@ async def download_my_seed_pack(
 
     try:
         config = generate_player_config(participant, race)
-        stream, content_length = stream_seed_pack_with_config(Path(race.seed.folder_path), config)
+        stream, content_length = stream_seed_pack_with_config(
+            Path(race.seed.folder_path), config, Path(settings.mod_dll_path)
+        )
+    except ModDllUnavailableError:
+        logger.exception("Mod DLL unavailable for race %s seed pack", race_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=MOD_DLL_UNAVAILABLE_DETAIL,
+        )
     except FileNotFoundError:
         logger.warning("Seed zip missing for race %s (cleaned up)", race_id)
         raise HTTPException(

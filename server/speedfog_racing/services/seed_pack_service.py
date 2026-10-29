@@ -36,6 +36,11 @@ class ModDllUnavailableError(Exception):
     """The server has no readable mod DLL to put in seed packs."""
 
 
+MOD_DLL_UNAVAILABLE_DETAIL = (
+    "The racing mod is unavailable on the server right now. Please try again in a few minutes."
+)
+
+
 @dataclass(frozen=True)
 class ModDll:
     """The mod build every pack carries, read once and shared by all downloads."""

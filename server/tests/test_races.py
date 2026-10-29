@@ -1,5 +1,6 @@
 """Test race API endpoints."""
 
+import io
 import json
 import tempfile
 import uuid
@@ -11,6 +12,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
@@ -1075,6 +1077,39 @@ async def test_seed_pack_ticket_download_flow(
         assert dl.headers["content-type"] == "application/zip"
         disposition = dl.headers["content-disposition"]
         assert 'filename="speedfog_player1_abc123.zip"' in disposition
+        with zipfile.ZipFile(io.BytesIO(dl.content)) as zf:
+            assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"test mod dll"
+
+
+@pytest.mark.asyncio
+async def test_seed_pack_ticket_503_without_mod_dll(
+    test_client, organizer, player, seed_with_zip, tmp_path, monkeypatch
+):
+    """No DLL on the server: the ticket fails with a mod message, not a broken download."""
+    monkeypatch.setattr(settings, "mod_dll_path", str(tmp_path / "absent.dll"))
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={"name": "Test Race"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        race_id = create_response.json()["id"]
+        await client.post(
+            f"/api/races/{race_id}/participants",
+            json={"twitch_username": "player1"},
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        await client.post(
+            f"/api/races/{race_id}/release-seeds",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+
+        ticket_resp = await client.get(
+            f"/api/races/{race_id}/seed-pack-ticket",
+            headers={"Authorization": f"Bearer {player.api_token}"},
+        )
+        assert ticket_resp.status_code == 503
+        assert "mod" in ticket_resp.json()["detail"]
 
 
 @pytest.mark.asyncio

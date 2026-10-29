@@ -14,6 +14,7 @@ from starlette.responses import StreamingResponse
 
 from speedfog_racing.api.helpers import parse_enum_csv, user_response
 from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
+from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
@@ -35,7 +36,10 @@ from speedfog_racing.services import get_pool
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.seed_nodes import SeedNodes, load_seed_nodes
 from speedfog_racing.services.seed_pack_service import (
+    MOD_DLL_UNAVAILABLE_DETAIL,
+    ModDllUnavailableError,
     generate_training_config,
+    load_mod_dll,
     sanitize_filename,
     stream_seed_pack_with_config,
 )
@@ -276,6 +280,14 @@ async def create_pack_ticket(
             detail="This seed pack is no longer available."
             " Seed files are periodically removed after use.",
         )
+    try:
+        load_mod_dll(Path(settings.mod_dll_path))
+    except ModDllUnavailableError:
+        logger.exception("Mod DLL unavailable for training session %s pack", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=MOD_DLL_UNAVAILABLE_DETAIL,
+        )
     ticket = sign_download_ticket("training", user.id, session_id, datetime.now(UTC))
     return DownloadTicketResponse(ticket=ticket)
 
@@ -323,7 +335,13 @@ async def download_pack(
     try:
         config = generate_training_config(session)
         stream, content_length = stream_seed_pack_with_config(
-            Path(session.seed.folder_path), config
+            Path(session.seed.folder_path), config, Path(settings.mod_dll_path)
+        )
+    except ModDllUnavailableError:
+        logger.exception("Mod DLL unavailable for training session %s pack", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=MOD_DLL_UNAVAILABLE_DETAIL,
         )
     except FileNotFoundError:
         logger.warning("Seed zip missing for training session %s", session_id)

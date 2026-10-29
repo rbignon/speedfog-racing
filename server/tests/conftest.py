@@ -117,6 +117,18 @@ def _no_outbound_notifications(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _mod_dll(tmp_path, monkeypatch):
+    """Seed packs append the server's mod DLL: give every test one, so the
+    developer's .env (or a missing prod path) never decides a download."""
+    from speedfog_racing.config import settings
+
+    path = tmp_path / "speedfog_racing.dll"
+    path.write_bytes(b"test mod dll")
+    monkeypatch.setattr(settings, "mod_dll_path", str(path))
+    return path
+
+
+@pytest.fixture(autouse=True)
 def _clear_stats_cache():
     """Clear the public stats TTL cache between tests to avoid cross-test pollution."""
     from speedfog_racing.api.stats import _refresh_tasks, _stats_cache, _stats_cache_locks
