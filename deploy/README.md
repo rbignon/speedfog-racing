@@ -99,11 +99,23 @@ The script:
 
 1. Builds the SvelteKit frontend locally
 2. Uploads the build archive via scp
-3. Syncs server code via rsync (preserves `.venv` and `.env`)
-4. Installs/updates Python dependencies on the VPS
-5. Runs database migrations
-6. Swaps the frontend build atomically
-7. Restarts the service and checks health
+3. Uploads the mod DLL (`tools/assets/speedfog_racing.dll`, required) via scp
+4. Syncs server code via rsync (preserves `.venv` and `.env`)
+5. Installs/updates Python dependencies on the VPS
+6. Runs database migrations
+7. Swaps the frontend build atomically
+8. Installs the mod DLL at `/opt/speedfog-racing/mod/speedfog_racing.dll` (written beside it, then renamed over it)
+9. Restarts the service and checks health
+
+### Releasing a new mod build
+
+Seed zips do not carry the mod: the server appends the DLL at `MOD_DLL_PATH`
+(default `/opt/speedfog-racing/mod/speedfog_racing.dll`) to every seed pack at
+download. A mod release is therefore `./tools/download-mod.sh` (fetches the
+latest Windows build into `tools/assets/`) then `./deploy/deploy.sh`; the pools
+need no regeneration. Players get the new build on their next download, so
+avoid releasing during an event. If the file is missing, pack downloads answer
+503 until it is back.
 
 ## Site announcement
 

@@ -6,6 +6,13 @@ set -euo pipefail
 SERVER="${DEPLOY_HOST:?Set DEPLOY_HOST (e.g. export DEPLOY_HOST=user@host)}"
 APP_DIR="/opt/speedfog-racing"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+MOD_DLL="$REPO_DIR/tools/assets/speedfog_racing.dll"
+
+# Every seed pack carries this DLL (appended at download), so never deploy without it.
+if [ ! -f "$MOD_DLL" ]; then
+    echo "==> ERROR: $MOD_DLL not found. Fetch it with ./tools/download-mod.sh"
+    exit 1
+fi
 
 # --- Local build ---
 
@@ -27,6 +34,9 @@ scp /tmp/speedfog-web.tar.gz "$SERVER:/tmp/"
 rm /tmp/speedfog-web.tar.gz
 
 # --- Remote deploy ---
+
+echo "==> Uploading mod DLL..."
+scp "$MOD_DLL" "$SERVER:/tmp/speedfog_racing.dll"
 
 echo "==> Uploading server code..."
 rsync -a --delete --omit-dir-times --chmod=g+w \
@@ -57,6 +67,14 @@ ssh "$SERVER" bash << 'ENDSSH'
     mv "$APP_DIR/web-build.new" "$APP_DIR/web-build"
     rm -rf "$APP_DIR/web-build.old"
     rm /tmp/speedfog-web.tar.gz
+
+    echo "  Installing mod DLL..."
+    # Written beside the live file, then renamed over it: a download never
+    # reads a half-written DLL.
+    sudo install -D -o speedfog -g speedfog -m 644 /tmp/speedfog_racing.dll \
+        "$APP_DIR/mod/speedfog_racing.dll.new"
+    sudo mv -f "$APP_DIR/mod/speedfog_racing.dll.new" "$APP_DIR/mod/speedfog_racing.dll"
+    rm /tmp/speedfog_racing.dll
 
     echo "  Restarting service..."
     sudo systemctl restart speedfog-racing
