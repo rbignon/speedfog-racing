@@ -124,9 +124,11 @@ async def test_ranked_session_records_debug_flags_and_alerts(df_session) -> None
         entity.current_zone = "node_a"
         await db.commit()
         # The cached-graph path of a status_update: the seed brings no graph.
+        db.expunge_all()  # else the identity map hands back the full seed
         entity = await _load_session_no_graph(db, entity.id)
         assert entity is not None
         handler = _handler(df_session)
+        handler._cached_graph_json = {"nodes": {"node_a": {"display_name": "Gate"}}}
         added = handler._record_debug_flags(entity, ["one_shot"], 83000)
 
         with patch("speedfog_racing.websocket.training.mod.fire_debug_flags_notification") as fire:
