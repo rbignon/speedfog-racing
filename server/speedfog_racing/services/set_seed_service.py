@@ -187,7 +187,7 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
 async def has_finished_run(db: AsyncSession, seed_id: UUID, user_id: UUID) -> bool:
     """Whether the user finished a run on the seed: a FINISHED participant of
     a FINISHED race of any mode, or a FINISHED ranked (speedrun or set_seed)
-    solo session."""
+    solo session an admin has not invalidated."""
     race_run = (
         select(Participant.id)
         .join(Race, Participant.race_id == Race.id)
@@ -203,6 +203,7 @@ async def has_finished_run(db: AsyncSession, seed_id: UUID, user_id: UUID) -> bo
         TrainingSession.user_id == user_id,
         TrainingSession.status == TrainingSessionStatus.FINISHED,
         TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
+        TrainingSession.invalidated_at.is_(None),
     )
     return bool(await db.scalar(select(or_(race_run.exists(), solo_run.exists()))))
 

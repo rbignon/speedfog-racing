@@ -11,6 +11,8 @@
     // Opens the disqualification flow for a flagged runner, with a
     // suggested reason built from the detected flags.
     onDisqualify?: (participantId: string, suggestedReason: string) => void;
+    // Label of that action ("Invalidate" for a solo run).
+    actionLabel?: string;
   }
 
   let {
@@ -18,6 +20,7 @@
     participants,
     zoneNames = null,
     onDisqualify,
+    actionLabel = "Disqualify",
   }: Props = $props();
 
   function isDisqualified(id: string): boolean {
@@ -52,7 +55,7 @@
                 onDisqualify(
                   row.participantId,
                   `Cheat tool detected: ${row.flags.map((f) => f.label).join(", ")}`,
-                )}>Disqualify</button
+                )}>{actionLabel}</button
             >
           {/if}
           <ul class="flags">

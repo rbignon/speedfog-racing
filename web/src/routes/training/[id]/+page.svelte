@@ -173,6 +173,27 @@
     ];
   });
 
+  // The panel only needs the runner's names, whatever the zone history.
+  let panelParticipants = $derived(
+    session
+      ? [
+          {
+            id: session.id,
+            twitch_username: session.user?.twitch_username ?? "",
+            twitch_display_name: session.user?.twitch_display_name ?? null,
+            status: session.status === "active" ? "playing" : session.status,
+            current_zone: null,
+            current_layer: 0,
+            igt_ms: 0,
+            death_count: 0,
+            color_index: 0,
+            mod_connected: false,
+            zone_history: null,
+          },
+        ]
+      : [],
+  );
+
   let ghostParticipants = $derived.by(() => {
     return ghosts.map((g, i) => ({
       id: `ghost-${i}`,
@@ -440,7 +461,8 @@
       {#if session.debug_flags}
         <CheatDetectionsPanel
           detections={{ [session.id]: session.debug_flags }}
-          participants={dagParticipants}
+          participants={panelParticipants}
+          actionLabel="Invalidate"
           onDisqualify={isInvalidated
             ? undefined
             : (_id, reason) => (invalidateReason = reason)}

@@ -22,6 +22,7 @@ from speedfog_racing.models import (
     Seed,
     SeedProtection,
     SeedStatus,
+    TrainingSession,
     TrainingSessionStatus,
     UserRole,
 )
@@ -400,6 +401,35 @@ async def test_protect_requires_a_finished_run(test_client, async_session, pools
         "protected_seeds": ["f00d00000001"],
         "protection_limit": 3,
     }
+
+
+async def test_invalidated_run_does_not_let_its_player_protect(
+    test_client, async_session, pools, seed_zip
+):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        seed = await _seed(db, "f00d00000002", folder_path=seed_zip)
+        session = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 1000, seed=seed)
+        session.invalidated_at = BASE
+        session.invalidation_reason = "Cheat"
+        session_id = session.id
+        await db.commit()
+
+    url = "/api/speedrun/seeds/f00d00000002/protection"
+    refused = await test_client.put(url, headers=_auth("a"))
+    page = await _page(test_client, "f00d00000002", "a")
+
+    assert refused.status_code == 403
+    assert page["viewer"]["can_protect"] is False
+
+    async with async_session() as db:
+        restored = await db.get(TrainingSession, session_id)
+        assert restored is not None
+        restored.invalidated_at = None
+        await db.commit()
+
+    assert (await test_client.put(url, headers=_auth("a"))).status_code == 200
+    assert (await _page(test_client, "f00d00000002", "a"))["viewer"]["can_protect"] is True
 
 
 async def test_protect_limit_and_idempotence(test_client, async_session, pools, seed_zip):
