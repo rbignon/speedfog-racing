@@ -100,6 +100,7 @@ function seed(over: Partial<SpeedrunSeed> = {}): SpeedrunSeed {
     replayable: true,
     not_replayable_code: null,
     not_replayable_reason: null,
+    protectable: true,
     kept_reasons: [],
     protected_by: 0,
     excluded_reason: null,
@@ -153,6 +154,35 @@ describe("seed page: the run it was opened on", () => {
 
     const none = renderPage(seed());
     expect(selectedNames(none.container)).toEqual([]);
+  });
+});
+
+describe("seed page: the run list's places", () => {
+  it("shows the server's ranks: shared on a tie, none on a slower run", () => {
+    const { container } = renderPage(
+      seed({
+        runs: [
+          { ...seedRun("p-1", "alice", 1_500_000, true), rank: 1 },
+          { ...seedRun("p-2", "bob", 1_600_000, true), rank: 2 },
+          { ...seedRun("s-1", "carol", 1_600_000, false), rank: 2 },
+          { ...seedRun("s-2", "alice", 1_700_000, false), rank: null },
+        ],
+      }),
+    );
+
+    const rows = [...container.querySelectorAll("li.participant")];
+    expect(rows.map((r) => r.querySelector(".rank")?.textContent)).toEqual([
+      "1.",
+      "2.",
+      "2.",
+      "",
+    ]);
+    expect(rows.map((r) => r.classList.contains("obsolete"))).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
   });
 });
 
@@ -381,6 +411,34 @@ describe("SeedReplayCard", () => {
     ).toEqual(mine.map((n) => `/speedrun/seed/${n}`));
   });
 
+  it("offers no protection where it keeps nothing, but still an unprotect", () => {
+    const purged = {
+      replayable: false,
+      not_replayable_code: "purged" as const,
+      not_replayable_reason: "Files purged.",
+      protectable: false,
+    };
+    const first = render(SeedReplayCard, {
+      props: { seed: seed({ ...purged, viewer: viewer() }) },
+    });
+
+    expect(
+      screen.getByText("Protection only keeps the files of a replayable seed."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Protect" })).toBeNull();
+    first.unmount();
+
+    render(SeedReplayCard, {
+      props: {
+        seed: seed({
+          ...purged,
+          viewer: viewer({ protected: true, protected_seeds: [SEED] }),
+        }),
+      },
+    });
+    expect(screen.getByRole("button", { name: "Unprotect" })).toBeTruthy();
+  });
+
   it("hides the protect row from a logged-out viewer", () => {
     render(SeedReplayCard, { props: { seed: seed({ viewer: null }) } });
 
@@ -442,6 +500,22 @@ describe("Leaderboard run kinds", () => {
     });
 
     expect(container.querySelector(".run-chip")).toBeNull();
+  });
+
+  it("numbers rows by position without ranks, as on race pages", () => {
+    const { container } = render(Leaderboard, {
+      props: {
+        participants: [participant("a", "alice"), participant("b", "bob")],
+        mode: "finished",
+      },
+    });
+
+    const rows = [...container.querySelectorAll("li.participant")];
+    expect(rows.map((r) => r.querySelector(".rank")?.textContent)).toEqual([
+      "1.",
+      "2.",
+    ]);
+    expect(container.querySelector(".obsolete")).toBeNull();
   });
 });
 

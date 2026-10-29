@@ -18,9 +18,12 @@
   // Relative dates are computed once per board, like a page load would.
   const now = Date.now();
   // A click on the row opens the run's seed page, unless it landed on a link
-  // or a button (the player, the seed cell).
+  // or a button (the player, the seed cell), came with a modifier key (the
+  // seed cell's link opens a new tab) or ended a text selection.
   function openSeed(e: MouseEvent, href: string) {
     if ((e.target as Element).closest("a, button")) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (window.getSelection()?.toString()) return;
     void goto(href);
   }
   let visible = $derived(runs.slice(0, shown));

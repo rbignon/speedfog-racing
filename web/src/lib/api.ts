@@ -2361,7 +2361,8 @@ export interface SpeedrunSeedStats {
 
 /** The logged-in viewer's protection state on a seed. */
 export interface SpeedrunSeedViewer {
-  /** The viewer has a finished counted run on the seed. */
+  /** The viewer has a finished run on the seed: a race of any mode, or a
+   * ranked solo session. False for a banned viewer. */
   can_protect: boolean;
   protected: boolean;
   /** Seed numbers the viewer protects, oldest protection first. */
@@ -2391,6 +2392,10 @@ export interface SpeedrunSeed {
   replayable: boolean;
   not_replayable_code: SpeedrunNotReplayableCode | null;
   not_replayable_reason: string | null;
+  /** A protection would keep the seed's files: false once they are purged or
+   * the seed can never be replayed again (codes `purged`, `old_game_version`,
+   * `old_category`), where protecting it answers 409. */
+  protectable: boolean;
   /** Why the seed's files are kept from the purge; empty when nothing keeps them. */
   kept_reasons: string[];
   protected_by: number;
@@ -2570,7 +2575,19 @@ export async function fetchSpeedrunBoard(
   return handleResponse<SpeedrunBoardResponse>(response);
 }
 
-/** A played seed's page, by full seed number or 6+ character prefix. */
+/** A seed lookup with no page to show: no played seed has that ID
+ * ("unknown", 404) or several share the prefix ("ambiguous", 409). */
+export class SeedLookupError extends Error {
+  readonly kind: "unknown" | "ambiguous";
+
+  constructor(kind: "unknown" | "ambiguous") {
+    super(kind === "unknown" ? "Unknown seed" : "Ambiguous seed ID");
+    this.kind = kind;
+  }
+}
+
+/** A played seed's page, by full seed number or 6+ character prefix. Throws
+ * `SeedLookupError` when the server knows no such seed or several. */
 export async function fetchSpeedrunSeed(
   seed: string,
   customFetch: typeof fetch = fetch,
@@ -2579,6 +2596,8 @@ export async function fetchSpeedrunSeed(
     `${API_BASE}/speedrun/seeds/${encodeURIComponent(seed)}`,
     { headers: getAuthHeaders() },
   );
+  if (response.status === 404) throw new SeedLookupError("unknown");
+  if (response.status === 409) throw new SeedLookupError("ambiguous");
   return handleResponse<SpeedrunSeed>(response);
 }
 

@@ -35,6 +35,10 @@
     // Blind or Replay chip per row, by participant id: a list that mixes
     // runs played on an unknown seed with replays of a known one.
     runKinds?: Record<string, "blind" | "replay">;
+    // Each row's place by participant id, when it is not the row's position
+    // (shared places, rows without one): a null place shows none and dims
+    // the row. Without it, rows count 1, 2, 3.
+    ranks?: Record<string, number | null>;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -51,6 +55,7 @@
     flaggedIds = [],
     disqualificationReasons = {},
     runKinds = {},
+    ranks,
     selectedIds,
     onToggle,
     onClearSelection,
@@ -149,6 +154,7 @@
           participant.status === "ready" || participant.status === "registered"}
         {@const isSelected = selectedIds?.has(participant.id) ?? false}
         {@const runKind = runKinds[participant.id]}
+        {@const rank = ranks ? ranks[participant.id] : index + 1}
         {@const zone =
           isPlaying && showRunDetails
             ? zoneName(participant.current_zone)
@@ -157,6 +163,7 @@
         <li
           class="participant"
           class:abandoned={isAbandoned}
+          class:obsolete={rank === null}
           class:selected={isSelected}
           style="--player-color: {color}; {backgroundStyleFor(participant)}"
           onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
@@ -179,7 +186,9 @@
               >{#if isSelected}✓{/if}</button
             >
           {/if}
-          <span class="rank">{index + 1}.</span>
+          <span class="rank"
+            >{#if rank != null}{rank}.{/if}</span
+          >
           <div class="info">
             <div class="name-row">
               <span class="name name-container">
@@ -461,6 +470,12 @@
 
   .participant.abandoned {
     opacity: 0.55;
+  }
+
+  /* A row without a place: dimmed like the speedrun boards' obsolete rows,
+     the player's line left as it is. */
+  .participant.obsolete .info {
+    opacity: 0.6;
   }
 
   .rank {

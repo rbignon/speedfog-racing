@@ -63,6 +63,11 @@
       seed.runs.map((r) => [r.run_id, r.blind ? "blind" : "replay"] as const),
     ),
   );
+  // The server's places: shared on equal times, none for a player's slower
+  // runs (a Set Seed grind would otherwise take places 1 to 20).
+  let ranks = $derived(
+    Object.fromEntries(seed.runs.map((r) => [r.run_id, r.rank] as const)),
+  );
   let replays = $derived(seed.runs.filter((r) => !r.blind).length);
 
   // The race page's selection: a click ticks one run alone (or clears it),
@@ -127,6 +132,7 @@
             mode="finished"
             showRunDetails
             {runKinds}
+            {ranks}
             {selectedIds}
             onToggle={handleToggle}
             onClearSelection={clearSelection}

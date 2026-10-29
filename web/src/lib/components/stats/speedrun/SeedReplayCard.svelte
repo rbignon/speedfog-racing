@@ -68,6 +68,10 @@
           disabled={busy}
           onclick={toggleProtection}>Unprotect</button
         >
+      {:else if !seed.protectable}
+        <span class="hint"
+          >Protection only keeps the files of a replayable seed.</span
+        >
       {:else if !viewer.can_protect}
         <span class="hint"
           >Only players who finished a run on this seed can protect it.</span
@@ -80,7 +84,7 @@
           onclick={toggleProtection}>Protect</button
         >
       {/if}
-      {#if !viewer.protected && viewer.can_protect && atLimit}
+      {#if !viewer.protected && seed.protectable && viewer.can_protect && atLimit}
         <p class="hint mine">
           To protect this one, unprotect one of yours first:
           <span class="mine-list">

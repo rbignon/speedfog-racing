@@ -267,4 +267,26 @@ describe("SpeedrunBoard links to seed pages", () => {
     await fireEvent.click(player!);
     expect(goto).not.toHaveBeenCalled();
   });
+
+  it("does not navigate on a modified click or after a text selection", async () => {
+    mount();
+
+    const row = (await screen.findByText("363096")).closest("tr")!;
+    const rank = row.querySelector("td.rank")!;
+    for (const modifier of ["ctrlKey", "metaKey", "shiftKey"]) {
+      await fireEvent.click(rank, { [modifier]: true });
+    }
+    expect(goto).not.toHaveBeenCalled();
+
+    // Selecting the row's text ends with a click on it.
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    window.getSelection()!.addRange(range);
+    await fireEvent.click(rank);
+    window.getSelection()!.removeAllRanges();
+    expect(goto).not.toHaveBeenCalled();
+
+    await fireEvent.click(rank);
+    expect(goto).toHaveBeenCalledTimes(1);
+  });
 });
