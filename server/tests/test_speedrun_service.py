@@ -122,20 +122,22 @@ async def _add_run(
     finished: bool = True,
     layers: int = 15,
     mode: RunMode = RunMode.SPEEDRUN,
+    seed: Seed | None = None,
 ) -> Participant:
-    """One race on its own seed with a single participant."""
+    """One race with a single participant, on ``seed`` or on its own seed."""
     tag = uuid.uuid4().hex[:10]
-    seed = Seed(
-        seed_number=f"seed{tag}",
-        pool_name=pool,
-        graph_json={"nodes": {}},
-        total_layers=layers,
-        folder_path=f"/t/{tag}",
-        status=SeedStatus.CONSUMED,
-        created_at=BASE + timedelta(minutes=minute - 60),
-    )
-    db.add(seed)
-    await db.flush()
+    if seed is None:
+        seed = Seed(
+            seed_number=f"seed{tag}",
+            pool_name=pool,
+            graph_json={"nodes": {}},
+            total_layers=layers,
+            folder_path=f"/t/{tag}",
+            status=SeedStatus.CONSUMED,
+            created_at=BASE + timedelta(minutes=minute - 60),
+        )
+        db.add(seed)
+        await db.flush()
     race = Race(
         name=f"Race {tag}",
         organizer_id=user.id,
@@ -177,20 +179,22 @@ async def _add_session(
     finished_at: datetime | None = BASE,
     layers: int = 15,
     zone_history: list[dict[str, Any]] | None = None,
+    seed: Seed | None = None,
 ) -> TrainingSession:
-    """One solo session on its own seed."""
+    """One solo session, on ``seed`` or on its own seed."""
     tag = uuid.uuid4().hex[:10]
-    seed = Seed(
-        seed_number=f"seed{tag}",
-        pool_name=seed_pool,
-        graph_json={"nodes": {}},
-        total_layers=layers,
-        folder_path=f"/t/{tag}",
-        status=SeedStatus.CONSUMED,
-        created_at=BASE - timedelta(hours=1),
-    )
-    db.add(seed)
-    await db.flush()
+    if seed is None:
+        seed = Seed(
+            seed_number=f"seed{tag}",
+            pool_name=seed_pool,
+            graph_json={"nodes": {}},
+            total_layers=layers,
+            folder_path=f"/t/{tag}",
+            status=SeedStatus.CONSUMED,
+            created_at=BASE - timedelta(hours=1),
+        )
+        db.add(seed)
+        await db.flush()
     session = TrainingSession(
         user_id=user.id,
         seed_id=seed.id,
@@ -241,6 +245,7 @@ def _run(
         daily_date=None,
         seed_number=seed,
         deaths=0,
+        seed_excluded=False,
     )
 
 
@@ -542,7 +547,7 @@ async def test_main_weapons_cover_races_and_sessions(async_session, pools):
 async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
-        await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000)
+        session = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 5000)
         await db.commit()
 
         runs = await load_counted_runs(db)
@@ -558,6 +563,8 @@ async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session,
         overview = await build_overview(db, runs)
 
     assert [(r.race_id, r.race_name, r.igt_ms) for r in board.runs] == [(None, None, 5000)]
+    # A solo run is named by its session id, the same on the boards and the seed page.
+    assert [r.run_id for r in board.runs] == [session.id]
     assert [r.race_id for r in board.history] == [None]
     assert [r.race_id for r in overview.recent_runs] == [None]
 

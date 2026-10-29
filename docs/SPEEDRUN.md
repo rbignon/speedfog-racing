@@ -12,7 +12,7 @@ Each category (a pool) has two boards, **Set Seed** and **Random Seed**, plus a 
 
 | Board       | Counts                                                                                                                                                              |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Set Seed    | Every counted run: blind and replay runs, of every run type (`race`, `daily`, `event`, `solo`).                                                                     |
+| Set Seed    | Every counted run, blind and replay, of every run type (`race`, `daily`, `event`, `solo`), except runs on a seed an admin excluded from Set Seed.                   |
 | Random Seed | Blind runs only: runs whose seed the runner did not know beforehand (mode is not `set_seed`, for races and sessions alike). Empty when a category only has replays. |
 
 A run's `blind` flag is exposed on every row, so a Set Seed board can mark which runs were blind. The Deathless filter (`deathless=true`) keeps only runs of races with the deathless option (`Race.deathless`) and so never includes solo runs. It combines with either board. The default boards include deathless races.

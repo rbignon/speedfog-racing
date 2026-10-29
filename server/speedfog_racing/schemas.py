@@ -991,6 +991,8 @@ class SpeedrunCategory(BaseModel):
 
 
 class SpeedrunRun(BaseModel):
+    # Participant id for a race run, session id for a solo run.
+    run_id: UUID
     user: UserResponse
     # None for an obsolete run (not its player's best) and for history entries.
     rank: int | None

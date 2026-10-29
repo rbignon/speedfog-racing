@@ -1,5 +1,7 @@
 """Application configuration using Pydantic settings."""
 
+from datetime import datetime
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,6 +60,16 @@ class Settings(BaseSettings):
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
+
+    # Set Seed (docs/SPEEDRUN.md). Seeds generated before this instant are not
+    # replayable (raised once per game patch); None disables the cutoff.
+    set_seed_min_seed_date: datetime | None = None
+    # How many of each category's best Set Seed seeds keep their files once discarded.
+    set_seed_kept_top_seeds: int = 10
+    # Seeds a player can protect from the purge at once.
+    seed_protection_limit: int = 3
+    # A discarded seed keeps its files this many days after its last race or session.
+    seed_purge_grace_days: int = 30
 
     # Site-wide announcement shown as a banner on every web page (served via
     # /health so it can change without a frontend deploy). None hides it; the

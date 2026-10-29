@@ -69,6 +69,8 @@ class CountedRun:
     daily_date: date | None
     seed_number: str
     deaths: int
+    # The seed is excluded from Set Seed: the run leaves the Set Seed board only.
+    seed_excluded: bool
 
 
 def _pool_config(pool: Pool) -> dict[str, Any]:
@@ -101,14 +103,30 @@ def _category_key(pool: str, layers: int) -> str:
     return f"{pool}@{layers}"
 
 
-async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
+def seed_category(pool: Pool, total_layers: int) -> tuple[str, str]:
+    """The category key and display name of a seed of ``pool`` with
+    ``total_layers`` layers: the pool's own at its current layer count (or when
+    its config has none), else ``"<pool>@<layers>"`` and "<Pool> (<n> layers)",
+    whether that count is archived or not."""
+    display_name = format_pool_display_name(pool)
+    current_layers = _layers_count(_pool_config(pool))
+    if current_layers is None or total_layers == current_layers:
+        return pool.name, display_name
+    return _category_key(pool.name, total_layers), f"{display_name} ({total_layers} layers)"
+
+
+async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, community races left out unless their mode is speedrun or
     set_seed (Daily Seeds and event races count in any mode), training pools
     left out, and seeds from an older version of their pool (another layer count
     than its config) left out, unless that count is declared in the pool's
-    ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``."""
+    ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``.
+
+    With ``seed_id``, only that seed's runs, and an old layer count is kept
+    under ``"<pool>@<layers>"`` even when it is not archived (a seed page shows
+    its runs whatever the boards do)."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
     layer_counts = {
@@ -132,6 +150,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             Seed.pool_name,
             Seed.seed_number,
             Seed.total_layers,
+            Seed.set_seed_excluded_at,
             User.id.label("user_id"),
             User.twitch_username,
             User.twitch_display_name,
@@ -153,6 +172,8 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             ),
         )
     )
+    if seed_id is not None:
+        stmt = stmt.where(Race.seed_id == seed_id)
     users: dict[UUID, UserResponse] = {}
     runs: list[CountedRun] = []
 
@@ -165,7 +186,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
         current_layers = layer_counts.get(row.pool_name)
         if current_layers is None or row.total_layers == current_layers:
             return str(row.pool_name)
-        if row.total_layers in archives.get(row.pool_name, []):
+        if seed_id is not None or row.total_layers in archives.get(row.pool_name, []):
             return _category_key(row.pool_name, row.total_layers)
         return None
 
@@ -212,6 +233,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 daily_date=row.daily_date,
                 seed_number=row.seed_number,
                 deaths=row.death_count,
+                seed_excluded=row.set_seed_excluded_at is not None,
             )
         )
 
@@ -226,6 +248,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             Seed.pool_name,
             Seed.seed_number,
             Seed.total_layers,
+            Seed.set_seed_excluded_at,
             User.id.label("user_id"),
             User.twitch_username,
             User.twitch_display_name,
@@ -241,6 +264,8 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             User.banned_at.is_(None),
         )
     )
+    if seed_id is not None:
+        session_stmt = session_stmt.where(TrainingSession.seed_id == seed_id)
     for row in (await db.execute(session_stmt)).all():
         category = category_of(row)
         if category is None:
@@ -262,6 +287,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 daily_date=None,
                 seed_number=row.seed_number,
                 deaths=row.death_count,
+                seed_excluded=row.set_seed_excluded_at is not None,
             )
         )
     return runs
@@ -311,12 +337,16 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
     categories: list[SpeedrunCategory] = []
     for pool, archived in sorted(entries, key=order):
         config = _pool_config(pool)
-        display_name = format_pool_display_name(pool)
+        key, name = (
+            (pool.name, format_pool_display_name(pool))
+            if archived is None
+            else seed_category(pool, archived)
+        )
         target_layers = archived if archived is not None else _layers_count(config)
         categories.append(
             SpeedrunCategory(
-                pool=pool.name if archived is None else _category_key(pool.name, archived),
-                name=display_name if archived is None else f"{display_name} ({archived} layers)",
+                pool=key,
+                name=name,
                 retired=archived is not None or not pool.enabled,
                 description=_opt_str(config.get("description")),
                 estimated_duration=_opt_str(config.get("estimated_duration")),
@@ -343,12 +373,13 @@ def filter_board(
     types: frozenset[RunType],
 ) -> list[CountedRun]:
     """Runs of one category's board: Random Seed keeps blind runs, Set Seed
-    every run; ``deathless_only`` keeps runs of Deathless-mode races."""
+    every run on a seed not excluded from Set Seed; ``deathless_only`` keeps
+    runs of Deathless-mode races."""
     return [
         r
         for r in runs
         if r.category == category
-        and (sub == "set" or r.blind)
+        and (r.blind if sub == "random" else not r.seed_excluded)
         and (r.deathless or not deathless_only)
         and r.run_type in types
     ]
@@ -477,6 +508,7 @@ def _run_fields(
     run: CountedRun, rank: int | None, weapons: dict[UUID, list[int] | None]
 ) -> dict[str, Any]:
     return {
+        "run_id": run.run_id,
         "user": run.user,
         "rank": rank,
         "igt_ms": run.igt_ms,

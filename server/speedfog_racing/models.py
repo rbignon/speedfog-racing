@@ -229,6 +229,15 @@ class Seed(Base):
     )
     reported_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     reported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Excluded from Set Seed by an admin (see services/set_seed_service.py):
+    # no replay, and its runs leave the Set Seed boards but stay on Random Seed.
+    set_seed_excluded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    set_seed_excluded_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    set_seed_excluded_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id"), nullable=True
+    )
 
     # Relationships
     # ``lazy="joined"`` so that fetching a Seed always brings its Pool in the
@@ -238,6 +247,29 @@ class Seed(Base):
     pool: Mapped["Pool"] = relationship(back_populates="seeds", lazy="joined")
     races: Mapped[list["Race"]] = relationship(back_populates="seed")
     reported_by: Mapped["User | None"] = relationship(foreign_keys=[reported_by_id])
+
+
+class SeedProtection(Base):
+    """A player's request to keep a played seed's files from the purge.
+
+    Only players with a finished counted run on the seed protect it, up to
+    ``settings.seed_protection_limit`` seeds each, with no expiry.
+    """
+
+    __tablename__ = "seed_protections"
+    __table_args__ = (
+        UniqueConstraint("user_id", "seed_id", name="uq_seed_protections_user_seed"),
+        Index("ix_seed_protections_seed", "seed_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    seed_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("seeds.id", ondelete="CASCADE"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Event(Base):
