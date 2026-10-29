@@ -996,8 +996,8 @@ class SpeedrunRun(BaseModel):
     rank: int | None
     igt_ms: int
     finished_at: datetime
-    race_id: UUID
-    race_name: str
+    race_id: UUID | None
+    race_name: str | None
     daily_date: date | None
     seed_number: str
     deaths: int

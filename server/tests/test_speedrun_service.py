@@ -515,3 +515,25 @@ async def test_main_weapons_cover_races_and_sessions(async_session, pools):
         weapons = await load_main_weapons(db, [participant.id], [session.id])
 
     assert weapons == {participant.id: [1000000], session.id: [1000000]}
+
+
+async def test_boards_and_overview_hold_a_solo_run_without_a_race(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+        board = await build_board(
+            db,
+            runs,
+            pool="sprint",
+            deathless=False,
+            types=frozenset(RUN_TYPES),
+            include_obsolete=False,
+        )
+        overview = await build_overview(db, runs)
+
+    assert [(r.race_id, r.race_name, r.igt_ms) for r in board.runs] == [(None, None, 5000)]
+    assert [r.race_id for r in board.history] == [None]
+    assert [r.race_id for r in overview.recent_runs] == [None]
