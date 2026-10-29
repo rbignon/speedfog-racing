@@ -30,6 +30,7 @@ from speedfog_racing.models import (
     TrainingSession,
     TrainingSessionStatus,
     User,
+    counts_for_community_stats,
 )
 from speedfog_racing.rewards.catalog import BADGES
 from speedfog_racing.schemas import (
@@ -209,6 +210,7 @@ async def get_user_pool_stats(
             # head-to-head pool race) and should not inflate the per-mode
             # stats of their underlying pool.
             Race.daily_date.is_(None),
+            counts_for_community_stats(),
             or_(
                 Participant.status == ParticipantStatus.FINISHED,
                 (Participant.status == ParticipantStatus.ABANDONED) & (Participant.igt_ms > 0),
@@ -531,9 +533,13 @@ async def get_user_traits(
 
     finished_races = (
         await db.execute(
-            select(func.count()).where(
+            select(func.count())
+            .select_from(Participant)
+            .join(Race, Participant.race_id == Race.id)
+            .where(
                 Participant.user_id == user.id,
                 Participant.status == ParticipantStatus.FINISHED,
+                counts_for_community_stats(),
             )
         )
     ).scalar() or 0

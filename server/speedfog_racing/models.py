@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    ColumnElement,
     Date,
     DateTime,
     Enum,
@@ -20,6 +21,7 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
+    or_,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSON
@@ -765,6 +767,17 @@ class ChatMessageReaction(Base):
         primary_key=True,
     )
     emoji: Mapped[str] = mapped_column(String(16), primary_key=True)
+
+
+def counts_for_community_stats() -> ColumnElement[bool]:
+    """Race filter for the statistics that describe blind play.
+
+    Speedrun and Set Seed races are created with ``exclude_from_stats`` and stay
+    out; normal races (dailies and event races included) and older races whose
+    flag is off keep counting. Lives here (re-exported by ``api.helpers``) so the
+    services can use it without importing the API layer.
+    """
+    return or_(Race.mode == RunMode.NORMAL, Race.exclude_from_stats.is_(False))
 
 
 def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:

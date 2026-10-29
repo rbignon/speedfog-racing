@@ -14,6 +14,16 @@ Each seed receives an intrinsic difficulty score at ingestion time, computed fro
 
 ---
 
+## Which Races Feed Which Stats
+
+Speedrun and Set Seed races are created with `exclude_from_stats` set, and the statistics that describe blind play leave them out. The shared filter is `counts_for_community_stats()` (`models.py`, `mode = NORMAL OR exclude_from_stats = false`): normal races, Daily Seeds and event races count, and so do older races that were backfilled as speedrun with the flag off.
+
+**Filtered:** the zone and boss stats (all of `/zones`, `/zones/index`, `/zones/{node_id}`, `/bosses` share one loader), `/weapons`, behavioral traits (history, participation and abandon counts, the finished-race count of `GET /users/{username}/traits`, the dominant-trait qualification, and `update_player_traits`, which does nothing for a race that fails the filter), and the per-pool race stats of `GET /users/{username}/pool-stats`.
+
+**Not filtered (activity and history; a ranked race is real play):** the activity heatmap, the overview KPIs and active players, played-run counts and the weekly series, admin analytics, race history, rewards.
+
+---
+
 ## Community Overview
 
 `GET /api/stats/overview` powers the default tab of `/stats`. Public finished races only, Daily Seeds included (the KPIs describe total racing activity), except for active players, which count people rather than race volume.

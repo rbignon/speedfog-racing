@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     RaceStatus,
     Seed,
     User,
+    counts_for_community_stats,
 )
 from speedfog_racing.schemas import (
     BossStatEntry,
@@ -414,7 +415,7 @@ async def _load_zone_stats_inputs(
         )
     )
     cutoff = datetime.now(tz=UTC) - timedelta(days=days)
-    query = query.where(Race.started_at >= cutoff)
+    query = query.where(Race.started_at >= cutoff, counts_for_community_stats())
     if pool is not None:
         query = query.join(Seed, Race.seed_id == Seed.id).where(Seed.pool_name == pool)
 
@@ -882,6 +883,7 @@ async def get_weapon_stats(
                 ),
                 Race.status == RaceStatus.FINISHED,
                 Race.is_public == True,  # noqa: E712
+                counts_for_community_stats(),
             )
         )
         cutoff = datetime.now(tz=UTC) - timedelta(days=days)

@@ -19,6 +19,7 @@ from speedfog_racing.models import (
     PlayerTraitScores,
     Race,
     RaceStatus,
+    counts_for_community_stats,
 )
 from speedfog_racing.services.seed_nodes import SeedNodes, load_seed_nodes
 
@@ -48,7 +49,16 @@ _SCORED_PARTICIPATION = or_(
 
 
 async def update_player_traits(race_id: Any, db: AsyncSession) -> None:
-    """Recompute trait scores for all participants of a finished race."""
+    """Recompute trait scores for all participants of a finished race.
+
+    A race outside the community statistics (speedrun, Set Seed) changes no
+    one's traits.
+    """
+    counts = (
+        await db.execute(select(Race.id).where(Race.id == race_id, counts_for_community_stats()))
+    ).first()
+    if counts is None:
+        return
     user_ids = (
         (
             await db.execute(
@@ -77,9 +87,14 @@ async def _recompute_traits_for_users(user_ids: Sequence[Any], db: AsyncSession)
     if not user_ids:
         return
 
-    history_race_ids = select(Participant.race_id).where(
-        Participant.user_id.in_(user_ids),
-        Participant.status == ParticipantStatus.FINISHED,
+    history_race_ids = (
+        select(Participant.race_id)
+        .join(Race, Participant.race_id == Race.id)
+        .where(
+            Participant.user_id.in_(user_ids),
+            Participant.status == ParticipantStatus.FINISHED,
+            counts_for_community_stats(),
+        )
     )
 
     # Every finisher of every race a user finished: the users' own finished
@@ -123,10 +138,12 @@ async def _recompute_traits_for_users(user_ids: Sequence[Any], db: AsyncSession)
     for uid, status, count in (
         await db.execute(
             select(Participant.user_id, Participant.status, func.count())
+            .join(Race, Participant.race_id == Race.id)
             .where(
                 Participant.user_id.in_(user_ids),
                 Participant.status.in_([ParticipantStatus.FINISHED, ParticipantStatus.ABANDONED]),
                 Participant.igt_ms > 0,
+                counts_for_community_stats(),
             )
             .group_by(Participant.user_id, Participant.status)
         )
@@ -445,7 +462,8 @@ async def resolve_dominant_traits(db: AsyncSession) -> None:
     qualified_user_ids: set[Any] = set()
     qualified_result = await db.execute(
         select(Participant.user_id)
-        .where(Participant.status == ParticipantStatus.FINISHED)
+        .join(Race, Participant.race_id == Race.id)
+        .where(Participant.status == ParticipantStatus.FINISHED, counts_for_community_stats())
         .group_by(Participant.user_id)
         .having(func.count() >= MIN_RACES_FOR_TRAITS)
     )
@@ -518,6 +536,7 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
                 .where(
                     Race.status == RaceStatus.FINISHED,
                     Race.exclude_from_stats.is_(False),
+                    counts_for_community_stats(),
                     _SCORED_PARTICIPATION,
                 )
             )
