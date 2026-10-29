@@ -34,6 +34,7 @@ function raceWith(overrides: Partial<Race> = {}): Race {
     custom_rules: null,
     daily_date: null,
     exclude_from_stats: false,
+    mode: "normal",
     participant_count: 0,
     participant_previews: [],
     casters: [],

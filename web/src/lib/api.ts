@@ -52,6 +52,11 @@ export interface AuthUser extends User {
 
 export type RaceStatus = "setup" | "running" | "finished";
 
+/** What a race or solo session is for, fixed at creation: an ordinary run,
+ * or a ranked speedrun.fog run on a random seed (`speedrun`) or on a chosen
+ * one (`set_seed`, a replay). See docs/SPEEDRUN.md. */
+export type RunMode = "normal" | "speedrun" | "set_seed";
+
 export interface Race {
   id: string;
   name: string;
@@ -79,6 +84,7 @@ export interface Race {
   custom_rules: string | null;
   daily_date: string | null;
   exclude_from_stats: boolean;
+  mode: RunMode;
   participant_count: number;
   participant_previews: ParticipantPreview[];
   casters: Caster[];
@@ -2019,6 +2025,7 @@ export interface TrainingSession {
   id: string;
   user: User;
   status: "active" | "finished" | "abandoned" | "cancelled";
+  mode: RunMode;
   pool_name: string;
   pool_display_name: string | null;
   igt_ms: number;
@@ -2276,6 +2283,8 @@ export interface SpeedrunCategory {
 }
 
 export interface SpeedrunRun {
+  /** The participant id of a race run, the session id of a solo run. */
+  run_id: string;
   user: User;
   /** Null for an obsolete run (not its player's best) and history entries. */
   rank: number | null;
@@ -2318,6 +2327,79 @@ export interface SpeedrunBoardResponse {
   history: SpeedrunRun[];
   /** The record's seed and the runs on it; null on an empty board. */
   record_seed: { seed_number: string; runs: number } | null;
+}
+
+/** A run on a seed page; `rank` is its place among the seed's runs (null
+ * for a player's slower runs). */
+export interface SpeedrunSeedRun extends SpeedrunRun {
+  run_type: SpeedrunRunType;
+  zone_history: Array<{
+    node_id: string;
+    igt_ms: number;
+    deaths?: number;
+    type?: string;
+    weapons?: Array<{ ids: number[]; ticks: number }>;
+  }> | null;
+}
+
+/** Where a seed was first played: its earliest blind race, else its earliest
+ * Speedrun-mode solo session (race fields null). */
+export interface SpeedrunSeedOrigin {
+  race_id: string | null;
+  race_name: string | null;
+  daily_date: string | null;
+  played_at: string;
+}
+
+export interface SpeedrunSeedStats {
+  best_igt_ms: number | null;
+  /** The lower middle time on an even count: always a real run's time. */
+  median_igt_ms: number | null;
+  runs: number;
+  players: number;
+}
+
+/** The logged-in viewer's protection state on a seed. */
+export interface SpeedrunSeedViewer {
+  /** The viewer has a finished counted run on the seed. */
+  can_protect: boolean;
+  protected: boolean;
+  /** Seed numbers the viewer protects, oldest protection first. */
+  protected_seeds: string[];
+  protection_limit: number;
+}
+
+/** Why a seed cannot be replayed in Set Seed, in precedence order. */
+export type SpeedrunNotReplayableCode =
+  | "in_progress"
+  | "excluded"
+  | "old_game_version"
+  | "old_category"
+  | "purged";
+
+/** A played seed's page. While a blind run on it is in progress (`public`
+ * false), `graph_json` is null, `runs` empty and `stats` zero. */
+export interface SpeedrunSeed {
+  seed_number: string;
+  /** The seed's category key (`<pool>` or `<pool>@<layers>`) and name. */
+  category: string;
+  category_name: string;
+  pool_config: PoolConfig | null;
+  total_layers: number;
+  origin: SpeedrunSeedOrigin | null;
+  public: boolean;
+  replayable: boolean;
+  not_replayable_code: SpeedrunNotReplayableCode | null;
+  not_replayable_reason: string | null;
+  /** Why the seed's files are kept from the purge; empty when nothing keeps them. */
+  kept_reasons: string[];
+  protected_by: number;
+  excluded_reason: string | null;
+  /** Null for a logged-out viewer. */
+  viewer: SpeedrunSeedViewer | null;
+  graph_json: Record<string, unknown> | null;
+  runs: SpeedrunSeedRun[];
+  stats: SpeedrunSeedStats;
 }
 
 export interface BossStatEntry {
@@ -2486,6 +2568,72 @@ export async function fetchSpeedrunBoard(
     `${API_BASE}/stats/speedrun/${encodeURIComponent(pool)}${query ? `?${query}` : ""}`,
   );
   return handleResponse<SpeedrunBoardResponse>(response);
+}
+
+/** A played seed's page, by full seed number or 6+ character prefix. */
+export async function fetchSpeedrunSeed(
+  seed: string,
+  customFetch: typeof fetch = fetch,
+): Promise<SpeedrunSeed> {
+  const response = await customFetch(
+    `${API_BASE}/speedrun/seeds/${encodeURIComponent(seed)}`,
+    { headers: getAuthHeaders() },
+  );
+  return handleResponse<SpeedrunSeed>(response);
+}
+
+/** Keep a seed's files from the purge; answers the viewer's new state. */
+export async function protectSeed(seed: string): Promise<SpeedrunSeedViewer> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/seeds/${encodeURIComponent(seed)}/protection`,
+    { method: "PUT", headers: getAuthHeaders() },
+  );
+  return handleResponse<SpeedrunSeedViewer>(response);
+}
+
+/** Stop protecting a seed, which frees the slot. */
+export async function unprotectSeed(seed: string): Promise<SpeedrunSeedViewer> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/seeds/${encodeURIComponent(seed)}/protection`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  return handleResponse<SpeedrunSeedViewer>(response);
+}
+
+/** Admin: exclude a seed from Set Seed (no longer replayable, its runs
+ * leave the Set Seed boards). */
+export async function excludeSeedFromSetSeed(
+  seed: string,
+  reason: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/admin/seeds/${encodeURIComponent(seed)}/set-seed-exclusion`,
+    {
+      method: "PUT",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(formatApiErrorDetail(error.detail));
+  }
+}
+
+/** Admin: lift a seed's Set Seed exclusion. */
+export async function restoreSeedToSetSeed(seed: string): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/admin/seeds/${encodeURIComponent(seed)}/set-seed-exclusion`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(formatApiErrorDetail(error.detail));
+  }
 }
 
 /**

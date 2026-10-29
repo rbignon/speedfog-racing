@@ -32,6 +32,9 @@
     // Disqualification reasons the viewer may see, by participant id; shown
     // as the DQ tag's tooltip.
     disqualificationReasons?: Record<string, string>;
+    // Blind or Replay chip per row, by participant id: a list that mixes
+    // runs played on an unknown seed with replays of a known one.
+    runKinds?: Record<string, "blind" | "replay">;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -47,6 +50,7 @@
     provisionalPoints = false,
     flaggedIds = [],
     disqualificationReasons = {},
+    runKinds = {},
     selectedIds,
     onToggle,
     onClearSelection,
@@ -144,6 +148,7 @@
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
         {@const isSelected = selectedIds?.has(participant.id) ?? false}
+        {@const runKind = runKinds[participant.id]}
         {@const zone =
           isPlaying && showRunDetails
             ? zoneName(participant.current_zone)
@@ -214,6 +219,14 @@
                   small
                   onclick={(e) => e.stopPropagation()}
                 />
+              {/if}
+              {#if runKind}
+                <span
+                  class="chip run-chip"
+                  class:blind={runKind === "blind"}
+                  class:replay={runKind === "replay"}
+                  >{runKind === "blind" ? "Blind" : "Replay"}</span
+                >
               {/if}
               {#if flaggedIds.includes(participant.id)}
                 <span class="chip flagged-chip" title="Cheat tool detected"
@@ -624,6 +637,24 @@
 
   .zone.dq-label {
     color: var(--color-danger);
+  }
+
+  /* The speedrun boards' Run column chip, sized down for the row. */
+  .run-chip {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 0.05rem 0.35rem;
+    font-size: 0.6rem;
+  }
+
+  .run-chip.blind {
+    color: var(--color-success);
+    border-color: color-mix(in srgb, var(--color-success) 60%, transparent);
+  }
+
+  .run-chip.replay {
+    color: var(--color-purple);
+    border-color: color-mix(in srgb, var(--color-purple) 60%, transparent);
   }
 
   .flagged-chip {

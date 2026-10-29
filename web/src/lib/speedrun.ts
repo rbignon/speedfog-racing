@@ -2,7 +2,12 @@
  * The /speedrun page (speedrun.com style boards): URL state, time
  * formatting and record history helpers. Pure, unit-tested.
  */
-import type { SpeedrunCategory, SpeedrunRun, SpeedrunRunType } from "$lib/api";
+import type {
+  RunMode,
+  SpeedrunCategory,
+  SpeedrunRun,
+  SpeedrunRunType,
+} from "$lib/api";
 
 export const RUN_TYPES: SpeedrunRunType[] = ["race", "daily", "event", "solo"];
 
@@ -129,11 +134,47 @@ export function speedrunRaceHref(run: {
   return run.daily_date ? `/daily/${run.daily_date}` : `/race/${run.race_id}`;
 }
 
-/** Where a run's seed links to: its race (or day), nothing for a solo run. */
-export function speedrunSeedHref(run: SpeedrunRun): string | null {
-  return run.race_id === null
-    ? null
-    : speedrunRaceHref({ race_id: run.race_id, daily_date: run.daily_date });
+/** A seed's page (`/speedrun/seed/<n>`), focused on one of its runs when
+ * `runId` is given (`?run=<id>` ticks it on arrival). */
+export function seedPageHref(
+  seedNumber: string,
+  runId?: string | null,
+): string {
+  const path = `/speedrun/seed/${encodeURIComponent(seedNumber)}`;
+  return runId ? `${path}?run=${encodeURIComponent(runId)}` : path;
+}
+
+/** Where a run's seed links to: its seed page, focused on the run. */
+export function speedrunSeedHref(run: SpeedrunRun): string {
+  return seedPageHref(run.seed_number, run.run_id);
+}
+
+/** A race's seed page, once a link to it is worth showing: the race is
+ * finished, or it is a Set Seed race (a replay: its seed is already public).
+ * The server's public rule stays the guard; this only spares a link to a page
+ * that would still be hidden. */
+export function raceSeedPageHref(race: {
+  seed_number: string | null;
+  status: string;
+  mode: RunMode;
+}): string | null {
+  if (!race.seed_number) return null;
+  return race.status === "finished" || race.mode === "set_seed"
+    ? seedPageHref(race.seed_number)
+    : null;
+}
+
+/** A solo session's seed page: a Set Seed session's, or a Speedrun
+ * session's once it is no longer active. A normal (practice) session plays a
+ * training seed, which has no page. */
+export function sessionSeedPageHref(session: {
+  seed_number: string | null;
+  status: string;
+  mode: RunMode;
+}): string | null {
+  if (!session.seed_number || session.mode === "normal") return null;
+  if (session.mode === "speedrun" && session.status === "active") return null;
+  return seedPageHref(session.seed_number);
 }
 
 /** The record over time as a step line in data units (`[timeMs, igtMs]`):

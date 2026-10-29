@@ -25,7 +25,9 @@
 
   let isOverlay = $derived(page.url.pathname.startsWith("/overlay/"));
   let isImmersivePage = $derived(
-    page.route.id === "/race/[id]" || page.route.id === "/daily/[date]",
+    page.route.id === "/race/[id]" ||
+      page.route.id === "/daily/[date]" ||
+      page.route.id === "/speedrun/seed/[seed]",
   );
 
   let joinableCount = $state(0);

@@ -28,6 +28,7 @@ function category(pool: string): SpeedrunCategory {
 
 function run(blind: boolean): SpeedrunRun {
   return {
+    run_id: "p1",
     user: {
       id: "u1",
       twitch_username: "runner",
@@ -166,7 +167,9 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     expect(band.textContent).toContain("Runner");
     expect(band.textContent).toContain("Blind");
     expect(band.textContent).toContain("14 runs");
-    expect(band.querySelector("a")?.getAttribute("href")).toBe("/race/r1");
+    expect(band.querySelector("a")?.getAttribute("href")).toBe(
+      "/speedrun/seed/363096a4243f?run=p1",
+    );
   });
 
   it("words a single run on the record seed in the singular", async () => {
@@ -183,21 +186,28 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     expect(band.textContent).toContain("Replay");
   });
 
-  it("shows a solo WR seed as plain text", async () => {
+  it("links a solo WR seed to its seed page too", async () => {
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
       ...EMPTY,
       runs: [
-        { ...run(true), race_id: null, race_name: null, session_id: "s1" },
+        {
+          ...run(true),
+          run_id: "s1",
+          race_id: null,
+          race_name: null,
+          session_id: "s1",
+        },
       ],
       record_seed: { seed_number: "363096a4243f", runs: 1 },
     });
     mount();
 
     const band = await screen.findByTestId("wr-seed");
-    expect(band.textContent).toContain("363096a4243f");
     const seed = band.querySelector(".seed");
     expect(seed?.textContent).toBe("363096a4243f");
-    expect(seed?.tagName).not.toBe("A");
+    expect(seed?.getAttribute("href")).toBe(
+      "/speedrun/seed/363096a4243f?run=s1",
+    );
   });
 
   it("has no WR seed band without a record seed", async () => {

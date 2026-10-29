@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
-import type { SpeedrunCategory, SpeedrunRun } from "$lib/api";
+import type { RunMode, SpeedrunCategory, SpeedrunRun } from "$lib/api";
 import {
   RUN_TYPES,
   historyPolyline,
   historyTimeline,
   parseSpeedrunOverlayParams,
   parseSpeedrunParams,
+  raceSeedPageHref,
   recentRunParams,
   resolvePool,
+  seedPageHref,
+  sessionSeedPageHref,
   speedrunAgo,
   speedrunDay,
   speedrunDaysLater,
@@ -174,24 +177,105 @@ describe("resolvePool", () => {
   });
 });
 
-describe("speedrunSeedHref", () => {
-  const run = {
-    race_id: "r1",
-    session_id: null,
-    daily_date: null,
-  } as SpeedrunRun;
-
-  it("links a race run to its race and a daily run to its day", () => {
-    expect(speedrunSeedHref(run)).toBe("/race/r1");
-    expect(speedrunSeedHref({ ...run, daily_date: "2026-10-01" })).toBe(
-      "/daily/2026-10-01",
+describe("seedPageHref", () => {
+  it("links the seed page, focused on a run when one is given", () => {
+    expect(seedPageHref("363096a4243f")).toBe("/speedrun/seed/363096a4243f");
+    expect(seedPageHref("363096a4243f", null)).toBe(
+      "/speedrun/seed/363096a4243f",
+    );
+    expect(seedPageHref("363096a4243f", "p-1")).toBe(
+      "/speedrun/seed/363096a4243f?run=p-1",
     );
   });
 
-  it("has no link for a solo run", () => {
+  it("encodes the seed and the run id", () => {
+    expect(seedPageHref("a/b c", "x&y=1")).toBe(
+      "/speedrun/seed/a%2Fb%20c?run=x%26y%3D1",
+    );
+  });
+});
+
+describe("speedrunSeedHref", () => {
+  const run = {
+    run_id: "p-1",
+    race_id: "r1",
+    session_id: null,
+    daily_date: null,
+    seed_number: "363096a4243f",
+  } as SpeedrunRun;
+
+  it("opens the seed page on the run, for race, daily and solo runs alike", () => {
+    const href = "/speedrun/seed/363096a4243f?run=p-1";
+    expect(speedrunSeedHref(run)).toBe(href);
+    expect(speedrunSeedHref({ ...run, daily_date: "2026-10-01" })).toBe(href);
+    expect(speedrunSeedHref({ ...run, race_id: null, session_id: "p-1" })).toBe(
+      href,
+    );
+  });
+});
+
+describe("raceSeedPageHref", () => {
+  const race = {
+    seed_number: "363096a4243f",
+    status: "running",
+    mode: "normal" as RunMode,
+  };
+
+  it("links a finished race, whatever its mode", () => {
+    for (const mode of ["normal", "speedrun", "set_seed"] as RunMode[]) {
+      expect(raceSeedPageHref({ ...race, status: "finished", mode })).toBe(
+        "/speedrun/seed/363096a4243f",
+      );
+    }
+  });
+
+  it("links a Set Seed race before it finishes: its seed is already public", () => {
+    expect(raceSeedPageHref({ ...race, mode: "set_seed" })).toBe(
+      "/speedrun/seed/363096a4243f",
+    );
     expect(
-      speedrunSeedHref({ ...run, race_id: null, session_id: "s1" }),
+      raceSeedPageHref({ ...race, status: "setup", mode: "set_seed" }),
+    ).toBe("/speedrun/seed/363096a4243f");
+  });
+
+  it("has no link while a blind race runs, nor without a seed", () => {
+    expect(raceSeedPageHref(race)).toBeNull();
+    expect(raceSeedPageHref({ ...race, mode: "speedrun" })).toBeNull();
+    expect(
+      raceSeedPageHref({ ...race, status: "finished", seed_number: null }),
     ).toBeNull();
+  });
+});
+
+describe("sessionSeedPageHref", () => {
+  const session = {
+    seed_number: "363096a4243f",
+    status: "finished",
+    mode: "speedrun" as RunMode,
+  };
+  const href = "/speedrun/seed/363096a4243f";
+
+  it("never links a normal (practice) session", () => {
+    expect(sessionSeedPageHref({ ...session, mode: "normal" })).toBeNull();
+    expect(
+      sessionSeedPageHref({ ...session, mode: "normal", status: "active" }),
+    ).toBeNull();
+  });
+
+  it("links a Speedrun session once it is no longer active", () => {
+    expect(sessionSeedPageHref(session)).toBe(href);
+    expect(sessionSeedPageHref({ ...session, status: "abandoned" })).toBe(href);
+    expect(sessionSeedPageHref({ ...session, status: "active" })).toBeNull();
+  });
+
+  it("links a Set Seed session, even an active one", () => {
+    expect(
+      sessionSeedPageHref({ ...session, mode: "set_seed", status: "active" }),
+    ).toBe(href);
+  });
+
+  it("has no link without a seed", () => {
+    expect(sessionSeedPageHref({ ...session, seed_number: null })).toBeNull();
   });
 });
 
@@ -260,6 +344,7 @@ it("speedrunDaysLater words the gap between two records", () => {
 
 function record(user: string, igt: number, day: number): SpeedrunRun {
   return {
+    run_id: `p-${user}-${day}`,
     user: {
       id: user,
       twitch_username: user,
