@@ -16,9 +16,12 @@ from uuid import UUID
 
 from sqlalchemy import ColumnElement, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
     Pool,
     Race,
     RaceStatus,
@@ -32,13 +35,11 @@ from speedfog_racing.models import (
 from speedfog_racing.schemas import NotReplayableCode, SpeedrunSeedOrigin, as_aware_utc
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.speedrun_service import (
-    RUN_TYPES,
     CountedRun,
     _is_training,
     _layers_count,
     _pool_config,
     _run_key,
-    filter_board,
     load_counted_runs,
     seed_category,
 )
@@ -48,6 +49,12 @@ SEED_PREFIX_MIN = 6
 _SEED_QUERY_CHUNK = 500
 
 SeedLookupErrorKind = Literal["unknown", "ambiguous"]
+# A protection keeps nothing on a seed that fails one of these: its files are
+# gone, or it can never be replayed again (the purge deletes a seed added
+# before the game-version cutoff even when protected).
+_UNPROTECTABLE: frozenset[NotReplayableCode] = frozenset(
+    {"purged", "old_game_version", "old_category"}
+)
 
 
 class SeedLookupError(Exception):
@@ -71,18 +78,27 @@ class Replayability:
     def replayable(self) -> bool:
         return self.code is None
 
+    @property
+    def protectable(self) -> bool:
+        """A protection would keep something: the seed is replayable, or could
+        become so again (an exclusion lifted, the blind runs over)."""
+        return self.code not in _UNPROTECTABLE
+
 
 def _played_seed() -> ColumnElement[bool]:
-    """Condition on ``Seed`` rows that a race or a ranked session started."""
-    return or_(
-        exists().where(
-            Race.seed_id == Seed.id,
-            Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
-        ),
-        exists().where(
-            TrainingSession.seed_id == Seed.id,
-            TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
-        ),
+    """Condition on ``Seed`` rows that a race or a ranked session started.
+
+    An IN over a UNION, not an OR of two correlated EXISTS: PostgreSQL costs
+    that OR far above ``jit_above_cost`` and JIT-compiles the query, which
+    then takes ~150 ms instead of a few milliseconds."""
+    return Seed.id.in_(
+        select(Race.seed_id)
+        .where(Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]))
+        .union(
+            select(TrainingSession.seed_id).where(
+                TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED])
+            )
+        )
     )
 
 
@@ -116,8 +132,8 @@ async def resolve_seed(db: AsyncSession, text: str) -> Seed:
 async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
     """Whether a known seed's page is public, and whether it can be replayed in
     Set Seed or the first rule it fails: a blind run in progress (the page is
-    not public), excluded by an admin, built before the game-version cutoff,
-    built for another layer count than its pool's, files purged."""
+    not public), excluded by an admin, added (scanned) before the game-version
+    cutoff, built for another layer count than its pool's, files purged."""
     blind_run_in_progress = await db.scalar(
         select(
             or_(
@@ -168,15 +184,38 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
     return Replayability(public=True, code=None, reason=None)
 
 
-def top_seed_numbers(runs: Sequence[CountedRun], category: str, n: int) -> list[str]:
-    """The seed numbers of ``category``'s Set Seed board (every run type,
-    Deathless or not, excluded seeds left out), fastest best run first, the
-    first ``n``."""
-    best: dict[str, CountedRun] = {}
-    board = filter_board(
-        runs, category=category, sub="set", deathless_only=False, types=frozenset(RUN_TYPES)
+async def has_finished_run(db: AsyncSession, seed_id: UUID, user_id: UUID) -> bool:
+    """Whether the user finished a run on the seed: a FINISHED participant of
+    a FINISHED race of any mode, or a FINISHED ranked (speedrun or set_seed)
+    solo session."""
+    race_run = (
+        select(Participant.id)
+        .join(Race, Participant.race_id == Race.id)
+        .where(
+            Race.seed_id == seed_id,
+            Race.status == RaceStatus.FINISHED,
+            Participant.user_id == user_id,
+            Participant.status == ParticipantStatus.FINISHED,
+        )
     )
-    for run in board:
+    solo_run = select(TrainingSession.id).where(
+        TrainingSession.seed_id == seed_id,
+        TrainingSession.user_id == user_id,
+        TrainingSession.status == TrainingSessionStatus.FINISHED,
+        TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
+    )
+    return bool(await db.scalar(select(or_(race_run.exists(), solo_run.exists()))))
+
+
+def top_seed_numbers(runs: Sequence[CountedRun], category: str, n: int) -> list[str]:
+    """The seed numbers of ``category``'s seeds by their best counted run
+    (every run type, blind or replay, Deathless or not), fastest first, the
+    first ``n``: the Set Seed board's seeds, excluded seeds included (an admin
+    may restore one, and a purged zip cannot be rebuilt)."""
+    best: dict[str, CountedRun] = {}
+    for run in runs:
+        if run.category != category:
+            continue
         current = best.get(run.seed_number)
         if current is None or _run_key(run) < _run_key(current):
             best[run.seed_number] = run
@@ -230,6 +269,9 @@ class RetentionFacts:
     # Latest race (finish, else start, else creation) or solo session (finish,
     # else creation) on the seed; None when there is none.
     last_played_at: datetime | None
+    # A race in SETUP or RUNNING, or an ACTIVE solo session, is on the seed:
+    # it is being played now.
+    in_use: bool
 
 
 def retention_reasons(facts: RetentionFacts, *, now: datetime) -> list[str]:
@@ -245,7 +287,9 @@ def retention_reasons(facts: RetentionFacts, *, now: datetime) -> list[str]:
         reasons.append(f"Protected by {facts.protections} {players}")
     last_played_at = as_aware_utc(facts.last_played_at)
     grace_days = settings.seed_purge_grace_days
-    if last_played_at is not None and now - last_played_at < timedelta(days=grace_days):
+    if facts.in_use or (
+        last_played_at is not None and now - last_played_at < timedelta(days=grace_days)
+    ):
         reasons.append(f"Played in the last {grace_days} days")
     return reasons
 
@@ -256,7 +300,7 @@ async def load_retention_facts(
     """The retention facts of ``seeds``, by seed id. ``runs`` are every
     counted run (``load_counted_runs`` without a seed): a seed is a top seed
     when it is among the ``settings.set_seed_kept_top_seeds`` best seeds of
-    its category's Set Seed board."""
+    its category (``top_seed_numbers``)."""
     pools = {
         pool.name: pool
         for pool in (
@@ -266,6 +310,7 @@ async def load_retention_facts(
     ids = [seed.id for seed in seeds]
     protections: dict[UUID, int] = {}
     last_played: dict[UUID, datetime] = {}
+    in_use: set[UUID] = set()
     for start in range(0, len(ids), _SEED_QUERY_CHUNK):
         chunk = ids[start : start + _SEED_QUERY_CHUNK]
         counts = await db.execute(
@@ -274,6 +319,15 @@ async def load_retention_facts(
             .group_by(SeedProtection.seed_id)
         )
         protections.update({seed_id: count for seed_id, count in counts.all()})
+        playing = select(Race.seed_id).where(
+            Race.seed_id.in_(chunk), Race.status.in_([RaceStatus.SETUP, RaceStatus.RUNNING])
+        )
+        playing_solo = select(TrainingSession.seed_id).where(
+            TrainingSession.seed_id.in_(chunk),
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+        )
+        playing_ids = (await db.execute(playing.union(playing_solo))).scalars()
+        in_use.update(seed_id for seed_id in playing_ids if seed_id is not None)
         for seed_id_column, played_at in (
             (Race.seed_id, func.coalesce(Race.finished_at, Race.started_at, Race.created_at)),
             (
@@ -306,6 +360,7 @@ async def load_retention_facts(
             top_of=category_name if seed.seed_number in top_seeds[category] else None,
             protections=protections.get(seed.id, 0),
             last_played_at=last_played.get(seed.id),
+            in_use=seed.id in in_use,
         )
     return facts
 
@@ -317,11 +372,16 @@ async def purgeable_seeds(
     pool: str | None = None,
     older_than_days: int | None = None,
 ) -> list[Seed]:
-    """The DISCARDED seeds with a zip whose files may be purged: built before
+    """The DISCARDED seeds with a zip whose files may be purged: added before
     ``settings.set_seed_min_seed_date`` whatever else holds, else with no
-    retention reason (top seed, protected, played recently). ``pool`` and
-    ``older_than_days`` (on ``Seed.created_at``) narrow the candidates."""
-    query = select(Seed).where(Seed.status == SeedStatus.DISCARDED, Seed.folder_path.is_not(None))
+    retention reason (top seed, protected, played recently or now). ``pool``
+    and ``older_than_days`` (on ``Seed.created_at``) narrow the candidates.
+    The seeds come without their ``graph_json``, never decoded here."""
+    query = (
+        select(Seed)
+        .options(defer(Seed.graph_json))
+        .where(Seed.status == SeedStatus.DISCARDED, Seed.folder_path.is_not(None))
+    )
     if pool is not None:
         query = query.where(Seed.pool_name == pool)
     candidates = (

@@ -291,6 +291,22 @@ async def test_normal_community_races_do_not_count(async_session, pools):
     assert by_id[event.id].blind is True
 
 
+async def test_speedrun_race_excluded_from_stats_still_counts(async_session, pools):
+    """A community race created in speedrun mode carries ``exclude_from_stats``
+    (it stays out of the site's other stats), yet its runs are on the boards."""
+    async with async_session() as db:
+        a = await _user(db, "a")
+        speedrun = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.SPEEDRUN)
+        race = await db.get(Race, speedrun.race_id)
+        assert race is not None
+        race.exclude_from_stats = True
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    assert [(r.run_id, r.blind) for r in runs] == [(speedrun.id, True)]
+
+
 async def test_finished_at_falls_back_to_race_start(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")

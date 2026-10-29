@@ -61,8 +61,8 @@ class Settings(BaseSettings):
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
 
-    # Set Seed (docs/SPEEDRUN.md). Seeds generated before this instant are not
-    # replayable (raised once per game patch); None disables the cutoff.
+    # Set Seed (docs/SPEEDRUN.md). Seeds added (scanned) before this instant
+    # are not replayable (raised once per game patch); None disables the cutoff.
     set_seed_min_seed_date: datetime | None = None
     # How many of each category's best Set Seed seeds keep their files once discarded.
     set_seed_kept_top_seeds: int = 10

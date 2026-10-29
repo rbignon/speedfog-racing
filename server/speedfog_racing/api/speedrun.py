@@ -4,7 +4,6 @@ The boards live under /api/stats/speedrun (cached); a seed page is not
 cached, so a finished solo run or a protection shows at once.
 """
 
-from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -25,6 +24,7 @@ from speedfog_racing.schemas import (
 )
 from speedfog_racing.services.set_seed_service import (
     SeedLookupError,
+    has_finished_run,
     load_retention_facts,
     resolve_seed,
     retention_reasons,
@@ -32,7 +32,6 @@ from speedfog_racing.services.set_seed_service import (
     seed_replayability,
 )
 from speedfog_racing.services.speedrun_service import (
-    CountedRun,
     build_seed_runs,
     load_counted_runs,
     seed_category,
@@ -57,9 +56,9 @@ async def resolve_seed_or_404(db: AsyncSession, text: str) -> Seed:
 
 
 async def _viewer(
-    db: AsyncSession, seed_id: UUID, user_id: UUID, runs: Sequence[CountedRun]
+    db: AsyncSession, seed_id: UUID, user_id: UUID, *, banned: bool = False
 ) -> SpeedrunSeedViewer:
-    """``user_id``'s protection state on a seed whose counted runs are ``runs``."""
+    """``user_id``'s protection state on a seed (a banned user can protect none)."""
     protected = (
         await db.execute(
             select(SeedProtection.seed_id, Seed.seed_number)
@@ -69,7 +68,7 @@ async def _viewer(
         )
     ).all()
     return SpeedrunSeedViewer(
-        can_protect=any(run.user.id == user_id for run in runs),
+        can_protect=not banned and await has_finished_run(db, seed_id, user_id),
         protected=any(protected_id == seed_id for protected_id, _ in protected),
         protected_seeds=[number for _, number in protected],
         protection_limit=settings.seed_protection_limit,
@@ -103,12 +102,17 @@ async def get_seed_page(
         replayable=replayability.replayable,
         not_replayable_code=replayability.code,
         not_replayable_reason=replayability.reason,
+        protectable=replayability.protectable,
         kept_reasons=retention_reasons(retention, now=datetime.now(UTC)),
         protected_by=retention.protections,
         excluded_reason=(
             found.set_seed_excluded_reason if found.set_seed_excluded_at is not None else None
         ),
-        viewer=await _viewer(db, found.id, user.id, seed_runs) if user is not None else None,
+        viewer=(
+            await _viewer(db, found.id, user.id, banned=user.banned_at is not None)
+            if user is not None
+            else None
+        ),
         graph_json=found.graph_json if replayability.public else None,
         runs=await build_seed_runs(db, shown_runs),
         stats=seed_stats(shown_runs),
@@ -122,18 +126,21 @@ async def protect_seed(
     user: User = Depends(require_not_banned),
 ) -> SpeedrunSeedViewer:
     """Keep a seed's files from the purge. Idempotent: protecting a seed again
-    takes no second slot."""
+    takes no second slot. Refused (409, the reason) on a seed whose files a
+    protection would not keep: purged, or never replayable again."""
     found = await resolve_seed_or_404(db, seed)
     # Ids read up front: a rollback below expires the ORM objects.
     seed_id, user_id = found.id, user.id
-    runs = await load_counted_runs(db, seed_id=seed_id)
     already = await db.scalar(
         select(SeedProtection.id).where(
             SeedProtection.user_id == user_id, SeedProtection.seed_id == seed_id
         )
     )
     if already is None:
-        if not any(run.user.id == user_id for run in runs):
+        replayability = await seed_replayability(db, found)
+        if not replayability.protectable:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=replayability.reason)
+        if not await has_finished_run(db, seed_id, user_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Only players with a finished run on this seed can protect it",
@@ -146,9 +153,10 @@ async def protect_seed(
         )
         limit = settings.seed_protection_limit
         if (protected_count or 0) >= limit:
+            seeds = "seed" if limit == 1 else "seeds"
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"You already protect {limit} seeds",
+                detail=f"You already protect {limit} {seeds}",
             )
         db.add(SeedProtection(user_id=user_id, seed_id=seed_id))
         try:
@@ -156,7 +164,7 @@ async def protect_seed(
         except IntegrityError:
             # Already protected: two clicks racing each other.
             await db.rollback()
-    return await _viewer(db, seed_id, user_id, runs)
+    return await _viewer(db, seed_id, user_id)
 
 
 @router.delete("/seeds/{seed}/protection", response_model=SpeedrunSeedViewer)
@@ -174,5 +182,4 @@ async def unprotect_seed(
         )
     )
     await db.commit()
-    runs = await load_counted_runs(db, seed_id=seed_id)
-    return await _viewer(db, seed_id, user_id, runs)
+    return await _viewer(db, seed_id, user_id)

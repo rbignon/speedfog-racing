@@ -2,9 +2,9 @@
 # SpeedFog Racing - Discarded seed cleanup script
 # Deletes .zip files on the VPS for seeds marked DISCARDED in the database,
 # except those the retention rules keep: a top seed of its category's Set Seed
-# board, a seed protected by a player, or a seed played in the last
-# SEED_PURGE_GRACE_DAYS days. Seeds built before SET_SEED_MIN_SEED_DATE are
-# always purged. The server decides (speedfog-purgeable-seeds, see
+# board, a seed protected by a player, or a seed in use or played in the last
+# SEED_PURGE_GRACE_DAYS days. Seeds added (scanned) before
+# SET_SEED_MIN_SEED_DATE are always purged. The server decides (speedfog-purgeable-seeds, see
 # docs/SEED_PIPELINE.md); this script only deletes what it lists.
 # Additionally, deletes DB rows for DISCARDED seeds that were never referenced
 # by any race or training session and not protected (pure pollution, no audit
@@ -31,8 +31,8 @@ Usage: deploy/cleanup-seeds.sh [OPTIONS]
 
 Delete .zip files on the VPS for seeds marked DISCARDED in the database,
 except those the retention rules keep: a top seed of its category (best Set
-Seed board times), a seed protected by a player, or a seed played in the last
-30 days. Seeds built before the game-version cutoff are always deleted.
+Seed board times), a seed protected by a player, or a seed in use or played in
+the last 30 days. Seeds added before the game-version cutoff are always deleted.
 Also delete DB rows for DISCARDED seeds that were never referenced by any
 race or training session and not protected (they have no audit value).
 DB records of referenced DISCARDED seeds are preserved for race history.

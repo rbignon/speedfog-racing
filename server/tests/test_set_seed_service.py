@@ -3,7 +3,7 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.config import settings
@@ -343,6 +343,7 @@ async def test_top_seed_numbers_orders_by_best_time(async_session, pools):
         await _add_session(db, a, "sprint", RunMode.SET_SEED, 2000, seed=replayed)
         third = await _seed(db, "aaaa00000003")
         await _add_run(db, user=a, igt_ms=2500, minute=3, seed=third)
+        # Excluded from Set Seed, it still ranks: an admin may restore it.
         excluded = await _seed(db, "aaaa00000004")
         excluded.set_seed_excluded_at = BASE
         await _add_run(db, user=a, igt_ms=1000, minute=4, seed=excluded)
@@ -353,11 +354,12 @@ async def test_top_seed_numbers_orders_by_best_time(async_session, pools):
         runs = await load_counted_runs(db)
 
     assert top_seed_numbers(runs, "sprint", 10) == [
+        "aaaa00000004",
         "aaaa00000001",
         "aaaa00000002",
         "aaaa00000003",
     ]
-    assert top_seed_numbers(runs, "sprint", 2) == ["aaaa00000001", "aaaa00000002"]
+    assert top_seed_numbers(runs, "sprint", 2) == ["aaaa00000004", "aaaa00000001"]
 
 
 async def test_counted_runs_of_one_seed_keep_unlisted_layer_counts(async_session, pools):
@@ -403,7 +405,10 @@ async def _played(db: AsyncSession, seed: Seed, user, igt_ms: int, days_ago: int
 
 async def _purgeable(async_session, **kwargs) -> set[str]:
     async with async_session() as db:
-        return {s.seed_number for s in await purgeable_seeds(db, now=NOW, **kwargs)}
+        seeds = await purgeable_seeds(db, now=NOW, **kwargs)
+        # Every DISCARDED seed's map would be decoded for nothing.
+        assert all("graph_json" in inspect(s).unloaded for s in seeds)
+        return {s.seed_number for s in seeds}
 
 
 async def test_purgeable_seeds_keeps_protected_top_and_recent(async_session, pools, monkeypatch):
@@ -467,3 +472,71 @@ async def test_purgeable_seeds_never_played_discarded_seed_is_listed(async_sessi
         await db.commit()
 
     assert await _purgeable(async_session) == {"aaaa00000001"}
+
+
+async def test_purgeable_seeds_keeps_an_excluded_top_seed(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "set_seed_kept_top_seeds", 1)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        excluded = await _seed(db, "aaaa00000001", status=SeedStatus.DISCARDED)
+        excluded.set_seed_excluded_at = BASE
+        excluded.set_seed_excluded_reason = "Softlock"
+        await _played(db, excluded, user, 1000, 40)
+        slower = await _seed(db, "aaaa00000002", status=SeedStatus.DISCARDED)
+        await _played(db, slower, user, 2000, 40)
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000002"}
+
+
+async def test_purgeable_seeds_keeps_seeds_in_use(async_session, pools):
+    """A race in setup or running, or an active session, counts as played now,
+    however long ago it was created or started."""
+    long_ago = NOW - timedelta(days=40)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        for number, race_status, status in (
+            ("aaaa00000001", RaceStatus.SETUP, ParticipantStatus.REGISTERED),
+            ("aaaa00000002", RaceStatus.RUNNING, ParticipantStatus.PLAYING),
+        ):
+            seed = await _seed(db, number, status=SeedStatus.DISCARDED)
+            participant = await _add_run(
+                db,
+                user=user,
+                igt_ms=0,
+                minute=1,
+                race_status=race_status,
+                status=status,
+                finished=False,
+                seed=seed,
+            )
+            race = await db.get(Race, participant.race_id)
+            assert race is not None
+            race.created_at = race.started_at = long_ago
+        solo = await _seed(db, "aaaa00000003", status=SeedStatus.DISCARDED)
+        session = await _add_session(
+            db,
+            user,
+            "sprint",
+            RunMode.SPEEDRUN,
+            0,
+            status=TrainingSessionStatus.ACTIVE,
+            finished_at=None,
+            seed=solo,
+        )
+        session.created_at = long_ago
+        over = await _seed(db, "aaaa00000004", status=SeedStatus.DISCARDED)
+        abandoned = await _add_session(
+            db,
+            user,
+            "sprint",
+            RunMode.SPEEDRUN,
+            0,
+            status=TrainingSessionStatus.ABANDONED,
+            finished_at=long_ago,
+            seed=over,
+        )
+        abandoned.created_at = long_ago
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000004"}

@@ -75,6 +75,14 @@ def _set_seed_settings(monkeypatch):
     monkeypatch.setattr(settings, "seed_purge_grace_days", 30)
 
 
+@pytest.fixture
+def seed_zip(tmp_path) -> str:
+    """A seed zip on disk: a seed whose files are purged cannot be protected."""
+    path = tmp_path / "seed.zip"
+    path.write_bytes(b"zip")
+    return str(path)
+
+
 def _auth(name: str) -> dict[str, str]:
     return {"Authorization": f"Bearer tok-{name}"}
 
@@ -354,11 +362,11 @@ async def test_kept_reasons(test_client, async_session, pools):
     ]
 
 
-async def test_protect_requires_a_finished_run(test_client, async_session, pools):
+async def test_protect_requires_a_finished_run(test_client, async_session, pools, seed_zip):
     async with async_session() as db:
         a = await _user(db, "a")
         b = await _user(db, "b")
-        seed = await _seed(db, "f00d00000001")
+        seed = await _seed(db, "f00d00000001", folder_path=seed_zip)
         await _add_run(db, user=a, igt_ms=1000, minute=1, seed=seed)
         await _add_run(
             db,
@@ -394,12 +402,13 @@ async def test_protect_requires_a_finished_run(test_client, async_session, pools
     }
 
 
-async def test_protect_limit_and_idempotence(test_client, async_session, pools):
+async def test_protect_limit_and_idempotence(test_client, async_session, pools, seed_zip):
     numbers = [f"11111100000{i}" for i in range(1, 5)]
     async with async_session() as db:
         a = await _user(db, "a")
         for minute, number in enumerate(numbers, start=1):
-            await _add_run(db, user=a, igt_ms=1000, minute=minute, seed=await _seed(db, number))
+            seed = await _seed(db, number, folder_path=seed_zip)
+            await _add_run(db, user=a, igt_ms=1000, minute=minute, seed=seed)
         await db.commit()
 
     async def protect(number: str, method: str = "PUT") -> Any:
@@ -432,13 +441,14 @@ async def test_protect_limit_and_idempotence(test_client, async_session, pools):
 
 
 async def test_protection_limit_message_follows_the_setting(
-    test_client, async_session, pools, monkeypatch
+    test_client, async_session, pools, monkeypatch, seed_zip
 ):
     monkeypatch.setattr(settings, "seed_protection_limit", 1)
     async with async_session() as db:
         a = await _user(db, "a")
         for minute, number in enumerate(("222222000001", "222222000002"), start=1):
-            await _add_run(db, user=a, igt_ms=1000, minute=minute, seed=await _seed(db, number))
+            seed = await _seed(db, number, folder_path=seed_zip)
+            await _add_run(db, user=a, igt_ms=1000, minute=minute, seed=seed)
         await db.commit()
 
     first = await test_client.put("/api/speedrun/seeds/222222000001/protection", headers=_auth("a"))
@@ -447,7 +457,70 @@ async def test_protection_limit_message_follows_the_setting(
     )
 
     assert first.json()["protection_limit"] == 1
-    assert (second.status_code, second.json()["detail"]) == (409, "You already protect 1 seeds")
+    assert (second.status_code, second.json()["detail"]) == (409, "You already protect 1 seed")
+
+
+async def test_finisher_of_a_normal_race_can_protect(test_client, async_session, pools, seed_zip):
+    """Any finished run makes a player eligible, not only a counted one."""
+    async with async_session() as db:
+        a = await _user(db, "a")
+        seed = await _seed(db, "f00d00000002", folder_path=seed_zip)
+        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed)
+        await db.commit()
+
+    page = await _page(test_client, "f00d00000002", viewer="a")
+    accepted = await test_client.put(
+        "/api/speedrun/seeds/f00d00000002/protection", headers=_auth("a")
+    )
+
+    assert (page["runs"], page["viewer"]["can_protect"]) == ([], True)
+    assert (accepted.status_code, accepted.json()["protected"]) == (200, True)
+
+
+async def test_protection_refused_where_it_keeps_nothing(
+    test_client, async_session, pools, monkeypatch, seed_zip
+):
+    """Purged files, a seed added before the cutoff or one at an older layer
+    count: no protection, the replayability reason instead. An excluded seed
+    stays protectable (an admin may restore it)."""
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
+    async with async_session() as db:
+        a = await _user(db, "a")
+        purged = await _seed(db, "dead00000001")
+        purged.created_at = BASE + timedelta(days=1)
+        old_version = await _seed(db, "dead00000002", folder_path=seed_zip)
+        old_category = await _seed(
+            db, "dead00000003", pool="standard", layers=25, folder_path=seed_zip
+        )
+        old_category.created_at = BASE + timedelta(days=1)
+        excluded = await _seed(db, "dead00000004", folder_path=seed_zip)
+        excluded.created_at = BASE + timedelta(days=1)
+        excluded.set_seed_excluded_at = BASE
+        excluded.set_seed_excluded_reason = "Softlock"
+        for minute, seed in enumerate((purged, old_version, old_category, excluded), start=1):
+            await _add_run(db, user=a, igt_ms=1000, minute=minute, seed=seed)
+        await db.commit()
+
+    async def protect(number: str) -> tuple[int, Any]:
+        response = await test_client.put(
+            f"/api/speedrun/seeds/{number}/protection", headers=_auth("a")
+        )
+        return response.status_code, response.json().get("detail")
+
+    assert await protect("dead00000001") == (409, "Files purged.")
+    assert await protect("dead00000002") == (409, "Built for an older game version.")
+    assert await protect("dead00000003") == (409, "Built for an older version of Standard.")
+    assert (await protect("dead00000004"))[0] == 200
+    pages = [await _page(test_client, f"dead0000000{i}") for i in range(1, 5)]
+    assert [(p["not_replayable_code"], p["protectable"]) for p in pages] == [
+        ("purged", False),
+        ("old_game_version", False),
+        ("old_category", False),
+        ("excluded", True),
+    ]
+    async with async_session() as db:
+        count = await db.scalar(select(func.count()).select_from(SeedProtection))
+    assert count == 1
 
 
 async def test_viewer_block(test_client, async_session, pools):

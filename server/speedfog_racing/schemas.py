@@ -1076,7 +1076,8 @@ class SpeedrunSeedStats(BaseModel):
 class SpeedrunSeedViewer(BaseModel):
     """The logged-in viewer's protection state."""
 
-    # The viewer has a finished counted run on the seed.
+    # The viewer has a finished run on the seed: a race of any mode, or a
+    # ranked solo session. False for a banned viewer.
     can_protect: bool
     protected: bool
     # Seed numbers the viewer protects, oldest protection first.
@@ -1100,6 +1101,10 @@ class SpeedrunSeedResponse(BaseModel):
     replayable: bool
     not_replayable_code: NotReplayableCode | None
     not_replayable_reason: str | None
+    # A protection would keep the seed's files: false once they are purged or
+    # the seed can never be replayed again (codes purged, old_game_version,
+    # old_category), where protecting it answers 409.
+    protectable: bool
     # Why the seed's files are kept from the purge; empty when nothing keeps them.
     kept_reasons: list[str]
     protected_by: int

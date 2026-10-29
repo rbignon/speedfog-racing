@@ -2,8 +2,8 @@
 
 Used by ``deploy/cleanup-seeds.sh``: prints one ``folder_path`` per line on
 stdout and nothing else (logs go to stderr). A DISCARDED seed's zip is kept
-while it is a top seed of its category, protected by a player or played in the
-last ``SEED_PURGE_GRACE_DAYS`` days, unless it was built before
+while it is a top seed of its category, protected by a player, in use or played
+in the last ``SEED_PURGE_GRACE_DAYS`` days, unless it was added (scanned) before
 ``SET_SEED_MIN_SEED_DATE`` (see docs/SEED_PIPELINE.md).
 
 Usage:
