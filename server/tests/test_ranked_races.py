@@ -9,7 +9,7 @@ from uuid import UUID
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.config import settings
@@ -68,6 +68,7 @@ async def pools(async_session):
     async with async_session() as db:
         db.add(Pool(name="sprint", config={"name": "Sprint", "type": "race", "layers_count": 15}))
         db.add(Pool(name="off", enabled=False, config={"name": "Off", "type": "race"}))
+        db.add(Pool(name="training_sprint", config={"name": "Sprint", "type": "training"}))
         await db.commit()
 
 
@@ -173,6 +174,24 @@ async def test_speedrun_race_refused_at_floor(test_client, async_session, pools)
     assert await _available_count(async_session, "sprint") == 2
     # The floor guards speedrun draws only.
     assert (await _create(test_client, {"pool_name": "sprint"})).status_code == 201
+
+
+async def test_speedrun_race_refused_on_training_pool(test_client, async_session, pools):
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "training_sprint", 5)
+        await db.commit()
+
+    speedrun = await _create(test_client, {"pool_name": "training_sprint", "mode": "speedrun"})
+
+    assert (speedrun.status_code, speedrun.json()["detail"]) == (
+        400,
+        "Mode 'training_sprint' is not available",
+    )
+    assert await _race_count(async_session) == 0
+    assert await _available_count(async_session, "training_sprint") == 5
+    # A normal race keeps today's checks.
+    assert (await _create(test_client, {"pool_name": "training_sprint"})).status_code == 201
 
 
 async def test_create_set_seed_race(test_client, async_session, pools, seed_zip):
@@ -379,6 +398,75 @@ async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_s
     assert response.status_code == 200, response.text
     assert await current(daily_id) != "da11y0000001"
     assert await _status(async_session, "da11y0000001") == SeedStatus.CONSUMED
+
+
+@pytest.mark.parametrize("action", ["reroll", "delete"])
+@pytest.mark.parametrize("mode", [RunMode.NORMAL, RunMode.SPEEDRUN])
+async def test_reset_race_burns_its_seed(test_client, async_session, pools, mode, action):
+    """A reset brings a race back to SETUP but keeps its release: its seed was seen."""
+    started = datetime.now(UTC) - timedelta(minutes=30)
+    async with async_session() as db:
+        organizer = await _staff(db, "org")
+        await _available(db, "sprint", 5)
+        seed = await _seed(db, "5e1f00000001")
+        race = Race(
+            name="Reset",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            mode=mode,
+            started_at=started,
+            seeds_released_at=started,
+        )
+        db.add(race)
+        await db.commit()
+        race_id = str(race.id)
+
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["status"] == "setup"
+    assert reset.json()["seeds_released_at"] is not None
+    if action == "reroll":
+        assert (await _reroll(test_client, race_id)).status_code == 200
+    else:
+        deleted = await test_client.delete(f"/api/races/{race_id}", headers=_auth("org"))
+        assert deleted.status_code == 204
+
+    assert await _status(async_session, "5e1f00000001") == SeedStatus.CONSUMED
+
+
+@pytest.mark.parametrize("mode", ["normal", "speedrun"])
+async def test_discarded_seed_stays_discarded(test_client, async_session, pools, mode):
+    """A race whose pool was discarded since its creation: rerolling or deleting
+    it before the release never revives the seed."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "sprint", 8)
+        await db.commit()
+
+    async def discarded_race() -> tuple[str, str]:
+        race_id = (await _create(test_client, {"pool_name": "sprint", "mode": mode})).json()["id"]
+        seed = await _race_seed(async_session, race_id)
+        async with async_session() as db:
+            await db.execute(
+                update(Seed).where(Seed.id == seed.id).values(status=SeedStatus.DISCARDED)
+            )
+            await db.commit()
+        return race_id, seed.seed_number
+
+    rerolled, rerolled_seed = await discarded_race()
+    reported, reported_seed = await discarded_race()
+    deleted, deleted_seed = await discarded_race()
+
+    assert (await _reroll(test_client, rerolled)).status_code == 200
+    assert (
+        await _reroll(test_client, reported, report_buggy=True, report_reason="Broken gate")
+    ).status_code == 200
+    assert (
+        await test_client.delete(f"/api/races/{deleted}", headers=_auth("org"))
+    ).status_code == 204
+    for number in (rerolled_seed, reported_seed, deleted_seed):
+        assert await _status(async_session, number) == SeedStatus.DISCARDED, number
 
 
 async def test_deleting_set_seed_race_keeps_seed_status(

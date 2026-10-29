@@ -339,9 +339,17 @@ async def create_race(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=replayability.reason)
     else:
         # Guard: reject unknown or disabled pools so admin toggles aren't
-        # bypassable by an organizer passing the raw pool name directly.
+        # bypassable by an organizer passing the raw pool name directly. A
+        # speedrun race draws from a race pool only, like a Speedrun-mode solo run.
         pool = await get_pool(db, request.pool_name)
-        if pool is None or not pool.enabled:
+        if (
+            pool is None
+            or not pool.enabled
+            or (
+                request.mode == RunMode.SPEEDRUN
+                and (pool.config or {}).get("type", "race") == "training"
+            )
+        ):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Mode '{request.pool_name}' is not available",
