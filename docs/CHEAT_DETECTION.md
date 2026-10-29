@@ -72,7 +72,7 @@ There is no automatic sanction: the race staff decide (see Sanctions).
 
 ## Sanctions
 
-Two manual tools, for a detection or for anything else the staff find (an
+Three manual tools, for a detection or for anything else the staff find (an
 audit after the race, a report).
 
 **Disqualification** (one runner, one race). The race organizer or an admin
@@ -108,6 +108,17 @@ it finishes, and the same people can cancel it from the same dialog.
   runner.
 - A disqualified or flagged participation cannot be left or removed, so the
   record stays for review.
+
+**Invalidation** (one ranked solo run, admins only). Ranked solo sessions
+(`speedrun`, `set_seed`) have no participant to disqualify, so an admin
+opens the session page and picks "Invalidate run" (or "Disqualify" next to
+the flags in the "Cheat detections" panel shown from `debug_flags`, which
+suggests a reason). A reason (1 to 500 characters) is required. The session
+keeps its data, gets `invalidated_at`, `invalidated_by_id` and
+`invalidation_reason`, and leaves the speedrun.fog boards, the seed page and
+the records at once; the session page shows "Invalidated: <reason>" to
+everyone. "Cancel invalidation" restores it. Normal sessions cannot be
+invalidated. See `SPEEDRUN.md`.
 
 **Ban** (one account). An admin bans from the /admin Users tab ("Ban...",
 with a reason shown to the user) and lifts it with "Unban". Admins cannot be

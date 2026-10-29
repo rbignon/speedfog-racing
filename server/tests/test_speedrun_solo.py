@@ -423,3 +423,107 @@ async def test_monitor_expires_and_broadcasts(async_session, pools):
         await _expire_speedrun_sessions(async_session)
 
     broadcast.assert_awaited_once_with(old.id, "abandoned")
+
+
+async def _invalidation_setup(async_session):
+    """A finished speedrun session of "a" on its own seed, an admin, and an owner."""
+    async with async_session() as db:
+        owner = await _user(db, "a")
+        admin = await _user(db, "admin")
+        admin.role = UserRole.ADMIN
+        ranked = await _add_session(db, owner, "sprint", RunMode.SPEEDRUN, 5000)
+        normal = await _add_session(db, owner, "training_sprint", RunMode.NORMAL, 5000)
+        seed_number = (await db.get(Seed, ranked.seed_id)).seed_number  # type: ignore[union-attr]
+        await db.commit()
+        return ranked.id, normal.id, seed_number
+
+
+async def test_invalidation_service_round_trip_and_errors(async_session, pools):
+    from datetime import UTC, datetime
+
+    from speedfog_racing.services.sanctions_service import (
+        cancel_session_invalidation,
+        invalidate_session,
+    )
+
+    async with async_session() as db:
+        owner = await _user(db, "a")
+        ranked = await _add_session(db, owner, "sprint", RunMode.SPEEDRUN, 5000)
+        normal = await _add_session(db, owner, "training_sprint", RunMode.NORMAL, 5000)
+        now = datetime.now(UTC)
+
+        with pytest.raises(ValueError):
+            invalidate_session(normal, by_id=owner.id, reason="x", now=now)
+        with pytest.raises(ValueError):
+            cancel_session_invalidation(ranked)
+
+        invalidate_session(ranked, by_id=owner.id, reason="Cheat", now=now)
+        assert (ranked.invalidated_at, ranked.invalidated_by_id) == (now, owner.id)
+        with pytest.raises(ValueError):
+            invalidate_session(ranked, by_id=owner.id, reason="again", now=now)
+
+        cancel_session_invalidation(ranked)
+        assert (ranked.invalidated_at, ranked.invalidated_by_id, ranked.invalidation_reason) == (
+            None,
+            None,
+            None,
+        )
+
+
+async def test_invalidation_endpoint_guards(test_client, async_session, pools):
+    ranked_id, normal_id, _ = await _invalidation_setup(async_session)
+    url = "/api/admin/training/{}/invalidation"
+
+    assert (
+        await test_client.put(url.format(ranked_id), json={"reason": "x"}, headers=_auth("a"))
+    ).status_code == 403
+    assert (await test_client.put(url.format(ranked_id), json={"reason": "x"})).status_code in (
+        401,
+        403,
+    )
+    for reason in ("   ", "", "x" * 501):
+        r = await test_client.put(
+            url.format(ranked_id), json={"reason": reason}, headers=_auth("admin")
+        )
+        assert r.status_code == 422
+    normal = await test_client.put(
+        url.format(normal_id), json={"reason": "x"}, headers=_auth("admin")
+    )
+    assert (normal.status_code, normal.json()["detail"]) == (
+        400,
+        "Only a ranked solo run can be invalidated",
+    )
+    missing = await test_client.put(
+        url.format("00000000-0000-0000-0000-000000000000"),
+        json={"reason": "x"},
+        headers=_auth("admin"),
+    )
+    assert missing.status_code == 404
+    undo = await test_client.delete(url.format(ranked_id), headers=_auth("admin"))
+    assert (undo.status_code, undo.json()["detail"]) == (400, "Not invalidated")
+
+
+async def test_invalidated_run_leaves_board_and_seed_page_at_once(
+    test_client, async_session, pools
+):
+    ranked_id, _, seed_number = await _invalidation_setup(async_session)
+    url = f"/api/admin/training/{ranked_id}/invalidation"
+
+    async def counts() -> tuple[int, int]:
+        overview = (await test_client.get("/api/stats/speedrun")).json()
+        page = (await test_client.get(f"/api/speedrun/seeds/{seed_number}")).json()
+        return overview["runs"], len(page["runs"])
+
+    assert await counts() == (1, 1)
+
+    put = await test_client.put(url, json={"reason": "  Cheat tool  "}, headers=_auth("admin"))
+    assert put.status_code == 200
+    assert (put.json()["invalidated"], put.json()["invalidation_reason"]) == (True, "Cheat tool")
+    assert (await test_client.put(url, json={"reason": "again"}, headers=_auth("admin"))).json()[
+        "detail"
+    ] == "Already invalidated"
+    assert await counts() == (0, 0)
+
+    delete = await test_client.delete(url, headers=_auth("admin"))
+    assert (delete.status_code, delete.json()["invalidated"]) == (200, False)
+    assert await counts() == (1, 1)

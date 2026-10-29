@@ -20,6 +20,7 @@ from speedfog_racing.api.helpers import (
 from speedfog_racing.api.races import after_disqualification_change, remove_participation
 from speedfog_racing.api.speedrun import resolve_seed_or_404
 from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
+from speedfog_racing.api.training import _build_detail_response, _get_session_or_404_public
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
@@ -72,6 +73,7 @@ from speedfog_racing.schemas import (
     RaceParticipantActivity,
     RaceResponse,
     TrainingActivity,
+    TrainingSessionDetailResponse,
     UserResponse,
 )
 from speedfog_racing.services import (
@@ -102,7 +104,11 @@ from speedfog_racing.services.event_service import (
 )
 from speedfog_racing.services.layer_service import get_display_name_for_node
 from speedfog_racing.services.pool_service import format_pool_display_name
-from speedfog_racing.services.sanctions_service import disqualify
+from speedfog_racing.services.sanctions_service import (
+    cancel_session_invalidation,
+    disqualify,
+    invalidate_session,
+)
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
@@ -685,6 +691,62 @@ async def unban_user(
             lifted=True,
         )
     return await _admin_user_response(db, target)
+
+
+class InvalidateRunRequest(BaseModel):
+    """Why an admin invalidates a ranked solo run."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason must not be blank")
+        return stripped
+
+
+@router.put("/training/{session_id}/invalidation", response_model=TrainingSessionDetailResponse)
+async def invalidate_training_session(
+    session_id: uuid.UUID,
+    request: InvalidateRunRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> TrainingSessionDetailResponse:
+    """Invalidate a ranked solo run: it leaves boards, seed pages and records."""
+    session = await _get_session_or_404_public(db, session_id)
+    try:
+        invalidate_session(session, by_id=admin.id, reason=request.reason, now=datetime.now(UTC))
+    except ValueError as e:
+        detail = (
+            "Only a ranked solo run can be invalidated"
+            if session.invalidated_at is None
+            else "Already invalidated"
+        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from e
+    await db.commit()
+    forget_speedrun_caches()
+    return _build_detail_response(session, include_debug_flags=True)
+
+
+@router.delete("/training/{session_id}/invalidation", response_model=TrainingSessionDetailResponse)
+async def cancel_training_session_invalidation(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> TrainingSessionDetailResponse:
+    """Undo an invalidation (admin only)."""
+    session = await _get_session_or_404_public(db, session_id)
+    try:
+        cancel_session_invalidation(session)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Not invalidated"
+        ) from e
+    await db.commit()
+    forget_speedrun_caches()
+    return _build_detail_response(session, include_debug_flags=True)
 
 
 async def _apply_ban_side_effects(db: AsyncSession, user: User, *, by: User) -> None:

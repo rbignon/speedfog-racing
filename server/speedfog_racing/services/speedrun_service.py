@@ -265,6 +265,7 @@ async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) ->
         .where(
             TrainingSession.status == TrainingSessionStatus.FINISHED,
             TrainingSession.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
+            TrainingSession.invalidated_at.is_(None),
             User.banned_at.is_(None),
         )
     )

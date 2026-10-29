@@ -15,6 +15,8 @@ from speedfog_racing.models import (
     TERMINAL_PARTICIPANT_STATUSES,
     Participant,
     ParticipantStatus,
+    RunMode,
+    TrainingSession,
 )
 
 
@@ -68,3 +70,25 @@ def cancel_disqualification(
     participant.disqualified_at = None
     participant.disqualified_by_id = None
     participant.disqualification_reason = None
+
+
+def invalidate_session(
+    session: TrainingSession, *, by_id: uuid.UUID, reason: str, now: datetime
+) -> None:
+    """Invalidate a ranked solo session: it leaves boards, seed pages and records."""
+    if session.mode == RunMode.NORMAL:
+        raise ValueError("only a ranked solo run can be invalidated")
+    if session.invalidated_at is not None:
+        raise ValueError("already invalidated")
+    session.invalidated_at = now
+    session.invalidated_by_id = by_id
+    session.invalidation_reason = reason
+
+
+def cancel_session_invalidation(session: TrainingSession) -> None:
+    """Undo an invalidation."""
+    if session.invalidated_at is None:
+        raise ValueError("not invalidated")
+    session.invalidated_at = None
+    session.invalidated_by_id = None
+    session.invalidation_reason = None

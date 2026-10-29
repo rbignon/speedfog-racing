@@ -2049,6 +2049,11 @@ export interface TrainingSessionDetail extends TrainingSession {
   }> | null;
   graph_json: Record<string, unknown> | null;
   pool_config: PoolConfig | null;
+  // Admin invalidation of a ranked session; the reason is public.
+  invalidated?: boolean;
+  invalidation_reason?: string | null;
+  // Admins only.
+  debug_flags?: DebugFlags | null;
 }
 
 export async function fetchTrainingPools(): Promise<PoolStats> {
@@ -2109,6 +2114,40 @@ export async function abandonTrainingSession(
     method: "POST",
     headers: getAuthHeaders(),
   });
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+/**
+ * Invalidate a ranked solo run (admin only): it leaves boards and seed pages.
+ */
+export async function invalidateSession(
+  id: string,
+  reason: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(
+    `${API_BASE}/admin/training/${id}/invalidation`,
+    {
+      method: "PUT",
+      headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  );
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+/**
+ * Undo the invalidation of a ranked solo run (admin only).
+ */
+export async function cancelSessionInvalidation(
+  id: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(
+    `${API_BASE}/admin/training/${id}/invalidation`,
+    {
+      method: "DELETE",
+      headers: getAuthHeaders(),
+    },
+  );
   return handleResponse<TrainingSessionDetail>(response);
 }
 

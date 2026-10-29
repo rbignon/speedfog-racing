@@ -9,6 +9,7 @@
     fetchTrainingSession,
     fetchTrainingSessions,
     abandonTrainingSession,
+    cancelSessionInvalidation,
     downloadTrainingPack,
     fetchTrainingGhosts,
     type TrainingSessionDetail,
@@ -21,6 +22,8 @@
   import ObsOverlayModal from "$lib/components/ObsOverlayModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
+  import InvalidateRunModal from "$lib/components/InvalidateRunModal.svelte";
+  import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
   import DownloadModal from "$lib/components/DownloadModal.svelte";
   import TipTicker from "$lib/components/TipTicker.svelte";
   import ZoneSheet from "$lib/components/ZoneSheet.svelte";
@@ -51,6 +54,8 @@
   let showObsModal = $state(false);
   let showFeedback = $state(false);
   let showDownloadModal = $state(false);
+  let invalidateReason = $state<string | null>(null);
+  let cancellingInvalidation = $state(false);
   let ghosts = $state<Ghost[]>([]);
   // null = unknown (not owner, session still active, or lookup pending/failed).
   let hasActiveSession = $state<boolean | null>(null);
@@ -113,6 +118,9 @@
   let isOwner = $derived(
     auth.isLoggedIn && session?.user?.id === auth.user?.id,
   );
+
+  let isRanked = $derived(session !== null && session.mode !== "normal");
+  let isInvalidated = $derived(session?.invalidated === true);
 
   let graphJson = $derived(
     trainingStore.seed?.graph_json ?? session?.graph_json ?? null,
@@ -227,6 +235,19 @@
     }
   }
 
+  async function handleCancelInvalidation() {
+    cancellingInvalidation = true;
+    error = null;
+    try {
+      session = await cancelSessionInvalidation(sessionId);
+    } catch (e) {
+      error =
+        e instanceof Error ? e.message : "Failed to cancel the invalidation.";
+    } finally {
+      cancellingInvalidation = false;
+    }
+  }
+
   async function handleDownload() {
     downloading = true;
     error = null;
@@ -332,6 +353,12 @@
       </div>
     {/if}
 
+    {#if isInvalidated}
+      <div class="invalidated-banner" role="status">
+        Invalidated: {session.invalidation_reason}
+      </div>
+    {/if}
+
     <!-- Stats bar -->
     <div class="stats-bar">
       <div class="stat">
@@ -394,6 +421,31 @@
           <a href="/training" class="btn btn-primary">New Run</a>
         {/if}
       </div>
+    {/if}
+
+    {#if auth.isAdmin && isRanked}
+      <div class="actions">
+        {#if isInvalidated}
+          <button
+            class="btn btn-outline"
+            disabled={cancellingInvalidation}
+            onclick={handleCancelInvalidation}>Cancel invalidation</button
+          >
+        {:else}
+          <button class="btn btn-danger" onclick={() => (invalidateReason = "")}
+            >Invalidate run</button
+          >
+        {/if}
+      </div>
+      {#if session.debug_flags}
+        <CheatDetectionsPanel
+          detections={{ [session.id]: session.debug_flags }}
+          participants={dagParticipants}
+          onDisqualify={isInvalidated
+            ? undefined
+            : (_id, reason) => (invalidateReason = reason)}
+        />
+      {/if}
     {/if}
 
     {#if status === "active" && !liveParticipant?.mod_connected}
@@ -516,6 +568,18 @@
     loading={abandoning}
     onConfirm={handleAbandon}
     onCancel={() => (showAbandonConfirm = false)}
+  />
+{/if}
+
+{#if invalidateReason !== null && session}
+  <InvalidateRunModal
+    sessionId={session.id}
+    suggestedReason={invalidateReason}
+    onDone={(updated) => {
+      session = updated;
+      invalidateReason = null;
+    }}
+    onClose={() => (invalidateReason = null)}
   />
 {/if}
 
@@ -664,6 +728,15 @@
     color: white;
     font-size: 1.25rem;
     cursor: pointer;
+  }
+
+  .invalidated-banner {
+    background: var(--color-danger-dark);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    margin-bottom: 1.5rem;
+    overflow-wrap: anywhere;
   }
 
   /* Stats bar */
