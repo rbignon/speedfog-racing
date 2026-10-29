@@ -22,6 +22,9 @@ from speedfog_racing.models import (
     Race,
     RaceStatus,
     Seed,
+    TrainingSession,
+    TrainingSessionMode,
+    TrainingSessionStatus,
     User,
 )
 from speedfog_racing.schemas import (
@@ -35,8 +38,8 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
-RunType = Literal["race", "daily", "event"]
-RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event")
+RunType = Literal["race", "daily", "event", "solo"]
+RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
 
 RECENT_RUNS_COUNT = 5
 _WEAPON_QUERY_CHUNK = 500
@@ -44,15 +47,21 @@ _WEAPON_QUERY_CHUNK = 500
 
 @dataclass(frozen=True, slots=True)
 class CountedRun:
-    participant_id: UUID
+    # Participant id for a race run, session id for a solo run.
+    run_id: UUID
     user: UserResponse
     pool: str
+    # The board the run belongs to: the pool name.
+    category: str
     deathless: bool
     run_type: RunType
+    # False for a replay (Set Seed): the runner knew the seed beforehand.
+    blind: bool
     igt_ms: int
     finished_at: datetime
-    race_id: UUID
-    race_name: str
+    race_id: UUID | None
+    race_name: str | None
+    session_id: UUID | None
     daily_date: date | None
     seed_number: str
     deaths: int
@@ -77,11 +86,11 @@ def _layers_count(config: dict[str, Any]) -> int | None:
 
 
 async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
-    """Every run the boards count: finished participants of finished races,
-    banned users left out, races excluded from stats left out unless they are
-    Daily Seeds or event races, training pools left out, and seeds from an
-    older version of their pool (another layer count than its config) left
-    out."""
+    """Every run the boards count: finished participants of finished races and
+    finished ranked solo sessions (speedrun or set_seed mode), banned users
+    left out, races excluded from stats left out unless they are Daily Seeds
+    or event races, training pools left out, and seeds from an older version
+    of their pool (another layer count than its config) left out."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
     layer_counts = {
@@ -101,6 +110,7 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
             Race.daily_date,
             Race.event_id,
             Race.deathless,
+            Race.set_seed,
             Seed.pool_name,
             Seed.seed_number,
             Seed.total_layers,
@@ -127,12 +137,14 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
     )
     users: dict[UUID, UserResponse] = {}
     runs: list[CountedRun] = []
-    for row in (await db.execute(stmt)).all():
+
+    def counts(row: Any) -> bool:
         if row.pool_name in training_pools:
-            continue
+            return False
         current_layers = layer_counts.get(row.pool_name)
-        if current_layers is not None and row.total_layers != current_layers:
-            continue
+        return current_layers is None or row.total_layers == current_layers
+
+    def user_of(row: Any) -> UserResponse:
         user = users.get(row.user_id)
         if user is None:
             user = UserResponse(
@@ -144,6 +156,11 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
                 equipped_name_template_id=row.equipped_name_template_id,
             )
             users[row.user_id] = user
+        return user
+
+    for row in (await db.execute(stmt)).all():
+        if not counts(row):
+            continue
         run_type: RunType = (
             "daily"
             if row.daily_date is not None
@@ -153,17 +170,69 @@ async def load_counted_runs(db: AsyncSession) -> list[CountedRun]:
         )
         runs.append(
             CountedRun(
-                participant_id=row.participant_id,
-                user=user,
+                run_id=row.participant_id,
+                user=user_of(row),
                 pool=row.pool_name,
+                category=row.pool_name,
                 deathless=bool(row.deathless),
                 run_type=run_type,
+                blind=not row.set_seed,
                 igt_ms=row.igt_ms,
                 # Old rows can lack a finish time; the race start is close enough.
                 finished_at=row.finished_at or row.started_at or row.created_at,
                 race_id=row.race_id,
                 race_name=row.race_name,
+                session_id=None,
                 daily_date=row.daily_date,
+                seed_number=row.seed_number,
+                deaths=row.death_count,
+            )
+        )
+
+    session_stmt = (
+        select(
+            TrainingSession.id.label("session_id"),
+            TrainingSession.mode,
+            TrainingSession.igt_ms,
+            TrainingSession.death_count,
+            TrainingSession.finished_at,
+            TrainingSession.created_at,
+            Seed.pool_name,
+            Seed.seed_number,
+            Seed.total_layers,
+            User.id.label("user_id"),
+            User.twitch_username,
+            User.twitch_display_name,
+            User.twitch_avatar_url,
+            User.equipped_badge_id,
+            User.equipped_name_template_id,
+        )
+        .join(Seed, TrainingSession.seed_id == Seed.id)
+        .join(User, TrainingSession.user_id == User.id)
+        .where(
+            TrainingSession.status == TrainingSessionStatus.FINISHED,
+            TrainingSession.mode.in_([TrainingSessionMode.SPEEDRUN, TrainingSessionMode.SET_SEED]),
+            User.banned_at.is_(None),
+        )
+    )
+    for row in (await db.execute(session_stmt)).all():
+        if not counts(row):
+            continue
+        runs.append(
+            CountedRun(
+                run_id=row.session_id,
+                user=user_of(row),
+                pool=row.pool_name,
+                category=row.pool_name,
+                deathless=False,
+                run_type="solo",
+                blind=row.mode == TrainingSessionMode.SPEEDRUN,
+                igt_ms=row.igt_ms,
+                finished_at=row.finished_at or row.created_at,
+                race_id=None,
+                race_name=None,
+                session_id=row.session_id,
+                daily_date=None,
                 seed_number=row.seed_number,
                 deaths=row.death_count,
             )
@@ -257,11 +326,11 @@ def rank_board(
         if run.igt_ms != previous_igt:
             rank = position
             previous_igt = run.igt_ms
-        ranks[run.participant_id] = rank
+        ranks[run.run_id] = rank
 
     if not include_obsolete:
-        return [(run, ranks[run.participant_id]) for run in personal_bests]
-    return [(run, ranks.get(run.participant_id)) for run in sorted(runs, key=_run_key)]
+        return [(run, ranks[run.run_id]) for run in personal_bests]
+    return [(run, ranks.get(run.run_id)) for run in sorted(runs, key=_run_key)]
 
 
 def record_history(runs: Sequence[CountedRun]) -> list[CountedRun]:
@@ -312,18 +381,31 @@ def main_weapon(zone_history: list[dict[str, Any]] | None) -> list[int] | None:
 
 
 async def load_main_weapons(
-    db: AsyncSession, participant_ids: Collection[UUID]
+    db: AsyncSession, participant_ids: Collection[UUID], session_ids: Collection[UUID]
 ) -> dict[UUID, list[int] | None]:
-    ids = list(participant_ids)
+    """Main weapon per run id, from participants and solo sessions (same
+    ``zone_history`` shape)."""
     weapons: dict[UUID, list[int] | None] = {}
-    for start in range(0, len(ids), _WEAPON_QUERY_CHUNK):
-        chunk = ids[start : start + _WEAPON_QUERY_CHUNK]
-        rows = await db.execute(
-            select(Participant.id, Participant.zone_history).where(Participant.id.in_(chunk))
-        )
-        for participant_id, zone_history in rows.all():
-            weapons[participant_id] = main_weapon(zone_history)
+    for model, all_ids in (
+        (Participant, list(participant_ids)),
+        (TrainingSession, list(session_ids)),
+    ):
+        for start in range(0, len(all_ids), _WEAPON_QUERY_CHUNK):
+            chunk = all_ids[start : start + _WEAPON_QUERY_CHUNK]
+            rows = await db.execute(select(model.id, model.zone_history).where(model.id.in_(chunk)))
+            for run_id, zone_history in rows.all():
+                weapons[run_id] = main_weapon(zone_history)
     return weapons
+
+
+async def _weapons_for(
+    db: AsyncSession, runs: Collection[CountedRun]
+) -> dict[UUID, list[int] | None]:
+    return await load_main_weapons(
+        db,
+        {r.run_id for r in runs if r.session_id is None},
+        {r.run_id for r in runs if r.session_id is not None},
+    )
 
 
 def _run_fields(
@@ -339,7 +421,7 @@ def _run_fields(
         "daily_date": run.daily_date,
         "seed_number": run.seed_number,
         "deaths": run.deaths,
-        "weapon": weapons.get(run.participant_id),
+        "weapon": weapons.get(run.run_id),
     }
 
 
@@ -347,7 +429,7 @@ async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> Speedr
     categories = await load_categories(db, runs)
     names = {c.pool: c.name for c in categories}
     recent = sorted(runs, key=lambda r: r.finished_at, reverse=True)[:RECENT_RUNS_COUNT]
-    weapons = await load_main_weapons(db, {r.participant_id for r in recent})
+    weapons = await _weapons_for(db, recent)
     all_types = frozenset(RUN_TYPES)
     recent_runs = [
         SpeedrunRecentRun(
@@ -385,9 +467,7 @@ async def build_board(
     board = filter_board(runs, pool=pool, deathless=deathless, types=types)
     ranked = rank_board(board, include_obsolete=include_obsolete)
     history = record_history(board)
-    weapons = await load_main_weapons(
-        db, {r.participant_id for r, _ in ranked} | {r.participant_id for r in history}
-    )
+    weapons = await _weapons_for(db, [r for r, _ in ranked] + history)
     return SpeedrunBoardResponse(
         runs=[SpeedrunRun(**_run_fields(run, rank, weapons)) for run, rank in ranked],
         history=[SpeedrunRun(**_run_fields(run, None, weapons)) for run in history],

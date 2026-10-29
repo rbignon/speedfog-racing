@@ -17,6 +17,9 @@ from speedfog_racing.models import (
     RaceStatus,
     Seed,
     SeedStatus,
+    TrainingSession,
+    TrainingSessionMode,
+    TrainingSessionStatus,
     User,
     UserRole,
 )
@@ -28,6 +31,7 @@ from speedfog_racing.services.speedrun_service import (
     build_overview,
     load_categories,
     load_counted_runs,
+    load_main_weapons,
     main_weapon,
     place_of,
     rank_board,
@@ -116,6 +120,7 @@ async def _add_run(
     zone_history: list[dict[str, Any]] | None = None,
     finished: bool = True,
     layers: int = 15,
+    set_seed: bool = False,
 ) -> Participant:
     """One race on its own seed with a single participant."""
     tag = uuid.uuid4().hex[:10]
@@ -137,6 +142,7 @@ async def _add_run(
         status=race_status,
         started_at=BASE + timedelta(minutes=minute - 30),
         deathless=deathless,
+        set_seed=set_seed,
         exclude_from_stats=exclude or kind in ("daily", "event"),
         # daily_date is unique: one Daily Seed per day.
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if kind == "daily" else None,
@@ -159,6 +165,46 @@ async def _add_run(
     return participant
 
 
+async def _add_session(
+    db: AsyncSession,
+    user: User,
+    seed_pool: str,
+    mode: TrainingSessionMode,
+    igt_ms: int,
+    *,
+    status: TrainingSessionStatus = TrainingSessionStatus.FINISHED,
+    finished_at: datetime | None = BASE,
+    layers: int = 15,
+    zone_history: list[dict[str, Any]] | None = None,
+) -> TrainingSession:
+    """One solo session on its own seed."""
+    tag = uuid.uuid4().hex[:10]
+    seed = Seed(
+        seed_number=f"seed{tag}",
+        pool_name=seed_pool,
+        graph_json={"nodes": {}},
+        total_layers=layers,
+        folder_path=f"/t/{tag}",
+        status=SeedStatus.CONSUMED,
+        created_at=BASE - timedelta(hours=1),
+    )
+    db.add(seed)
+    await db.flush()
+    session = TrainingSession(
+        user_id=user.id,
+        seed_id=seed.id,
+        mode=mode,
+        status=status,
+        igt_ms=igt_ms,
+        death_count=2,
+        finished_at=finished_at,
+        zone_history=zone_history,
+    )
+    db.add(session)
+    await db.flush()
+    return session
+
+
 def _uid(name: str) -> uuid.UUID:
     return uuid.uuid5(uuid.NAMESPACE_DNS, name)
 
@@ -172,7 +218,7 @@ def _run(
     deathless: bool = False,
 ) -> CountedRun:
     return CountedRun(
-        participant_id=uuid.uuid4(),
+        run_id=uuid.uuid4(),
         user=UserResponse(
             id=_uid(name),
             twitch_username=name,
@@ -180,12 +226,15 @@ def _run(
             twitch_avatar_url=None,
         ),
         pool=pool,
+        category=pool,
         deathless=deathless,
         run_type="race",
+        blind=True,
         igt_ms=igt_ms,
         finished_at=BASE + timedelta(minutes=minute),
         race_id=uuid.uuid4(),
         race_name="R",
+        session_id=None,
         daily_date=None,
         seed_number="abc",
         deaths=0,
@@ -212,7 +261,7 @@ async def test_load_counted_runs_inclusion_rules(async_session, pools):
         runs = await load_counted_runs(db)
 
     assert sorted(r.run_type for r in runs) == ["daily", "event", "race"]
-    assert {r.participant_id for r in runs} == {race_p.id, daily_p.id, event_p.id}
+    assert {r.run_id for r in runs} == {race_p.id, daily_p.id, event_p.id}
 
 
 async def test_finished_at_falls_back_to_race_start(async_session, pools):
@@ -375,7 +424,7 @@ async def test_load_counted_runs_keeps_the_current_layer_count_only(async_sessio
 
         runs = await load_counted_runs(db)
 
-    assert {r.participant_id for r in runs} == {current.id, unversioned.id}
+    assert {r.run_id for r in runs} == {current.id, unversioned.id}
 
 
 async def test_category_release_is_the_first_seed_at_the_current_layer_count(async_session, pools):
@@ -391,3 +440,78 @@ async def test_category_release_is_the_first_seed_at_the_current_layer_count(asy
     assert [(c.pool, _naive(c.released_at)) for c in cats] == [
         ("sprint", _naive(BASE + timedelta(minutes=5 - 60)))
     ]
+
+
+async def test_counted_runs_include_ranked_solo_sessions(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        banned = await _user(db, "banned", banned=True)
+        speedrun = await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000)
+        set_seed = await _add_session(db, a, "sprint", TrainingSessionMode.SET_SEED, 6000)
+        await _add_session(db, a, "sprint", TrainingSessionMode.PRACTICE, 100)
+        await _add_session(
+            db,
+            a,
+            "sprint",
+            TrainingSessionMode.SPEEDRUN,
+            100,
+            status=TrainingSessionStatus.ACTIVE,
+        )
+        await _add_session(db, banned, "sprint", TrainingSessionMode.SPEEDRUN, 100)
+        await _add_session(db, a, "training_sprint", TrainingSessionMode.SPEEDRUN, 100)
+        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 100, layers=12)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    by_id = {r.run_id: r for r in runs}
+    assert set(by_id) == {speedrun.id, set_seed.id}
+    blind_run = by_id[speedrun.id]
+    assert (blind_run.run_type, blind_run.blind, blind_run.category) == ("solo", True, "sprint")
+    assert (blind_run.race_id, blind_run.race_name) == (None, None)
+    assert blind_run.session_id == speedrun.id
+    assert blind_run.igt_ms == 5000
+    assert by_id[set_seed.id].blind is False
+
+
+async def test_session_finish_time_falls_back_to_creation(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_session(db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000, finished_at=None)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    assert len(runs) == 1
+    assert runs[0].finished_at is not None
+
+
+async def test_set_seed_race_runs_are_replays(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        replay = await _add_run(db, user=a, igt_ms=1000, minute=1, set_seed=True)
+        ordinary = await _add_run(db, user=a, igt_ms=1100, minute=2)
+        daily = await _add_run(db, user=a, igt_ms=1200, minute=3, kind="daily")
+        event = await _add_run(db, user=a, igt_ms=1300, minute=4, kind="event")
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    blind = {r.run_id: r.blind for r in runs}
+    assert blind == {replay.id: False, ordinary.id: True, daily.id: True, event.id: True}
+    assert all(r.session_id is None for r in runs)
+
+
+async def test_main_weapons_cover_races_and_sessions(async_session, pools):
+    history = [{"weapons": [{"ids": [1000000], "ticks": 5}]}]
+    async with async_session() as db:
+        a = await _user(db, "a")
+        participant = await _add_run(db, user=a, igt_ms=1000, minute=1, zone_history=history)
+        session = await _add_session(
+            db, a, "sprint", TrainingSessionMode.SPEEDRUN, 5000, zone_history=history
+        )
+        await db.commit()
+
+        weapons = await load_main_weapons(db, [participant.id], [session.id])
+
+    assert weapons == {participant.id: [1000000], session.id: [1000000]}
