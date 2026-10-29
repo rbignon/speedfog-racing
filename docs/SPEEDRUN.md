@@ -89,4 +89,6 @@ Env settings in `server/speedfog_racing/config.py`, listed in `server/.env.examp
 | `SEED_PROTECTION_LIMIT`   | 3       | Seeds a player can protect at once.                                                                                                                                |
 | `SEED_PURGE_GRACE_DAYS`   | 30      | Days a seed keeps its files after its last race or session (the `Played in the last <D> days` reason).                                                             |
 
+**Purge.** `deploy/cleanup-seeds.sh` deletes a DISCARDED seed's zip only when these settings allow it (top seed, protected, recently played, or built before the cutoff); see the retention section of `docs/SEED_PIPELINE.md`.
+
 **Deploy.** The first production value of `SET_SEED_MIN_SEED_DATE` is `2026-09-01T00:00:00Z`, when the pools were regenerated for Elden Ring 1.17: earlier seeds carry a 1.16 `regulation.bin` that breaks Torrent on the 1.17 executable. Set it in the server's `.env` when this ships.

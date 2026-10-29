@@ -39,6 +39,7 @@ from speedfog_racing.services.speedrun_service import (
     _pool_config,
     _run_key,
     filter_board,
+    load_counted_runs,
     seed_category,
 )
 
@@ -307,3 +308,38 @@ async def load_retention_facts(
             last_played_at=last_played.get(seed.id),
         )
     return facts
+
+
+async def purgeable_seeds(
+    db: AsyncSession,
+    *,
+    now: datetime,
+    pool: str | None = None,
+    older_than_days: int | None = None,
+) -> list[Seed]:
+    """The DISCARDED seeds with a zip whose files may be purged: built before
+    ``settings.set_seed_min_seed_date`` whatever else holds, else with no
+    retention reason (top seed, protected, played recently). ``pool`` and
+    ``older_than_days`` (on ``Seed.created_at``) narrow the candidates."""
+    query = select(Seed).where(Seed.status == SeedStatus.DISCARDED, Seed.folder_path.is_not(None))
+    if pool is not None:
+        query = query.where(Seed.pool_name == pool)
+    candidates = (
+        (await db.execute(query.order_by(Seed.pool_name, Seed.seed_number))).scalars().all()
+    )
+    if older_than_days is not None:
+        limit = now - timedelta(days=older_than_days)
+        candidates = [
+            s for s in candidates if (c := as_aware_utc(s.created_at)) is not None and c < limit
+        ]
+    if not candidates:
+        return []
+    cutoff = as_aware_utc(settings.set_seed_min_seed_date)
+    facts = await load_retention_facts(db, candidates, await load_counted_runs(db))
+    purgeable: list[Seed] = []
+    for seed in candidates:
+        created_at = as_aware_utc(seed.created_at)
+        pre_cutoff = cutoff is not None and created_at is not None and created_at < cutoff
+        if pre_cutoff or not retention_reasons(facts[seed.id], now=now):
+            purgeable.append(seed)
+    return purgeable

@@ -15,11 +15,13 @@ from speedfog_racing.models import (
     RaceStatus,
     RunMode,
     Seed,
+    SeedProtection,
     SeedStatus,
     TrainingSessionStatus,
 )
 from speedfog_racing.services.set_seed_service import (
     SeedLookupError,
+    purgeable_seeds,
     resolve_seed,
     seed_replayability,
     top_seed_numbers,
@@ -387,3 +389,81 @@ def test_seed_category_names_an_old_layer_count():
     assert seed_category(standard, 30) == ("standard", "Standard")
     assert seed_category(standard, 25) == ("standard@25", "Standard (25 layers)")
     assert seed_category(unversioned, 17) == ("casual", "Casual")
+
+
+NOW = BASE + timedelta(days=60)
+
+
+async def _played(db: AsyncSession, seed: Seed, user, igt_ms: int, days_ago: int) -> None:
+    """A finished run on ``seed`` whose race last moved ``days_ago`` days before NOW."""
+    await _add_run(db, user=user, igt_ms=igt_ms, minute=1, seed=seed)
+    race = (await db.execute(select(Race).where(Race.seed_id == seed.id))).scalar_one()
+    race.started_at = NOW - timedelta(days=days_ago)
+
+
+async def _purgeable(async_session, **kwargs) -> set[str]:
+    async with async_session() as db:
+        return {s.seed_number for s in await purgeable_seeds(db, now=NOW, **kwargs)}
+
+
+async def test_purgeable_seeds_keeps_protected_top_and_recent(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "set_seed_kept_top_seeds", 1)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        top = await _seed(db, "aaaa00000001", status=SeedStatus.DISCARDED)
+        await _played(db, top, user, 1000, 40)
+        protected = await _seed(db, "aaaa00000002", status=SeedStatus.DISCARDED)
+        await _played(db, protected, user, 2000, 40)
+        db.add(SeedProtection(user_id=user.id, seed_id=protected.id))
+        recent = await _seed(db, "aaaa00000003", status=SeedStatus.DISCARDED)
+        await _played(db, recent, user, 3000, 10)
+        stale = await _seed(db, "aaaa00000004", status=SeedStatus.DISCARDED)
+        await _played(db, stale, user, 4000, 40)
+        consumed = await _seed(db, "aaaa00000005", status=SeedStatus.CONSUMED)
+        await _played(db, consumed, user, 5000, 40)
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000004"}
+
+
+async def test_purgeable_seeds_lists_pre_cutoff_seeds_even_protected(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        old = await _seed(db, "aaaa00000001", status=SeedStatus.DISCARDED)
+        old.created_at = BASE - timedelta(days=5)
+        await _played(db, old, user, 1000, 1)
+        db.add(SeedProtection(user_id=user.id, seed_id=old.id))
+        fresh = await _seed(db, "aaaa00000002", status=SeedStatus.DISCARDED)
+        fresh.created_at = BASE + timedelta(days=1)
+        await _played(db, fresh, user, 2000, 1)
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000001"}
+
+
+async def test_purgeable_seeds_filters_pool_and_age(async_session, pools):
+    async with async_session() as db:
+        sprint = await _seed(db, "aaaa00000001", status=SeedStatus.DISCARDED)
+        sprint.created_at = NOW - timedelta(days=50)
+        young = await _seed(db, "aaaa00000002", status=SeedStatus.DISCARDED)
+        young.created_at = NOW - timedelta(days=5)
+        standard = await _seed(
+            db, "bbbb00000001", pool="standard", layers=30, status=SeedStatus.DISCARDED
+        )
+        standard.created_at = NOW - timedelta(days=50)
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000001", "aaaa00000002", "bbbb00000001"}
+    assert await _purgeable(async_session, pool="sprint") == {"aaaa00000001", "aaaa00000002"}
+    assert await _purgeable(async_session, pool="sprint", older_than_days=30) == {"aaaa00000001"}
+
+
+async def test_purgeable_seeds_never_played_discarded_seed_is_listed(async_session, pools):
+    async with async_session() as db:
+        await _seed(db, "aaaa00000001", status=SeedStatus.DISCARDED)
+        await db.commit()
+
+    assert await _purgeable(async_session) == {"aaaa00000001"}

@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # SpeedFog Racing - Discarded seed cleanup script
-# Deletes .zip files on the VPS for seeds marked DISCARDED in the database.
+# Deletes .zip files on the VPS for seeds marked DISCARDED in the database,
+# except those the retention rules keep: a top seed of its category's Set Seed
+# board, a seed protected by a player, or a seed played in the last
+# SEED_PURGE_GRACE_DAYS days. Seeds built before SET_SEED_MIN_SEED_DATE are
+# always purged. The server decides (speedfog-purgeable-seeds, see
+# docs/SEED_PIPELINE.md); this script only deletes what it lists.
 # Additionally, deletes DB rows for DISCARDED seeds that were never referenced
-# by any race or training session (pure pollution, no audit value).
+# by any race or training session and not protected (pure pollution, no audit
+# value).
 # DB records of referenced DISCARDED seeds are kept for history / audit trail.
 #
 # Usage:
@@ -23,9 +29,12 @@ usage() {
     cat <<'EOF'
 Usage: deploy/cleanup-seeds.sh [OPTIONS]
 
-Delete .zip files on the VPS for seeds marked DISCARDED in the database.
+Delete .zip files on the VPS for seeds marked DISCARDED in the database,
+except those the retention rules keep: a top seed of its category (best Set
+Seed board times), a seed protected by a player, or a seed played in the last
+30 days. Seeds built before the game-version cutoff are always deleted.
 Also delete DB rows for DISCARDED seeds that were never referenced by any
-race or training session (they have no audit value).
+race or training session and not protected (they have no audit value).
 DB records of referenced DISCARDED seeds are preserved for race history.
 
 By default runs in dry-run mode (shows what would be deleted).
@@ -98,26 +107,19 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" "${OLDER_THAN:-
     [[ "$POOL" == "__ALL__" ]] && POOL=""
     [[ "$OLDER_THAN" == "0" ]] && OLDER_THAN=""
 
-    # Build SQL query for discarded seed file paths
-    WHERE="status = 'DISCARDED' AND folder_path IS NOT NULL"
+    # Ask the server which zips the retention rules allow to purge
+    # (one path per line on stdout, logs on stderr).
+    CLI_ARGS=()
     if [[ -n "$POOL" ]]; then
-        WHERE="$WHERE AND pool_name = '$POOL'"
+        CLI_ARGS+=(--pool "$POOL")
     fi
     if [[ -n "$OLDER_THAN" ]]; then
-        WHERE="$WHERE AND created_at < NOW() - INTERVAL '$OLDER_THAN days'"
+        CLI_ARGS+=(--older-than "$OLDER_THAN")
     fi
-
-    # Query discarded seeds from database
-    SQL="SELECT folder_path FROM seeds WHERE $WHERE ORDER BY pool_name, seed_number;"
-    PATHS=$(sudo -u speedfog psql -t -A speedfog_racing -c "$SQL" </dev/null) || {
-        echo "ERROR: psql query failed"
+    PATHS=$(cd /opt/speedfog-racing/server && sudo -H -u speedfog .venv/bin/speedfog-purgeable-seeds "${CLI_ARGS[@]}" </dev/null) || {
+        echo "ERROR: speedfog-purgeable-seeds failed"
         exit 1
     }
-
-    if [[ -z "$PATHS" ]]; then
-        echo "No discarded seeds found."
-        exit 0
-    fi
 
     TOTAL=0
     TOTAL_BYTES=0
@@ -158,7 +160,7 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" "${OLDER_THAN:-
 
     echo ""
     if [[ "$DRY_RUN" == true ]]; then
-        echo "Summary: $TOTAL discarded seeds, $((TOTAL - MISSING)) files on disk ($HUMAN_TOTAL), $MISSING already removed"
+        echo "Summary: $TOTAL purgeable discarded seeds, $((TOTAL - MISSING)) files on disk ($HUMAN_TOTAL), $MISSING already removed"
     else
         echo "Summary: deleted $DELETED files ($HUMAN_TOTAL freed), $MISSING were already removed"
     fi
@@ -169,7 +171,8 @@ ssh "$SERVER" bash -s "${POOL:-__ALL__}" "$DRY_RUN" "$SEEDS_DIR" "${OLDER_THAN:-
 
     UNREF_WHERE="s.status = 'DISCARDED'
         AND NOT EXISTS (SELECT 1 FROM races r WHERE r.seed_id = s.id)
-        AND NOT EXISTS (SELECT 1 FROM training_sessions t WHERE t.seed_id = s.id)"
+        AND NOT EXISTS (SELECT 1 FROM training_sessions t WHERE t.seed_id = s.id)
+        AND NOT EXISTS (SELECT 1 FROM seed_protections p WHERE p.seed_id = s.id)"
     if [[ -n "$POOL" ]]; then
         UNREF_WHERE="$UNREF_WHERE AND s.pool_name = '$POOL'"
     fi

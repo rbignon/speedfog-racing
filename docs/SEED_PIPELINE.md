@@ -267,6 +267,16 @@ DISCARDED ──reroll──→ stays DISCARDED (never released back)
 - Reroll is only allowed in SETUP status and when seeds have NOT been released.
 - Discarded seeds are permanently retired; the guard in `reroll_seed_for_race` prevents them from returning to AVAILABLE.
 
+### Retention of DISCARDED zips
+
+A DISCARDED seed's zip is kept while any of these holds, so a played seed stays replayable on Set Seed:
+
+- it is one of the `SET_SEED_KEPT_TOP_SEEDS` (10) best seeds of its category's Set Seed board;
+- a player protected it (`seed_protections`, at most `SEED_PROTECTION_LIMIT` seeds each, no expiry);
+- its last race or solo session is less than `SEED_PURGE_GRACE_DAYS` (30) days old (a race counts from its finish, else its start, else its creation; a session from its finish, else its creation).
+
+A seed built before `SET_SEED_MIN_SEED_DATE` is purgeable whatever its reasons. Seeds that are not DISCARDED are never purged. `services/set_seed_service.py::purgeable_seeds` applies the rules; the CLI `speedfog-purgeable-seeds [--pool P] [--older-than DAYS]` prints one `folder_path` per line (logs on stderr). `deploy/cleanup-seeds.sh` runs it on the VPS and deletes only the listed zips (dry-run unless `--execute`); its second phase, which deletes DISCARDED rows no race or session references, also skips protected seeds. Settings are described in `docs/SPEEDRUN.md`.
+
 ---
 
 ## Directory Layout
