@@ -183,6 +183,23 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     expect(band.textContent).toContain("Replay");
   });
 
+  it("shows a solo WR seed as plain text", async () => {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [
+        { ...run(true), race_id: null, race_name: null, session_id: "s1" },
+      ],
+      record_seed: { seed_number: "363096a4243f", runs: 1 },
+    });
+    mount();
+
+    const band = await screen.findByTestId("wr-seed");
+    expect(band.textContent).toContain("363096a4243f");
+    const seed = band.querySelector(".seed");
+    expect(seed?.textContent).toBe("363096a4243f");
+    expect(seed?.tagName).not.toBe("A");
+  });
+
   it("has no WR seed band without a record seed", async () => {
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue(EMPTY);
     mount();

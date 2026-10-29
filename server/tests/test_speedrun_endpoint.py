@@ -178,12 +178,21 @@ async def test_board_cache_holds_serialized_json(test_client, sprint_runs):
     assert boards and all(isinstance(value, bytes) for value in boards)
 
 
-async def test_board_sub_defaults_to_set_and_rejects_others(test_client, sprint_runs):
+async def test_board_sub_defaults_to_set_and_rejects_others(
+    test_client, async_session, sprint_runs
+):
+    async with async_session() as db:
+        await _add_run(db, sprint_runs["a"], 900, 3, set_seed=True)
+        await db.commit()
+
     default = await test_client.get("/api/stats/speedrun/sprint")
     explicit = await test_client.get("/api/stats/speedrun/sprint?sub=set")
     bad = await test_client.get("/api/stats/speedrun/sprint?sub=any")
 
+    random_board = await test_client.get("/api/stats/speedrun/sprint?sub=random")
+
     assert bad.status_code == 422
+    assert random_board.json() != explicit.json()
     assert default.json() == explicit.json()
 
 

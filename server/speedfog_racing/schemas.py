@@ -974,7 +974,7 @@ class WeaponStatsResponse(BaseModel):
     combos: list[WeaponComboStat]
 
 
-# speedrun.fog: the speedrun.com parody tab of /stats (see docs/SPEEDRUN.md).
+# speedrun.fog: the /speedrun page, with Set Seed and Random Seed boards (see docs/SPEEDRUN.md).
 
 
 class SpeedrunCategory(BaseModel):
@@ -985,7 +985,8 @@ class SpeedrunCategory(BaseModel):
     estimated_duration: str | None = None
     rules: str | None = None
     # First seed of the pool at its current layer count: when this "version"
-    # of the category came out.
+    # of the category came out. An archived category's is its earliest seed
+    # at its archived count.
     released_at: datetime | None = None
 
 

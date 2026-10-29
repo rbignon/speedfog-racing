@@ -1,4 +1,4 @@
-"""speedrun.fog: the speedrun.com parody tab of /stats.
+"""speedrun.fog: the /speedrun page, with Set Seed and Random Seed boards.
 
 Every counted run is loaded once with light columns (no ``zone_history``);
 boards, record histories and recent runs are derived from that list in

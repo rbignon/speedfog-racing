@@ -266,7 +266,7 @@ checkout.
 
 ## speedrun.fog
 
-The speedrun.com parody tab of `/stats` (Set Seed and Random Seed boards per category) is documented in `docs/SPEEDRUN.md`.
+The `/speedrun` page (Set Seed and Random Seed boards per category) is documented in `docs/SPEEDRUN.md`.
 
 ---
 

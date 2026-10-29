@@ -2268,7 +2268,10 @@ export interface SpeedrunCategory {
   description: string | null;
   estimated_duration: string | null;
   rules: string | null;
-  /** First seed at the pool's current layer count: this version's release. */
+  /**
+   * First seed at the pool's current layer count: this version's release.
+   * An archived category's is its earliest seed at its archived count.
+   */
   released_at: string | null;
 }
 
@@ -2285,7 +2288,11 @@ export interface SpeedrunRun {
   session_id: string | null;
   daily_date: string | null;
   seed_number: string;
-  /** Played without having seen the seed before (the first run on it). */
+  /**
+   * Played on a seed the runner could not study first: every racer of an
+   * ordinary race, daily or event, and Speedrun-mode solo runs. Replays (Set
+   * Seed races and set_seed sessions) are not blind.
+   */
   blind: boolean;
   deaths: number;
   weapon: number[] | null;

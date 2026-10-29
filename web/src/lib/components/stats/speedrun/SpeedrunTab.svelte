@@ -9,6 +9,7 @@
   import { DISCORD_URL } from "$lib/links";
   import {
     parseSpeedrunParams,
+    recentRunParams,
     writeSpeedrunParams,
     type SpeedrunParams,
   } from "$lib/speedrun";
@@ -16,11 +17,21 @@
   import SpeedrunBoard from "./SpeedrunBoard.svelte";
   import SpeedrunSidebar from "./SpeedrunSidebar.svelte";
 
-  // Read once: from then on the page owns its state and mirrors it into the
-  // URL, so a board can be shared.
+  // The tab owns its state and mirrors it into the URL, so a board can be
+  // shared. `written` is the query string the tab last put there: a different
+  // one is a navigation (the navbar link back to bare /speedrun), which
+  // replaces the state.
+  let written = untrack(() => page.url.search);
   let params = $state<SpeedrunParams>(
     untrack(() => parseSpeedrunParams(page.url.searchParams)),
   );
+
+  $effect(() => {
+    const search = page.url.search;
+    if (search === written) return;
+    written = search;
+    params = parseSpeedrunParams(page.url.searchParams);
+  });
   let overview = $state<SpeedrunOverviewResponse | null>(null);
   let error = $state<string | null>(null);
 
@@ -40,6 +51,7 @@
     params = next;
     const url = new URL(page.url);
     writeSpeedrunParams(url, next);
+    written = url.search;
     goto(url, { replaceState: true, noScroll: true, keepFocus: true });
   }
 </script>
@@ -74,7 +86,7 @@
       />
       <SpeedrunSidebar
         {overview}
-        onpick={(pool) => update({ ...params, pool })}
+        onpick={(pool) => update(recentRunParams(params, pool))}
       />
     </div>
   {/if}
