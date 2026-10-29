@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RunModeChip from "$lib/components/RunModeChip.svelte";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import { auth } from "$lib/stores/auth.svelte";
@@ -244,6 +245,7 @@
                     {session.pool_display_name ||
                       formatPoolName(session.pool_name)}
                   </a>
+                  <RunModeChip mode={session.mode} />
                 </td>
                 <td>
                   <span class="signal signal-{session.status}"

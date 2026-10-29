@@ -29,7 +29,8 @@
   import ZoneSheet from "$lib/components/ZoneSheet.svelte";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import { formatPoolName } from "$lib/utils/format";
-  import { formatIgt } from "$lib/utils/training";
+  import { formatIgt, trainingMapView } from "$lib/utils/training";
+  import RunModeChip from "$lib/components/RunModeChip.svelte";
   import { statusLabel } from "$lib/format";
 
   function formatDatetime(iso: string): string {
@@ -361,6 +362,7 @@
             <span class="seed-badge">Seed {session.seed_number}</span>
           {/if}
         {/if}
+        <RunModeChip mode={session.mode} />
         <span class="signal signal-{status}"
           >{status === "abandoned" ? "DNF" : status}</span
         >
@@ -478,8 +480,13 @@
 
     <!-- DAG section -->
     {#if graphJson}
+      {@const mapView = trainingMapView(
+        session,
+        status,
+        dagParticipants.length > 0,
+      )}
       <section class="dag-section">
-        {#if status === "finished" && dagParticipants.length > 0}
+        {#if mapView === "replay"}
           <div class="dag-view-toggle">
             <button
               class="toggle-btn"
@@ -505,20 +512,22 @@
               ghosts={ghostParticipants}
             />
           {/if}
-        {:else if (status === "abandoned" || status === "cancelled") && dagParticipants.length > 0}
+        {:else if mapView === "full"}
           <MetroDagFull
             {graphJson}
             participants={dagParticipants}
             onzonecodex={openZoneCodex}
           />
-        {:else if status === "active" && dagParticipants.length > 0}
+        {:else if mapView === "progressive-with-spoiler" || mapView === "progressive-only"}
           <div class="dag-toolbar">
-            <button
-              class="btn btn-outline btn-sm"
-              onclick={() => (showFullDag = !showFullDag)}
-            >
-              {showFullDag ? "Hide Spoiler" : "Show Spoiler"}
-            </button>
+            {#if mapView === "progressive-with-spoiler"}
+              <button
+                class="btn btn-outline btn-sm"
+                onclick={() => (showFullDag = !showFullDag)}
+              >
+                {showFullDag ? "Hide Spoiler" : "Show Spoiler"}
+              </button>
+            {/if}
             {#if isOwner}
               <button
                 class="btn btn-outline btn-sm"
@@ -529,7 +538,7 @@
             {/if}
           </div>
           <div class="dag-wrapper">
-            {#if showFullDag}
+            {#if showFullDag && mapView === "progressive-with-spoiler"}
               <MetroDagFull
                 {graphJson}
                 participants={dagParticipants}
@@ -544,6 +553,21 @@
               />
             {/if}
           </div>
+        {:else if mapView === "hidden"}
+          {#if isOwner}
+            <div class="dag-toolbar">
+              <button
+                class="btn btn-outline btn-sm"
+                onclick={() => (showObsModal = true)}
+              >
+                OBS Overlay
+              </button>
+            </div>
+          {/if}
+          <p class="blind-note">
+            The map reveals itself as you play. The full map and ghosts appear
+            when your run ends.
+          </p>
         {:else}
           <MetroDag {graphJson} />
         {/if}
@@ -807,6 +831,12 @@
     border-radius: var(--radius-sm);
     padding: 0.2rem 0.5rem;
     color: var(--color-text-secondary);
+  }
+
+  .blind-note {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    margin: 0.5rem 0;
   }
 
   .stat-right {

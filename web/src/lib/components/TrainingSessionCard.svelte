@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { TrainingSession } from "$lib/api";
+  import RunModeChip from "./RunModeChip.svelte";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
   import { timeAgo } from "$lib/utils/time";
@@ -30,7 +31,8 @@
   </div>
   <div class="card-header">
     <span class="card-title"
-      >{session.pool_display_name || formatPoolName(session.pool_name)}</span
+      >{session.pool_display_name || formatPoolName(session.pool_name)}
+      <RunModeChip mode={session.mode} /></span
     >
     <span class="signal signal-{session.status}"
       >{session.status === "abandoned" ? "DNF" : session.status}</span
