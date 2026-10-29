@@ -7,7 +7,10 @@ import {
   type SpeedrunCategory,
   type SpeedrunRun,
 } from "$lib/api";
+import { goto } from "$app/navigation";
 import { RUN_TYPES, type SpeedrunParams } from "$lib/speedrun";
+
+vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
@@ -216,5 +219,52 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
 
     await screen.findByText("No runs match these filters.");
     expect(screen.queryByTestId("wr-seed")).toBeNull();
+  });
+});
+
+describe("SpeedrunBoard links to seed pages", () => {
+  beforeEach(() => {
+    vi.mocked(fetchSpeedrunBoard).mockReset();
+    vi.mocked(goto).mockReset();
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [run(true)],
+      record_seed: { seed_number: "363096a4243f", runs: 3 },
+    });
+  });
+
+  it("opens the record run's seed page from the WR band button", async () => {
+    mount();
+
+    const band = await screen.findByTestId("wr-seed");
+    const open = Array.from(band.querySelectorAll("a")).find(
+      (a) => a.textContent?.trim() === "Open seed",
+    );
+    expect(open?.getAttribute("href")).toBe(
+      "/speedrun/seed/363096a4243f?run=p1",
+    );
+  });
+
+  it("links the table's seed cell to the run's seed page", async () => {
+    mount();
+
+    const row = (await screen.findByText("363096")).closest("tr")!;
+    expect(row.querySelector("a.seed")?.getAttribute("href")).toBe(
+      "/speedrun/seed/363096a4243f?run=p1",
+    );
+  });
+
+  it("navigates to the seed page on a row click, but not on a link", async () => {
+    mount();
+
+    const row = (await screen.findByText("363096")).closest("tr")!;
+    await fireEvent.click(row.querySelector("td.rank")!);
+    expect(goto).toHaveBeenCalledWith("/speedrun/seed/363096a4243f?run=p1");
+
+    vi.mocked(goto).mockClear();
+    const player = row.querySelector(".player a");
+    expect(player).toBeTruthy();
+    await fireEvent.click(player!);
+    expect(goto).not.toHaveBeenCalled();
   });
 });

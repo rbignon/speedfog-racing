@@ -84,13 +84,9 @@
             {entry.kind === "new"
               ? "set a new record time of"
               : "improved their time to"}
-            {#if speedrunSeedHref(entry.run)}
-              <a class="time" href={speedrunSeedHref(entry.run)}
-                ><SpeedrunTime ms={entry.run.igt_ms} /></a
-              >
-            {:else}
-              <span class="time"><SpeedrunTime ms={entry.run.igt_ms} /></span>
-            {/if} !
+            <a class="time" href={speedrunSeedHref(entry.run)}
+              ><SpeedrunTime ms={entry.run.igt_ms} /></a
+            > !
           </p>
           <p class="when">
             {speedrunDay(entry.run.finished_at)}{entry.daysLater !== null

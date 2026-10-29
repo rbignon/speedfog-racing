@@ -286,6 +286,20 @@ describe("SeedStatusChip", () => {
     expect(tip.textContent).not.toContain("Files kept");
   });
 
+  it("dismisses the open tooltip with Escape by blurring the chip", async () => {
+    render(SeedStatusChip, { props: { seed: seed() } });
+
+    const chip = screen
+      .getByText("Replayable")
+      .closest<HTMLElement>("[tabindex]")!;
+    chip.focus();
+    expect(document.activeElement).toBe(chip);
+
+    await fireEvent.keyDown(chip, { key: "Escape" });
+
+    expect(document.activeElement).not.toBe(chip);
+  });
+
   it("describes a keyboard-reachable chip", () => {
     render(SeedStatusChip, { props: { seed: seed() } });
 

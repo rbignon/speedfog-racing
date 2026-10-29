@@ -41,6 +41,7 @@
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import { goto } from "$app/navigation";
+  import { raceSeedPageHref } from "$lib/speedrun";
   import { deleteRace, getTwitchLoginUrl } from "$lib/api";
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
   import { MetroDag, MetroDagProgressive, MetroDagFull } from "$lib/dag";
@@ -1205,7 +1206,18 @@
               <span class="visibility-badge">Private</span>
             {/if}
             {#if initialRace.seed_number}
-              <span class="seed-badge">Seed {initialRace.seed_number}</span>
+              {@const seedPage = raceSeedPageHref({
+                seed_number: initialRace.seed_number,
+                status: raceStatus,
+                mode: initialRace.mode,
+              })}
+              {#if seedPage}
+                <a class="seed-badge" href={seedPage}
+                  >Seed {initialRace.seed_number}</a
+                >
+              {:else}
+                <span class="seed-badge">Seed {initialRace.seed_number}</span>
+              {/if}
             {/if}
             {#if liveRaceEndsAt && raceStatus === "running"}
               <span class="race-ends-pill">
@@ -2087,6 +2099,10 @@
   .value {
     font-weight: 500;
     font-family: var(--font-mono);
+  }
+
+  a.seed-badge:hover {
+    color: var(--color-purple-hover);
   }
 
   .seed-badge {

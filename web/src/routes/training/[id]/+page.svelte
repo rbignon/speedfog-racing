@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { page } from "$app/state";
+  import { sessionSeedPageHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
   import { trainingStore } from "$lib/stores/training.svelte";
@@ -307,7 +308,16 @@
           </button>
         {/if}
         {#if session.seed_number}
-          <span class="seed-badge">Seed {session.seed_number}</span>
+          {@const seedPage = sessionSeedPageHref({
+            seed_number: session.seed_number,
+            status: status === "finished" ? "finished" : session.status,
+            mode: session.mode,
+          })}
+          {#if seedPage}
+            <a class="seed-badge" href={seedPage}>Seed {session.seed_number}</a>
+          {:else}
+            <span class="seed-badge">Seed {session.seed_number}</span>
+          {/if}
         {/if}
         <span class="signal signal-{status}"
           >{status === "abandoned" ? "DNF" : status}</span
@@ -688,6 +698,10 @@
 
   .mono {
     font-family: var(--font-mono);
+  }
+
+  a.seed-badge:hover {
+    color: var(--color-purple-hover);
   }
 
   .seed-badge {

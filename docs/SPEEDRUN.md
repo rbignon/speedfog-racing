@@ -89,6 +89,8 @@ A run's `blind` flag is exposed on every row, so a Set Seed board can mark which
 
 Links to the page come from `web/src/lib/speedrun.ts`: `seedPageHref(seed, runId?)` builds it (`?run=` when a run is given); `speedrunSeedHref(run)` is a board run's seed page focused on that run; `raceSeedPageHref` (a finished race, or a Set Seed race at any status) and `sessionSeedPageHref` (a Set Seed session, or a Speedrun session no longer active; never a `normal` session) say when a race or solo page should link its seed. They only spare links to pages that would still be hidden: the server's public rule stays the guard. Race and session responses carry `mode` on the web types too (`RunMode`).
 
+Where the links appear: the WR seed band (the seed number and an "Open seed" button, both to the record run's page), the board table (the seed cell is the keyboard-reachable link; a click anywhere else on a row navigates to the same page through `goto`, except on the player link or any other link or button), the record history's times, and the `Seed <n>` badge of the race, daily and solo session pages, which is a link only when `raceSeedPageHref` / `sessionSeedPageHref` return one (a running blind race or an active Speedrun session shows plain text). The seed status chip's tooltip opens on hover and on focus (so a tap shows it on a phone) and Escape blurs the chip to close it.
+
 ## Settings
 
 Env settings in `server/speedfog_racing/config.py`, listed in `server/.env.example`:

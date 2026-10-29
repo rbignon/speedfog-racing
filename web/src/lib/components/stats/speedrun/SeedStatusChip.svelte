@@ -14,10 +14,18 @@
   const tipId = `seed-status-${uid}`;
 </script>
 
-<!-- The reason is a tooltip, shown on hover and on keyboard focus: the chip
-     takes focus so a keyboard reaches it. -->
-<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-<span class="seed-status" tabindex="0" aria-describedby={tipId}>
+<!-- The reason is a tooltip, shown on hover and on focus (a tap focuses the
+     chip on a phone; Escape blurs it): the chip takes focus so a keyboard
+     reaches it. -->
+<!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_static_element_interactions -->
+<span
+  class="seed-status"
+  tabindex="0"
+  aria-describedby={tipId}
+  onkeydown={(e) => {
+    if (e.key === "Escape") e.currentTarget.blur();
+  }}
+>
   <span
     class="signal"
     class:signal-open={seed.replayable}
@@ -74,7 +82,7 @@
   }
 
   .seed-status:hover .seed-tip,
-  .seed-status:focus-visible .seed-tip {
+  .seed-status:focus .seed-tip {
     display: flex;
   }
 

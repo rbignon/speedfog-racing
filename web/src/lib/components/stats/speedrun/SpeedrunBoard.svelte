@@ -194,11 +194,7 @@
     {@const seedHref = speedrunSeedHref(recordRun)}
     <div class="wr-seed" data-testid="wr-seed">
       <span class="chip wr-chip">WR seed</span>
-      {#if seedHref}
-        <a class="seed" href={seedHref}>{board.record_seed.seed_number}</a>
-      {:else}
-        <span class="seed">{board.record_seed.seed_number}</span>
-      {/if}
+      <a class="seed" href={seedHref}>{board.record_seed.seed_number}</a>
       <span class="wr-time"><SpeedrunTime ms={recordRun.igt_ms} /></span>
       <SpeedrunPlayer user={recordRun.user} />
       <span
@@ -212,6 +208,8 @@
           ? ""
           : "s"}</span
       >
+      <span class="spacer"></span>
+      <a class="tool" href={seedHref}>Open seed</a>
     </div>
   {/if}
 

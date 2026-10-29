@@ -26,7 +26,7 @@
   }
 
   // untrack: initial snapshot only; the $effect below follows navigation.
-  let seed: SpeedrunSeed = $state(untrack(() => data.seed));
+  let seed: SpeedrunSeed = $state.raw(untrack(() => data.seed));
   let selectedIds = $state<Set<string>>(
     untrack(() => openedSelection(data.seed, data.run)),
   );

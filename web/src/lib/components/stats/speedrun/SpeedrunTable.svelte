@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import type { SpeedrunRun } from "$lib/api";
   import { speedrunAgo, speedrunSeedHref } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
@@ -16,6 +17,12 @@
   let shown = $state(PAGE_SIZE);
   // Relative dates are computed once per board, like a page load would.
   const now = Date.now();
+  // A click on the row opens the run's seed page, unless it landed on a link
+  // or a button (the player, the seed cell).
+  function openSeed(e: MouseEvent, href: string) {
+    if ((e.target as Element).closest("a, button")) return;
+    void goto(href);
+  }
   let visible = $derived(runs.slice(0, shown));
 </script>
 
@@ -39,7 +46,11 @@
         {@const route = run.weapon
           ? formatCombo(run.weapon, getWeaponName)
           : "–"}
-        <tr class:obsolete={run.rank === null}>
+        <!-- A mouse shortcut only: the seed cell's link is the keyboard path. -->
+        <tr
+          class:obsolete={run.rank === null}
+          onclick={(e) => openSeed(e, seedHref)}
+        >
           <td class="rank">
             {#if run.rank !== null && run.rank <= 3}
               <span class="trophy"><SpeedrunTrophy place={run.rank} /></span>
@@ -67,11 +78,7 @@
             >{speedrunAgo(run.finished_at, now)}</td
           >
           <td>
-            {#if seedHref}
-              <a class="seed" href={seedHref}>{run.seed_number.slice(0, 6)}</a>
-            {:else}
-              {run.seed_number.slice(0, 6)}
-            {/if}
+            <a class="seed" href={seedHref}>{run.seed_number.slice(0, 6)}</a>
           </td>
           <td class="route-cell" title={run.weapon ? route : undefined}
             >{route}</td
@@ -137,6 +144,10 @@
 
   .left {
     text-align: left;
+  }
+
+  tbody tr {
+    cursor: pointer;
   }
 
   tbody tr:nth-child(even) td {

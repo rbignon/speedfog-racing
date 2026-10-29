@@ -2,6 +2,7 @@
   import { isOutOfRace } from "$lib/format";
   import { untrack } from "svelte";
   import { goto } from "$app/navigation";
+  import { raceSeedPageHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import { raceStore } from "$lib/stores/race.svelte";
   import { joinableStore } from "$lib/stores/joinable.svelte";
@@ -663,7 +664,18 @@
           <div class="daily-meta-right">
             <ShareButtons />
             {#if initialRace.seed_number}
-              <span class="seed-badge">Seed {initialRace.seed_number}</span>
+              {@const seedPage = raceSeedPageHref({
+                seed_number: initialRace.seed_number,
+                status: raceStatus,
+                mode: initialRace.mode,
+              })}
+              {#if seedPage}
+                <a class="seed-badge" href={seedPage}
+                  >Seed {initialRace.seed_number}</a
+                >
+              {:else}
+                <span class="seed-badge">Seed {initialRace.seed_number}</span>
+              {/if}
             {/if}
             {#if initialRace.deathless}
               <span
@@ -1200,6 +1212,10 @@
       min-width: 0;
       justify-content: flex-start;
     }
+  }
+
+  a.seed-badge:hover {
+    color: var(--color-purple-hover);
   }
 
   .seed-badge {
