@@ -15,9 +15,11 @@ import pytest
 
 from speedfog_racing.services.seed_pack_service import (
     OVERLAY_DEFAULTS,
+    ModDllUnavailableError,
     _iter_cd_entries,
     generate_player_config,
     generate_training_config,
+    load_mod_dll,
     stream_seed_pack_with_config,
 )
 
@@ -99,6 +101,14 @@ def seed_zip():
             )
             zf.writestr("speedfog_abc123/launch_speedfog.bat", "@echo off\necho Launch")
         yield zip_path
+
+
+@pytest.fixture
+def mod_dll(tmp_path):
+    """The server's current mod DLL, which every pack must carry."""
+    path = tmp_path / "speedfog_racing.dll"
+    path.write_bytes(b"current dll")
+    return path
 
 
 @pytest.fixture
@@ -199,30 +209,30 @@ def test_player_and_training_configs_set_up_the_overlay_alike(mock_participant, 
 # =============================================================================
 
 
-def _collect_stream(seed_zip_path: Path, config: str) -> tuple[bytes, int]:
+def _collect_stream(seed_zip_path: Path, config: str, mod_dll_path: Path) -> tuple[bytes, int]:
     """Helper: collect streamed bytes and declared content length."""
-    stream, content_length = stream_seed_pack_with_config(seed_zip_path, config)
+    stream, content_length = stream_seed_pack_with_config(seed_zip_path, config, mod_dll_path)
     data = b"".join(stream)
     return data, content_length
 
 
-def test_stream_produces_valid_zip(seed_zip):
+def test_stream_produces_valid_zip(seed_zip, mod_dll):
     """Streamed output should be a valid ZIP file."""
-    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n", mod_dll)
     zf = zipfile.ZipFile(io.BytesIO(data))
     assert zf.testzip() is None
     zf.close()
 
 
-def test_stream_content_length_matches(seed_zip):
+def test_stream_content_length_matches(seed_zip, mod_dll):
     """Declared content length should match actual bytes."""
-    data, content_length = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    data, content_length = _collect_stream(seed_zip, "[server]\ntest = true\n", mod_dll)
     assert len(data) == content_length
 
 
-def test_stream_contains_original_files(seed_zip):
+def test_stream_contains_original_files(seed_zip, mod_dll):
     """Streamed zip should contain all original files."""
-    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n")
+    data, _ = _collect_stream(seed_zip, "[server]\ntest = true\n", mod_dll)
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         names = zf.namelist()
         assert "speedfog_abc123/lib/speedfog_racing.dll" in names
@@ -230,54 +240,53 @@ def test_stream_contains_original_files(seed_zip):
         assert "speedfog_abc123/launch_speedfog.bat" in names
 
 
-def test_stream_contains_injected_config(seed_zip):
+def test_stream_contains_injected_config(seed_zip, mod_dll):
     """Streamed zip should contain the injected config TOML."""
     config = '[server]\nmod_token = "abc123"\n'
-    data, _ = _collect_stream(seed_zip, config)
+    data, _ = _collect_stream(seed_zip, config, mod_dll)
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         assert "speedfog_abc123/lib/speedfog_racing.toml" in zf.namelist()
         content = zf.read("speedfog_abc123/lib/speedfog_racing.toml").decode()
         assert 'mod_token = "abc123"' in content
 
 
-def test_stream_original_file_contents_intact(seed_zip):
+def test_stream_original_file_contents_intact(seed_zip, mod_dll):
     """Original file contents should be preserved byte-for-byte."""
-    data, _ = _collect_stream(seed_zip, "[server]\n")
+    data, _ = _collect_stream(seed_zip, "[server]\n", mod_dll)
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"mock dll"
         assert zf.read("speedfog_abc123/launch_speedfog.bat") == b"@echo off\necho Launch"
 
 
-def test_stream_does_not_modify_original(seed_zip):
+def test_stream_does_not_modify_original(seed_zip, mod_dll):
     """Original seed zip should not be modified."""
     original_mtime = os.path.getmtime(seed_zip)
     original_size = os.path.getsize(seed_zip)
 
-    _collect_stream(seed_zip, "[server]\n")
+    _collect_stream(seed_zip, "[server]\n", mod_dll)
 
     assert os.path.getmtime(seed_zip) == original_mtime
     assert os.path.getsize(seed_zip) == original_size
 
 
-def test_stream_missing_zip_raises():
+def test_stream_missing_zip_raises(mod_dll):
     """Should raise FileNotFoundError for non-existent zip."""
     with pytest.raises(FileNotFoundError):
-        _collect_stream(Path("/nonexistent/path.zip"), "[server]\n")
+        _collect_stream(Path("/nonexistent/path.zip"), "[server]\n", mod_dll)
 
 
-def test_stream_invalid_zip_raises():
+def test_stream_invalid_zip_raises(mod_dll):
     """Should raise ValueError for non-ZIP file."""
     with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as f:
         f.write(b"not a zip file")
         f.flush()
         try:
             with pytest.raises(ValueError, match="Not a valid ZIP"):
-                _collect_stream(Path(f.name), "[server]\n")
+                _collect_stream(Path(f.name), "[server]\n", mod_dll)
         finally:
             os.unlink(f.name)
 
 
-def test_stream_zip_without_top_dir():
+def test_stream_zip_without_top_dir(mod_dll):
     """Flat zips get the config at lib/ and lose their root-level graph.json."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "flat.zip"
@@ -285,7 +294,7 @@ def test_stream_zip_without_top_dir():
             zf.writestr("lib/mod.dll", "dll")
             zf.writestr("graph.json", "{}")
 
-        data, _ = _collect_stream(zip_path, "[server]\n")
+        data, _ = _collect_stream(zip_path, "[server]\n", mod_dll)
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             assert zf.testzip() is None
             assert "lib/speedfog_racing.toml" in zf.namelist()
@@ -293,10 +302,10 @@ def test_stream_zip_without_top_dir():
             assert zf.read("lib/mod.dll") == b"dll"
 
 
-def test_stream_larger_config(seed_zip):
+def test_stream_larger_config(seed_zip, mod_dll):
     """Should handle configs of various sizes correctly."""
     config = "[server]\n" + "# padding\n" * 500  # ~5 KB config
-    data, content_length = _collect_stream(seed_zip, config)
+    data, content_length = _collect_stream(seed_zip, config, mod_dll)
     assert len(data) == content_length
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -305,7 +314,7 @@ def test_stream_larger_config(seed_zip):
         assert stored == config
 
 
-def test_stream_with_deflated_entries():
+def test_stream_with_deflated_entries(mod_dll):
     """Deflated entries in the original zip should survive the round-trip."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "deflated.zip"
@@ -313,7 +322,7 @@ def test_stream_with_deflated_entries():
             zf.writestr("top/lib/mod.dll", "x" * 10000)
             zf.writestr("top/graph.json", json.dumps({"nodes": list(range(100))}))
 
-        data, content_length = _collect_stream(zip_path, "[server]\n")
+        data, content_length = _collect_stream(zip_path, "[server]\n", mod_dll)
         assert len(data) == content_length
 
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -327,16 +336,16 @@ def test_stream_with_deflated_entries():
 # =============================================================================
 
 
-def test_stream_strips_graph_json(seed_zip):
+def test_stream_strips_graph_json(seed_zip, mod_dll):
     """The DAG definition must not ship to players: it is a full-route spoiler."""
-    data, content_length = _collect_stream(seed_zip, "[server]\n")
+    data, content_length = _collect_stream(seed_zip, "[server]\n", mod_dll)
     assert len(data) == content_length
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
         assert zf.testzip() is None
         assert "speedfog_abc123/graph.json" not in zf.namelist()
 
 
-def test_stream_strips_graph_json_between_other_entries():
+def test_stream_strips_graph_json_between_other_entries(mod_dll):
     """Entries stored after graph.json must keep working once its bytes are dropped."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "middle.zip"
@@ -345,17 +354,22 @@ def test_stream_strips_graph_json_between_other_entries():
             zf.writestr("top/graph.json", json.dumps({"nodes": list(range(500))}))
             zf.writestr("top/z.txt", "z" * 3000)
 
-        data, content_length = _collect_stream(zip_path, "[server]\n")
+        data, content_length = _collect_stream(zip_path, "[server]\n", mod_dll)
         assert len(data) == content_length
 
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             assert zf.testzip() is None
-            assert zf.namelist() == ["top/a.txt", "top/z.txt", "top/lib/speedfog_racing.toml"]
+            assert zf.namelist() == [
+                "top/a.txt",
+                "top/z.txt",
+                "top/lib/speedfog_racing.toml",
+                "top/lib/speedfog_racing.dll",
+            ]
             assert zf.read("top/a.txt") == b"a" * 3000
             assert zf.read("top/z.txt") == b"z" * 3000
 
 
-def test_stream_without_graph_json_keeps_everything():
+def test_stream_without_graph_json_keeps_everything(mod_dll):
     """A zip that never had a graph.json streams through untouched."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "nograph.zip"
@@ -363,7 +377,7 @@ def test_stream_without_graph_json_keeps_everything():
             zf.writestr("top/lib/mod.dll", "dll")
             zf.writestr("top/launch.bat", "bat")
 
-        data, content_length = _collect_stream(zip_path, "[server]\n")
+        data, content_length = _collect_stream(zip_path, "[server]\n", mod_dll)
         assert len(data) == content_length
 
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -372,10 +386,11 @@ def test_stream_without_graph_json_keeps_everything():
                 "top/lib/mod.dll",
                 "top/launch.bat",
                 "top/lib/speedfog_racing.toml",
+                "top/lib/speedfog_racing.dll",
             ]
 
 
-def test_stream_keeps_deeper_graph_json():
+def test_stream_keeps_deeper_graph_json(mod_dll):
     """Only the seed's own graph.json (root or top_dir level) is stripped, same rule as the scan."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "deep.zip"
@@ -383,7 +398,7 @@ def test_stream_keeps_deeper_graph_json():
             zf.writestr("top/lib/mod.dll", "dll")
             zf.writestr("top/docs/graph.json", "{}")
 
-        data, _ = _collect_stream(zip_path, "[server]\n")
+        data, _ = _collect_stream(zip_path, "[server]\n", mod_dll)
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             assert zf.testzip() is None
             assert "top/docs/graph.json" in zf.namelist()
@@ -411,7 +426,7 @@ class _UnseekableWriter(io.RawIOBase):
         return self._target.tell()
 
 
-def test_stream_strips_graph_json_with_data_descriptor():
+def test_stream_strips_graph_json_with_data_descriptor(mod_dll):
     """Entries written with a trailing data descriptor (flag bit 3) span extra bytes."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "descriptor.zip"
@@ -427,7 +442,7 @@ def test_stream_strips_graph_json_with_data_descriptor():
                 "fixture must use data descriptors"
             )
 
-        data, content_length = _collect_stream(zip_path, "[server]\n")
+        data, content_length = _collect_stream(zip_path, "[server]\n", mod_dll)
         assert len(data) == content_length
 
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -455,7 +470,7 @@ def _reverse_central_directory(zip_path: Path) -> None:
     zip_path.write_bytes(bytes(data))
 
 
-def test_stream_shifts_by_local_offset_not_central_directory_order():
+def test_stream_shifts_by_local_offset_not_central_directory_order(mod_dll):
     """Offsets are rewritten for records stored after graph.json, whatever the CD order."""
     with tempfile.TemporaryDirectory() as tmpdir:
         zip_path = Path(tmpdir) / "reversed.zip"
@@ -467,7 +482,7 @@ def test_stream_shifts_by_local_offset_not_central_directory_order():
         with zipfile.ZipFile(zip_path) as src:
             assert src.namelist() == ["top/z.txt", "top/graph.json", "top/a.txt"]
 
-        data, content_length = _collect_stream(zip_path, "[server]\n")
+        data, content_length = _collect_stream(zip_path, "[server]\n", mod_dll)
         assert len(data) == content_length
 
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -475,3 +490,133 @@ def test_stream_shifts_by_local_offset_not_central_directory_order():
             assert "top/graph.json" not in zf.namelist()
             assert zf.read("top/a.txt") == b"a" * 3000
             assert zf.read("top/z.txt") == b"z" * 3000
+
+
+# =============================================================================
+# Mod DLL: the server's current build replaces the one bundled at generation
+# =============================================================================
+
+
+def _write_zip(path: Path, entries: list[tuple[str, bytes]], **kwargs) -> Path:
+    with zipfile.ZipFile(path, "w", **kwargs) as zf:
+        for name, data in entries:
+            zf.writestr(name, data)
+    return path
+
+
+def _dll_names(zf: zipfile.ZipFile) -> list[str]:
+    return [n for n in zf.namelist() if n.endswith("speedfog_racing.dll")]
+
+
+def test_stream_replaces_bundled_dll(seed_zip, mod_dll):
+    """A pool zip generated with the mod inside ships the server's build instead."""
+    data, length = _collect_stream(seed_zip, "[server]\n", mod_dll)
+    assert len(data) == length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert _dll_names(zf) == ["speedfog_abc123/lib/speedfog_racing.dll"]
+        assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"current dll"
+
+
+def test_stream_appends_dll_when_zip_has_none(tmp_path, mod_dll):
+    """Seeds generated without a bundled DLL still get one."""
+    zip_path = _write_zip(
+        tmp_path / "nodll.zip",
+        [("speedfog_x/graph.json", b"{}"), ("speedfog_x/launch.bat", b"bat")],
+    )
+    data, length = _collect_stream(zip_path, "[server]\n", mod_dll)
+    assert len(data) == length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert "speedfog_x/graph.json" not in zf.namelist()
+        assert zf.read("speedfog_x/lib/speedfog_racing.dll") == b"current dll"
+        assert zf.read("speedfog_x/launch.bat") == b"bat"
+
+
+def test_stream_dll_without_top_dir(tmp_path, mod_dll):
+    """A flat zip gets its root-level lib/speedfog_racing.dll replaced."""
+    zip_path = _write_zip(
+        tmp_path / "flat.zip",
+        [("lib/speedfog_racing.dll", b"old dll"), ("launch.bat", b"bat")],
+    )
+    data, length = _collect_stream(zip_path, "[server]\n", mod_dll)
+    assert len(data) == length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert _dll_names(zf) == ["lib/speedfog_racing.dll"]
+        assert zf.read("lib/speedfog_racing.dll") == b"current dll"
+
+
+def test_stream_drops_graph_and_dll_between_other_entries(tmp_path, mod_dll):
+    """Two dropped records shift the entries stored after them by their summed spans."""
+    zip_path = _write_zip(
+        tmp_path / "middle.zip",
+        [
+            ("x/a.txt", b"a" * 3000),
+            ("x/graph.json", json.dumps({"nodes": list(range(500))}).encode()),
+            ("x/b.bin", bytes(range(256)) * 20),
+            ("x/lib/speedfog_racing.dll", b"old dll" * 400),
+            ("x/c.txt", b"c" * 3000),
+        ],
+        compression=zipfile.ZIP_DEFLATED,
+    )
+    data, length = _collect_stream(zip_path, "[server]\n", mod_dll)
+    assert len(data) == length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert zf.namelist() == [
+            "x/a.txt",
+            "x/b.bin",
+            "x/c.txt",
+            "x/lib/speedfog_racing.toml",
+            "x/lib/speedfog_racing.dll",
+        ]
+        assert zf.read("x/a.txt") == b"a" * 3000
+        assert zf.read("x/b.bin") == bytes(range(256)) * 20
+        assert zf.read("x/c.txt") == b"c" * 3000
+        assert zf.read("x/lib/speedfog_racing.dll") == b"current dll"
+
+
+def test_stream_keeps_deeper_dll(tmp_path, mod_dll):
+    """Only the mod's own path is replaced; a same-named file deeper down is kept."""
+    zip_path = _write_zip(
+        tmp_path / "deep.zip",
+        [("x/mods/lib/speedfog_racing.dll", b"other"), ("x/launch.bat", b"bat")],
+    )
+    data, _ = _collect_stream(zip_path, "[server]\n", mod_dll)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert zf.read("x/mods/lib/speedfog_racing.dll") == b"other"
+        assert zf.read("x/lib/speedfog_racing.dll") == b"current dll"
+
+
+def test_stream_missing_mod_dll_raises(seed_zip, tmp_path):
+    """No DLL on the server is its own error, not the purged-seed FileNotFoundError."""
+    with pytest.raises(ModDllUnavailableError):
+        stream_seed_pack_with_config(seed_zip, "[server]\n", tmp_path / "absent.dll")
+
+
+def test_stream_keeps_the_dll_it_started_with(seed_zip, mod_dll):
+    """A deploy landing mid-download must not mix two builds into one zip."""
+    stream, length = stream_seed_pack_with_config(seed_zip, "[server]\n", mod_dll)
+    mod_dll.write_bytes(b"newer dll, longer")
+    data = b"".join(stream)
+    assert len(data) == length
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.testzip() is None
+        assert zf.read("speedfog_abc123/lib/speedfog_racing.dll") == b"current dll"
+
+
+def test_load_mod_dll_reuses_the_cached_copy(mod_dll):
+    """Concurrent downloads share one copy of the DLL instead of reading it each time."""
+    assert load_mod_dll(mod_dll) is load_mod_dll(mod_dll)
+
+
+def test_load_mod_dll_reloads_a_changed_file(mod_dll):
+    """A new build on disk is picked up without a restart."""
+    first = load_mod_dll(mod_dll)
+    mod_dll.write_bytes(b"another build")
+    os.utime(mod_dll, ns=(1, 1))
+    second = load_mod_dll(mod_dll)
+    assert second.data == b"another build"
+    assert second.crc != first.crc

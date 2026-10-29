@@ -1,16 +1,18 @@
 """Seed pack generation service for race participants.
 
-Streams personalized seed packs by injecting per-participant config into
-the original seed zip on-the-fly, without copying the full file.
+Streams personalized seed packs by injecting per-participant config and the
+server's current mod DLL into the original seed zip on-the-fly, without copying
+the full file.
 """
 
 import io
 import logging
+import os
 import re
 import struct
 import time
 import zlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, get_args
@@ -27,6 +29,47 @@ OVERLAY_DEFAULTS: dict[str, float] = {"font_size": 20.0}
 LeaderboardMode = Literal["centered", "top"]
 DEFAULT_LEADERBOARD_MODE: LeaderboardMode = "centered"
 CHUNK_SIZE = 64 * 1024  # 64 KB streaming chunks
+MOD_DLL_NAME = "speedfog_racing.dll"
+
+
+class ModDllUnavailableError(Exception):
+    """The server has no readable mod DLL to put in seed packs."""
+
+
+@dataclass(frozen=True)
+class ModDll:
+    """The mod build every pack carries, read once and shared by all downloads."""
+
+    data: bytes
+    crc: int
+
+
+# One entry: the server serves a single DLL, and a new build on disk replaces
+# it. Keyed on (path, size, mtime) so concurrent downloads share one copy.
+_mod_dll_cache: tuple[tuple[str, int, int], ModDll] | None = None
+
+
+def load_mod_dll(path: Path) -> ModDll:
+    """The mod DLL at ``path``, cached until the file changes.
+
+    Raises:
+        ModDllUnavailableError: If the file is missing or unreadable (kept apart
+            from ``FileNotFoundError``, which means a purged seed zip).
+    """
+    global _mod_dll_cache
+    try:
+        with open(path, "rb") as f:
+            # Stat the open file, so the key and the bytes come from the same inode.
+            st = os.fstat(f.fileno())
+            key = (str(path), st.st_size, st.st_mtime_ns)
+            if _mod_dll_cache is not None and _mod_dll_cache[0] == key:
+                return _mod_dll_cache[1]
+            data = f.read()
+    except OSError as e:
+        raise ModDllUnavailableError(f"Mod DLL unavailable at {path}: {e}") from e
+    dll = ModDll(data=data, crc=zlib.crc32(data) & 0xFFFFFFFF)
+    _mod_dll_cache = (key, dll)
+    return dll
 
 
 def _get_overlay_setting(user_settings: dict[str, Any] | None, key: str) -> float:
@@ -171,22 +214,53 @@ def _local_entry_span(f: io.BufferedReader, entry: _CdEntry) -> int:
     return span
 
 
-def _drop_entry_from_cd(
-    cd_bytes: bytes, entries: list[_CdEntry], dropped: _CdEntry, span: int
-) -> bytes:
-    """Rebuild the central directory without ``dropped``.
+def _is_mod_dll_entry(name: str) -> bool:
+    """Match the mod DLL at the path ModEngine loads: ``lib/`` at the root or under the top dir.
 
-    Entries whose local record sat after the dropped one move back by ``span``
-    bytes in the streamed output, so their ``local_header_offset`` is rewritten.
-    Any trailing non-entry bytes are kept verbatim.
+    Pool zips generated before the server started appending the DLL carry the
+    build of their generation day there; it is replaced by the current one.
+    """
+    parts = name.split("/")
+    return parts[-2:] == ["lib", MOD_DLL_NAME] and len(parts) <= 3
+
+
+def _first_entry(
+    zip_name: str, entries: list[_CdEntry], match: Callable[[str], bool], label: str
+) -> _CdEntry | None:
+    """The first entry ``match`` accepts; several candidates are logged, only one is dropped."""
+    found = [e for e in entries if match(e.name)]
+    if len(found) > 1:
+        # Generator output never produces this; make a leak visible if it ever does.
+        logger.warning(
+            "%s has %d %s candidates, only %r is dropped",
+            zip_name,
+            len(found),
+            label,
+            found[0].name,
+        )
+    return found[0] if found else None
+
+
+def _drop_entries_from_cd(
+    cd_bytes: bytes, entries: list[_CdEntry], dropped: list[tuple[_CdEntry, int]]
+) -> bytes:
+    """Rebuild the central directory without the ``dropped`` ``(entry, span)`` pairs.
+
+    Each surviving entry moves back, in the streamed output, by the summed
+    spans of the dropped records stored before it, so its
+    ``local_header_offset`` is rewritten. Any trailing non-entry bytes are kept
+    verbatim.
     """
     out = bytearray()
     for entry in entries:
-        if entry is dropped:
+        if any(entry is d for d, _ in dropped):
             continue
         chunk = bytearray(cd_bytes[entry.start : entry.end])
-        if entry.local_header_offset > dropped.local_header_offset:
-            struct.pack_into("<I", chunk, 42, entry.local_header_offset - span)
+        shift = sum(
+            span for d, span in dropped if d.local_header_offset < entry.local_header_offset
+        )
+        if shift:
+            struct.pack_into("<I", chunk, 42, entry.local_header_offset - shift)
         out += chunk
     out += cd_bytes[entries[-1].end :]
     return bytes(out)
@@ -219,21 +293,38 @@ def _make_local_file_header(
     dos_date: int,
 ) -> bytes:
     """Build a local file header + file data (stored, no compression)."""
-    header = struct.pack(
-        "<4sHHHHHIIIHH",
-        _LOCAL_SIG,
-        20,  # version needed (2.0)
-        0,  # general purpose bit flag
-        0,  # compression method (stored)
-        dos_time,
-        dos_date,
-        crc,
-        len(data),  # compressed size
-        len(data),  # uncompressed size
-        len(fname_bytes),
-        0,  # extra field length
+    return _make_local_header(fname_bytes, len(data), crc, dos_time, dos_date) + data
+
+
+def _make_local_header(
+    fname_bytes: bytes,
+    data_size: int,
+    crc: int,
+    dos_time: int,
+    dos_date: int,
+) -> bytes:
+    """Build a local file header and name for a stored entry, without its data.
+
+    Lets a large entry's data be streamed from a shared buffer instead of being
+    concatenated into a new object per download.
+    """
+    return (
+        struct.pack(
+            "<4sHHHHHIIIHH",
+            _LOCAL_SIG,
+            20,  # version needed (2.0)
+            0,  # general purpose bit flag
+            0,  # compression method (stored)
+            dos_time,
+            dos_date,
+            crc,
+            data_size,  # compressed size
+            data_size,  # uncompressed size
+            len(fname_bytes),
+            0,  # extra field length
+        )
+        + fname_bytes
     )
-    return header + fname_bytes + data
 
 
 def _make_cd_entry(
@@ -303,18 +394,22 @@ def _stream_range(f: io.BufferedReader, start: int, end: int) -> Iterator[bytes]
 def stream_seed_pack_with_config(
     seed_zip_path: Path,
     config_content: str,
+    mod_dll_path: Path,
 ) -> tuple[Iterator[bytes], int]:
-    """Stream a seed zip with an injected per-participant config.
+    """Stream a seed zip with an injected per-participant config and the current mod.
 
     Reads the original zip structure, drops the seed's ``graph.json`` (see
-    :func:`_is_seed_graph_entry`), appends the config as
-    ``{top_dir}/lib/speedfog_racing.toml``, and streams the result in 64 KB
+    :func:`_is_seed_graph_entry`) and any mod DLL bundled at generation (see
+    :func:`_is_mod_dll_entry`), appends the config as
+    ``{top_dir}/lib/speedfog_racing.toml`` and the server's current DLL as
+    ``{top_dir}/lib/speedfog_racing.dll``, and streams the result in 64 KB
     chunks.  No temp files, no full-file copy: the surviving local records
     are streamed verbatim, only the central directory is rewritten.
 
     Args:
         seed_zip_path: Path to the original seed zip.
         config_content: TOML configuration string to inject.
+        mod_dll_path: Path to the mod DLL every pack carries.
 
     Returns:
         ``(byte_generator, total_content_length)``
@@ -322,6 +417,7 @@ def stream_seed_pack_with_config(
     Raises:
         FileNotFoundError: If *seed_zip_path* does not exist.
         ValueError: If the file is not a valid ZIP or uses ZIP64.
+        ModDllUnavailableError: If the mod DLL cannot be read.
     """
     logger.info("Generating seed pack from %s", seed_zip_path.name)
     # --- Phase 1: analyse (reads a few KB from end of file) ---------------
@@ -331,61 +427,81 @@ def stream_seed_pack_with_config(
         cd_bytes = f.read(cd_size)
         entries = list(_iter_cd_entries(cd_bytes))
 
-        graphs = [e for e in entries if _is_seed_graph_entry(e.name)]
-        if len(graphs) > 1:
-            # Generator output never produces this; make a leak visible if it ever does.
-            logger.warning(
-                "%s has %d graph.json candidates, only %r is dropped",
-                seed_zip_path.name,
-                len(graphs),
-                graphs[0].name,
-            )
-        graph = graphs[0] if graphs else None
-        # Local bytes to skip: [skip_start, skip_end). Empty when there is no graph.
-        skip_start = skip_end = cd_offset
-        if graph is not None:
-            skip_start = graph.local_header_offset
-            skip_end = skip_start + _local_entry_span(f, graph)
-            if skip_end > cd_offset:
-                raise ValueError(f"Local record of {graph.name!r} overruns the central directory")
-            cd_bytes = _drop_entry_from_cd(cd_bytes, entries, graph, skip_end - skip_start)
-            num_entries -= 1
+        # Local records to skip, as (entry, span) in local-offset order.
+        dropped: list[tuple[_CdEntry, int]] = []
+        for match, label in (
+            (_is_seed_graph_entry, "graph.json"),
+            (_is_mod_dll_entry, MOD_DLL_NAME),
+        ):
+            entry = _first_entry(seed_zip_path.name, entries, match, label)
+            if entry is None:
+                continue
+            span = _local_entry_span(f, entry)
+            if entry.local_header_offset + span > cd_offset:
+                raise ValueError(f"Local record of {entry.name!r} overruns the central directory")
+            dropped.append((entry, span))
+        dropped.sort(key=lambda d: d[0].local_header_offset)
+        if dropped:
+            cd_bytes = _drop_entries_from_cd(cd_bytes, entries, dropped)
+            num_entries -= len(dropped)
+
+    # Loaded once here: the generator streams this exact build even if a
+    # deploy replaces the file mid-download.
+    mod_dll = load_mod_dll(mod_dll_path)
 
     top_dir = _top_dir_from_cd(entries)
-    config_name = f"{top_dir}/lib/speedfog_racing.toml" if top_dir else "lib/speedfog_racing.toml"
+    lib_dir = f"{top_dir}/lib" if top_dir else "lib"
 
     # Offset where the surviving local records end in the streamed output.
-    local_end = cd_offset - (skip_end - skip_start)
+    local_end = cd_offset - sum(span for _, span in dropped)
+    dos_time, dos_date = _dos_datetime()
 
     config_data = config_content.encode("utf-8")
-    fname_bytes, crc, data_size = _prepare_entry(config_name, config_data)
-    dos_time, dos_date = _dos_datetime()
-    local_entry = _make_local_file_header(fname_bytes, config_data, crc, dos_time, dos_date)
-    new_cd_entry = _make_cd_entry(
+    fname_bytes, crc, data_size = _prepare_entry(f"{lib_dir}/speedfog_racing.toml", config_data)
+    config_local = _make_local_file_header(fname_bytes, config_data, crc, dos_time, dos_date)
+    config_cd = _make_cd_entry(
         fname_bytes, data_size, crc, dos_time, dos_date, local_header_offset=local_end
     )
-    new_eocd = _make_eocd(
-        num_entries=num_entries + 1,
-        cd_size=len(cd_bytes) + len(new_cd_entry),
-        cd_offset=local_end + len(local_entry),
+
+    dll_offset = local_end + len(config_local)
+    dll_fname = f"{lib_dir}/{MOD_DLL_NAME}".encode()
+    dll_size = len(mod_dll.data)
+    dll_header = _make_local_header(dll_fname, dll_size, mod_dll.crc, dos_time, dos_date)
+    dll_cd = _make_cd_entry(
+        dll_fname, dll_size, mod_dll.crc, dos_time, dos_date, local_header_offset=dll_offset
     )
 
-    total_size = local_end + len(local_entry) + len(cd_bytes) + len(new_cd_entry) + len(new_eocd)
+    new_cd_offset = dll_offset + len(dll_header) + dll_size
+    new_eocd = _make_eocd(
+        num_entries=num_entries + 2,
+        cd_size=len(cd_bytes) + len(config_cd) + len(dll_cd),
+        cd_offset=new_cd_offset,
+    )
+
+    total_size = new_cd_offset + len(cd_bytes) + len(config_cd) + len(dll_cd) + len(new_eocd)
 
     # --- Phase 2: streaming generator (64 KB RAM) -------------------------
     def _generate() -> Iterator[bytes]:
         with open(seed_zip_path, "rb") as f:
-            yield from _stream_range(f, 0, skip_start)
-            yield from _stream_range(f, skip_end, cd_offset)
+            start = 0
+            for entry, span in dropped:
+                yield from _stream_range(f, start, entry.local_header_offset)
+                start = entry.local_header_offset + span
+            yield from _stream_range(f, start, cd_offset)
 
-        # New local file entry (sits right before the new central directory)
-        yield local_entry
+        # New local entries (right before the new central directory): the
+        # config, then the DLL sliced from the shared buffer.
+        yield config_local
+        yield dll_header
+        for i in range(0, dll_size, CHUNK_SIZE):
+            yield mod_dll.data[i : i + CHUNK_SIZE]
 
         # Surviving central directory entries (offsets already rewritten)
         yield cd_bytes
 
-        # New central directory entry
-        yield new_cd_entry
+        # New central directory entries
+        yield config_cd
+        yield dll_cd
 
         # Updated EOCD
         yield new_eocd
@@ -399,8 +515,9 @@ def stream_seed_pack_with_config(
 
 # Both templates below write the same [overlay] table: the font size fallback
 # (OVERLAY_DEFAULTS), the colors and the background opacity equal the mod's own
-# defaults, so every seed renders alike whatever mod version it bundles. Keep in
-# sync with mod/src/dll/config.rs and docs/GRAPHIC_CHARTER.md.
+# defaults, so every pack renders alike whatever mod version runs it (a pack
+# downloaded before a release keeps its older DLL). Keep in sync with
+# mod/src/dll/config.rs and docs/GRAPHIC_CHARTER.md.
 
 
 def generate_player_config(

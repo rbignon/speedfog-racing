@@ -12,6 +12,7 @@ generate_pool.py        speedfog-scan-seeds      Player download
   speedfog CLI           Read seed_*.zip          Stream base zip
       │                  Extract graph.json       Drop graph.json
       ▼                  Create Seed records      Inject config TOML
+                                                  Append current DLL
   Post-process                                    Rewrite central dir
   (DLL, config, zip)
       │
@@ -168,13 +169,15 @@ The ticket endpoints run the same gating as the download endpoints, including ch
 
 ### Steps
 
-`stream_seed_pack_with_config(seed_zip_path, config_content)` never copies the pool zip: it parses the central directory once, then streams the original local records in 64 KB chunks and appends a rewritten central directory.
+`stream_seed_pack_with_config(seed_zip_path, config_content, mod_dll_path)` never copies the pool zip: it parses the central directory once, then streams the original local records in 64 KB chunks and appends a rewritten central directory.
 
 1. **Parse the central directory**: locate the EOCD record (ZIP64 is rejected), read the entries, and detect the common top-level directory (e.g., `speedfog_a1b2c3/`).
 
 2. **Drop `graph.json`**: the seed's own DAG file (root-level or directly under the top dir, the same rule the pool scan uses to ingest it) is excluded from the download. Its local record is skipped in the byte stream, its central directory entry is removed, and the local header offsets of the entries stored after it are shifted back. The mod reads nothing from it (`event_ids`, `finish_event`, `spawn_items`, `phantom_skins` all arrive in `auth_ok`, see [PROTOCOL.md](PROTOCOL.md)) and it is a full-route spoiler in plain text; the pool zip on disk keeps it as the ingestion contract for `scan_pool()`.
 
-3. **Generate TOML config**: `generate_player_config(participant, race)` produces:
+3. **Drop the bundled mod DLL**: a `lib/speedfog_racing.dll` at the root or directly under the top dir (where ModEngine loads it, see `external_dlls`) is skipped the same way. Pool zips generated before the server started appending the DLL carry the build of their generation day there.
+
+4. **Generate TOML config**: `generate_player_config(participant, race)` produces:
 
    ```toml
    [server]
@@ -201,9 +204,9 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    toggle_leaderboard = "f10"
    ```
 
-4. **Inject config**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, followed by the rewritten central directory and a new EOCD.
+5. **Inject config and the current DLL**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, then the server's current DLL as a stored `<top_dir>/lib/speedfog_racing.dll`, followed by the rewritten central directory and a new EOCD. The DLL comes from `MOD_DLL_PATH` (default `/opt/speedfog-racing/mod/speedfog_racing.dll`, shipped by `deploy/deploy.sh`): `load_mod_dll` reads it once and keeps it in memory until the file changes, so concurrent downloads share one copy, and a pack streams the build it started with even if a deploy replaces the file meanwhile. Every pack therefore carries the current mod, whatever its seed's generation date; a player who keeps an older pack keeps its older DLL. When the file is missing, the ticket and download endpoints answer 503 (not the 410 of a purged seed zip).
 
-5. **Serve response**: FastAPI `StreamingResponse` with the exact `Content-Length` computed up front (original size, minus the dropped `graph.json` record, plus the config entry). No temp file is written. The download is named `speedfog_<username>_<slug>.zip`, `<slug>` being the seed's `seed_number` (the slug shown as "Seed <slug>" on the race, daily and training pages); both parts are sanitized to `[a-zA-Z0-9_]`.
+6. **Serve response**: FastAPI `StreamingResponse` with the exact `Content-Length` computed up front (original size, minus the dropped `graph.json` and DLL records, plus the config and DLL entries). No temp file is written. The download is named `speedfog_<username>_<slug>.zip`, `<slug>` being the seed's `seed_number` (the slug shown as "Seed <slug>" on the race, daily and training pages); both parts are sanitized to `[a-zA-Z0-9_]`.
 
 ### Training Mode Variant
 
