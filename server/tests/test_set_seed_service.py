@@ -159,7 +159,16 @@ async def test_prefix_ambiguity_counts_known_seeds_only(async_session, pools):
         await _add_session(db, a, "sprint", RunMode.SET_SEED, 900, seed=second)
         played = await _seed(db, "123456aaaaaa")
         await _add_run(db, user=a, igt_ms=1000, minute=2, seed=played)
-        await _seed(db, "123456bbbbbb", status=SeedStatus.AVAILABLE)
+        unplayed = await _seed(db, "123456bbbbbb", status=SeedStatus.AVAILABLE)
+        await _add_session(
+            db,
+            a,
+            "sprint",
+            RunMode.SPEEDRUN,
+            0,
+            status=TrainingSessionStatus.CANCELLED,
+            seed=unplayed,
+        )
         await db.commit()
 
         with pytest.raises(SeedLookupError) as error:

@@ -666,6 +666,26 @@ async def test_recent_run_place_is_on_the_set_board(async_session, pools):
     assert by_igt == {900: 1, 1000: 2, 1500: 2}
 
 
+async def test_recent_run_on_an_excluded_seed_has_no_place(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1000, minute=1)
+        excluded = await _add_run(db, user=b, igt_ms=900, minute=2)
+        race = await db.get(Race, excluded.race_id)
+        assert race is not None and race.seed_id is not None
+        seed = await db.get(Seed, race.seed_id)
+        assert seed is not None
+        seed.set_seed_excluded_at = BASE
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    # The excluded seed's run is on no Set Seed board, so it has no place
+    # there, and the other run's place ignores it.
+    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1, 900: None}
+
+
 @pytest.fixture
 async def archived_pool(async_session):
     async with async_session() as db:

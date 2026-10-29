@@ -18,7 +18,8 @@ from speedfog_racing.api.helpers import (
     user_response,
 )
 from speedfog_racing.api.races import after_disqualification_change, remove_participation
-from speedfog_racing.api.stats import forget_player_profiles
+from speedfog_racing.api.speedrun import resolve_seed_or_404
+from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
 from speedfog_racing.database import get_db
 from speedfog_racing.discord import fire_ban_notification
@@ -1169,6 +1170,56 @@ async def resolve_reported_seed(
 
     await db.commit()
     return {"status": "ok"}
+
+
+class SetSeedExclusionRequest(BaseModel):
+    """Why an admin excludes a seed from Set Seed."""
+
+    reason: str = Field(min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _strip(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("reason must not be blank")
+        return stripped
+
+
+@router.put("/seeds/{seed}/set-seed-exclusion", status_code=204)
+async def exclude_seed_from_set_seed(
+    seed: str,
+    request: SetSeedExclusionRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> Response:
+    """Exclude a played seed from Set Seed (full number or 6+ character
+    prefix): it is no longer replayable and its runs leave the Set Seed boards
+    (they stay on Random Seed). Excluding it again replaces the reason.
+    Requires admin role."""
+    found = await resolve_seed_or_404(db, seed)
+    found.set_seed_excluded_at = datetime.now(UTC)
+    found.set_seed_excluded_reason = request.reason
+    found.set_seed_excluded_by_id = admin.id
+    await db.commit()
+    forget_speedrun_caches()
+    return Response(status_code=204)
+
+
+@router.delete("/seeds/{seed}/set-seed-exclusion", status_code=204)
+async def restore_seed_to_set_seed(
+    seed: str,
+    db: AsyncSession = Depends(get_db),
+    _admin: User = Depends(require_admin),
+) -> Response:
+    """Lift a seed's Set Seed exclusion. Requires admin role."""
+    found = await resolve_seed_or_404(db, seed)
+    found.set_seed_excluded_at = None
+    found.set_seed_excluded_reason = None
+    found.set_seed_excluded_by_id = None
+    await db.commit()
+    forget_speedrun_caches()
+    return Response(status_code=204)
 
 
 # =============================================================================

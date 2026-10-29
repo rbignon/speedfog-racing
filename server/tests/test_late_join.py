@@ -20,6 +20,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -128,6 +129,7 @@ def _make_race(
         private_dag=private_dag,
         deathless=deathless,
         exclude_from_stats=False,
+        mode=RunMode.NORMAL,
         created_at=datetime.now(UTC),
     )
     race.participants = []

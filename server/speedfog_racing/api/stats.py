@@ -849,6 +849,17 @@ def forget_player_profiles() -> None:
     _stats_cache.pop("players", None)
 
 
+def forget_speedrun_caches() -> None:
+    """Drop every cached speedrun.fog value (counted runs, overview, boards):
+    the next request recomputes them.
+
+    For writers that change which runs a board holds and must not leave the
+    previous boards up for a whole cache TTL.
+    """
+    for key in [key for key in _stats_cache if key.startswith("speedrun:")]:
+        del _stats_cache[key]
+
+
 @router.get("/weapons", response_model=WeaponStatsResponse)
 async def get_weapon_stats(
     pool: str | None = Query(default=None),

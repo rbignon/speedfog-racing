@@ -1,5 +1,5 @@
-"""Set Seed: seed lookup, and whether a seed's page is public and its files
-replayable.
+"""Set Seed: seed lookup, whether a seed's page is public and its files
+replayable, and what keeps its files from the purge.
 
 A seed is known once it has been played: not AVAILABLE, not from a training
 pool, with a race RUNNING or FINISHED on it or a ranked (speedrun or set_seed)
@@ -9,10 +9,12 @@ it, and it never makes a prefix ambiguous. See docs/SPEEDRUN.md.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Literal
+from uuid import UUID
 
-from sqlalchemy import ColumnElement, exists, or_, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
@@ -22,11 +24,12 @@ from speedfog_racing.models import (
     RaceStatus,
     RunMode,
     Seed,
+    SeedProtection,
     SeedStatus,
     TrainingSession,
     TrainingSessionStatus,
 )
-from speedfog_racing.schemas import as_aware_utc
+from speedfog_racing.schemas import NotReplayableCode, SpeedrunSeedOrigin, as_aware_utc
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.speedrun_service import (
     RUN_TYPES,
@@ -36,13 +39,14 @@ from speedfog_racing.services.speedrun_service import (
     _pool_config,
     _run_key,
     filter_board,
+    seed_category,
 )
 
 # The shortest seed ID prefix a lookup accepts.
 SEED_PREFIX_MIN = 6
+_SEED_QUERY_CHUNK = 500
 
 SeedLookupErrorKind = Literal["unknown", "ambiguous"]
-NotReplayableCode = Literal["in_progress", "excluded", "old_game_version", "old_category", "purged"]
 
 
 class SeedLookupError(Exception):
@@ -176,3 +180,130 @@ def top_seed_numbers(runs: Sequence[CountedRun], category: str, n: int) -> list[
         if current is None or _run_key(run) < _run_key(current):
             best[run.seed_number] = run
     return [run.seed_number for run in sorted(best.values(), key=_run_key)][:n]
+
+
+async def seed_origin(db: AsyncSession, seed: Seed) -> SpeedrunSeedOrigin | None:
+    """Where a seed was first played: its earliest blind race (any mode but
+    set_seed, RUNNING or FINISHED, by start, else creation), else its earliest
+    Speedrun-mode solo session; None when only replays were run on it."""
+    race_played_at = func.coalesce(Race.started_at, Race.created_at)
+    race = (
+        await db.execute(
+            select(Race.id, Race.name, Race.daily_date, race_played_at.label("played_at"))
+            .where(
+                Race.seed_id == seed.id,
+                Race.mode != RunMode.SET_SEED,
+                Race.status.in_([RaceStatus.RUNNING, RaceStatus.FINISHED]),
+            )
+            .order_by(race_played_at, Race.id)
+            .limit(1)
+        )
+    ).first()
+    if race is not None:
+        return SpeedrunSeedOrigin(
+            race_id=race.id,
+            race_name=race.name,
+            daily_date=race.daily_date,
+            played_at=race.played_at,
+        )
+    session_at = await db.scalar(
+        select(func.min(TrainingSession.created_at)).where(
+            TrainingSession.seed_id == seed.id, TrainingSession.mode == RunMode.SPEEDRUN
+        )
+    )
+    if session_at is None:
+        return None
+    return SpeedrunSeedOrigin(race_id=None, race_name=None, daily_date=None, played_at=session_at)
+
+
+@dataclass(frozen=True, slots=True)
+class RetentionFacts:
+    """What decides whether a seed's files are kept (see ``retention_reasons``)."""
+
+    # Not DISCARDED: the seed still belongs to its pool.
+    in_current_pool: bool
+    pool_display_name: str
+    # The seed's category name when it is among the category's top seeds, else None.
+    top_of: str | None
+    protections: int
+    # Latest race (finish, else start, else creation) or solo session (finish,
+    # else creation) on the seed; None when there is none.
+    last_played_at: datetime | None
+
+
+def retention_reasons(facts: RetentionFacts, *, now: datetime) -> list[str]:
+    """Why a seed's files are kept, in display order; empty when nothing
+    keeps them, which only a DISCARDED seed can be."""
+    reasons: list[str] = []
+    if facts.in_current_pool:
+        reasons.append(f"Seed of the current {facts.pool_display_name} pool")
+    if facts.top_of is not None:
+        reasons.append(f"Top {settings.set_seed_kept_top_seeds} seed of {facts.top_of}")
+    if facts.protections:
+        players = "player" if facts.protections == 1 else "players"
+        reasons.append(f"Protected by {facts.protections} {players}")
+    last_played_at = as_aware_utc(facts.last_played_at)
+    grace_days = settings.seed_purge_grace_days
+    if last_played_at is not None and now - last_played_at < timedelta(days=grace_days):
+        reasons.append(f"Played in the last {grace_days} days")
+    return reasons
+
+
+async def load_retention_facts(
+    db: AsyncSession, seeds: Sequence[Seed], runs: Sequence[CountedRun]
+) -> dict[UUID, RetentionFacts]:
+    """The retention facts of ``seeds``, by seed id. ``runs`` are every
+    counted run (``load_counted_runs`` without a seed): a seed is a top seed
+    when it is among the ``settings.set_seed_kept_top_seeds`` best seeds of
+    its category's Set Seed board."""
+    pools = {
+        pool.name: pool
+        for pool in (
+            await db.execute(select(Pool).where(Pool.name.in_({s.pool_name for s in seeds})))
+        ).scalars()
+    }
+    ids = [seed.id for seed in seeds]
+    protections: dict[UUID, int] = {}
+    last_played: dict[UUID, datetime] = {}
+    for start in range(0, len(ids), _SEED_QUERY_CHUNK):
+        chunk = ids[start : start + _SEED_QUERY_CHUNK]
+        counts = await db.execute(
+            select(SeedProtection.seed_id, func.count())
+            .where(SeedProtection.seed_id.in_(chunk))
+            .group_by(SeedProtection.seed_id)
+        )
+        protections.update({seed_id: count for seed_id, count in counts.all()})
+        for seed_id_column, played_at in (
+            (Race.seed_id, func.coalesce(Race.finished_at, Race.started_at, Race.created_at)),
+            (
+                TrainingSession.seed_id,
+                func.coalesce(TrainingSession.finished_at, TrainingSession.created_at),
+            ),
+        ):
+            latest = await db.execute(
+                select(seed_id_column, func.max(played_at))
+                .where(seed_id_column.in_(chunk))
+                .group_by(seed_id_column)
+            )
+            for seed_id, at in latest.all():
+                at = as_aware_utc(at)
+                if at is not None and (seed_id not in last_played or at > last_played[seed_id]):
+                    last_played[seed_id] = at
+
+    top_seeds: dict[str, frozenset[str]] = {}
+    facts: dict[UUID, RetentionFacts] = {}
+    for seed in seeds:
+        pool = pools[seed.pool_name]
+        category, category_name = seed_category(pool, seed.total_layers)
+        if category not in top_seeds:
+            top_seeds[category] = frozenset(
+                top_seed_numbers(runs, category, settings.set_seed_kept_top_seeds)
+            )
+        facts[seed.id] = RetentionFacts(
+            in_current_pool=seed.status != SeedStatus.DISCARDED,
+            pool_display_name=format_pool_display_name(pool),
+            top_of=category_name if seed.seed_number in top_seeds[category] else None,
+            protections=protections.get(seed.id, 0),
+            last_played_at=last_played.get(seed.id),
+        )
+    return facts

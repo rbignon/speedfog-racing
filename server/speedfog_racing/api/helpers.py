@@ -205,6 +205,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         exclude_from_stats=race.exclude_from_stats,
+        mode=race.mode,
         participant_count=participant_count,
         participant_previews=previews,
         seed_total_layers=race.seed.total_layers if race.seed else None,

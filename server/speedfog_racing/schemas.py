@@ -19,6 +19,7 @@ from speedfog_racing.models import (
     FeedbackSource,
     ParticipantStatus,
     RaceStatus,
+    RunMode,
     TrainingSessionStatus,
 )
 
@@ -432,6 +433,7 @@ class RaceResponse(BaseModel):
     custom_rules: str | None = None
     daily_date: date | None = None
     exclude_from_stats: bool = False
+    mode: RunMode
     participant_count: int
     participant_previews: list[ParticipantPreview] = []
     seed_total_layers: int | None = None
@@ -524,6 +526,7 @@ class RaceDetailResponse(BaseModel):
     custom_rules: str | None = None
     daily_date: date | None = None
     exclude_from_stats: bool = False
+    mode: RunMode
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None
@@ -698,6 +701,7 @@ class TrainingSessionResponse(BaseModel):
     id: UUID
     user: UserResponse
     status: TrainingSessionStatus
+    mode: RunMode
     pool_name: str
     pool_display_name: str | None = None
     igt_ms: int
@@ -717,6 +721,7 @@ class TrainingSessionDetailResponse(BaseModel):
     id: UUID
     user: UserResponse
     status: TrainingSessionStatus
+    mode: RunMode
     pool_name: str
     igt_ms: int
     death_count: int
@@ -976,6 +981,10 @@ class WeaponStatsResponse(BaseModel):
 
 # speedrun.fog: the /speedrun page, with Set Seed and Random Seed boards (see docs/SPEEDRUN.md).
 
+RunType = Literal["race", "daily", "event", "solo"]
+# Why a seed cannot be replayed in Set Seed, in precedence order.
+NotReplayableCode = Literal["in_progress", "excluded", "old_game_version", "old_category", "purged"]
+
 
 class SpeedrunCategory(BaseModel):
     pool: str
@@ -1037,6 +1046,69 @@ class SpeedrunBoardResponse(BaseModel):
     record_seed: SpeedrunRecordSeed | None
     # Successive records, oldest first.
     history: list[SpeedrunRun]
+
+
+class SpeedrunSeedRun(SpeedrunRun):
+    """A run on a seed page; ``rank`` is its place among the seed's runs."""
+
+    run_type: RunType
+    zone_history: list[dict[str, Any]] | None
+
+
+class SpeedrunSeedOrigin(BaseModel):
+    """Where a seed was first played: its earliest blind race, else its
+    earliest Speedrun-mode solo session (race fields None)."""
+
+    race_id: UUID | None
+    race_name: str | None
+    daily_date: date | None
+    played_at: datetime
+
+
+class SpeedrunSeedStats(BaseModel):
+    best_igt_ms: int | None
+    # The lower middle time on an even count: always a real run's time.
+    median_igt_ms: int | None
+    runs: int
+    players: int
+
+
+class SpeedrunSeedViewer(BaseModel):
+    """The logged-in viewer's protection state."""
+
+    # The viewer has a finished counted run on the seed.
+    can_protect: bool
+    protected: bool
+    # Seed numbers the viewer protects, oldest protection first.
+    protected_seeds: list[str]
+    protection_limit: int
+
+
+class SpeedrunSeedResponse(BaseModel):
+    """A played seed's page. While a blind run on it is in progress
+    (``public`` false), ``graph_json`` is None, ``runs`` empty and ``stats``
+    zero."""
+
+    seed_number: str
+    # The seed's category key ("<pool>" or "<pool>@<layers>") and name.
+    category: str
+    category_name: str
+    pool_config: PoolConfig | None
+    total_layers: int
+    origin: SpeedrunSeedOrigin | None
+    public: bool
+    replayable: bool
+    not_replayable_code: NotReplayableCode | None
+    not_replayable_reason: str | None
+    # Why the seed's files are kept from the purge; empty when nothing keeps them.
+    kept_reasons: list[str]
+    protected_by: int
+    excluded_reason: str | None
+    # None for a logged-out viewer.
+    viewer: SpeedrunSeedViewer | None
+    graph_json: dict[str, Any] | None
+    runs: list[SpeedrunSeedRun]
+    stats: SpeedrunSeedStats
 
 
 # =============================================================================

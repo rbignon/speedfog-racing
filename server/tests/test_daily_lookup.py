@@ -13,6 +13,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RunMode,
     User,
     UserRole,
 )
@@ -46,6 +47,7 @@ def _daily_race(*, organizer: User, **overrides) -> Race:
         deathless=False,
         daily_date=date(2026, 4, 27),
         exclude_from_stats=True,
+        mode=RunMode.NORMAL,
         started_at=started,
         seeds_released_at=started,
         late_join_window_minutes=1440,

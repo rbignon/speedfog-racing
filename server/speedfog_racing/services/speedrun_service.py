@@ -3,12 +3,14 @@
 Every counted run is loaded once with light columns (no ``zone_history``);
 boards, record histories and recent runs are derived from that list in
 memory. Weapons need ``zone_history``, so they are decoded only for the runs
-a response returns. See docs/SPEEDRUN.md.
+a response returns; a seed page, which shows each run's path, returns the
+histories themselves. See docs/SPEEDRUN.md.
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import AsyncIterator, Collection, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
+from statistics import median_low
 from typing import Any, Literal
 from uuid import UUID
 
@@ -28,24 +30,26 @@ from speedfog_racing.models import (
     User,
 )
 from speedfog_racing.schemas import (
+    RunType,
     SpeedrunBoardResponse,
     SpeedrunCategory,
     SpeedrunOverviewResponse,
     SpeedrunRecentRun,
     SpeedrunRecordSeed,
     SpeedrunRun,
+    SpeedrunSeedRun,
+    SpeedrunSeedStats,
     UserResponse,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS
 
-RunType = Literal["race", "daily", "event", "solo"]
 RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
 # Set Seed counts every run; Random Seed only blind ones.
 SpeedrunSub = Literal["set", "random"]
 
 RECENT_RUNS_COUNT = 5
-_WEAPON_QUERY_CHUNK = 500
+_ZONE_HISTORY_QUERY_CHUNK = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,22 +480,42 @@ def main_weapon(zone_history: list[dict[str, Any]] | None) -> list[int] | None:
     return list(max(totals.items(), key=lambda item: item[1])[0])
 
 
-async def load_main_weapons(
+async def _zone_history_rows(
     db: AsyncSession, participant_ids: Collection[UUID], session_ids: Collection[UUID]
-) -> dict[UUID, list[int] | None]:
-    """Main weapon per run id, from participants and solo sessions (same
-    ``zone_history`` shape)."""
-    weapons: dict[UUID, list[int] | None] = {}
+) -> AsyncIterator[tuple[UUID, list[dict[str, Any]] | None]]:
+    """``(run id, zone_history)`` of participants and solo sessions (same
+    ``zone_history`` shape), queried in chunks."""
     for model, all_ids in (
         (Participant, list(participant_ids)),
         (TrainingSession, list(session_ids)),
     ):
-        for start in range(0, len(all_ids), _WEAPON_QUERY_CHUNK):
-            chunk = all_ids[start : start + _WEAPON_QUERY_CHUNK]
+        for start in range(0, len(all_ids), _ZONE_HISTORY_QUERY_CHUNK):
+            chunk = all_ids[start : start + _ZONE_HISTORY_QUERY_CHUNK]
             rows = await db.execute(select(model.id, model.zone_history).where(model.id.in_(chunk)))
             for run_id, zone_history in rows.all():
-                weapons[run_id] = main_weapon(zone_history)
-    return weapons
+                yield run_id, zone_history
+
+
+async def load_main_weapons(
+    db: AsyncSession, participant_ids: Collection[UUID], session_ids: Collection[UUID]
+) -> dict[UUID, list[int] | None]:
+    """Main weapon per run id, from participants and solo sessions. Each
+    history is decoded and dropped at once: a board can return thousands of
+    runs."""
+    return {
+        run_id: main_weapon(zone_history)
+        async for run_id, zone_history in _zone_history_rows(db, participant_ids, session_ids)
+    }
+
+
+async def load_zone_histories(
+    db: AsyncSession, participant_ids: Collection[UUID], session_ids: Collection[UUID]
+) -> dict[UUID, list[dict[str, Any]] | None]:
+    """``zone_history`` per run id, from participants and solo sessions."""
+    return {
+        run_id: zone_history
+        async for run_id, zone_history in _zone_history_rows(db, participant_ids, session_ids)
+    }
 
 
 async def _weapons_for(
@@ -534,7 +558,10 @@ async def build_overview(db: AsyncSession, runs: Sequence[CountedRun]) -> Speedr
         SpeedrunRecentRun(
             **_run_fields(
                 run,
-                place_of(
+                # A run on a seed excluded from Set Seed is on no Set Seed board.
+                None
+                if run.seed_excluded
+                else place_of(
                     run,
                     filter_board(
                         runs,
@@ -581,3 +608,35 @@ async def build_board(
         history=[SpeedrunRun(**_run_fields(run, None, weapons)) for run in history],
         record_seed=record_seed(board, ranked),
     )
+
+
+def seed_stats(runs: Sequence[CountedRun]) -> SpeedrunSeedStats:
+    """Best and median time, run and player counts of a seed's runs (zero and
+    None without runs)."""
+    times = [run.igt_ms for run in runs]
+    return SpeedrunSeedStats(
+        best_igt_ms=min(times, default=None),
+        median_igt_ms=median_low(times) if times else None,
+        runs=len(runs),
+        players=len({run.user.id for run in runs}),
+    )
+
+
+async def build_seed_runs(db: AsyncSession, runs: Sequence[CountedRun]) -> list[SpeedrunSeedRun]:
+    """A seed page's run list from the seed's counted runs: every run by time,
+    each player's best ranked and the others without a rank, with its zone
+    history (and the weapon decoded from it)."""
+    histories = await load_zone_histories(
+        db,
+        {r.run_id for r in runs if r.session_id is None},
+        {r.run_id for r in runs if r.session_id is not None},
+    )
+    weapons = {run_id: main_weapon(history) for run_id, history in histories.items()}
+    return [
+        SpeedrunSeedRun(
+            **_run_fields(run, rank, weapons),
+            run_type=run.run_type,
+            zone_history=histories.get(run.run_id),
+        )
+        for run, rank in rank_board(runs, include_obsolete=True)
+    ]
