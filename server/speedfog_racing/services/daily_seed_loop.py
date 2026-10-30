@@ -15,18 +15,25 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.discord import notify_daily_seed_created
+from speedfog_racing.discord import (
+    notify_daily_pools_low,
+    notify_daily_seed_created,
+    notify_daily_seed_unavailable,
+)
 from speedfog_racing.models import (
     DailySeedSchedule,
     Participant,
+    Pool,
     Race,
     RaceStatus,
+    SeedStatus,
     User,
 )
 from speedfog_racing.rewards.service import RewardsService
-from speedfog_racing.services import assign_seed_to_race, get_pool
+from speedfog_racing.services import assign_seed_to_race, get_pool, get_pool_stats
 from speedfog_racing.services.hard_close_loop import close_expired_races
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.seed_service import effective_speedrun_floor
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +41,9 @@ POLL_INTERVAL = 60  # seconds
 SYSTEM_TWITCH_ID = "system:daily"
 DAILY_ROTATION_HOUR = 8  # UTC
 DAILY_WIN_REWARD_LOOKBACK_DAYS = 7
+
+# The rotation day the admins were last told had no seed to draw.
+_shortage_alerted_on: date | None = None
 
 
 def daily_date_for(now: datetime) -> date:
@@ -124,8 +134,9 @@ async def create_daily_seed_if_needed(
             return None
 
         start_at = daily_start_at(today)
+        pool_label = format_pool_display_name(pool)
         race = Race(
-            name=f"Daily - {today.isoformat()} - {format_pool_display_name(pool)}",
+            name=f"Daily - {today.isoformat()} - {pool_label}",
             organizer_id=system_user.id,
             daily_date=today,
             exclude_from_stats=True,
@@ -155,6 +166,7 @@ async def create_daily_seed_if_needed(
                     today,
                 )
                 await db.rollback()
+                await _alert_seed_shortage(pool_label, today)
                 return None
             await db.commit()
         except IntegrityError:
@@ -206,8 +218,47 @@ async def create_daily_seed_if_needed(
             )
         ).scalar_one_or_none()
 
+        # The daily exists now, so no later tick announces it: this optional
+        # admin check must never cost the public announcement below.
+        try:
+            low_pools = await scheduled_pools_at_floor(db)
+        except Exception:
+            logger.exception("Daily seed pool check failed for %s", today)
+            low_pools = []
+
     await notify_daily_seed_created(full_race, previous_race)
+    if low_pools:
+        await notify_daily_pools_low(low_pools)
     return full_race
+
+
+async def scheduled_pools_at_floor(db: AsyncSession) -> list[tuple[str, int, int]]:
+    """The weekly schedule's pools with no more AVAILABLE seeds than their
+    speedrun floor, as ``(display name, AVAILABLE seeds, floor)`` sorted by name.
+
+    Dailies draw AVAILABLE seeds only and ignore the floor, so a pool at its
+    floor is eating the reserve it shares with event races: time to refill.
+    """
+    names = set((await db.execute(select(DailySeedSchedule.pool_name))).scalars())
+    pools = (await db.execute(select(Pool).where(Pool.name.in_(names)))).scalars().all()
+    stats = await get_pool_stats(db)
+    low = []
+    for pool in pools:
+        available = stats.get(pool.name, {}).get(SeedStatus.AVAILABLE.value, 0)
+        floor = effective_speedrun_floor(pool)
+        if available <= floor:
+            low.append((format_pool_display_name(pool), available, floor))
+    return sorted(low)
+
+
+async def _alert_seed_shortage(pool_label: str, day: date) -> None:
+    """Tell the admins the day's daily has no seed, once per rotation day:
+    the loop tries again every minute until seeds arrive."""
+    global _shortage_alerted_on
+    if _shortage_alerted_on == day:
+        return
+    _shortage_alerted_on = day
+    await notify_daily_seed_unavailable(pool_label, day)
 
 
 async def daily_seed_loop(session_maker: async_sessionmaker[AsyncSession]) -> None:

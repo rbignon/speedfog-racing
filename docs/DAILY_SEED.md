@@ -143,17 +143,19 @@ Each tick (`create_daily_seed_if_needed`) does:
 
 8. **Re-fetch + Discord.** Re-fetch the race with eager-loaded `organizer`, `seed`, `participants.user`, then call `notify_daily_seed_created(race, previous_race)` outside the DB session. The previous race is looked up for `daily_date = today - 1 day` to render yesterday's podium.
 
+9. **Low pools.** `scheduled_pools_at_floor` lists the pools of the weekly schedule with no more AVAILABLE seeds than their speedrun floor (`Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), and `notify_daily_pools_low` posts them to the admin channel (`DISCORD_ADMIN_WEBHOOK_URL`): display name, AVAILABLE seeds and floor per pool. A Daily Seed ignores the floor, so a pool at its floor feeds its dailies and event races from the reserve: time to refill it. This runs once per rotation day, after the creation.
+
 ### Skip conditions (return None)
 
-| Condition                                         | Severity | Recovery                                         |
-| ------------------------------------------------- | -------- | ------------------------------------------------ |
-| Race already exists for `today`                   | normal   | Next tick when `today` rolls over.               |
-| Previous daily still RUNNING                      | error    | Operator intervention; next tick retries.        |
-| Schedule row missing for `today.weekday()`        | error    | Insert the row; next tick retries.               |
-| Pool missing or disabled                          | error    | Re-enable the pool or reassign the schedule row. |
-| System user missing                               | error    | Re-run the migration.                            |
-| `assign_seed_to_race` raised (no available seeds) | error    | Top up the pool; next tick retries.              |
-| `IntegrityError` on insert (concurrent tick)      | info     | Other worker won; next tick is a no-op.          |
+| Condition                                         | Severity | Recovery                                                                                                                                                            |
+| ------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Race already exists for `today`                   | normal   | Next tick when `today` rolls over.                                                                                                                                  |
+| Previous daily still RUNNING                      | error    | Operator intervention; next tick retries.                                                                                                                           |
+| Schedule row missing for `today.weekday()`        | error    | Insert the row; next tick retries.                                                                                                                                  |
+| Pool missing or disabled                          | error    | Re-enable the pool or reassign the schedule row.                                                                                                                    |
+| System user missing                               | error    | Re-run the migration.                                                                                                                                               |
+| `assign_seed_to_race` raised (no available seeds) | error    | Top up the pool; next tick retries. The admin channel gets one "Daily Seed not created" alert per rotation day (`notify_daily_seed_unavailable`), not one per tick. |
+| `IntegrityError` on insert (concurrent tick)      | info     | Other worker won; next tick is a no-op.                                                                                                                             |
 
 ### Strict 08:00 alignment
 

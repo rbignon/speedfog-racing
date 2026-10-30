@@ -86,17 +86,17 @@ MALENIA_API_TOKEN=your-bearer-token
 MALENIA_API_BASE=https://events.malenia.win/api
 ```
 
-| Variable                       | Required for    | Description                                                            |
-| ------------------------------ | --------------- | ---------------------------------------------------------------------- |
-| `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                        |
-| `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel)    |
-| `DISCORD_ADMIN_WEBHOOK_URL`    | Notifications   | Webhook URL for cheat detections and sanctions (private admin channel) |
-| `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                        |
-| `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                                 |
-| `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                    |
-| `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                          |
-| `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                                  |
-| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.racing`)           |
+| Variable                       | Required for    | Description                                                                                    |
+| ------------------------------ | --------------- | ---------------------------------------------------------------------------------------------- |
+| `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                                                |
+| `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel)                            |
+| `DISCORD_ADMIN_WEBHOOK_URL`    | Notifications   | Webhook URL for cheat detections, sanctions and Daily Seed pool alerts (private admin channel) |
+| `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                                                |
+| `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                                                         |
+| `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                                            |
+| `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                                                  |
+| `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                                                          |
+| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.racing`)                                   |
 
 ## 8. Post the Runner Button Message
 
@@ -129,6 +129,8 @@ When `DISCORD_TRAINING_WEBHOOK_URL` is set, a notification is posted when a play
 When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag labels ("One shot", "Infinite stamina"...). Ranked solo runs (Speedrun, Set Seed) post the same alert linking the run's page, and a "Ranked finish rejected" alert when the server drops a ranked solo finish whose zone history never reached the final boss: runner, run link, run name, seed, IGT and the reason (see "Finish rule" in `docs/SPEEDRUN.md`).
 
 The same channel receives every sanction: a disqualification or its cancellation (runner, race link, who did it, and the reason), and a ban or its lifting (account, who did it, and the reason). A ban that disqualifies the account from running races posts those disqualifications too. See `docs/CHEAT_DETECTION.md`.
+
+It also hears about the Daily Seed's pools: a "Daily Seed not created: no fresh seed left" alert (pool and day) when the day's daily has no AVAILABLE seed to draw, once per rotation day while the loop keeps trying, and a "Daily Seed pools running low" list (pool, AVAILABLE seeds, floor) after each daily creation when pools of the weekly schedule are down to their speedrun floor. See "Tick procedure" in `docs/DAILY_SEED.md`.
 
 ### Scheduled Events (Bot)
 

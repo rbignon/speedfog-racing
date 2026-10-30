@@ -419,6 +419,10 @@ class Race(Base):
     seed_was_seen: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The ids (as strings) of the seeds this race's rerolls gave up, oldest
+    # first, NULL before its first reroll: its later rerolls never draw one
+    # back, so they cannot cycle through the seeds it already rejected.
+    rerolled_seed_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # Daily Seed marker: NULL for regular races, the UTC rotation date for
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.

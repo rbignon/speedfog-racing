@@ -7,7 +7,7 @@ import logging
 import re
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import httpx
@@ -792,6 +792,42 @@ def fire_finish_dropped_notification(
         )
     )
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+async def notify_daily_seed_unavailable(pool_label: str, day: date) -> None:
+    """Alert the admin channel that the day's Daily Seed has no seed to draw."""
+    embed: dict[str, object] = {
+        "title": "Daily Seed not created: no fresh seed left",
+        "color": 0xDC6A51,
+        "fields": [
+            {"name": "Pool", "value": _escape_discord_md(pool_label), "inline": True},
+            {"name": "Day", "value": day.isoformat(), "inline": True},
+            {
+                "name": "Next",
+                "value": "Add seeds to the pool: the daily loop tries again every minute.",
+                "inline": False,
+            },
+        ],
+    }
+    await _send_admin_webhook(embed)
+
+
+async def notify_daily_pools_low(pools: Sequence[tuple[str, int, int]]) -> None:
+    """Alert the admin channel that Daily Seed pools are down to their speedrun floor.
+
+    ``pools`` holds one ``(display name, AVAILABLE seeds, floor)`` per pool.
+    """
+    lines = [
+        f"**{_escape_discord_md(label)}**: {available} fresh "
+        f"seed{'' if available == 1 else 's'} left (floor {floor})"
+        for label, available, floor in pools
+    ]
+    embed: dict[str, object] = {
+        "title": "Daily Seed pools running low",
+        "description": "\n".join(lines),
+        "color": 0xF5C542,
+    }
+    await _send_admin_webhook(embed)
 
 
 async def notify_disqualification(

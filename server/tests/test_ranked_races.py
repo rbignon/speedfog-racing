@@ -17,6 +17,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Event,
     Participant,
     ParticipantStatus,
     Pool,
@@ -38,6 +39,8 @@ from speedfog_racing.services.training_service import (
     create_speedrun_session,
 )
 
+from .event_fixtures import bracketed
+from .test_admin_events import DOC as EVENT_DOC
 from .test_set_seed_service import _seed
 from .test_speedrun_service import _add_run, _event, _user
 from .test_speedrun_solo import _auth, _available
@@ -616,40 +619,45 @@ async def _seen(db: AsyncSession, pool: str, count: int) -> list[Seed]:
     ]
 
 
-async def test_normal_races_draw_seen_seeds_only_at_the_floor(test_client, async_session, pools):
-    """Creation and reroll of a normal race: AVAILABLE while the pool has more
-    than its floor (2 here), then SEEN, then the AVAILABLE reserve."""
+async def test_normal_race_rerolls_never_draw_back_a_seed_they_gave_up(
+    test_client, async_session, pools
+):
+    """At the floor (2 here) a normal race takes SEEN seeds before the
+    AVAILABLE reserve, but never one its own rerolls gave up: its rerolls move
+    on to the reserve instead of cycling through the seeds it rejected, and
+    fail once nothing else is left. Another race may take those seeds."""
     async with async_session() as db:
         await _staff(db, "org")
-        await _available(db, "sprint", 3)
-        seen = {s.seed_number for s in await _seen(db, "sprint", 2)}
+        await _available(db, "sprint", 2)
+        seen = {s.seed_number for s in await _seen(db, "sprint", 1)}
         await db.commit()
 
-    above = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
-    assert (await _race_seed(async_session, above)).seed_number not in seen
-    assert not await _seed_was_seen(async_session, above)
+    race_id = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    current = (await _race_seed(async_session, race_id)).seed_number
+    assert current in seen
+    assert await _seed_was_seen(async_session, race_id)
 
-    at_floor = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
-    first_seen = (await _race_seed(async_session, at_floor)).seed_number
-    assert first_seen in seen
-    assert await _seed_was_seen(async_session, at_floor)
-    assert (await _reroll(test_client, at_floor)).status_code == 200
-    second_seen = await _race_seed(async_session, at_floor)
-    assert second_seen.seed_number == (seen - {first_seen}).pop()
-    assert second_seen.status == SeedStatus.CONSUMED
-    assert await _seed_was_seen(async_session, at_floor)
-    assert await _status(async_session, first_seen) == SeedStatus.SEEN
-    assert await _available_count(async_session, "sprint") == 2
+    gave_up = set()
+    for _ in range(2):
+        gave_up.add(current)
+        assert (await _reroll(test_client, race_id)).status_code == 200
+        current = (await _race_seed(async_session, race_id)).seed_number
+        assert current not in gave_up
+        assert not await _seed_was_seen(async_session, race_id)
+        assert await _status(async_session, current) == SeedStatus.CONSUMED
+    assert {await _status(async_session, number) for number in gave_up} == {SeedStatus.SEEN}
+    assert await _available_count(async_session, "sprint") == 0
 
-    # The reroll's old seed is the only SEEN one left: the next race takes it,
-    # and that race's reroll falls back to the reserve, a fresh seed again.
-    reserve = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
-    assert (await _race_seed(async_session, reserve)).seed_number == first_seen
-    assert await _seed_was_seen(async_session, reserve)
-    assert (await _reroll(test_client, reserve)).status_code == 200
-    assert (await _race_seed(async_session, reserve)).seed_number not in seen
-    assert not await _seed_was_seen(async_session, reserve)
-    assert await _available_count(async_session, "sprint") == 1
+    refused = await _reroll(test_client, race_id)
+    assert (refused.status_code, refused.json()["detail"]) == (
+        400,
+        "No other seed left in pool 'sprint' for this race",
+    )
+    assert (await _race_seed(async_session, race_id)).seed_number == current
+
+    other = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    assert (await _race_seed(async_session, other)).seed_number in gave_up
+    assert await _seed_was_seen(async_session, other)
 
 
 async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, pools):
@@ -731,11 +739,14 @@ async def test_an_event_race_on_a_seen_seed_counts_on_no_board(test_client, asyn
     async with async_session() as db:
         await _staff(db, "org")
         await _available(db, "sprint", 3)  # one above the floor (2)
+        await db.commit()
+
+    # No SEEN seed yet: a fresh one.
+    fresh = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    async with async_session() as db:
         # One more than the races take, for a reroll that would allow SEEN seeds.
         seen = {s.seed_number for s in await _seen(db, "sprint", 3)}
         await db.commit()
-
-    fresh = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     on_seen = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     rerolled = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     assert (await _race_seed(async_session, fresh)).seed_number not in seen
@@ -789,6 +800,78 @@ async def test_an_event_race_on_a_seen_seed_counts_on_no_board(test_client, asyn
         ]
         for race_id in (fresh, rerolled):
             assert await load_unranked_runs(db, races[race_id].seed_id) == [], race_id
+
+
+async def test_attaching_a_race_on_a_seen_seed_to_an_event_rerolls_it(
+    test_client, async_session, pools
+):
+    """Attached to an event before its seeds are released, a race that drew a
+    SEEN seed is rerolled onto a fresh one, as by its Re-roll button, so its
+    runs count on the boards. A race on a fresh seed, one whose seeds are out
+    and one whose pool has no fresh seed left keep theirs, and the attach
+    itself always goes through."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _staff(db, "admin", UserRole.ADMIN)
+        await _available(db, "sprint", 3)  # one above the floor (2)
+        await db.commit()
+    # No SEEN seed yet: a fresh one.
+    fresh = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    async with async_session() as db:
+        seen = {s.seed_number for s in await _seen(db, "sprint", 3)}
+        event = Event(
+            slug="ev-attach",
+            name="Event",
+            starts_at=datetime(2026, 9, 23, tzinfo=UTC),
+            qualifier_ends_at=datetime(2026, 9, 30, tzinfo=UTC),
+            ends_at=datetime(2026, 10, 26, tzinfo=UTC),
+            config=bracketed(EVENT_DOC["config"]),
+        )
+        db.add(event)
+        await db.commit()
+        event_id = str(event.id)
+    unreleased, released, starved = [
+        (await _create(test_client, {"pool_name": "sprint"})).json()["id"] for _ in range(3)
+    ]
+    response = await test_client.post(f"/api/races/{released}/release-seeds", headers=_auth("org"))
+    assert response.status_code == 200, response.text
+    before = {
+        race_id: (await _race_seed(async_session, race_id)).seed_number
+        for race_id in (fresh, unreleased, released, starved)
+    }
+    for race_id in (unreleased, released, starved):
+        assert before[race_id] in seen, race_id
+    version = await _version(async_session, unreleased)
+
+    async def attach(race_id: str, slot: str) -> Any:
+        response = await test_client.post(
+            f"/api/admin/races/{race_id}/event",
+            json={"event_id": event_id, "slot": slot},
+            headers=_auth("admin"),
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert not (await attach(fresh, "semi_a:1"))["seed_was_seen"]
+    assert not (await attach(unreleased, "semi_a:2"))["seed_was_seen"]
+    assert (await attach(released, "semi_a:3"))["seed_was_seen"]
+    async with async_session() as db:
+        await db.execute(
+            update(Seed)
+            .where(Seed.status == SeedStatus.AVAILABLE)
+            .values(status=SeedStatus.CONSUMED)
+        )
+        await db.commit()
+    assert (await attach(starved, "final:1"))["seed_was_seen"]
+
+    rerolled = (await _race_seed(async_session, unreleased)).seed_number
+    assert rerolled not in seen
+    assert not await _seed_was_seen(async_session, unreleased)
+    assert await _version(async_session, unreleased) == version + 1
+    assert await _status(async_session, before[unreleased]) == SeedStatus.SEEN
+    for race_id in (fresh, released, starved):
+        assert (await _race_seed(async_session, race_id)).seed_number == before[race_id], race_id
+    assert await _seed_was_seen(async_session, starved)
 
 
 async def test_training_pool_seed_goes_back_available(test_client, async_session, pools):

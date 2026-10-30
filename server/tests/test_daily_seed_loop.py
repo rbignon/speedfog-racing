@@ -1,15 +1,18 @@
 """Tests for the Daily Seed background creation loop."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
     DailySeedSchedule,
+    Pool,
     Race,
     RaceStatus,
     Seed,
@@ -17,6 +20,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.services import daily_seed_loop
 from speedfog_racing.services.daily_seed_loop import (
     create_daily_seed_if_needed,
     daily_date_for,
@@ -194,3 +198,97 @@ async def test_daily_tick_never_draws_seen_seeds(ds_async_session_maker) -> None
     async with ds_async_session_maker() as db:
         seed = await db.get(Seed, created.seed_id)
         assert seed is not None and seed.seed_number == "fresh-0"
+
+
+@pytest.fixture(autouse=True)
+def _forget_seed_shortage_alert(monkeypatch) -> None:
+    """Every test starts with no seed shortage alert sent yet, whatever ran before."""
+    monkeypatch.setattr(daily_seed_loop, "_shortage_alerted_on", None)
+
+
+@pytest.fixture
+def admin_alerts(monkeypatch) -> dict[str, AsyncMock]:
+    """The loop's admin alerts, mocked."""
+    alerts = {"unavailable": AsyncMock(), "low": AsyncMock()}
+    monkeypatch.setattr(daily_seed_loop, "notify_daily_seed_unavailable", alerts["unavailable"])
+    monkeypatch.setattr(daily_seed_loop, "notify_daily_pools_low", alerts["low"])
+    return alerts
+
+
+@pytest.mark.asyncio
+async def test_daily_tick_alerts_the_admins_once_a_day_when_no_seed_is_left(
+    ds_async_session_maker, admin_alerts
+) -> None:
+    """No seed to draw: no daily, and one admin alert per rotation day rather
+    than one per minute the loop tries again."""
+    await _seed_pool_and_system_user(ds_async_session_maker, seeds=0)
+
+    for minute in range(3):
+        now = TICK_TIME + timedelta(minutes=minute)
+        assert await create_daily_seed_if_needed(ds_async_session_maker, now=now) is None
+    next_day = TICK_TIME + timedelta(days=1)
+    assert await create_daily_seed_if_needed(ds_async_session_maker, now=next_day) is None
+
+    assert [call.args for call in admin_alerts["unavailable"].await_args_list] == [
+        ("Standard", date(2026, 4, 27)),
+        ("Standard", date(2026, 4, 28)),
+    ]
+    admin_alerts["low"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_daily_tick_warns_the_admins_about_scheduled_pools_at_their_floor(
+    ds_async_session_maker, admin_alerts, monkeypatch
+) -> None:
+    """Once the day's daily exists, every pool of the weekly schedule with no
+    more AVAILABLE seeds than its speedrun floor is reported, the others and
+    the pools off the schedule are not."""
+    monkeypatch.setattr(settings, "speedrun_default_floor", 3)
+    await _seed_pool_and_system_user(ds_async_session_maker, seeds=4)
+    async with ds_async_session_maker() as db:
+        db.add(Pool(name="sprint", config={"name": "Sprint"}, speedrun_floor=1))
+        db.add(Pool(name="boss_rush", config={"name": "Boss Rush"}, speedrun_floor=1))
+        db.add(Pool(name="off_schedule", config={"name": "Off Schedule"}))
+        for weekday, pool in ((2, "sprint"), (3, "boss_rush")):
+            schedule = await db.get(DailySeedSchedule, weekday)
+            assert schedule is not None
+            schedule.pool_name = pool
+        for pool, count in (("sprint", 2), ("boss_rush", 1)):
+            for i in range(count):
+                db.add(
+                    Seed(
+                        seed_number=f"{pool}-{i}",
+                        pool_name=pool,
+                        graph_json={"total_layers": 5, "nodes": []},
+                        total_layers=5,
+                        folder_path=f"/test/{pool}-{i}",
+                        status=SeedStatus.AVAILABLE,
+                    )
+                )
+        await db.commit()
+
+    # 2026-04-27 is a Monday: Standard, whose draw leaves 3 seeds, its floor.
+    assert await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME) is not None
+
+    admin_alerts["low"].assert_awaited_once_with([("Boss Rush", 1, 1), ("Standard", 3, 3)])
+    admin_alerts["unavailable"].assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_a_failing_pool_check_never_costs_the_daily_announcement(
+    ds_async_session_maker, admin_alerts, monkeypatch
+) -> None:
+    """The daily exists once the pool check runs, so no later tick would
+    announce it: a failure there skips the admin alert, not the announcement."""
+    await _seed_pool_and_system_user(ds_async_session_maker)
+    announce = AsyncMock()
+    monkeypatch.setattr(daily_seed_loop, "notify_daily_seed_created", announce)
+    monkeypatch.setattr(
+        daily_seed_loop, "scheduled_pools_at_floor", AsyncMock(side_effect=RuntimeError("boom"))
+    )
+
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+
+    assert created is not None
+    announce.assert_awaited_once()
+    admin_alerts["low"].assert_not_awaited()

@@ -1793,13 +1793,42 @@ async def reroll_seed(
         report_buggy,
         is_daily,
     )
+    race = await apply_seed_reroll(
+        db,
+        race,
+        reporter_id=user.id if report_buggy else None,
+        report_reason=body.report_reason if body and report_buggy else None,
+    )
+    return _race_detail_response(race, user=user)
+
+
+async def apply_seed_reroll(
+    db: AsyncSession,
+    race: Race,
+    *,
+    reporter_id: UUID | None = None,
+    report_reason: str | None = None,
+) -> Race:
+    """Draw a new seed for a race whose reroll the caller allowed, and tell everyone.
+
+    Bumps the race version (optimistic lock), re-gates a SETUP race's seeds,
+    resets a Daily Seed's progress, announces the reroll in the participants
+    chat and broadcasts the new state to spectators and mods. ``race`` must
+    have its seed loaded (and its participants for a Daily Seed); the race is
+    re-fetched with every relationship before the broadcasts.
+
+    Returns:
+        The race re-fetched with its relationships.
+
+    Raises:
+        HTTPException: 409 when a speedrun race's pool is at its floor or the
+            race changed concurrently, 400 when no seed can be drawn. Nothing
+            is committed then; a caller that goes on rolls the session back.
+    """
+    race_id = race.id
+    is_daily = race.daily_date is not None
     try:
-        await reroll_seed_for_race(
-            db,
-            race,
-            reporter_id=user.id if report_buggy else None,
-            report_reason=body.report_reason if body and report_buggy else None,
-        )
+        await reroll_seed_for_race(db, race, reporter_id=reporter_id, report_reason=report_reason)
     except SpeedrunFloorError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except ValueError as e:
@@ -1826,6 +1855,7 @@ async def reroll_seed(
             seed_id=race.seed_id,
             seed_played=race.seed_played,
             seed_was_seen=race.seed_was_seen,
+            rerolled_seed_ids=race.rerolled_seed_ids,
             seeds_released_at=new_seeds_released_at,
         )
     )
@@ -1882,8 +1912,7 @@ async def reroll_seed(
     # race_state is spectator-only; mods learn the new seed_id (to flag a stale
     # loaded pack) through race_info_update, which reaches mods + spectators.
     await broadcast_race_info_update(race)
-
-    return _race_detail_response(race, user=user)
+    return race
 
 
 @router.post("/{race_id}/release-seeds", response_model=RaceDetailResponse)

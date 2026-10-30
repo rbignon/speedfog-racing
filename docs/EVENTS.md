@@ -520,7 +520,10 @@ count there. See `daily_points` in
    With it unset, every withdrawal redraws, stages already played included.
 4. Once a match is agreed with its players: create the stage's public races
    (four slots, a duration cap) with their `scheduled_at`, add the qualified
-   runners and the casters, attach to `<stage>:<n>`. The earliest of the
+   runners and the casters, attach to `<stage>:<n>`, before releasing the
+   seeds: a race created on a SEEN seed is rerolled onto a fresh one by the
+   attach itself, which it cannot do once the seeds are out (see "Ranked
+   races" in [SPEEDRUN.md](SPEEDRUN.md)). The earliest of the
    stage's races then dates it, which ends the `cut`, makes it the next
    stage, and drives the home band, the share card and polling (see
    "Current and next stage" and "The event page"). Fixed evenings (the
@@ -617,6 +620,15 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
 - An occupied slot is a 409, including the race between two admins attaching
   to the same slot at once (caught by the unique constraint on
   `(event_id, event_slot)`).
+
+Once attached, a race still in SETUP whose seeds are not released and whose
+seed was SEEN when drawn (`Race.seed_was_seen`: races are created as normal
+races, which may draw one) is rerolled onto an AVAILABLE seed, as by its
+Re-roll Seed button (`apply_seed_reroll`: chat message, version bump,
+broadcasts), so its runs count on the speedrun boards. A race whose seeds are
+out keeps its seed, as does one whose pool has no AVAILABLE seed left; the
+attach stands either way, and the admin Races tab flags a race left on a SEEN
+seed. See "Ranked races" in [SPEEDRUN.md](SPEEDRUN.md).
 
 `exclude_from_stats` is read only by the community-wide trait-score recompute
 (`stats_service.recalculate_all_stats`); it has no effect on the event's own

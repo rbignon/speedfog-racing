@@ -90,10 +90,10 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 - Marks it `CONSUMED`, sets `race.seed_id`.
 - Callers: the creation of a `normal` race (`allow_seen=True`) and the Daily Seed loop (AVAILABLE only).
 
-**`get_available_seed(db, pool_name, exclude_id?, *, allow_seen=False)`**:
+**`get_available_seed(db, pool_name, exclude_id?, *, allow_seen=False, rerolled_seed_ids=())`**:
 
-- Returns a random AVAILABLE seed (`random.choice`), or `None`. Optional `exclude_id` for reroll (exclude the current seed, from the floor count too).
-- With `allow_seen` (races off the boards only), the draw takes an AVAILABLE seed while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), then a SEEN seed, then an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
+- Returns a random AVAILABLE seed (`ORDER BY random()`), or `None`. Optional `exclude_id` for reroll (exclude the current seed, from the floor count too); `rerolled_seed_ids` (a reroll's `Race.rerolled_seed_ids`) leaves the seeds the race already gave up out of every candidate set.
+- With `allow_seen` (races off the boards only), SEEN seeds join the draw: while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), one uniform draw over its SEEN and AVAILABLE seeds, so SEEN seeds leave the pool at their share of it instead of piling up; at or under the floor, a SEEN seed, else an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
 
 ### Seed Reroll
 
@@ -101,7 +101,7 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 - Requires `race.seed` to be eager-loaded.
 - Refuses a Set Seed race (`ValueError`, "A Set Seed race keeps its seed").
-- Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race draws fresh seeds only (`race_draws_fresh_seeds`: a Daily Seed or an event race). The reroll sets `race.seed_was_seen` from the drawn seed's status, so an event race that drew a SEEN seed gets back on the boards.
+- Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race draws fresh seeds only (`race_draws_fresh_seeds`: a Daily Seed or an event race), leaving out the seeds the race's earlier rerolls gave up. The old seed joins them (`race.rerolled_seed_ids`), so a race's rerolls never cycle back through the seeds it rejected, and a reroll fails (`ValueError`) once nothing else is left. The reroll sets `race.seed_was_seen` from the drawn seed's status, so an event race that drew a SEEN seed gets back on the boards.
 - The old seed of a race in SETUP becomes SEEN, released or not (AVAILABLE again in a training pool); a played seed stays CONSUMED: a running Daily Seed's, or a reset race's (`race.seed_played`, which the reroll then clears). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Seen seeds" in `RACE_LIFECYCLE.md`.
 - Assigns new seed to race.
 
@@ -258,6 +258,7 @@ pool from new selection UIs and blocks training creation.
 AVAILABLE ──draw──→ CONSUMED ──reroll or deletion in SETUP──→ SEEN
                                                               │
 CONSUMED ←──draw by a normal race (allow_seen)────────────────┘
+          (never by a race whose own reroll gave it up)
 
 REPORTED ──admin restore──→ SEEN
 

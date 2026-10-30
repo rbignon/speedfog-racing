@@ -1,5 +1,6 @@
 """Admin API routes for seed and system management."""
 
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -17,7 +18,11 @@ from speedfog_racing.api.helpers import (
     race_response,
     user_response,
 )
-from speedfog_racing.api.races import after_disqualification_change, remove_participation
+from speedfog_racing.api.races import (
+    after_disqualification_change,
+    apply_seed_reroll,
+    remove_participation,
+)
 from speedfog_racing.api.speedrun import resolve_seed_or_404
 from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
 from speedfog_racing.api.training import _build_detail_response, _get_session_or_404_public
@@ -113,6 +118,8 @@ from speedfog_racing.services.speedrun_service import _is_training, _pool_config
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -1863,4 +1870,19 @@ async def admin_attach_race_to_event(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"slot {request.slot} is taken",
         ) from exc
+
+    if race.status == RaceStatus.SETUP and race.seeds_released_at is None and race.seed_was_seen:
+        # Created as a normal race, it may have drawn a SEEN seed, which keeps
+        # an event race off the boards: reroll it while nobody can have its
+        # pack (an event race's reroll draws AVAILABLE seeds only). The attach
+        # stands either way; without a fresh seed the Races tab flags the race.
+        logger.info("Rerolling race %s off its seen seed on attach to %s", race_id, request.slot)
+        try:
+            race = await apply_seed_reroll(db, race)
+        except HTTPException as exc:
+            await db.rollback()
+            logger.warning("Race %s keeps its seen seed: %s", race_id, exc.detail)
+            race = (
+                (await db.execute(stmt.execution_options(populate_existing=True))).scalars().one()
+            )
     return race_response(race)

@@ -5,6 +5,7 @@ import logging
 import tomllib
 import uuid
 import zipfile
+from collections.abc import Collection
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -319,18 +320,22 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
 
 
 async def _random_seed(
-    db: AsyncSession, pool_name: str, seed_status: SeedStatus, exclude_id: uuid.UUID | None
+    db: AsyncSession,
+    pool_name: str,
+    statuses: Collection[SeedStatus],
+    excluded: Collection[uuid.UUID],
 ) -> Seed | None:
+    """One seed picked uniformly among the pool's seeds in ``statuses``."""
     query = (
         select(Seed)
-        .where(Seed.pool_name == pool_name, Seed.status == seed_status)
+        .where(Seed.pool_name == pool_name, Seed.status.in_(statuses))
         .order_by(func.random())
         .limit(1)
         # Never take a row a concurrent speedrun draw holds (ignored on SQLite).
         .with_for_update(of=Seed, skip_locked=True)
     )
-    if exclude_id is not None:
-        query = query.where(Seed.id != exclude_id)
+    if excluded:
+        query = query.where(Seed.id.not_in(excluded))
     return (await db.execute(query)).scalar_one_or_none()
 
 
@@ -340,14 +345,16 @@ async def get_available_seed(
     exclude_id: uuid.UUID | None = None,
     *,
     allow_seen: bool = False,
+    rerolled_seed_ids: Collection[uuid.UUID] = (),
 ) -> Seed | None:
     """Get a random seed to draw from the pool.
 
     By default only AVAILABLE seeds are drawn. With ``allow_seen`` (normal
-    races only: nothing that counts on the boards), the draw takes an
-    AVAILABLE seed while the pool has more AVAILABLE seeds than its speedrun
-    floor, then a SEEN seed, then an AVAILABLE one from the reserve: fresh
-    seeds while there are plenty, SEEN seeds before the reserve the speedrun
+    races only: nothing that counts on the boards), SEEN seeds join the
+    draw: while the pool has more AVAILABLE seeds than its speedrun floor,
+    one uniform draw over its SEEN and AVAILABLE seeds, so SEEN seeds leave
+    the pool at their share of it instead of piling up; at or under the
+    floor, a SEEN seed, else an AVAILABLE one from the reserve the speedrun
     draws need.
 
     Args:
@@ -356,17 +363,21 @@ async def get_available_seed(
         exclude_id: Optional seed ID to exclude (e.g. current seed during re-roll),
             from the floor count too
         allow_seen: Whether SEEN seeds may be drawn (see above)
+        rerolled_seed_ids: Seeds the race's rerolls already gave up
+            (``Race.rerolled_seed_ids``), left out of every candidate set
 
     Returns:
         A random Seed, or None if the pool has none to draw
     """
-    if allow_seen and await _available_count(db, pool_name, exclude_id) <= await speedrun_floor(
-        db, pool_name
-    ):
-        seen = await _random_seed(db, pool_name, SeedStatus.SEEN, exclude_id)
-        if seen is not None:
-            return seen
-    return await _random_seed(db, pool_name, SeedStatus.AVAILABLE, exclude_id)
+    excluded = {*rerolled_seed_ids, *([exclude_id] if exclude_id is not None else [])}
+    if not allow_seen:
+        return await _random_seed(db, pool_name, (SeedStatus.AVAILABLE,), excluded)
+    if await _available_count(db, pool_name, exclude_id) > await speedrun_floor(db, pool_name):
+        return await _random_seed(db, pool_name, (SeedStatus.SEEN, SeedStatus.AVAILABLE), excluded)
+    seen = await _random_seed(db, pool_name, (SeedStatus.SEEN,), excluded)
+    if seen is not None:
+        return seen
+    return await _random_seed(db, pool_name, (SeedStatus.AVAILABLE,), excluded)
 
 
 class SpeedrunFloorError(ValueError):
@@ -498,8 +509,10 @@ async def reroll_seed_for_race(
     applies, and a race that does not draw fresh seeds only
     (``race_draws_fresh_seeds``) may draw a SEEN seed (see
     ``get_available_seed``): an event race on a SEEN seed gets an AVAILABLE
-    one, which puts it back on the boards (``Race.seed_was_seen``). Nothing
-    changes when no seed can be drawn.
+    one, which puts it back on the boards (``Race.seed_was_seen``). The draw
+    leaves out every seed the race's earlier rerolls gave up, and the old seed
+    joins them (``Race.rerolled_seed_ids``), so rerolls never cycle back
+    through rejected seeds. Nothing changes when no seed can be drawn.
 
     The old seed of a race still in SETUP becomes SEEN, released or not: its
     map reached the race's spectators, so no draw that counts on the boards
@@ -525,14 +538,24 @@ async def reroll_seed_for_race(
 
     pool_name = old_seed.pool_name
 
+    rerolled = race.rerolled_seed_ids or []
     new_seed: Seed | None
     if race.mode == RunMode.SPEEDRUN:
+        # AVAILABLE seeds only, and a seed this race gave up is never AVAILABLE
+        # again (speedrun races never draw from a training pool).
         new_seed = await draw_speedrun_seed(db, pool_name, exclude_id=old_seed.id)
     else:
         new_seed = await get_available_seed(
-            db, pool_name, exclude_id=old_seed.id, allow_seen=not race_draws_fresh_seeds(race)
+            db,
+            pool_name,
+            exclude_id=old_seed.id,
+            allow_seen=not race_draws_fresh_seeds(race),
+            rerolled_seed_ids=[uuid.UUID(seed_id) for seed_id in rerolled],
         )
     if new_seed is None:
+        if rerolled:
+            # The pool may still hold the seeds this race rejected.
+            raise ValueError(f"No other seed left in pool '{pool_name}' for this race")
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     # Release old seed (keep DISCARDED if pool was discarded)
@@ -548,6 +571,9 @@ async def reroll_seed_for_race(
                 if _is_training(_pool_config(old_seed.pool))
                 else SeedStatus.SEEN
             )
+
+    # A new list, so the ORM sees the JSON column change.
+    race.rerolled_seed_ids = [*rerolled, str(old_seed.id)]
 
     # Assign new seed
     race.seed_was_seen = new_seed.status == SeedStatus.SEEN
