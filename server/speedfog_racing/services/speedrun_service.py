@@ -17,6 +17,7 @@ from uuid import UUID
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from speedfog_racing.config import settings
 from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
@@ -50,8 +51,6 @@ RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
 SpeedrunSub = Literal["set", "random"]
 
 RECENT_RUNS_COUNT = 5
-PRACTICED_SEEDS_COUNT = 5
-PRACTICED_SEEDS_DAYS = 7
 _ZONE_HISTORY_QUERY_CHUNK = 500
 
 
@@ -568,11 +567,11 @@ async def load_practiced_seeds(
     db: AsyncSession, now: datetime | None = None
 ) -> list[SpeedrunPracticedSeed]:
     """The seeds with the most Set Seed attempts in the last
-    ``PRACTICED_SEEDS_DAYS`` days, top ``PRACTICED_SEEDS_COUNT`` by attempts,
+    ``speedrun_practiced_seeds_days`` days, top ``speedrun_practiced_seeds_count`` by attempts,
     then players, then seed number. An attempt is a Set Seed session created
     (invalidated ones out) or a participant of a Set Seed race joined in the
     window; banned users and training pools are left out."""
-    cutoff = (now or datetime.now(UTC)) - timedelta(days=PRACTICED_SEEDS_DAYS)
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=settings.speedrun_practiced_seeds_days)
     session_rows = await db.execute(
         select(TrainingSession.user_id, Seed.seed_number, Seed.pool_name, Seed.total_layers)
         .join(Seed, TrainingSession.seed_id == Seed.id)
@@ -608,7 +607,7 @@ async def load_practiced_seeds(
         where[number] = (pool_name, layers)
     top = sorted(attempts, key=lambda n: (-attempts[n], -len(players[n]), n))
     out: list[SpeedrunPracticedSeed] = []
-    for number in top[:PRACTICED_SEEDS_COUNT]:
+    for number in top[: settings.speedrun_practiced_seeds_count]:
         pool_name, layers = where[number]
         key, name = seed_category(pools[pool_name], layers)
         out.append(
@@ -662,6 +661,7 @@ async def build_overview(
         players=len({r.user.id for r in runs}),
         recent_runs=recent_runs,
         practiced_seeds=await load_practiced_seeds(db, now),
+        practiced_seeds_days=settings.speedrun_practiced_seeds_days,
     )
 
 

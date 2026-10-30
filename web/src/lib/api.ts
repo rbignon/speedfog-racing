@@ -2399,8 +2399,10 @@ export interface SpeedrunOverviewResponse {
   runs: number;
   players: number;
   recent_runs: SpeedrunRecentRun[];
-  /** Most practiced Set Seed seeds of the last 7 days (top 5). */
+  /** Most practiced Set Seed seeds of the last `practiced_seeds_days` days. */
   practiced_seeds: SpeedrunPracticedSeed[];
+  /** The window, in days, `practiced_seeds` covers. */
+  practiced_seeds_days: number;
 }
 
 export interface SpeedrunBoardResponse {

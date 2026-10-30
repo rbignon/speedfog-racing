@@ -9,6 +9,7 @@ vi.mock("$lib/stores/weaponsCatalogue.svelte", () => ({
 
 function overview(
   practiced_seeds: SpeedrunPracticedSeed[],
+  practiced_seeds_days = 7,
 ): SpeedrunOverviewResponse {
   return {
     categories: [],
@@ -16,6 +17,7 @@ function overview(
     players: 0,
     recent_runs: [],
     practiced_seeds,
+    practiced_seeds_days,
   };
 }
 
@@ -45,6 +47,28 @@ describe("SpeedrunSidebar practiced seeds", () => {
     expect(first.getAttribute("href")).toBe("/speedrun/seed/363096a4243f");
     expect(first.textContent).toContain("3 attempts · 2 players");
     expect(screen.getByText("1 attempt · 1 player")).toBeTruthy();
+  });
+
+  it("labels the panel with the window the API reports", () => {
+    const seed = {
+      seed_number: "363096a4243f",
+      category: "sprint",
+      category_name: "Sprint",
+      attempts: 1,
+      players: 1,
+    };
+    const { unmount } = render(SpeedrunSidebar, {
+      overview: overview([seed], 14),
+      onpick: vi.fn(),
+    });
+    expect(screen.getByText("14 days")).toBeTruthy();
+    unmount();
+
+    render(SpeedrunSidebar, {
+      overview: overview([seed], 1),
+      onpick: vi.fn(),
+    });
+    expect(screen.getByText("1 day")).toBeTruthy();
   });
 
   it("hides the panel when no seed was practiced", () => {

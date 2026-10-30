@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     speedrun_default_floor: int = 5
     # An ACTIVE Speedrun solo session older than this becomes ABANDONED.
     speedrun_session_ttl_hours: int = 24
+    # Most practiced seeds panel of the Speedrun tab: how many seeds it lists...
+    speedrun_practiced_seeds_count: int = 5
+    # ...and how many days back their attempts are counted.
+    speedrun_practiced_seeds_days: int = 7
 
     # Site-wide announcement shown as a banner on every web page (served via
     # /health so it can change without a frontend deploy). None hides it; the

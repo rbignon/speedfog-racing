@@ -1049,7 +1049,7 @@ class SpeedrunRecentRun(SpeedrunRun):
 
 
 class SpeedrunPracticedSeed(BaseModel):
-    """A seed practiced in Set Seed over the last 7 days."""
+    """A seed practiced in Set Seed over the practiced-seeds window."""
 
     seed_number: str
     category: str
@@ -1064,6 +1064,8 @@ class SpeedrunOverviewResponse(BaseModel):
     players: int
     recent_runs: list[SpeedrunRecentRun]
     practiced_seeds: list[SpeedrunPracticedSeed]
+    # The window (days) practiced_seeds covers.
+    practiced_seeds_days: int
 
 
 class SpeedrunRecordSeed(BaseModel):

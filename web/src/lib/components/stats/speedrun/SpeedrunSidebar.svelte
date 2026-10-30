@@ -34,7 +34,11 @@
 
   {#if overview.practiced_seeds.length > 0}
     <section class="sr-panel">
-      <h3>Most practiced seeds <span class="window">7 days</span></h3>
+      <h3>
+        Most practiced seeds <span class="window"
+          >{plural(overview.practiced_seeds_days, "day")}</span
+        >
+      </h3>
       {#each overview.practiced_seeds as seed (seed.seed_number)}
         <a class="practiced" href={seedPageHref(seed.seed_number)}>
           <span class="seed"

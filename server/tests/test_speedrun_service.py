@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.config import settings
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
     Event,
@@ -841,3 +842,29 @@ async def test_practiced_seeds_order_and_cap(async_session, pools):
         ov = await build_overview(db, await load_counted_runs(db), now=PRACTICE_NOW)
 
     assert [p.seed_number[:2] for p in ov.practiced_seeds] == ["s1", "s2", "s3", "s4", "s5"]
+
+
+async def test_practiced_seeds_honor_the_configured_window_and_count(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "speedrun_practiced_seeds_days", 10)
+    monkeypatch.setattr(settings, "speedrun_practiced_seeds_count", 2)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        # One attempt 9 days ago (inside 10, outside the default 7), then 3, 2 and 1
+        # attempts today: only the two busiest seeds are kept.
+        old = await _seed(db, "oldold111")
+        await _practice(db, old, user, days_ago=9)
+        for number, attempts in (("s1xxxxx", 3), ("s2xxxxx", 2), ("s3xxxxx", 1)):
+            seed = await _seed(db, number)
+            for _ in range(attempts):
+                await _practice(db, seed, user)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db), now=PRACTICE_NOW)
+        monkeypatch.setattr(settings, "speedrun_practiced_seeds_count", 10)
+        wide = await build_overview(db, await load_counted_runs(db), now=PRACTICE_NOW)
+
+    assert [p.seed_number for p in ov.practiced_seeds] == ["s1xxxxx", "s2xxxxx"]
+    assert ov.practiced_seeds_days == 10
+    assert "oldold111" in [p.seed_number for p in wide.practiced_seeds]
