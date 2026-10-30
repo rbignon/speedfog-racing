@@ -1083,10 +1083,13 @@ class SpeedrunBoardResponse(BaseModel):
 
 
 class SpeedrunSeedRun(SpeedrunRun):
-    """A run on a seed page; ``rank`` is its place among the seed's runs."""
+    """A run on a seed page; ``rank`` is its place among the seed's ranked runs
+    (None for an unranked run and for a player's slower ranked runs)."""
 
     run_type: RunType
     zone_history: list[dict[str, Any]] | None
+    # False for a finished run of a normal race: listed, never placed.
+    ranked: bool = True
 
 
 class SpeedrunSeedOrigin(BaseModel):

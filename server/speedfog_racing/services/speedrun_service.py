@@ -76,6 +76,8 @@ class CountedRun:
     deaths: int
     # The seed is excluded from Set Seed: the run leaves the Set Seed board only.
     seed_excluded: bool
+    # False for a run listed on its seed page only (see ``load_unranked_runs``).
+    ranked: bool = True
 
 
 def _pool_config(pool: Pool) -> dict[str, Any]:
@@ -130,6 +132,78 @@ def race_counts_on_boards(race: Race) -> bool:
     return (
         race.mode in _RANKED_RACE_MODES or race.daily_date is not None or race.event_id is not None
     )
+
+
+async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun]:
+    """The runs a seed page lists without counting them: finished participants
+    of finished normal-mode races that are neither Daily Seeds nor event races
+    (the boards leave them out), banned users left out. Disqualified and
+    unfinished participants are not finished. Only the seed page merges these
+    in; the boards, records and purge never see them."""
+    stmt = (
+        select(
+            Participant.id.label("participant_id"),
+            Participant.igt_ms,
+            Participant.death_count,
+            Participant.finished_at,
+            Race.id.label("race_id"),
+            Race.name.label("race_name"),
+            Race.started_at,
+            Race.created_at,
+            Race.deathless,
+            Seed.pool_name,
+            Seed.seed_number,
+            Seed.set_seed_excluded_at,
+            User.id.label("user_id"),
+            User.twitch_username,
+            User.twitch_display_name,
+            User.twitch_avatar_url,
+            User.equipped_badge_id,
+            User.equipped_name_template_id,
+        )
+        .join(Race, Participant.race_id == Race.id)
+        .join(Seed, Race.seed_id == Seed.id)
+        .join(User, Participant.user_id == User.id)
+        .where(
+            Race.seed_id == seed_id,
+            Participant.status == ParticipantStatus.FINISHED,
+            Race.status == RaceStatus.FINISHED,
+            Race.mode == RunMode.NORMAL,
+            Race.daily_date.is_(None),
+            Race.event_id.is_(None),
+            User.banned_at.is_(None),
+        )
+    )
+    return [
+        CountedRun(
+            run_id=row.participant_id,
+            user=UserResponse(
+                id=row.user_id,
+                twitch_username=row.twitch_username,
+                twitch_display_name=row.twitch_display_name,
+                twitch_avatar_url=row.twitch_avatar_url,
+                equipped_badge_id=row.equipped_badge_id,
+                equipped_name_template_id=row.equipped_name_template_id,
+            ),
+            pool=row.pool_name,
+            # Never read: an unranked run belongs to no board.
+            category=row.pool_name,
+            deathless=bool(row.deathless),
+            run_type="race",
+            blind=True,
+            igt_ms=row.igt_ms,
+            finished_at=row.finished_at or row.started_at or row.created_at,
+            race_id=row.race_id,
+            race_name=row.race_name,
+            session_id=None,
+            daily_date=None,
+            seed_number=row.seed_number,
+            deaths=row.death_count,
+            seed_excluded=row.set_seed_excluded_at is not None,
+            ranked=False,
+        )
+        for row in (await db.execute(stmt)).all()
+    ]
 
 
 async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) -> list[CountedRun]:
@@ -701,21 +775,30 @@ def seed_stats(runs: Sequence[CountedRun]) -> SpeedrunSeedStats:
     )
 
 
-async def build_seed_runs(db: AsyncSession, runs: Sequence[CountedRun]) -> list[SpeedrunSeedRun]:
-    """A seed page's run list from the seed's counted runs: every run by time,
-    each player's best ranked and the others without a rank, with its zone
-    history (and the weapon decoded from it)."""
+async def build_seed_runs(
+    db: AsyncSession, runs: Sequence[CountedRun], unranked: Sequence[CountedRun] = ()
+) -> list[SpeedrunSeedRun]:
+    """A seed page's run list from the seed's counted runs and its ``unranked``
+    ones: every run by time, each player's best counted run ranked and the
+    others (slower counted runs, unranked runs) without a rank, with its zone
+    history (and the weapon decoded from it). Unranked runs never take part in
+    the ranking."""
+    every_run = [*runs, *unranked]
     histories = await load_zone_histories(
         db,
-        {r.run_id for r in runs if r.session_id is None},
-        {r.run_id for r in runs if r.session_id is not None},
+        {r.run_id for r in every_run if r.session_id is None},
+        {r.run_id for r in every_run if r.session_id is not None},
     )
     weapons = {run_id: main_weapon(history) for run_id, history in histories.items()}
+    ranked_rows = rank_board(runs, include_obsolete=True)
+    rows = [*ranked_rows, *((run, None) for run in unranked)]
+    rows.sort(key=lambda row: _run_key(row[0]))
     return [
         SpeedrunSeedRun(
             **_run_fields(run, rank, weapons),
             run_type=run.run_type,
             zone_history=histories.get(run.run_id),
+            ranked=run.ranked,
         )
-        for run, rank in rank_board(runs, include_obsolete=True)
+        for run, rank in rows
     ]

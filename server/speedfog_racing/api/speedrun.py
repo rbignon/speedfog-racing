@@ -42,6 +42,7 @@ from speedfog_racing.services.set_seed_service import (
 from speedfog_racing.services.speedrun_service import (
     build_seed_runs,
     load_counted_runs,
+    load_unranked_runs,
     seed_category,
     seed_stats,
 )
@@ -94,14 +95,17 @@ async def get_seed_page(
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
 ) -> SpeedrunSeedResponse:
-    """A played seed's page: its runs and map once no blind run on it is in
-    progress, whether it is replayable, and what keeps its files."""
+    """A played seed's page: its runs (counted ones with their place, finished
+    normal-race runs unranked) and map once no blind run on it is in progress,
+    whether it is replayable, and what keeps its files."""
     found = await resolve_seed_or_404(db, seed)
     replayability = await seed_replayability(db, found)
     every_run = await _cached("speedrun:runs", load_counted_runs, db)
     retention = (await load_retention_facts(db, [found], every_run))[found.id]
     seed_runs = await load_counted_runs(db, seed_id=found.id)
+    unranked_runs = await load_unranked_runs(db, found.id)
     shown_runs = seed_runs if replayability.public else []
+    shown_unranked = unranked_runs if replayability.public else []
     category, category_name = seed_category(found.pool, found.total_layers)
     raw_config = found.pool.config or None
     return SpeedrunSeedResponse(
@@ -127,8 +131,8 @@ async def get_seed_page(
             else None
         ),
         graph_json=found.graph_json if replayability.public else None,
-        runs=await build_seed_runs(db, shown_runs),
-        stats=seed_stats(shown_runs),
+        runs=await build_seed_runs(db, shown_runs, shown_unranked),
+        stats=seed_stats([*shown_runs, *shown_unranked]),
     )
 
 

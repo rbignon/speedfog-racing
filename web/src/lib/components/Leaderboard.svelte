@@ -32,9 +32,10 @@
     // Disqualification reasons the viewer may see, by participant id; shown
     // as the DQ tag's tooltip.
     disqualificationReasons?: Record<string, string>;
-    // Blind or Replay chip per row, by participant id: a list that mixes
-    // runs played on an unknown seed with replays of a known one.
-    runKinds?: Record<string, "blind" | "replay">;
+    // Blind, Replay or Unranked chip per row, by participant id: a list that
+    // mixes runs played on an unknown seed, replays of a known one and runs
+    // that count on no board.
+    runKinds?: Record<string, "blind" | "replay" | "unranked">;
     // Each row's place by participant id, when it is not the row's position
     // (shared places, rows without one): a null place shows none and dims
     // the row. Without it, rows count 1, 2, 3.
@@ -234,7 +235,11 @@
                   class="chip run-chip"
                   class:blind={runKind === "blind"}
                   class:replay={runKind === "replay"}
-                  >{runKind === "blind" ? "Blind" : "Replay"}</span
+                  >{runKind === "blind"
+                    ? "Blind"
+                    : runKind === "replay"
+                      ? "Replay"
+                      : "Unranked"}</span
                 >
               {/if}
               {#if flaggedIds.includes(participant.id)}

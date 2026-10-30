@@ -60,11 +60,18 @@
   );
   let runKinds = $derived(
     Object.fromEntries(
-      seed.runs.map((r) => [r.run_id, r.blind ? "blind" : "replay"] as const),
+      seed.runs.map(
+        (r) =>
+          [
+            r.run_id,
+            !r.ranked ? "unranked" : r.blind ? "blind" : "replay",
+          ] as const,
+      ),
     ),
   );
   // The server's places: shared on equal times, none for a player's slower
-  // runs (a Set Seed grind would otherwise take places 1 to 20).
+  // runs (a Set Seed grind would otherwise take places 1 to 20) nor for an
+  // unranked run.
   let ranks = $derived(
     Object.fromEntries(seed.runs.map((r) => [r.run_id, r.rank] as const)),
   );
@@ -124,7 +131,7 @@
           <h2>Runs on this seed</h2>
         </div>
         {#if participants.length === 0}
-          <p class="empty">No ranked run on this seed yet.</p>
+          <p class="empty">No finished run on this seed yet.</p>
         {:else}
           <Leaderboard
             {participants}

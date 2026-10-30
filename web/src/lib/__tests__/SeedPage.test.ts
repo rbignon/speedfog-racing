@@ -62,6 +62,7 @@ function seedRun(
       twitch_avatar_url: null,
     },
     rank: null,
+    ranked: true,
     igt_ms: igt,
     finished_at: "2026-10-20T12:00:00Z",
     race_id: blind ? "r1" : null,
@@ -189,6 +190,32 @@ describe("seed page: the run list's places", () => {
       false,
       false,
       true,
+    ]);
+  });
+});
+
+describe("seed page: unranked runs", () => {
+  it("chips an unranked run and gives it no place, beside ranked places", () => {
+    const { container } = renderPage(
+      seed({
+        runs: [
+          { ...seedRun("p-0", "dave", 1_400_000, true), ranked: false },
+          { ...seedRun("p-1", "alice", 1_500_000, true), rank: 1 },
+          { ...seedRun("s-1", "carol", 1_600_000, false), rank: 2 },
+        ],
+      }),
+    );
+
+    const rows = [...container.querySelectorAll("li.participant")];
+    expect(rows.map((r) => r.querySelector(".rank")?.textContent)).toEqual([
+      "",
+      "1.",
+      "2.",
+    ]);
+    expect(rows.map((r) => r.querySelector(".run-chip")?.textContent)).toEqual([
+      "Unranked",
+      "Blind",
+      "Replay",
     ]);
   });
 });

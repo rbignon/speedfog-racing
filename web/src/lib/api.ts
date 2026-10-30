@@ -2413,10 +2413,12 @@ export interface SpeedrunBoardResponse {
   record_seed: { seed_number: string; runs: number } | null;
 }
 
-/** A run on a seed page; `rank` is its place among the seed's runs (null
- * for a player's slower runs). */
+/** A run on a seed page; `rank` is its place among the seed's ranked runs
+ * (null for a player's slower runs and for unranked runs). */
 export interface SpeedrunSeedRun extends SpeedrunRun {
   run_type: SpeedrunRunType;
+  /** False for a finished run of a normal race: listed, never placed. */
+  ranked: boolean;
   zone_history: Array<{
     node_id: string;
     igt_ms: number;
