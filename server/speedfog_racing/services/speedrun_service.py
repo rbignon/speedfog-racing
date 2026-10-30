@@ -122,6 +122,18 @@ def seed_category(pool: Pool, total_layers: int) -> tuple[str, str]:
     return _category_key(pool.name, total_layers), f"{display_name} ({total_layers} layers)"
 
 
+_RANKED_RACE_MODES = (RunMode.SPEEDRUN, RunMode.SET_SEED)
+
+
+def race_counts_on_boards(race: Race) -> bool:
+    """Whether a race's finishers can count on the boards: a ranked mode, a
+    Daily Seed or an event race. Python twin of the SQL clause in
+    ``load_counted_runs``; keep them in step."""
+    return (
+        race.mode in _RANKED_RACE_MODES or race.daily_date is not None or race.event_id is not None
+    )
+
+
 async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
@@ -173,7 +185,7 @@ async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) ->
             Race.status == RaceStatus.FINISHED,
             User.banned_at.is_(None),
             or_(
-                Race.mode.in_([RunMode.SPEEDRUN, RunMode.SET_SEED]),
+                Race.mode.in_(_RANKED_RACE_MODES),  # twin: race_counts_on_boards
                 Race.daily_date.is_not(None),
                 Race.event_id.is_not(None),
             ),

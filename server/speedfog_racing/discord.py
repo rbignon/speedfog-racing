@@ -533,8 +533,11 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
 
     # Local import: speedrun_records imports this module.
     from speedfog_racing.services.speedrun_records import schedule_speedrun_record_check
+    from speedfog_racing.services.speedrun_service import race_counts_on_boards
 
-    schedule_speedrun_record_check(race_id=race.id)
+    # A race whose runs can never count would only load every counted run for nothing.
+    if race_counts_on_boards(race):
+        schedule_speedrun_record_check(race_id=race.id)
 
     if race.discord_event_id:
         ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))

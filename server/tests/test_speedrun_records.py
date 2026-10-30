@@ -1,5 +1,4 @@
 """Discord announcements of new Set Seed and Random Seed records."""
-# ruff: noqa: F401, F811
 
 import asyncio
 import uuid
@@ -7,20 +6,40 @@ from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from speedfog_racing.models import RunMode, TrainingSessionStatus
+from speedfog_racing.database import Base
+from speedfog_racing.models import Pool, RunMode, TrainingSessionStatus
 from speedfog_racing.services import speedrun_records
 from speedfog_racing.services.speedrun_records import check_speedrun_records, new_records
 
-from .test_speedrun_service import (
-    _add_run,
-    _add_session,
-    _run,
-    _user,
-    async_engine,
-    async_session,
-    pools,
-)
+from .test_speedrun_service import _add_run, _add_session, _run, _user
+
+
+@pytest.fixture
+async def async_engine():
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    await engine.dispose()
+
+
+@pytest.fixture
+def async_session(async_engine):
+    return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+@pytest.fixture
+async def pools(async_session):
+    async with async_session() as db:
+        db.add(
+            Pool(
+                name="sprint",
+                config={"name": "Sprint", "type": "race", "sort_order": 20, "layers_count": 15},
+            )
+        )
+        await db.commit()
 
 
 def _by_sub(changes):
@@ -140,3 +159,32 @@ async def test_ranked_session_finish_schedules_check():
 @pytest.fixture(autouse=True)
 def _clear_announced():
     speedrun_records._announced.clear()
+
+
+def test_only_races_that_can_count_schedule_the_check():
+    from speedfog_racing import discord
+
+    def race(**kw):
+        defaults = dict(
+            id=uuid.uuid4(),
+            mode=RunMode.NORMAL,
+            daily_date=None,
+            event_id=None,
+            is_public=False,
+            discord_event_id=None,
+        )
+        return MagicMock(**{**defaults, **kw})
+
+    cases = [
+        (race(), False),
+        (race(mode=RunMode.SPEEDRUN), True),
+        (race(mode=RunMode.SET_SEED), True),
+        (race(daily_date=object()), True),
+        (race(event_id=uuid.uuid4()), True),
+    ]
+    for r, expected in cases:
+        with patch(
+            "speedfog_racing.services.speedrun_records.schedule_speedrun_record_check"
+        ) as scheduled:
+            discord.fire_race_finished_notifications(r)
+        assert scheduled.called is expected
