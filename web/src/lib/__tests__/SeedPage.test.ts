@@ -218,6 +218,25 @@ describe("seed page: unranked runs", () => {
       "Replay",
     ]);
   });
+
+  it("dims a slower ranked run but not an unranked one", () => {
+    const { container } = renderPage(
+      seed({
+        runs: [
+          { ...seedRun("p-0", "dave", 1_400_000, true), ranked: false },
+          { ...seedRun("p-1", "alice", 1_500_000, true), rank: 1 },
+          { ...seedRun("s-2", "alice", 1_700_000, false), rank: null },
+        ],
+      }),
+    );
+
+    const rows = [...container.querySelectorAll("li.participant")];
+    expect(rows.map((r) => r.classList.contains("obsolete"))).toEqual([
+      false,
+      false,
+      true,
+    ]);
+  });
 });
 
 describe("seed page: where the seed was first played", () => {

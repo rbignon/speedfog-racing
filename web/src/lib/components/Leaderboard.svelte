@@ -164,7 +164,7 @@
         <li
           class="participant"
           class:abandoned={isAbandoned}
-          class:obsolete={rank === null}
+          class:obsolete={rank === null && runKind !== "unranked"}
           class:selected={isSelected}
           style="--player-color: {color}; {backgroundStyleFor(participant)}"
           onclick={(e) => onToggle?.(participant.id, e.ctrlKey || e.metaKey)}
@@ -235,6 +235,10 @@
                   class="chip run-chip"
                   class:blind={runKind === "blind"}
                   class:replay={runKind === "replay"}
+                  class:unranked={runKind === "unranked"}
+                  title={runKind === "unranked"
+                    ? "Normal race: counts on no board"
+                    : undefined}
                   >{runKind === "blind"
                     ? "Blind"
                     : runKind === "replay"
@@ -477,8 +481,8 @@
     opacity: 0.55;
   }
 
-  /* A row without a place: dimmed like the speedrun boards' obsolete rows,
-     the player's line left as it is. */
+  /* A ranked row without a place: dimmed like the speedrun boards' obsolete
+     rows, the player's line left as it is. An Unranked row is not dimmed. */
   .participant.obsolete .info {
     opacity: 0.6;
   }
@@ -675,6 +679,15 @@
   .run-chip.replay {
     color: var(--color-purple);
     border-color: color-mix(in srgb, var(--color-purple) 60%, transparent);
+  }
+
+  .run-chip.unranked {
+    color: var(--color-text-secondary);
+    border-color: color-mix(
+      in srgb,
+      var(--color-text-secondary) 60%,
+      transparent
+    );
   }
 
   .flagged-chip {

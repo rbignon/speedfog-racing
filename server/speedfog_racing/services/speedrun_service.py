@@ -190,6 +190,7 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             category=row.pool_name,
             deathless=bool(row.deathless),
             run_type="race",
+            # Played blind like any non-Set-Seed race; the web labels the row by ``ranked``.
             blind=True,
             igt_ms=row.igt_ms,
             finished_at=row.finished_at or row.started_at or row.created_at,

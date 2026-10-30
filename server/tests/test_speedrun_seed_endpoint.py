@@ -26,6 +26,7 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     UserRole,
 )
+from speedfog_racing.services.speedrun_service import load_unranked_runs
 
 from .test_set_seed_service import _seed
 from .test_speedrun_service import BASE, _add_run, _add_session, _user
@@ -752,6 +753,27 @@ async def test_unranked_runs_leave_out_other_modes_and_unfit_runs(
     # The event race is a counted run, whatever its mode.
     assert by_type["event"]["ranked"] is True
     assert data["stats"]["runs"] == 2
+
+
+async def test_daily_and_unfinished_race_runs_are_not_unranked(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        seed = await _seed(db, "00a1b2000006")
+        await _add_run(
+            db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, kind="daily", seed=seed
+        )
+        await _add_run(
+            db,
+            user=a,
+            igt_ms=900,
+            minute=2,
+            mode=RunMode.NORMAL,
+            race_status=RaceStatus.RUNNING,
+            seed=seed,
+        )
+        await db.commit()
+
+        assert await load_unranked_runs(db, seed.id) == []
 
 
 async def test_unranked_runs_stay_out_of_the_summary_record(test_client, async_session, pools):
