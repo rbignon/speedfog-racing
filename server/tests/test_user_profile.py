@@ -18,6 +18,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     TrainingSession,
@@ -343,6 +344,30 @@ async def test_activity_caster_has_status(test_client, user_with_activity):
         for item in caster_items:
             assert "race_name" in item
             assert "status" in item
+
+
+@pytest.mark.asyncio
+async def test_activity_items_carry_the_run_mode(test_client, async_session, user_with_activity):
+    """Each race and solo row carries its own race's or session's mode, so the
+    timeline can mark the ranked ones."""
+    async with async_session() as db:
+        await db.execute(sa_update(Race).where(Race.name == "Race 1").values(mode=RunMode.SPEEDRUN))
+        await db.execute(sa_update(Race).where(Race.name == "Race 3").values(mode=RunMode.SET_SEED))
+        await db.execute(sa_update(Race).where(Race.name == "Race 4").values(mode=RunMode.SPEEDRUN))
+        await db.execute(sa_update(TrainingSession).values(mode=RunMode.SET_SEED))
+        await db.commit()
+
+    async with test_client as client:
+        data = (await client.get("/api/users/active_player/activity")).json()
+
+    modes = {(i["type"], i.get("race_name")): i["mode"] for i in data["items"]}
+    assert modes == {
+        ("race_participant", "Race 1"): "speedrun",
+        ("race_participant", "Race 2"): "normal",
+        ("race_organizer", "Race 3"): "set_seed",
+        ("race_caster", "Race 4"): "speedrun",
+        ("training", None): "set_seed",
+    }
 
 
 @pytest.mark.asyncio

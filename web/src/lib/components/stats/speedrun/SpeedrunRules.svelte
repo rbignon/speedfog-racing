@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { SPEEDRUN_RULES } from "$lib/speedrun";
+  import { RUN_RULES } from "$lib/rules";
 
   // `title` null leaves the heading to a surrounding block that has its own.
   let { title = "Speedrun rules" }: { title?: string | null } = $props();
@@ -10,8 +10,8 @@
     <span class="rules-title">{title}</span>
   {/if}
   <ul>
-    {#each SPEEDRUN_RULES as rule (rule)}
-      <li>{rule}</li>
+    {#each RUN_RULES as rule (rule.lead)}
+      <li>{rule.lead}{rule.rest}</li>
     {/each}
   </ul>
 </div>

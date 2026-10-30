@@ -95,6 +95,17 @@ async function openPage(search: string) {
   return view;
 }
 
+// The Speedrun race option sits in the Advanced options panel, folded by
+// default: unfold it first.
+async function speedrunOption(): Promise<HTMLInputElement | null> {
+  if (!screen.queryByText("Late joiners")) {
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Advanced options/ }),
+    );
+  }
+  return screen.queryByLabelText("Speedrun race") as HTMLInputElement | null;
+}
+
 async function submitPrivate(name: string) {
   await fireEvent.input(screen.getByLabelText("Race Name"), {
     target: { value: name },
@@ -128,10 +139,12 @@ afterEach(() => {
 
 describe("/race/new: the Speedrun race option", () => {
   it("is on with the pool picked from ?mode=speedrun&pool=", async () => {
-    await openPage("?mode=speedrun&pool=sprint");
+    const { container } = await openPage("?mode=speedrun&pool=sprint");
 
-    const option = screen.getByLabelText("Speedrun race") as HTMLInputElement;
-    expect(option.checked).toBe(true);
+    // Folded, the Advanced options trigger already shows it on.
+    const active = [...container.querySelectorAll(".advanced-option.active")];
+    expect(active.map((el) => el.textContent?.trim())).toContain("✓ speedrun");
+    expect((await speedrunOption())?.checked).toBe(true);
     expect(
       screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -140,9 +153,7 @@ describe("/race/new: the Speedrun race option", () => {
   it("stays off when ?pool= alone picks the pool", async () => {
     await openPage("?pool=sprint");
 
-    expect(
-      (screen.getByLabelText("Speedrun race") as HTMLInputElement).checked,
-    ).toBe(false);
+    expect((await speedrunOption())?.checked).toBe(false);
     expect(
       screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -188,7 +199,7 @@ describe("/race/new: seen seeds", () => {
     expect(screen.getByText(/2 seeds available/)).toBeTruthy();
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+    await fireEvent.click((await speedrunOption())!);
 
     expect(sprint.disabled).toBe(true);
     expect(create.disabled).toBe(true);
@@ -209,7 +220,7 @@ describe("/race/new: seen seeds", () => {
     }) as HTMLButtonElement;
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+    await fireEvent.click((await speedrunOption())!);
 
     // Another pool still has seeds, but the selected one has none to draw.
     expect(create.disabled).toBe(true);
@@ -234,7 +245,7 @@ describe("/race/new: the speedrun floor", () => {
     expect(screen.getByText(/4 seeds available/)).toBeTruthy();
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+    await fireEvent.click((await speedrunOption())!);
 
     // The server would refuse the draw: the floor's seeds are a reserve.
     expect(sprint.disabled).toBe(true);
@@ -285,7 +296,7 @@ describe("/race/new?seed=: a Set Seed race", () => {
       `/speedrun?pool=standard&start=set&seed=${SEED}`,
     );
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(screen.queryByLabelText("Speedrun race")).toBeNull();
+    expect(await speedrunOption()).toBeNull();
     expect(screen.getByText(`Seed ${SEED}, fixed: no reroll`)).toBeTruthy();
   });
 
@@ -302,11 +313,14 @@ describe("/race/new?seed=: a Set Seed race", () => {
 
   it("gives the reason and disables Create for a seed that cannot be replayed", async () => {
     vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
-      summary({ replayable: false, not_replayable_reason: "Files purged." }),
+      summary({
+        replayable: false,
+        not_replayable_reason: "Its files were deleted.",
+      }),
     );
     await openPage(`?seed=${SEED}`);
 
-    await screen.findByText("Files purged.");
+    await screen.findByText("Its files were deleted.");
     expect(
       (screen.getByRole("button", { name: "Create Race" }) as HTMLButtonElement)
         .disabled,
@@ -337,8 +351,6 @@ describe("/race/new?seed=: a Set Seed race", () => {
 
     await waitFor(() => expect(screen.queryByText("Change seed")).toBeNull());
     expect(screen.getByRole("tablist")).toBeTruthy();
-    expect(
-      (screen.getByLabelText("Speedrun race") as HTMLInputElement).checked,
-    ).toBe(false);
+    expect((await speedrunOption())?.checked).toBe(false);
   });
 });

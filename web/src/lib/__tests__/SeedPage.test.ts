@@ -331,7 +331,7 @@ describe("SeedStatusChip", () => {
         seed: seed({
           replayable: false,
           not_replayable_code: "purged",
-          not_replayable_reason: "Files purged.",
+          not_replayable_reason: "Its files were deleted.",
           kept_reasons: ["Protected by 2 players"],
         }),
       },
@@ -339,7 +339,7 @@ describe("SeedStatusChip", () => {
 
     expect(screen.getByText("Not replayable")).toBeTruthy();
     expect(screen.getByRole("tooltip").textContent?.trim()).toBe(
-      "Files purged.",
+      "Its files were deleted.",
     );
   });
 
@@ -464,27 +464,35 @@ describe("SeedReplayCard", () => {
     ).toEqual(mine.map((n) => `/speedrun/seed/${n}`));
   });
 
-  it("offers no protection where it keeps nothing, but still an unprotect", () => {
-    const purged = {
+  it("shows only the reason on a seed that cannot be replayed, but still an unprotect", () => {
+    const excluded = {
       replayable: false,
-      not_replayable_code: "purged" as const,
-      not_replayable_reason: "Files purged.",
-      protectable: false,
+      not_replayable_code: "excluded" as const,
+      not_replayable_reason:
+        "An admin excluded this seed from Set Seed: Softlock",
+      protectable: true,
     };
     const first = render(SeedReplayCard, {
-      props: { seed: seed({ ...purged, viewer: viewer() }) },
+      props: { seed: seed({ ...excluded, viewer: viewer() }) },
     });
 
     expect(
-      screen.getByText("Protection only keeps the files of a replayable seed."),
+      screen.getByText("An admin excluded this seed from Set Seed: Softlock"),
     ).toBeTruthy();
+    expect(screen.queryByText(/as many times as you like/)).toBeNull();
+    expect(screen.queryByText("Glitchless")).toBeNull();
+    expect(screen.queryByText("Protect this seed")).toBeNull();
     expect(screen.queryByRole("button", { name: "Protect" })).toBeNull();
     first.unmount();
 
+    // A player who protected it before keeps a way to free the slot.
     render(SeedReplayCard, {
       props: {
         seed: seed({
-          ...purged,
+          replayable: false,
+          not_replayable_code: "purged",
+          not_replayable_reason: "Its files were deleted.",
+          protectable: false,
           viewer: viewer({ protected: true, protected_seeds: [SEED] }),
         }),
       },
@@ -497,20 +505,6 @@ describe("SeedReplayCard", () => {
 
     expect(screen.queryByText("Protect this seed")).toBeNull();
     expect(screen.queryByRole("button", { name: "Protect" })).toBeNull();
-  });
-
-  it("gives the reason when the seed cannot be replayed", () => {
-    render(SeedReplayCard, {
-      props: {
-        seed: seed({
-          replayable: false,
-          not_replayable_code: "old_game_version",
-          not_replayable_reason: "Built for an older game version.",
-        }),
-      },
-    });
-
-    expect(screen.getByText("Built for an older game version.")).toBeTruthy();
   });
 });
 
@@ -587,12 +581,12 @@ describe("SeedReplayCard: starting a run", () => {
         seed: seed({
           replayable: false,
           not_replayable_code: "purged",
-          not_replayable_reason: "Files purged.",
+          not_replayable_reason: "Its files were deleted.",
         }),
       },
     });
 
-    expect(screen.getByText("Files purged.")).toBeTruthy();
+    expect(screen.getByText("Its files were deleted.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Play solo" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Create race" })).toBeNull();
   });
@@ -695,7 +689,8 @@ describe("SeedAdminControls", () => {
         seed: seed({
           replayable: false,
           not_replayable_code: "excluded",
-          not_replayable_reason: "Excluded from Set Seed: Broken",
+          not_replayable_reason:
+            "An admin excluded this seed from Set Seed: Broken",
           excluded_reason: "Broken",
         }),
         onchange,

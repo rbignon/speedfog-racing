@@ -48,6 +48,15 @@ from speedfog_racing.services.speedrun_service import (
 SEED_PREFIX_MIN = 6
 _SEED_QUERY_CHUNK = 500
 
+# Why a seed cannot be replayed, as players read it (seed page, Start a run
+# window, refusals). The excluded and old_category texts carry details.
+OLD_GAME_VERSION_REASON = (
+    "Built for an older version of Elden Ring: it no longer works with the current game."
+)
+PURGED_REASON = (
+    "Its files were deleted from the server to free space: it can no longer be downloaded."
+)
+
 SeedLookupErrorKind = Literal["unknown", "ambiguous"]
 # A protection keeps nothing on a seed that fails one of these: its files are
 # gone, or it can never be replayed again (the purge deletes a seed added
@@ -163,24 +172,25 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
     if seed.set_seed_excluded_at is not None:
         return not_replayable(
             "excluded",
-            f"Excluded from Set Seed: {seed.set_seed_excluded_reason}"
+            f"An admin excluded this seed from Set Seed: {seed.set_seed_excluded_reason}"
             if seed.set_seed_excluded_reason
-            else "Excluded from Set Seed.",
+            else "An admin excluded this seed from Set Seed.",
         )
     cutoff = as_aware_utc(settings.set_seed_min_seed_date)
     created_at = as_aware_utc(seed.created_at)
     if cutoff is not None and created_at is not None and created_at < cutoff:
-        return not_replayable("old_game_version", "Built for an older game version.")
+        return not_replayable("old_game_version", OLD_GAME_VERSION_REASON)
     pool = (await db.execute(select(Pool).where(Pool.name == seed.pool_name))).scalar_one_or_none()
     if pool is not None:
         current_layers = _layers_count(_pool_config(pool))
         if current_layers is not None and seed.total_layers != current_layers:
             return not_replayable(
                 "old_category",
-                f"Built for an older version of {format_pool_display_name(pool)}.",
+                f"Built for an older version of {format_pool_display_name(pool)}"
+                f" ({seed.total_layers} layers, {current_layers} today).",
             )
     if not Path(seed.folder_path).is_file():
-        return not_replayable("purged", "Files purged.")
+        return not_replayable("purged", PURGED_REASON)
     return Replayability(public=True, code=None, reason=None)
 
 

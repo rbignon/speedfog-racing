@@ -2,6 +2,7 @@
   import type { ActivityItem } from "$lib/api";
   import { formatPoolName } from "$lib/utils/format";
   import { formatIgt } from "$lib/utils/training";
+  import RunModeChip from "./RunModeChip.svelte";
   import SkullIcon from "./SkullIcon.svelte";
 
   interface Props {
@@ -54,6 +55,10 @@
       <span class="act-main">
         <span class="t">
           <span class="title">{titleFor(item)}</span>
+          <!-- Daily Seeds have no mode: they always count as they are. -->
+          {#if "mode" in item}
+            <RunModeChip mode={item.mode} />
+          {/if}
         </span>
         <span class="m">
           {#if item.type === "race_participant" || item.type === "daily_participant"}

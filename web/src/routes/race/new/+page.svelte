@@ -107,6 +107,8 @@
     { label: "deathless", active: deathless },
     { label: "private map", active: privateDag },
     { label: "custom rules", active: customRules.trim() !== "" },
+    // A Set Seed race's mode is set by its seed.
+    ...(setSeed === null ? [{ label: "speedrun", active: speedrun }] : []),
   ]);
 
   $effect(() => {
@@ -335,15 +337,6 @@
               {/if}
             </p>
           {/if}
-          <label class="radio-label speedrun-option">
-            <input
-              type="checkbox"
-              bind:checked={speedrun}
-              disabled={creating}
-            />
-            Speedrun race
-          </label>
-          <p class="hint">Counts on the Speedrun boards.</p>
         {/if}
       </div>
 
@@ -602,6 +595,24 @@
                 rule per line.
               </p>
             </div>
+
+            {#if setSeed === null}
+              <div class="form-group">
+                <span>Speedrun</span>
+                <label class="radio-label">
+                  <input
+                    type="checkbox"
+                    bind:checked={speedrun}
+                    disabled={creating}
+                  />
+                  Speedrun race
+                </label>
+                <p class="hint">
+                  Counts on the Speedrun boards. The game modes above then count
+                  only the fresh seeds a speedrun race can draw.
+                </p>
+              </div>
+            {/if}
           </div>
         {/if}
       </div>
@@ -744,10 +755,6 @@
 
   .seeds-available:first-child {
     margin-top: 0;
-  }
-
-  .speedrun-option {
-    margin-top: 0.25rem;
   }
 
   /* A Set Seed race: the seed's banner over the form. */

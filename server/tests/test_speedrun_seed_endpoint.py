@@ -26,6 +26,7 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
     UserRole,
 )
+from speedfog_racing.services.set_seed_service import OLD_GAME_VERSION_REASON, PURGED_REASON
 from speedfog_racing.services.speedrun_service import load_unranked_runs
 
 from .test_set_seed_service import _seed
@@ -266,7 +267,9 @@ async def test_seed_page_of_unlisted_old_layer_count(test_client, async_session,
         False,
         "old_category",
     )
-    assert data["not_replayable_reason"] == "Built for an older version of Standard."
+    assert data["not_replayable_reason"] == (
+        "Built for an older version of Standard (25 layers, 30 today)."
+    )
     assert [(r["igt_ms"], r["rank"]) for r in data["runs"]] == [(1000, 1), (1100, 2)]
 
 
@@ -293,7 +296,7 @@ async def test_old_game_version_on_a_seed_read_from_the_database(
     assert (old["replayable"], old["not_replayable_code"], old["not_replayable_reason"]) == (
         False,
         "old_game_version",
-        "Built for an older game version.",
+        OLD_GAME_VERSION_REASON,
     )
     assert (new["replayable"], new["not_replayable_code"]) == (True, None)
 
@@ -538,9 +541,12 @@ async def test_protection_refused_where_it_keeps_nothing(
         )
         return response.status_code, response.json().get("detail")
 
-    assert await protect("dead00000001") == (409, "Files purged.")
-    assert await protect("dead00000002") == (409, "Built for an older game version.")
-    assert await protect("dead00000003") == (409, "Built for an older version of Standard.")
+    assert await protect("dead00000001") == (409, PURGED_REASON)
+    assert await protect("dead00000002") == (409, OLD_GAME_VERSION_REASON)
+    assert await protect("dead00000003") == (
+        409,
+        "Built for an older version of Standard (25 layers, 30 today).",
+    )
     assert (await protect("dead00000004"))[0] == 200
     pages = [await _page(test_client, f"dead0000000{i}") for i in range(1, 5)]
     assert [(p["not_replayable_code"], p["protectable"]) for p in pages] == [
@@ -631,7 +637,7 @@ async def test_admin_exclusion_round_trip(test_client, async_session, pools):
         "excluded",
         "Broken warp",
     )
-    assert page["not_replayable_reason"] == "Excluded from Set Seed: Broken warp"
+    assert page["not_replayable_reason"] == "An admin excluded this seed from Set Seed: Broken warp"
     assert await excluded_by() == admin.id
     assert await board() == ["b"]
     assert await board("random") == ["a", "b"]

@@ -17,12 +17,16 @@ from speedfog_racing.discord import (
     notify_race_created,
     notify_race_finished,
     notify_race_started,
+    notify_speedrun_record,
     post_runner_message,
     remove_runner_role,
     set_event_status,
     update_scheduled_event,
 )
 from speedfog_racing.models import Pool, RunMode
+from speedfog_racing.services.speedrun_records import RecordChange
+
+from .test_speedrun_service import _run
 
 
 def _make_pool(name: str, config: dict | None = None) -> Pool:
@@ -39,6 +43,7 @@ def race_kwargs():
         "participant_count": 4,
         "organizer_name": "TestOrganizer",
         "organizer_avatar_url": "https://example.com/avatar.png",
+        "mode": RunMode.NORMAL,
     }
 
 
@@ -65,6 +70,7 @@ def finished_kwargs():
             {"name": "Player2", "igt": "15:00"},
             {"name": "Player3", "igt": "18:22"},
         ],
+        "mode": RunMode.NORMAL,
     }
 
 
@@ -314,6 +320,104 @@ async def test_created_notification_names_the_race_mode(created_kwargs):
         "📋 New Set Seed race",
     ]
     assert seeds == [None, None, "5eed00000001"]
+
+
+# --- speedrun channel ---
+
+MAIN_HOOK = "https://discord.com/api/webhooks/main"
+SPEEDRUN_HOOK = "https://discord.com/api/webhooks/speedrun"
+
+
+async def _post_lifecycle(
+    mode: RunMode, speedrun_hook: str | None, created_kwargs, race_kwargs, finished_kwargs
+) -> list[tuple[str, dict]]:
+    """Created, started and finished notifications of one race, as posted."""
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = MAIN_HOOK
+        mock_settings.discord_speedrun_webhook_url = speedrun_hook
+        mock_settings.discord_runner_role_id = "999"
+        mock_settings.base_url = "https://speedfog.racing"
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_race_created(**created_kwargs, mode=mode)
+        await notify_race_started(**{**race_kwargs, "mode": mode})
+        await notify_race_finished(**{**finished_kwargs, "mode": mode})
+
+    return [(c.args[0], c.kwargs["json"]) for c in mock_client.post.call_args_list]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
+async def test_ranked_race_posts_to_the_speedrun_channel_without_ping(
+    mode, created_kwargs, race_kwargs, finished_kwargs
+):
+    posts = await _post_lifecycle(mode, SPEEDRUN_HOOK, created_kwargs, race_kwargs, finished_kwargs)
+
+    assert [url for url, _ in posts] == [SPEEDRUN_HOOK] * 3
+    assert all("content" not in payload for _, payload in posts)
+    # Mentions are switched off outright, whatever the embed holds.
+    assert posts[0][1]["allowed_mentions"] == {"parse": []}
+
+
+@pytest.mark.asyncio
+async def test_ranked_race_falls_back_to_the_main_channel_still_without_ping(
+    created_kwargs, race_kwargs, finished_kwargs
+):
+    posts = await _post_lifecycle(
+        RunMode.SPEEDRUN, None, created_kwargs, race_kwargs, finished_kwargs
+    )
+
+    assert [url for url, _ in posts] == [MAIN_HOOK] * 3
+    assert all("content" not in payload for _, payload in posts)
+
+
+@pytest.mark.asyncio
+async def test_normal_race_stays_on_the_main_channel_with_its_ping(
+    created_kwargs, race_kwargs, finished_kwargs
+):
+    posts = await _post_lifecycle(
+        RunMode.NORMAL, SPEEDRUN_HOOK, created_kwargs, race_kwargs, finished_kwargs
+    )
+
+    assert [url for url, _ in posts] == [MAIN_HOOK] * 3
+    assert posts[0][1]["content"] == "<@&999>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("speedrun_hook", "expected"), [(SPEEDRUN_HOOK, SPEEDRUN_HOOK), (None, MAIN_HOOK)]
+)
+async def test_speedrun_record_goes_to_the_speedrun_channel(speedrun_hook, expected):
+    mock_response = AsyncMock()
+    mock_response.status_code = 204
+    change = RecordChange(
+        category="sprint",
+        category_name="Sprint",
+        sub="set",
+        run=_run("alice", 600_000, 1, seed="5eed00000001"),
+        previous=None,
+    )
+    with (
+        patch("speedfog_racing.discord.settings") as mock_settings,
+        patch("speedfog_racing.discord.httpx.AsyncClient") as mock_client_cls,
+    ):
+        mock_settings.discord_webhook_url = MAIN_HOOK
+        mock_settings.discord_speedrun_webhook_url = speedrun_hook
+        mock_settings.base_url = "https://speedfog.racing"
+        mock_client = AsyncMock()
+        mock_client.post.return_value = mock_response
+        mock_client_cls.return_value.__aenter__.return_value = mock_client
+
+        await notify_speedrun_record(change)
+
+    assert mock_client.post.call_args.args[0] == expected
 
 
 # --- notify_race_started ---
@@ -935,6 +1039,7 @@ def test_tests_never_reach_the_real_discord_or_calendar() -> None:
         "discord_webhook_url",
         "discord_training_webhook_url",
         "discord_admin_webhook_url",
+        "discord_speedrun_webhook_url",
         "discord_bot_token",
         "malenia_api_token",
     )

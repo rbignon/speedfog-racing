@@ -1,5 +1,6 @@
 <script lang="ts">
   import EmphasisText from "$lib/components/EmphasisText.svelte";
+  import { RUN_RULES } from "$lib/rules";
 
   interface Props {
     onClose: () => void;
@@ -64,10 +65,9 @@
     <div class="section">
       <h3>Rules</h3>
       <ul>
-        <li>Glitchless</li>
-        <li>Quit-outs are allowed (2-second penalty each)</li>
-        <li>Using other mods is not allowed</li>
-        <li>Skips are allowed</li>
+        {#each RUN_RULES as rule (rule.lead)}
+          <li>{rule.lead}{rule.rest}</li>
+        {/each}
       </ul>
     </div>
 

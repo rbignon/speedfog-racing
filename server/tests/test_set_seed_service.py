@@ -20,6 +20,8 @@ from speedfog_racing.models import (
     TrainingSessionStatus,
 )
 from speedfog_racing.services.set_seed_service import (
+    OLD_GAME_VERSION_REASON,
+    PURGED_REASON,
     SeedLookupError,
     purgeable_seeds,
     resolve_seed,
@@ -258,10 +260,10 @@ async def test_replayability_precedence(async_session, pools, tmp_path, monkeypa
 
     assert steps == [
         (False, "in_progress", "A blind run on this seed is still in progress."),
-        (True, "excluded", "Excluded from Set Seed: Broken warp"),
-        (True, "old_game_version", "Built for an older game version."),
-        (True, "old_category", "Built for an older version of Sprint."),
-        (True, "purged", "Files purged."),
+        (True, "excluded", "An admin excluded this seed from Set Seed: Broken warp"),
+        (True, "old_game_version", OLD_GAME_VERSION_REASON),
+        (True, "old_category", "Built for an older version of Sprint (12 layers, 15 today)."),
+        (True, "purged", PURGED_REASON),
         (True, None, None),
     ]
 

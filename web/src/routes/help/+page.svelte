@@ -9,6 +9,7 @@
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import heroSeed from "$lib/data/hero-seed.json";
   import EmphasisText from "$lib/components/EmphasisText.svelte";
+  import { RUN_RULES } from "$lib/rules";
   import { CONTENT_ITEMS } from "$lib/content/items";
   import { DISCORD_URL } from "$lib/links";
 
@@ -300,23 +301,12 @@
     {#if isOpen("rules")}
       <div class="panel">
         <ul>
-          <li><strong>Glitchless</strong>: no glitch exploits allowed</li>
-          <li>
-            <strong>Quit-outs allowed</strong>: each one adds a 2-second penalty
-            to your in-game time
-          </li>
+          {#each RUN_RULES as rule (rule.lead)}
+            <li><strong>{rule.lead}</strong>{rule.rest}</li>
+          {/each}
           <li>
             <strong>No LiveSplit</strong>: IGT is tracked automatically by the
             mod
-          </li>
-          <li>
-            <strong>No other mods</strong>: only SpeedFog, no additional
-            modifications
-          </li>
-          <li><strong>Skips are allowed</strong> within a zone</li>
-          <li>
-            <strong>No sequence break</strong>: reaching a zone other than
-            through its fog gate is forbidden
           </li>
         </ul>
       </div>

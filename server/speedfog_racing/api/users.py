@@ -373,6 +373,7 @@ async def get_user_activity(
                     igt_ms=p.igt_ms,
                     death_count=p.death_count,
                     is_organizer=race.organizer_id == user_id,
+                    mode=race.mode,
                 )
             )
 
@@ -389,6 +390,7 @@ async def get_user_activity(
                 race_name=race.name,
                 status=race.status.value,
                 participant_count=total_by_race.get(race.id, 0),
+                mode=race.mode,
             )
         )
 
@@ -405,6 +407,7 @@ async def get_user_activity(
                 race_id=c.race.id,
                 race_name=c.race.name,
                 status=c.race.status.value,
+                mode=c.race.mode,
             )
         )
 
@@ -432,6 +435,7 @@ async def get_user_activity(
                 status=t.status.value,
                 igt_ms=t.igt_ms,
                 death_count=t.death_count,
+                mode=t.mode,
             )
         )
 

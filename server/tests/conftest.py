@@ -110,6 +110,7 @@ def _no_outbound_notifications(monkeypatch):
         "discord_webhook_url",
         "discord_training_webhook_url",
         "discord_admin_webhook_url",
+        "discord_speedrun_webhook_url",
         "discord_bot_token",
         "malenia_api_token",
     ):

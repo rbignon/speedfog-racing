@@ -313,6 +313,7 @@ class RaceParticipantActivity(ActivityItemBase):
     is_mod_connected: bool = False
     mod_version: str | None = None
     is_organizer: bool = False
+    mode: RunMode
 
 
 class DailyParticipantActivity(ActivityItemBase):
@@ -336,6 +337,7 @@ class RaceOrganizerActivity(ActivityItemBase):
     race_name: str
     status: str
     participant_count: int
+    mode: RunMode
 
 
 class RaceCasterActivity(ActivityItemBase):
@@ -343,6 +345,7 @@ class RaceCasterActivity(ActivityItemBase):
     race_id: UUID
     race_name: str
     status: str
+    mode: RunMode
 
 
 class TrainingActivity(ActivityItemBase):
@@ -355,6 +358,7 @@ class TrainingActivity(ActivityItemBase):
     death_count: int
     is_mod_connected: bool = False
     mod_version: str | None = None
+    mode: RunMode
 
 
 ActivityItem = (

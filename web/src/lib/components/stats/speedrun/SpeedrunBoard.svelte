@@ -370,6 +370,17 @@
 
   {#if rulesOpen && category}
     <div class="rules">
+      <h4>Set Seed and Random Seed</h4>
+      <p>
+        <strong>Set Seed</strong>: every run on a played seed, blind or
+        replayed. Replay any seed as often as you like.
+      </p>
+      <p>
+        <strong>Random Seed</strong>: blind runs only, on a seed nobody had
+        played.
+      </p>
+      <h4>Speedrun rules</h4>
+      <SpeedrunRules title={null} />
       <h4>{category.name} rules</h4>
       {#if category.description}
         <p>{category.description}</p>
@@ -378,15 +389,13 @@
         <p class="muted">Estimated duration: {category.estimated_duration}</p>
       {/if}
       {#if ruleLines.length > 0}
-        <h5>Mode Rules</h5>
+        <h5>Mode rules</h5>
         <ul>
           {#each ruleLines as line, i (i)}
             <li>{line}</li>
           {/each}
         </ul>
       {/if}
-      <h5>Speedrun rules</h5>
-      <SpeedrunRules title={null} />
     </div>
   {/if}
 
@@ -429,6 +438,9 @@
     categoryName={category.name}
     retired={category.retired}
     initialSeed={startWith}
+    recordSeed={loading || error
+      ? null
+      : (board?.record_seed?.seed_number ?? null)}
     onClose={() => {
       startOpen = false;
       startWith = null;
@@ -693,6 +705,10 @@
 
   .rules h4 {
     font-size: 1rem;
+  }
+
+  .rules h4:not(:first-child) {
+    margin-top: 0.9rem;
   }
 
   .rules h5 {

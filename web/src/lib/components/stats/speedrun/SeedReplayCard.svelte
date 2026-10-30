@@ -68,20 +68,22 @@
 
 <section class="replay-card">
   <h3>Play this seed in Set Seed</h3>
-  <p>
-    Replay it <strong>as many times as you like</strong>. Your runs count on the
-    <strong class="board">{seed.category_name} · Set Seed</strong> board, ranked with
-    every blind run on this seed.
-  </p>
-  <p>
-    They never enter <strong>Random Seed</strong>, which stays for blind runs.
-  </p>
-  <div class="rules">
-    <SpeedrunRules />
-  </div>
   {#if !seed.replayable}
+    <!-- The reason alone: nothing else on the card applies to this seed. -->
     <p class="not-replayable">{seed.not_replayable_reason}</p>
   {:else}
+    <p>
+      Replay it <strong>as many times as you like</strong>. Your runs count on
+      the
+      <strong class="board">{seed.category_name} · Set Seed</strong> board, ranked
+      with every blind run on this seed.
+    </p>
+    <p>
+      They never enter <strong>Random Seed</strong>, which stays for blind runs.
+    </p>
+    <div class="rules">
+      <SpeedrunRules />
+    </div>
     <div class="start">
       {#if auth.isLoggedIn}
         <button
@@ -110,7 +112,9 @@
     {/if}
   {/if}
 
-  {#if viewer}
+  <!-- On a seed that cannot be replayed, only a viewer who protects it gets
+       the row: Unprotect frees the slot. -->
+  {#if viewer && (seed.replayable || viewer.protected)}
     <div class="protect">
       <div class="protect-text">
         <strong>Protect this seed</strong>
@@ -125,10 +129,6 @@
           class="btn btn-outline btn-sm"
           disabled={busy}
           onclick={toggleProtection}>Unprotect</button
-        >
-      {:else if !seed.protectable}
-        <span class="hint"
-          >Protection only keeps the files of a replayable seed.</span
         >
       {:else if !viewer.can_protect}
         <span class="hint"
@@ -192,7 +192,6 @@
   }
 
   .not-replayable {
-    margin-top: 0.65rem;
     color: var(--color-text);
   }
 

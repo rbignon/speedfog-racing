@@ -1608,6 +1608,7 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   is_mod_connected: boolean;
   mod_version?: string | null;
   is_organizer: boolean;
+  mode: RunMode;
 }
 
 export interface DailyParticipantActivity extends ActivityItemBase {
@@ -1631,6 +1632,7 @@ export interface RaceOrganizerActivity extends ActivityItemBase {
   race_name: string;
   status: string;
   participant_count: number;
+  mode: RunMode;
 }
 
 export interface RaceCasterActivity extends ActivityItemBase {
@@ -1638,6 +1640,7 @@ export interface RaceCasterActivity extends ActivityItemBase {
   race_id: string;
   race_name: string;
   status: string;
+  mode: RunMode;
 }
 
 export interface TrainingActivityItem extends ActivityItemBase {
@@ -1650,6 +1653,7 @@ export interface TrainingActivityItem extends ActivityItemBase {
   death_count: number;
   is_mod_connected: boolean;
   mod_version?: string | null;
+  mode: RunMode;
 }
 
 export type ActivityItem =

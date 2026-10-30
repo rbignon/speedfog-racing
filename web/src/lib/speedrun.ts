@@ -144,15 +144,6 @@ export function seedPageHref(
   return runId ? `${path}?run=${encodeURIComponent(runId)}` : path;
 }
 
-/** The rules of every ranked run (Roger), one text for the board's Rules
- * popover, the seed page card, the Start a run window and the Set Seed race
- * banner (`SpeedrunRules.svelte`). The help page's race rules say the same. */
-export const SPEEDRUN_RULES: string[] = [
-  "Glitchless.",
-  "Skips are allowed within a zone.",
-  "No sequence break: reaching a zone other than through its fog gate is forbidden (for example, Limgrave to a much deeper zone through the Troll arena).",
-];
-
 /** The fewest characters of a seed ID worth looking up: the 6 the boards
  * show, unambiguous most of the time. */
 export const SEED_ID_MIN_LENGTH = 6;

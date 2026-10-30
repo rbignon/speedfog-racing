@@ -215,9 +215,15 @@ async def _send_webhook(
     *,
     content: str | None = None,
     allowed_mentions: dict[str, object] | None = None,
+    speedrun: bool = False,
 ) -> None:
-    """Send an embed to the Discord webhook. No-op if webhook URL is not configured."""
+    """Send an embed to the Discord webhook. No-op if webhook URL is not configured.
+
+    ``speedrun`` posts to the speedrun webhook instead, when one is configured.
+    """
     webhook_url = settings.discord_webhook_url
+    if speedrun and settings.discord_speedrun_webhook_url:
+        webhook_url = settings.discord_speedrun_webhook_url
     if not webhook_url:
         return
 
@@ -285,7 +291,8 @@ async def notify_race_created(
     """Send Discord notification when a race is created.
 
     A speedrun or Set Seed race says so in the title; a Set Seed race also
-    shows ``seed_number`` (a drawn seed is never shown).
+    shows ``seed_number`` (a drawn seed is never shown). It goes to the
+    speedrun channel and never pings the @Runner role.
     """
     label, color = _race_label_and_color(pool)
     label = _RACE_MODE_LABELS.get(mode, label)
@@ -312,6 +319,10 @@ async def notify_race_created(
     if organizer_avatar_url:
         embed["thumbnail"] = {"url": organizer_avatar_url}
 
+    if mode != RunMode.NORMAL:
+        await _send_webhook(embed, allowed_mentions={"parse": []}, speedrun=True)
+        return
+
     role_id = settings.discord_runner_role_id
     content = f"<@&{role_id}>" if role_id else None
     allowed_mentions: dict[str, object] | None = {"roles": [role_id]} if role_id else None
@@ -326,9 +337,11 @@ async def notify_race_started(
     participant_count: int,
     organizer_name: str,
     organizer_avatar_url: str | None,
+    mode: RunMode,
     registration_closes_at: datetime | None = None,
 ) -> None:
-    """Send Discord notification when a race is started."""
+    """Send Discord notification when a race is started (a speedrun or Set
+    Seed race's to the speedrun channel)."""
     label, color = _race_label_and_color(pool)
     display_pool = format_pool_display_name(pool)
     safe_name = _escape_discord_md(race_name)
@@ -358,7 +371,7 @@ async def notify_race_started(
     if organizer_avatar_url:
         embed["thumbnail"] = {"url": organizer_avatar_url}
 
-    await _send_webhook(embed)
+    await _send_webhook(embed, speedrun=mode != RunMode.NORMAL)
 
 
 def _format_igt(igt_ms: int) -> str:
@@ -394,8 +407,10 @@ async def notify_race_finished(
     pool: Pool | None,
     participant_count: int,
     podium: list[dict[str, str]],
+    mode: RunMode,
 ) -> None:
-    """Send Discord notification when a race finishes.
+    """Send Discord notification when a race finishes (a speedrun or Set Seed
+    race's to the speedrun channel).
 
     podium is a list of {"name": ..., "igt": ...} dicts for top finishers.
     """
@@ -420,7 +435,7 @@ async def notify_race_finished(
         ],
     }
 
-    await _send_webhook(embed)
+    await _send_webhook(embed, speedrun=mode != RunMode.NORMAL)
 
 
 async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> None:
@@ -484,7 +499,7 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
 
 
 async def notify_speedrun_record(change: RecordChange) -> None:
-    """Announce a new Set Seed or Random Seed record on the main webhook."""
+    """Announce a new Set Seed or Random Seed record on the speedrun webhook."""
     run = change.run
     sub_label = "Set Seed" if change.sub == "set" else "Random Seed"
     runner = _escape_discord_md(run.user.twitch_display_name or run.user.twitch_username)
@@ -507,7 +522,7 @@ async def notify_speedrun_record(change: RecordChange) -> None:
             {"name": "Run", "value": "Blind" if run.blind else "Replay", "inline": True},
         ],
     }
-    await _send_webhook(embed, allowed_mentions={"parse": []})
+    await _send_webhook(embed, allowed_mentions={"parse": []}, speedrun=True)
 
 
 def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:
@@ -532,6 +547,7 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
                 pool=race.seed.pool if race.seed else None,
                 participant_count=len(race.participants),
                 podium=build_podium(race.participants),
+                mode=race.mode,
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

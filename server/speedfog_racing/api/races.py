@@ -1741,6 +1741,7 @@ async def start_race(
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,
                 registration_closes_at=registration_closes_at,
+                mode=race.mode,
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

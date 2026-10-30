@@ -25,6 +25,8 @@
     retired?: boolean;
     /** Opens in Set Seed mode with this seed ID typed in. */
     initialSeed?: string | null;
+    /** The seed of the record on the board shown: the WR button types it. */
+    recordSeed?: string | null;
     onClose: () => void;
   }
 
@@ -33,6 +35,7 @@
     categoryName,
     retired = false,
     initialSeed = null,
+    recordSeed = null,
     onClose,
   }: Props = $props();
 
@@ -202,9 +205,6 @@
         <span class="row-label">Category</span>
         <span class="chip category-chip">{categoryName}</span>
       </div>
-      <p class="config-hint">
-        The category picked on the board; change it there.
-      </p>
     {:else}
       <div class="config-row">
         <label for="start-run-seed" class="row-label">Seed ID</label>
@@ -217,6 +217,14 @@
           spellcheck="false"
           maxlength="32"
         />
+        {#if recordSeed}
+          <button
+            type="button"
+            class="btn btn-outline btn-sm wr-btn"
+            title="Type in the seed of the record on the board"
+            onclick={() => (seedInput = recordSeed ?? "")}>WR</button
+          >
+        {/if}
       </div>
       {#if lookupError}
         <p class="config-hint seed-check bad">{lookupError}</p>
@@ -459,6 +467,15 @@
     flex: 1;
     min-width: 0;
     max-width: 14rem;
+  }
+
+  /* The Seed ID field's height. */
+  .wr-btn {
+    padding: 0.25rem 0.6rem;
+    font-size: var(--font-size-sm);
+    line-height: normal;
+    color: var(--color-gold);
+    border-color: color-mix(in srgb, var(--color-gold) 60%, transparent);
   }
 
   .config-hint {

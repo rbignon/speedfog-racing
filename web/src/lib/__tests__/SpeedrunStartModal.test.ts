@@ -63,7 +63,12 @@ function summary(over: Partial<SpeedrunSeedSummary> = {}): SpeedrunSeedSummary {
 }
 
 function renderWindow(
-  props: { initialSeed?: string | null; pool?: string; retired?: boolean } = {},
+  props: {
+    initialSeed?: string | null;
+    pool?: string;
+    retired?: boolean;
+    recordSeed?: string | null;
+  } = {},
 ) {
   return render(SpeedrunStartModal, {
     props: {
@@ -272,11 +277,14 @@ describe("Start a run: Set Seed", () => {
 
   it("gives the reason a seed cannot be replayed and disables Start", async () => {
     vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
-      summary({ replayable: false, not_replayable_reason: "Files purged." }),
+      summary({
+        replayable: false,
+        not_replayable_reason: "Its files were deleted.",
+      }),
     );
     renderWindow({ initialSeed: SEED });
 
-    await screen.findByText(/Files purged\./);
+    await screen.findByText(/Its files were deleted\./);
     expect(
       (screen.getByRole("button", { name: "Start solo" }) as HTMLButtonElement)
         .disabled,
@@ -298,6 +306,26 @@ describe("Start a run: Set Seed", () => {
 
     expect(startSpeedrunSolo).toHaveBeenCalledWith({ seed: SEED });
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/training/s2"));
+  });
+
+  it("fills in the board's record seed from the WR button", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+    renderWindow({ initialSeed: "abc", recordSeed: SEED });
+
+    await fireEvent.click(screen.getByRole("button", { name: "WR" }));
+
+    expect((screen.getByLabelText("Seed ID") as HTMLInputElement).value).toBe(
+      SEED,
+    );
+    await waitFor(() =>
+      expect(fetchSpeedrunSeedSummary).toHaveBeenCalledWith(SEED),
+    );
+  });
+
+  it("offers no WR button on a board without a record", async () => {
+    renderWindow({ initialSeed: "" });
+
+    expect(screen.queryByRole("button", { name: "WR" })).toBeNull();
   });
 
   it("keeps the answer to the latest keystroke", async () => {
