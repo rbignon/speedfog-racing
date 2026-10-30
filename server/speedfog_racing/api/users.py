@@ -26,6 +26,7 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     TrainingSession,
     TrainingSessionStatus,
@@ -241,6 +242,9 @@ async def get_user_pool_stats(
         .join(Seed, TrainingSession.seed_id == Seed.id)
         .where(
             TrainingSession.user_id == user_id,
+            # Ranked solo (Speedrun, Set Seed) is not practice: it belongs to
+            # the speedrun boards, like ranked races stay out of the race side.
+            TrainingSession.mode == RunMode.NORMAL,
             or_(
                 TrainingSession.status == TrainingSessionStatus.FINISHED,
                 (TrainingSession.status == TrainingSessionStatus.ABANDONED)

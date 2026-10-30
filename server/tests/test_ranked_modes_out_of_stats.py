@@ -28,6 +28,8 @@ from speedfog_racing.models import (
     RunMode,
     Seed,
     SeedStatus,
+    TrainingSession,
+    TrainingSessionStatus,
     User,
     UserRole,
 )
@@ -160,6 +162,36 @@ async def test_pool_stats_best_time_ignores_ranked_races(test_client, world):
     # daily is excluded by daily_date; speedrun and set_seed by the predicate
     assert standard["race"]["runs"] == 2
     assert standard["race"]["best_time_ms"] == 200_000
+
+
+async def test_pool_stats_training_block_ignores_ranked_solo_sessions(
+    test_client, async_session, world
+):
+    async with async_session() as db:
+        alice = (await db.execute(select(User).where(User.twitch_username == "alice"))).scalar_one()
+        seed = (await db.execute(select(Seed).limit(1))).scalars().first()
+        for mode, igt in (
+            (RunMode.SET_SEED, 1_000),
+            (RunMode.SPEEDRUN, 2_000),
+            (RunMode.NORMAL, 50_000),
+        ):
+            db.add(
+                TrainingSession(
+                    user_id=alice.id,
+                    seed_id=seed.id,
+                    mode=mode,
+                    status=TrainingSessionStatus.FINISHED,
+                    igt_ms=igt,
+                    finished_at=datetime.now(UTC),
+                )
+            )
+        await db.commit()
+    async with test_client as client:
+        response = await client.get("/api/users/alice/pool-stats")
+    standard = next(p for p in response.json()["pools"] if p["pool_name"] == "standard")
+    # Only the practice session feeds the profile's solo numbers.
+    assert standard["training"]["runs"] == 1
+    assert standard["training"]["best_time_ms"] == 50_000
 
 
 async def test_traits_finished_race_count_ignores_ranked_races(test_client, world):
