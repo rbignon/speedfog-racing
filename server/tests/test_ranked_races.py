@@ -401,7 +401,7 @@ async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_s
 
 
 @pytest.mark.parametrize("action", ["reroll", "delete"])
-@pytest.mark.parametrize("mode", [RunMode.NORMAL, RunMode.SPEEDRUN])
+@pytest.mark.parametrize("mode", [RunMode.NORMAL])
 async def test_reset_race_burns_its_seed(test_client, async_session, pools, mode, action):
     """A reset brings a race back to SETUP but keeps its release: its seed was seen."""
     started = datetime.now(UTC) - timedelta(minutes=30)
@@ -433,6 +433,55 @@ async def test_reset_race_burns_its_seed(test_client, async_session, pools, mode
         assert deleted.status_code == 204
 
     assert await _status(async_session, "5e1f00000001") == SeedStatus.CONSUMED
+
+
+async def _ranked_race_in(
+    async_session: async_sessionmaker[AsyncSession], mode: RunMode, status: RaceStatus
+) -> str:
+    started = datetime.now(UTC) - timedelta(minutes=30)
+    async with async_session() as db:
+        organizer = await _staff(db, "org")
+        await _available(db, "sprint", 5)
+        seed = await _seed(db, "5e1f00000002")
+        race = Race(
+            name="Reset",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=status,
+            mode=mode,
+            started_at=started,
+            seeds_released_at=started,
+        )
+        db.add(race)
+        await db.commit()
+        return str(race.id)
+
+
+@pytest.mark.parametrize("status", [RaceStatus.RUNNING, RaceStatus.FINISHED])
+async def test_speedrun_race_cannot_be_reset(test_client, async_session, pools, status):
+    """A reset would replay the seed and count the second attempt as blind."""
+    race_id = await _ranked_race_in(async_session, RunMode.SPEEDRUN, status)
+
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 400, reset.text
+    assert "speedrun race cannot be reset" in reset.json()["detail"]
+    assert "create a new race" in reset.json()["detail"]
+
+    async with async_session() as db:
+        race = await db.get(Race, UUID(race_id))
+        assert race is not None
+        assert race.status == status
+        assert race.started_at is not None
+
+
+@pytest.mark.parametrize("mode", [RunMode.NORMAL, RunMode.SET_SEED])
+@pytest.mark.parametrize("status", [RaceStatus.RUNNING, RaceStatus.FINISHED])
+async def test_other_races_still_reset(test_client, async_session, pools, mode, status):
+    race_id = await _ranked_race_in(async_session, mode, status)
+
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+    assert reset.json()["status"] == "setup"
 
 
 @pytest.mark.parametrize("mode", ["normal", "speedrun"])

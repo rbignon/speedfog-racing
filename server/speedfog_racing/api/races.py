@@ -1956,6 +1956,13 @@ async def reset_race(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only reset a running or finished race",
         )
+    if race.mode == RunMode.SPEEDRUN:
+        # A reset would replay the same seed, and the second attempt would
+        # count as blind.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A speedrun race cannot be reset: create a new race instead",
+        )
 
     # Close all WebSocket connections before mutating state
     await manager.close_room(race_id, code=1000, reason="Race reset")

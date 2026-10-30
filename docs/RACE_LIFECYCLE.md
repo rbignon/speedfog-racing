@@ -38,6 +38,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 **RUNNING or FINISHED → SETUP** (`POST /races/{id}/reset`, organizer only)
 
+- Refused with 400 "A speedrun race cannot be reset: create a new race instead" for a race in `speedrun` mode (a reset would replay the same seed and the second attempt would count as blind); the race page offers no Reset Race on one. Set Seed, normal, event and daily races reset as described here.
 - Closes all WebSocket connections first (`manager.close_room(code=1000)`).
 - Transitions status via `_transition_status()` with optimistic lock. Clears `started_at` (but NOT `seeds_released_at`, as seed packs remain downloadable).
 - Resets all participants except disqualified ones via ORM loop (`reset_participant_progress`): `status=REGISTERED, current_zone=None, current_layer=0, igt_ms=0, death_count=0, zone_history=None, finished_at=None, layer_entry_igts={}, last_igt_change_at=None`. The last two are cleared so the re-run starts with clean leaderboard-gap and inactivity state (leaving them stale would keep the previous run's per-layer entry IGTs and activity timestamp).

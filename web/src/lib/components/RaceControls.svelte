@@ -28,9 +28,14 @@
   let seedsReleased = $derived(race.seeds_released_at !== null);
   let canStart = $derived(race.participants.length >= 2 || auth.isAdmin);
   let isDaily = $derived(race.daily_date !== null);
+  // A Set Seed race keeps its seed whatever its status.
+  let keepsSeed = $derived(race.mode === "set_seed");
   let canReroll = $derived(
-    raceStatus === "setup" || (isDaily && raceStatus === "running"),
+    !keepsSeed &&
+      (raceStatus === "setup" || (isDaily && raceStatus === "running")),
   );
+  // A reset would replay the seed and count the second attempt as blind.
+  let canReset = $derived(race.mode !== "speedrun");
 
   let reportBuggy = $state(false);
   let reportReason = $state("");
@@ -257,7 +262,9 @@
         label: "Disqualify a runner...",
         onclick: () => (showDisqualify = true),
       });
-      items.push({ label: "Reset Race", danger: true, onclick: handleReset });
+      if (canReset) {
+        items.push({ label: "Reset Race", danger: true, onclick: handleReset });
+      }
     }
     items.push({
       label: "Delete Race",
@@ -305,13 +312,15 @@
             Seeds ready
           </span>
         {/if}
-        <button
-          class="btn btn-secondary"
-          onclick={handleReroll}
-          disabled={loading}
-        >
-          {loading ? "Re-rolling..." : "Re-roll Seed"}
-        </button>
+        {#if canReroll}
+          <button
+            class="btn btn-secondary"
+            onclick={handleReroll}
+            disabled={loading}
+          >
+            {loading ? "Re-rolling..." : "Re-roll Seed"}
+          </button>
+        {/if}
       {:else if raceStatus === "running"}
         {#if canReroll}
           <button
