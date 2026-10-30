@@ -15,8 +15,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import Pool, Race, RunMode, Seed, SeedStatus
+from speedfog_racing.models import Pool, Race, RaceStatus, RunMode, Seed, SeedStatus
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
+from speedfog_racing.services.speedrun_service import race_counts_on_boards
 
 logger = logging.getLogger(__name__)
 
@@ -314,29 +315,50 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
     return added
 
 
-async def get_available_seed(
-    db: AsyncSession, pool_name: str = "standard", exclude_id: uuid.UUID | None = None
+async def _random_seed(
+    db: AsyncSession, pool_name: str, seed_status: SeedStatus, exclude_id: uuid.UUID | None
 ) -> Seed | None:
-    """Get a random available seed from the pool.
+    query = select(Seed).where(Seed.pool_name == pool_name, Seed.status == seed_status)
+    if exclude_id is not None:
+        query = query.where(Seed.id != exclude_id)
+    result = await db.execute(query)
+    seeds = list(result.scalars().all())
+    return random.choice(seeds) if seeds else None
+
+
+async def get_available_seed(
+    db: AsyncSession,
+    pool_name: str = "standard",
+    exclude_id: uuid.UUID | None = None,
+    *,
+    allow_seen: bool = False,
+) -> Seed | None:
+    """Get a random seed to draw from the pool.
+
+    By default only AVAILABLE seeds are drawn. With ``allow_seen`` (normal
+    races only: nothing that counts on the boards), the draw takes an
+    AVAILABLE seed while the pool has more AVAILABLE seeds than its speedrun
+    floor, then a SEEN seed, then an AVAILABLE one from the reserve: fresh
+    seeds while there are plenty, SEEN seeds before the reserve the speedrun
+    draws need.
 
     Args:
         db: Database session
         pool_name: Name of the pool
-        exclude_id: Optional seed ID to exclude (e.g. current seed during re-roll)
+        exclude_id: Optional seed ID to exclude (e.g. current seed during re-roll),
+            from the floor count too
+        allow_seen: Whether SEEN seeds may be drawn (see above)
 
     Returns:
-        A random available Seed, or None if pool is exhausted
+        A random Seed, or None if the pool has none to draw
     """
-    query = select(Seed).where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
-    if exclude_id is not None:
-        query = query.where(Seed.id != exclude_id)
-    result = await db.execute(query)
-    available_seeds = list(result.scalars().all())
-
-    if not available_seeds:
-        return None
-
-    return random.choice(available_seeds)
+    if allow_seen and await _available_count(db, pool_name, exclude_id) <= await speedrun_floor(
+        db, pool_name
+    ):
+        seen = await _random_seed(db, pool_name, SeedStatus.SEEN, exclude_id)
+        if seen is not None:
+            return seen
+    return await _random_seed(db, pool_name, SeedStatus.AVAILABLE, exclude_id)
 
 
 class SpeedrunFloorError(ValueError):
@@ -410,7 +432,9 @@ async def draw_speedrun_seed(
     return seed
 
 
-async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "standard") -> Seed:
+async def assign_seed_to_race(
+    db: AsyncSession, race: Race, pool_name: str = "standard", *, allow_seen: bool = False
+) -> Seed:
     """Assign an available seed to a race.
 
     Marks the seed as consumed and sets race.seed_id. Callers are
@@ -422,6 +446,8 @@ async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "st
         db: Database session
         race: Race to assign seed to
         pool_name: Name of the pool to pick from
+        allow_seen: Whether a SEEN seed may be drawn (see ``get_available_seed``);
+            only for a race that does not count on the boards
 
     Returns:
         The assigned Seed
@@ -429,7 +455,7 @@ async def assign_seed_to_race(db: AsyncSession, race: Race, pool_name: str = "st
     Raises:
         ValueError: If no seeds are available in the pool
     """
-    seed = await get_available_seed(db, pool_name)
+    seed = await get_available_seed(db, pool_name, allow_seen=allow_seen)
 
     if seed is None:
         raise ValueError(f"No available seeds in mode '{pool_name}'")
@@ -450,14 +476,16 @@ async def reroll_seed_for_race(
 ) -> Seed:
     """Re-roll the seed for a race.
 
-    Picks a new available seed from the same pool, excluding the current seed;
-    a speedrun race draws through ``draw_speedrun_seed``, so the pool's floor
-    applies. Nothing changes when no seed can be drawn.
+    Picks a new seed from the same pool, excluding the current seed; a
+    speedrun race draws through ``draw_speedrun_seed``, so the pool's floor
+    applies, and a race off the boards (``race_counts_on_boards``) may draw a
+    SEEN seed (see ``get_available_seed``). Nothing changes when no seed can
+    be drawn.
 
-    The old seed goes back AVAILABLE only while the race's seeds were never
-    released (``race.seeds_released_at`` is None, read before the caller
-    resets it): once released, players may have seen it, so it stays CONSUMED
-    (burned). When ``reporter_id`` is provided, it is marked REPORTED instead
+    The old seed of a race still in SETUP becomes SEEN, released or not: its
+    map reached the race's spectators, so no draw that counts on the boards
+    may take it again. A running Daily Seed's seed was played: it stays
+    CONSUMED. When ``reporter_id`` is provided, it is marked REPORTED instead
     and the report fields are populated. A DISCARDED seed stays DISCARDED.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
@@ -479,7 +507,9 @@ async def reroll_seed_for_race(
     if race.mode == RunMode.SPEEDRUN:
         new_seed = await draw_speedrun_seed(db, pool_name, exclude_id=old_seed.id)
     else:
-        new_seed = await get_available_seed(db, pool_name, exclude_id=old_seed.id)
+        new_seed = await get_available_seed(
+            db, pool_name, exclude_id=old_seed.id, allow_seen=not race_counts_on_boards(race)
+        )
     if new_seed is None:
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
@@ -490,8 +520,8 @@ async def reroll_seed_for_race(
             old_seed.reported_by_id = reporter_id
             old_seed.reported_reason = report_reason
             old_seed.reported_at = datetime.now(UTC)
-        elif race.seeds_released_at is None:
-            old_seed.status = SeedStatus.AVAILABLE
+        elif race.status == RaceStatus.SETUP:
+            old_seed.status = SeedStatus.SEEN
 
     # Assign new seed
     new_seed.status = SeedStatus.CONSUMED
@@ -508,7 +538,8 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
     """Get availability statistics for all pools.
 
     Returns:
-        Dict mapping pool names to {"available": N, "consumed": M}
+        Dict mapping pool names to a count per seed status (``SeedStatus``
+        values as keys, every status present)
     """
     result = await db.execute(
         select(Seed.pool_name, Seed.status, func.count(Seed.id)).group_by(
@@ -520,17 +551,18 @@ async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:
 
     for pool_name, status, count in result:
         if pool_name not in stats:
-            stats[pool_name] = {"available": 0, "consumed": 0, "discarded": 0, "reported": 0}
+            stats[pool_name] = {s.value: 0 for s in SeedStatus}
         stats[pool_name][status.value] = count
 
     return stats
 
 
 async def discard_pool(db: AsyncSession, pool_name: str) -> int:
-    """Mark all AVAILABLE and CONSUMED seeds in a pool as DISCARDED.
+    """Mark every seed of a pool that is not DISCARDED yet as DISCARDED.
 
-    CONSUMED seeds are included so they cannot leak back to AVAILABLE
-    when a race re-rolls or is deleted after the pool is discarded.
+    CONSUMED seeds are included so they cannot leak back to SEEN when a race
+    re-rolls or is deleted after the pool is discarded; SEEN seeds since
+    normal races could still draw them.
 
     Args:
         db: Database session
@@ -543,7 +575,7 @@ async def discard_pool(db: AsyncSession, pool_name: str) -> int:
         update(Seed)
         .where(
             Seed.pool_name == pool_name,
-            Seed.status.in_([SeedStatus.AVAILABLE, SeedStatus.CONSUMED, SeedStatus.REPORTED]),
+            Seed.status != SeedStatus.DISCARDED,
         )
         .values(status=SeedStatus.DISCARDED)
     )

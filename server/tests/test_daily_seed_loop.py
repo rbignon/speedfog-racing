@@ -152,3 +152,45 @@ async def test_daily_tick_skips_when_previous_daily_still_running(ds_async_sessi
 
     created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
     assert created is None
+
+
+@pytest.mark.asyncio
+async def test_daily_tick_never_draws_seen_seeds(ds_async_session_maker) -> None:
+    """A Daily Seed counts on the boards: it takes an AVAILABLE seed, even
+    below the floor where a normal race would take a SEEN one, and no daily is
+    created from SEEN seeds alone."""
+    await _seed_pool_and_system_user(ds_async_session_maker, seeds=0)
+    async with ds_async_session_maker() as db:
+        for i in range(5):
+            db.add(
+                Seed(
+                    seed_number=f"seen-{i}",
+                    pool_name="standard",
+                    graph_json={"total_layers": 5, "nodes": []},
+                    total_layers=5,
+                    folder_path=f"/test/seen-{i}",
+                    status=SeedStatus.SEEN,
+                )
+            )
+        await db.commit()
+
+    assert await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME) is None
+
+    async with ds_async_session_maker() as db:
+        db.add(
+            Seed(
+                seed_number="fresh-0",
+                pool_name="standard",
+                graph_json={"total_layers": 5, "nodes": []},
+                total_layers=5,
+                folder_path="/test/fresh-0",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        await db.commit()
+
+    created = await create_daily_seed_if_needed(ds_async_session_maker, now=TICK_TIME)
+    assert created is not None
+    async with ds_async_session_maker() as db:
+        seed = await db.get(Seed, created.seed_id)
+        assert seed is not None and seed.seed_number == "fresh-0"

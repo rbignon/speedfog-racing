@@ -84,15 +84,16 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 ### Seed Assignment
 
-**`assign_seed_to_race(db, race, pool_name)`**:
+**`assign_seed_to_race(db, race, pool_name, *, allow_seen=False)`**:
 
-- Queries all AVAILABLE seeds for the pool.
-- Picks one at random (`random.choice`).
+- Draws a seed through `get_available_seed` (AVAILABLE only unless `allow_seen`).
 - Marks it `CONSUMED`, sets `race.seed_id`.
+- Callers: the creation of a `normal` race (`allow_seen=True`) and the Daily Seed loop (AVAILABLE only).
 
-**`get_available_seed(db, pool_name, exclude_id?)`**:
+**`get_available_seed(db, pool_name, exclude_id?, *, allow_seen=False)`**:
 
-- Returns a random AVAILABLE seed. Optional `exclude_id` for reroll (exclude the current seed).
+- Returns a random AVAILABLE seed (`random.choice`), or `None`. Optional `exclude_id` for reroll (exclude the current seed, from the floor count too).
+- With `allow_seen` (races off the boards only), the draw takes an AVAILABLE seed while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), then a SEEN seed, then an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
 
 ### Seed Reroll
 
@@ -100,16 +101,16 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 - Requires `race.seed` to be eager-loaded.
 - Refuses a Set Seed race (`ValueError`, "A Set Seed race keeps its seed").
-- Gets a new AVAILABLE seed from the same pool, excluding the current seed ID; a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed).
-- Releases old seed back to AVAILABLE only while `race.seeds_released_at` is null; once the seeds were released it stays CONSUMED (burned). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Burning" in `RACE_LIFECYCLE.md`.
+- Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race counts on the boards (`race_counts_on_boards`: a Daily Seed or an event race).
+- The old seed of a race in SETUP becomes SEEN, released or not; a running Daily Seed's stays CONSUMED (it was played). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Seen seeds" in `RACE_LIFECYCLE.md`.
 - Assigns new seed to race.
 
 ### Pool Discard
 
 **`discard_pool(db, pool_name)`**:
 
-- Single UPDATE: marks both AVAILABLE and CONSUMED seeds as DISCARDED.
-- CONSUMED seeds are included to prevent them from leaking back to AVAILABLE via reroll after the pool is retired.
+- Single UPDATE: marks every seed that is not DISCARDED yet (AVAILABLE, SEEN, CONSUMED, REPORTED) as DISCARDED.
+- CONSUMED seeds are included to prevent them from leaking back to SEEN via a reroll or a deletion after the pool is retired; SEEN seeds since normal races could still draw them.
 
 ### Pool Metadata
 
@@ -140,7 +141,10 @@ these resolve names via `format_pool_display_name`, which prefers the
 config name and falls back to title-casing the normalized name. The
 admin pools list also exposes each pool's `type` (`race` / `training`,
 read from `Pool.config`) so the admin UI can suffix training pools with
-" (Solo)".
+" (Solo)". It and `GET /api/admin/seeds/stats` count the seeds of each
+status (`get_pool_stats`: `available`, `seen`, `consumed`, `discarded`,
+`reported`); the Seeds tab shows each count in its own column and offers
+Discard while a pool has available or seen seeds.
 
 Training seeds are never consumed: `get_training_seed` only skips the
 seeds the requesting user already opened a session on, and once they have
@@ -251,23 +255,24 @@ pool from new selection UIs and blocks training creation.
 ## 5. Seed Status Lifecycle
 
 ```
-AVAILABLE ──assign_seed_to_race──→ CONSUMED
-    ↑                                  │
-    └────reroll_seed_for_race──────────┘  (only before the seeds are released)
+AVAILABLE ──draw──→ CONSUMED ──reroll or deletion in SETUP──→ SEEN
+                                                              │
+CONSUMED ←──draw by a normal race (allow_seen)────────────────┘
 
-AVAILABLE ──┐
-             ├──discard_pool──→ DISCARDED
-CONSUMED  ──┘
+REPORTED ──admin restore──→ SEEN
 
-DISCARDED ──reroll──→ stays DISCARDED (never released back)
+AVAILABLE, SEEN, CONSUMED, REPORTED ──discard_pool──→ DISCARDED
+
+DISCARDED ──reroll or deletion──→ stays DISCARDED (never released back)
 ```
 
 ### Key Invariants
 
 - A race always has exactly one seed assigned (set at creation, changeable via reroll during SETUP, or while RUNNING for a Daily Seed; never for a Set Seed race).
 - Seeds released via `POST /races/{id}/release-seeds` sets `seeds_released_at`, and participants can then download. The seed itself stays CONSUMED.
-- Reroll is allowed in SETUP status (a running Daily Seed too, by an admin). A reroll after the release clears `seeds_released_at` and burns the old seed: it stays CONSUMED, as does the seed of a released race that is deleted.
-- Discarded seeds are permanently retired; the guard in `reroll_seed_for_race` prevents them from returning to AVAILABLE.
+- Reroll is allowed in SETUP status (a running Daily Seed too, by an admin). A reroll clears `seeds_released_at`; the old seed of a SETUP race becomes SEEN, released or not, as does the seed of a SETUP race that is deleted. A running Daily Seed's old seed, and the seed of a deleted RUNNING or FINISHED race, stay CONSUMED.
+- Draws that count on the boards (speedrun races, Speedrun-mode solo runs, Daily Seeds, event race rerolls) take AVAILABLE seeds only, and the speedrun floor counts AVAILABLE seeds only.
+- Discarded seeds are permanently retired; the guards in `reroll_seed_for_race` and `delete_race` prevent them from returning to the draws.
 
 ### Retention of DISCARDED zips
 

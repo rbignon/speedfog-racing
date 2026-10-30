@@ -1726,6 +1726,9 @@ export interface AdminPool {
   enabled: boolean;
   last_scanned_at: string | null;
   available: number;
+  /** Seeds whose map may have been seen before their race started: only
+   * normal races draw them again. */
+  seen: number;
   consumed: number;
   discarded: number;
   reported: number;

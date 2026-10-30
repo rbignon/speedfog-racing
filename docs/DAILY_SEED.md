@@ -139,7 +139,7 @@ Each tick (`create_daily_seed_if_needed`) does:
    deathless                 = schedule.deathless
    ```
 
-   `assign_seed_to_race` picks a seed in the same transaction. The whole `add` / `flush` / `assign` / `commit` is wrapped in an `IntegrityError` guard: PostgreSQL enforces the partial unique index at flush time, so a concurrent tick (e.g. on boot) loses its INSERT and falls through to a clean rollback + INFO log.
+   `assign_seed_to_race` picks a seed in the same transaction (an AVAILABLE one: a Daily Seed counts on the boards, so it never draws a SEEN seed). The whole `add` / `flush` / `assign` / `commit` is wrapped in an `IntegrityError` guard: PostgreSQL enforces the partial unique index at flush time, so a concurrent tick (e.g. on boot) loses its INSERT and falls through to a clean rollback + INFO log.
 
 8. **Re-fetch + Discord.** Re-fetch the race with eager-loaded `organizer`, `seed`, `participants.user`, then call `notify_daily_seed_created(race, previous_race)` outside the DB session. The previous race is looked up for `daily_date = today - 1 day` to render yesterday's podium.
 
@@ -218,7 +218,7 @@ Branching inside the handler:
 | Public chat message | "Seed has been rerolled"                  | "Seed has been rerolled. All previous runs are invalidated."                                                                                                                                                                |
 | Streak rollback     | n/a                                       | Every user whose streak state references this `daily_date` (qualifiers and abandon-trigger freeze-consumers) has their streak re-derived via `rollback_streak_for_reroll`. `best_streak` is preserved as a high water mark. |
 
-Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_race` assigns a fresh seed from the same pool. A daily's seeds are always released, so its previous seed is burned: it stays CONSUMED (REPORTED with a report, DISCARDED stays), never drawn again (see "Burning" in `RACE_LIFECYCLE.md`). The frontend detects the participant reset via the standard `race_state` push and shows a toast.
+Race version bumps via the existing optimistic-lock UPDATE; `reroll_seed_for_race` assigns a fresh seed from the same pool. A running daily was played, so its previous seed stays CONSUMED (REPORTED with a report, DISCARDED stays), never drawn again; the new seed is an AVAILABLE one, never a SEEN one (see "Seen seeds" and "Draws" in `RACE_LIFECYCLE.md`). The frontend detects the participant reset via the standard `race_state` push and shows a toast.
 
 ---
 

@@ -1104,7 +1104,7 @@ async def test_resolve_seed_discard(test_client, admin_user, organizer_user, asy
 
 @pytest.mark.asyncio
 async def test_resolve_seed_restore(test_client, admin_user, organizer_user, async_session):
-    """Admin can restore a reported seed to AVAILABLE."""
+    """Admin can restore a reported seed: it was seen, so it becomes SEEN."""
     async with async_session() as db:
         seed = Seed(
             seed_number="resolve_r",
@@ -1135,7 +1135,7 @@ async def test_resolve_seed_restore(test_client, admin_user, organizer_user, asy
     async with async_session() as db:
         result = await db.execute(select(Seed).where(Seed.seed_number == "resolve_r"))
         seed = result.scalar_one()
-        assert seed.status == SeedStatus.AVAILABLE
+        assert seed.status == SeedStatus.SEEN
         assert seed.reported_by_id is None
         assert seed.reported_reason is None
         assert seed.reported_at is None
@@ -1231,6 +1231,38 @@ async def test_admin_pools_report_solo_progress(
         )
         assert response.status_code == 200
         assert response.json()["solo"] == expected
+
+
+@pytest.mark.asyncio
+async def test_admin_pool_counts_include_seen_seeds(
+    test_client, admin_user, async_session, seeded_pools
+):
+    """SEEN seeds have their own count on both admin pool listings."""
+    async with async_session() as db:
+        db.add_all(
+            Seed(
+                seed_number=f"seen_{i}",
+                pool_name="standard",
+                graph_json={"total_layers": 5, "nodes": {}},
+                total_layers=5,
+                folder_path=f"/test/seen_{i}",
+                status=status,
+            )
+            for i, status in enumerate(
+                [SeedStatus.SEEN, SeedStatus.SEEN, SeedStatus.AVAILABLE, SeedStatus.CONSUMED]
+            )
+        )
+        await db.commit()
+
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        pools = {
+            p["name"]: p for p in (await client.get("/api/admin/pools", headers=headers)).json()
+        }
+        stats = (await client.get("/api/admin/seeds/stats", headers=headers)).json()["pools"]
+
+    for row in (pools["standard"], stats["standard"]):
+        assert (row["available"], row["seen"], row["consumed"]) == (1, 2, 1)
 
 
 @pytest.mark.asyncio

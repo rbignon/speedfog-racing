@@ -1,5 +1,6 @@
 """Races in speedrun and Set Seed mode, the speedrun floor on race draws, and
-burned seeds: a seed seen by players never goes back to its pool."""
+seen seeds: a seed shown before its race started never returns to the draws
+that count on the boards."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -25,9 +26,13 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
+from speedfog_racing.services.training_service import (
+    SpeedrunStartError,
+    create_speedrun_session,
+)
 
 from .test_set_seed_service import _seed
-from .test_speedrun_service import _add_run, _user
+from .test_speedrun_service import _add_run, _event, _user
 from .test_speedrun_solo import _auth, _available
 
 
@@ -327,7 +332,10 @@ async def test_speedrun_reroll_respects_floor(test_client, async_session, pools)
     assert await _available_count(async_session, "sprint") == 2
 
 
-async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_session, pools):
+async def test_setup_reroll_and_delete_leave_the_seed_seen(test_client, async_session, pools):
+    """A SETUP race's seed may have been seen (its map reaches every spectator),
+    released or not: a reroll or a deletion makes it SEEN, a report REPORTED.
+    A running Daily Seed's seed was played: its reroll keeps it CONSUMED."""
     async with async_session() as db:
         await _staff(db, "org")
         admin = await _staff(db, "admin", UserRole.ADMIN)
@@ -352,12 +360,12 @@ async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_s
 
         unreleased = await current(race_id)
         assert (await _reroll(test_client, race_id)).status_code == 200
-        assert await _status(async_session, unreleased) == SeedStatus.AVAILABLE, mode
+        assert await _status(async_session, unreleased) == SeedStatus.SEEN, mode
 
         released = await current(race_id)
         await release(race_id)
         assert (await _reroll(test_client, race_id)).status_code == 200
-        assert await _status(async_session, released) == SeedStatus.CONSUMED, mode
+        assert await _status(async_session, released) == SeedStatus.SEEN, mode
 
         reported = await current(race_id)
         await release(race_id)
@@ -366,16 +374,16 @@ async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_s
         ).status_code == 200
         assert await _status(async_session, reported) == SeedStatus.REPORTED, mode
 
-        # The reroll cleared the release: deleting now gives the seed back.
-        returned = await current(race_id)
+        # The reroll cleared the release: an unreleased deletion.
+        deleted = await current(race_id)
         await delete(race_id)
-        assert await _status(async_session, returned) == SeedStatus.AVAILABLE, mode
+        assert await _status(async_session, deleted) == SeedStatus.SEEN, mode
 
         race_id = (await _create(test_client, {"pool_name": "sprint", "mode": mode})).json()["id"]
-        burned = await current(race_id)
+        released_deleted = await current(race_id)
         await release(race_id)
         await delete(race_id)
-        assert await _status(async_session, burned) == SeedStatus.CONSUMED, mode
+        assert await _status(async_session, released_deleted) == SeedStatus.SEEN, mode
 
     started = datetime.now(UTC) - timedelta(hours=1)
     async with async_session() as db:
@@ -402,8 +410,9 @@ async def test_released_seed_is_burned_on_reroll_and_delete(test_client, async_s
 
 @pytest.mark.parametrize("action", ["reroll", "delete"])
 @pytest.mark.parametrize("mode", [RunMode.NORMAL])
-async def test_reset_race_burns_its_seed(test_client, async_session, pools, mode, action):
-    """A reset brings a race back to SETUP but keeps its release: its seed was seen."""
+async def test_reset_race_seed_becomes_seen(test_client, async_session, pools, mode, action):
+    """A reset brings a race back to SETUP (keeping its release): a reroll or a
+    deletion then treats its seed like any SETUP race's, SEEN."""
     started = datetime.now(UTC) - timedelta(minutes=30)
     async with async_session() as db:
         organizer = await _staff(db, "org")
@@ -432,7 +441,7 @@ async def test_reset_race_burns_its_seed(test_client, async_session, pools, mode
         deleted = await test_client.delete(f"/api/races/{race_id}", headers=_auth("org"))
         assert deleted.status_code == 204
 
-    assert await _status(async_session, "5e1f00000001") == SeedStatus.CONSUMED
+    assert await _status(async_session, "5e1f00000001") == SeedStatus.SEEN
 
 
 async def _ranked_race_in(
@@ -566,3 +575,124 @@ async def test_announcement_carries_the_mode(test_client, async_session, pools, 
         (RunMode.SPEEDRUN, None),
         (RunMode.SET_SEED, "5eed00000001"),
     ]
+
+
+@pytest.mark.parametrize("status", [RaceStatus.RUNNING, RaceStatus.FINISHED])
+async def test_deleting_a_played_race_keeps_its_seed_consumed(
+    test_client, async_session, pools, status
+):
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, status)
+
+    deleted = await test_client.delete(f"/api/races/{race_id}", headers=_auth("org"))
+
+    assert deleted.status_code == 204
+    assert await _status(async_session, "5e1f00000002") == SeedStatus.CONSUMED
+
+
+async def _seen(db: AsyncSession, pool: str, count: int) -> list[Seed]:
+    return [
+        await _seed(db, f"5ee{pool}{i:05d}", pool=pool, status=SeedStatus.SEEN)
+        for i in range(count)
+    ]
+
+
+async def test_normal_races_draw_seen_seeds_only_at_the_floor(test_client, async_session, pools):
+    """Creation and reroll of a normal race: AVAILABLE while the pool has more
+    than its floor (2 here), then SEEN, then the AVAILABLE reserve."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "sprint", 3)
+        seen = {s.seed_number for s in await _seen(db, "sprint", 2)}
+        await db.commit()
+
+    above = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    assert (await _race_seed(async_session, above)).seed_number not in seen
+
+    at_floor = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    first_seen = (await _race_seed(async_session, at_floor)).seed_number
+    assert first_seen in seen
+    assert (await _reroll(test_client, at_floor)).status_code == 200
+    second_seen = await _race_seed(async_session, at_floor)
+    assert second_seen.seed_number == (seen - {first_seen}).pop()
+    assert second_seen.status == SeedStatus.CONSUMED
+    assert await _status(async_session, first_seen) == SeedStatus.SEEN
+    assert await _available_count(async_session, "sprint") == 2
+
+    # The reroll's old seed is the only SEEN one left: the next race takes it,
+    # and that race's reroll falls back to the reserve.
+    reserve = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    assert (await _race_seed(async_session, reserve)).seed_number == first_seen
+    assert (await _reroll(test_client, reserve)).status_code == 200
+    assert (await _race_seed(async_session, reserve)).seed_number not in seen
+    assert await _available_count(async_session, "sprint") == 1
+
+
+async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, pools):
+    """Speedrun races, Speedrun-mode solo runs, Daily Seeds and event races draw
+    AVAILABLE seeds only, and the floor counts AVAILABLE seeds only."""
+    async with async_session() as db:
+        org = await _staff(db, "org")
+        runner = await _user(db, "runner")
+        await _available(db, "sprint", 2)  # the floor
+        seen = {s.seed_number for s in await _seen(db, "sprint", 5)}
+        await db.commit()
+
+    refused = await _create(test_client, {"pool_name": "sprint", "mode": "speedrun"})
+    assert (refused.status_code, refused.json()["detail"]) == (409, "No fresh seed right now")
+    fresh = await test_client.get("/api/speedrun/fresh-seeds", params={"pool": "sprint"})
+    assert fresh.json() == {"fresh": False}
+    async with async_session() as db:
+        with pytest.raises(SpeedrunStartError) as solo_error:
+            await create_speedrun_session(db, runner.id, "sprint")
+        assert solo_error.value.code == "no_fresh_seed"
+
+    async with async_session() as db:
+        db.add(
+            Seed(
+                seed_number="f4e5h0000001",
+                pool_name="sprint",
+                graph_json={"nodes": {}},
+                total_layers=15,
+                folder_path="/t/fresh",
+                status=SeedStatus.AVAILABLE,
+            )
+        )
+        await db.commit()
+    speedrun = (await _create(test_client, {"pool_name": "sprint", "mode": "speedrun"})).json()
+    assert (await _race_seed(async_session, speedrun["id"])).seed_number not in seen
+    reroll = await _reroll(test_client, speedrun["id"])
+    assert (reroll.status_code, reroll.json()["detail"]) == (409, "No fresh seed right now")
+
+    # At the floor, a normal race would take a SEEN seed: a Daily Seed's reroll
+    # and an event race's reroll take an AVAILABLE one.
+    started = datetime.now(UTC) - timedelta(hours=1)
+    async with async_session() as db:
+        event = await _event(db)
+        daily = Race(
+            name="Daily Seed",
+            organizer_id=org.id,
+            seed_id=(await _seed(db, "da11y0000001")).id,
+            status=RaceStatus.RUNNING,
+            is_public=True,
+            daily_date=started.date(),
+            exclude_from_stats=True,
+            started_at=started,
+            seeds_released_at=started,
+        )
+        qualifier = Race(
+            name="Qualifier",
+            organizer_id=org.id,
+            seed_id=(await _seed(db, "e7e470000001")).id,
+            status=RaceStatus.SETUP,
+            event_id=event.id,
+        )
+        db.add_all([daily, qualifier])
+        await db.commit()
+        daily_id, qualifier_id = str(daily.id), str(qualifier.id)
+    for race_id in (daily_id, qualifier_id):
+        assert (await _reroll(test_client, race_id)).status_code == 200, race_id
+        drawn = await _race_seed(async_session, race_id)
+        assert drawn.seed_number not in seen, race_id
+    assert await _available_count(async_session, "sprint") == 0
+    assert await _status(async_session, "da11y0000001") == SeedStatus.CONSUMED
+    assert await _status(async_session, "e7e470000001") == SeedStatus.SEEN

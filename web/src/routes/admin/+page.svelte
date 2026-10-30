@@ -877,7 +877,7 @@
   async function handleDiscard(poolName: string) {
     if (
       !confirm(
-        `Discard all available seeds in "${formatPoolName(poolName)}"? This cannot be undone.`,
+        `Discard all available and seen seeds in "${formatPoolName(poolName)}"? This cannot be undone.`,
       )
     )
       return;
@@ -887,7 +887,7 @@
       error = null;
       await loadSeedStats();
       if (result.discarded === 0) {
-        error = `No available seeds to discard in "${poolName}".`;
+        error = `No available or seen seeds to discard in "${poolName}".`;
       }
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to discard seeds.";
@@ -1445,6 +1445,11 @@
               <th class="num-col">Available</th>
               <th
                 class="num-col"
+                title="Seeds of races rerolled or deleted before they started, and restored reports: their map may have been seen, so only normal races draw them again"
+                >Seen</th
+              >
+              <th
+                class="num-col"
                 title="Solo pools: most seeds played by one user / pool size, then how many users played them all"
                 >Consumed</th
               >
@@ -1482,6 +1487,7 @@
                   </label>
                 </td>
                 <td class="num-cell">{pool.available}</td>
+                <td class="num-cell">{pool.seen}</td>
                 {#if pool.type === "training"}
                   <!-- Solo seeds are never consumed: show how close the
                        furthest users are to running out of unseen seeds. -->
@@ -1534,7 +1540,7 @@
                   <button
                     class="action-btn discard"
                     disabled={actionLoading[`discard_${pool.name}`] ||
-                      pool.available === 0}
+                      pool.available + pool.seen === 0}
                     onclick={() => handleDiscard(pool.name)}
                   >
                     {actionLoading[`discard_${pool.name}`]

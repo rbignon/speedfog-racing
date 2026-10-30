@@ -152,6 +152,33 @@ async def test_unplayed_seeds_are_unknown(async_session, pools):
             assert await _unknown(db, seed.seed_number[:6])
 
 
+async def test_seen_seed_is_known_only_once_played(async_session, pools):
+    """A SEEN seed (shown before a race started, then put aside) stays unknown
+    until a race plays it: from then on it is a played seed like any other."""
+    async with async_session() as db:
+        a = await _user(db, "a")
+        seen = await _seed(db, "5ee115000001", status=SeedStatus.SEEN)
+        await _add_run(
+            db,
+            user=a,
+            igt_ms=0,
+            minute=1,
+            race_status=RaceStatus.SETUP,
+            status=ParticipantStatus.REGISTERED,
+            finished=False,
+            seed=seen,
+        )
+        await db.commit()
+
+        assert await _unknown(db, seen.seed_number)
+        assert await _unknown(db, seen.seed_number[:6])
+
+        await _add_run(db, user=a, igt_ms=1000, minute=2, mode=RunMode.NORMAL, seed=seen)
+        await db.commit()
+
+        assert (await resolve_seed(db, seen.seed_number)).id == seen.id
+
+
 async def test_prefix_ambiguity_counts_known_seeds_only(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")

@@ -65,9 +65,15 @@ TERMINAL_PARTICIPANT_STATUSES = frozenset(
 
 
 class SeedStatus(enum.Enum):
-    """Seed availability status."""
+    """Seed availability status.
+
+    SEEN: drawn for a race that never started (rerolled or deleted in SETUP, or
+    a restored report), so its map may have been seen. Only normal races draw
+    it again; every draw that counts on the boards takes AVAILABLE seeds only.
+    """
 
     AVAILABLE = "available"
+    SEEN = "seen"
     CONSUMED = "consumed"
     DISCARDED = "discarded"
     REPORTED = "reported"

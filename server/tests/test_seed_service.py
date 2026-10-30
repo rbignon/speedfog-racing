@@ -477,7 +477,7 @@ async def test_reroll_with_report(reporting_session, reporter_user):
 
 @pytest.mark.asyncio
 async def test_reroll_without_report(reporting_session):
-    """Re-rolling without reporter_id sets old seed back to AVAILABLE (backward compat)."""
+    """Re-rolling a SETUP race without reporter_id makes the old seed SEEN, never AVAILABLE."""
     async with reporting_session() as db:
         organizer = User(twitch_id="org1", twitch_username="organizer", role=UserRole.ORGANIZER)
         db.add(organizer)
@@ -501,7 +501,7 @@ async def test_reroll_without_report(reporting_session):
         await db.refresh(old_seed)
 
         assert result.seed_number == "newseed2"
-        assert old_seed.status == SeedStatus.AVAILABLE
+        assert old_seed.status == SeedStatus.SEEN
         assert old_seed.reported_by_id is None
         assert old_seed.reported_reason is None
         assert old_seed.reported_at is None
@@ -770,3 +770,117 @@ async def test_rescan_keeps_speedrun_floor(async_db, seed_pool_dir):
         await scan_pool(async_db, "standard")
         await async_db.refresh(pool)
         assert pool.speedrun_floor == 7
+
+
+# =============================================================================
+# Seen seeds
+# =============================================================================
+
+
+async def _mixed_pool(db, *, available: int, seen: int, floor: int = 2) -> None:
+    """Pool "mix" with ``available`` AVAILABLE and ``seen`` SEEN seeds."""
+    db.add(Pool(name="mix", enabled=True, config={}, speedrun_floor=floor))
+    await db.commit()
+    await _add_seeds(db, "mix", available)
+    db.add_all(
+        Seed(
+            seed_number=f"mix_seen_{i:03d}",
+            pool_name="mix",
+            graph_json={"total_layers": 5},
+            total_layers=5,
+            folder_path=f"/tmp/mix_seen_{i}.zip",
+            status=SeedStatus.SEEN,
+        )
+        for i in range(seen)
+    )
+    await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_seen_allowed_draw_above_the_floor_takes_available(async_db):
+    """More AVAILABLE seeds than the floor: SEEN seeds are left alone."""
+    await _mixed_pool(async_db, available=3, seen=20)
+
+    for _ in range(10):
+        seed = await get_available_seed(async_db, "mix", allow_seen=True)
+        assert seed is not None and seed.status == SeedStatus.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_seen_allowed_draw_at_the_floor_takes_seen(async_db):
+    """At the floor, SEEN seeds go before the AVAILABLE reserve; a draw that
+    does not allow them (the default) still takes the reserve."""
+    await _mixed_pool(async_db, available=2, seen=1)
+
+    seen = await get_available_seed(async_db, "mix", allow_seen=True)
+    assert seen is not None and seen.status == SeedStatus.SEEN
+    for _ in range(10):
+        seed = await get_available_seed(async_db, "mix")
+        assert seed is not None and seed.status == SeedStatus.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_seen_allowed_draw_without_seen_takes_the_reserve(async_db):
+    await _mixed_pool(async_db, available=1, seen=0)
+
+    seed = await get_available_seed(async_db, "mix", allow_seen=True)
+    assert seed is not None and seed.status == SeedStatus.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_seen_allowed_draw_uses_the_default_floor(async_db):
+    """A pool without its own floor uses the setting's default."""
+    await _mixed_pool(async_db, available=3, seen=1)
+    pool = (await async_db.execute(select(Pool).where(Pool.name == "mix"))).scalar_one()
+    pool.speedrun_floor = None
+    await async_db.commit()
+
+    with patch("speedfog_racing.services.seed_service.settings") as mock_settings:
+        mock_settings.speedrun_default_floor = 3
+        seed = await get_available_seed(async_db, "mix", allow_seen=True)
+        assert seed is not None and seed.status == SeedStatus.SEEN
+        mock_settings.speedrun_default_floor = 2
+        seed = await get_available_seed(async_db, "mix", allow_seen=True)
+        assert seed is not None and seed.status == SeedStatus.AVAILABLE
+
+
+@pytest.mark.asyncio
+async def test_assign_seed_to_race_takes_seen_only_when_allowed(async_db):
+    """A forgotten caller (the default) never gets a SEEN seed."""
+    await _mixed_pool(async_db, available=0, seen=1)
+    user = User(twitch_id="u1", twitch_username="user1", role=UserRole.USER)
+    async_db.add(user)
+    await async_db.flush()
+    race = Race(name="Test", organizer_id=user.id)
+    async_db.add(race)
+    await async_db.flush()
+
+    with pytest.raises(ValueError, match="No available seeds"):
+        await assign_seed_to_race(async_db, race, "mix")
+    seed = await assign_seed_to_race(async_db, race, "mix", allow_seen=True)
+    assert seed.status == SeedStatus.CONSUMED
+    assert race.seed_id == seed.id
+
+
+@pytest.mark.asyncio
+async def test_speedrun_floor_counts_available_seeds_only(async_db):
+    await _mixed_pool(async_db, available=2, seen=10)
+
+    assert not await has_fresh_speedrun_seed(async_db, "mix")
+    with pytest.raises(SpeedrunFloorError):
+        await draw_speedrun_seed(async_db, "mix")
+
+
+@pytest.mark.asyncio
+async def test_discard_pool_and_stats_cover_seen(async_db):
+    await _mixed_pool(async_db, available=1, seen=2)
+
+    assert (await get_pool_stats(async_db))["mix"] == {
+        "available": 1,
+        "seen": 2,
+        "consumed": 0,
+        "discarded": 0,
+        "reported": 0,
+    }
+    assert await discard_pool(async_db, "mix") == 3
+    assert (await get_pool_stats(async_db))["mix"]["discarded"] == 3

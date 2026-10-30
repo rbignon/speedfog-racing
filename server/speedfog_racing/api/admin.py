@@ -146,6 +146,7 @@ class PoolStats(BaseModel):
     """Statistics for a single pool."""
 
     available: int
+    seen: int = 0
     consumed: int
     discarded: int = 0
     reported: int = 0
@@ -192,7 +193,7 @@ async def discard_seeds(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> DiscardResponse:
-    """Mark all AVAILABLE seeds in a pool as DISCARDED.
+    """Mark every seed of a pool that is not DISCARDED yet as DISCARDED.
 
     Requires admin role.
     """
@@ -234,6 +235,7 @@ class AdminPoolResponse(BaseModel):
     speedrun_floor_effective: int
     last_scanned_at: datetime | None
     available: int = 0
+    seen: int = 0
     consumed: int = 0
     discarded: int = 0
     reported: int = 0
@@ -1233,7 +1235,10 @@ async def resolve_reported_seed(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> dict[str, str]:
-    """Discard or restore a reported seed. Requires admin role."""
+    """Discard or restore a reported seed. Requires admin role.
+
+    A restored seed becomes SEEN, not AVAILABLE: whoever reported it saw it,
+    so only normal races may draw it again."""
     result = await db.execute(select(Seed).where(Seed.id == seed_id))
     seed = result.scalar_one_or_none()
     if not seed:
@@ -1247,7 +1252,7 @@ async def resolve_reported_seed(
     if request.action == "discard":
         seed.status = SeedStatus.DISCARDED
     else:
-        seed.status = SeedStatus.AVAILABLE
+        seed.status = SeedStatus.SEEN
         seed.reported_by_id = None
         seed.reported_reason = None
         seed.reported_at = None

@@ -1905,7 +1905,7 @@ async def test_delete_race_allowed_for_admin_non_organizer(
 
 @pytest.mark.asyncio
 async def test_delete_race_releases_seed(test_client, organizer, async_session):
-    """Deleting a race releases the seed back to available status."""
+    """Deleting a SETUP race makes its seed SEEN: never AVAILABLE again."""
     async with async_session() as db:
         seed = Seed(
             seed_number="s920",
@@ -1936,13 +1936,12 @@ async def test_delete_race_releases_seed(test_client, organizer, async_session):
         )
         assert response.status_code == 204
 
-    # Verify seed is released
     async with async_session() as db:
         from sqlalchemy import select
 
         result = await db.execute(select(Seed).where(Seed.id == seed_id))
         seed = result.scalar_one()
-        assert seed.status == SeedStatus.AVAILABLE
+        assert seed.status == SeedStatus.SEEN
 
 
 @pytest.mark.asyncio
@@ -1994,7 +1993,7 @@ async def test_delete_started_race_keeps_seed_consumed(test_client, organizer, a
 
 @pytest.mark.asyncio
 async def test_reroll_seed_setup(test_client, organizer, async_session):
-    """Re-rolling seed on a SETUP race assigns a new seed and releases the old one."""
+    """Re-rolling seed on a SETUP race assigns a new seed and makes the old one SEEN."""
     async with async_session() as db:
         seed_a = Seed(
             seed_number="reroll_a",
@@ -2036,12 +2035,11 @@ async def test_reroll_seed_setup(test_client, organizer, async_session):
         data = response.json()
         assert data["seed_total_layers"] == 7
 
-    # Verify old seed released, new seed consumed
     async with async_session() as db:
         from sqlalchemy import select
 
         result_a = await db.execute(select(Seed).where(Seed.id == seed_a_id))
-        assert result_a.scalar_one().status == SeedStatus.AVAILABLE
+        assert result_a.scalar_one().status == SeedStatus.SEEN
 
         result_b = await db.execute(select(Seed).where(Seed.id == seed_b_id))
         assert result_b.scalar_one().status == SeedStatus.CONSUMED
@@ -2247,7 +2245,7 @@ async def test_reroll_seed_without_report_body(test_client, organizer, async_ses
         from sqlalchemy import select
 
         result = await db.execute(select(Seed).where(Seed.id == seed_a_id))
-        assert result.scalar_one().status == SeedStatus.AVAILABLE
+        assert result.scalar_one().status == SeedStatus.SEEN
 
 
 # =============================================================================

@@ -389,9 +389,11 @@ async def create_race(
     await db.flush()
 
     if seed is None:
-        # Assign seed from pool
+        # A normal race counts on no board when it is created, so it may draw
+        # a SEEN seed (an event may attach it later: the draw prefers
+        # AVAILABLE seeds while the pool is above its floor).
         try:
-            await assign_seed_to_race(db, race, request.pool_name)
+            await assign_seed_to_race(db, race, request.pool_name, allow_seen=True)
         except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -1790,8 +1792,6 @@ async def reroll_seed(
         report_buggy,
         is_daily,
     )
-    # Before the version bump below clears seeds_released_at: the service reads
-    # it to decide whether the old seed goes back to the pool or is burned.
     try:
         await reroll_seed_for_race(
             db,
@@ -2146,20 +2146,16 @@ async def delete_race(
     # Delete invites explicitly (belt-and-suspenders with ORM cascade)
     await db.execute(delete(Invite).where(Invite.race_id == race_id))
 
-    # Release seed back to pool only if no player could have seen it: the race
-    # never started and its seeds were never released. Otherwise it stays
-    # consumed (burned), as on a reroll (see reroll_seed_for_race). A Set Seed
-    # race's seed was never drawn from the pool: its status is left alone.
-    if (
-        race.seed_id
-        and race.status == RaceStatus.SETUP
-        and race.seeds_released_at is None
-        and race.mode != RunMode.SET_SEED
-    ):
+    # A SETUP race's seed was never played but may have been seen (its map
+    # reaches every spectator), released or not: it becomes SEEN, as on a
+    # reroll (see reroll_seed_for_race). A started race's seed was played: it
+    # stays CONSUMED. A Set Seed race's seed was never drawn from the pool:
+    # its status is left alone.
+    if race.seed_id and race.status == RaceStatus.SETUP and race.mode != RunMode.SET_SEED:
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
         if seed and seed.status != SeedStatus.DISCARDED:
-            seed.status = SeedStatus.AVAILABLE
+            seed.status = SeedStatus.SEEN
 
     discord_event_id = race.discord_event_id
     malenia_event_id = race.malenia_event_id
