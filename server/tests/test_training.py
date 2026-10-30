@@ -997,10 +997,108 @@ def test_training_auth_ok_tells_the_mod_whether_the_run_is_ranked(
     asyncio.run(set_mode())
     sid = training_session_data["session_id"]
     with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
-        ws.send_json({"type": "auth", "mod_token": training_session_data["mod_token"]})
+        ws.send_json(
+            {
+                "type": "auth",
+                "mod_token": training_session_data["mod_token"],
+                "protocol_version": "1.9",
+            }
+        )
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         assert auth_ok["race"]["ranked"] is ranked
+
+
+def _set_session_mode(async_session, session_id: str, mode: RunMode) -> None:
+    async def run() -> None:
+        async with async_session() as db:
+            session = await db.get(TrainingSession, uuid.UUID(session_id))
+            session.mode = mode
+            await db.commit()
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("mode", "protocol", "accepted"),
+    [
+        (RunMode.SPEEDRUN, "1.8", False),
+        (RunMode.SET_SEED, "1.8", False),
+        (RunMode.SPEEDRUN, None, False),
+        (RunMode.SET_SEED, None, False),
+        (RunMode.SPEEDRUN, "1.9", True),
+        (RunMode.SET_SEED, "1.10", True),
+        (RunMode.NORMAL, "1.8", True),
+        (RunMode.NORMAL, None, True),
+    ],
+)
+def test_ranked_solo_refuses_a_mod_without_solo_cheat_detection(
+    training_ws_client, training_session_data, async_session, mode, protocol, accepted
+):
+    """A ranked solo run needs protocol 1.9 (the mod reads debug flags in a
+    ranked solo session); the refusal sends the player back to the run's
+    pack, which carries the current mod. Practice runs take any 1.x mod."""
+    _set_session_mode(async_session, training_session_data["session_id"], mode)
+    auth: dict[str, str] = {"type": "auth", "mod_token": training_session_data["mod_token"]}
+    if protocol is not None:
+        auth["protocol_version"] = protocol
+    sid = training_session_data["session_id"]
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json(auth)
+        resp = ws.receive_json()
+    if accepted:
+        assert resp["type"] == "auth_ok"
+    else:
+        assert resp["type"] == "auth_error"
+        assert "pack again" in resp["message"]
+
+
+def test_ranked_solo_finish_counts_once_the_final_zone_is_reached(
+    training_ws_client, training_session_data, async_session
+):
+    """A ranked run's finish flag is dropped until a fog gate put the final
+    zone in its history (this graph has no final_boss node: the highest
+    layer, liurnia_01, is the final zone). The entry recorded by an
+    event_flag is seen by the finish flag that follows it."""
+    sid = training_session_data["session_id"]
+    _set_session_mode(async_session, sid, RunMode.SPEEDRUN)
+    stormveil, liurnia, finish = 1040292801, 1040292802, 1040292899
+
+    with (
+        patch("speedfog_racing.websocket.training.mod.schedule_speedrun_record_check") as check,
+        training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws,
+    ):
+        ws.send_json(
+            {
+                "type": "auth",
+                "mod_token": training_session_data["mod_token"],
+                "protocol_version": "1.9",
+            }
+        )
+        assert ws.receive_json()["type"] == "auth_ok"
+        assert ws.receive_json()["type"] == "race_start"
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        assert ws.receive_json()["type"] == "leaderboard_update"
+        ws.send_json({"type": "event_flag", "flag_id": stormveil, "igt_ms": 3000})
+        assert ws.receive_json()["type"] == "leaderboard_update"
+        assert ws.receive_json()["type"] == "zone_update"
+
+        # Boss kill reported before the final zone: acked, then dropped.
+        ws.send_json({"type": "event_flag", "flag_id": finish, "igt_ms": 4000, "message_id": 1})
+        assert ws.receive_json() == {"type": "event_flag_ack", "message_id": 1}
+        ws.send_json({"type": "event_flag", "flag_id": liurnia, "igt_ms": 5000})
+        update = ws.receive_json()
+        assert update["type"] == "leaderboard_update"
+        assert update["participants"][0]["status"] == "playing"
+        assert ws.receive_json()["type"] == "zone_update"
+
+        ws.send_json({"type": "event_flag", "flag_id": finish, "igt_ms": 6000, "message_id": 2})
+        assert ws.receive_json() == {"type": "event_flag_ack", "message_id": 2}
+        assert ws.receive_json()["participants"][0]["status"] == "finished"
+        change = ws.receive_json()
+        assert (change["type"], change["status"]) == ("race_status_change", "finished")
+
+    check.assert_called_once_with(session_id=uuid.UUID(sid))
 
 
 def test_training_auth_ok_expands_random_phantom_skin(

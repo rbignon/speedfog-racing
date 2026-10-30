@@ -62,7 +62,9 @@ wire names and carry the same human-readable labels.
    and links `/training/<session id>`, and the IGT plausibility check (wrong
    save) runs against `last_igt_change_at`. There is no spectator push.
    The mod reads the flags in a solo session only when `auth_ok` carries
-   `race.ranked` (protocol 1.9); older mods never read them in solo sessions.
+   `race.ranked` (protocol 1.9), so a ranked session refuses an older mod at
+   auth. A ranked finish also counts only once the zone history reached the
+   final boss (see "Finish rule" in `SPEEDRUN.md`).
    Normal practice sessions skip all of it.
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists

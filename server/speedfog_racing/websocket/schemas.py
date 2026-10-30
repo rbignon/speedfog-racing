@@ -24,6 +24,11 @@ from speedfog_racing.rewards.service import RewardsService
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
 PROTOCOL_VERSION = "1.9"
 
+# Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
+# auth: from 1.9 the mod reads and reports debug flags in a solo session
+# that RaceInfo.ranked marks. A protocol fact, not a tunable.
+RANKED_SOLO_MIN_PROTOCOL = "1.9"
+
 # --- Client -> Server Messages (Mod) ---
 
 

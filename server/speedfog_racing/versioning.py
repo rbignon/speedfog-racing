@@ -34,6 +34,30 @@ def parse_version(value: str | None) -> tuple[int, ...] | None:
     return tuple(parts) if parts else None
 
 
+def _client_protocol(value: str | None) -> tuple[int, int]:
+    """(major, minor) of the protocol a mod reports at auth.
+
+    An absent or unparsable value is "1.0": pre-versioning builds speak
+    protocol 1.0 by definition.
+    """
+    client = parse_version(value) or (1, 0)
+    return client[0], client[1] if len(client) > 1 else 0
+
+
+def protocol_at_least(client_protocol: str | None, minimum: str) -> bool:
+    """True when a mod's reported protocol is ``minimum`` or newer.
+
+    For capability gating: a feature that needs a protocol minor accepts a
+    connecting mod only from that version on. Same reading of the client
+    value as ``evaluate_mod_compat``.
+    """
+    required = parse_version(minimum)
+    if required is None:
+        raise ValueError(f"Invalid minimum protocol version: {minimum!r}")
+    floor = (required[0], required[1] if len(required) > 1 else 0)
+    return _client_protocol(client_protocol) >= floor
+
+
 @dataclass(frozen=True)
 class ModCompat:
     """Outcome of the auth-time compatibility decision."""
@@ -66,9 +90,7 @@ def evaluate_mod_compat(
     if server is None:
         raise ValueError(f"Invalid server protocol version: {server_protocol!r}")
     s_major = server[0]
-    client = parse_version(client_protocol) or (1, 0)
-    c_major = client[0]
-    c_minor = client[1] if len(client) > 1 else 0
+    c_major, c_minor = _client_protocol(client_protocol)
 
     if c_major != s_major:
         return ModCompat(

@@ -27,8 +27,14 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.speedrun_records import schedule_speedrun_record_check
-from speedfog_racing.websocket.handler import BaseModHandler, extract_event_ids
+from speedfog_racing.versioning import protocol_at_least
+from speedfog_racing.websocket.handler import (
+    BaseModHandler,
+    extract_event_ids,
+    reached_final_zone,
+)
 from speedfog_racing.websocket.schemas import (
+    RANKED_SOLO_MIN_PROTOCOL,
     AuthOkMessage,
     DeathCountsMessage,
     ErrorCode,
@@ -46,6 +52,13 @@ from speedfog_racing.websocket.schemas import (
 from speedfog_racing.websocket.training.manager import training_manager
 
 logger = logging.getLogger(__name__)
+
+# auth_error for a mod too old for a ranked solo run. The run's pack carries
+# the current mod, so downloading it again is the fix.
+RANKED_SOLO_OLD_MOD_MESSAGE = (
+    "This ranked run needs a newer mod. Download this run's pack again from its page: "
+    "it carries the current mod."
+)
 
 
 def _aggregate_session_deaths(zone_history: list[dict[str, Any]] | None) -> dict[str, int]:
@@ -142,6 +155,20 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
             if session.user.banned_at is not None:
                 await self._send_auth_error(BAN_MESSAGE)
+                return False
+
+            # A ranked run needs a mod that reports debug flags in a solo
+            # session; a practice run takes any mod the protocol check passed.
+            if session.mode != RunMode.NORMAL and not protocol_at_least(
+                self.mod_protocol_version, RANKED_SOLO_MIN_PROTOCOL
+            ):
+                logger.info(
+                    "Mod rejected (ranked solo needs protocol %s): %s, protocol=%s",
+                    RANKED_SOLO_MIN_PROTOCOL,
+                    self.log_ref,
+                    self.mod_protocol_version or "absent",
+                )
+                await self._send_auth_error(RANKED_SOLO_OLD_MOD_MESSAGE)
                 return False
 
             self._user_id = session.user_id
@@ -401,6 +428,26 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         # event_flag_ack already sent by base class for finish events.
         session_id = self._session_id
         async with self.session_maker() as db:
+            # A ranked finish counts only once the run reached the final boss.
+            # The history is read here, not taken from ``entity``, so the check
+            # sees every zone entry committed before this flag, whatever
+            # connection wrote it.
+            if entity.mode != RunMode.NORMAL:
+                history = (
+                    await db.execute(
+                        select(TrainingSession.zone_history).where(TrainingSession.id == session_id)
+                    )
+                ).scalar_one_or_none()
+                if not reached_final_zone(self._get_graph_json(entity) or {}, history):
+                    logger.warning(
+                        "Finish dropped: training=%s user=%s mode=%s igt_ms=%d "
+                        "never reached the final zone",
+                        session_id,
+                        entity.user_id,
+                        entity.mode.value,
+                        igt,
+                    )
+                    return
             # Conditional, like the expiry: an expiry or an abandon that landed
             # since the base class's check keeps its status, and this finish
             # is dropped (no broadcast, no record check).

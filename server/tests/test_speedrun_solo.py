@@ -1,5 +1,7 @@
 """Ranked solo runs: POST /api/speedrun/solo, fresh-seeds and the seed summary."""
 
+import logging
+import uuid
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -405,6 +407,122 @@ async def test_expiry_never_overwrites_a_finished_session(async_session, pools):
         assert row is not None and row.status == TrainingSessionStatus.FINISHED
 
 
+FINAL_BOSS_GRAPH: dict[str, Any] = {
+    "nodes": {
+        "start": {"type": "start", "layer": 0},
+        "mid": {"type": "boss_arena", "layer": 1},
+        "end": {"type": "final_boss", "layer": 2},
+    }
+}
+# Older seed eras have no final_boss node type: the highest layer is the end.
+OLD_ERA_GRAPH: dict[str, Any] = {
+    "nodes": {
+        "start": {"type": "start", "layer": 0},
+        "mid": {"type": "boss_arena", "layer": 1},
+        "end": {"type": "major_boss", "layer": 2},
+    }
+}
+
+
+def _history(*nodes: str) -> list[dict[str, Any]]:
+    return [
+        {"node_id": node, "type": "fog" if i else "spawn", "igt_ms": i * 1000}
+        for i, node in enumerate(nodes)
+    ]
+
+
+async def _graph_seed(db: AsyncSession, graph: dict[str, Any]) -> Seed:
+    tag = uuid.uuid4().hex[:12]
+    seed = Seed(
+        seed_number=tag,
+        pool_name="sprint",
+        graph_json=graph,
+        total_layers=3,
+        folder_path=f"/t/{tag}",
+        status=SeedStatus.CONSUMED,
+        created_at=BASE,
+    )
+    db.add(seed)
+    await db.flush()
+    return seed
+
+
+async def _finish(async_session: Any, session_id: uuid.UUID) -> tuple[AsyncMock, MagicMock]:
+    """Run the training mod's finish hook on a session loaded the way the
+    mod handler loads it; returns the status-change broadcast and the
+    record-check scheduler mocks."""
+    from speedfog_racing.websocket.training import mod
+
+    async with async_session() as db:
+        entity = await mod._load_session(db, session_id)
+    with (
+        patch.object(mod, "_broadcast_status_change", new_callable=AsyncMock) as broadcast,
+        patch.object(mod, "schedule_speedrun_record_check") as check,
+    ):
+        handler = mod.TrainingModHandler(MagicMock(), session_id, async_session)
+        await handler._handle_finish_event(entity, entity.igt_ms, None)
+    return broadcast, check
+
+
+async def _status(async_session: Any, session_id: uuid.UUID) -> TrainingSessionStatus:
+    async with async_session() as db:
+        row = await db.get(TrainingSession, session_id)
+        assert row is not None
+        return row.status
+
+
+@pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
+@pytest.mark.parametrize(
+    ("graph", "path", "counted"),
+    [
+        (FINAL_BOSS_GRAPH, ("start", "mid", "end"), True),
+        (FINAL_BOSS_GRAPH, ("start", "mid"), False),
+        (OLD_ERA_GRAPH, ("start", "mid", "end"), True),
+        (OLD_ERA_GRAPH, ("start", "mid"), False),
+    ],
+)
+async def test_ranked_finish_needs_the_final_zone_in_the_history(
+    async_session, pools, caplog, mode, graph, path, counted
+):
+    """A ranked solo finish counts only when the run's zone history reached
+    the seed's final boss node (the highest layer on a graph without one).
+    Otherwise it is dropped: the session stays ACTIVE, no broadcast, no
+    record check, and a warning names it."""
+    async with async_session() as db:
+        session = await _add_session(
+            db, await _user(db, "a"), "sprint", mode, 5000,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+            zone_history=_history(*path), seed=await _graph_seed(db, graph),
+        )  # fmt: skip
+        await db.commit()
+
+    with caplog.at_level(logging.WARNING, logger="speedfog_racing.websocket.training.mod"):
+        broadcast, check = await _finish(async_session, session.id)
+
+    assert await _status(async_session, session.id) == (
+        TrainingSessionStatus.FINISHED if counted else TrainingSessionStatus.ACTIVE
+    )
+    assert broadcast.await_count == check.call_count == (1 if counted else 0)
+    assert ("Finish dropped" in caplog.text) is not counted
+
+
+async def test_practice_finish_needs_no_final_zone(async_session, pools):
+    """A practice session finishes on the finish flag alone, as before."""
+    async with async_session() as db:
+        session = await _add_session(
+            db, await _user(db, "a"), "training_sprint", RunMode.NORMAL, 5000,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+            zone_history=_history("start", "mid"), seed=await _graph_seed(db, FINAL_BOSS_GRAPH),
+        )  # fmt: skip
+        await db.commit()
+
+    broadcast, check = await _finish(async_session, session.id)
+
+    assert await _status(async_session, session.id) == TrainingSessionStatus.FINISHED
+    broadcast.assert_awaited_once()
+    check.assert_not_called()
+
+
 async def test_finish_never_overwrites_an_abandoned_session(async_session, pools):
     """An expiry or an abandon landing between the mod's finish report and
     its handler wins: the session stays ABANDONED, with no broadcast and no
@@ -415,10 +533,14 @@ async def test_finish_never_overwrites_an_abandoned_session(async_session, pools
         gone = await _add_session(
             db, await _user(db, "a"), "sprint", RunMode.SPEEDRUN, 5000,
             status=TrainingSessionStatus.ABANDONED,
+            zone_history=_history("start", "mid", "end"),
+            seed=await _graph_seed(db, FINAL_BOSS_GRAPH),
         )  # fmt: skip
         live = await _add_session(
             db, await _user(db, "b"), "sprint", RunMode.SPEEDRUN, 6000,
             status=TrainingSessionStatus.ACTIVE, finished_at=None,
+            zone_history=_history("start", "mid", "end"),
+            seed=await _graph_seed(db, FINAL_BOSS_GRAPH),
         )  # fmt: skip
         await db.commit()
 
@@ -427,8 +549,10 @@ async def test_finish_never_overwrites_an_abandoned_session(async_session, pools
         patch.object(mod, "schedule_speedrun_record_check") as check,
     ):
         for session in (gone, live):
+            async with async_session() as db:
+                entity = await mod._load_session(db, session.id)
             handler = mod.TrainingModHandler(MagicMock(), session.id, async_session)
-            await handler._handle_finish_event(session, session.igt_ms, None)
+            await handler._handle_finish_event(entity, session.igt_ms, None)
 
     broadcast.assert_awaited_once_with(live.id, "finished")
     check.assert_called_once_with(session_id=live.id)

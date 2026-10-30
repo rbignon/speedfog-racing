@@ -131,7 +131,7 @@ Bump rules:
 
 Version history:
 
-- **1.9** - ranked runs: `ranked` boolean on the `race` object (RaceInfo), default false. True for a race or a solo session in Speedrun or Set Seed mode. The mod reads and sends debug flags in a solo session only when it is true (races always do). Older mods ignore the field (no detection in solo sessions), and a newer mod facing an older server gets false.
+- **1.9** - ranked runs: `ranked` boolean on the `race` object (RaceInfo), default false. True for a race or a solo session in Speedrun or Set Seed mode. The mod reads and sends debug flags in a solo session only when it is true (races always do). Older mods ignore the field, so a ranked solo session refuses them at auth (see below); a newer mod facing an older server gets false.
 - **1.8** - in-game cutoff: optional `igt_cutoff_ms` on the `race` object (RaceInfo), the in-game time a run must finish by. The server eliminates a playing runner past it; the mod counts the local IGT down to it while the local runner plays. Older mods ignore the field (no countdown on such a race), and a newer mod facing an older server keeps the wall-clock countdown.
 - **1.7** - per-runner splits: optional `layer_entry_igts` on `ParticipantInfo` (`leaderboard_update`, `player_update`), each runner's first-arrival IGT per layer. The mod's centered leaderboard measures every gap between the local player and each runner on their own splits (see [Gap Timing](#gap-timing)); older mods ignore the field, and a newer mod facing an older server keeps leader-relative gaps.
 - **1.6** - disqualification: participant status `disqualified` (terminal, ranked last), set by the race organizer or an admin. The mod shows a "DISQUALIFIED" line to the runner concerned and "DQ" in the leaderboard; older mods read it as an unknown status and keep working.
@@ -152,6 +152,15 @@ action to take. Only a breaking change (major bump) warrants a player-visible
 message, and that is the rejection above. The `MIN_MOD_VERSION` server
 setting can additionally reject old _release_ versions for non-protocol
 emergencies.
+
+One capability gate exists: a ranked solo session (Speedrun or Set Seed
+mode) requires protocol 1.9 or newer (`RANKED_SOLO_MIN_PROTOCOL` in
+`websocket/schemas.py`, compared by `protocol_at_least` in
+`versioning.py`, which reads an absent value as 1.0), the version from
+which the mod reports debug flags in a solo session. An older mod gets an
+`auth_error` telling the player to download the run's pack again (it
+carries the current mod). Races, Daily Seeds, events and practice
+sessions keep accepting any mod of the current major.
 
 ---
 
@@ -1061,11 +1070,11 @@ Solo practice mode. Uses the same protocol messages as competitive races but wit
 
 Same protocol as `/ws/mod/{race_id}` with differences:
 
-- **Auth**: Uses `mod_token` from the training session (not a race participant token)
+- **Auth**: Uses `mod_token` from the training session (not a race participant token). A ranked session (Speedrun or Set Seed mode) refuses a mod below protocol 1.9 (see [Protocol Version](#protocol-version))
 - **No `ready` phase**: Race starts immediately after `auth_ok`
 - **`race_start` sent immediately**: No waiting for other players
 - **Single player**: Only one mod connection per session
-- **Finish detection**: `finish_event` flag triggers session completion (ACTIVE → FINISHED)
+- **Finish detection**: `finish_event` flag triggers session completion (ACTIVE → FINISHED). In a ranked session it counts only when the zone history contains the seed's final boss node (`reached_final_zone`); otherwise the flag is acked and dropped, and the session stays ACTIVE
 
 Client → Server messages: `auth`, `status_update`, `event_flag`, `zone_query`, `pong` (same format as mod WS).
 

@@ -1,6 +1,11 @@
 """Tests for version parsing and mod compatibility decisions."""
 
-from speedfog_racing.versioning import ModCompat, evaluate_mod_compat, parse_version
+from speedfog_racing.versioning import (
+    ModCompat,
+    evaluate_mod_compat,
+    parse_version,
+    protocol_at_least,
+)
 
 
 class TestParseVersion:
@@ -107,3 +112,19 @@ class TestEvaluateModCompat:
             min_release="1.18.0",
         )
         assert "not compatible" in (compat.reject_reason or "")
+
+
+class TestProtocolAtLeast:
+    def test_minor_compared_as_a_number(self):
+        assert protocol_at_least("1.10", "1.9")
+        assert not protocol_at_least("1.8", "1.9")
+
+    def test_equal_and_newer_major(self):
+        assert protocol_at_least("1.9", "1.9")
+        assert protocol_at_least("2.0", "1.9")
+
+    def test_absent_or_unparsable_is_1_0(self):
+        # Same rule as evaluate_mod_compat: pre-versioning builds speak 1.0.
+        assert not protocol_at_least(None, "1.1")
+        assert not protocol_at_least("garbage", "1.1")
+        assert protocol_at_least(None, "1.0")

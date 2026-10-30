@@ -223,6 +223,35 @@ def extract_event_ids(graph_json: dict[str, Any]) -> tuple[list[int], int | None
     return event_ids, finish_event_id
 
 
+def reached_final_zone(
+    graph_json: dict[str, Any], zone_history: list[dict[str, Any]] | None
+) -> bool:
+    """True when a zone history contains a node of the seed's final zone.
+
+    The final zone is the ``final_boss`` node. A graph without one (older
+    seed eras) ends on the nodes of its highest layer. A graph with no
+    layered node has no final zone: nothing reaches it.
+    """
+    nodes = graph_json.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return False
+    final = {
+        node_id
+        for node_id, node in nodes.items()
+        if isinstance(node, dict) and node.get("type") == "final_boss"
+    }
+    if not final:
+        layers = {
+            node_id: node["layer"]
+            for node_id, node in nodes.items()
+            if isinstance(node, dict) and isinstance(node.get("layer"), int)
+        }
+        if layers:
+            top = max(layers.values())
+            final = {node_id for node_id, layer in layers.items() if layer == top}
+    return any(entry.get("node_id") in final for entry in zone_history or [])
+
+
 def attribute_deaths(
     zone_history: list[dict[str, Any]],
     current_zone: str,
