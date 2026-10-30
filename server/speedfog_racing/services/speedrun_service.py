@@ -207,7 +207,9 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
     ]
 
 
-async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) -> list[CountedRun]:
+async def load_counted_runs(
+    db: AsyncSession, *, seed_id: UUID | None = None, pool: str | None = None
+) -> list[CountedRun]:
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, community races left out unless their mode is speedrun or
@@ -218,7 +220,10 @@ async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) ->
 
     With ``seed_id``, only that seed's runs, and an old layer count is kept
     under ``"<pool>@<layers>"`` even when it is not archived (a seed page shows
-    its runs whatever the boards do)."""
+    its runs whatever the boards do).
+
+    With ``pool``, only the runs on seeds of that pool: every board of a pool
+    (its current layer count and its archives) holds seeds of that pool only."""
     pools = (await db.execute(select(Pool))).scalars().all()
     training_pools = {p.name for p in pools if _is_training(_pool_config(p))}
     layer_counts = {
@@ -266,6 +271,8 @@ async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) ->
     )
     if seed_id is not None:
         stmt = stmt.where(Race.seed_id == seed_id)
+    if pool is not None:
+        stmt = stmt.where(Seed.pool_name == pool)
     users: dict[UUID, UserResponse] = {}
     runs: list[CountedRun] = []
 
@@ -359,6 +366,8 @@ async def load_counted_runs(db: AsyncSession, *, seed_id: UUID | None = None) ->
     )
     if seed_id is not None:
         session_stmt = session_stmt.where(TrainingSession.seed_id == seed_id)
+    if pool is not None:
+        session_stmt = session_stmt.where(Seed.pool_name == pool)
     for row in (await db.execute(session_stmt)).all():
         category = category_of(row)
         if category is None:

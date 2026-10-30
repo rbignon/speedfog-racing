@@ -1,7 +1,8 @@
 """Discord announcements of new speedrun.fog records (see docs/SPEEDRUN.md).
 
 A finished race or ranked solo session is checked once, off the request path:
-its runs are compared with every other counted run of each board.
+its runs are compared with every other counted run of the boards of its pool
+(a finish cannot change the boards of another pool, so those are not loaded).
 """
 
 import asyncio
@@ -10,8 +11,11 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
+from sqlalchemy import select
+
 from speedfog_racing import discord
 from speedfog_racing.database import async_session_maker
+from speedfog_racing.models import Race, Seed, TrainingSession
 from speedfog_racing.services.speedrun_service import (
     RUN_TYPES,
     CountedRun,
@@ -93,7 +97,20 @@ async def check_speedrun_records(
 ) -> None:
     """Announce the records set by a finished race's or session's runs."""
     async with async_session_maker() as db:
-        runs = await load_counted_runs(db)
+        if race_id is not None:
+            pool_stmt = select(Seed.pool_name).join(Race, Race.seed_id == Seed.id)
+            pool_stmt = pool_stmt.where(Race.id == race_id)
+        elif session_id is not None:
+            pool_stmt = select(Seed.pool_name).join(
+                TrainingSession, TrainingSession.seed_id == Seed.id
+            )
+            pool_stmt = pool_stmt.where(TrainingSession.id == session_id)
+        else:
+            return
+        pool = (await db.execute(pool_stmt)).scalar_one_or_none()
+        if pool is None:
+            return
+        runs = await load_counted_runs(db, pool=pool)
         new_ids = {
             r.run_id
             for r in runs

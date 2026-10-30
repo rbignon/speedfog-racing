@@ -188,3 +188,35 @@ def test_only_races_that_can_count_schedule_the_check():
         ) as scheduled:
             discord.fire_race_finished_notifications(r)
         assert scheduled.called is expected
+
+
+async def test_record_check_loads_only_the_finished_runs_pool(async_session, pools):
+    """A finish is compared with its own pool's runs; other pools are never
+    loaded, and a faster run elsewhere neither blocks nor changes the record."""
+    speedrun_records._announced.clear()
+    async with async_session() as db:
+        db.add(Pool(name="other", config={"name": "Other", "type": "race", "layers_count": 15}))
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1_000_000, minute=1, pool="other")
+        await _add_run(db, user=a, igt_ms=5_000_000, minute=2)
+        p = await _add_run(db, user=b, igt_ms=4_000_000, minute=3)
+        await db.commit()
+        race_id = p.race_id
+    send = AsyncMock()
+    real_load = speedrun_records.load_counted_runs
+    loaded: list[list[str]] = []
+
+    async def spy(db, **kwargs):
+        runs = await real_load(db, **kwargs)
+        loaded.append(sorted({r.pool for r in runs}))
+        return runs
+
+    with (
+        patch.object(speedrun_records, "async_session_maker", async_session),
+        patch.object(speedrun_records, "load_counted_runs", spy),
+        patch("speedfog_racing.discord._send_webhook", send),
+    ):
+        await check_speedrun_records(race_id=race_id)
+    assert loaded == [["sprint"]]
+    assert send.await_count == 2
