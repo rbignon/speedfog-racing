@@ -50,7 +50,6 @@ RUN_TYPES: tuple[RunType, ...] = ("race", "daily", "event", "solo")
 # Set Seed counts every run; Random Seed only blind ones.
 SpeedrunSub = Literal["set", "random"]
 
-RECENT_RUNS_COUNT = 5
 _ZONE_HISTORY_QUERY_CHUNK = 500
 
 
@@ -627,7 +626,9 @@ async def build_overview(
 ) -> SpeedrunOverviewResponse:
     categories = await load_categories(db, runs)
     names = {c.pool: c.name for c in categories}
-    recent = sorted(runs, key=lambda r: r.finished_at, reverse=True)[:RECENT_RUNS_COUNT]
+    recent = sorted(runs, key=lambda r: r.finished_at, reverse=True)[
+        : settings.speedrun_recent_runs_count
+    ]
     weapons = await _weapons_for(db, recent)
     all_types = frozenset(RUN_TYPES)
     recent_runs = [

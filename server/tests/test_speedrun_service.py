@@ -868,3 +868,12 @@ async def test_practiced_seeds_honor_the_configured_window_and_count(
     assert [p.seed_number for p in ov.practiced_seeds] == ["s1xxxxx", "s2xxxxx"]
     assert ov.practiced_seeds_days == 10
     assert "oldold111" in [p.seed_number for p in wide.practiced_seeds]
+
+
+async def test_recent_runs_honor_the_configured_count(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "speedrun_recent_runs_count", 2)
+    async with async_session() as db:
+        await _four_runs(db)
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    assert len(ov.recent_runs) == 2
