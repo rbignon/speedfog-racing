@@ -4,7 +4,8 @@
   import { auth } from "$lib/stores/auth.svelte";
   import { trainingStore } from "$lib/stores/training.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
-  import { MetroDagFull } from "$lib/dag";
+  import { MetroDagFull, MetroDagProgressive } from "$lib/dag";
+  import { isBlindTrainingSession } from "$lib/utils/training";
 
   let { data } = $props();
 
@@ -16,6 +17,9 @@
   let graphJson = $derived(
     liveSeed?.graph_json ?? data.session.graph_json ?? null,
   );
+  // A Speedrun-mode session stays blind while active: the overlay shows what
+  // the runner sees on the session page, the full map once the run is over.
+  let blind = $derived(isBlindTrainingSession(data.session, sessionStatus));
 
   let dagParticipants = $derived.by(() => {
     if (liveParticipant) return [liveParticipant];
@@ -74,17 +78,26 @@
 
 <div class="dag-overlay">
   {#if graphJson && dagParticipants.length > 0}
-    <MetroDagFull
-      {graphJson}
-      participants={dagParticipants}
-      raceStatus={sessionStatus === "active" ? "running" : sessionStatus}
-      transparent
-      {follow}
-      {maxLayers}
-      {labelFontSize}
-      showLiveDots
-      fullPathOpacity
-    />
+    {#if blind}
+      <MetroDagProgressive
+        {graphJson}
+        participants={dagParticipants}
+        myParticipantId={dagParticipants[0].id}
+        transparent
+      />
+    {:else}
+      <MetroDagFull
+        {graphJson}
+        participants={dagParticipants}
+        raceStatus={sessionStatus === "active" ? "running" : sessionStatus}
+        transparent
+        {follow}
+        {maxLayers}
+        {labelFontSize}
+        showLiveDots
+        fullPathOpacity
+      />
+    {/if}
   {/if}
 </div>
 

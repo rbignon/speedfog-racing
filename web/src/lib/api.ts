@@ -1251,6 +1251,7 @@ export interface InviteInfo {
   race_name: string;
   organizer_name: string;
   race_status: RaceStatus;
+  race_mode: RunMode;
   twitch_username: string;
 }
 
@@ -2708,13 +2709,15 @@ export async function fetchSpeedrunSeedSummary(
 }
 
 /** Whether a Speedrun-mode run could start on `pool` now: false at the
- * pool's floor. 404 for a pool that cannot host one. */
+ * pool's floor, null for a pool that cannot host one (the server's 404:
+ * missing, disabled or training). */
 export async function fetchFreshSpeedrunSeeds(
   pool: string,
-): Promise<{ fresh: boolean }> {
+): Promise<{ fresh: boolean } | null> {
   const response = await fetch(
     `${API_BASE}/speedrun/fresh-seeds?pool=${encodeURIComponent(pool)}`,
   );
+  if (response.status === 404) return null;
   return handleResponse<{ fresh: boolean }>(response);
 }
 

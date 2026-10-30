@@ -63,6 +63,13 @@
       </div>
     </div>
 
+    {#if invite.race_mode === "set_seed"}
+      <!-- The race page's join asks the same before a Set Seed race. -->
+      <p class="set-seed-warning" role="note">
+        Set Seed race: other runners may have practiced this seed
+      </p>
+    {/if}
+
     {#if errorMessage}
       <div class="error">{errorMessage}</div>
     {/if}
@@ -155,6 +162,14 @@
     color: var(--color-text-secondary);
     font-style: italic;
     margin: 0;
+  }
+
+  .set-seed-warning {
+    margin: 0 0 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-warning);
+    border-radius: var(--radius-sm);
+    color: var(--color-warning);
   }
 
   .error {

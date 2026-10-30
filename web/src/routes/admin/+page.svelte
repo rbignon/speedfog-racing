@@ -47,6 +47,7 @@
   import AdminEventRewards from "$lib/components/events/AdminEventRewards.svelte";
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import { detectionRows } from "$lib/debugFlags";
+  import { parseSpeedrunFloor } from "$lib/speedrun";
   // The page's own formatIgt shows "--:--" at 0 ms; a detection at the
   // start must read 0:00.
   import { formatIgt as formatDetectionIgt } from "$lib/dag/popupData";
@@ -468,12 +469,17 @@
   // Saved when the field changes (blur or Enter); emptied, it falls back to
   // the server default.
   async function handleSpeedrunFloor(pool: AdminPool, input: HTMLInputElement) {
-    if (input.validity.badInput) {
-      floorErrors = { ...floorErrors, [pool.name]: "Enter a whole number." };
+    // Letters in a number field read as "" with badInput: not a clear.
+    const floor = input.validity.badInput
+      ? undefined
+      : parseSpeedrunFloor(input.value);
+    if (floor === undefined) {
+      floorErrors = {
+        ...floorErrors,
+        [pool.name]: "Enter a whole number, 0 or more.",
+      };
       return;
     }
-    const raw = input.value.trim();
-    const floor = raw === "" ? null : Number(raw);
     const key = `floor_${pool.name}`;
     actionLoading = { ...actionLoading, [key]: true };
     try {
@@ -488,6 +494,8 @@
         ...floorErrors,
         [pool.name]: e instanceof Error ? e.message : "Failed to save.",
       };
+      // The field shows what is stored, not the refused value.
+      input.value = String(pool.speedrun_floor ?? "");
     } finally {
       actionLoading = { ...actionLoading, [key]: false };
     }

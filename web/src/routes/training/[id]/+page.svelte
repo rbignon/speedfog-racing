@@ -225,17 +225,25 @@
     };
   });
 
+  // Ghosts load in the background once the session is finished, whether it
+  // loaded finished or finished on the open page (a Speedrun-mode run reveals
+  // them then); once per session. A plain variable: the effect must not
+  // rerun on its own write.
+  let ghostsFor: string | null = null;
+  $effect(() => {
+    const id = session?.id;
+    if (status !== "finished" || !id || ghostsFor === id) return;
+    ghostsFor = id;
+    fetchTrainingGhosts(id)
+      .then((g) => {
+        if (session?.id === id) ghosts = g;
+      })
+      .catch(() => {});
+  });
+
   async function loadSession() {
     try {
       session = await fetchTrainingSession(sessionId);
-      // Fetch ghosts in background for finished sessions
-      if (session.status === "finished") {
-        fetchTrainingGhosts(sessionId)
-          .then((g) => {
-            ghosts = g;
-          })
-          .catch(() => {});
-      }
     } catch (e) {
       error = e instanceof Error ? e.message : "Failed to load session.";
     } finally {

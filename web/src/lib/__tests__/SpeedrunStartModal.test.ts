@@ -62,7 +62,9 @@ function summary(over: Partial<SpeedrunSeedSummary> = {}): SpeedrunSeedSummary {
   };
 }
 
-function renderWindow(props: { initialSeed?: string | null } = {}) {
+function renderWindow(
+  props: { initialSeed?: string | null; pool?: string; retired?: boolean } = {},
+) {
   return render(SpeedrunStartModal, {
     props: {
       pool: "standard",
@@ -135,6 +137,96 @@ describe("Start a run: Random Seed", () => {
 
     await screen.findByText("You already have an active solo session");
     expect(goto).not.toHaveBeenCalled();
+  });
+});
+
+describe("Start a run: closed categories", () => {
+  const CLOSED = "Random Seed runs are closed for this category.";
+
+  function action(name: string): HTMLButtonElement {
+    return screen.getByRole("button", { name }) as HTMLButtonElement;
+  }
+
+  it("closes a retired category's Random Seed without asking", async () => {
+    auth.user = user("organizer");
+    renderWindow({ retired: true });
+
+    expect(screen.getByText(CLOSED)).toBeTruthy();
+    expect(screen.queryByText("No fresh seed right now")).toBeNull();
+    expect(action("Start solo").disabled).toBe(true);
+    await fireEvent.click(screen.getByRole("button", { name: "Race" }));
+    expect(action("Create race").disabled).toBe(true);
+    expect(fetchFreshSpeedrunSeeds).not.toHaveBeenCalled();
+  });
+
+  it("closes an archive's Random Seed without asking", () => {
+    renderWindow({ pool: "standard@25" });
+
+    expect(screen.getByText(CLOSED)).toBeTruthy();
+    expect(action("Start solo").disabled).toBe(true);
+    expect(fetchFreshSpeedrunSeeds).not.toHaveBeenCalled();
+  });
+
+  it("closes it when the server cannot draw from the pool", async () => {
+    vi.mocked(fetchFreshSpeedrunSeeds).mockResolvedValue(null);
+    renderWindow();
+
+    await screen.findByText(CLOSED);
+    expect(screen.queryByText("No fresh seed right now")).toBeNull();
+    expect(action("Start solo").disabled).toBe(true);
+  });
+
+  it("keeps Set Seed open on a retired category", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+    renderWindow({ retired: true, initialSeed: SEED });
+
+    await waitFor(() => expect(action("Start solo").disabled).toBe(false));
+    expect(screen.queryByText(CLOSED)).toBeNull();
+  });
+});
+
+describe("Start a run: a refusal belongs to its choice", () => {
+  const REFUSAL = "You already have an active solo session";
+
+  async function refuse() {
+    const start = screen.getByRole("button", { name: "Start solo" });
+    await waitFor(() =>
+      expect((start as HTMLButtonElement).disabled).toBe(false),
+    );
+    await fireEvent.click(start);
+    await screen.findByText(REFUSAL);
+  }
+
+  beforeEach(() => {
+    vi.mocked(startSpeedrunSolo).mockRejectedValue(new Error(REFUSAL));
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+  });
+
+  it("clears it when the seed mode changes", async () => {
+    renderWindow();
+    await refuse();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
+    expect(screen.queryByText(REFUSAL)).toBeNull();
+  });
+
+  it("clears it when the format changes", async () => {
+    auth.user = user("organizer");
+    renderWindow();
+    await refuse();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Race" }));
+    expect(screen.queryByText(REFUSAL)).toBeNull();
+  });
+
+  it("clears it when the seed ID changes", async () => {
+    renderWindow({ initialSeed: SEED });
+    await refuse();
+
+    await fireEvent.input(screen.getByLabelText("Seed ID"), {
+      target: { value: "363096" },
+    });
+    expect(screen.queryByText(REFUSAL)).toBeNull();
   });
 });
 

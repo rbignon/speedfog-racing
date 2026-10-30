@@ -21,12 +21,20 @@
     /** The board's category key: Random Seed draws from it. */
     pool: string;
     categoryName: string;
+    /** A retired category: no Random Seed run on it. */
+    retired?: boolean;
     /** Opens in Set Seed mode with this seed ID typed in. */
     initialSeed?: string | null;
     onClose: () => void;
   }
 
-  let { pool, categoryName, initialSeed = null, onClose }: Props = $props();
+  let {
+    pool,
+    categoryName,
+    retired = false,
+    initialSeed = null,
+    onClose,
+  }: Props = $props();
 
   type SeedMode = "random" | "set";
   type Format = "solo" | "race";
@@ -38,6 +46,9 @@
   let seedInput = $state(untrack(() => initialSeed ?? ""));
   // Null until the server answers.
   let fresh = $state<boolean | null>(null);
+  // A retired category (an archive, `<pool>@<layers>`, always is) or a pool
+  // the server cannot draw from: Random Seed runs are closed.
+  let closed = $state(untrack(() => retired || pool.includes("@")));
   let summary = $state<SpeedrunSeedSummary | null>(null);
   let lookupError = $state<string | null>(null);
   let checking = $state(false);
@@ -60,17 +71,31 @@
   });
   let ready = $derived(
     seedMode === "random"
-      ? fresh === true
+      ? !closed && fresh === true
       : summary !== null && summary.replayable,
   );
 
   onMount(() => {
-    // A pool that cannot host a Speedrun run (retired, disabled) answers
-    // 404: no fresh seed either way.
+    if (closed) return;
+    // A pool that cannot host a Speedrun run (disabled) answers 404.
     fetchFreshSpeedrunSeeds(pool)
-      .then((r) => (fresh = r.fresh))
+      .then((r) => {
+        if (r === null) closed = true;
+        else fresh = r.fresh;
+      })
       .catch(() => (fresh = false));
   });
+
+  // A refusal belongs to the choice it answered: a new choice clears it.
+  function chooseSeedMode(mode: SeedMode) {
+    seedMode = mode;
+    error = null;
+  }
+
+  function chooseFormat(next: Format) {
+    format = next;
+    error = null;
+  }
 
   // The Seed ID is checked as typed, once typing pauses; a response that
   // lands after a newer keystroke is dropped.
@@ -80,6 +105,7 @@
     const id = ++lookupId;
     summary = null;
     lookupError = null;
+    error = null;
     if (text.length < SEED_ID_MIN_LENGTH) {
       checking = false;
       return;
@@ -160,13 +186,13 @@
           type="button"
           class:on={seedMode === "random"}
           aria-pressed={seedMode === "random"}
-          onclick={() => (seedMode = "random")}>Random Seed</button
+          onclick={() => chooseSeedMode("random")}>Random Seed</button
         >
         <button
           type="button"
           class:on={seedMode === "set"}
           aria-pressed={seedMode === "set"}
-          onclick={() => (seedMode = "set")}>Set Seed</button
+          onclick={() => chooseSeedMode("set")}>Set Seed</button
         >
       </div>
     </div>
@@ -219,13 +245,13 @@
             type="button"
             class:on={format === "solo"}
             aria-pressed={format === "solo"}
-            onclick={() => (format = "solo")}>Solo</button
+            onclick={() => chooseFormat("solo")}>Solo</button
           >
           <button
             type="button"
             class:on={format === "race"}
             aria-pressed={format === "race"}
-            onclick={() => (format = "race")}>Race</button
+            onclick={() => chooseFormat("race")}>Race</button
           >
         </div>
       </div>
@@ -252,7 +278,11 @@
       {/if}
     </p>
 
-    {#if seedMode === "random" && fresh === false}
+    {#if seedMode === "random" && closed}
+      <p class="config-hint no-fresh">
+        Random Seed runs are closed for this category.
+      </p>
+    {:else if seedMode === "random" && fresh === false}
       <p class="config-hint no-fresh">No fresh seed right now</p>
     {/if}
 

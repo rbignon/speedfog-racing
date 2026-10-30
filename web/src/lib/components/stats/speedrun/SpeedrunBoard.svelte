@@ -427,6 +427,7 @@
   <SpeedrunStartModal
     {pool}
     categoryName={category.name}
+    retired={category.retired}
     initialSeed={startWith}
     onClose={() => {
       startOpen = false;

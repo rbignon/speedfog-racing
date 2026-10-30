@@ -5,6 +5,7 @@ import {
   historyPolyline,
   historyTimeline,
   parseRaceNewParams,
+  parseSpeedrunFloor,
   parseSpeedrunOverlayParams,
   parseSpeedrunParams,
   parseStartSeed,
@@ -324,6 +325,24 @@ describe("ranked race creation links", () => {
     expect(parseRaceNewParams(search("/race/new?mode=set_seed")).speedrun).toBe(
       false,
     );
+  });
+});
+
+describe("parseSpeedrunFloor", () => {
+  it("reads an empty field as the server default", () => {
+    expect(parseSpeedrunFloor("")).toBeNull();
+    expect(parseSpeedrunFloor("  ")).toBeNull();
+  });
+
+  it("takes a whole number, 0 included", () => {
+    expect(parseSpeedrunFloor("0")).toBe(0);
+    expect(parseSpeedrunFloor(" 12 ")).toBe(12);
+  });
+
+  it("refuses fractions, negatives and the rest before any request", () => {
+    for (const raw of ["3.5", "-1", "1e3", "abc", "4 2"]) {
+      expect(parseSpeedrunFloor(raw)).toBeUndefined();
+    }
   });
 });
 

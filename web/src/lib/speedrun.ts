@@ -157,6 +157,15 @@ export const SPEEDRUN_RULES: string[] = [
  * show, unambiguous most of the time. */
 export const SEED_ID_MIN_LENGTH = 6;
 
+/** A pool's Speedrun floor as typed in the admin panel: null when empty (the
+ * server default applies), a whole number 0 or more, or undefined for
+ * anything else, refused before any request. */
+export function parseSpeedrunFloor(raw: string): number | null | undefined {
+  const text = raw.trim();
+  if (text === "") return null;
+  return /^\d+$/.test(text) ? Number(text) : undefined;
+}
+
 /** Race creation for a speedrun race: the Speedrun option on, `pool` picked. */
 export function speedrunRaceNewHref(pool: string): string {
   return `/race/new?mode=speedrun&pool=${encodeURIComponent(pool)}`;

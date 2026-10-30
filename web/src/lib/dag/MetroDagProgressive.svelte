@@ -51,6 +51,8 @@
     graphJson: Record<string, unknown>;
     participants: WsParticipant[];
     myParticipantId: string;
+    /** No background and no label halo, for an OBS overlay. */
+    transparent?: boolean;
     onzonecodex?: (
       nodeId: string,
       displayName: string,
@@ -58,8 +60,13 @@
     ) => void;
   }
 
-  let { graphJson, participants, myParticipantId, onzonecodex }: Props =
-    $props();
+  let {
+    graphJson,
+    participants,
+    myParticipantId,
+    transparent = false,
+    onzonecodex,
+  }: Props = $props();
 
   // Parse once, reuse for layout and visibility
   let graph = $derived(parseDagGraph(graphJson));
@@ -309,6 +316,7 @@
   <ZoomableSvg
     width={layout.width}
     height={layout.height}
+    {transparent}
     onnodeclick={onNodeClick}
     onpanstart={closePopup}
   >
@@ -503,6 +511,7 @@
             font-size={LABEL_FONT_SIZE}
             fill={LABEL_COLOR}
             class="dag-label"
+            class:transparent-label={transparent}
             transform="rotate(-30, {labelX(node)}, {labelY(node)})"
           >
             {truncateLabel(node.labelName)}
@@ -549,6 +558,10 @@
     stroke: var(--color-surface, #1a1a2e);
     stroke-width: 4px;
     stroke-linejoin: round;
+  }
+
+  .transparent-label {
+    stroke: transparent;
   }
 
   .dag-node {

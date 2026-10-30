@@ -25,6 +25,20 @@ export type TrainingMapView =
   | "structure";
 
 /**
+ * Whether a session hides its map: a Speedrun-mode session while ACTIVE (the
+ * live connection calls that status "running"). The session page and its OBS
+ * overlay both follow it.
+ */
+export function isBlindTrainingSession(
+  session: { mode: string },
+  status: string,
+): boolean {
+  return (
+    session.mode === "speedrun" && (status === "active" || status === "running")
+  );
+}
+
+/**
  * Which map the session page shows. A Speedrun-mode session stays blind while
  * ACTIVE: no full map, no spoiler toggle, no structure-only map. Once it is
  * not active the page behaves like any other session.
@@ -38,7 +52,7 @@ export function trainingMapView(
   if ((status === "abandoned" || status === "cancelled") && hasProgress)
     return "full";
   if (status === "active") {
-    const blind = session.mode === "speedrun";
+    const blind = isBlindTrainingSession(session, status);
     if (hasProgress)
       return blind ? "progressive-only" : "progressive-with-spoiler";
     if (blind) return "hidden";
