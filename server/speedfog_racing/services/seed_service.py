@@ -326,6 +326,8 @@ async def _random_seed(
         .where(Seed.pool_name == pool_name, Seed.status == seed_status)
         .order_by(func.random())
         .limit(1)
+        # Never take a row a concurrent speedrun draw holds (ignored on SQLite).
+        .with_for_update(of=Seed, skip_locked=True)
     )
     if exclude_id is not None:
         query = query.where(Seed.id != exclude_id)

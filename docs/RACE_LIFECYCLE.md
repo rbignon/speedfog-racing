@@ -204,17 +204,19 @@ AVAILABLE ──→ CONSUMED          (drawn: race, Daily Seed, Speedrun-mode so
 CONSUMED  ──→ SEEN              (reroll or deletion of a race still in SETUP)
 CONSUMED  ──→ REPORTED          (reroll with a report)
 REPORTED  ──→ SEEN | DISCARDED  (admin restore | admin discard)
+REPORTED  ──→ AVAILABLE         (admin restore, training pool)
+CONSUMED  ──→ AVAILABLE         (reroll or deletion of a SETUP race, training pool)
 SEEN      ──→ CONSUMED          (drawn again by a normal race)
 any other ──→ DISCARDED         (pool discard)
 ```
 
-| Status    | Description                                                                                                                                                                   |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AVAILABLE | In pool, never drawn: every draw can take it                                                                                                                                  |
-| SEEN      | Drawn for a race that never started (rerolled or deleted in SETUP) or a restored report: its map may have been seen, so only normal races draw it again (see Draws)           |
-| CONSUMED  | Assigned to a race, a Daily Seed or a Speedrun-mode solo run: never drawn again                                                                                               |
-| REPORTED  | Reported as buggy on a reroll; an admin discards or restores it (`POST /api/admin/seeds/{id}/resolve`). Restoring makes it SEEN, never AVAILABLE: whoever reported it saw it. |
-| DISCARDED | Pool retired, seed no longer usable                                                                                                                                           |
+| Status    | Description                                                                                                                                                                                                                                                                                                                                                                   |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AVAILABLE | In pool, never drawn: every draw can take it                                                                                                                                                                                                                                                                                                                                  |
+| SEEN      | Drawn for a race that never started (rerolled or deleted in SETUP) or a restored report: its map may have been seen, so only normal races draw it again (see Draws)                                                                                                                                                                                                           |
+| CONSUMED  | Assigned to a race, a Daily Seed or a Speedrun-mode solo run: never drawn again                                                                                                                                                                                                                                                                                               |
+| REPORTED  | Reported as buggy on a reroll; an admin discards or restores it (`POST /api/admin/seeds/{id}/resolve`). Restoring makes it SEEN, never AVAILABLE (a training pool's seed goes back AVAILABLE): whoever reported it saw it. A restored seed may also have been played (a rerolled running daily, or a reset race reported on reroll): restore only seeds that were not played. |
+| DISCARDED | Pool retired, seed no longer usable                                                                                                                                                                                                                                                                                                                                           |
 
 ### Rules
 

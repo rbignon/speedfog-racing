@@ -1083,9 +1083,12 @@ def test_ranked_solo_finish_counts_once_the_final_zone_is_reached(
         assert ws.receive_json()["type"] == "leaderboard_update"
         assert ws.receive_json()["type"] == "zone_update"
 
-        # Boss kill reported before the final zone: acked, then dropped.
+        # Boss kill reported before the final zone: acked, then dropped, and the
+        # runner is told.
         ws.send_json({"type": "event_flag", "flag_id": finish, "igt_ms": 4000, "message_id": 1})
         assert ws.receive_json() == {"type": "event_flag_ack", "message_id": 1}
+        dropped = ws.receive_json()
+        assert dropped["type"] == "error" and "Finish not counted" in dropped["message"]
         ws.send_json({"type": "event_flag", "flag_id": liurnia, "igt_ms": 5000})
         update = ws.receive_json()
         assert update["type"] == "leaderboard_update"

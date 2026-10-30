@@ -109,6 +109,7 @@ from speedfog_racing.services.sanctions_service import (
     disqualify,
     invalidate_session,
 )
+from speedfog_racing.services.speedrun_service import _is_training, _pool_config
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
@@ -1238,7 +1239,8 @@ async def resolve_reported_seed(
     """Discard or restore a reported seed. Requires admin role.
 
     A restored seed becomes SEEN, not AVAILABLE: whoever reported it saw it,
-    so only normal races may draw it again."""
+    so only normal races may draw it again. In a training pool, whose seeds
+    are shared practice seeds, it becomes AVAILABLE again."""
     result = await db.execute(select(Seed).where(Seed.id == seed_id))
     seed = result.scalar_one_or_none()
     if not seed:
@@ -1252,7 +1254,9 @@ async def resolve_reported_seed(
     if request.action == "discard":
         seed.status = SeedStatus.DISCARDED
     else:
-        seed.status = SeedStatus.SEEN
+        seed.status = (
+            SeedStatus.AVAILABLE if _is_training(_pool_config(seed.pool)) else SeedStatus.SEEN
+        )
         seed.reported_by_id = None
         seed.reported_reason = None
         seed.reported_at = None

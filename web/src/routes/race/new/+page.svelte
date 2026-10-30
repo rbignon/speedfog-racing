@@ -87,8 +87,12 @@
     seedSummary ? (pools[seedSummary.category]?.pool_config ?? null) : null,
   );
   // A Set Seed race draws nothing from the pools: it only needs its seed.
+  // Otherwise the selected pool itself must have something to draw (another
+  // pool having seeds is not enough once the Speedrun option hides seen ones).
   let canCreate = $derived(
-    setSeed === null ? hasAvailablePool : seedSummary?.replayable === true,
+    setSeed === null
+      ? hasAvailablePool && selectedAvailable > 0
+      : seedSummary?.replayable === true,
   );
 
   // Advanced-options state grid shown inside the trigger: one entry per

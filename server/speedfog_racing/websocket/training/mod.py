@@ -61,6 +61,13 @@ RANKED_SOLO_OLD_MOD_MESSAGE = (
     "it carries the current mod."
 )
 
+# Uncoded error sent when a ranked finish is dropped (the final boss zone was
+# never recorded): the mod shows it as status text.
+FINISH_NOT_COUNTED_MESSAGE = (
+    "Finish not counted: the final boss zone was never recorded. The admins were notified. "
+    "Abandon the run from its page to start another."
+)
+
 
 def _aggregate_session_deaths(zone_history: list[dict[str, Any]] | None) -> dict[str, int]:
     """Aggregate deaths per node_id from a single session's zone_history."""
@@ -453,6 +460,10 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                         igt_ms=igt,
                         reason="Final boss zone not reached",
                     )
+                    # The mod decides "finished" from the server's status and
+                    # sends the finish flag once, so tell the runner. An
+                    # uncoded error is shown as status text by every mod.
+                    await self._send_error(FINISH_NOT_COUNTED_MESSAGE)
                     return
             # Conditional, like the expiry: an expiry or an abandon that landed
             # since the base class's check keeps its status, and this finish

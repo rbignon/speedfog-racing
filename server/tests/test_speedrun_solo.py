@@ -464,7 +464,9 @@ async def _finish(
         patch.object(mod, "fire_finish_dropped_notification") as alert,
     ):
         handler = mod.TrainingModHandler(MagicMock(), session_id, async_session)
-        await handler._handle_finish_event(entity, entity.igt_ms, None)
+        with patch.object(handler, "_send_error", new_callable=AsyncMock) as send_error:
+            await handler._handle_finish_event(entity, entity.igt_ms, None)
+    _finish.send_error = send_error  # type: ignore[attr-defined]
     return broadcast, check, alert
 
 
@@ -509,6 +511,15 @@ async def test_ranked_finish_needs_the_final_zone_in_the_history(
     )
     assert broadcast.await_count == check.call_count == (1 if counted else 0)
     assert ("Finish dropped" in caplog.text) is not counted
+    # The runner is told when the finish does not count (uncoded error, shown
+    # as status text by every mod version); a counted finish sends none.
+    sent = _finish.send_error  # type: ignore[attr-defined]
+    if counted:
+        sent.assert_not_awaited()
+    else:
+        sent.assert_awaited_once()
+        assert "Finish not counted" in sent.await_args.args[0]
+        assert "code" not in sent.await_args.kwargs
     if counted:
         alert.assert_not_called()
     else:

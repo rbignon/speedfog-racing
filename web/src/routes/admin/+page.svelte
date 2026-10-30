@@ -877,7 +877,7 @@
   async function handleDiscard(poolName: string) {
     if (
       !confirm(
-        `Discard all available and seen seeds in "${formatPoolName(poolName)}"? This cannot be undone.`,
+        `Discard every seed of "${formatPoolName(poolName)}" that is not already discarded (available, seen, consumed and reported)? This cannot be undone.`,
       )
     )
       return;
@@ -1422,6 +1422,7 @@
                         class="action-btn scan"
                         disabled={actionLoading[`resolve_${seed.id}`]}
                         onclick={() => handleResolve(seed.id, "restore")}
+                        title="Restore only a seed that was not played: the seed may have been played (e.g. a rerolled running daily, or a reset race reported on reroll)"
                       >
                         Restore
                       </button>

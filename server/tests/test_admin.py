@@ -1141,6 +1141,42 @@ async def test_resolve_seed_restore(test_client, admin_user, organizer_user, asy
         assert seed.reported_at is None
 
 
+@pytest.mark.asyncio
+async def test_resolve_seed_restore_in_training_pool_is_available(
+    test_client, admin_user, organizer_user, async_session
+):
+    """A training pool's seeds are shared practice seeds: a restored one goes
+    back to AVAILABLE, not SEEN."""
+    async with async_session() as db:
+        db.add(Pool(name="training_x", config={"name": "X", "type": "training"}))
+        await db.flush()
+        seed = Seed(
+            seed_number="resolve_t",
+            pool_name="training_x",
+            graph_json={"total_layers": 5, "nodes": {}},
+            total_layers=5,
+            folder_path="/test/resolve_t",
+            status=SeedStatus.REPORTED,
+            reported_by_id=organizer_user.id,
+            reported_at=datetime.now(UTC),
+        )
+        db.add(seed)
+        await db.commit()
+        seed_id = str(seed.id)
+
+    async with test_client as client:
+        response = await client.post(
+            f"/api/admin/seeds/{seed_id}/resolve",
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+            json={"action": "restore"},
+        )
+        assert response.status_code == 200
+
+    async with async_session() as db:
+        result = await db.execute(select(Seed).where(Seed.seed_number == "resolve_t"))
+        assert result.scalar_one().status == SeedStatus.AVAILABLE
+
+
 # =============================================================================
 # Pool Management Tests
 # =============================================================================

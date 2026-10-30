@@ -194,6 +194,24 @@ describe("/race/new: seen seeds", () => {
       screen.getByText(/No seeds available in any game mode/),
     ).toBeTruthy();
   });
+
+  it("disables Create when the speedrun option leaves the selected pool with nothing to draw", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 3),
+      sprint: pool("Sprint", 2, 0, 2),
+    });
+    await openPage("?pool=sprint");
+
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+    expect(create.disabled).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+
+    // Another pool still has seeds, but the selected one has none to draw.
+    expect(create.disabled).toBe(true);
+  });
 });
 
 describe("/race/new?seed=: a Set Seed race", () => {
