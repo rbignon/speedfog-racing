@@ -51,10 +51,12 @@ function pool(
   sortOrder: number,
   available: number,
   seen = 0,
+  speedrunFloor = 0,
 ): PoolInfo {
   return {
     available,
     seen,
+    speedrun_floor: speedrunFloor,
     consumed: 0,
     discarded: 0,
     played_by_user: null,
@@ -191,7 +193,7 @@ describe("/race/new: seen seeds", () => {
     expect(sprint.disabled).toBe(true);
     expect(create.disabled).toBe(true);
     expect(
-      screen.getByText(/No seeds available in any game mode/),
+      screen.getByText("No fresh seed right now in any game mode."),
     ).toBeTruthy();
   });
 
@@ -211,6 +213,59 @@ describe("/race/new: seen seeds", () => {
 
     // Another pool still has seeds, but the selected one has none to draw.
     expect(create.disabled).toBe(true);
+  });
+});
+
+describe("/race/new: the speedrun floor", () => {
+  it("keeps a speedrun race off a pool at its floor and counts only the seeds above it", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6, 0, 5),
+      sprint: pool("Sprint", 2, 4, 0, 4),
+      long: pool("Long", 3, 3, 0, 5),
+    });
+    await openPage("?pool=sprint");
+
+    const sprint = screen.getByRole("tab", {
+      name: /Sprint/,
+    }) as HTMLButtonElement;
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+    expect(screen.getByText(/4 seeds available/)).toBeTruthy();
+    expect(create.disabled).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+
+    // The server would refuse the draw: the floor's seeds are a reserve.
+    expect(sprint.disabled).toBe(true);
+    expect(
+      (screen.getByRole("tab", { name: /Long/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(create.disabled).toBe(true);
+    expect(screen.getByText("No fresh seed right now")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Standard/ }));
+
+    expect(create.disabled).toBe(false);
+    expect(screen.getByText(/1 seed available/)).toBeTruthy();
+  });
+
+  it("picks a pool above its floor when ?mode=speedrun asks for one at it", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6, 0, 5),
+      sprint: pool("Sprint", 2, 4, 0, 4),
+    });
+    await openPage("?mode=speedrun&pool=sprint");
+
+    expect(
+      screen
+        .getByRole("tab", { name: /Standard/ })
+        .getAttribute("aria-selected"),
+    ).toBe("true");
+    expect(
+      (screen.getByRole("button", { name: "Create Race" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false);
   });
 });
 

@@ -101,7 +101,7 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 - Requires `race.seed` to be eager-loaded.
 - Refuses a Set Seed race (`ValueError`, "A Set Seed race keeps its seed").
-- Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race counts on the boards (`race_counts_on_boards`: a Daily Seed or an event race).
+- Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race draws fresh seeds only (`race_draws_fresh_seeds`: a Daily Seed or an event race). The reroll sets `race.seed_was_seen` from the drawn seed's status, so an event race that drew a SEEN seed gets back on the boards.
 - The old seed of a race in SETUP becomes SEEN, released or not (AVAILABLE again in a training pool); a played seed stays CONSUMED: a running Daily Seed's, or a reset race's (`race.seed_played`, which the reroll then clears). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Seen seeds" in `RACE_LIFECYCLE.md`.
 - Assigns new seed to race.
 

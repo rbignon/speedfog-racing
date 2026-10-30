@@ -17,6 +17,8 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import (
+    Participant,
+    ParticipantStatus,
     Pool,
     Race,
     RaceStatus,
@@ -25,6 +27,11 @@ from speedfog_racing.models import (
     SeedStatus,
     User,
     UserRole,
+)
+from speedfog_racing.services.speedrun_service import (
+    load_counted_runs,
+    load_unranked_runs,
+    race_counts_on_boards,
 )
 from speedfog_racing.services.training_service import (
     SpeedrunStartError,
@@ -128,6 +135,13 @@ async def _available_count(async_session: async_sessionmaker[AsyncSession], pool
                 .select_from(Seed)
                 .where(Seed.pool_name == pool, Seed.status == SeedStatus.AVAILABLE)
             )
+        ).scalar_one()
+
+
+async def _seed_was_seen(async_session: async_sessionmaker[AsyncSession], race_id: str) -> bool:
+    async with async_session() as db:
+        return (
+            await db.execute(select(Race.seed_was_seen).where(Race.id == UUID(race_id)))
         ).scalar_one()
 
 
@@ -613,23 +627,28 @@ async def test_normal_races_draw_seen_seeds_only_at_the_floor(test_client, async
 
     above = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     assert (await _race_seed(async_session, above)).seed_number not in seen
+    assert not await _seed_was_seen(async_session, above)
 
     at_floor = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     first_seen = (await _race_seed(async_session, at_floor)).seed_number
     assert first_seen in seen
+    assert await _seed_was_seen(async_session, at_floor)
     assert (await _reroll(test_client, at_floor)).status_code == 200
     second_seen = await _race_seed(async_session, at_floor)
     assert second_seen.seed_number == (seen - {first_seen}).pop()
     assert second_seen.status == SeedStatus.CONSUMED
+    assert await _seed_was_seen(async_session, at_floor)
     assert await _status(async_session, first_seen) == SeedStatus.SEEN
     assert await _available_count(async_session, "sprint") == 2
 
     # The reroll's old seed is the only SEEN one left: the next race takes it,
-    # and that race's reroll falls back to the reserve.
+    # and that race's reroll falls back to the reserve, a fresh seed again.
     reserve = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     assert (await _race_seed(async_session, reserve)).seed_number == first_seen
+    assert await _seed_was_seen(async_session, reserve)
     assert (await _reroll(test_client, reserve)).status_code == 200
     assert (await _race_seed(async_session, reserve)).seed_number not in seen
+    assert not await _seed_was_seen(async_session, reserve)
     assert await _available_count(async_session, "sprint") == 1
 
 
@@ -702,6 +721,74 @@ async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, po
     assert await _available_count(async_session, "sprint") == 0
     assert await _status(async_session, "da11y0000001") == SeedStatus.CONSUMED
     assert await _status(async_session, "e7e470000001") == SeedStatus.SEEN
+
+
+async def test_an_event_race_on_a_seen_seed_counts_on_no_board(test_client, async_session, pools):
+    """An event race is created as a normal race, which takes a SEEN seed at
+    the floor: attached to its event, it counts on no board (its seed page
+    lists its runs as Unranked) until a reroll, which for an event race takes
+    an AVAILABLE seed and puts it back on the boards."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "sprint", 3)  # one above the floor (2)
+        # One more than the races take, for a reroll that would allow SEEN seeds.
+        seen = {s.seed_number for s in await _seen(db, "sprint", 3)}
+        await db.commit()
+
+    fresh = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    on_seen = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    rerolled = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    assert (await _race_seed(async_session, fresh)).seed_number not in seen
+    for race_id in (on_seen, rerolled):
+        assert (await _race_seed(async_session, race_id)).seed_number in seen, race_id
+
+    async with async_session() as db:
+        event = await _event(db)
+        for race_id in (fresh, on_seen, rerolled):
+            race = await db.get(Race, UUID(race_id))
+            assert race is not None
+            race.event_id = event.id
+        await db.commit()
+
+    # At the floor, but an event race's reroll takes the AVAILABLE reserve.
+    assert (await _reroll(test_client, rerolled)).status_code == 200
+    assert (await _race_seed(async_session, rerolled)).seed_number not in seen
+    assert not await _seed_was_seen(async_session, rerolled)
+
+    started = datetime.now(UTC) - timedelta(hours=1)
+    async with async_session() as db:
+        runner = await _user(db, "runner")
+        races = {}
+        for race_id in (fresh, on_seen, rerolled):
+            race = await db.get(Race, UUID(race_id))
+            assert race is not None
+            race.status = RaceStatus.FINISHED
+            race.started_at = started
+            db.add(
+                Participant(
+                    race_id=race.id,
+                    user_id=runner.id,
+                    mod_token=f"mt-{race_id}",
+                    status=ParticipantStatus.FINISHED,
+                    igt_ms=1000,
+                    finished_at=started + timedelta(minutes=30),
+                )
+            )
+            races[race_id] = race
+        await db.commit()
+
+        counted = {str(run.race_id) for run in await load_counted_runs(db, pool="sprint")}
+        assert counted == {fresh, rerolled}
+        assert {race_id for race_id, race in races.items() if race_counts_on_boards(race)} == {
+            fresh,
+            rerolled,
+        }
+        unranked = await load_unranked_runs(db, races[on_seen].seed_id)
+        assert [(str(run.race_id), run.ranked, run.run_type) for run in unranked] == [
+            (on_seen, False, "event")
+        ]
+        for race_id in (fresh, rerolled):
+            assert await load_unranked_runs(db, races[race_id].seed_id) == [], race_id
 
 
 async def test_training_pool_seed_goes_back_available(test_client, async_session, pools):

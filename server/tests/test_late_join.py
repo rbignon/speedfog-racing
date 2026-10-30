@@ -130,6 +130,7 @@ def _make_race(
         deathless=deathless,
         exclude_from_stats=False,
         mode=RunMode.NORMAL,
+        seed_was_seen=False,
         created_at=datetime.now(UTC),
     )
     race.participants = []

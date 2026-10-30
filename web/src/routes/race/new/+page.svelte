@@ -55,9 +55,12 @@
   let authChecked = $state(false);
 
   // Seeds this race could draw: a normal race also takes SEEN seeds (seeds
-  // put aside before their race started), a speedrun race never does.
+  // put aside before their race started), a speedrun race never does, and
+  // leaves the pool's speedrun floor in reserve.
   function drawable(info: PoolInfo): number {
-    return info.available + (speedrun ? 0 : info.seen);
+    return speedrun
+      ? Math.max(0, info.available - info.speedrun_floor)
+      : info.available + info.seen;
   }
 
   // `available` holds the drawable count, which the tabs gate on.
@@ -313,15 +316,23 @@
                   compact
                 />
                 <p class="seeds-available">
-                  {selectedAvailable} seed{selectedAvailable !== 1 ? "s" : ""} available
+                  {#if speedrun && selectedAvailable === 0}
+                    No fresh seed right now
+                  {:else}
+                    {selectedAvailable} seed{selectedAvailable !== 1 ? "s" : ""} available
+                  {/if}
                 </p>
               </div>
             {/if}
           </div>
           {#if !hasAvailablePool}
             <p class="empty-pools">
-              No seeds available in any game mode. New seeds need to be
-              generated.
+              {#if speedrun}
+                No fresh seed right now in any game mode.
+              {:else}
+                No seeds available in any game mode. New seeds need to be
+                generated.
+              {/if}
             </p>
           {/if}
           <label class="radio-label speedrun-option">

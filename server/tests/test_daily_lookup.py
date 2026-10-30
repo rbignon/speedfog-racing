@@ -48,6 +48,7 @@ def _daily_race(*, organizer: User, **overrides) -> Race:
         daily_date=date(2026, 4, 27),
         exclude_from_stats=True,
         mode=RunMode.NORMAL,
+        seed_was_seen=False,
         started_at=started,
         seeds_released_at=started,
         late_join_window_minutes=1440,

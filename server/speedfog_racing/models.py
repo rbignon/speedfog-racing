@@ -412,6 +412,13 @@ class Race(Base):
     seed_played: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The current seed was SEEN when the race drew it: set by a draw that takes
+    # a SEEN seed, cleared by one that takes an AVAILABLE seed. Such a race
+    # counts on no board, even once attached to an event (see
+    # ``race_counts_on_boards``).
+    seed_was_seen: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Daily Seed marker: NULL for regular races, the UTC rotation date for
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.

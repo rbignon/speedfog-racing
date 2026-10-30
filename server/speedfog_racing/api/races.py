@@ -1825,6 +1825,7 @@ async def reroll_seed(
             version=current_version + 1,
             seed_id=race.seed_id,
             seed_played=race.seed_played,
+            seed_was_seen=race.seed_was_seen,
             seeds_released_at=new_seeds_released_at,
         )
     )

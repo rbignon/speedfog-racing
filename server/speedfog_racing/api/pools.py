@@ -12,6 +12,7 @@ from speedfog_racing.models import User
 from speedfog_racing.schemas import PoolConfig
 from speedfog_racing.services import get_pool_stats
 from speedfog_racing.services import list_pools as list_pool_rows
+from speedfog_racing.services.seed_service import effective_speedrun_floor
 from speedfog_racing.services.training_service import get_played_seed_counts
 
 router = APIRouter()
@@ -23,6 +24,8 @@ class PoolStats(BaseModel):
     available: int
     # Drawn by normal races only (see SeedStatus.SEEN).
     seen: int = 0
+    # A speedrun race draws only while ``available`` is above it.
+    speedrun_floor: int
     consumed: int
     discarded: int = 0
     played_by_user: int | None = None
@@ -69,6 +72,7 @@ async def list_pools(
         result[name] = PoolStats(
             available=counts.get("available", 0),
             seen=counts.get("seen", 0),
+            speedrun_floor=effective_speedrun_floor(pool),
             consumed=counts.get("consumed", 0),
             discarded=counts.get("discarded", 0),
             played_by_user=played_counts.get(name) if user and is_training else None,

@@ -14,7 +14,7 @@ from statistics import median_low
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
@@ -125,19 +125,29 @@ def seed_category(pool: Pool, total_layers: int) -> tuple[str, str]:
 _RANKED_RACE_MODES = (RunMode.SPEEDRUN, RunMode.SET_SEED)
 
 
-def race_counts_on_boards(race: Race) -> bool:
-    """Whether a race's finishers can count on the boards: a ranked mode, a
-    Daily Seed or an event race. Python twin of the SQL clause in
-    ``load_counted_runs``; keep them in step."""
+def race_draws_fresh_seeds(race: Race) -> bool:
+    """Whether a race's seed draws take AVAILABLE seeds only, never SEEN ones:
+    a ranked mode, a Daily Seed or an event race, the races whose finishers
+    count on the boards."""
     return (
         race.mode in _RANKED_RACE_MODES or race.daily_date is not None or race.event_id is not None
     )
 
 
+def race_counts_on_boards(race: Race) -> bool:
+    """Whether a race's finishers can count on the boards: a race that draws
+    fresh seeds (``race_draws_fresh_seeds``) and whose seed was not SEEN when
+    drawn (``Race.seed_was_seen``: an event race is created as a normal race,
+    which may draw a SEEN seed, and attached to its event later). Python twin
+    of the SQL clause in ``load_counted_runs``; keep them in step."""
+    return race_draws_fresh_seeds(race) and not race.seed_was_seen
+
+
 async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun]:
     """The runs a seed page lists without counting them: finished participants
-    of finished normal-mode races that are neither Daily Seeds nor event races
-    (the boards leave them out), banned users left out. Disqualified and
+    of finished normal-mode races that ``race_counts_on_boards`` leaves out
+    (neither Daily Seeds nor event races, or on a seed that was SEEN when
+    drawn), banned users left out. Disqualified and
     unfinished participants are not finished. Only the seed page merges these
     in; the boards, records and purge never see them."""
     stmt = (
@@ -150,6 +160,7 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             Race.name.label("race_name"),
             Race.started_at,
             Race.created_at,
+            Race.event_id,
             Race.deathless,
             Seed.pool_name,
             Seed.seed_number,
@@ -169,8 +180,10 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             Participant.status == ParticipantStatus.FINISHED,
             Race.status == RaceStatus.FINISHED,
             Race.mode == RunMode.NORMAL,
-            Race.daily_date.is_(None),
-            Race.event_id.is_(None),
+            or_(
+                and_(Race.daily_date.is_(None), Race.event_id.is_(None)),
+                Race.seed_was_seen.is_(True),
+            ),
             User.banned_at.is_(None),
         )
     )
@@ -189,7 +202,8 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             # Never read: an unranked run belongs to no board.
             category=row.pool_name,
             deathless=bool(row.deathless),
-            run_type="race",
+            # An event race lands here when it drew a SEEN seed.
+            run_type="event" if row.event_id is not None else "race",
             # Played blind like any non-Set-Seed race; the web labels the row by ``ranked``.
             blind=True,
             igt_ms=row.igt_ms,
@@ -213,7 +227,8 @@ async def load_counted_runs(
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, community races left out unless their mode is speedrun or
-    set_seed (Daily Seeds and event races count in any mode), training pools
+    set_seed (Daily Seeds and event races count in any mode), races on a seed
+    that was SEEN when drawn left out (``Race.seed_was_seen``), training pools
     left out, and seeds from an older version of their pool (another layer count
     than its config) left out, unless that count is declared in the pool's
     ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``.
@@ -267,6 +282,7 @@ async def load_counted_runs(
                 Race.daily_date.is_not(None),
                 Race.event_id.is_not(None),
             ),
+            Race.seed_was_seen.is_(False),
         )
     )
     if seed_id is not None:

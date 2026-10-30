@@ -19,7 +19,7 @@ from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 from speedfog_racing.services.speedrun_service import (
     _is_training,
     _pool_config,
-    race_counts_on_boards,
+    race_draws_fresh_seeds,
 )
 
 logger = logging.getLogger(__name__)
@@ -376,6 +376,13 @@ class SpeedrunFloorError(ValueError):
         super().__init__("No fresh seed right now")
 
 
+def effective_speedrun_floor(pool: Pool) -> int:
+    """A pool row's speedrun floor: its admin override, else the setting's default."""
+    if pool.speedrun_floor is not None:
+        return pool.speedrun_floor
+    return settings.speedrun_default_floor
+
+
 async def speedrun_floor(db: AsyncSession, pool_name: str) -> int:
     """The pool's speedrun floor: its admin override, else the setting's default."""
     override = (
@@ -445,7 +452,8 @@ async def assign_seed_to_race(
 ) -> Seed:
     """Assign an available seed to a race.
 
-    Marks the seed as consumed and sets race.seed_id. Callers are
+    Marks the seed as consumed, sets race.seed_id, and records in
+    ``race.seed_was_seen`` whether the seed was SEEN. Callers are
     responsible for enforcing ``Pool.enabled`` (see
     ``api/races.py:create_race`` / ``api/training.py:create_session``);
     this function only cares about seed availability.
@@ -468,6 +476,7 @@ async def assign_seed_to_race(
     if seed is None:
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
+    race.seed_was_seen = seed.status == SeedStatus.SEEN
     seed.status = SeedStatus.CONSUMED
     race.seed_id = seed.id
     race.seed = seed
@@ -486,9 +495,11 @@ async def reroll_seed_for_race(
 
     Picks a new seed from the same pool, excluding the current seed; a
     speedrun race draws through ``draw_speedrun_seed``, so the pool's floor
-    applies, and a race off the boards (``race_counts_on_boards``) may draw a
-    SEEN seed (see ``get_available_seed``). Nothing changes when no seed can
-    be drawn.
+    applies, and a race that does not draw fresh seeds only
+    (``race_draws_fresh_seeds``) may draw a SEEN seed (see
+    ``get_available_seed``): an event race on a SEEN seed gets an AVAILABLE
+    one, which puts it back on the boards (``Race.seed_was_seen``). Nothing
+    changes when no seed can be drawn.
 
     The old seed of a race still in SETUP becomes SEEN, released or not: its
     map reached the race's spectators, so no draw that counts on the boards
@@ -519,7 +530,7 @@ async def reroll_seed_for_race(
         new_seed = await draw_speedrun_seed(db, pool_name, exclude_id=old_seed.id)
     else:
         new_seed = await get_available_seed(
-            db, pool_name, exclude_id=old_seed.id, allow_seen=not race_counts_on_boards(race)
+            db, pool_name, exclude_id=old_seed.id, allow_seen=not race_draws_fresh_seeds(race)
         )
     if new_seed is None:
         raise ValueError(f"No available seeds in mode '{pool_name}'")
@@ -539,6 +550,7 @@ async def reroll_seed_for_race(
             )
 
     # Assign new seed
+    race.seed_was_seen = new_seed.status == SeedStatus.SEEN
     new_seed.status = SeedStatus.CONSUMED
     race.seed_id = new_seed.id
     race.seed = new_seed

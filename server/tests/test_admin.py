@@ -1376,6 +1376,39 @@ async def test_admin_pool_speedrun_floor_round_trip(test_client, admin_user, see
 
 
 @pytest.mark.asyncio
+async def test_public_pools_give_the_speedrun_floor_in_force(
+    test_client, admin_user, async_session
+):
+    """The race form reads each pool's floor from the public listing: the
+    admin override, else the setting's default."""
+    async with async_session() as db:
+        db.add(Pool(name="sprint", config={"name": "Sprint"}))
+        db.add_all(
+            Seed(
+                seed_number=f"floor_{pool}",
+                pool_name=pool,
+                graph_json={"total_layers": 5, "nodes": {}},
+                total_layers=5,
+                folder_path=f"/test/floor_{pool}",
+                status=SeedStatus.AVAILABLE,
+            )
+            for pool in ("standard", "sprint")
+        )
+        await db.commit()
+
+    headers = {"Authorization": f"Bearer {admin_user.api_token}"}
+    async with test_client as client:
+        response = await client.patch(
+            "/api/admin/pools/sprint", headers=headers, json={"speedrun_floor": 3}
+        )
+        assert response.status_code == 200
+        public = (await client.get("/api/pools")).json()
+
+    assert public["sprint"]["speedrun_floor"] == 3
+    assert public["standard"]["speedrun_floor"] == settings.speedrun_default_floor
+
+
+@pytest.mark.asyncio
 async def test_admin_toggle_pool_unknown(test_client, admin_user):
     """PATCH /admin/pools/{unknown} returns 404."""
     async with test_client as client:

@@ -22,7 +22,6 @@ from speedfog_racing.api.speedrun import resolve_seed_or_404
 from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
 from speedfog_racing.api.training import _build_detail_response, _get_session_or_404_public
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
-from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.discord import fire_ban_notification
 from speedfog_racing.models import (
@@ -109,6 +108,7 @@ from speedfog_racing.services.sanctions_service import (
     disqualify,
     invalidate_session,
 )
+from speedfog_racing.services.seed_service import effective_speedrun_floor
 from speedfog_racing.services.speedrun_service import _is_training, _pool_config
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
@@ -218,12 +218,6 @@ class SoloPoolProgress(BaseModel):
     exhausted_users: int
 
 
-def _effective_floor(pool: Pool) -> int:
-    if pool.speedrun_floor is not None:
-        return pool.speedrun_floor
-    return settings.speedrun_default_floor
-
-
 class AdminPoolResponse(BaseModel):
     """Admin view of a pool row."""
 
@@ -268,7 +262,7 @@ async def admin_list_pools(
             type=p.config.get("type", "race"),
             enabled=p.enabled,
             speedrun_floor=p.speedrun_floor,
-            speedrun_floor_effective=_effective_floor(p),
+            speedrun_floor_effective=effective_speedrun_floor(p),
             last_scanned_at=p.last_scanned_at,
             **stats.get(p.name, {}),
             solo=(
@@ -306,7 +300,7 @@ async def admin_update_pool(
         type=pool.config.get("type", "race"),
         enabled=pool.enabled,
         speedrun_floor=pool.speedrun_floor,
-        speedrun_floor_effective=_effective_floor(pool),
+        speedrun_floor_effective=effective_speedrun_floor(pool),
         last_scanned_at=pool.last_scanned_at,
         **stats,
         solo=SoloPoolProgress.model_validate(progress) if progress else None,

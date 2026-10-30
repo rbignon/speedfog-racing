@@ -85,6 +85,10 @@ export interface Race {
   daily_date: string | null;
   exclude_from_stats: boolean;
   mode: RunMode;
+  /** The race drew a seen seed: it counts on no Speedrun board until a
+   * reroll. Only list payloads (`RaceResponse`) carry it, not a race's
+   * detail. */
+  seed_was_seen?: boolean;
   participant_count: number;
   participant_previews: ParticipantPreview[];
   casters: Caster[];
@@ -197,6 +201,9 @@ export interface PoolInfo {
   available: number;
   /** Seeds a normal race may draw too, never a speedrun one. */
   seen: number;
+  /** The pool's speedrun floor in force: a speedrun race draws only while
+   * `available` is above it. */
+  speedrun_floor: number;
   consumed: number;
   discarded: number;
   played_by_user: number | null;

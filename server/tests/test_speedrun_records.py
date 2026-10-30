@@ -170,6 +170,7 @@ def test_only_races_that_can_count_schedule_the_check():
             mode=RunMode.NORMAL,
             daily_date=None,
             event_id=None,
+            seed_was_seen=False,
             is_public=False,
             discord_event_id=None,
         )
@@ -181,6 +182,8 @@ def test_only_races_that_can_count_schedule_the_check():
         (race(mode=RunMode.SET_SEED), True),
         (race(daily_date=object()), True),
         (race(event_id=uuid.uuid4()), True),
+        # An event race created as a normal race on a SEEN seed counts nowhere.
+        (race(event_id=uuid.uuid4(), seed_was_seen=True), False),
     ]
     for r, expected in cases:
         with patch(

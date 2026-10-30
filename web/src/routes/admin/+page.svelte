@@ -2290,6 +2290,15 @@
                       </optgroup>
                     {/each}
                   </select>
+                  {#if race.event_id && race.seed_was_seen}
+                    <!-- Only a SETUP race can be re-rolled. -->
+                    <span class="slot-warning"
+                      >Seen seed: off the Speedrun boards{race.status ===
+                      "setup"
+                        ? " until a re-roll"
+                        : ""}.</span
+                    >
+                  {/if}
                 </td>
                 <td>
                   <div class="actions-cell">
@@ -3425,6 +3434,14 @@
   .error-text {
     color: var(--color-danger);
     font-size: var(--font-size-sm);
+  }
+
+  .slot-warning {
+    display: block;
+    margin-top: 0.25rem;
+    max-width: 220px;
+    color: var(--color-warning);
+    font-size: var(--font-size-xs);
   }
 
   .slot-select {
