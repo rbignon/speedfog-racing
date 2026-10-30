@@ -17,6 +17,9 @@
   import SpeedrunBoard from "./SpeedrunBoard.svelte";
   import SpeedrunSidebar from "./SpeedrunSidebar.svelte";
 
+  /** Opens the board's Start a run window in Set Seed mode on this seed ID. */
+  let { startSeed = null }: { startSeed?: string | null } = $props();
+
   // The tab owns its state and mirrors it into the URL, so a board can be
   // shared. `written` is the query string the tab last put there: a different
   // one is a navigation (the navbar link back to bare /speedrun), which
@@ -83,6 +86,7 @@
         categories={overview.categories}
         {params}
         onchange={update}
+        {startSeed}
       />
       <SpeedrunSidebar
         {overview}

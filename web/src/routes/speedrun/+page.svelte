@@ -1,5 +1,22 @@
 <script lang="ts">
+  import { onMount } from "svelte";
+  import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import SpeedrunTab from "$lib/components/stats/speedrun/SpeedrunTab.svelte";
+  import { parseStartSeed } from "$lib/speedrun";
+
+  // `?start=set&seed=<n>` opens the Start a run window in Set Seed mode on
+  // that seed. Read once, then dropped from the URL (the board's own keys
+  // stay), so a reload or a shared link shows the board alone.
+  const startSeed = parseStartSeed(page.url.searchParams);
+
+  onMount(() => {
+    const url = new URL(page.url);
+    if (!url.searchParams.has("start") && !url.searchParams.has("seed")) return;
+    url.searchParams.delete("start");
+    url.searchParams.delete("seed");
+    goto(url, { replaceState: true, noScroll: true, keepFocus: true });
+  });
 </script>
 
 <svelte:head>
@@ -14,7 +31,7 @@
     </p>
   </div>
 
-  <SpeedrunTab />
+  <SpeedrunTab {startSeed} />
 </main>
 
 <style>

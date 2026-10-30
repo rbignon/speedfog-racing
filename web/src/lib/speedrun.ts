@@ -144,6 +144,61 @@ export function seedPageHref(
   return runId ? `${path}?run=${encodeURIComponent(runId)}` : path;
 }
 
+/** The rules of every ranked run (Roger), one text for the board's Rules
+ * popover, the seed page card, the Start a run window and the Set Seed race
+ * banner (`SpeedrunRules.svelte`). The help page's race rules say the same. */
+export const SPEEDRUN_RULES: string[] = [
+  "Glitchless.",
+  "Skips are allowed within a zone.",
+  "No sequence break: reaching a zone other than through its fog gate is forbidden (for example, Limgrave to a much deeper zone through the Troll arena).",
+];
+
+/** The fewest characters of a seed ID worth looking up: the 6 the boards
+ * show, unambiguous most of the time. */
+export const SEED_ID_MIN_LENGTH = 6;
+
+/** Race creation for a speedrun race: the Speedrun option on, `pool` picked. */
+export function speedrunRaceNewHref(pool: string): string {
+  return `/race/new?mode=speedrun&pool=${encodeURIComponent(pool)}`;
+}
+
+/** Race creation for a Set Seed race on `seed`. */
+export function setSeedRaceNewHref(seed: string): string {
+  return `/race/new?seed=${encodeURIComponent(seed)}`;
+}
+
+/** What `/race/new` was opened for: a Set Seed race on `seed`, else a
+ * speedrun race when `mode=speedrun`, and the pool to preselect. */
+export interface RaceNewParams {
+  seed: string | null;
+  speedrun: boolean;
+  pool: string | null;
+}
+
+export function parseRaceNewParams(search: URLSearchParams): RaceNewParams {
+  const seed = search.get("seed")?.trim() || null;
+  return {
+    seed,
+    speedrun: seed === null && search.get("mode") === "speedrun",
+    pool: search.get("pool")?.trim() || null,
+  };
+}
+
+/** The Start a run window open in Set Seed mode on `seed`, over the board
+ * of `category` (a seed's category key; null for the default board). */
+export function startRunHref(category: string | null, seed: string): string {
+  const pool = category === null ? "" : `pool=${encodeURIComponent(category)}&`;
+  return `/speedrun?${pool}start=set&seed=${encodeURIComponent(seed)}`;
+}
+
+/** The seed a `/speedrun` URL opens the Start a run window on
+ * (`start=set&seed=<n>`): "" for an empty field, null for no window. */
+export function parseStartSeed(search: URLSearchParams): string | null {
+  return search.get("start") === "set"
+    ? (search.get("seed")?.trim() ?? "")
+    : null;
+}
+
 /** Where a run's seed links to: its seed page, focused on the run. */
 export function speedrunSeedHref(run: SpeedrunRun): string {
   return seedPageHref(run.seed_number, run.run_id);

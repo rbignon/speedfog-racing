@@ -4,6 +4,7 @@
   import { raceDisplayDate } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
+  import RunModeChip from "./RunModeChip.svelte";
 
   // `title` replaces the displayed race name, `showFoot={false}` drops the
   // players / mode / organizer row and `showRole={false}` the viewer's role
@@ -225,6 +226,7 @@
                 >Deathless</span
               >
             {/if}
+            <RunModeChip mode={race.mode} />
           </div>
           <span class="byline">
             by

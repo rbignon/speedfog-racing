@@ -313,8 +313,10 @@
             <strong>No other mods</strong>: only SpeedFog, no additional
             modifications
           </li>
+          <li><strong>Skips are allowed</strong> within a zone</li>
           <li>
-            <strong>Skips are allowed</strong>: creative routing is fair game
+            <strong>No sequence break</strong>: reaching a zone other than
+            through its fog gate is forbidden
           </li>
         </ul>
       </div>

@@ -4,13 +4,16 @@ import {
   RUN_TYPES,
   historyPolyline,
   historyTimeline,
+  parseRaceNewParams,
   parseSpeedrunOverlayParams,
   parseSpeedrunParams,
+  parseStartSeed,
   raceSeedPageHref,
   recentRunParams,
   resolvePool,
   seedPageHref,
   sessionSeedPageHref,
+  setSeedRaceNewHref,
   speedrunAgo,
   speedrunDay,
   speedrunDaysLater,
@@ -18,8 +21,10 @@ import {
   speedrunOverlayRows,
   speedrunOverlayUrl,
   speedrunRaceHref,
+  speedrunRaceNewHref,
   speedrunSeedHref,
   speedrunTimeParts,
+  startRunHref,
   toggleRunType,
   writeSpeedrunParams,
   type SpeedrunOverlayParams,
@@ -276,6 +281,70 @@ describe("sessionSeedPageHref", () => {
 
   it("has no link without a seed", () => {
     expect(sessionSeedPageHref({ ...session, seed_number: null })).toBeNull();
+  });
+});
+
+describe("ranked race creation links", () => {
+  const search = (href: string) =>
+    new URL(href, "http://localhost").searchParams;
+
+  it("opens /race/new with the Speedrun option on and the pool picked", () => {
+    expect(
+      parseRaceNewParams(search(speedrunRaceNewHref("boss rush"))),
+    ).toEqual({ seed: null, speedrun: true, pool: "boss rush" });
+  });
+
+  it("opens /race/new on a Set Seed race for the seed", () => {
+    expect(parseRaceNewParams(search(setSeedRaceNewHref("363096")))).toEqual({
+      seed: "363096",
+      speedrun: false,
+      pool: null,
+    });
+  });
+
+  it("preselects a pool alone with the option off", () => {
+    expect(parseRaceNewParams(search("/race/new?pool=sprint"))).toEqual({
+      seed: null,
+      speedrun: false,
+      pool: "sprint",
+    });
+  });
+
+  it("lets a seed win over the speedrun mode, and ignores blank values", () => {
+    expect(
+      parseRaceNewParams(
+        search("/race/new?mode=speedrun&pool=sprint&seed=abc123"),
+      ).speedrun,
+    ).toBe(false);
+    expect(parseRaceNewParams(search("/race/new?seed=%20&pool="))).toEqual({
+      seed: null,
+      speedrun: false,
+      pool: null,
+    });
+    expect(parseRaceNewParams(search("/race/new?mode=set_seed")).speedrun).toBe(
+      false,
+    );
+  });
+});
+
+describe("the Start a run window's link", () => {
+  it("opens the window on the seed over the seed category's board", () => {
+    const url = new URL(startRunHref("standard@25", "363096"), "http://x");
+    expect(url.pathname).toBe("/speedrun");
+    expect(parseStartSeed(url.searchParams)).toBe("363096");
+    expect(parseSpeedrunParams(url.searchParams).pool).toBe("standard@25");
+  });
+
+  it("opens over the default board for a seed without a category", () => {
+    const url = new URL(startRunHref(null, "zz 1"), "http://x");
+    expect(parseStartSeed(url.searchParams)).toBe("zz 1");
+    expect(url.searchParams.has("pool")).toBe(false);
+  });
+
+  it("opens no window without start=set, an empty field without a seed", () => {
+    expect(parseStartSeed(new URLSearchParams("pool=sprint"))).toBeNull();
+    expect(parseStartSeed(new URLSearchParams("start=random"))).toBeNull();
+    expect(parseStartSeed(new URLSearchParams("start=set"))).toBe("");
   });
 });
 

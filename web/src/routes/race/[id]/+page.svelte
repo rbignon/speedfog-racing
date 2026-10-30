@@ -6,6 +6,7 @@
   import { raceStore } from "$lib/stores/race.svelte";
   import Leaderboard from "$lib/components/Leaderboard.svelte";
   import RaceStatus from "$lib/components/RaceStatus.svelte";
+  import RunModeChip from "$lib/components/RunModeChip.svelte";
 
   import SpectatorCount from "$lib/components/SpectatorCount.svelte";
   import ParticipantCard from "$lib/components/ParticipantCard.svelte";
@@ -792,6 +793,20 @@
       goto(getTwitchLoginUrl());
       return;
     }
+    // A Set Seed race replays a played seed: say so before the runner joins.
+    if (initialRace.mode === "set_seed") {
+      pendingConfirm = {
+        title: "Join Race",
+        message: "Set Seed race: other runners may have practiced this seed",
+        confirmLabel: "Join",
+        action: joinNow,
+      };
+      return;
+    }
+    await joinNow();
+  }
+
+  async function joinNow() {
     joining = true;
     joinError = null;
     try {
@@ -1219,6 +1234,7 @@
                 <span class="seed-badge">Seed {initialRace.seed_number}</span>
               {/if}
             {/if}
+            <RunModeChip mode={initialRace.mode} />
             {#if liveRaceEndsAt && raceStatus === "running"}
               <span class="race-ends-pill">
                 Ends in {formatCountdown(liveRaceEndsAt, now)}

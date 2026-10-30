@@ -1,15 +1,32 @@
 <script lang="ts">
+  import { untrack } from "svelte";
   import { goto } from "$app/navigation";
+  import { page } from "$app/state";
   import { auth } from "$lib/stores/auth.svelte";
   import {
     createRace,
     fetchPoolStats,
+    fetchSpeedrunSeedSummary,
     type PoolStats,
     type PoolInfo,
+    type SpeedrunSeedSummary,
   } from "$lib/api";
   import PoolSettingsCard from "$lib/components/PoolSettingsCard.svelte";
   import PoolTabs from "$lib/components/PoolTabs.svelte";
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
+  import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
+  import {
+    parseRaceNewParams,
+    seedPageHref,
+    startRunHref,
+  } from "$lib/speedrun";
+
+  // `?seed=<n>` makes a Set Seed race on that seed, `?mode=speedrun` turns
+  // the Speedrun option on and `?pool=` picks the pool. Applied on arrival
+  // (see the effect below); what the organizer changes afterwards stays
+  // theirs.
+  let asked = $derived(parseRaceNewParams(page.url.searchParams));
+  let setSeed = $derived(asked.seed);
 
   let name = $state("");
   let scheduledAt = $state("");
@@ -25,6 +42,11 @@
   let deathless = $state(false);
   let privateDag = $state(false);
   let customRules = $state("");
+  let speedrun = $state(untrack(() => asked.speedrun));
+  // A Set Seed race's seed, as the server knows it; the lookup's error text
+  // ("Unknown seed", "Ambiguous seed ID") otherwise.
+  let seedSummary = $state<SpeedrunSeedSummary | null>(null);
+  let seedError = $state<string | null>(null);
   let showAdvanced = $state(false);
   let pools: PoolStats = $state({});
   let loading = $state(true);
@@ -47,6 +69,15 @@
   );
   let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
   let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
+  // A Set Seed race takes its pool from the seed, which need not be listed
+  // (a retired category's seed stays replayable): no card then.
+  let seedConfig = $derived(
+    seedSummary ? (pools[seedSummary.category]?.pool_config ?? null) : null,
+  );
+  // A Set Seed race draws nothing from the pools: it only needs its seed.
+  let canCreate = $derived(
+    setSeed === null ? hasAvailablePool : seedSummary?.replayable === true,
+  );
 
   // Advanced-options state grid shown inside the trigger: one entry per
   // option, checked when the option is active for this race (actual
@@ -72,12 +103,45 @@
     }
   });
 
+  // The URL's request, applied on arrival and again when a link to
+  // /race/new with other parameters reuses this page (the navbar's Create
+  // Race, from a Set Seed race form).
+  let appliedSearch: string | null = null;
+  $effect(() => {
+    const search = page.url.search;
+    if (search === appliedSearch) return;
+    appliedSearch = search;
+    untrack(() => {
+      speedrun = asked.speedrun;
+      seedSummary = null;
+      seedError = null;
+      if (asked.seed !== null) loadSeed(asked.seed);
+      pickPool();
+    });
+  });
+
+  async function loadSeed(seed: string) {
+    try {
+      const summary = await fetchSpeedrunSeedSummary(seed);
+      if (asked.seed === seed) seedSummary = summary;
+    } catch (e) {
+      if (asked.seed === seed)
+        seedError = e instanceof Error ? e.message : "Unknown seed";
+    }
+  }
+
+  // The asked pool when it has seeds, else the first pool with seeds.
+  function pickPool() {
+    const available =
+      sortedPools.find(([p, info]) => p === asked.pool && info.available > 0) ??
+      sortedPools.find(([, info]) => info.available > 0);
+    if (available) poolName = available[0];
+  }
+
   async function loadPools() {
     try {
       pools = await fetchPoolStats();
-      // Default to first pool with available seeds
-      const available = sortedPools.find(([, info]) => info.available > 0);
-      if (available) poolName = available[0];
+      pickPool();
     } catch (e) {
       console.error("Failed to fetch pools:", e);
       error = "Failed to load game modes.";
@@ -96,6 +160,7 @@
       error = "Public races must have a scheduled time.";
       return;
     }
+    if (!canCreate) return;
 
     creating = true;
     error = null;
@@ -104,7 +169,7 @@
       const isoScheduled = scheduledAt || null;
       const race = await createRace(
         name.trim(),
-        poolName,
+        seedSummary?.category ?? poolName,
         organizerParticipates,
         {},
         isoScheduled,
@@ -116,6 +181,8 @@
         privateDag,
         customRules.trim() || null,
         deathless,
+        seedSummary ? "set_seed" : speedrun ? "speedrun" : "normal",
+        seedSummary?.seed_number ?? null,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -135,6 +202,40 @@
   {#if loading}
     <p class="loading">Loading...</p>
   {:else}
+    {#if setSeed !== null}
+      <section class="set-seed-banner">
+        <div class="banner-head">
+          <span class="chip set-seed-chip">Set Seed</span>
+          {#if seedSummary}
+            <a class="banner-seed" href={seedPageHref(seedSummary.seed_number)}
+              >{seedSummary.seed_number}</a
+            >
+            <span class="banner-category">{seedSummary.category_name}</span>
+          {:else}
+            <span class="banner-seed">{setSeed}</span>
+          {/if}
+          <a
+            class="banner-change"
+            href={startRunHref(
+              seedSummary?.category ?? null,
+              seedSummary?.seed_number ?? setSeed,
+            )}>Change seed</a
+          >
+        </div>
+        {#if seedError}
+          <p class="banner-reason">{seedError}</p>
+        {:else if seedSummary && !seedSummary.replayable}
+          <p class="banner-reason">{seedSummary.not_replayable_reason}</p>
+        {:else if seedSummary}
+          <p>
+            Runners may already know this seed. Times count on the
+            <strong>{seedSummary.category_name} · Set Seed</strong> board only.
+          </p>
+          <SpeedrunRules />
+        {/if}
+      </section>
+    {/if}
+
     <form onsubmit={handleSubmit}>
       <div class="form-group">
         <label for="name">Race Name</label>
@@ -150,7 +251,30 @@
 
       <div class="form-group">
         <span>Game Mode</span>
-        {#if sortedPools.length === 0}
+        {#if setSeed !== null}
+          <!-- The seed sets the pool: no mode grid, no Speedrun option. -->
+          <div class="pool-container">
+            <div class="seed-mode">
+              {#if seedSummary}
+                <strong>{seedSummary.category_name}</strong> · set by the seed
+              {:else}
+                Set by the seed
+              {/if}
+            </div>
+            <div class="pool-content">
+              {#if seedSummary && seedConfig}
+                <PoolSettingsCard
+                  poolName={seedSummary.category}
+                  poolConfig={seedConfig}
+                  compact
+                />
+              {/if}
+              <p class="seeds-available">
+                Seed {seedSummary?.seed_number ?? setSeed}, fixed: no reroll
+              </p>
+            </div>
+          </div>
+        {:else if sortedPools.length === 0}
           <p class="empty-pools">
             No game modes available. Seeds need to be generated before races can
             be created.
@@ -184,6 +308,15 @@
               generated.
             </p>
           {/if}
+          <label class="radio-label speedrun-option">
+            <input
+              type="checkbox"
+              bind:checked={speedrun}
+              disabled={creating}
+            />
+            Speedrun race
+          </label>
+          <p class="hint">Counts on the Speedrun boards.</p>
         {/if}
       </div>
 
@@ -454,7 +587,7 @@
         <button
           type="submit"
           class="btn btn-primary"
-          disabled={creating || !hasAvailablePool}
+          disabled={creating || !canCreate}
         >
           {creating ? "Creating..." : "Create Race"}
         </button>
@@ -580,6 +713,91 @@
     margin: 0.75rem 0 0;
     color: var(--color-text-disabled);
     font-size: var(--font-size-sm);
+  }
+
+  .seeds-available:first-child {
+    margin-top: 0;
+  }
+
+  .speedrun-option {
+    margin-top: 0.25rem;
+  }
+
+  /* A Set Seed race: the seed's banner over the form. */
+  .set-seed-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin: 0 0 1.5rem;
+    padding: 1.1rem 1.3rem;
+    background: var(--color-surface);
+    border-left: 3px solid var(--color-gold);
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .set-seed-banner p {
+    margin: 0;
+    line-height: 1.6;
+  }
+
+  .set-seed-banner strong {
+    color: var(--color-gold);
+  }
+
+  .banner-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 0.7rem;
+  }
+
+  .set-seed-chip {
+    color: var(--color-gold);
+    border-color: var(--color-gold);
+  }
+
+  .banner-seed {
+    font-family: var(--font-mono);
+    color: var(--color-text);
+  }
+
+  a.banner-seed,
+  .banner-change {
+    color: var(--color-purple);
+    text-decoration: none;
+  }
+
+  a.banner-seed:hover,
+  .banner-change:hover {
+    color: var(--color-purple-hover);
+  }
+
+  .banner-category {
+    color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .banner-change {
+    margin-left: auto;
+  }
+
+  .set-seed-banner .banner-reason {
+    color: var(--color-danger);
+  }
+
+  .seed-mode {
+    padding: 0.7rem 0.9rem;
+    background: var(--color-surface);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .seed-mode strong {
+    color: var(--color-text);
   }
 
   .radio-group {

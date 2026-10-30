@@ -17,6 +17,8 @@
   import SpeedrunHistory from "./SpeedrunHistory.svelte";
   import SpeedrunOverlayModal from "./SpeedrunOverlayModal.svelte";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
+  import SpeedrunRules from "./SpeedrunRules.svelte";
+  import SpeedrunStartModal from "./SpeedrunStartModal.svelte";
   import SpeedrunTable from "./SpeedrunTable.svelte";
   import SpeedrunTime from "./SpeedrunTime.svelte";
 
@@ -24,10 +26,13 @@
     categories,
     params,
     onchange,
+    startSeed = null,
   }: {
     categories: SpeedrunCategory[];
     params: SpeedrunParams;
     onchange: (p: SpeedrunParams) => void;
+    /** Opens the Start a run window in Set Seed mode on this seed ID. */
+    startSeed?: string | null;
   } = $props();
 
   const TYPE_LABELS: Record<SpeedrunRunType, string> = {
@@ -49,6 +54,10 @@
   let rulesOpen = $state(false);
   let moreOpen = $state(false);
   let overlayOpen = $state(false);
+  // The seed the URL opened the window on, forgotten once it closes: the
+  // toolbar button opens it fresh.
+  let startOpen = $state(untrack(() => startSeed !== null));
+  let startWith = $state(untrack(() => startSeed));
   let filtersEl = $state<HTMLElement | null>(null);
 
   let pool = $derived(resolvePool(params, categories));
@@ -340,18 +349,23 @@
       </svg>
       Rules
     </button>
-    <!-- A run is "submitted" by racing it. -->
-    <a class="tool submit" href="/race/new">
-      <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-        <circle cx="12" cy="12" r="10" fill="currentColor" />
-        <path
-          d="M12 7v10M7 12h10"
-          stroke="var(--color-gold)"
-          stroke-width="2.4"
-        />
-      </svg>
-      Submit run
-    </a>
+    {#if pool && category}
+      <button
+        type="button"
+        class="tool submit"
+        onclick={() => (startOpen = true)}
+      >
+        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+          <circle cx="12" cy="12" r="10" fill="currentColor" />
+          <path
+            d="M12 7v10M7 12h10"
+            stroke="var(--color-gold)"
+            stroke-width="2.4"
+          />
+        </svg>
+        Start a run
+      </button>
+    {/if}
   </div>
 
   {#if rulesOpen && category}
@@ -371,6 +385,8 @@
           {/each}
         </ul>
       {/if}
+      <h5>Speedrun rules</h5>
+      <SpeedrunRules title={null} />
     </div>
   {/if}
 
@@ -404,6 +420,18 @@
     deathless={params.deathless}
     types={params.types}
     onClose={() => (overlayOpen = false)}
+  />
+{/if}
+
+{#if startOpen && pool && category}
+  <SpeedrunStartModal
+    {pool}
+    categoryName={category.name}
+    initialSeed={startWith}
+    onClose={() => {
+      startOpen = false;
+      startWith = null;
+    }}
   />
 {/if}
 
@@ -604,7 +632,6 @@
   }
 
   .tool.submit {
-    text-decoration: none;
     background: var(--color-gold);
     border-color: var(--color-gold);
     color: var(--color-ink-on-accent);

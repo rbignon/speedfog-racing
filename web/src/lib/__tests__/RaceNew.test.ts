@@ -1,0 +1,236 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { flushSync } from "svelte";
+
+import { pageState } from "./pageState.svelte";
+
+vi.mock("$app/state", async () => {
+  const { pageState } = await import("./pageState.svelte");
+  return { page: pageState };
+});
+vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
+vi.mock("$lib/api", async () => {
+  const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
+  return {
+    ...actual,
+    fetchPoolStats: vi.fn(),
+    fetchSpeedrunSeedSummary: vi.fn(),
+  };
+});
+
+import { goto } from "$app/navigation";
+import RaceNewPage from "../../routes/race/new/+page.svelte";
+import {
+  fetchPoolStats,
+  fetchSpeedrunSeedSummary,
+  type AuthUser,
+  type PoolConfig,
+  type PoolInfo,
+  type SpeedrunSeedSummary,
+} from "$lib/api";
+import { auth } from "$lib/stores/auth.svelte";
+
+const SEED = "363096a4243f";
+
+const ORGANIZER: AuthUser = {
+  id: "u1",
+  twitch_username: "org",
+  twitch_display_name: "Org",
+  twitch_avatar_url: null,
+  role: "organizer",
+  locale: null,
+  overlay_settings: null,
+  feedback_prompted_at: null,
+  race_count: 0,
+  daily_count: 0,
+  training_count: 0,
+};
+
+function pool(name: string, sortOrder: number, available: number): PoolInfo {
+  return {
+    available,
+    consumed: 0,
+    discarded: 0,
+    played_by_user: null,
+    pool_config: { name, sort_order: sortOrder } as PoolConfig,
+  };
+}
+
+function summary(over: Partial<SpeedrunSeedSummary> = {}): SpeedrunSeedSummary {
+  return {
+    seed_number: SEED,
+    category: "standard",
+    category_name: "Standard",
+    replayable: true,
+    not_replayable_reason: null,
+    record: null,
+    ...over,
+  };
+}
+
+let fetchMock: ReturnType<typeof vi.fn>;
+
+function postedBody(): Record<string, unknown> {
+  const call = fetchMock.mock.calls.find(
+    ([url, init]) =>
+      String(url).endsWith("/races") &&
+      (init as RequestInit | undefined)?.method === "POST",
+  );
+  if (!call) throw new Error("no POST /races");
+  return JSON.parse(String((call[1] as RequestInit).body));
+}
+
+async function openPage(search: string) {
+  pageState.url = new URL(`http://localhost/race/new${search}`);
+  const view = render(RaceNewPage);
+  await screen.findByRole("button", { name: "Create Race" });
+  return view;
+}
+
+async function submitPrivate(name: string) {
+  await fireEvent.input(screen.getByLabelText("Race Name"), {
+    target: { value: name },
+  });
+  await fireEvent.click(screen.getByLabelText("Private"));
+  await fireEvent.click(screen.getByRole("button", { name: "Create Race" }));
+}
+
+beforeEach(() => {
+  auth.user = ORGANIZER;
+  auth.initialized = true;
+  vi.mocked(goto).mockReset();
+  vi.mocked(fetchPoolStats).mockResolvedValue({
+    standard: pool("Standard", 1, 6),
+    sprint: pool("Sprint", 2, 4),
+  });
+  vi.mocked(fetchSpeedrunSeedSummary).mockReset();
+  fetchMock = vi
+    .fn()
+    .mockResolvedValue(
+      new Response(JSON.stringify({ id: "r9" }), { status: 201 }),
+    );
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  auth.user = null;
+  auth.initialized = false;
+});
+
+describe("/race/new: the Speedrun race option", () => {
+  it("is on with the pool picked from ?mode=speedrun&pool=", async () => {
+    await openPage("?mode=speedrun&pool=sprint");
+
+    const option = screen.getByLabelText("Speedrun race") as HTMLInputElement;
+    expect(option.checked).toBe(true);
+    expect(
+      screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("stays off when ?pool= alone picks the pool", async () => {
+    await openPage("?pool=sprint");
+
+    expect(
+      (screen.getByLabelText("Speedrun race") as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+
+  it("sends the race's mode", async () => {
+    await openPage("?mode=speedrun&pool=sprint");
+    await submitPrivate("Fast one");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({
+      pool_name: "sprint",
+      mode: "speedrun",
+      seed: null,
+    });
+  });
+
+  it("sends a normal race when the option is left off", async () => {
+    await openPage("");
+    await submitPrivate("Plain one");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ mode: "normal", seed: null });
+  });
+});
+
+describe("/race/new?seed=: a Set Seed race", () => {
+  it("shows the banner and the seed in place of the mode grid", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+    const { container } = await openPage("?seed=363096");
+
+    await screen.findByText("Change seed");
+    expect(fetchSpeedrunSeedSummary).toHaveBeenCalledWith("363096");
+    const banner = container.querySelector(".set-seed-banner");
+    expect(banner?.textContent).toContain(SEED);
+    expect(banner?.textContent).toContain(
+      "Runners may already know this seed.",
+    );
+    expect(screen.getByText("Change seed").getAttribute("href")).toBe(
+      `/speedrun?pool=standard&start=set&seed=${SEED}`,
+    );
+    expect(screen.queryByRole("tablist")).toBeNull();
+    expect(screen.queryByLabelText("Speedrun race")).toBeNull();
+    expect(screen.getByText(`Seed ${SEED}, fixed: no reroll`)).toBeTruthy();
+  });
+
+  it("creates the race on the seed, in Set Seed mode", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+    await openPage("?seed=363096");
+    await screen.findByText("Change seed");
+
+    await submitPrivate("Grinding");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ mode: "set_seed", seed: SEED });
+  });
+
+  it("gives the reason and disables Create for a seed that cannot be replayed", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
+      summary({ replayable: false, not_replayable_reason: "Files purged." }),
+    );
+    await openPage(`?seed=${SEED}`);
+
+    await screen.findByText("Files purged.");
+    expect(
+      (screen.getByRole("button", { name: "Create Race" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("says when the seed is unknown and disables Create", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockRejectedValue(
+      new Error("Unknown seed"),
+    );
+    await openPage("?seed=zzzzzz");
+
+    await screen.findByText("Unknown seed");
+    expect(
+      (screen.getByRole("button", { name: "Create Race" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+  });
+
+  it("turns back into a plain form when a link drops the seed", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(summary());
+    await openPage("?seed=363096");
+    await screen.findByText("Change seed");
+
+    // The navbar's Create Race reuses the mounted page.
+    pageState.url = new URL("http://localhost/race/new");
+    flushSync();
+
+    await waitFor(() => expect(screen.queryByText("Change seed")).toBeNull());
+    expect(screen.getByRole("tablist")).toBeTruthy();
+    expect(
+      (screen.getByLabelText("Speedrun race") as HTMLInputElement).checked,
+    ).toBe(false);
+  });
+});

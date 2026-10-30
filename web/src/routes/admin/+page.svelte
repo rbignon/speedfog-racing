@@ -9,6 +9,7 @@
     unbanUser,
     fetchAdminPools,
     setAdminPoolEnabled,
+    setAdminPoolSpeedrunFloor,
     adminDiscardPool,
     adminScanPool,
     fetchAdminActivity,
@@ -126,6 +127,8 @@
   let adminPools: AdminPool[] = $state([]);
   let seedsLoading = $state(false);
   let actionLoading = $state<Record<string, boolean>>({});
+  // Per pool: why its Speedrun floor was not saved.
+  let floorErrors = $state<Record<string, string>>({});
   let banTarget = $state<AdminUser | null>(null);
   let banReason = $state("");
   let banLoading = $state(false);
@@ -459,6 +462,34 @@
       error = e instanceof Error ? e.message : "Failed to update pool.";
     } finally {
       actionLoading = { ...actionLoading, [`toggle_${poolName}`]: false };
+    }
+  }
+
+  // Saved when the field changes (blur or Enter); emptied, it falls back to
+  // the server default.
+  async function handleSpeedrunFloor(pool: AdminPool, input: HTMLInputElement) {
+    if (input.validity.badInput) {
+      floorErrors = { ...floorErrors, [pool.name]: "Enter a whole number." };
+      return;
+    }
+    const raw = input.value.trim();
+    const floor = raw === "" ? null : Number(raw);
+    const key = `floor_${pool.name}`;
+    actionLoading = { ...actionLoading, [key]: true };
+    try {
+      const updated = await setAdminPoolSpeedrunFloor(pool.name, floor);
+      const idx = adminPools.findIndex((p) => p.name === updated.name);
+      if (idx !== -1) {
+        adminPools[idx] = updated;
+      }
+      floorErrors = { ...floorErrors, [pool.name]: "" };
+    } catch (e) {
+      floorErrors = {
+        ...floorErrors,
+        [pool.name]: e instanceof Error ? e.message : "Failed to save.",
+      };
+    } finally {
+      actionLoading = { ...actionLoading, [key]: false };
     }
   }
 
@@ -1411,6 +1442,10 @@
               >
               <th class="num-col">Reported</th>
               <th class="num-col">Discarded</th>
+              <th
+                title="Speedrun draws (solo runs, speedrun races and their rerolls) are refused while the pool has this many available seeds or fewer. Empty: the default."
+                >Speedrun floor</th
+              >
               <th>Actions</th>
             </tr>
           </thead>
@@ -1458,6 +1493,26 @@
                 {/if}
                 <td class="num-cell">{pool.reported}</td>
                 <td class="num-cell">{pool.discarded}</td>
+                <td class="floor-cell">
+                  {#if pool.type !== "training"}
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      class="floor-input"
+                      aria-label="Speedrun floor of {pool.display_name ||
+                        formatPoolName(pool.name)}"
+                      value={pool.speedrun_floor ?? ""}
+                      placeholder={String(pool.speedrun_floor_effective)}
+                      disabled={actionLoading[`floor_${pool.name}`]}
+                      onchange={(e) =>
+                        handleSpeedrunFloor(pool, e.currentTarget)}
+                    />
+                    {#if floorErrors[pool.name]}
+                      <span class="floor-error">{floorErrors[pool.name]}</span>
+                    {/if}
+                  {/if}
+                </td>
                 <td class="actions-cell">
                   <button
                     class="action-btn scan"
@@ -2534,6 +2589,30 @@
 
   .pool-disabled .pool-name {
     text-decoration: line-through;
+  }
+
+  .floor-input {
+    width: 4.5rem;
+    padding: 0.25rem 0.4rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+
+  .floor-input:focus {
+    outline: none;
+    border-color: var(--color-purple);
+  }
+
+  .floor-error {
+    display: block;
+    margin-top: 0.25rem;
+    max-width: 14rem;
+    color: var(--color-danger);
+    font-size: var(--font-size-xs);
   }
 
   .pool-toggle {

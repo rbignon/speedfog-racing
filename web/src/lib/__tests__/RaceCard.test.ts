@@ -183,3 +183,31 @@ describe("RaceCard route state", () => {
     }
   });
 });
+
+describe("RaceCard ranked race chip", () => {
+  function chipText(container: HTMLElement): string | null {
+    return (
+      container
+        .querySelector(".race-meta .run-mode-chip")
+        ?.textContent?.trim() ?? null
+    );
+  }
+
+  it("marks speedrun and Set Seed races, and nothing on a normal race", () => {
+    expect(
+      chipText(
+        render(RaceCard, { race: raceWith({ mode: "speedrun" }) }).container,
+      ),
+    ).toBe("Speedrun");
+    expect(
+      chipText(
+        render(RaceCard, { race: raceWith({ mode: "set_seed" }) }).container,
+      ),
+    ).toBe("Set Seed");
+    expect(
+      chipText(
+        render(RaceCard, { race: raceWith({ mode: "normal" }) }).container,
+      ),
+    ).toBeNull();
+  });
+});

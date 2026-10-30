@@ -966,6 +966,10 @@ export async function createRace(
   privateDag: boolean = false,
   customRules: string | null = null,
   deathless: boolean = false,
+  // Fixed at creation. A `set_seed` race names its played `seed` and takes
+  // its pool from it; the other modes draw from `poolName`.
+  mode: RunMode = "normal",
+  seed: string | null = null,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -987,6 +991,8 @@ export async function createRace(
       private_dag: privateDag,
       custom_rules: customRules,
       deathless,
+      mode,
+      seed,
     }),
   });
   return handleResponse<Race>(response);
@@ -1724,6 +1730,10 @@ export interface AdminPool {
   reported: number;
   /** Null until somebody plays the pool, so always null for race pools. */
   solo: SoloPoolProgress | null;
+  /** The pool's own Speedrun floor; null uses the server default. */
+  speedrun_floor: number | null;
+  /** The floor in force: `speedrun_floor`, else the server default. */
+  speedrun_floor_effective: number;
 }
 
 export interface AnalyticsKpis {
@@ -1864,6 +1874,28 @@ export async function setAdminPoolEnabled(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ enabled }),
+    },
+  );
+  return handleResponse<AdminPool>(response);
+}
+
+/**
+ * Set a pool's Speedrun floor (admin only): a speedrun draw is refused while
+ * the pool has that many available seeds or fewer. Null clears the override.
+ */
+export async function setAdminPoolSpeedrunFloor(
+  poolName: string,
+  floor: number | null,
+): Promise<AdminPool> {
+  const response = await fetch(
+    `${API_BASE}/admin/pools/${encodeURIComponent(poolName)}`,
+    {
+      method: "PATCH",
+      headers: {
+        ...getAuthHeaders(),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ speedrun_floor: floor }),
     },
   );
   return handleResponse<AdminPool>(response);
@@ -2648,6 +2680,58 @@ export async function fetchSpeedrunSeed(
   if (response.status === 404) throw new SeedLookupError("unknown");
   if (response.status === 409) throw new SeedLookupError("ambiguous");
   return handleResponse<SpeedrunSeed>(response);
+}
+
+/** What the Set Seed field shows while a player types a seed ID. */
+export interface SpeedrunSeedSummary {
+  seed_number: string;
+  /** The seed's category key (`<pool>` or `<pool>@<layers>`) and name. */
+  category: string;
+  category_name: string;
+  replayable: boolean;
+  not_replayable_reason: string | null;
+  /** The seed's best counted run; null without one, or while a blind run on
+   * it is in progress. */
+  record: { igt_ms: number; user: User } | null;
+}
+
+/** A seed's summary, by full seed number or 6+ character prefix. Throws with
+ * the server's text: "Unknown seed" (an unplayed seed too) or "Ambiguous seed
+ * ID". */
+export async function fetchSpeedrunSeedSummary(
+  seed: string,
+): Promise<SpeedrunSeedSummary> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/seeds/${encodeURIComponent(seed)}/summary`,
+  );
+  return handleResponse<SpeedrunSeedSummary>(response);
+}
+
+/** Whether a Speedrun-mode run could start on `pool` now: false at the
+ * pool's floor. 404 for a pool that cannot host one. */
+export async function fetchFreshSpeedrunSeeds(
+  pool: string,
+): Promise<{ fresh: boolean }> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/fresh-seeds?pool=${encodeURIComponent(pool)}`,
+  );
+  return handleResponse<{ fresh: boolean }>(response);
+}
+
+/** Start a ranked solo run: Speedrun mode on a fresh seed of `pool`, or Set
+ * Seed on a played `seed`. */
+export async function startSpeedrunSolo(
+  target: { pool: string } | { seed: string },
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(`${API_BASE}/speedrun/solo`, {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(target),
+  });
+  return handleResponse<TrainingSessionDetail>(response);
 }
 
 /** Keep a seed's files from the purge; answers the viewer's new state. */

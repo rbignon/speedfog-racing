@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 
+vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
   return {
@@ -10,6 +11,7 @@ vi.mock("$lib/api", async () => {
     unprotectSeed: vi.fn(),
     excludeSeedFromSetSeed: vi.fn(),
     restoreSeedToSetSeed: vi.fn(),
+    startSpeedrunSolo: vi.fn(),
   };
 });
 
@@ -18,15 +20,20 @@ import Leaderboard from "$lib/components/Leaderboard.svelte";
 import SeedAdminControls from "$lib/components/stats/speedrun/SeedAdminControls.svelte";
 import SeedReplayCard from "$lib/components/stats/speedrun/SeedReplayCard.svelte";
 import SeedStatusChip from "$lib/components/stats/speedrun/SeedStatusChip.svelte";
+import { goto } from "$app/navigation";
+import { auth } from "$lib/stores/auth.svelte";
 import {
   excludeSeedFromSetSeed,
   fetchSpeedrunSeed,
   protectSeed,
   restoreSeedToSetSeed,
+  startSpeedrunSolo,
   unprotectSeed,
+  type AuthUser,
   type SpeedrunSeed,
   type SpeedrunSeedRun,
   type SpeedrunSeedViewer,
+  type TrainingSessionDetail,
 } from "$lib/api";
 
 const SEED = "363096a4243f";
@@ -458,6 +465,99 @@ describe("SeedReplayCard", () => {
     });
 
     expect(screen.getByText("Built for an older game version.")).toBeTruthy();
+  });
+});
+
+describe("SeedReplayCard: starting a run", () => {
+  function loggedIn(role: string): AuthUser {
+    return {
+      id: "u1",
+      twitch_username: "runner",
+      twitch_display_name: null,
+      twitch_avatar_url: null,
+      role,
+      locale: null,
+      overlay_settings: null,
+      feedback_prompted_at: null,
+      race_count: 0,
+      daily_count: 0,
+      training_count: 0,
+    };
+  }
+
+  beforeEach(() => {
+    vi.mocked(goto).mockReset();
+    vi.mocked(startSpeedrunSolo).mockReset();
+  });
+
+  afterEach(() => {
+    auth.user = null;
+  });
+
+  it("Play solo starts a Set Seed run on this seed and opens it", async () => {
+    auth.user = loggedIn("user");
+    vi.mocked(startSpeedrunSolo).mockResolvedValue({
+      id: "s1",
+    } as TrainingSessionDetail);
+    render(SeedReplayCard, { props: { seed: seed() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Play solo" }));
+
+    expect(startSpeedrunSolo).toHaveBeenCalledWith({ seed: SEED });
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/training/s1"));
+  });
+
+  it("shows why the run could not start", async () => {
+    auth.user = loggedIn("user");
+    vi.mocked(startSpeedrunSolo).mockRejectedValue(
+      new Error("You already have an active solo session"),
+    );
+    render(SeedReplayCard, { props: { seed: seed() } });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Play solo" }));
+
+    await screen.findByText("You already have an active solo session");
+    expect(goto).not.toHaveBeenCalled();
+  });
+
+  it("offers Create race to organizers and admins only", async () => {
+    auth.user = loggedIn("user");
+    const first = render(SeedReplayCard, { props: { seed: seed() } });
+    expect(screen.queryByRole("link", { name: "Create race" })).toBeNull();
+    first.unmount();
+
+    auth.user = loggedIn("organizer");
+    render(SeedReplayCard, { props: { seed: seed() } });
+
+    expect(
+      screen.getByRole("link", { name: "Create race" }).getAttribute("href"),
+    ).toBe(`/race/new?seed=${SEED}`);
+  });
+
+  it("puts the reason in place of the buttons when the seed cannot be replayed", () => {
+    auth.user = loggedIn("organizer");
+    render(SeedReplayCard, {
+      props: {
+        seed: seed({
+          replayable: false,
+          not_replayable_code: "purged",
+          not_replayable_reason: "Files purged.",
+        }),
+      },
+    });
+
+    expect(screen.getByText("Files purged.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play solo" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Create race" })).toBeNull();
+  });
+
+  it("asks a logged-out viewer to log in", () => {
+    render(SeedReplayCard, { props: { seed: seed() } });
+
+    expect(
+      screen.getByRole("link", { name: "Login with Twitch" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Play solo" })).toBeNull();
   });
 });
 

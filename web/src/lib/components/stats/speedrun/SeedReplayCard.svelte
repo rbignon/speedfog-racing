@@ -1,6 +1,15 @@
 <script lang="ts">
-  import { protectSeed, unprotectSeed, type SpeedrunSeed } from "$lib/api";
-  import { seedPageHref } from "$lib/speedrun";
+  import { goto } from "$app/navigation";
+  import {
+    getTwitchLoginUrl,
+    protectSeed,
+    startSpeedrunSolo,
+    unprotectSeed,
+    type SpeedrunSeed,
+  } from "$lib/api";
+  import { seedPageHref, setSeedRaceNewHref } from "$lib/speedrun";
+  import { auth } from "$lib/stores/auth.svelte";
+  import SpeedrunRules from "./SpeedrunRules.svelte";
 
   let {
     seed,
@@ -16,10 +25,29 @@
   let viewer = $derived(seed.viewer);
   let busy = $state(false);
   let error = $state<string | null>(null);
+  let starting = $state(false);
+  let startError = $state<string | null>(null);
 
   let atLimit = $derived(
     viewer !== null && viewer.protected_seeds.length >= viewer.protection_limit,
   );
+
+  async function playSolo() {
+    starting = true;
+    startError = null;
+    try {
+      const session = await startSpeedrunSolo({ seed: seed.seed_number });
+      goto(`/training/${session.id}`);
+    } catch (e) {
+      startError = e instanceof Error ? e.message : "Failed to start the run.";
+      starting = false;
+    }
+  }
+
+  // Back to this seed after the Twitch round trip.
+  function rememberPage() {
+    sessionStorage.setItem("redirect_after_login", window.location.pathname);
+  }
 
   async function toggleProtection() {
     if (viewer === null) return;
@@ -48,8 +76,38 @@
   <p>
     They never enter <strong>Random Seed</strong>, which stays for blind runs.
   </p>
+  <div class="rules">
+    <SpeedrunRules />
+  </div>
   {#if !seed.replayable}
     <p class="not-replayable">{seed.not_replayable_reason}</p>
+  {:else}
+    <div class="start">
+      {#if auth.isLoggedIn}
+        <button
+          type="button"
+          class="btn btn-primary"
+          disabled={starting}
+          onclick={playSolo}>{starting ? "Starting..." : "Play solo"}</button
+        >
+        {#if auth.canCreateRace}
+          <a
+            class="btn btn-secondary"
+            href={setSeedRaceNewHref(seed.seed_number)}>Create race</a
+          >
+        {/if}
+      {:else}
+        <a
+          class="btn btn-twitch"
+          href={getTwitchLoginUrl()}
+          data-sveltekit-reload
+          onclick={rememberPage}>Login with Twitch</a
+        >
+      {/if}
+    </div>
+    {#if startError}
+      <p class="start-error" role="alert">{startError}</p>
+    {/if}
   {/if}
 
   {#if viewer}
@@ -136,6 +194,25 @@
   .not-replayable {
     margin-top: 0.65rem;
     color: var(--color-text);
+  }
+
+  .rules {
+    margin: 0.9rem 0 1.2rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .start {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .start-error {
+    margin: 0.6rem 0 0;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
   }
 
   .protect {
