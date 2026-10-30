@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from speedfog_racing.models import Participant, Pool, Race, User
+    from speedfog_racing.services.speedrun_records import RecordChange
 
 logger = logging.getLogger(__name__)
 
@@ -477,6 +478,33 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
     await _send_webhook(embed, allowed_mentions={"parse": []})
 
 
+async def notify_speedrun_record(change: RecordChange) -> None:
+    """Announce a new Set Seed or Random Seed record on the main webhook."""
+    run = change.run
+    sub_label = "Set Seed" if change.sub == "set" else "Random Seed"
+    runner = _escape_discord_md(run.user.twitch_display_name or run.user.twitch_username)
+    if change.previous is None:
+        previous = "First record"
+    else:
+        holder = change.previous.user
+        previous_name = _escape_discord_md(holder.twitch_display_name or holder.twitch_username)
+        previous = f"{_format_igt(change.previous.igt_ms)} by {previous_name}"
+    base_url = settings.base_url.rstrip("/")
+    embed: dict[str, object] = {
+        "title": f"New {_escape_discord_md(change.category_name)} \u00b7 {sub_label} record",
+        "url": f"{base_url}/speedrun/seed/{run.seed_number}?run={run.run_id}",
+        "color": 0xF5C542,
+        "fields": [
+            {"name": "Time", "value": _format_igt(run.igt_ms), "inline": True},
+            {"name": "Runner", "value": runner, "inline": True},
+            {"name": "Seed", "value": run.seed_number[:6], "inline": True},
+            {"name": "Previous", "value": previous, "inline": True},
+            {"name": "Run", "value": "Blind" if run.blind else "Replay", "inline": True},
+        ],
+    }
+    await _send_webhook(embed, allowed_mentions={"parse": []})
+
+
 def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:
     """Fire-and-forget Discord notifications for a finished race.
 
@@ -502,6 +530,11 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+    # Local import: speedrun_records imports this module.
+    from speedfog_racing.services.speedrun_records import schedule_speedrun_record_check
+
+    schedule_speedrun_record_check(race_id=race.id)
 
     if race.discord_event_id:
         ev_task = asyncio.create_task(set_event_status(race.discord_event_id, 3))

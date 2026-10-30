@@ -118,6 +118,7 @@ When `DISCORD_WEBHOOK_URL` is set, race lifecycle events post embeds:
 - **Race created**: with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set. Skipped for invite-only races (open registration disabled), since only invited players can join.
 - **Race started**: with participant count
 - **Race finished**: with podium (top 3 times)
+- **Speedrun record**: "New <category> · Set Seed record" (or "Random Seed record") each time a finished race or ranked solo session sets a strictly faster time than every other counted run of that board (a tie is not a record). Fields: Time, Runner, Seed (first 6 characters), Previous ("<time> by <name>" or "First record") and Run (Blind or Replay); the title links to the seed page focused on the run. No role ping. One announcement per board and finish (a run that is a record on both boards posts twice). See `docs/SPEEDRUN.md`.
 
 ### Solo/Training Live Notifications (Webhook)
 

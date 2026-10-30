@@ -26,6 +26,7 @@ from speedfog_racing.services.layer_service import (
     get_tier_for_node,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.speedrun_records import schedule_speedrun_record_check
 from speedfog_racing.websocket.handler import BaseModHandler, extract_event_ids
 from speedfog_racing.websocket.schemas import (
     AuthOkMessage,
@@ -405,9 +406,12 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 return
             session.status = TrainingSessionStatus.FINISHED
             session.finished_at = datetime.now(UTC)
+            mode = session.mode
             # session.igt_ms already holds the clamped value: the base
             # _on_igt_change ran on this same report before this hook.
             await db.commit()
+
+        maybe_schedule_record_check(session_id, mode)
 
         # Broadcast finish to spectators
         await _broadcast_participant_update(session)
@@ -465,6 +469,12 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
         if prev_zone_history_len is not None:
             await _broadcast_zone_history(self._session_id, entity.zone_history or [])
+
+
+def maybe_schedule_record_check(session_id: uuid.UUID, mode: RunMode) -> None:
+    """A finished ranked session may set a speedrun.fog record."""
+    if mode in (RunMode.SPEEDRUN, RunMode.SET_SEED):
+        schedule_speedrun_record_check(session_id=session_id)
 
 
 def build_training_participant_info(
