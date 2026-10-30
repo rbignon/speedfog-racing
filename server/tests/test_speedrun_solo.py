@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -719,3 +719,109 @@ async def test_invalidated_run_leaves_board_and_seed_page_at_once(
     delete = await test_client.delete(url, headers=_auth("admin"))
     assert (delete.status_code, delete.json()["invalidated"]) == (200, False)
     assert await counts() == (1, 1)
+
+
+# --- Unfinished Speedrun solo limit ---
+
+
+async def _backdated(
+    db: AsyncSession,
+    user,
+    hours_ago: float,
+    *,
+    status: TrainingSessionStatus = TrainingSessionStatus.ABANDONED,
+    mode: RunMode = RunMode.SPEEDRUN,
+) -> TrainingSession:
+    session = await _add_session(db, user, "sprint", mode, 1000, status=status)
+    session.created_at = datetime.now(UTC) - timedelta(hours=hours_ago)
+    return session
+
+
+@pytest.fixture
+def limit_3(monkeypatch):
+    monkeypatch.setattr(settings, "speedrun_solo_unfinished_limit", 3)
+    monkeypatch.setattr(settings, "speedrun_solo_unfinished_window_hours", 24)
+
+
+async def _seed_states(db: AsyncSession) -> list[SeedStatus]:
+    return list((await db.execute(select(Seed.status))).scalars())
+
+
+async def test_unfinished_limit_refuses_and_consumes_no_seed(async_session, pools, limit_3):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        await _available(db, "sprint", 5)
+        for hours, state in (
+            (1, TrainingSessionStatus.ABANDONED),
+            (2, TrainingSessionStatus.CANCELLED),
+            (3, TrainingSessionStatus.ABANDONED),
+        ):
+            await _backdated(db, user, hours, status=state)
+        await db.commit()
+        before = await _seed_states(db)
+        with pytest.raises(SpeedrunStartError) as error:
+            await create_speedrun_session(db, user.id, "sprint")
+        assert error.value.code == "unfinished_limit"
+        # Built from the settings, and names when a slot frees up (oldest + window).
+        assert "3 unfinished" in error.value.message and "24 hours" in error.value.message
+        assert await _seed_states(db) == before
+
+
+async def test_unfinished_limit_counts_only_unfinished_own_speedrun_in_window(
+    async_session, pools, limit_3
+):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        other = await _user(db, "b")
+        await _available(db, "sprint", 5)
+        await _backdated(db, user, 1, status=TrainingSessionStatus.ABANDONED)
+        await _backdated(db, user, 2, status=TrainingSessionStatus.FINISHED)  # finished
+        await _backdated(db, user, 25, status=TrainingSessionStatus.ABANDONED)  # too old
+        await _backdated(db, user, 3, mode=RunMode.SET_SEED)  # other mode
+        await _backdated(db, other, 1)  # other player
+        await _backdated(db, other, 2)
+        await _backdated(db, other, 3)
+        await db.commit()
+        # Only one counts: below the limit of 3.
+        session = await create_speedrun_session(db, user.id, "sprint")
+        assert session.mode == RunMode.SPEEDRUN
+
+
+async def test_unfinished_limit_zero_disables(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "speedrun_solo_unfinished_limit", 0)
+    async with async_session() as db:
+        user = await _user(db, "a")
+        await _available(db, "sprint", 5)
+        for hours in (1, 2, 3, 4):
+            await _backdated(db, user, hours)
+        await db.commit()
+        session = await create_speedrun_session(db, user.id, "sprint")
+        assert session.mode == RunMode.SPEEDRUN
+
+
+async def test_unfinished_limit_does_not_apply_to_set_seed(async_session, pools, limit_3, seed_zip):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        for hours in (1, 2, 3):
+            await _backdated(db, user, hours)
+        seed = await _seed(db, "abcdef111111", folder_path=seed_zip)
+        await _add_run(db, user=await _user(db, "b"), igt_ms=1000, minute=1, seed=seed)
+        await db.commit()
+        session = await create_set_seed_session(db, user.id, "abcdef111111")
+        assert session.mode == RunMode.SET_SEED
+
+
+async def test_unfinished_limit_is_429_with_its_own_detail(
+    test_client, async_session, pools, limit_3
+):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        await _available(db, "sprint", 5)
+        for hours in (1, 2, 3):
+            await _backdated(db, user, hours)
+        await db.commit()
+    response = await test_client.post(
+        "/api/speedrun/solo", json={"pool": "sprint"}, headers=_auth("a")
+    )
+    assert response.status_code == 429
+    assert "3 unfinished" in response.json()["detail"]

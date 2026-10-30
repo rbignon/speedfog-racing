@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     speedrun_default_floor: int = 5
     # An ACTIVE Speedrun solo session older than this becomes ABANDONED.
     speedrun_session_ttl_hours: int = 24
+    # A player with this many unfinished Speedrun solo sessions created within the window
+    # below cannot start another (0 disables the limit).
+    speedrun_solo_unfinished_limit: int = 3
+    # Hours back the unfinished Speedrun solo sessions are counted.
+    speedrun_solo_unfinished_window_hours: int = 24
     # Runs the Speedrun page's Recent runs panel lists.
     speedrun_recent_runs_count: int = 5
     # Most practiced seeds panel of the Speedrun tab: how many seeds it lists...

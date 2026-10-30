@@ -171,6 +171,7 @@ async def get_fresh_seeds(
 _START_ERROR_STATUS = {
     "unknown_pool": status.HTTP_404_NOT_FOUND,
     "unknown_seed": status.HTTP_404_NOT_FOUND,
+    "unfinished_limit": status.HTTP_429_TOO_MANY_REQUESTS,
 }
 
 
