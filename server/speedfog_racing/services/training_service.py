@@ -240,36 +240,43 @@ async def _require_no_active_session(db: AsyncSession, user_id: uuid.UUID) -> No
         raise SpeedrunStartError("active_session", "You already have an active solo session")
 
 
-async def _require_under_unfinished_limit(db: AsyncSession, user_id: uuid.UUID) -> None:
+async def _require_under_unfinished_limit(
+    db: AsyncSession, user_id: uuid.UUID, *, now: datetime | None = None
+) -> None:
     """Refuse a Speedrun solo start when the player has too many unfinished
     Speedrun sessions in the window (finished runs never count)."""
     limit = settings.speedrun_solo_unfinished_limit
     if limit <= 0:
         return
-    window = timedelta(hours=settings.speedrun_solo_unfinished_window_hours)
+    now = now or datetime.now(UTC)
+    hours = settings.speedrun_solo_unfinished_window_hours
+    window = timedelta(hours=hours)
     result = await db.execute(
         select(TrainingSession.created_at)
         .where(
             TrainingSession.user_id == user_id,
             TrainingSession.mode == RunMode.SPEEDRUN,
             TrainingSession.status != TrainingSessionStatus.FINISHED,
-            TrainingSession.created_at >= datetime.now(UTC) - window,
+            TrainingSession.created_at >= now - window,
         )
         .order_by(TrainingSession.created_at)
     )
     created = list(result.scalars())
-    if len(created) < limit:
+    count = len(created)
+    if count < limit:
         return
     # The session whose leaving the window brings the count under the limit.
-    frees_up = created[len(created) - limit]
+    frees_up = created[count - limit]
     if frees_up.tzinfo is None:  # SQLite drops the zone; stored values are UTC
         frees_up = frees_up.replace(tzinfo=UTC)
-    retry_at = (frees_up + window).strftime("%Y-%m-%d %H:%M UTC")
-    hours = settings.speedrun_solo_unfinished_window_hours
+    minutes = max(1, -((now - (frees_up + window)) // timedelta(minutes=1)))
+    hours_left, minutes_left = divmod(minutes, 60)
+    wait = f"{hours_left} h {minutes_left} min" if hours_left else f"{minutes_left} min"
+    unit = "hour" if hours == 1 else "hours"
     raise SpeedrunStartError(
         "unfinished_limit",
-        f"You have {limit} unfinished Random Seed runs in the last {hours} "
-        f"{'hour' if hours == 1 else 'hours'}. Finish a run, or try again after {retry_at}.",
+        f"You have {count} unfinished Random Seed runs in the last {hours} {unit} "
+        f"(the limit is {limit}). Finish a run, or try again in {wait}.",
     )
 
 

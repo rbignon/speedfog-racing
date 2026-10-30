@@ -29,6 +29,7 @@ from speedfog_racing.services.seed_service import SpeedrunFloorError
 from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.training_service import (
     SpeedrunStartError,
+    _require_under_unfinished_limit,
     create_set_seed_session,
     create_speedrun_session,
     expire_speedrun_sessions,
@@ -724,6 +725,9 @@ async def test_invalidated_run_leaves_board_and_seed_page_at_once(
 # --- Unfinished Speedrun solo limit ---
 
 
+NOW = datetime.now(UTC).replace(microsecond=0)
+
+
 async def _backdated(
     db: AsyncSession,
     user,
@@ -733,7 +737,7 @@ async def _backdated(
     mode: RunMode = RunMode.SPEEDRUN,
 ) -> TrainingSession:
     session = await _add_session(db, user, "sprint", mode, 1000, status=status)
-    session.created_at = datetime.now(UTC) - timedelta(hours=hours_ago)
+    session.created_at = NOW - timedelta(hours=hours_ago)
     return session
 
 
@@ -751,20 +755,54 @@ async def test_unfinished_limit_refuses_and_consumes_no_seed(async_session, pool
     async with async_session() as db:
         user = await _user(db, "a")
         await _available(db, "sprint", 5)
+        # Four counted sessions (more than the limit); the 2nd oldest frees the slot
+        # (4 - 3 = index 1): 23 h 40 min old, so it leaves the window in 20 min.
         for hours, state in (
-            (1, TrainingSessionStatus.ABANDONED),
-            (2, TrainingSessionStatus.CANCELLED),
-            (3, TrainingSessionStatus.ABANDONED),
+            (23.9, TrainingSessionStatus.ABANDONED),
+            (23 + 40 / 60, TrainingSessionStatus.CANCELLED),
+            (10, TrainingSessionStatus.ABANDONED),
+            (1, TrainingSessionStatus.CANCELLED),
         ):
             await _backdated(db, user, hours, status=state)
         await db.commit()
         before = await _seed_states(db)
         with pytest.raises(SpeedrunStartError) as error:
-            await create_speedrun_session(db, user.id, "sprint")
+            await _require_under_unfinished_limit(db, user.id, now=NOW)
         assert error.value.code == "unfinished_limit"
-        # Built from the settings, and names when a slot frees up (oldest + window).
-        assert "3 unfinished" in error.value.message and "24 hours" in error.value.message
+        assert error.value.message == (
+            "You have 4 unfinished Random Seed runs in the last 24 hours (the limit is 3). "
+            "Finish a run, or try again in 20 min."
+        )
         assert await _seed_states(db) == before
+
+
+async def test_unfinished_limit_wait_in_hours_rounds_minutes_up(async_session, pools, limit_3):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        for hours in (19, 5, 1):  # oldest leaves in 5 h; add 30 s to force the round up
+            await _backdated(db, user, hours)
+        sessions = (
+            (await db.execute(select(TrainingSession).order_by(TrainingSession.created_at)))
+            .scalars()
+            .all()
+        )
+        sessions[0].created_at = NOW - timedelta(hours=18, minutes=47, seconds=30)
+        await db.commit()
+        with pytest.raises(SpeedrunStartError) as error:
+            await _require_under_unfinished_limit(db, user.id, now=NOW)
+        assert error.value.message.endswith("try again in 5 h 13 min.")
+
+
+async def test_unfinished_limit_counts_an_active_session(async_session, pools, limit_3):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        await _backdated(db, user, 3)
+        await _backdated(db, user, 2)
+        await _backdated(db, user, 1, status=TrainingSessionStatus.ACTIVE)
+        await db.commit()
+        with pytest.raises(SpeedrunStartError) as error:
+            await _require_under_unfinished_limit(db, user.id, now=NOW)
+        assert error.value.code == "unfinished_limit"
 
 
 async def test_unfinished_limit_counts_only_unfinished_own_speedrun_in_window(
@@ -773,18 +811,28 @@ async def test_unfinished_limit_counts_only_unfinished_own_speedrun_in_window(
     async with async_session() as db:
         user = await _user(db, "a")
         other = await _user(db, "b")
-        await _available(db, "sprint", 5)
+        # limit - 1 counted sessions; each excluded row below would make it 3 if
+        # its filter were dropped.
         await _backdated(db, user, 1, status=TrainingSessionStatus.ABANDONED)
-        await _backdated(db, user, 2, status=TrainingSessionStatus.FINISHED)  # finished
-        await _backdated(db, user, 25, status=TrainingSessionStatus.ABANDONED)  # too old
-        await _backdated(db, user, 3, mode=RunMode.SET_SEED)  # other mode
-        await _backdated(db, other, 1)  # other player
-        await _backdated(db, other, 2)
-        await _backdated(db, other, 3)
+        await _backdated(db, user, 2, status=TrainingSessionStatus.CANCELLED)
+        await _backdated(db, user, 3, status=TrainingSessionStatus.FINISHED)
         await db.commit()
-        # Only one counts: below the limit of 3.
-        session = await create_speedrun_session(db, user.id, "sprint")
-        assert session.mode == RunMode.SPEEDRUN
+        await _require_under_unfinished_limit(db, user.id, now=NOW)
+        for excluded in (
+            dict(user=user, hours_ago=25),  # out of window
+            dict(user=user, hours_ago=4, mode=RunMode.SET_SEED),  # other mode
+            dict(user=other, hours_ago=4),  # other player
+        ):
+            row = await _backdated(db, **excluded)
+            await db.commit()
+            await _require_under_unfinished_limit(db, user.id, now=NOW)
+            await db.delete(row)
+            await db.commit()
+        # A counted row on top does reach the limit.
+        await _backdated(db, user, 4)
+        await db.commit()
+        with pytest.raises(SpeedrunStartError):
+            await _require_under_unfinished_limit(db, user.id, now=NOW)
 
 
 async def test_unfinished_limit_zero_disables(async_session, pools, monkeypatch):
