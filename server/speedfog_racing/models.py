@@ -774,8 +774,8 @@ def counts_for_community_stats() -> ColumnElement[bool]:
 
     Speedrun and Set Seed races are created with ``exclude_from_stats`` and stay
     out; normal races (dailies and event races included) and older races whose
-    flag is off keep counting. Lives here (re-exported by ``api.helpers``) so the
-    services can use it without importing the API layer.
+    flag is off keep counting. Lives here so the services can use it without
+    importing the API layer.
     """
     return or_(Race.mode == RunMode.NORMAL, Race.exclude_from_stats.is_(False))
 

@@ -42,7 +42,7 @@ An endpoint reserved to the organizer also accepts an admin (`_require_organizer
 | POST   | `/api/races/{id}/join`                          | Bearer           | Self-join open-registration race (SETUP only)                                                                                                                                                                              |
 | POST   | `/api/races/{id}/leave`                         | Bearer           | Leave race (SETUP only)                                                                                                                                                                                                    |
 | POST   | `/api/races/{id}/release-seeds`                 | Bearer           | Release seeds for download (organizer, SETUP)                                                                                                                                                                              |
-| POST   | `/api/races/{id}/reroll-seed`                   | Bearer           | Reroll the seed (organizer, SETUP, seeds not released). For Daily Seeds, accepts RUNNING and resets every participant.                                                                                                     |
+| POST   | `/api/races/{id}/reroll-seed`                   | Bearer           | Reroll the seed (organizer, SETUP; not a Set Seed race; speedrun: pool floor). The old seed goes back AVAILABLE, or stays CONSUMED once released. Daily Seeds: RUNNING only, resets every participant.                     |
 | POST   | `/api/races/{id}/start`                         | Bearer           | Start race: SETUP → RUNNING (organizer)                                                                                                                                                                                    |
 | POST   | `/api/races/{id}/reset`                         | Bearer           | Reset race: RUNNING → SETUP (organizer)                                                                                                                                                                                    |
 | POST   | `/api/races/{id}/finish`                        | Bearer           | Force-finish race: RUNNING → FINISHED (organizer)                                                                                                                                                                          |
@@ -85,10 +85,10 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 
 ### Invites
 
-| Method | Endpoint                     | Auth   | Description     |
-| ------ | ---------------------------- | ------ | --------------- |
-| GET    | `/api/invite/{token}`        | -      | Get invite info |
-| POST   | `/api/invite/{token}/accept` | Bearer | Accept invite   |
+| Method | Endpoint                     | Auth   | Description                                                                          |
+| ------ | ---------------------------- | ------ | ------------------------------------------------------------------------------------ |
+| GET    | `/api/invite/{token}`        | -      | Get invite info (race name, organizer, `race_status`, `race_mode`, invited username) |
+| POST   | `/api/invite/{token}/accept` | Bearer | Accept invite                                                                        |
 
 ### i18n
 
@@ -106,7 +106,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 | PUT    | `/api/admin/seeds/{seed}/set-seed-exclusion` | Bearer (admin) | Exclude a played seed (number or 6+ character prefix) from Set Seed, body `{reason}` (1 to 500 characters); see [SPEEDRUN.md](SPEEDRUN.md) |
 | DELETE | `/api/admin/seeds/{seed}/set-seed-exclusion` | Bearer (admin) | Lift a seed's Set Seed exclusion                                                                                                           |
 | GET    | `/api/admin/pools`                           | Bearer (admin) | List pools (incl. disabled) with seed counts                                                                                               |
-| PATCH  | `/api/admin/pools/{name}`                    | Bearer (admin) | Toggle `enabled` flag (`{ enabled: bool }`)                                                                                                |
+| PATCH  | `/api/admin/pools/{name}`                    | Bearer (admin) | Toggle `enabled` and/or set `speedrun_floor` (`{ enabled?: bool, speedrun_floor?: int >= 0 \| null }`, null clears the override)           |
 | GET    | `/api/admin/users`                           | Bearer (admin) | List all users                                                                                                                             |
 | PATCH  | `/api/admin/users/{user_id}`                 | Bearer (admin) | Update user role                                                                                                                           |
 | POST   | `/api/admin/users/{user_id}/ban`             | Bearer (admin) | Ban an account, body `{reason}` (never an admin or oneself); applies the ban side effects                                                  |
@@ -1154,7 +1154,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                           |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
 ### SeedInfo
 

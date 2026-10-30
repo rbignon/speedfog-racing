@@ -52,6 +52,7 @@ async def get_invite_info(
         organizer_name=invite.race.organizer.twitch_display_name
         or invite.race.organizer.twitch_username,
         race_status=invite.race.status,
+        race_mode=invite.race.mode,
         twitch_username=invite.twitch_username,
     )
 

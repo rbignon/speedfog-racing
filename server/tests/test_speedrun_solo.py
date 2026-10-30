@@ -3,7 +3,7 @@
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -403,6 +403,57 @@ async def test_expiry_never_overwrites_a_finished_session(async_session, pools):
     async with async_session() as db:
         row = await db.get(TrainingSession, done.id)
         assert row is not None and row.status == TrainingSessionStatus.FINISHED
+
+
+async def test_finish_never_overwrites_an_abandoned_session(async_session, pools):
+    """An expiry or an abandon landing between the mod's finish report and
+    its handler wins: the session stays ABANDONED, with no broadcast and no
+    record check. An ACTIVE session still finishes."""
+    from speedfog_racing.websocket.training import mod
+
+    async with async_session() as db:
+        gone = await _add_session(
+            db, await _user(db, "a"), "sprint", RunMode.SPEEDRUN, 5000,
+            status=TrainingSessionStatus.ABANDONED,
+        )  # fmt: skip
+        live = await _add_session(
+            db, await _user(db, "b"), "sprint", RunMode.SPEEDRUN, 6000,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+        )  # fmt: skip
+        await db.commit()
+
+    with (
+        patch.object(mod, "_broadcast_status_change", new_callable=AsyncMock) as broadcast,
+        patch.object(mod, "schedule_speedrun_record_check") as check,
+    ):
+        for session in (gone, live):
+            handler = mod.TrainingModHandler(MagicMock(), session.id, async_session)
+            await handler._handle_finish_event(session, session.igt_ms, None)
+
+    broadcast.assert_awaited_once_with(live.id, "finished")
+    check.assert_called_once_with(session_id=live.id)
+    async with async_session() as db:
+        statuses = {
+            row.id: row.status
+            for row in (await db.execute(select(TrainingSession))).scalars().all()
+        }
+    assert statuses == {
+        gone.id: TrainingSessionStatus.ABANDONED,
+        live.id: TrainingSessionStatus.FINISHED,
+    }
+
+
+async def test_seed_lookups_keep_the_default_rate_limit(test_client, pools):
+    """The Start a run window asks fresh-seeds on opening and the summary as
+    the Seed ID is typed: both stay under the API's default per-client limit
+    (60 a minute)."""
+    for url, params in (
+        ("/api/speedrun/fresh-seeds", {"pool": "sprint"}),
+        ("/api/speedrun/seeds/zzzzzz/summary", None),
+    ):
+        statuses = [(await test_client.get(url, params=params)).status_code for _ in range(61)]
+        assert 429 not in statuses[:60], url
+        assert statuses[60] == 429, url
 
 
 async def test_monitor_expires_and_broadcasts(async_session, pools):

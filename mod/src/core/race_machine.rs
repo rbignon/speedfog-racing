@@ -522,10 +522,11 @@ impl RaceMachine {
             && !self.wrong_save
     }
 
-    /// Whether the debug-flag read may run: racing for real (not training,
-    /// not abandoned), after the countdown, before the local finish, on a
-    /// save the server accepts (no local wrong save, no blocking server
-    /// condition). Outside it the server ignores the reports anyway.
+    /// Whether the debug-flag read may run: racing for real (not a practice
+    /// session, not abandoned), after the countdown, before the local
+    /// finish, on a save the server accepts (no local wrong save, no
+    /// blocking server condition). Outside it the server ignores the reports
+    /// anyway.
     fn debug_flags_gate_open(&self, now: Instant) -> bool {
         (!self.training || self.is_ranked())
             && !self.am_i_abandoned()

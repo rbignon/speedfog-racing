@@ -1227,7 +1227,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
     def _record_debug_flags(self, entity: T, reported: Any, igt_ms: int) -> list[str]:
         """Store the game debug flags reported with a status_update and
         return the names seen for the first time. Override to record them
-        (race); training sessions ignore them."""
+        (race, ranked solo session); practice sessions ignore them."""
         return []
 
     async def _on_debug_flags_recorded(self, entity: T, added: list[str]) -> None:
@@ -1236,8 +1236,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the
-        forward-plausibility check. None disables the check (training has
-        no such column; solo sessions have no leaderboard to protect)."""
+        forward-plausibility check. None disables the check: practice
+        sessions have no leaderboard to protect. Override to return it (race,
+        ranked solo session)."""
         return None
 
     def _igt_plausible(self, entity: T, igt_ms: int) -> bool:

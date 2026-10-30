@@ -669,6 +669,8 @@ class InviteInfoResponse(BaseModel):
     race_name: str
     organizer_name: str
     race_status: RaceStatus
+    # The invite page warns that a Set Seed race replays a played seed.
+    race_mode: RunMode
     twitch_username: str
 
 

@@ -111,7 +111,7 @@ it finishes, and the same people can cancel it from the same dialog.
 
 **Invalidation** (one ranked solo run, admins only). Ranked solo sessions
 (`speedrun`, `set_seed`) have no participant to disqualify, so an admin
-opens the session page and picks "Invalidate run" (or "Disqualify" next to
+opens the session page and picks "Invalidate run" (or "Invalidate" next to
 the flags in the "Cheat detections" panel shown from `debug_flags`, which
 suggests a reason). A reason (1 to 500 characters) is required. The session
 keeps its data, gets `invalidated_at`, `invalidated_by_id` and

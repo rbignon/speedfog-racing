@@ -377,16 +377,35 @@ async def draw_speedrun_seed(
 ) -> Seed:
     """Pick a random AVAILABLE seed for a speedrun, refusing at or under the floor.
 
-    The count leaves out ``exclude_id`` (a reroll's current seed). Does not
-    change the seed's status: callers do.
+    The count and the pick both leave out ``exclude_id`` (a reroll's current
+    seed). Does not change the seed's status: callers do.
+
+    The picked row stays locked until the caller's commit (``FOR UPDATE SKIP
+    LOCKED`` on PostgreSQL; SQLite ignores it), so two concurrent draws never
+    get the same seed: the second one skips the locked row. The count cannot
+    see a concurrent draw's uncommitted pick, so simultaneous draws can each
+    pass the floor check and take the pool under its floor by the extra
+    draws; the floor is a reserve, not an invariant.
 
     Raises:
-        SpeedrunFloorError: If the pool has ``<= floor`` AVAILABLE seeds.
+        SpeedrunFloorError: If the pool has ``<= floor`` AVAILABLE seeds, or
+            every remaining one is locked by a concurrent draw.
     """
     if await _available_count(db, pool_name, exclude_id) <= await speedrun_floor(db, pool_name):
         raise SpeedrunFloorError()
-    seed = await get_available_seed(db, pool_name, exclude_id)
-    if seed is None:  # floor 0 and an empty pool
+    query = (
+        select(Seed)
+        .where(Seed.pool_name == pool_name, Seed.status == SeedStatus.AVAILABLE)
+        .order_by(func.random())
+        .limit(1)
+        # OF seeds: the eager-loaded pool is outer joined, and PostgreSQL
+        # refuses FOR UPDATE on the nullable side of an outer join.
+        .with_for_update(of=Seed, skip_locked=True)
+    )
+    if exclude_id is not None:
+        query = query.where(Seed.id != exclude_id)
+    seed = (await db.execute(query)).scalar_one_or_none()
+    if seed is None:  # floor 0 and an empty pool, or every seed locked
         raise SpeedrunFloorError()
     return seed
 

@@ -401,15 +401,31 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         # event_flag_ack already sent by base class for finish events.
         session_id = self._session_id
         async with self.session_maker() as db:
+            # Conditional, like the expiry: an expiry or an abandon that landed
+            # since the base class's check keeps its status, and this finish
+            # is dropped (no broadcast, no record check).
+            finished = (
+                await db.execute(
+                    update(TrainingSession)
+                    .where(
+                        TrainingSession.id == session_id,
+                        TrainingSession.status == TrainingSessionStatus.ACTIVE,
+                    )
+                    .values(status=TrainingSessionStatus.FINISHED, finished_at=datetime.now(UTC))
+                    .returning(TrainingSession.id)
+                    .execution_options(synchronize_session=False)
+                )
+            ).scalar_one_or_none()
+            await db.commit()
+            if finished is None:
+                logger.info("Finish dropped: training=%s is no longer active", session_id)
+                return
             session = await _load_session(db, session_id)
             if not session:
                 return
-            session.status = TrainingSessionStatus.FINISHED
-            session.finished_at = datetime.now(UTC)
             mode = session.mode
             # session.igt_ms already holds the clamped value: the base
             # _on_igt_change ran on this same report before this hook.
-            await db.commit()
 
         maybe_schedule_record_check(session_id, mode)
 

@@ -12,6 +12,7 @@ from speedfog_racing.models import (
     Participant,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -139,6 +140,21 @@ async def test_get_invite_info(test_client, race_with_invite):
         assert data["organizer_name"] == "The Organizer"
         assert data["twitch_username"] == "invited_player"
         assert data["race_status"] == "setup"
+
+
+@pytest.mark.asyncio
+async def test_invite_info_carries_the_race_mode(test_client, async_session, race_with_invite):
+    """The invite page warns before a runner joins a Set Seed race."""
+    async with async_session() as db:
+        race = await db.get(Race, race_with_invite["race"].id)
+        assert race is not None
+        race.mode = RunMode.SET_SEED
+        await db.commit()
+
+    async with test_client as client:
+        response = await client.get("/api/invite/test_invite_token")
+
+    assert response.json()["race_mode"] == "set_seed"
 
 
 @pytest.mark.asyncio
