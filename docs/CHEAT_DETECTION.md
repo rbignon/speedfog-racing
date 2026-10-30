@@ -64,7 +64,9 @@ wire names and carry the same human-readable labels.
    The mod reads the flags in a solo session only when `auth_ok` carries
    `race.ranked` (protocol 1.9), so a ranked session refuses an older mod at
    auth. A ranked finish also counts only once the zone history reached the
-   final boss (see "Finish rule" in `SPEEDRUN.md`).
+   final boss; a rejected finish posts "Ranked finish rejected" (run link,
+   seed, IGT, reason) to the same admin channel (see "Finish rule" in
+   `SPEEDRUN.md`).
    Normal practice sessions skip all of it.
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists

@@ -126,7 +126,7 @@ When `DISCORD_TRAINING_WEBHOOK_URL` is set, a notification is posted when a play
 
 ### Cheat Detections and Sanctions (Webhook)
 
-When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag labels ("One shot", "Infinite stamina"...).
+When `DISCORD_ADMIN_WEBHOOK_URL` is set, the server posts to that channel (keep it private to admins) each time a race participant's mod reports game debug flags not seen before for that participant: runner, race link, IGT, zone and the flag labels ("One shot", "Infinite stamina"...). Ranked solo runs (Speedrun, Set Seed) post the same alert linking the run's page, and a "Ranked finish rejected" alert when the server drops a ranked solo finish whose zone history never reached the final boss: runner, run link, run name, seed, IGT and the reason (see "Finish rule" in `docs/SPEEDRUN.md`).
 
 The same channel receives every sanction: a disqualification or its cancellation (runner, race link, who did it, and the reason), and a ban or its lifting (account, who did it, and the reason). A ban that disqualifies the account from running races posts those disqualifications too. See `docs/CHEAT_DETECTION.md`.
 

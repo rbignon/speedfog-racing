@@ -266,6 +266,11 @@ def _race_url(race_id: str) -> str:
     return f"{base_url}/race/{race_id}"
 
 
+def _training_url(session_id: str) -> str:
+    base_url = settings.base_url.rstrip("/")
+    return f"{base_url}/training/{session_id}"
+
+
 async def notify_race_created(
     *,
     race_name: str,
@@ -673,7 +678,7 @@ async def _send_admin_webhook(embed: dict[str, object]) -> None:
 def _debug_flags_target(race_id: str | None, session_id: str | None) -> tuple[str, str]:
     """Alert link and field name: a race page, or a ranked solo session's."""
     if session_id is not None:
-        return f"{settings.base_url.rstrip('/')}/training/{session_id}", "Run"
+        return _training_url(session_id), "Run"
     if race_id is None:
         raise ValueError("a debug flags alert needs a race_id or a session_id")
     return _race_url(race_id), "Race"
@@ -733,6 +738,57 @@ def fire_debug_flags_notification(
             igt_ms=igt_ms,
             zone_name=zone_name,
             session_id=session_id,
+        )
+    )
+    task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+
+
+async def notify_finish_dropped(
+    *,
+    run_name: str,
+    session_id: str,
+    player_name: str,
+    seed_number: str,
+    igt_ms: int,
+    reason: str,
+) -> None:
+    """Alert the admin channel that a ranked solo run's finish was rejected.
+
+    The run stays unfinished; the embed gives the admins what they need to
+    look into it (the run's page, its seed, the reported IGT, the reason).
+    """
+    embed: dict[str, object] = {
+        "title": f"Ranked finish rejected: {_escape_discord_md(player_name)}",
+        "url": _training_url(session_id),
+        "color": 0x8A8F98,
+        "fields": [
+            {"name": "Run", "value": _escape_discord_md(run_name), "inline": True},
+            {"name": "Seed", "value": seed_number, "inline": True},
+            {"name": "IGT", "value": _format_igt(igt_ms), "inline": True},
+            {"name": "Reason", "value": reason, "inline": False},
+        ],
+    }
+    await _send_admin_webhook(embed)
+
+
+def fire_finish_dropped_notification(
+    *,
+    run_name: str,
+    session_id: str,
+    player_name: str,
+    seed_number: str,
+    igt_ms: int,
+    reason: str,
+) -> None:
+    """Fire-and-forget wrapper around ``notify_finish_dropped``."""
+    task = asyncio.create_task(
+        notify_finish_dropped(
+            run_name=run_name,
+            session_id=session_id,
+            player_name=player_name,
+            seed_number=seed_number,
+            igt_ms=igt_ms,
+            reason=reason,
         )
     )
     task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

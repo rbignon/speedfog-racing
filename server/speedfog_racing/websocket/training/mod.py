@@ -16,6 +16,7 @@ from speedfog_racing.auth import BAN_MESSAGE
 from speedfog_racing.config import settings
 from speedfog_racing.discord import (
     fire_debug_flags_notification,
+    fire_finish_dropped_notification,
     send_training_live_notification,
 )
 from speedfog_racing.models import Pool, RunMode, Seed, TrainingSession, TrainingSessionStatus
@@ -354,13 +355,10 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             ",".join(added),
         )
         async with self.session_maker() as db:
-            pool = (
-                await db.execute(select(Pool).where(Pool.name == entity.seed.pool_name))
-            ).scalar_one_or_none()
-        mode_label = "Speedrun" if entity.mode == RunMode.SPEEDRUN else "Set Seed"
+            run_name = await _ranked_run_name(db, entity)
         first = flags[added[0]]
         fire_debug_flags_notification(
-            race_name=f"Solo \u00b7 {format_pool_display_name(pool)} \u00b7 {mode_label}",
+            race_name=run_name,
             race_id=None,
             session_id=str(entity.id),
             player_name=entity.user.twitch_display_name or entity.user.twitch_username,
@@ -447,6 +445,14 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                         entity.mode.value,
                         igt,
                     )
+                    fire_finish_dropped_notification(
+                        run_name=await _ranked_run_name(db, entity),
+                        session_id=str(session_id),
+                        player_name=entity.user.twitch_display_name or entity.user.twitch_username,
+                        seed_number=entity.seed.seed_number,
+                        igt_ms=igt,
+                        reason="Final boss zone not reached",
+                    )
                     return
             # Conditional, like the expiry: an expiry or an abandon that landed
             # since the base class's check keeps its status, and this finish
@@ -532,6 +538,15 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
         if prev_zone_history_len is not None:
             await _broadcast_zone_history(self._session_id, entity.zone_history or [])
+
+
+async def _ranked_run_name(db: AsyncSession, entity: TrainingSession) -> str:
+    """How admin alerts name a ranked solo run: "Solo · <category> · <mode>"."""
+    pool = (
+        await db.execute(select(Pool).where(Pool.name == entity.seed.pool_name))
+    ).scalar_one_or_none()
+    mode_label = "Speedrun" if entity.mode == RunMode.SPEEDRUN else "Set Seed"
+    return f"Solo \u00b7 {format_pool_display_name(pool)} \u00b7 {mode_label}"
 
 
 def maybe_schedule_record_check(session_id: uuid.UUID, mode: RunMode) -> None:

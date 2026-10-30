@@ -13,6 +13,7 @@ from speedfog_racing.discord import (
     build_podium,
     create_scheduled_event,
     delete_scheduled_event,
+    notify_finish_dropped,
     notify_race_created,
     notify_race_finished,
     notify_race_started,
@@ -897,6 +898,31 @@ def test_build_podium():
     assert result[0]["name"] == "First"
     assert result[1]["name"] == "Second"
     assert result[2]["name"] == "Third"
+
+
+async def test_finish_dropped_alert_gives_admins_the_evidence():
+    """A rejected ranked solo finish posts to the admin channel under a
+    neutral title, linking the run, with its seed, IGT and reason."""
+    mock_send = AsyncMock()
+    with patch("speedfog_racing.discord._send_admin_webhook", mock_send):
+        await notify_finish_dropped(
+            run_name="Solo \u00b7 Sprint \u00b7 Speedrun",
+            session_id="abc",
+            player_name="Some_Runner",
+            seed_number="363096a4243f",
+            igt_ms=3_723_000,
+            reason="Final boss zone not reached",
+        )
+    embed = mock_send.call_args.args[0]
+    assert embed["title"] == "Ranked finish rejected: Some\\_Runner"  # markdown-escaped
+    assert embed["url"].endswith("/training/abc")
+    values = {f["name"]: f["value"] for f in embed["fields"]}
+    assert values == {
+        "Run": "Solo \u00b7 Sprint \u00b7 Speedrun",
+        "Seed": "363096a4243f",
+        "IGT": "1:02:03",
+        "Reason": "Final boss zone not reached",
+    }
 
 
 def test_tests_never_reach_the_real_discord_or_calendar() -> None:

@@ -447,10 +447,12 @@ async def _graph_seed(db: AsyncSession, graph: dict[str, Any]) -> Seed:
     return seed
 
 
-async def _finish(async_session: Any, session_id: uuid.UUID) -> tuple[AsyncMock, MagicMock]:
+async def _finish(
+    async_session: Any, session_id: uuid.UUID
+) -> tuple[AsyncMock, MagicMock, MagicMock]:
     """Run the training mod's finish hook on a session loaded the way the
-    mod handler loads it; returns the status-change broadcast and the
-    record-check scheduler mocks."""
+    mod handler loads it; returns the status-change broadcast, the
+    record-check scheduler and the rejected-finish admin alert mocks."""
     from speedfog_racing.websocket.training import mod
 
     async with async_session() as db:
@@ -458,10 +460,11 @@ async def _finish(async_session: Any, session_id: uuid.UUID) -> tuple[AsyncMock,
     with (
         patch.object(mod, "_broadcast_status_change", new_callable=AsyncMock) as broadcast,
         patch.object(mod, "schedule_speedrun_record_check") as check,
+        patch.object(mod, "fire_finish_dropped_notification") as alert,
     ):
         handler = mod.TrainingModHandler(MagicMock(), session_id, async_session)
         await handler._handle_finish_event(entity, entity.igt_ms, None)
-    return broadcast, check
+    return broadcast, check, alert
 
 
 async def _status(async_session: Any, session_id: uuid.UUID) -> TrainingSessionStatus:
@@ -487,23 +490,36 @@ async def test_ranked_finish_needs_the_final_zone_in_the_history(
     """A ranked solo finish counts only when the run's zone history reached
     the seed's final boss node (the highest layer on a graph without one).
     Otherwise it is dropped: the session stays ACTIVE, no broadcast, no
-    record check, and a warning names it."""
+    record check, and a warning and an admin alert name it."""
     async with async_session() as db:
+        seed = await _graph_seed(db, graph)
         session = await _add_session(
             db, await _user(db, "a"), "sprint", mode, 5000,
             status=TrainingSessionStatus.ACTIVE, finished_at=None,
-            zone_history=_history(*path), seed=await _graph_seed(db, graph),
+            zone_history=_history(*path), seed=seed,
         )  # fmt: skip
         await db.commit()
 
     with caplog.at_level(logging.WARNING, logger="speedfog_racing.websocket.training.mod"):
-        broadcast, check = await _finish(async_session, session.id)
+        broadcast, check, alert = await _finish(async_session, session.id)
 
     assert await _status(async_session, session.id) == (
         TrainingSessionStatus.FINISHED if counted else TrainingSessionStatus.ACTIVE
     )
     assert broadcast.await_count == check.call_count == (1 if counted else 0)
     assert ("Finish dropped" in caplog.text) is not counted
+    if counted:
+        alert.assert_not_called()
+    else:
+        mode_label = "Speedrun" if mode == RunMode.SPEEDRUN else "Set Seed"
+        alert.assert_called_once_with(
+            run_name=f"Solo \u00b7 Sprint \u00b7 {mode_label}",
+            session_id=str(session.id),
+            player_name="a",
+            seed_number=seed.seed_number,
+            igt_ms=5000,
+            reason="Final boss zone not reached",
+        )
 
 
 async def test_practice_finish_needs_no_final_zone(async_session, pools):
@@ -516,11 +532,12 @@ async def test_practice_finish_needs_no_final_zone(async_session, pools):
         )  # fmt: skip
         await db.commit()
 
-    broadcast, check = await _finish(async_session, session.id)
+    broadcast, check, alert = await _finish(async_session, session.id)
 
     assert await _status(async_session, session.id) == TrainingSessionStatus.FINISHED
     broadcast.assert_awaited_once()
     check.assert_not_called()
+    alert.assert_not_called()
 
 
 async def test_finish_never_overwrites_an_abandoned_session(async_session, pools):
