@@ -21,6 +21,8 @@ class PoolStats(BaseModel):
     """Statistics for a single pool."""
 
     available: int
+    # Drawn by normal races only (see SeedStatus.SEEN).
+    seen: int = 0
     consumed: int
     discarded: int = 0
     played_by_user: int | None = None
@@ -66,6 +68,7 @@ async def list_pools(
         is_training = raw_config and raw_config.get("type") == "training"
         result[name] = PoolStats(
             available=counts.get("available", 0),
+            seen=counts.get("seen", 0),
             consumed=counts.get("consumed", 0),
             discarded=counts.get("discarded", 0),
             played_by_user=played_counts.get(name) if user and is_training else None,

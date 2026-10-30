@@ -7,11 +7,15 @@ Create Date: 2026-10-30 10:30:00.000000
 Seeds get a SEEN status: drawn for a race that never started (rerolled or
 deleted in SETUP, or a restored report), so only normal races draw them again.
 PostgreSQL stores the enum names; SQLite stores them as plain strings, so it
-needs no schema change. The downgrade turns SEEN seeds into CONSUMED ones (out
-of every draw) and rebuilds the PostgreSQL type without SEEN.
+needs no schema change. Races get seed_played (set by a reset, cleared by a
+reroll): a reset race's played seed stays CONSUMED instead of becoming SEEN.
+The downgrade drops the column, turns SEEN seeds into CONSUMED ones (out of
+every draw) and rebuilds the PostgreSQL type without SEEN.
 """
 
 from collections.abc import Sequence
+
+import sqlalchemy as sa
 
 from alembic import op
 
@@ -32,9 +36,15 @@ def upgrade() -> None:
         # ALTER TYPE ... ADD VALUE cannot run inside a transaction block
         with op.get_context().autocommit_block():
             op.execute("ALTER TYPE seedstatus ADD VALUE IF NOT EXISTS 'SEEN'")
+    with op.batch_alter_table("races") as batch_op:
+        batch_op.add_column(
+            sa.Column("seed_played", sa.Boolean(), server_default="0", nullable=False)
+        )
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("races") as batch_op:
+        batch_op.drop_column("seed_played")
     op.execute("UPDATE seeds SET status = 'CONSUMED' WHERE status = 'SEEN'")
     if _is_postgresql():
         # PostgreSQL cannot drop an enum value: rebuild the type without it. The

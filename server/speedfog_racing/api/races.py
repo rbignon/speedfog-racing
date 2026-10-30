@@ -106,6 +106,7 @@ from speedfog_racing.services.seed_pack_service import (
 )
 from speedfog_racing.services.seed_service import SpeedrunFloorError, draw_speedrun_seed
 from speedfog_racing.services.set_seed_service import seed_replayability
+from speedfog_racing.services.speedrun_service import _is_training, _pool_config
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 from speedfog_racing.websocket import (
     broadcast_race_info_update,
@@ -1823,6 +1824,7 @@ async def reroll_seed(
         .values(
             version=current_version + 1,
             seed_id=race.seed_id,
+            seed_played=race.seed_played,
             seeds_released_at=new_seeds_released_at,
         )
     )
@@ -1967,12 +1969,14 @@ async def reset_race(
     # Close all WebSocket connections before mutating state
     await manager.close_room(race_id, code=1000, reason="Race reset")
 
+    # Back in SETUP with a played seed: a reroll or a deletion keeps it CONSUMED.
     await _transition_status(
         db,
         race,
         [RaceStatus.RUNNING, RaceStatus.FINISHED],
         RaceStatus.SETUP,
         started_at=None,
+        seed_played=True,
     )
 
     for p in race.participants:
@@ -2146,16 +2150,24 @@ async def delete_race(
     # Delete invites explicitly (belt-and-suspenders with ORM cascade)
     await db.execute(delete(Invite).where(Invite.race_id == race_id))
 
-    # A SETUP race's seed was never played but may have been seen (its map
-    # reaches every spectator), released or not: it becomes SEEN, as on a
-    # reroll (see reroll_seed_for_race). A started race's seed was played: it
-    # stays CONSUMED. A Set Seed race's seed was never drawn from the pool:
-    # its status is left alone.
-    if race.seed_id and race.status == RaceStatus.SETUP and race.mode != RunMode.SET_SEED:
+    # A SETUP race's unplayed seed may have been seen (its map reaches every
+    # spectator), released or not: it becomes SEEN, as on a reroll (see
+    # reroll_seed_for_race), or AVAILABLE again in a training pool, whose
+    # seeds are shared practice seeds. A played seed (a started race, or a
+    # reset one: seed_played) stays CONSUMED. A Set Seed race's seed was
+    # never drawn from the pool: its status is left alone.
+    if (
+        race.seed_id
+        and race.status == RaceStatus.SETUP
+        and not race.seed_played
+        and race.mode != RunMode.SET_SEED
+    ):
         result = await db.execute(select(Seed).where(Seed.id == race.seed_id))
         seed = result.scalar_one_or_none()
         if seed and seed.status != SeedStatus.DISCARDED:
-            seed.status = SeedStatus.SEEN
+            seed.status = (
+                SeedStatus.AVAILABLE if _is_training(_pool_config(seed.pool)) else SeedStatus.SEEN
+            )
 
     discord_event_id = race.discord_event_id
     malenia_event_id = race.malenia_event_id

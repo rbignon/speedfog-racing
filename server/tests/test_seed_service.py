@@ -810,10 +810,11 @@ async def test_seen_allowed_draw_above_the_floor_takes_available(async_db):
 async def test_seen_allowed_draw_at_the_floor_takes_seen(async_db):
     """At the floor, SEEN seeds go before the AVAILABLE reserve; a draw that
     does not allow them (the default) still takes the reserve."""
-    await _mixed_pool(async_db, available=2, seen=1)
+    await _mixed_pool(async_db, available=2, seen=3)
 
-    seen = await get_available_seed(async_db, "mix", allow_seen=True)
-    assert seen is not None and seen.status == SeedStatus.SEEN
+    for _ in range(10):
+        seed = await get_available_seed(async_db, "mix", allow_seen=True)
+        assert seed is not None and seed.status == SeedStatus.SEEN
     for _ in range(10):
         seed = await get_available_seed(async_db, "mix")
         assert seed is not None and seed.status == SeedStatus.AVAILABLE

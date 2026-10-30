@@ -43,7 +43,7 @@ Options:
   --seeds-dir PATH  Remote seed directory on VPS (default: $SEEDS_DIR or /data/SpeedFog/racing/seeds)
   --upload-only     Skip generation, upload existing tools/output/
   --output DIR      Local output directory (default: tools/output)
-  --discard         Mark old AVAILABLE/CONSUMED seeds as DISCARDED (after extract, before scan)
+  --discard         Mark every old seed not DISCARDED yet as DISCARDED (after extract, before scan)
   -j, --jobs N      Parallel workers across all pools (default: 1, sequential)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
@@ -132,14 +132,14 @@ fi
 
 echo "Pools: ${POOLS[*]}"
 
-# Helper: mark AVAILABLE/CONSUMED seeds as DISCARDED via psql over SSH
+# Helper: mark every seed not DISCARDED yet as DISCARDED via psql over SSH (as discard_pool)
 discard_seeds() {
     ssh "$SERVER" bash -s "${POOLS[@]}" <<'ENDSSH'
         set -eo pipefail
         cd /tmp
         for pool in "$@"; do
             result=$(sudo -u speedfog psql -t -A speedfog_racing -c \
-                "UPDATE seeds SET status = 'DISCARDED' WHERE status IN ('AVAILABLE', 'CONSUMED', 'REPORTED') AND pool_name = '$pool'" </dev/null) || {
+                "UPDATE seeds SET status = 'DISCARDED' WHERE status <> 'DISCARDED' AND pool_name = '$pool'" </dev/null) || {
                 echo "  ERROR: psql failed for pool $pool"
                 exit 1
             }
@@ -152,7 +152,7 @@ ENDSSH
 # --- Discard-only mode ---
 
 if [[ "$DISCARD" == true && "$UPLOAD_ONLY" == false && -z "$COUNT" ]]; then
-    echo "==> Discarding AVAILABLE/CONSUMED seeds on server..."
+    echo "==> Discarding seeds on server..."
     discard_seeds
     echo "==> Done!"
     exit 0
@@ -298,7 +298,7 @@ ENDSSH
 # --- Discard phase (after extract, just before restart to minimize downtime) ---
 
 if [[ "$DISCARD" == true ]]; then
-    echo "==> Discarding old AVAILABLE/CONSUMED seeds on server..."
+    echo "==> Discarding old seeds on server..."
     discard_seeds
 fi
 

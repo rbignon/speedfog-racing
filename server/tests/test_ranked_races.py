@@ -410,9 +410,12 @@ async def test_setup_reroll_and_delete_leave_the_seed_seen(test_client, async_se
 
 @pytest.mark.parametrize("action", ["reroll", "delete"])
 @pytest.mark.parametrize("mode", [RunMode.NORMAL])
-async def test_reset_race_seed_becomes_seen(test_client, async_session, pools, mode, action):
-    """A reset brings a race back to SETUP (keeping its release): a reroll or a
-    deletion then treats its seed like any SETUP race's, SEEN."""
+async def test_reset_race_keeps_its_played_seed_consumed(
+    test_client, async_session, pools, mode, action
+):
+    """A reset brings a race back to SETUP with a seed its runners played: a
+    reroll or a deletion keeps that seed CONSUMED. The seed a reroll then draws
+    was never played, so the next reroll makes it SEEN."""
     started = datetime.now(UTC) - timedelta(minutes=30)
     async with async_session() as db:
         organizer = await _staff(db, "org")
@@ -437,11 +440,14 @@ async def test_reset_race_seed_becomes_seen(test_client, async_session, pools, m
     assert reset.json()["seeds_released_at"] is not None
     if action == "reroll":
         assert (await _reroll(test_client, race_id)).status_code == 200
+        drawn = (await _race_seed(async_session, race_id)).seed_number
+        assert (await _reroll(test_client, race_id)).status_code == 200
+        assert await _status(async_session, drawn) == SeedStatus.SEEN
     else:
         deleted = await test_client.delete(f"/api/races/{race_id}", headers=_auth("org"))
         assert deleted.status_code == 204
 
-    assert await _status(async_session, "5e1f00000001") == SeedStatus.SEEN
+    assert await _status(async_session, "5e1f00000001") == SeedStatus.CONSUMED
 
 
 async def _ranked_race_in(
@@ -696,3 +702,24 @@ async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, po
     assert await _available_count(async_session, "sprint") == 0
     assert await _status(async_session, "da11y0000001") == SeedStatus.CONSUMED
     assert await _status(async_session, "e7e470000001") == SeedStatus.SEEN
+
+
+async def test_training_pool_seed_goes_back_available(test_client, async_session, pools):
+    """A training pool's seeds are shared practice seeds: a normal race on one
+    gives its seed back AVAILABLE on a SETUP reroll or deletion, never SEEN."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "training_sprint", 4)
+        await db.commit()
+
+    race_id = (await _create(test_client, {"pool_name": "training_sprint"})).json()["id"]
+    rerolled = (await _race_seed(async_session, race_id)).seed_number
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    deleted = (await _race_seed(async_session, race_id)).seed_number
+    assert (
+        await test_client.delete(f"/api/races/{race_id}", headers=_auth("org"))
+    ).status_code == 204
+
+    assert await _status(async_session, rerolled) == SeedStatus.AVAILABLE
+    assert await _status(async_session, deleted) == SeedStatus.AVAILABLE
+    assert await _available_count(async_session, "training_sprint") == 4

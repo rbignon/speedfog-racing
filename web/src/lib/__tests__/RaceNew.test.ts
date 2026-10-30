@@ -46,9 +46,15 @@ const ORGANIZER: AuthUser = {
   training_count: 0,
 };
 
-function pool(name: string, sortOrder: number, available: number): PoolInfo {
+function pool(
+  name: string,
+  sortOrder: number,
+  available: number,
+  seen = 0,
+): PoolInfo {
   return {
     available,
+    seen,
     consumed: 0,
     discarded: 0,
     played_by_user: null,
@@ -158,6 +164,35 @@ describe("/race/new: the Speedrun race option", () => {
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
     expect(postedBody()).toMatchObject({ mode: "normal", seed: null });
+  });
+});
+
+describe("/race/new: seen seeds", () => {
+  it("lets a normal race, not a speedrun race, draw from a pool with only seen seeds", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 0),
+      sprint: pool("Sprint", 2, 0, 2),
+    });
+    await openPage("");
+
+    const sprint = screen.getByRole("tab", {
+      name: /Sprint/,
+    }) as HTMLButtonElement;
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+    expect(sprint.disabled).toBe(false);
+    expect(sprint.getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText(/2 seeds available/)).toBeTruthy();
+    expect(create.disabled).toBe(false);
+
+    await fireEvent.click(screen.getByLabelText("Speedrun race"));
+
+    expect(sprint.disabled).toBe(true);
+    expect(create.disabled).toBe(true);
+    expect(
+      screen.getByText(/No seeds available in any game mode/),
+    ).toBeTruthy();
   });
 });
 

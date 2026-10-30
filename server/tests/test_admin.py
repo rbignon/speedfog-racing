@@ -1237,7 +1237,8 @@ async def test_admin_pools_report_solo_progress(
 async def test_admin_pool_counts_include_seen_seeds(
     test_client, admin_user, async_session, seeded_pools
 ):
-    """SEEN seeds have their own count on both admin pool listings."""
+    """SEEN seeds have their own count on both admin pool listings and on the
+    public one, which the race form reads (a normal race may draw them)."""
     async with async_session() as db:
         db.add_all(
             Seed(
@@ -1260,8 +1261,9 @@ async def test_admin_pool_counts_include_seen_seeds(
             p["name"]: p for p in (await client.get("/api/admin/pools", headers=headers)).json()
         }
         stats = (await client.get("/api/admin/seeds/stats", headers=headers)).json()["pools"]
+        public = (await client.get("/api/pools")).json()
 
-    for row in (pools["standard"], stats["standard"]):
+    for row in (pools["standard"], stats["standard"], public["standard"]):
         assert (row["available"], row["seen"], row["consumed"]) == (1, 2, 1)
 
 

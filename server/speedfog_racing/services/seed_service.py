@@ -2,7 +2,6 @@
 
 import json
 import logging
-import random
 import tomllib
 import uuid
 import zipfile
@@ -17,7 +16,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.config import settings
 from speedfog_racing.models import Pool, Race, RaceStatus, RunMode, Seed, SeedStatus
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
-from speedfog_racing.services.speedrun_service import race_counts_on_boards
+from speedfog_racing.services.speedrun_service import (
+    _is_training,
+    _pool_config,
+    race_counts_on_boards,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -318,12 +321,15 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
 async def _random_seed(
     db: AsyncSession, pool_name: str, seed_status: SeedStatus, exclude_id: uuid.UUID | None
 ) -> Seed | None:
-    query = select(Seed).where(Seed.pool_name == pool_name, Seed.status == seed_status)
+    query = (
+        select(Seed)
+        .where(Seed.pool_name == pool_name, Seed.status == seed_status)
+        .order_by(func.random())
+        .limit(1)
+    )
     if exclude_id is not None:
         query = query.where(Seed.id != exclude_id)
-    result = await db.execute(query)
-    seeds = list(result.scalars().all())
-    return random.choice(seeds) if seeds else None
+    return (await db.execute(query)).scalar_one_or_none()
 
 
 async def get_available_seed(
@@ -484,8 +490,11 @@ async def reroll_seed_for_race(
 
     The old seed of a race still in SETUP becomes SEEN, released or not: its
     map reached the race's spectators, so no draw that counts on the boards
-    may take it again. A running Daily Seed's seed was played: it stays
-    CONSUMED. When ``reporter_id`` is provided, it is marked REPORTED instead
+    may take it again. A training pool's seed goes back AVAILABLE instead
+    (shared practice seeds: being seen means nothing there). A played seed
+    stays CONSUMED: a running Daily Seed's, or a reset race's
+    (``race.seed_played``, cleared here since the new seed was never
+    played). When ``reporter_id`` is provided, it is marked REPORTED instead
     and the report fields are populated. A DISCARDED seed stays DISCARDED.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
@@ -520,13 +529,18 @@ async def reroll_seed_for_race(
             old_seed.reported_by_id = reporter_id
             old_seed.reported_reason = report_reason
             old_seed.reported_at = datetime.now(UTC)
-        elif race.status == RaceStatus.SETUP:
-            old_seed.status = SeedStatus.SEEN
+        elif race.status == RaceStatus.SETUP and not race.seed_played:
+            old_seed.status = (
+                SeedStatus.AVAILABLE
+                if _is_training(_pool_config(old_seed.pool))
+                else SeedStatus.SEEN
+            )
 
     # Assign new seed
     new_seed.status = SeedStatus.CONSUMED
     race.seed_id = new_seed.id
     race.seed = new_seed
+    race.seed_played = False
 
     logger.info(
         f"Re-rolled seed for race {race.id}: {old_seed.seed_number} -> {new_seed.seed_number}"

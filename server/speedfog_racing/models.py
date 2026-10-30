@@ -406,6 +406,12 @@ class Race(Base):
     deathless: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The current seed was played: set by a reset (the only way back to SETUP
+    # after a start), cleared by a reroll. A SETUP race's seed then stays
+    # CONSUMED on a reroll or a deletion instead of becoming SEEN.
+    seed_played: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Daily Seed marker: NULL for regular races, the UTC rotation date for
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.

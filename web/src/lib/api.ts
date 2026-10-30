@@ -195,6 +195,8 @@ export interface RaceDetail extends Race {
 
 export interface PoolInfo {
   available: number;
+  /** Seeds a normal race may draw too, never a speedrun one. */
+  seen: number;
   consumed: number;
   discarded: number;
   played_by_user: number | null;

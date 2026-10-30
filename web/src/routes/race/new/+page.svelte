@@ -54,9 +54,19 @@
   let error = $state<string | null>(null);
   let authChecked = $state(false);
 
+  // Seeds this race could draw: a normal race also takes SEEN seeds (seeds
+  // put aside before their race started), a speedrun race never does.
+  function drawable(info: PoolInfo): number {
+    return info.available + (speedrun ? 0 : info.seen);
+  }
+
+  // `available` holds the drawable count, which the tabs gate on.
   let sortedPools = $derived(
     Object.entries(pools)
-      .map(([p, info]) => [p, info] as [string, PoolInfo])
+      .map(
+        ([p, info]) =>
+          [p, { ...info, available: drawable(info) }] as [string, PoolInfo],
+      )
       .sort(
         (a, b) =>
           (a[1].pool_config?.sort_order ?? 99) -
@@ -68,7 +78,9 @@
     sortedPools.some(([, info]) => info.available > 0),
   );
   let selectedConfig = $derived(pools[poolName]?.pool_config ?? null);
-  let selectedAvailable = $derived(pools[poolName]?.available ?? 0);
+  let selectedAvailable = $derived(
+    pools[poolName] ? drawable(pools[poolName]) : 0,
+  );
   // A Set Seed race takes its pool from the seed, which need not be listed
   // (a retired category's seed stays replayable): no card then.
   let seedConfig = $derived(

@@ -102,7 +102,7 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 - Requires `race.seed` to be eager-loaded.
 - Refuses a Set Seed race (`ValueError`, "A Set Seed race keeps its seed").
 - Gets a new seed from the same pool, excluding the current seed ID: a speedrun race draws through `draw_speedrun_seed`, so the pool's floor applies (`SpeedrunFloorError`, nothing changed); any other race through `get_available_seed`, with `allow_seen` unless the race counts on the boards (`race_counts_on_boards`: a Daily Seed or an event race).
-- The old seed of a race in SETUP becomes SEEN, released or not; a running Daily Seed's stays CONSUMED (it was played). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Seen seeds" in `RACE_LIFECYCLE.md`.
+- The old seed of a race in SETUP becomes SEEN, released or not (AVAILABLE again in a training pool); a played seed stays CONSUMED: a running Daily Seed's, or a reset race's (`race.seed_played`, which the reroll then clears). With a reporter it becomes REPORTED; a seed already DISCARDED from a pool retirement stays DISCARDED. See "Seen seeds" in `RACE_LIFECYCLE.md`.
 - Assigns new seed to race.
 
 ### Pool Discard
@@ -270,7 +270,7 @@ DISCARDED ──reroll or deletion──→ stays DISCARDED (never released back
 
 - A race always has exactly one seed assigned (set at creation, changeable via reroll during SETUP, or while RUNNING for a Daily Seed; never for a Set Seed race).
 - Seeds released via `POST /races/{id}/release-seeds` sets `seeds_released_at`, and participants can then download. The seed itself stays CONSUMED.
-- Reroll is allowed in SETUP status (a running Daily Seed too, by an admin). A reroll clears `seeds_released_at`; the old seed of a SETUP race becomes SEEN, released or not, as does the seed of a SETUP race that is deleted. A running Daily Seed's old seed, and the seed of a deleted RUNNING or FINISHED race, stay CONSUMED.
+- Reroll is allowed in SETUP status (a running Daily Seed too, by an admin). A reroll clears `seeds_released_at`; the old seed of a SETUP race becomes SEEN, released or not, as does the seed of a SETUP race that is deleted (a training pool's goes back AVAILABLE). A played seed stays CONSUMED: a running Daily Seed's old seed, the seed of a deleted RUNNING or FINISHED race, and the seed of a race reset back to SETUP (`Race.seed_played`).
 - Draws that count on the boards (speedrun races, Speedrun-mode solo runs, Daily Seeds, event race rerolls) take AVAILABLE seeds only, and the speedrun floor counts AVAILABLE seeds only.
 - Discarded seeds are permanently retired; the guards in `reroll_seed_for_race` and `delete_race` prevent them from returning to the draws.
 

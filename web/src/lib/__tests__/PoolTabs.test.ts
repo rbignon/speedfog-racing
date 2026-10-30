@@ -6,6 +6,7 @@ import type { PoolInfo } from "$lib/api";
 function poolInfo(available: number): PoolInfo {
   return {
     available,
+    seen: 0,
     consumed: 0,
     discarded: 0,
     played_by_user: null,
