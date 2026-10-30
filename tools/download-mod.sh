@@ -3,7 +3,7 @@
 # Requires: gh (GitHub CLI), authenticated.
 #
 # Usage:
-#   ./tools/download-mod.sh              # download latest successful build
+#   ./tools/download-mod.sh              # download the latest successful build of master
 #   ./tools/download-mod.sh <run-id>     # download from a specific workflow run
 
 set -euo pipefail
@@ -28,10 +28,12 @@ if [[ "${1:-}" ]]; then
     RUN_ID="$1"
     echo "Using specified run: $RUN_ID"
 else
-    echo "Finding latest successful build from $WORKFLOW..."
+    # master only: a branch or PR build must not reach every seed pack.
+    echo "Finding latest successful build of master from $WORKFLOW..."
     RUN_ID=$(gh run list \
         --repo "$REPO" \
         --workflow "$WORKFLOW" \
+        --branch master \
         --status success \
         --limit 1 \
         --json databaseId \

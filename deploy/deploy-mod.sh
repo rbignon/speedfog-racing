@@ -18,13 +18,18 @@ if [ ! -s "$MOD_DLL" ]; then
     exit 1
 fi
 
-# The DLL embeds its version as a bare string (e.g. 1.31.0).
-mod_version() {
-    strings "$1" | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+$' || echo "unknown version"
-}
+# Every pack gets this DLL: refuse one built from another version than the
+# checkout's (a stale tools/assets copy, an older download). The DLL embeds
+# its crate version as a bare string (e.g. 1.31.0); grep -c reads the whole
+# stream, since an early exit would kill strings with SIGPIPE under pipefail.
+LOCAL_VERSION=$(awk -F'"' '/^version = /{print $2; exit}' "$REPO_DIR/mod/Cargo.toml")
+if [ "$(strings "$MOD_DLL" | grep -cxF "$LOCAL_VERSION" || true)" -eq 0 ]; then
+    echo "==> ERROR: $MOD_DLL is not mod $LOCAL_VERSION (mod/Cargo.toml)."
+    echo "    Fetch this version's build with ./tools/download-mod.sh"
+    exit 1
+fi
 
 LOCAL_SHA=$(sha256sum "$MOD_DLL" | cut -d' ' -f1)
-LOCAL_VERSION=$(mod_version "$MOD_DLL")
 # shellcheck disable=SC2029  # REMOTE_DLL is a constant path, expanded here on purpose
 REMOTE_SHA=$(ssh "$SERVER" "sha256sum $REMOTE_DLL 2>/dev/null | cut -d' ' -f1" || true)
 
