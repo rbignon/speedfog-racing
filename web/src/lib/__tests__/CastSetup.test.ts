@@ -887,6 +887,54 @@ describe("CastSetup: OBS scene files", () => {
     }
   });
 
+  it("names scenes by position once ticked, on both files and every race", async () => {
+    serveGroupG(["alice", "bob", "carol", "dave"]);
+    const sceneNames = (collection: Obj) =>
+      collection.scene_order
+        .map((s: Obj) => s.name)
+        .filter((n: string) => /^(Focus|Duel)/.test(n));
+    const first = render(CastSetup, {
+      props: { race: inGroupG("race-n1", 1), onClose: () => {} },
+    });
+    await waitFor(() =>
+      expect(buttonLabelled(first.container, MATCH_FILE)).toBeDefined(),
+    );
+    const box = first.container.querySelector<HTMLInputElement>(
+      ".check input[type=checkbox]",
+    )!;
+    expect(box.checked).toBe(false);
+    await fireEvent.click(buttonLabelled(first.container, RACE_FILE)!);
+    await fireEvent.click(box);
+    await fireEvent.click(buttonLabelled(first.container, RACE_FILE)!);
+    await fireEvent.click(buttonLabelled(first.container, MATCH_FILE)!);
+    await waitFor(() => expect(downloadJson).toHaveBeenCalledTimes(3));
+    first.unmount();
+
+    // Another race's panel, outside any event: the choice is the caster's,
+    // not the race's.
+    const second = render(CastSetup, {
+      props: { race: fakeRace("race-n2"), onClose: () => {} },
+    });
+    await fireEvent.click(buttonLabelled(second.container, RACE_FILE)!);
+
+    const calls = vi.mocked(downloadJson).mock.calls as [string, Obj][];
+    expect(sceneNames(calls[0][1])).toContain("Focus: alice");
+    for (const [, collection] of calls.slice(1)) {
+      expect(sceneNames(collection)).toEqual([
+        "Focus: 1",
+        "Focus: 2",
+        "Focus: 3",
+        "Focus: 4",
+        "Duel: 1 vs 2",
+        "Duel: 1 vs 3",
+        "Duel: 1 vs 4",
+        "Duel: 2 vs 3",
+        "Duel: 2 vs 4",
+        "Duel: 3 vs 4",
+      ]);
+    }
+  });
+
   it("the race file names every seat, under the race's own URLs", async () => {
     const { container } = render(CastSetup, {
       props: { race: fakeRace("race-file"), onClose: () => {} },

@@ -194,6 +194,28 @@
     }
   });
 
+  // Whether the OBS files name their Focus and Duel scenes by POV number.
+  // One choice for every race, not saved with the race's settings: a caster
+  // who maps scene names on a control deck wants them on every file without
+  // ticking the box again for each race.
+  const POSITION_NAMES_KEY = "cast-setup:position-names";
+  function loadPositionNames(): boolean {
+    try {
+      return localStorage.getItem(POSITION_NAMES_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+  let positionNames = $state(loadPositionNames());
+  $effect(() => {
+    const value = positionNames ? "1" : "0";
+    try {
+      localStorage.setItem(POSITION_NAMES_KEY, value);
+    } catch {
+      // Private window or storage disabled: the choice just doesn't persist.
+    }
+  });
+
   function selectScene(option: SceneOption) {
     scene = option.id;
     if (option.focus) focusSlot = option.focus;
@@ -436,8 +458,9 @@
   }
 
   // The OBS scene collections (see "The OBS scene collection" in
-  // docs/CAST_OVERLAYS.md). Both take the co-brand, casters, cams, delay and
-  // pins from the panel as it stands, and write every seat out by name.
+  // docs/CAST_OVERLAYS.md). Both take the co-brand, casters, cams, delay,
+  // pins and scene naming from the panel as it stands, and write every seat
+  // out by name.
   // The race file names this race, and opens on the evening scenes under
   // the same rule as allUrls.
   function downloadRaceFile() {
@@ -459,6 +482,7 @@
           stageKey,
         },
         includeEvening: !!eventSlug && !!stageKey,
+        positionNames,
       }),
     );
   }
@@ -499,6 +523,7 @@
           stageKeyed: true,
         },
         includeEvening: true,
+        positionNames,
       }),
     );
   }
@@ -668,6 +693,14 @@
         The match's field is not settled yet: seats without a runner stay empty.
       </p>
     {/if}
+    <label class="check">
+      <input type="checkbox" bind:checked={positionNames} />
+      Name scenes by position
+    </label>
+    <p class="hint">
+      Focus: 1, Duel: 1 vs 2 and so on instead of runner names, so the scenes
+      keep their names from one race to the next (handy for a control deck).
+    </p>
   </div>
 
   <!-- A slate pierces no hole: nothing to place under it. -->
@@ -845,6 +878,16 @@
 
   .url-actions-hint {
     margin-top: 0.5rem;
+  }
+
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text);
+    cursor: pointer;
   }
 
   .positions {

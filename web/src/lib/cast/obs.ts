@@ -37,6 +37,20 @@ export interface ObsExportInput {
   /** Whether the file carries the evening scenes (intro, talk, pause, end),
    * which need `url.eventSlug` and `url.stageKey`. */
   includeEvening: boolean;
+  /** Whether the Focus and Duel scenes are named by POV number (`Focus: 1`,
+   * `Duel: 1 vs 3`, see `ObsDuel.positions`) instead of by runner, so every
+   * file names its scenes alike whoever races. Sources keep the runners'
+   * names. */
+  positionNames?: boolean;
+}
+
+/** A duel scene's two runners, and the POV numbers its name gives them
+ * under `positionNames`: their seats up to four runners; above four, 1 and
+ * 2, the duel holes, which keeps the one duel's name the same whoever the
+ * holes seat. */
+export interface ObsDuel {
+  runners: [ObsRunner, ObsRunner];
+  positions: [number, number];
 }
 
 /** The runner pairs a duel scene is built for: every pair of seated slots
@@ -46,16 +60,17 @@ export function duelPairs(
   seats: (ObsRunner | null)[],
   fieldSize: number,
   duelSeats: (ObsRunner | null)[] = seats.slice(0, 2),
-): [ObsRunner, ObsRunner][] {
+): ObsDuel[] {
   if (fieldSize > 4) {
     const [a, b] = duelSeats;
-    return a && b ? [[a, b]] : [];
+    return a && b ? [{ runners: [a, b], positions: [1, 2] }] : [];
   }
-  const pairs: [ObsRunner, ObsRunner][] = [];
+  const pairs: ObsDuel[] = [];
   for (let a = 0; a < 4; a++) {
     for (let b = a + 1; b < 4; b++) {
       const [ra, rb] = [seats[a], seats[b]];
-      if (ra && rb) pairs.push([ra, rb]);
+      if (ra && rb)
+        pairs.push({ runners: [ra, rb], positions: [a + 1, b + 1] });
     }
   }
   return pairs;
@@ -223,11 +238,12 @@ export function buildObsCollection(
     fieldSize,
     url,
     includeEvening,
+    positionNames = false,
   } = input;
   const duels = duelPairs(seats, fieldSize, duelSeats);
 
   const runners = new Map<string, ObsRunner>();
-  for (const r of [...seats, ...duels.flat()]) {
+  for (const r of [...seats, ...duels.flatMap((d) => d.runners)]) {
     if (r) runners.set(r.username, r);
   }
   const lower = [...runners.values()].map((r) => r.name.toLowerCase());
@@ -307,7 +323,7 @@ export function buildObsCollection(
   );
   for (const slot of seatedAll) {
     castScene(
-      `Focus: ${label(seats[slot - 1]!)}`,
+      `Focus: ${positionNames ? slot : label(seats[slot - 1]!)}`,
       "focus",
       { ...url, slots: slotsOf(seats), focus: slot },
       seatedAll,
@@ -315,9 +331,10 @@ export function buildObsCollection(
       slot,
     );
   }
-  for (const pair of duels) {
+  for (const { runners: pair, positions } of duels) {
+    const [a, b] = positionNames ? positions : pair.map(label);
     castScene(
-      `Duel: ${label(pair[0])} vs ${label(pair[1])}`,
+      `Duel: ${a} vs ${b}`,
       "duel",
       { ...url, slots: slotsOf(pair) },
       [1, 2],

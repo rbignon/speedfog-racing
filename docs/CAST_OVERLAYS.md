@@ -775,8 +775,8 @@ It gives a caster, without hand-editing a URL:
   URLs yet (an unconfigured evening URL would only point at a 404).
 - Next to it, two buttons that download a ready-to-import OBS scene
   collection (see "The OBS scene collection" below), built in the browser
-  from the panel as it stands: its co-brand, casters, cams, delay and
-  pinned seats.
+  from the panel as it stands: its co-brand, casters, cams, delay, pinned
+  seats and scene naming.
   - **"Download OBS scenes"**: the collection for this race, its scenes
     named by the race (`/overlay/cast/race/<id>/<scene>`). Its seats are
     the race's runners, exactly as the hole dropdowns' "(auto: ...)"
@@ -818,12 +818,19 @@ It gives a caster, without hand-editing a URL:
     supplies the runners, as for the race file: a showcase whose races seat
     different runners needs a race file per race. The file is
     `speedfog-<event>-<stage>.json`.
+  - Under them, a "Name scenes by position" checkbox, off by default: both
+    files then name their Focus and Duel scenes by POV number rather than
+    by runner (see "The OBS scene collection" below), so every file names
+    its scenes alike whoever races, for a caster who maps scene names on a
+    control deck. The choice is the caster's, not the race's: it is kept
+    for every race in `localStorage` under `cast-setup:position-names`.
 - An "OBS positions" table: every hole of the current scene's label,
   position and size (the same `formatGeo` line the guides mode prints), minus
   the metro scene's map, which is never a video source (see "Composition
   model" above), plus a link that opens the same scene with `guides=1`.
 
-Settings are kept per race in `localStorage` under `cast-setup:<raceId>`, so
+Settings (the scene-naming checkbox excepted, see above) are kept per race
+in `localStorage` under `cast-setup:<raceId>`, so
 reopening the panel for the same race remembers the last setup; a private
 window that refuses storage just does not persist between visits. What is
 saved wins over the prefill from the race's event, a cleared co-brand
@@ -868,7 +875,17 @@ scenes, in this order, the first being the one OBS opens on:
 7. The placeholder scenes: **Cam 1** and **Cam 2** (as many as `cams`), then
    **Audio**.
 
-Scene and source names carry the runner's display name, or every runner's
+With the panel's "Name scenes by position" ticked, a POV number stands in
+for each runner in these two kinds of scene: **Focus: <n>** for the hero's
+seat, **Duel: <n> vs <n>** for the pair's seats (`Duel: 1 vs 3` on a
+gapped field seating slots 1 and 3). Above four runners, the one duel is
+always **Duel: 1 vs 2**, its holes' numbers, even when its pair sits
+elsewhere in the four seats: the name stays the same from one file to the
+next, which is the point of the option. Only the scene names change: the
+plates' URLs, and the POV sources under the holes, still name the runners.
+
+Scene and source names carry the runner's display name (only the POV
+sources' names do under "Name scenes by position"), or every runner's
 Twitch login when two display names would read the same (OBS wants every
 name unique). A runner's POV source is one source shared by every scene
 that seats them; any other name met twice fails the export with an error

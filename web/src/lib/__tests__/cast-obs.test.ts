@@ -3,6 +3,7 @@ import {
   buildObsCollection,
   duelPairs,
   holeRelative,
+  type ObsDuel,
   type ObsExportInput,
   type ObsRunner,
 } from "../cast/obs";
@@ -328,6 +329,72 @@ describe("buildObsCollection", () => {
     ).toEqual([]);
   });
 
+  // A caster who maps scene names on a control deck needs every file to
+  // name its scenes alike, whoever races and whatever their names.
+  it("position names keep the scene names from one field to the next", () => {
+    const sceneNames = (over: Partial<ObsExportInput>) =>
+      (
+        buildObsCollection(input({ ...over, positionNames: true })) as Obj
+      ).scene_order
+        .map((s: Obj) => s.name)
+        .filter((n: string) => /^(Focus|Duel)/.test(n));
+    const other = [
+      runner("x1", "Ana"),
+      runner("x2", "Ana"),
+      runner("x3"),
+      runner("x4"),
+    ];
+    expect(sceneNames({})).toEqual(sceneNames({ seats: other }));
+    expect(sceneNames({})).toEqual([
+      "Focus: 1",
+      "Focus: 2",
+      "Focus: 3",
+      "Focus: 4",
+      "Duel: 1 vs 2",
+      "Duel: 1 vs 3",
+      "Duel: 1 vs 4",
+      "Duel: 2 vs 3",
+      "Duel: 2 vs 4",
+      "Duel: 3 vs 4",
+    ]);
+    // An empty seat keeps the others' numbers.
+    expect(
+      sceneNames({
+        seats: [runner("alice"), null, runner("cleo"), null],
+        fieldSize: 2,
+      }),
+    ).toEqual(["Focus: 1", "Focus: 3", "Duel: 1 vs 3"]);
+    // Above four, the one duel is 1 vs 2 whoever its holes seat.
+    expect(
+      sceneNames({
+        fieldSize: 6,
+        duelSeats: [runner("cleo"), runner("alice")],
+      }),
+    ).toEqual(["Focus: 1", "Focus: 2", "Focus: 3", "Focus: 4", "Duel: 1 vs 2"]);
+  });
+
+  it("position names leave the sources and plates on the runners", () => {
+    const c = buildObsCollection(
+      input({
+        positionNames: true,
+        fieldSize: 6,
+        duelSeats: [runner("cleo"), runner("alice")],
+      }),
+    );
+    expect(byName(c, "Focus: 3 plate").settings.url).toContain(
+      "p1=alice&p2=bob&p3=cleo&p4=dan",
+    );
+    expect(byName(c, "Focus: 3 plate").settings.url).toContain("focus=3");
+    expect(byName(c, "Duel: 1 vs 2 plate").settings.url).toContain(
+      "p1=cleo&p2=alice",
+    );
+    const duel = byName(c, "Duel: 1 vs 2").settings.items.map(
+      (it: Obj) => it.name,
+    );
+    expect(duel).toContain("POV cleo");
+    expect(duel).toContain("POV alice");
+  });
+
   it("names keep spaces and accents", () => {
     const c = buildObsCollection(
       input({
@@ -344,8 +411,10 @@ describe("buildObsCollection", () => {
 
 describe("duelPairs", () => {
   const seat = (n: number) => four.map((r, i) => (i < n ? r : null));
-  const logins = (pairs: [ObsRunner, ObsRunner][]) =>
-    pairs.map(([a, b]) => `${a.username}-${b.username}`);
+  const logins = (pairs: ObsDuel[]) =>
+    pairs.map(({ runners: [a, b] }) => `${a.username}-${b.username}`);
+  const positions = (pairs: ObsDuel[]) =>
+    pairs.map(({ positions: [a, b] }) => `${a}-${b}`);
   it("covers every pair up to four runners", () => {
     expect(logins(duelPairs(seat(4), 4))).toEqual([
       "alice-bob",
@@ -359,11 +428,19 @@ describe("duelPairs", () => {
     expect(duelPairs(seat(2), 2)).toHaveLength(1);
     expect(duelPairs(seat(1), 1)).toHaveLength(0);
   });
+  it("numbers each pair by its runners' seats up to four", () => {
+    const gapped = [null, four[1], null, four[3]];
+    expect(logins(duelPairs(gapped, 2))).toEqual(["bob-dan"]);
+    expect(positions(duelPairs(gapped, 2))).toEqual(["2-4"]);
+  });
   // Above four, the duel holes resolve over POV 1 and 2's pins alone, so a
   // runner pinned in POV 3 can auto-fill POV 1: the pair is given as such.
   it("keeps only the duel holes' pair above four", () => {
     expect(logins(duelPairs(seat(4), 6, [four[2], four[0]]))).toEqual([
       "cleo-alice",
+    ]);
+    expect(positions(duelPairs(seat(4), 6, [four[2], four[0]]))).toEqual([
+      "1-2",
     ]);
     expect(duelPairs(seat(4), 6, [null, four[1]])).toEqual([]);
     expect(logins(duelPairs(seat(4), 6))).toEqual(["alice-bob"]);
