@@ -27,6 +27,9 @@ export interface DagNode {
   zones: string[];
   layer: number;
   tier: number;
+  /** The tier the zone normally has, when the seed rescaled it away from
+   * it (`original_tier`, absent from the oldest seeds' graphs). */
+  originalTier?: number;
   weight: number;
   randomizedBosses?: string[]; // Boss names when boss randomization is active (one per phase)
 }
@@ -138,6 +141,8 @@ export function parseDagGraph(graphJson: Record<string, unknown>): DagGraph {
       zones: (raw.zones as string[]) ?? [],
       layer: (raw.layer as number) ?? 0,
       tier: (raw.tier as number) ?? 0,
+      originalTier:
+        typeof raw.original_tier === "number" ? raw.original_tier : undefined,
       weight: (raw.weight as number) ?? 1,
       randomizedBosses,
     });

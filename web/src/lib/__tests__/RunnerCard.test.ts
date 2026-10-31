@@ -257,6 +257,65 @@ describe("RunnerCard: weapons line", () => {
   });
 });
 
+describe("RunnerCard: tier line", () => {
+  const zoneNames = new Map([
+    ["rescaled", "Ashen Leyndell - Hoarah Loux"],
+    ["usual", "Stormveil Castle"],
+    ["old_seed", "Liurnia"],
+    ["no_tier", "Chapel of Anticipation"],
+  ]);
+  const zoneTiers = new Map([
+    ["rescaled", { tier: 9, originalTier: 16 }],
+    ["usual", { tier: 7, originalTier: 7 }],
+    ["old_seed", { tier: 5 }],
+    ["no_tier", { tier: 0 }],
+    ["unnamed", { tier: 4 }],
+  ]);
+  function tierLine(
+    over: Record<string, unknown>,
+    variant: "card" | "tall" = "tall",
+  ): string | null {
+    const { container } = render(RunnerCard, {
+      props: {
+        ...baseProps,
+        variant,
+        participant: fakeParticipant(over),
+        zoneNames,
+        zoneTiers,
+      },
+    });
+    const line = container.querySelector(".ctier");
+    return line ? line.textContent : null;
+  }
+
+  // Worded like the mod's overlay, so a caster reads the two alike.
+  it("names the usual tier of a rescaled zone, and only then", () => {
+    expect(tierLine({ current_zone: "rescaled" })).toBe("Tier 9, normally 16");
+    expect(tierLine({ current_zone: "usual" })).toBe("Tier 7");
+    // The oldest seeds' graphs carry no original tier.
+    expect(tierLine({ current_zone: "old_seed" })).toBe("Tier 5");
+  });
+
+  it("follows the zone line: nothing without a zone, a tier or a run left", () => {
+    expect(tierLine({ current_zone: "no_tier" })).toBeNull();
+    expect(tierLine({ current_zone: null })).toBeNull();
+    // A node the graph hasn't resolved leaves the zone line blank, and a
+    // node with no name to show leaves it blank too: no tier under nothing.
+    expect(tierLine({ current_zone: "unknown" })).toBeNull();
+    expect(tierLine({ current_zone: "unnamed" })).toBeNull();
+    expect(
+      tierLine({ current_zone: "rescaled", status: "finished" }),
+    ).toBeNull();
+    expect(tierLine({ current_zone: "rescaled", status: "abandoned" })).toBe(
+      "Tier 9, normally 16",
+    );
+  });
+
+  it("renders on the tall variant only", () => {
+    expect(tierLine({ current_zone: "rescaled" }, "card")).toBeNull();
+  });
+});
+
 describe("RunnerCard: splits (tall variant)", () => {
   it("renders each split's zone and duration as a plain time, not a signed gap", () => {
     const { container } = render(RunnerCard, {

@@ -119,6 +119,28 @@ describe("parseDagGraph", () => {
     expect(graph.nodes[0].id).toBe("b");
   });
 
+  // The cast hero card says when a zone was rescaled; the oldest seeds'
+  // graphs carry no original tier, and a malformed one is no tier.
+  it("reads a node's original tier when the graph has one", () => {
+    const graph = parseDagGraph({
+      total_layers: 1,
+      nodes: {
+        rescaled: { type: "mini_dungeon", tier: 9, original_tier: 16 },
+        old_seed: { type: "mini_dungeon", tier: 5 },
+        malformed: { type: "mini_dungeon", tier: 5, original_tier: "16" },
+      },
+      edges: [],
+    });
+    const tiers = Object.fromEntries(
+      graph.nodes.map((n) => [n.id, [n.tier, n.originalTier]]),
+    );
+    expect(tiers).toEqual({
+      rescaled: [9, 16],
+      old_seed: [5, undefined],
+      malformed: [5, undefined],
+    });
+  });
+
   describe("labelName", () => {
     function labelOf(node: Record<string, unknown>): string {
       const graph = parseDagGraph({

@@ -35,6 +35,12 @@
      * `Leaderboard.svelte`'s `zoneName`: a raw node id on a broadcast is
      * worse than nothing. */
     zoneNames?: Map<string, string> | null;
+    /** Node id -> the zone's tier, and the tier it normally has when the
+     * seed rescaled it (`DagNode.tier` / `originalTier`), from the same
+     * graph as `zoneNames`. Only the tall variant renders it, on a line of
+     * its own under the zone, worded like the mod's overlay: "Tier 9,
+     * normally 16", or "Tier 9" alone for a zone at its usual tier. */
+    zoneTiers?: Map<string, { tier: number; originalTier?: number }> | null;
     /** The runner's last few zone splits, most recent first (see
      * `buildCastSplits`). Only the "tall" variant renders this; the quad
      * scene's cards pass nothing, so the section renders empty rather than
@@ -59,6 +65,7 @@
     leader,
     raceStatus,
     zoneNames = null,
+    zoneTiers = null,
     splits = [],
     weapons = "",
   }: Props = $props();
@@ -127,6 +134,22 @@
     return name.includes(" - ") ? name.split(" - ").pop()! : name;
   }
 
+  // Follows the zone line: nothing while it is blank (the graph hasn't
+  // resolved the zone yet) or once it reads Finished, and nothing for a
+  // node the graph gives no tier.
+  let tierLine = $derived.by(() => {
+    const zone = participant.current_zone;
+    if (variant !== "tall" || participant.status === "finished") return null;
+    if (!zoneLabel(zone)) return null;
+    const node = zone ? zoneTiers?.get(zone) : undefined;
+    if (!node || !(node.tier > 0)) return null;
+    const normally = node.originalTier;
+    return {
+      tier: node.tier,
+      normally: normally != null && normally !== node.tier ? normally : null,
+    };
+  });
+
   function formatIgt(ms: number): string {
     const totalSeconds = Math.floor(ms / 1000);
     const hours = Math.floor(totalSeconds / 3600);
@@ -169,6 +192,12 @@
       ? "Finished"
       : zoneLabel(participant.current_zone)}</span
   >
+  {#if tierLine}
+    <span class="ctier"
+      ><b>Tier {tierLine.tier}</b
+      >{#if tierLine.normally !== null}{`, normally ${tierLine.normally}`}{/if}</span
+    >
+  {/if}
   {#if weapons && variant === "tall"}
     <span class="cweap">{weapons}</span>
   {/if}
@@ -349,6 +378,23 @@
     color: var(--color-info);
   }
 
+  /* The hero's zone tier, under the zone line, on the same terms: one line,
+   * never squeezed. The tier itself in gold, the mod's tier colour. */
+  .ctier {
+    flex-shrink: 0;
+    margin-top: 2px;
+    font-size: 20px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ctier b {
+    font-weight: inherit;
+    color: var(--color-gold);
+  }
+
   .crows {
     flex: 1;
     display: flex;
@@ -424,9 +470,9 @@
     color: var(--color-info);
   }
 
-  /* The hero's wielded combo, under the zone line: a full-width line of
-   * its own, no label, because a labelled stats row leaves the card too
-   * little width for real weapon names. Up to two lines, then ellipsis;
+  /* The hero's wielded combo, under the zone and tier lines: a full-width
+   * line of its own, no label, because a labelled stats row leaves the card
+   * too little width for real weapon names. Up to two lines, then ellipsis;
    * never squeezed by the card's own flex column. Only the tall variant
    * renders it (see the template). */
   .cweap {

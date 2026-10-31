@@ -183,9 +183,18 @@ dot, name and gap; no depth cell, since the scene's own POVs already show
 what each runner is doing), and the hero's own runner card fills the panel
 at (16, 16), 240 x 736, left of the hero hole, so the scene reads card,
 hero, field, left to right. The name keeps one line, ellipsized, as on the
-quad cards. When the badge wraps under a long name and the weapon line takes
-two lines, the splits at the card's foot are what give way, a whole row at a
-time; the zone line above them never does. Plus the
+quad cards. Under the zone line, the card names the zone's tier, worded
+like the mod's overlay: "Tier 9, normally 16" when the seed rescaled the
+zone away from its usual tier, "Tier 9" alone otherwise (or when the seed's
+graph, among the oldest, carries no original tier). Both come from the
+seed's graph (`tier` and `original_tier` on the node), the one the zone
+names come from. The tier line follows the zone line: nothing while the
+zone is not resolved, nothing once the runner has finished, the last zone's
+tier for a runner out of the race; nothing either for a node the graph
+gives no tier. When the card runs short of height, the splits at its foot
+are what give way, a whole row at a time; the zone and tier lines above
+them never do. With the tier line and a weapon line both shown, the usual
+case mid-race, the card has room for two of its three splits. Plus the
 shared desk band.
 
 ### Duel

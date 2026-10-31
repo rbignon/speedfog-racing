@@ -52,16 +52,14 @@
   // WsParticipant.current_zone is a graph node id, never a display string
   // (see RunnerCard's zoneLabel): resolve it from the seed's own graph, the
   // same nodeNames pattern the quad scene builds and buildCastSplits reuses.
-  let zoneNames = $derived(
-    new Map(
-      raceStore.seed?.graph_json
-        ? parseDagGraph(raceStore.seed.graph_json).nodes.map((n) => [
-            n.id,
-            n.labelName,
-          ])
-        : [],
-    ),
+  // The hero card also reads each zone's tier off the same nodes.
+  let graphNodes = $derived(
+    raceStore.seed?.graph_json
+      ? parseDagGraph(raceStore.seed.graph_json).nodes
+      : [],
   );
+  let zoneNames = $derived(new Map(graphNodes.map((n) => [n.id, n.labelName])));
+  let zoneTiers = $derived(new Map(graphNodes.map((n) => [n.id, n])));
 
   // The hero hole is the one the geometry marked "hero"; every other hole
   // here is a small "pov". Its slot number comes out of the hole's own id
@@ -126,6 +124,7 @@
       avatarUrl={avatars.get(heroParticipant.id) ?? null}
       {totalLayers}
       {zoneNames}
+      {zoneTiers}
       rect={layout.panels.focus}
       variant="tall"
       leader={ranks.get(heroParticipant.id) === 1}
