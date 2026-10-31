@@ -693,14 +693,13 @@
         The match's field is not settled yet: seats without a runner stay empty.
       </p>
     {/if}
-    <label class="check">
+    <label
+      class="check"
+      title="Names the Focus and Duel scenes by POV number (Focus: 1, Duel: 1 vs 2 and so on) instead of by runner, so they keep their names from one race to the next (handy for a control deck)."
+    >
       <input type="checkbox" bind:checked={positionNames} />
       Name scenes by position
     </label>
-    <p class="hint">
-      Focus: 1, Duel: 1 vs 2 and so on instead of runner names, so the scenes
-      keep their names from one race to the next (handy for a control deck).
-    </p>
   </div>
 
   <!-- A slate pierces no hole: nothing to place under it. -->
@@ -880,8 +879,11 @@
     margin-top: 0.5rem;
   }
 
+  /* As wide as the box and its label: the tooltip should not answer a
+   * hover over the empty row beside them. */
   .check {
     display: flex;
+    width: fit-content;
     align-items: center;
     gap: 0.4rem;
     margin-top: 0.75rem;
