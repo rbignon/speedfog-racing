@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { Snippet } from "svelte";
   import type { User } from "$lib/api";
   import { rewards } from "$lib/stores/rewards.svelte";
 
@@ -6,9 +7,23 @@
     user: User;
     showAvatar?: boolean;
     showBadge?: boolean;
+    /** Where the name leads: the user's profile unless set; a web URL opens in a new tab. */
+    href?: string;
+    title?: string;
+    /** More of the link, after the name and badge: inside the `<a>`, so nothing interactive. */
+    children?: Snippet;
   }
 
-  let { user, showAvatar = false, showBadge = false }: Props = $props();
+  let {
+    user,
+    showAvatar = false,
+    showBadge = false,
+    href,
+    title,
+    children,
+  }: Props = $props();
+
+  let external = $derived(href !== undefined && /^https?:\/\//.test(href));
 
   let displayName = $derived(user.twitch_display_name || user.twitch_username);
 
@@ -51,7 +66,13 @@
   );
 </script>
 
-<a href="/user/{user.twitch_username}" class="user-link">
+<a
+  href={href ?? `/user/${user.twitch_username}`}
+  class="user-link"
+  {title}
+  target={external ? "_blank" : undefined}
+  rel={external ? "noopener noreferrer" : undefined}
+>
   {#if showAvatar && user.twitch_avatar_url}
     <img src={user.twitch_avatar_url} alt="" class="user-link-avatar" />
   {/if}
@@ -66,6 +87,7 @@
       class="user-link-badge"
     />
   {/if}
+  {@render children?.()}
 </a>
 
 <style>

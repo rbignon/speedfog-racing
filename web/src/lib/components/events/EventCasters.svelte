@@ -4,8 +4,8 @@
   import UserLink from "$lib/components/UserLink.svelte";
 
   /**
-   * A match's casters in one line that wraps: each with their language, a
-   * LIVE badge while they stream, and a Watch button to their stream.
+   * A match's casters in one line that wraps: each one link to their stream
+   * (avatar, name, language, a Twitch mark, LIVE while they stream).
    */
   let {
     casters,
@@ -34,17 +34,19 @@
   <ul>
     {#each casters as caster (caster.user.id)}
       <li class="caster">
-        <UserLink user={caster.user} showAvatar />
-        {#if languages[caster.user.id]}<span class="lang"
-            >{languages[caster.user.id]}</span
-          >{/if}
-        {#if caster.is_live}<LiveBadge href={watchUrl(caster)} small />{/if}
-        <a
-          class="btn btn-twitch btn-sm watch"
+        <UserLink
+          user={caster.user}
+          showAvatar
           href={watchUrl(caster)}
-          target="_blank"
-          rel="noopener noreferrer">{@render twitchIcon()}Watch</a
+          title="Watch {caster.user.twitch_display_name ||
+            caster.user.twitch_username} on Twitch"
         >
+          {#if languages[caster.user.id]}<span class="lang"
+              >{languages[caster.user.id]}</span
+            >{/if}
+          <span class="mark">{@render twitchIcon()}</span>
+          {#if caster.is_live}<LiveBadge small />{/if}
+        </UserLink>
       </li>
     {/each}
   </ul>
@@ -86,7 +88,6 @@
   .caster {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
     font-weight: 600;
   }
   .lang {
@@ -99,12 +100,18 @@
     padding: 0 4px;
     color: var(--color-text-secondary);
   }
-  .watch {
+  /* The Twitch mark says where the link leads; it brightens on hover. */
+  .mark {
     display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.2rem 0.55rem 0.26rem;
-    font-size: 0.78rem;
-    white-space: nowrap;
+    color: var(--color-twitch-hover);
+    transition: color var(--transition);
+  }
+  .mark svg {
+    width: 13px;
+    height: 13px;
+  }
+  .caster:hover .mark,
+  .caster:focus-within .mark {
+    color: var(--color-purple);
   }
 </style>

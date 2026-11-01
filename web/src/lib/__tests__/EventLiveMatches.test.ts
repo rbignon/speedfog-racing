@@ -166,9 +166,31 @@ describe("EventLiveMatches", () => {
       now: NOW,
     });
     expect(getByText("FR")).toBeTruthy();
-    expect(container.querySelector(".watch")?.getAttribute("href")).toBe(
-      "https://twitch.tv/karssi",
-    );
+    // The caster's name is the link to their stream, not to their profile.
+    const link = container.querySelector(".cast a");
+    expect(link?.getAttribute("href")).toBe("https://twitch.tv/karssi");
+    expect(link?.textContent).toContain("FR");
+  });
+
+  it("sends a live caster to their stream, the LIVE mark inside the one link", () => {
+    const match = live(stage("group_h"));
+    match.race!.race.casters = [
+      {
+        id: "c1",
+        user: person("karssi"),
+        is_live: true,
+        stream_url: "https://twitch.tv/karssi_live",
+      },
+    ];
+    const { container } = render(EventLiveMatches, {
+      matches: [match],
+      stages: [],
+      now: NOW,
+    });
+    const links = container.querySelectorAll(".cast a");
+    expect(links.length).toBe(1);
+    expect(links[0].getAttribute("href")).toBe("https://twitch.tv/karssi_live");
+    expect(links[0].textContent).toContain("LIVE");
   });
 
   it("still renders its casters for a server that sends no languages yet", () => {

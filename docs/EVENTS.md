@@ -699,10 +699,12 @@ is played a dashed line under the last runner going on names where they go.
 The column headers lead to the race pages, and the header button to the race
 running ("Race page") or the next one ("Next race"). Under the table, "Cast
 by" lines up the match's casters (`EventCasters`), each once whatever the
-number of races they cast, with their language when the config's
-`caster_languages` gives one, a `LIVE` mark while their stream is on, and a
-Watch button (their live stream, else their channel); a match nobody casts
-has no such line. A race time reads alone on
+number of races they cast and each one link to their live stream, else their
+channel (in a new tab): their avatar and name, their language when the
+config's `caster_languages` gives one, a Twitch mark saying where the link
+leads, and a `LIVE` mark while their stream is on. Unlike a runner's name,
+a caster's leads to Twitch, not to their profile: a viewer clicking a
+caster wants to watch them. A match nobody casts has no such line. A race time reads alone on
 the viewer's day and with its day otherwise ("Next: Boss Rush at Wed 14 Oct,
 22:00"), so a race two evenings away never reads as tonight; the Up next chips
 do the same against their match's day.

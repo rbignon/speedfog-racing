@@ -239,8 +239,10 @@ describe("EventBand", () => {
     expect(blocks[0].querySelector(".cast")?.textContent).toContain("FR");
     const to = links(container);
     expect(to["Race page"]).toBe("/race/r1");
-    expect(to["Watch"]).toBe("https://twitch.tv/karssi");
     expect(to["Watch on Twitch"]).toBeUndefined();
+    expect(blocks[0].querySelector(".cast a")?.getAttribute("href")).toBe(
+      "https://twitch.tv/karssi",
+    );
   });
 
   it("shows no match block outside the playoffs, nor from an older server", () => {

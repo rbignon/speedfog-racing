@@ -151,4 +151,25 @@ describe("UserLink", () => {
     });
     expect(container.querySelector("img.user-link-badge")).toBeNull();
   });
+
+  it("leads to the profile in place, and to an outside URL in a new tab", () => {
+    seedCatalog();
+    const user = {
+      id: "u1",
+      twitch_username: "alice",
+      twitch_display_name: "Alice",
+      twitch_avatar_url: null,
+    };
+    const profile = render(UserLink, {
+      props: { user },
+    }).container.querySelector("a");
+    expect(profile?.getAttribute("href")).toBe("/user/alice");
+    expect(profile?.getAttribute("target")).toBeNull();
+    const stream = render(UserLink, {
+      props: { user, href: "https://twitch.tv/alice" },
+    }).container.querySelector("a");
+    expect(stream?.getAttribute("href")).toBe("https://twitch.tv/alice");
+    expect(stream?.getAttribute("target")).toBe("_blank");
+    expect(stream?.getAttribute("rel")).toBe("noopener noreferrer");
+  });
 });

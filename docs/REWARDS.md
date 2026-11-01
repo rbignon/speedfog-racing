@@ -280,6 +280,7 @@ UserLink:
 
 - Always applies the user's name template `color` or `gradient` (CSS `linear-gradient` + `-webkit-background-clip: text` for gradient text).
 - Optional `showBadge?: boolean` prop (default `false`) renders the equipped badge icon (16x16 SVG from `web/static/badges/`) next to the name.
+- Optional `href` (default: the user's profile; a web URL opens in a new tab), `title`, and children rendered inside the link after the name: the event casters' line points the name at their Twitch stream this way.
 
 The `background_css` is applied at the **container** level, not in `UserLink`. The visibility model follows the Discord parallel: the name `color`/`gradient` is the "role color" (always visible everywhere it makes sense), the `background_css` is the "profile banner" (visible in showcase contexts, conditional in dense lists).
 

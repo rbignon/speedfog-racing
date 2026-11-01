@@ -1,6 +1,7 @@
 <script lang="ts">
   interface Props {
-    href: string;
+    /** The stream; without one the badge is a plain mark (inside a link of its own). */
+    href?: string;
     small?: boolean;
     onclick?: (e: MouseEvent) => void;
   }
@@ -8,15 +9,19 @@
   let { href, small = false, onclick }: Props = $props();
 </script>
 
-<a
-  {href}
-  target="_blank"
-  rel="noopener noreferrer"
-  class="live-badge"
-  class:small
-  title="Watch live on Twitch"
-  {onclick}>LIVE</a
->
+{#if href}
+  <a
+    {href}
+    target="_blank"
+    rel="noopener noreferrer"
+    class="live-badge"
+    class:small
+    title="Watch live on Twitch"
+    {onclick}>LIVE</a
+  >
+{:else}
+  <span class="live-badge" class:small>LIVE</span>
+{/if}
 
 <style>
   .live-badge {
