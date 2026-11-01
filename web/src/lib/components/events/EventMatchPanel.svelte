@@ -97,10 +97,7 @@
         <li class:out={row.forfeit}>
           <span class="rank" class:gold={row.rank === 1}>{row.rank ?? ""}</span>
           <UserLink user={row.user} showAvatar />
-          {#if row.total !== null}<span
-              class="total"
-              class:prov={!stage.complete}
-              class:adv={row.advances}
+          {#if row.total !== null}<span class="total" class:adv={row.advances}
               >{row.advances ? `adv ${row.total}` : `${row.total} pts`}</span
             >{/if}
         </li>
@@ -367,12 +364,12 @@
   .runners .rank.gold {
     color: var(--color-gold);
   }
+  /* Gold whether provisional or final, so a total never reads as part of
+   * the name beside it: the block's signal says which it is. */
   .runners .total {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
     font-weight: 600;
-  }
-  .runners .total.prov {
     color: var(--color-gold);
   }
   .runners .total.adv {

@@ -1013,7 +1013,9 @@ with their rank and match total once the match has points (from its first
 finish; a forfeit who ran no race keeps their name alone, greyed); the
 running race's progress (layer, the race's own points, DNF or DQ) stays
 on the event page and the race page, so the line never shows two numbers
-side by side. While a block shows, the band reads the summary again
+side by side. The total stays gold once final too, unlike the table's, so
+it never reads as part of the name beside it; the block's signal tells
+provisional from final. While a block shows, the band reads the summary again
 every minute, and every five minutes while the next evening is within 12
 hours (`bandPollMs`, the event page's `pollIntervalMs` rule on the
 summary), so a band left open before a match sees it go on air.
