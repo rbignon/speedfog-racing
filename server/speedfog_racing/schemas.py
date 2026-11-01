@@ -1668,6 +1668,14 @@ class EventSummaryResponse(BaseModel):
     player_previews: list[UserResponse]
     next_stage: EventNextStageResponse | None
     live: EventLiveRaceResponse | None
+    # During the playoffs, the stages on air (the event page's live zone rule,
+    # ``on_air_stage_keys``) shaped as the detail shapes them, save that no
+    # entry carries a signature weapon and ``newcomer`` is only read for an
+    # event with a newcomers bracket; and the languages of their casters
+    # (caster user id -> code): the band gives each match a block. Empty in
+    # every other phase.
+    on_air_stages: list[EventStageResponse] = []
+    caster_languages: dict[UUID, str] = {}
     champion: UserResponse | None
     brackets: list[EventSummaryBracketResponse] = []
 

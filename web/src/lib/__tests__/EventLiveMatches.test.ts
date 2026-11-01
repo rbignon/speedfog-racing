@@ -62,37 +62,24 @@ function live(s: EventStage, raceId = `${s.key}-r1`): LiveMatch {
 }
 
 describe("EventLiveMatches", () => {
-  it("gives a lone match the wide panel and two matches a panel each", () => {
+  it("lists the casters under the table, and no cast line nobody casts", () => {
     const cast = live(stage("group_h"));
     cast.race!.race.casters = [
       { id: "c1", user: person("karssi"), is_live: false, stream_url: null },
     ];
-    const one = render(EventLiveMatches, {
-      matches: [cast],
-      stages: [],
-      languages: {},
-      now: NOW,
-    });
-    expect(one.container.querySelectorAll(".match.wide").length).toBe(1);
-    const two = render(EventLiveMatches, {
-      matches: [live(stage("group_h")), live(stage("group_d"))],
-      stages: [],
-      languages: {},
-      now: NOW,
-    });
-    expect(two.container.querySelectorAll(".match").length).toBe(2);
-    expect(two.container.querySelector(".match.wide")).toBeNull();
-  });
-
-  it("leaves the full width to a lone match's table when nobody casts it", () => {
     const { container } = render(EventLiveMatches, {
-      matches: [live(stage("group_h"))],
+      matches: [cast, live(stage("group_d"))],
       stages: [],
       languages: {},
       now: NOW,
     });
-    expect(container.querySelector(".match")).not.toBeNull();
-    expect(container.querySelector(".match.wide")).toBeNull();
+    const [castPanel, quietPanel] = container.querySelectorAll(".match");
+    const table = castPanel.querySelector("table.score")!;
+    const line = castPanel.querySelector(".cast")!;
+    expect(
+      table.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(quietPanel.querySelector(".cast")).toBeNull();
   });
 
   it("draws the cut line under the last runner going on and links the running race", () => {

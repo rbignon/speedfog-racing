@@ -678,7 +678,7 @@ plates take its place.
 
 During the playoffs, a live zone opens the page, above the playoffs
 introduction: one panel per match on air, both brackets together, two a row,
-a lone match on the full width (its casters then in a column on the right).
+a lone match on the full width.
 A match is on air from its first race to its end (`liveMatches`): while one
 of its races runs ("Live now"); between two of its races ("In progress"),
 while its last race ended less than 2 hours ago or its next race is due
@@ -689,10 +689,7 @@ who goes on, or who wins a final). Panels keep the stage order, finished ones
 last, so they never swap places between two refreshes. The last final turns
 the event `finished`, and the champion plates take over at once.
 
-A panel leads with the match's casters, each once whatever the number of
-races they cast, with their language when the config's `caster_languages`
-gives one, a `LIVE` mark while their stream is on, and a Watch button (their
-live stream, else their channel). Under them, one row per runner: the results'
+A panel holds one row per runner: the results'
 order (a forfeit at the bottom, receded), the seat (`#<seed>`, or a fed
 seat's code), one cell per race (the race's points, DNF or DQ once it is
 finished; the points once the runner finished, in brass, else the layer they
@@ -700,11 +697,15 @@ ride, while it runs; nothing before), then the total, in brass until the
 match is complete, `adv` for the runners going on once it is. While the match
 is played a dashed line under the last runner going on names where they go.
 The column headers lead to the race pages, and the header button to the race
-running ("Race page") or the next one ("Next race"). A race time reads alone on
+running ("Race page") or the next one ("Next race"). Under the table, "Cast
+by" lines up the match's casters (`EventCasters`), each once whatever the
+number of races they cast, with their language when the config's
+`caster_languages` gives one, a `LIVE` mark while their stream is on, and a
+Watch button (their live stream, else their channel); a match nobody casts
+has no such line. A race time reads alone on
 the viewer's day and with its day otherwise ("Next: Boss Rush at Wed 14 Oct,
 22:00"), so a race two evenings away never reads as tonight; the Up next chips
-do the same against their match's day. A lone match nobody casts keeps the
-full width for its table.
+do the same against their match's day.
 
 Beside the bracket, the Up next box lists the selected bracket's next
 matches (`upcomingMatches`): not complete, not on air, with every seat
@@ -938,7 +939,12 @@ than a showcase's, plus the signups while the event can still be joined, the lad
 the first `MAX_PLAYER_PREVIEWS` of them are previewed; both empty while an
 upcoming event has fewer than `MIN_UPCOMING_PLAYERS`), the next stage, the
 live playoff race with the slot it fills (`live`), the champion once the
-final is complete, `my_signup`, and from the cut until the playoffs are over
+final is complete, `my_signup`, during the playoffs `on_air_stages` (the
+stages on air by the live zone's rule, `on_air_stage_keys` in
+`event_service.py`, each shaped as the detail's `stages`, except that no
+entry carries a signature weapon and the `newcomer` flags are only read
+for an event with a newcomers bracket) and `caster_languages` (resolved for their races' casters, empty
+without one), and from the cut until the playoffs are over
 `brackets`: each bracket's label and its qualified runners in seed order, a
 seat nobody holds left out, with `forfeited` (the ids of the forfeits among
 them, also in `eliminated` once a complete stage knocks them out) and
@@ -957,13 +963,13 @@ above the Daily Seed on the dashboard: the event page's lockup (a link to
 that page), a phase signal, one line of state and the buttons, which
 `eventBand` in `lib/events.ts` decides from the phase:
 
-| phase       | line                                        | buttons                                                                      |
-| ----------- | ------------------------------------------- | ---------------------------------------------------------------------------- |
-| `upcoming`  | the opening, then who is in                 | `Take part`, to the event page                                               |
-| `qualifier` | the closing, then who is in                 | `Take part`, to the event page                                               |
-| `cut`       | the next evening, when one is known         | `Event page`                                                                 |
-| `playoffs`  | live: stage and race index; else next stage | live: `Watch on Twitch` or `Race page`, then `Event page`; else `Event page` |
-| `finished`  | `Champion`, then the champion's link        | `Event page`                                                                 |
+| phase       | line                                        | buttons                        |
+| ----------- | ------------------------------------------- | ------------------------------ |
+| `upcoming`  | the opening, then who is in                 | `Take part`, to the event page |
+| `qualifier` | the closing, then who is in                 | `Take part`, to the event page |
+| `cut`       | the next evening, when one is known         | `Event page`                   |
+| `playoffs`  | live: stage and race index; else next stage | `Event page`                   |
+| `finished`  | `Champion`, then the champion's link        | `Event page`                   |
 
 Who is in shows as the race cards' avatar stack after the line (initials for
 a runner without an avatar, the name on hover, a `+N` chip for the players
@@ -977,11 +983,19 @@ and a
 bracket nobody holds a seat in yet shows no row; the cut's signal reads `Playoffs incoming`, as it does
 on the event page and the Open Graph card.
 Signing up stays on the event page: a viewer already in reads `You're in`
-next to the `Event page` button. The watch link is a live caster's own
-stream, else the first caster's channel (the live zone gives each caster a
-button of their own). The
+next to the `Event page` button. The
 instants on the line are ahead of the viewer, so they carry the timezone
 like the event page's.
+
+During the playoffs, each match on air (`liveMatches` over the summary's
+`on_air_stages`) gets a block under the bracket rows, across the band's
+width, two a row from 900px: the live zone's panel in its compact form,
+its signal, line, title and header button, then its runners in one line
+(rank, the cell of the race running, the total) instead of the table, and
+its "Cast by" line. While a block shows, the band reads the summary again
+every minute, and every five minutes while the next evening is within 12
+hours (`bandPollMs`, the event page's `pollIntervalMs` rule on the
+summary), so a band left open before a match sees it go on air.
 
 The navbar shows an `Event` link to every viewer while an event is on the
 bill, before Solo when signed in and before the login button otherwise,

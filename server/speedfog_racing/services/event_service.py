@@ -1117,6 +1117,68 @@ def next_stage_key(
     return ahead[0][1] if ahead else None
 
 
+# How long a match stays on air between two races, after its last finish or
+# around its next race's start, and how long a complete one stays on.
+BETWEEN_RACES = timedelta(hours=2)
+FINISHED_SHOWN = timedelta(hours=1)
+
+
+def on_air_stage_keys(
+    config: EventConfig,
+    resolved: ResolvedStages,
+    walkovers: Collection[str],
+    now: datetime,
+) -> list[str]:
+    """The stages on air at ``now``, in bracket order: the event page's live zone rule.
+
+    A stage with a race running; one between two races (a race finished, the
+    stage not complete, its last race ended less than BETWEEN_RACES ago or its
+    next race due within as long, a start as late included); one complete
+    less than FINISHED_SHOWN ago. Walkovers never are. The web applies the
+    same rule (``liveMatches`` in web/src/lib/events.ts) to what it is sent.
+    """
+    keys: list[str] = []
+    for stage in config.stages:
+        if stage.key in walkovers:
+            continue
+        races = resolved.stage_races[stage.key]
+        ended = max(
+            (
+                moment
+                for _, race in races
+                if race.status == RaceStatus.FINISHED
+                and (moment := as_aware_utc(race.finished_at)) is not None
+            ),
+            default=None,
+        )
+        since_end = now - ended if ended is not None else None
+        if resolved.results[stage.key].complete:
+            if since_end is not None and since_end < FINISHED_SHOWN:
+                keys.append(stage.key)
+            continue
+        if any(race.status == RaceStatus.RUNNING for _, race in races):
+            keys.append(stage.key)
+            continue
+        if not any(race.status == RaceStatus.FINISHED for _, race in races):
+            continue
+        # The first slot not played yet: no race attached, or one still in setup.
+        by_index = {slot.index: race for slot, race in races}
+        next_race = next(
+            (
+                by_index.get(i)
+                for i in range(1, stage.races + 1)
+                if by_index.get(i) is None or by_index[i].status == RaceStatus.SETUP
+            ),
+            None,
+        )
+        next_at = as_aware_utc(next_race.scheduled_at) if next_race is not None else None
+        if (since_end is not None and since_end < BETWEEN_RACES) or (
+            next_at is not None and abs(next_at - now) <= BETWEEN_RACES
+        ):
+            keys.append(stage.key)
+    return keys
+
+
 # --- loaders ----------------------------------------------------------------
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Collection, Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
@@ -56,6 +58,7 @@ from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MAX_PLAYER_PREVIEWS,
     MIN_UPCOMING_PLAYERS,
+    QualifiedSlot,
     Slot,
     StageResult,
     announce_date,
@@ -76,6 +79,7 @@ from speedfog_racing.services.event_service import (
     load_featured_events,
     newcomer_flags,
     next_stage_key,
+    on_air_stage_keys,
     parse_slot,
     resolve_caster_languages,
     resolve_stages,
@@ -120,12 +124,153 @@ def _my_result(race: Race, user: User | None) -> EventMyResultResponse | None:
     )
 
 
+def _live_order(race: Race) -> list[EventLiveRunnerResponse]:
+    """A running race's whole field in the race page's own order, else nothing.
+
+    From each runner's layer-entry cache: the event load defers the seed graph
+    the fallback would scan.
+    """
+    if race.status != RaceStatus.RUNNING:
+        return []
+    ordered, _ = sort_leaderboard(race.participants)
+    return [
+        EventLiveRunnerResponse(
+            **participant_preview(p).model_dump(), current_layer=p.current_layer
+        )
+        for p in ordered
+        # Always true: the sort also takes projections, these are rows.
+        if isinstance(p, Participant)
+    ]
+
+
+def _no_weapon(_user_id: UUID) -> EventWeaponResponse | None:
+    return None
+
+
+@dataclass(frozen=True)
+class _StageBuilder:
+    """Shapes a stage (or a showcase) for a response, the detail's and the listing's alike."""
+
+    config: EventConfig
+    user: User | None
+    users: Mapping[UUID, User]
+    newcomers: Mapping[UUID, bool]
+    forfeits: Collection[UUID]
+    qualified: Mapping[str, list[QualifiedSlot]]
+    results: dict[str, StageResult]
+    weapon_of: Callable[[UUID], EventWeaponResponse | None] = _no_weapon
+
+    def user_of(self, user_id: UUID | None) -> UserResponse | None:
+        if user_id is None or user_id not in self.users:
+            return None
+        return UserResponse.model_validate(self.users[user_id])
+
+    def entries_of(self, result: StageResult) -> list[EventStageEntryResponse]:
+        return [
+            EventStageEntryResponse(
+                user=UserResponse.model_validate(self.users[e.user_id]),
+                newcomer=self.newcomers.get(e.user_id, False),
+                points=e.points,
+                igt_total=e.igt_total,
+                advances=e.advances,
+                signature_weapon=self.weapon_of(e.user_id),
+            )
+            for e in result.entries
+        ]
+
+    def stage_response(
+        self,
+        stage: EventStage | EventShowcase,
+        *,
+        kind: str,
+        bracket: str | None,
+        sources: list[str],
+        date: datetime | None,
+        races: list[tuple[Slot, Race]],
+        result: StageResult,
+        field: list[EventFieldSlotResponse],
+        walkover: bool = False,
+    ) -> EventStageResponse:
+        config = self.config
+        # Only a running race scores provisionally: without one, the settled
+        # standings are `result` itself (a walkover's included, which no race
+        # backs). With one, scored like `result`, on the same advance, over
+        # the finished races alone.
+        settled = (
+            compute_stage_results(
+                stage,
+                [r for _, r in races if r.status == RaceStatus.FINISHED],
+                (stage.advance or 0) if isinstance(stage, EventStage) else 0,
+                config,
+            )
+            if any(r.status == RaceStatus.RUNNING for _, r in races)
+            else result
+        )
+        return EventStageResponse(
+            key=stage.key,
+            label=stage.label,
+            kind=kind,
+            bracket=bracket,
+            date=date,
+            date_fixed=stage.date is not None,
+            time_set=stage_time_set(stage, races),
+            from_=sources,  # type: ignore[call-arg]  # mypy ignores populate_by_name
+            advance=stage.advance if isinstance(stage, EventStage) else None,
+            races_expected=stage.races,
+            complete=result.complete,
+            walkover=walkover,
+            modes=stage.modes,
+            races=[
+                EventStageRaceResponse(
+                    slot=str(s),
+                    index=s.index,
+                    race=race_response(r, self.user),
+                    points={
+                        str(uid): sc.points for uid, sc in score_playoff_race(r, config).items()
+                    },
+                    live=_live_order(r),
+                )
+                for s, r in races
+            ],
+            results=self.entries_of(result),
+            settled_results=self.entries_of(settled),
+            field=field,
+        )
+
+    def field_of(self, stage_key: str) -> list[EventFieldSlotResponse]:
+        stage = self.config.stage(stage_key)
+        if stage is None:
+            return []
+        if stage.from_:
+            return [
+                EventFieldSlotResponse(
+                    user=self.user_of(slot.user_id),
+                    label=slot.label,
+                    forfeited=slot.user_id in self.forfeits,
+                    source=slot.source,
+                    place=slot.place,
+                )
+                for slot in fed_field(stage, self.config, self.results)
+            ]
+        return [
+            EventFieldSlotResponse(
+                user=self.user_of(slot.user_id),
+                label=slot_label(slot),
+                forfeited=slot.forfeited,
+            )
+            for slot in self.qualified.get(stage_key, [])
+        ]
+
+
 @router.get("", response_model=list[EventSummaryResponse])
 async def list_events(
     db: AsyncSession = Depends(get_db),
     user: User | None = Depends(get_current_user_optional),
 ) -> list[EventSummaryResponse]:
     """The events on the bill: what the home page band and the navbar show.
+
+    During the playoffs each carries its matches on air, shaped as the detail
+    shapes its stages, for the band's match blocks.
 
     A finished season (kept for its champion) yields the head of the list to
     one still to come, so a season announced right after the last final is
@@ -177,6 +322,8 @@ async def list_events(
         # summary runs beyond the load, only in these phases and only for an
         # event that has such a bracket.
         brackets: list[EventSummaryBracketResponse] = []
+        on_air: list[EventStageResponse] = []
+        languages: dict[UUID, str] = {}
         if phase in ("cut", "playoffs"):
             newcomers: dict[UUID, bool] = {}
             if any(b.entry == "newcomers" for b in config.brackets):
@@ -189,7 +336,7 @@ async def list_events(
             )
             forfeits = resolve_withdrawn(config.forfeits, users)
             qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
-            apply_walkovers(config, resolved, qualified, forfeits)
+            walkovers = apply_walkovers(config, resolved, qualified, forfeits)
             out = eliminated_runners(config, resolved.results, qualified)
             withdrew = set(forfeits)
             for bracket, seated in bracket_draw(config, qualified):
@@ -202,6 +349,40 @@ async def list_events(
                         eliminated=[u for u in shown if u in out],
                         forfeited=[u for u in shown if u in withdrew],
                     )
+                )
+            # The matches on air, shaped as the event page's live zone reads them.
+            on_air_keys = (
+                on_air_stage_keys(config, resolved, walkovers, now) if phase == "playoffs" else []
+            )
+            if on_air_keys:
+                build = _StageBuilder(
+                    config=config,
+                    user=user,
+                    users=users,
+                    newcomers=newcomers,
+                    forfeits=withdrew,
+                    qualified=qualified,
+                    results=results,
+                )
+                for bracket in config.brackets:
+                    for stage in bracket.stages:
+                        if stage.key not in on_air_keys:
+                            continue
+                        on_air.append(
+                            build.stage_response(
+                                stage,
+                                kind=stage.kind,
+                                bracket=bracket.key,
+                                sources=stage.source_keys,
+                                date=resolved.dates[stage.key],
+                                races=stage_races[stage.key],
+                                result=results[stage.key],
+                                field=build.field_of(stage.key),
+                            )
+                        )
+                languages = resolve_caster_languages(
+                    config.caster_languages,
+                    [race for key in on_air_keys for _, race in stage_races[key]],
                 )
 
         live = None
@@ -257,6 +438,8 @@ async def list_events(
                 live=live,
                 champion=champion,
                 brackets=brackets,
+                on_air_stages=on_air,
+                caster_languages=languages,
             )
         )
     summaries.sort(key=lambda s: (s.phase == "finished", s.starts_at))
@@ -342,117 +525,17 @@ async def get_event(
 
     next_stage = next_stage_response(next_stage_key(config, resolved, now))
 
-    def user_of(user_id: UUID | None) -> UserResponse | None:
-        return UserResponse.model_validate(users[user_id]) if user_id in users else None
-
-    def live_order(race: Race) -> list[EventLiveRunnerResponse]:
-        # The race page's own order, from each runner's layer-entry cache
-        # (the event load defers the seed graph the fallback would scan).
-        if race.status != RaceStatus.RUNNING:
-            return []
-        ordered, _ = sort_leaderboard(race.participants)
-        return [
-            EventLiveRunnerResponse(
-                **participant_preview(p).model_dump(), current_layer=p.current_layer
-            )
-            for p in ordered
-            # Always true: the sort also takes projections, these are rows.
-            if isinstance(p, Participant)
-        ]
-
-    def entries_of(result: StageResult) -> list[EventStageEntryResponse]:
-        return [
-            EventStageEntryResponse(
-                user=UserResponse.model_validate(users[e.user_id]),
-                newcomer=newcomers.get(e.user_id, False),
-                points=e.points,
-                igt_total=e.igt_total,
-                advances=e.advances,
-                signature_weapon=weapon_of(e.user_id),
-            )
-            for e in result.entries
-        ]
-
-    def stage_response(
-        stage: EventStage | EventShowcase,
-        *,
-        kind: str,
-        bracket: str | None,
-        sources: list[str],
-        date: datetime | None,
-        races: list[tuple[Slot, Race]],
-        result: StageResult,
-        field: list[EventFieldSlotResponse],
-        walkover: bool = False,
-    ) -> EventStageResponse:
-        # Only a running race scores provisionally: without one, the settled
-        # standings are `result` itself (a walkover's included, which no race
-        # backs). With one, scored like `result`, on the same advance, over
-        # the finished races alone.
-        settled = (
-            compute_stage_results(
-                stage,
-                [r for _, r in races if r.status == RaceStatus.FINISHED],
-                (stage.advance or 0) if isinstance(stage, EventStage) else 0,
-                config,
-            )
-            if any(r.status == RaceStatus.RUNNING for _, r in races)
-            else result
-        )
-        return EventStageResponse(
-            key=stage.key,
-            label=stage.label,
-            kind=kind,
-            bracket=bracket,
-            date=date,
-            date_fixed=stage.date is not None,
-            time_set=stage_time_set(stage, races),
-            from_=sources,  # type: ignore[call-arg]  # mypy ignores populate_by_name
-            advance=stage.advance if isinstance(stage, EventStage) else None,
-            races_expected=stage.races,
-            complete=result.complete,
-            walkover=walkover,
-            modes=stage.modes,
-            races=[
-                EventStageRaceResponse(
-                    slot=str(s),
-                    index=s.index,
-                    race=race_response(r, user),
-                    points={
-                        str(uid): sc.points for uid, sc in score_playoff_race(r, config).items()
-                    },
-                    live=live_order(r),
-                )
-                for s, r in races
-            ],
-            results=entries_of(result),
-            settled_results=entries_of(settled),
-            field=field,
-        )
-
-    def field_of(stage_key: str) -> list[EventFieldSlotResponse]:
-        stage = config.stage(stage_key)
-        if stage is None:
-            return []
-        if stage.from_:
-            return [
-                EventFieldSlotResponse(
-                    user=user_of(slot.user_id),
-                    label=slot.label,
-                    forfeited=slot.user_id in forfeits,
-                    source=slot.source,
-                    place=slot.place,
-                )
-                for slot in fed_field(stage, config, results)
-            ]
-        return [
-            EventFieldSlotResponse(
-                user=user_of(slot.user_id),
-                label=slot_label(slot),
-                forfeited=slot.forfeited,
-            )
-            for slot in qualified.get(stage_key, [])
-        ]
+    build = _StageBuilder(
+        config=config,
+        user=user,
+        users=users,
+        newcomers=newcomers,
+        forfeits=forfeits,
+        qualified=qualified,
+        results=results,
+        weapon_of=weapon_of,
+    )
+    user_of = build.user_of
 
     return EventDetailResponse(
         slug=event.slug,
@@ -547,7 +630,7 @@ async def get_event(
             for bracket in config.brackets
         ],
         stages=[
-            stage_response(
+            build.stage_response(
                 stage,
                 kind=stage.kind,
                 bracket=bracket.key,
@@ -555,14 +638,14 @@ async def get_event(
                 date=resolved.dates[stage.key],
                 races=stage_races[stage.key],
                 result=results[stage.key],
-                field=field_of(stage.key),
+                field=build.field_of(stage.key),
                 walkover=stage.key in walkovers,
             )
             for bracket in config.brackets
             for stage in bracket.stages
         ],
         showcases=[
-            stage_response(
+            build.stage_response(
                 showcase,
                 kind="showcase",
                 bracket=None,

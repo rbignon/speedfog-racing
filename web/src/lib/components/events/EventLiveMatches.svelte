@@ -25,13 +25,7 @@
   <SectionTitle>{liveZoneTitle(matches)}</SectionTitle>
   <div class="grid" class:single={matches.length === 1}>
     {#each matches as match (match.stage.key)}
-      <EventMatchPanel
-        {match}
-        {stages}
-        {languages}
-        {now}
-        wide={matches.length === 1}
-      />
+      <EventMatchPanel {match} {stages} {languages} {now} />
     {/each}
   </div>
 </section>

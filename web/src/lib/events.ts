@@ -184,7 +184,9 @@ export function nextSlot(
  * between them; one complete less than FINISHED_SHOWN_MS ago (`finished`).
  * Walkovers never are. Running and in-progress matches come first, in stage
  * order (bracket, then stage), the finished ones after them in the same
- * order, so the panels never swap places between two refreshes.
+ * order, so the panels never swap places between two refreshes. The server
+ * filters the summary's `on_air_stages` by the same rule
+ * (`on_air_stage_keys` in event_service.py): change both together.
  */
 export function liveMatches(stages: EventStage[], now: Date): LiveMatch[] {
   const t = now.getTime();
@@ -913,6 +915,25 @@ export function pollIntervalMs(
   return near ? STAGE_DAY_POLL_MS : null;
 }
 
+/**
+ * How often the home band reads the summary again, or null for never: every
+ * minute while it shows a match (`matches`, the summary's on-air stages),
+ * every five minutes in the playoffs while the next evening is within 12
+ * hours, so a band left open before a match sees it go on air.
+ */
+export function bandPollMs(
+  event: Pick<EventSummary, "phase" | "next_stage">,
+  matches: LiveMatch[],
+  now: Date,
+): number | null {
+  if (event.phase !== "playoffs") return null;
+  if (matches.length > 0) return LIVE_POLL_MS;
+  const at = event.next_stage?.date;
+  return at && Math.abs(Date.parse(at) - now.getTime()) <= STAGE_DAY_WINDOW_MS
+    ? STAGE_DAY_POLL_MS
+    : null;
+}
+
 const OPENING_SPREAD_MS = 10_000;
 // The longest delay setTimeout holds (about 24.8 days).
 const MAX_TIMEOUT_MS = 2_147_483_647;
@@ -991,7 +1012,7 @@ export function signupIntentStands(
 export interface EventBandAction {
   href: string;
   label: string;
-  kind: "primary" | "twitch" | "outline";
+  kind: "primary" | "outline";
 }
 
 export interface EventBandState {
@@ -1012,9 +1033,8 @@ export interface EventBandState {
  * one line of state and the buttons. ``fmt`` formats an instant the viewer
  * can still act on. While the event can be joined the primary button leads
  * to the event page's signup step, or plainly to the page once the viewer
- * is in; while a playoff race runs it leads to the stream (a live caster's
- * own, else the first caster's channel) or to the race page, the event page
- * beside it.
+ * is in. While a playoff race runs the band's match blocks lead to the
+ * race and its casters, so the button stays on the event page.
  */
 export function eventBand(
   event: EventSummary,
@@ -1068,25 +1088,10 @@ export function eventBand(
     case "playoffs": {
       const live = event.live;
       if (live) {
-        const casters = live.race.casters;
-        const watchUrl =
-          casters.find((c) => c.is_live)?.stream_url ??
-          (casters[0]
-            ? `https://twitch.tv/${casters[0].user.twitch_username}`
-            : null);
         return {
           signal: { cls: "signal-running", text: "Live now" },
           line: `${live.stage_label} · Race ${live.index} of ${live.races_expected}`,
-          actions: [
-            watchUrl
-              ? { href: watchUrl, label: "Watch on Twitch", kind: "twitch" }
-              : {
-                  href: `/race/${live.race.id}`,
-                  label: "Race page",
-                  kind: "primary",
-                },
-            pageAction("outline"),
-          ],
+          actions: [pageAction("primary")],
           ...drawn,
         };
       }

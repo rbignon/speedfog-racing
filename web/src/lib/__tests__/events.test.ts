@@ -9,6 +9,7 @@ import {
   champions,
   cutLine,
   encodeSignupIntent,
+  bandPollMs,
   eventBand,
   eventFacts,
   fillSlots,
@@ -46,6 +47,7 @@ import {
   timeRemaining,
   upcomingMatches,
 } from "$lib/events";
+import type { LiveMatch } from "$lib/events";
 import type {
   Caster,
   EventBracket,
@@ -2175,60 +2177,29 @@ describe("eventBand", () => {
     expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
   });
 
-  it("points at the live race, on Twitch when a caster streams it", () => {
+  it("leaves the live race to the match blocks, the button on the event page", () => {
     const casters = [
-      { is_live: false, stream_url: null, user: { twitch_username: "quiet" } },
       {
         is_live: true,
         stream_url: "https://twitch.tv/live-one",
         user: { twitch_username: "live-one" },
       },
     ] as Race["casters"];
-    const live = {
-      race: { id: "r7", casters } as Race,
-      stage_label: "Semi A",
-      index: 2,
-      races_expected: 3,
-    };
-    const state = eventBand(summaryWith({ phase: "playoffs", live }), fmt);
-    expect(state.signal.text).toBe("Live now");
-    expect(state.line).toBe("Semi A · Race 2 of 3");
-    expect(state.actions).toEqual([
-      {
-        href: "https://twitch.tv/live-one",
-        label: "Watch on Twitch",
-        kind: "twitch",
-      },
-      { ...eventPage, kind: "outline" },
-    ]);
-    // Nobody live: the first caster's channel, the usual guess.
-    const idleCasters = eventBand(
-      summaryWith({
-        phase: "playoffs",
-        live: { ...live, race: { id: "r7", casters: [casters[0]] } as Race },
-      }),
-      fmt,
-    );
-    expect(idleCasters.actions[0].href).toBe("https://twitch.tv/quiet");
-  });
-
-  it("falls back to the race page when nobody casts the live race", () => {
     const state = eventBand(
       summaryWith({
         phase: "playoffs",
         live: {
-          race: { id: "r7", casters: [] } as unknown as Race,
+          race: { id: "r7", casters } as Race,
           stage_label: "Semi A",
-          index: 1,
+          index: 2,
           races_expected: 3,
         },
       }),
       fmt,
     );
-    expect(state.actions).toEqual([
-      { href: "/race/r7", label: "Race page", kind: "primary" },
-      { ...eventPage, kind: "outline" },
-    ]);
+    expect(state.signal.text).toBe("Live now");
+    expect(state.line).toBe("Semi A · Race 2 of 3");
+    expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
   });
 
   it("announces the next evening between playoff races", () => {
@@ -2311,5 +2282,39 @@ describe("nextStageLabels", () => {
 
   it("is empty for a stage nobody goes on from", () => {
     expect(nextStageLabels(stages, "quarter_a", null)).toEqual([]);
+  });
+});
+
+describe("bandPollMs", () => {
+  const now = new Date("2026-11-01T17:00:00Z");
+  const summary = (
+    phase: EventSummary["phase"],
+    date: string | null = null,
+  ): Pick<EventSummary, "phase" | "next_stage"> => ({
+    phase,
+    next_stage: date
+      ? { key: "final", label: "Final", date, time_set: true }
+      : null,
+  });
+  const onAir = [{ state: "live" }] as LiveMatch[];
+
+  it("follows a match on air every minute", () => {
+    expect(bandPollMs(summary("playoffs"), onAir, now)).toBe(60_000);
+  });
+
+  it("watches the next evening every five minutes from 12 hours out", () => {
+    expect(
+      bandPollMs(summary("playoffs", "2026-11-02T05:00:00Z"), [], now),
+    ).toBe(300_000);
+    expect(
+      bandPollMs(summary("playoffs", "2026-11-02T05:00:01Z"), [], now),
+    ).toBeNull();
+  });
+
+  it("never polls outside the playoffs", () => {
+    expect(bandPollMs(summary("finished"), onAir, now)).toBeNull();
+    expect(
+      bandPollMs(summary("cut", "2026-11-01T19:00:00Z"), [], now),
+    ).toBeNull();
   });
 });

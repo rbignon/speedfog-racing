@@ -1,23 +1,53 @@
 <script lang="ts">
   // The event on the bill, as the home page and the dashboard feature it:
   // the event page's lockup, a phase signal with one line of state, and the
-  // buttons; the lockup and buttons lead there (or to the live race), and from
-  // the cut on a row of qualified avatars per bracket, the eliminated and the
-  // forfeits greyed in their seat. Signing up stays on the event page, which
-  // owns the Twitch intent flow.
+  // buttons; the lockup and buttons lead there, from the cut on a row of
+  // qualified avatars per bracket, the eliminated and the forfeits greyed in
+  // their seat, and during the playoffs a block per match on air (the event
+  // page's live panel without its table). Signing up stays on the event page,
+  // which owns the Twitch intent flow.
   import type { EventSummary, User } from "$lib/api";
-  import { eventBand, formatEventDate } from "$lib/events";
+  import {
+    bandPollMs,
+    eventBand,
+    formatEventDate,
+    liveMatches,
+  } from "$lib/events";
+  import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
   import UserLink from "$lib/components/UserLink.svelte";
+  import EventMatchPanel from "./EventMatchPanel.svelte";
 
   let { event }: { event: EventSummary } = $props();
 
   // The instants on the line are ahead of the viewer, so they carry the zone.
-  let state = $derived(eventBand(event, (iso) => formatEventDate(iso, true)));
+  let band = $derived(eventBand(event, (iso) => formatEventDate(iso, true)));
   let overflowCount = $derived(
     Math.max(0, event.players - event.player_previews.length),
   );
   const nameOf = (user: User) =>
     user.twitch_display_name || user.twitch_username;
+
+  // The clock reads anew with each summary and each poll.
+  let tick = $state(0);
+  let now = $derived.by(() => {
+    void tick;
+    void event;
+    return new Date();
+  });
+  let onAir = $derived(event.on_air_stages ?? []);
+  let matches = $derived(
+    event.phase === "playoffs" ? liveMatches(onAir, now) : [],
+  );
+  // The band follows the evening, as the event page does.
+  let pollMs = $derived(bandPollMs(event, matches, now));
+  $effect(() => {
+    if (pollMs === null) return;
+    const timer = setInterval(() => {
+      tick += 1;
+      void featuredEvent.refresh();
+    }, pollMs);
+    return () => clearInterval(timer);
+  });
 </script>
 
 <!-- `out` names why the runner left the bracket, greying their avatar. -->
@@ -54,12 +84,12 @@
         </a>
       </h2>
       <div class="state">
-        <span class="signal {state.signal.cls}">{state.signal.text}</span>
-        {#if state.line}<span class="line">{state.line}</span>{/if}
+        <span class="signal {band.signal.cls}">{band.signal.text}</span>
+        {#if band.line}<span class="line">{band.line}</span>{/if}
         {#if event.phase === "finished" && event.champion}
           <UserLink user={event.champion} showAvatar />
         {/if}
-        {#if state.showPlayers}
+        {#if band.showPlayers}
           <div
             class="avatar-stack"
             role="group"
@@ -76,7 +106,7 @@
           </div>
         {/if}
       </div>
-      {#each state.brackets as bracket (bracket.key)}
+      {#each band.brackets as bracket (bracket.key)}
         {#if bracket.qualified.length > 0}
           {@const eliminated = new Set(bracket.eliminated)}
           {@const forfeited = new Set(bracket.forfeited)}
@@ -112,7 +142,7 @@
           >
         {/if}
       {/if}
-      {#if state.signedUp}
+      {#if band.signedUp}
         <span class="in">
           <svg
             viewBox="0 0 24 24"
@@ -129,17 +159,24 @@
         </span>
       {/if}
       <div class="actions">
-        {#each state.actions as action (action.href)}
-          <a
-            href={action.href}
-            class="btn btn-{action.kind}"
-            target={action.kind === "twitch" ? "_blank" : undefined}
-            rel={action.kind === "twitch" ? "noopener noreferrer" : undefined}
-            >{action.label}</a
-          >
+        {#each band.actions as action (action.href)}
+          <a href={action.href} class="btn btn-{action.kind}">{action.label}</a>
         {/each}
       </div>
     </div>
+    {#if matches.length > 0}
+      <div class="matches" class:pair={matches.length > 1}>
+        {#each matches as match (match.stage.key)}
+          <EventMatchPanel
+            {match}
+            stages={onAir}
+            languages={event.caster_languages ?? {}}
+            {now}
+            compact
+          />
+        {/each}
+      </div>
+    {/if}
   </div>
 </section>
 
@@ -290,6 +327,19 @@
   .actions {
     display: flex;
     gap: 0.5rem;
+  }
+  /* The matches on air under the rows, the band's full width; two a row
+   * from 900px, as on the event page. */
+  .matches {
+    flex: 1 1 100%;
+    display: grid;
+    gap: 18px;
+    margin-top: 0.4rem;
+  }
+  @media (min-width: 900px) {
+    .matches.pair {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   @media (max-width: 640px) {

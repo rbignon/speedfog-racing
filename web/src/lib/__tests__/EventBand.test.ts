@@ -1,7 +1,7 @@
 import { render } from "@testing-library/svelte";
 import { describe, expect, it } from "vitest";
 import EventBand from "$lib/components/events/EventBand.svelte";
-import type { EventSummary, User } from "$lib/api";
+import type { EventStage, EventSummary, Race, User } from "$lib/api";
 
 function summaryWith(partial: Partial<EventSummary>): EventSummary {
   return {
@@ -30,6 +30,64 @@ function links(container: HTMLElement): Record<string, string> {
     out[a.textContent?.trim() ?? ""] = a.getAttribute("href") ?? "";
   }
   return out;
+}
+
+const runner = (id: string): User => ({
+  id,
+  twitch_username: id,
+  twitch_display_name: null,
+  twitch_avatar_url: null,
+});
+
+/** Semi A with its first race running, cast by karssi; ana leads on 100. */
+function semiOnAir(): EventStage {
+  const race = {
+    id: "r1",
+    status: "running",
+    casters: [
+      { id: "c1", user: runner("karssi"), is_live: false, stream_url: null },
+    ],
+    participant_previews: [],
+    scheduled_at: null,
+    started_at: "2026-10-18T17:02:00Z",
+    finished_at: null,
+    seed_total_layers: 9,
+  } as unknown as Race;
+  return {
+    key: "semi_a",
+    label: "Semi A",
+    kind: "semi",
+    bracket: "main",
+    date: null,
+    date_fixed: false,
+    time_set: true,
+    from: [],
+    advance: 2,
+    races_expected: 3,
+    complete: false,
+    walkover: false,
+    modes: ["Standard", "Boss Rush", "UWYG"],
+    races: [{ slot: "semi_a:1", index: 1, race, points: {}, live: [] }],
+    results: [
+      {
+        user: runner("ana"),
+        newcomer: false,
+        points: 100,
+        igt_total: 1_000_000,
+        advances: false,
+      },
+    ],
+    settled_results: [],
+    field: [
+      {
+        user: runner("ana"),
+        label: "Seed 1",
+        forfeited: false,
+        source: null,
+        place: null,
+      },
+    ],
+  } as unknown as EventStage;
 }
 
 describe("EventBand", () => {
@@ -164,5 +222,36 @@ describe("EventBand", () => {
     });
     expect(container.textContent).toContain("Champion");
     expect(links(container)["Ana"]).toBe("/user/ana");
+  });
+
+  it("gives each match on air a block without its table, casters in a line", () => {
+    const { container } = render(EventBand, {
+      event: summaryWith({
+        phase: "playoffs",
+        on_air_stages: [semiOnAir()],
+        caster_languages: { karssi: "FR" },
+      }),
+    });
+    const blocks = container.querySelectorAll(".match");
+    expect(blocks.length).toBe(1);
+    expect(blocks[0].querySelector("table")).toBeNull();
+    expect(blocks[0].textContent).toContain("100 pts");
+    expect(blocks[0].querySelector(".cast")?.textContent).toContain("FR");
+    const to = links(container);
+    expect(to["Race page"]).toBe("/race/r1");
+    expect(to["Watch"]).toBe("https://twitch.tv/karssi");
+    expect(to["Watch on Twitch"]).toBeUndefined();
+  });
+
+  it("shows no match block outside the playoffs, nor from an older server", () => {
+    const finished = render(EventBand, {
+      event: summaryWith({ phase: "finished", on_air_stages: [semiOnAir()] }),
+    });
+    expect(finished.container.querySelector(".match")).toBeNull();
+    // A server from before the blocks sends no on-air stages at all.
+    const older = render(EventBand, {
+      event: summaryWith({ phase: "playoffs" }),
+    });
+    expect(older.container.querySelector(".match")).toBeNull();
   });
 });

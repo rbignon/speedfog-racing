@@ -1548,6 +1548,169 @@ async def test_listing_flags_the_runners_a_complete_stage_knocked_out(test_clien
     }
 
 
+async def _playoff_season(
+    db: AsyncSession, now: datetime, **extra: object
+) -> tuple[Event, dict[str, User]]:
+    """Semi A dated yesterday (the playoffs), 7 ranked runners: Semi A seats
+    runner1 and runner4, Semi B runner2 and runner3."""
+    starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=12))
+    event = await _event(
+        db,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        config={**config, **extra},
+    )
+    await _ranked_runners(db, event, 7, RaceStatus.FINISHED)
+    users = {u.twitch_username: u for u in (await db.execute(select(User))).scalars()}
+    return event, users
+
+
+async def _semi_race(
+    db: AsyncSession,
+    event: Event,
+    users: dict[str, User],
+    slot: str,
+    status: RaceStatus,
+    *,
+    finished_at: datetime | None = None,
+    scheduled_at: datetime | None = None,
+) -> Race:
+    race = await _race(
+        db,
+        users["orga"],
+        await _seed(db, "standard", slot),
+        event,
+        slot,
+        status=status,
+        scheduled_at=scheduled_at,
+    )
+    race.finished_at = finished_at
+    runners = ("runner1", "runner4") if slot.startswith("semi_a") else ("runner2", "runner3")
+    if status != RaceStatus.SETUP:
+        done = ParticipantStatus.FINISHED
+        await _entry(db, race, users[runners[0]], done, 1_000_000)
+        await _entry(
+            db,
+            race,
+            users[runners[1]],
+            done if status == RaceStatus.FINISHED else ParticipantStatus.PLAYING,
+            1_100_000,
+        )
+    return race
+
+
+@pytest.mark.asyncio
+async def test_listing_sends_the_matches_on_air_with_their_casters_languages(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        event, users = await _playoff_season(db, now, caster_languages={"karssi": "FR"})
+        karssi = await _user(db, "karssi")
+        # Semi A: race 1 done, race 2 running, cast by karssi.
+        await _semi_race(
+            db,
+            event,
+            users,
+            "semi_a:1",
+            RaceStatus.FINISHED,
+            finished_at=now - timedelta(minutes=50),
+        )
+        live = await _semi_race(db, event, users, "semi_a:2", RaceStatus.RUNNING)
+        db.add(Caster(race_id=live.id, user_id=karssi.id))
+        # Semi B played its first race this morning, its second is tonight: off air.
+        await _semi_race(
+            db, event, users, "semi_b:1", RaceStatus.FINISHED, finished_at=now - timedelta(hours=5)
+        )
+        await _semi_race(
+            db, event, users, "semi_b:2", RaceStatus.SETUP, scheduled_at=now + timedelta(hours=5)
+        )
+        await db.commit()
+        karssi_id = str(karssi.id)
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+        detail = (await client.get("/api/events/season-one")).json()
+    assert summary["phase"] == "playoffs"
+    (semi_a,) = summary["on_air_stages"]
+    # The detail's own shape for the stage: the band reads it like the live zone.
+    assert semi_a == next(s for s in detail["stages"] if s["key"] == "semi_a")
+    assert [r["race"]["status"] for r in semi_a["races"]] == ["finished", "running"]
+    assert summary["caster_languages"] == {karssi_id: "FR"}
+
+
+@pytest.mark.asyncio
+async def test_listing_keeps_a_match_on_air_between_races_and_just_after_it(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        event, users = await _playoff_season(db, now)
+        # Semi A is over, its last race ended half an hour ago.
+        semi_a = [
+            await _semi_race(
+                db,
+                event,
+                users,
+                f"semi_a:{i}",
+                RaceStatus.FINISHED,
+                finished_at=now - timedelta(minutes=30 * (4 - i)),
+            )
+            for i in (1, 2, 3)
+        ]
+        # Semi B played this morning; its second race is due within the hour.
+        await _semi_race(
+            db, event, users, "semi_b:1", RaceStatus.FINISHED, finished_at=now - timedelta(hours=5)
+        )
+        await _semi_race(
+            db, event, users, "semi_b:2", RaceStatus.SETUP, scheduled_at=now + timedelta(hours=1)
+        )
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+        assert [(s["key"], s["complete"]) for s in summary["on_air_stages"]] == [
+            ("semi_a", True),
+            ("semi_b", False),
+        ]
+        assert summary["caster_languages"] == {}
+
+        # An hour after Semi A's last race, its panel is gone.
+        async with async_session() as db:
+            last = await db.get(Race, semi_a[-1].id)
+            assert last is not None
+            last.finished_at = now - timedelta(minutes=61)
+            await db.commit()
+        (summary,) = (await client.get("/api/events")).json()
+        assert [s["key"] for s in summary["on_air_stages"]] == ["semi_b"]
+
+
+@pytest.mark.asyncio
+async def test_listing_keeps_a_match_on_air_after_a_race_and_through_a_late_start(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        event, users = await _playoff_season(db, now)
+        # Semi A's first race ended an hour ago; its next race is not attached yet.
+        await _semi_race(
+            db, event, users, "semi_a:1", RaceStatus.FINISHED, finished_at=now - timedelta(hours=1)
+        )
+        # Semi B played this morning; its second race was due an hour ago.
+        await _semi_race(
+            db, event, users, "semi_b:1", RaceStatus.FINISHED, finished_at=now - timedelta(hours=5)
+        )
+        await _semi_race(
+            db, event, users, "semi_b:2", RaceStatus.SETUP, scheduled_at=now - timedelta(hours=1)
+        )
+        await db.commit()
+
+    async with test_client as client:
+        (summary,) = (await client.get("/api/events")).json()
+    assert [s["key"] for s in summary["on_air_stages"]] == ["semi_a", "semi_b"]
+
+
 @pytest.mark.asyncio
 async def test_listing_carries_the_live_playoff_race_and_its_stage(test_client, async_session):
     now = datetime.now(UTC)

@@ -702,6 +702,13 @@ export interface EventSummary {
   champion: User | null;
   /** From the cut until the playoffs are over, each bracket's qualified runners in seed order. */
   brackets: EventSummaryBracket[];
+  /**
+   * During the playoffs, the stages on air (the live zone's rule), shaped as
+   * the detail's `stages`, and their casters' languages (user id -> code).
+   * Absent from an older server's payload, so consumers default them.
+   */
+  on_air_stages?: EventStage[];
+  caster_languages?: Record<string, string>;
 }
 
 /** A bracket on the home band: its label and the runners it seats. */
