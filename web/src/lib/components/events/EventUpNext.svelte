@@ -11,6 +11,7 @@
     type UpcomingMatch,
   } from "$lib/events";
   import UserLink from "$lib/components/UserLink.svelte";
+  import EventCasters from "./EventCasters.svelte";
 
   /**
    * One match of the bracket's Up next box: its runners, its casters, then
@@ -66,27 +67,7 @@
       </li>
     {/each}
   </ul>
-  <div class="cast">
-    <span class="k"
-      ><svg viewBox="0 0 24 24" aria-hidden="true"
-        ><path
-          d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z"
-        /></svg
-      >Cast by</span
-    >
-    {#each casters as caster (caster.user.id)}
-      <span class="caster"
-        ><UserLink
-          user={caster.user}
-          showAvatar
-        />{#if languages[caster.user.id]}<span class="lang"
-            >{languages[caster.user.id]}</span
-          >{/if}</span
-      >
-    {:else}
-      <span class="tba">Casters to be announced</span>
-    {/each}
-  </div>
+  <EventCasters {casters} {languages} stacked />
   <div class="chips">
     {#each slots as entry, i (i)}
       {@const label = stage.modes[i] ?? `Race ${i + 1}`}
@@ -170,52 +151,6 @@
   /* Withdrew after the lock: the name recedes. */
   .runners li.out > :global(:last-child) {
     opacity: 0.55;
-  }
-  .cast {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 0.9rem;
-    margin-top: 0.6rem;
-    padding-top: 0.6rem;
-    border-top: 1px solid var(--color-border);
-  }
-  .cast .k {
-    width: 100%;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-family: var(--font-mono);
-    font-size: 0.6rem;
-    letter-spacing: 0.09em;
-    text-transform: uppercase;
-    color: var(--color-twitch-hover);
-  }
-  .cast .k svg {
-    width: 12px;
-    height: 12px;
-    fill: currentColor;
-  }
-  .caster {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 600;
-  }
-  .lang {
-    font-family: var(--font-mono);
-    font-size: 0.6rem;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 0 4px;
-    color: var(--color-text-secondary);
-  }
-  .tba {
-    color: var(--color-text-disabled);
-    font-style: italic;
-    font-size: var(--font-size-sm);
   }
   .chips {
     display: flex;

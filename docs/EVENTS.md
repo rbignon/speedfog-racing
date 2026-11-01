@@ -726,9 +726,10 @@ decided, and a start ahead (or under 2 hours behind; a day without its time
 until its UTC day ends), soonest first. A match not begun starts at its date,
 one begun on another evening at its next race. Each block shows the date in
 brass with the viewer's timezone and how far ahead it is, the runners with
-their seats, "Cast by" and the casters with their language ("Casters to be
-announced" without any), then one chip per race with its start time, linking
-to the race once attached. It lists every such match, the list scrolling
+their seats, the same "Cast by" line as a match panel's, each caster a link
+to their stream (`EventCasters` in its stacked form, the label on a row of
+its own; "Casters to be announced" without any), then one chip per race
+with its start time, linking to the race once attached. It lists every such match, the list scrolling
 under the title: it stops halfway down its third match (measured, the blocks'
 heights vary), the cut telling there is more, and fades out at the bottom
 while more lies below. Beside a tall tree it also stops above the first box

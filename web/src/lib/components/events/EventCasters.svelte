@@ -5,15 +5,19 @@
 
   /**
    * A match's casters in one line that wraps: each one link to their stream
-   * (avatar, name, language, a Twitch mark, LIVE while they stream).
+   * (avatar, name, language, a Twitch mark, LIVE while they stream), or a
+   * placeholder while nobody casts it yet.
    */
   let {
     casters,
     languages = {},
+    stacked = false,
   }: {
     casters: Caster[];
     /** Caster user id -> language code (`caster_languages`). */
     languages?: Record<string, string>;
+    /** A narrow box's form: the label on a row of its own, tighter. */
+    stacked?: boolean;
   } = $props();
 
   // Each caster's own live stream, else their channel.
@@ -29,7 +33,7 @@
   >
 {/snippet}
 
-<div class="cast">
+<div class="cast" class:stacked>
   <span class="k">{@render twitchIcon()}Cast by</span>
   <ul>
     {#each casters as caster (caster.user.id)}
@@ -48,6 +52,8 @@
           {#if caster.is_live}<LiveBadge small />{/if}
         </UserLink>
       </li>
+    {:else}
+      <li class="tba">Casters to be announced</li>
     {/each}
   </ul>
 </div>
@@ -113,5 +119,21 @@
   .caster:hover .mark,
   .caster:focus-within .mark {
     color: var(--color-purple);
+  }
+  .tba {
+    color: var(--color-text-disabled);
+    font-style: italic;
+    font-size: var(--font-size-sm);
+  }
+  .cast.stacked {
+    gap: 0.4rem 0.9rem;
+    margin-top: 0.6rem;
+    padding-top: 0.6rem;
+  }
+  .stacked .k {
+    width: 100%;
+  }
+  .stacked ul {
+    gap: 0.4rem 0.9rem;
   }
 </style>
