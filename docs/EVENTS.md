@@ -664,7 +664,8 @@ keeps the plain form: the ladder's `Closed` fact, the same deadline read
 after it passed, and the phase signal.
 
 From the cut until the playoffs are over, a short "The playoffs" block heads
-the bracket, under the live zone while a match is on. It says, from the
+the bracket, under the live zone while a match is on (and under the
+`Champions` plates once a bracket is decided, see below). It says, from the
 config, what a viewer arriving from a cast needs (`playoffsIntro`), in short
 titled beats side by side, the introduction's concepts laid out in a row: the
 first bracket's seats, its rounds up to the final, dated when the config
@@ -697,7 +698,7 @@ without its next race re-dated falls off air), so a match spread over two
 evenings is off air between them; and for an hour after its last race ("Finished", with
 who goes on, or who wins a final). Panels keep the stage order, finished ones
 last, so they never swap places between two refreshes. The last final turns
-the event `finished`, and the champion plates take over at once.
+the event `finished`, and the champion plates open the page at once.
 
 A panel holds one row per runner: the results'
 order (a forfeit at the bottom, receded), the seat (`#<seed>`, or a fed
@@ -875,8 +876,12 @@ event's champion, larger, the others labelled with their bracket, with their sto
 evening's races finished first out of the races expected (a race nobody
 finished counts for no one), and their signature weapon, the one carried the
 longest over every event race they entered, showcases aside
-(`signature_weapon` on each stage result, from the zone histories). An event that ends at `ends_at` with the
-final incomplete shows no plate.
+(`signature_weapon` on each stage result, from the zone histories). An event that ends at `ends_at` shows a
+plate only for the finals complete by then. A bracket decided while another
+still plays (the newcomers' final before the main one) gets its plate during
+the playoffs already, under a `Champions` title right below the live zone, so
+its winner is not left at the end of a bracket tab; the page takes the
+layout above once every final is complete.
 
 ### Seeing each state locally
 

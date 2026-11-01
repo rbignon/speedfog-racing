@@ -100,6 +100,10 @@ describe("blockOrder", () => {
     expect(blockOrder("finished")[0]).toBe("champions");
   });
 
+  it("crowns a bracket decided during the playoffs right under the live block", () => {
+    expect(blockOrder("playoffs").slice(0, 2)).toEqual(["live", "champions"]);
+  });
+
   it("introduces the playoffs over the bracket while they are ahead or under way", () => {
     for (const phase of ["cut", "playoffs"] as const) {
       const blocks = blockOrder(phase);

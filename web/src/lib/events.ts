@@ -33,9 +33,11 @@ export type EventBlock =
  * visitors who have never played it. The take-part block carries the
  * qualifier rules, the bracket block the playoff rules and the bracket's
  * next matches (Up next); during the playoffs the matches on air lead the
- * page (the live block); from the cut on the bracket replaces the
- * qualified column, the ladder staying under it, and a short introduction
- * to the playoffs heads it until they are over.
+ * page (the live block), the winners of the brackets already decided right
+ * under them (the champions block, which opens the page once the event is
+ * over); from the cut on the bracket replaces the qualified column, the
+ * ladder staying under it, and a short introduction to the playoffs heads
+ * it until they are over.
  */
 export function blockOrder(phase: EventPhase): EventBlock[] {
   switch (phase) {
@@ -52,7 +54,7 @@ export function blockOrder(phase: EventPhase): EventBlock[] {
     case "cut":
       return ["playoffs_intro", "bracket_ladder"];
     case "playoffs":
-      return ["live", "playoffs_intro", "bracket_ladder"];
+      return ["live", "champions", "playoffs_intro", "bracket_ladder"];
     case "finished":
       return ["champions", "bracket_ladder"];
   }

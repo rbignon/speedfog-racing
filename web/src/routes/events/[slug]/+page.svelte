@@ -352,6 +352,58 @@
     </div>
   {/snippet}
 
+  {#snippet podium()}
+    <section class="podium" aria-label="Winners">
+      {#each crowned as champion (champion.bracket)}
+        {@const first = champion.first}
+        <div class="plate" class:first>
+          <span class="chip plate-chip">{champion.label}</span>
+          {#if champion.user.twitch_avatar_url}
+            <img
+              class="plate-avatar"
+              src={champion.user.twitch_avatar_url}
+              alt=""
+            />
+          {:else}
+            <span
+              class="plate-avatar plate-avatar-placeholder"
+              aria-hidden="true"
+              >{(
+                champion.user.twitch_display_name ||
+                champion.user.twitch_username
+              )
+                .charAt(0)
+                .toUpperCase()}</span
+            >
+          {/if}
+          <div class="plate-name">
+            <UserLink user={champion.user} showBadge />
+          </div>
+          <div class="plate-stats">
+            {#if champion.ladderRank !== null}
+              <div>
+                <span class="n">{ordinal(champion.ladderRank)}</span><span
+                  class="k">qualified</span
+                >
+              </div>
+            {/if}
+            <div>
+              <span class="n">{champion.wins} of {champion.racesExpected}</span
+              ><span class="k">wins</span>
+            </div>
+            {#if champion.weapon}
+              <div class="wide">
+                <span class="n text">{champion.weapon}</span><span class="k"
+                  >signature weapon</span
+                >
+              </div>
+            {/if}
+          </div>
+        </div>
+      {/each}
+    </section>
+  {/snippet}
+
   {#snippet playoffRules()}
     <div class="rules-card">
       <h3>Playoff rules</h3>
@@ -701,57 +753,16 @@
         </section>
       {/if}
     {:else if block === "champions"}
-      {#if crowned.length > 0}
-        <section class="podium" aria-label="Winners">
-          {#each crowned as champion (champion.bracket)}
-            {@const first = champion.first}
-            <div class="plate" class:first>
-              <span class="chip plate-chip">{champion.label}</span>
-              {#if champion.user.twitch_avatar_url}
-                <img
-                  class="plate-avatar"
-                  src={champion.user.twitch_avatar_url}
-                  alt=""
-                />
-              {:else}
-                <span
-                  class="plate-avatar plate-avatar-placeholder"
-                  aria-hidden="true"
-                  >{(
-                    champion.user.twitch_display_name ||
-                    champion.user.twitch_username
-                  )
-                    .charAt(0)
-                    .toUpperCase()}</span
-                >
-              {/if}
-              <div class="plate-name">
-                <UserLink user={champion.user} showBadge />
-              </div>
-              <div class="plate-stats">
-                {#if champion.ladderRank !== null}
-                  <div>
-                    <span class="n">{ordinal(champion.ladderRank)}</span><span
-                      class="k">qualified</span
-                    >
-                  </div>
-                {/if}
-                <div>
-                  <span class="n"
-                    >{champion.wins} of {champion.racesExpected}</span
-                  ><span class="k">wins</span>
-                </div>
-                {#if champion.weapon}
-                  <div class="wide">
-                    <span class="n text">{champion.weapon}</span><span class="k"
-                      >signature weapon</span
-                    >
-                  </div>
-                {/if}
-              </div>
-            </div>
-          {/each}
+      {#if crowned.length > 0 && detail.phase === "playoffs"}
+        <!-- A bracket decided while another still plays: its plates under
+             a title, like the phase's other blocks. Once the event is over
+             they open the page, right under the band, without one. -->
+        <section>
+          <SectionTitle>Champions</SectionTitle>
+          {@render podium()}
         </section>
+      {:else if crowned.length > 0}
+        {@render podium()}
       {/if}
     {:else if block === "bracket_ladder"}
       <section class="bracket-block">
@@ -1137,8 +1148,9 @@
   .meta-row .fact-row {
     margin-left: auto;
   }
-  /* The decided winners: two compact plates centred under the band, the
-   * champion's larger and on the fog accent, with the evening's figures. */
+  /* The decided winners: compact plates centred under the band (under a
+   * title during the playoffs), the champion's larger and on the fog accent,
+   * with the evening's figures. */
   .podium {
     display: flex;
     justify-content: center;
