@@ -26,7 +26,10 @@
     languages?: Record<string, string>;
     /** The page's clock: a race on another day reads with its day. */
     now: Date;
-    /** The home band's block: the runners in a line, without the table. */
+    /**
+     * The home band's block: the runners in a line with their match total,
+     * without the table or the running race's progress.
+     */
     compact?: boolean;
   } = $props();
 
@@ -61,10 +64,6 @@
       ? formatMatchTime(entry.race.scheduled_at, now)
       : "";
   }
-  // The running race's slot: the compact line shows each runner's cell in it.
-  let liveSlot = $derived(
-    match.state === "live" && match.race ? match.race.index - 1 : null,
-  );
 </script>
 
 <article class="match">
@@ -95,13 +94,9 @@
   {#if compact}
     <ol class="runners">
       {#each rows as row (row.user.id)}
-        {@const cell = liveSlot === null ? null : row.cells[liveSlot]}
         <li class:out={row.forfeit}>
           <span class="rank" class:gold={row.rank === 1}>{row.rank ?? ""}</span>
           <UserLink user={row.user} showAvatar />
-          {#if cell && cell.tone !== "todo"}<span class="cell {cell.tone}"
-              >{cell.text}</span
-            >{/if}
           {#if row.total !== null}<span
               class="total"
               class:prov={!stage.complete}
@@ -372,12 +367,9 @@
   .runners .rank.gold {
     color: var(--color-gold);
   }
-  .runners .cell,
   .runners .total {
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
-  }
-  .runners .total {
     font-weight: 600;
   }
   .runners .total.prov {

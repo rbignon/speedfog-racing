@@ -39,7 +39,7 @@ const runner = (id: string): User => ({
   twitch_avatar_url: null,
 });
 
-/** Semi A with its first race running, cast by karssi; ana leads on 100. */
+/** Semi A with its first race running, cast by karssi: ana finished it on 100, bob is on layer 4. */
 function semiOnAir(): EventStage {
   const race = {
     id: "r1",
@@ -67,7 +67,30 @@ function semiOnAir(): EventStage {
     complete: false,
     walkover: false,
     modes: ["Standard", "Boss Rush", "UWYG"],
-    races: [{ slot: "semi_a:1", index: 1, race, points: {}, live: [] }],
+    races: [
+      {
+        slot: "semi_a:1",
+        index: 1,
+        race,
+        points: { ana: 100 },
+        live: [
+          {
+            ...runner("ana"),
+            placement: 1,
+            status: "finished",
+            igt_ms: 1_000_000,
+            current_layer: 9,
+          },
+          {
+            ...runner("bob"),
+            placement: null,
+            status: "playing",
+            igt_ms: null,
+            current_layer: 4,
+          },
+        ],
+      },
+    ],
     results: [
       {
         user: runner("ana"),
@@ -76,12 +99,26 @@ function semiOnAir(): EventStage {
         igt_total: 1_000_000,
         advances: false,
       },
+      {
+        user: runner("bob"),
+        newcomer: false,
+        points: 0,
+        igt_total: 1_600_000,
+        advances: false,
+      },
     ],
     settled_results: [],
     field: [
       {
         user: runner("ana"),
         label: "Seed 1",
+        forfeited: false,
+        source: null,
+        place: null,
+      },
+      {
+        user: runner("bob"),
+        label: "Seed 2",
         forfeited: false,
         source: null,
         place: null,
@@ -224,7 +261,7 @@ describe("EventBand", () => {
     expect(links(container)["Ana"]).toBe("/user/ana");
   });
 
-  it("gives each match on air a block without its table, casters in a line", () => {
+  it("gives each match on air a block: no table, runners on their match total, casters in a line", () => {
     const { container } = render(EventBand, {
       event: summaryWith({
         phase: "playoffs",
@@ -235,7 +272,12 @@ describe("EventBand", () => {
     const blocks = container.querySelectorAll(".match");
     expect(blocks.length).toBe(1);
     expect(blocks[0].querySelector("table")).toBeNull();
-    expect(blocks[0].textContent).toContain("100 pts");
+    // Each runner reads their total alone: not the race's own points beside
+    // it (ana's 100 twice), nor the layer of a runner still playing.
+    const runners = [...blocks[0].querySelectorAll(".runners li")].map((li) =>
+      li.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(runners).toEqual(["1 ana 100 pts", "2 bob 0 pts"]);
     expect(blocks[0].querySelector(".cast")?.textContent).toContain("FR");
     const to = links(container);
     expect(to["Race page"]).toBe("/race/r1");
@@ -243,6 +285,26 @@ describe("EventBand", () => {
     expect(blocks[0].querySelector(".cast a")?.getAttribute("href")).toBe(
       "https://twitch.tv/karssi",
     );
+  });
+
+  it("names the runners alone until the match's first finish", () => {
+    // Nobody has finished race 1: no points yet, so no rank or total.
+    const stage = semiOnAir();
+    stage.results = [];
+    stage.races[0].points = {};
+    stage.races[0].live = stage.races[0].live.map((p) => ({
+      ...p,
+      status: "playing",
+      placement: null,
+      igt_ms: null,
+    }));
+    const { container } = render(EventBand, {
+      event: summaryWith({ phase: "playoffs", on_air_stages: [stage] }),
+    });
+    const runners = [...container.querySelectorAll(".match .runners li")].map(
+      (li) => li.textContent?.replace(/\s+/g, " ").trim(),
+    );
+    expect(runners).toEqual(["ana", "bob"]);
   });
 
   it("shows no match block outside the playoffs, nor from an older server", () => {

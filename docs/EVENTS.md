@@ -993,8 +993,12 @@ During the playoffs, each match on air (`liveMatches` over the summary's
 `on_air_stages`) gets a block under the bracket rows, across the band's
 width, two a row from 900px: the live zone's panel in its compact form,
 its signal, line, title and header button, then its runners in one line
-(rank, the cell of the race running, the total) instead of the table, and
-its "Cast by" line. While a block shows, the band reads the summary again
+instead of the table, and its "Cast by" line. A runner reads their name,
+with their rank and match total once the match has points (from its first
+finish; a forfeit who ran no race keeps their name alone, greyed); the
+running race's progress (layer, the race's own points, DNF or DQ) stays
+on the event page and the race page, so the line never shows two numbers
+side by side. While a block shows, the band reads the summary again
 every minute, and every five minutes while the next evening is within 12
 hours (`bandPollMs`, the event page's `pollIntervalMs` rule on the
 summary), so a band left open before a match sees it go on air.
