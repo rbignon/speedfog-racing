@@ -552,7 +552,7 @@ Aggregated death counts per DAG node across all race participants. Broadcast to 
 
 The mod uses these counts with `death_flags` from `SeedInfo` to set EMEVD event flags that control in-game bloodstain visibility. Three thresholds: low (1+), med (3+), high (5+).
 
-Never sent on event qualifier races (`Race.is_event_qualifier`): those run asynchronously over a long window, and bloodstains would leak the early runners' deaths to the later ones.
+Never sent on a race attached to an event (`Race.event_slot` set: qualifiers, playoff stages and showcases). A qualifier runs asynchronously over a long window, so bloodstains would leak the early runners' deaths to the later ones; on a playoff or showcase race, they would tell a runner where their opponents died.
 
 ```json
 {
@@ -1066,7 +1066,7 @@ Same protocol as `/ws/mod/{race_id}` with differences:
 
 Client → Server messages: `auth`, `status_update`, `event_flag`, `zone_query`, `pong` (same format as mod WS).
 
-Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zone_update`, `leaderboard_update`, `race_status_change`, `ping` (same format as mod WS). `death_counts` is **not** sent in training sessions (racing only, since there is only one participant in training).
+Server → Client messages: `auth_ok`, `auth_error`, `error`, `race_start`, `zone_update`, `leaderboard_update`, `race_status_change`, `ping`, `death_counts` (same format as mod WS). In training, `death_counts` counts the runner's own deaths in the session, sent on each attributed death and on reconnect.
 
 ### WebSocket: Training Spectator
 
@@ -1202,7 +1202,7 @@ Emission sites (server-side):
 
 Mods never receive `zone_history` snapshots (they don't consume `zone_history`). The training spectator endpoint (`/ws/training/{id}/spectate`) uses the same pattern with the training session UUID as `participant_id`.
 
-**No-ops**: mod reconnects don't emit any `zone_history` event (the state is unchanged, the reconnecting mod gets a unicast `zone_update` and `death_counts`). Race/training finish also does not emit a snapshot: instead the server re-broadcasts a fresh `race_state` with the full `zone_history`.
+**No-ops**: mod reconnects don't emit any `zone_history` event (the state is unchanged, the reconnecting mod gets a unicast `zone_update` and, outside event races, `death_counts`). Race/training finish also does not emit a snapshot: instead the server re-broadcasts a fresh `race_state` with the full `zone_history`.
 
 **Rollout caveat**: old clients running against a new backend see `null` `zone_history` in high-frequency broadcasts and ignore unknown `zone_history` messages. Their local DAG view freezes at pre-deploy state, while the rest of the UI (IGT, deaths, layer, gaps) keeps updating. A page reload restores full behavior. Backend and frontend must ship together.
 
@@ -1334,6 +1334,8 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | Player auto-abandoned          | `leaderboard_update`                                                     | `leaderboard_update` + `race_state` + `chat_message` (system)                                                                                                                                                 |
 | Chat message sent              | (none)                                                                   | `chat_message` (filtered per [Chat System](#chat-system) matrix)                                                                                                                                              |
 | Chat reaction toggled          | (none)                                                                   | `chat_reaction_update` (filtered per [Chat System](#chat-system) matrix)                                                                                                                                      |
+
+Note: a race attached to an event never sends `death_counts`, on a death or on reconnect (see [`death_counts`](#death_counts)).
 
 Note: `zone_history` snapshots are emitted only to spectators (mods don't consume `zone_history`). `leaderboard_update` and `player_update` carry `zone_history: null` in every broadcast; the full history is only seeded via `race_state` on connect, plus these snapshot messages. See [zone_history updates](#zone_history-updates).
 

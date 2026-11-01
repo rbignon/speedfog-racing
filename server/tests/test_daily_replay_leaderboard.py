@@ -104,7 +104,7 @@ def daily_client(daily_db: Any) -> Any:
 # ---------------------------------------------------------------------------
 # Race seeding helpers
 # ---------------------------------------------------------------------------
-RaceKind = Literal["daily", "qualifier", "regular"]
+RaceKind = Literal["daily", "qualifier", "stage", "regular"]
 # The two race kinds that replay against asynchronous ghosts.
 ASYNC_KINDS: tuple[RaceKind, ...] = ("daily", "qualifier")
 
@@ -135,7 +135,8 @@ async def _seed_race_with_finished_ghost(
     Returns ``(race_id, a_mod_token, b_mod_token)``. ``kind`` picks the
     async marker: ``"daily"`` sets a ``daily_date``, ``"qualifier"`` attaches
     the race to an event qualifier slot, ``"regular"`` sets neither so the
-    projection codepath must stay off (Test C).
+    projection codepath must stay off (Test C). ``"stage"`` attaches the race
+    to a playoff stage slot, which is synchronous like a regular race.
     """
     started = datetime.now(UTC) - timedelta(hours=2)
     today = started.date()
@@ -185,8 +186,8 @@ async def _seed_race_with_finished_ghost(
             is_public=True,
             open_registration=True,
             daily_date=today if kind == "daily" else None,
-            event_slot="qualifier:standard:1" if kind == "qualifier" else None,
-            exclude_from_stats=kind != "regular",
+            event_slot={"qualifier": "qualifier:standard:1", "stage": "final:1"}.get(kind),
+            exclude_from_stats=kind in ASYNC_KINDS,
             started_at=started,
             seeds_released_at=started,
             late_join_window_minutes=1440,
@@ -520,15 +521,16 @@ def test_heartbeat_routes_player_update_to_spectators_only(
         assert bravo_update["player"]["igt_ms"] == 60_000
 
 
-@pytest.mark.parametrize("kind", ASYNC_KINDS)
-def test_event_qualifier_mods_get_no_death_counts(
+@pytest.mark.parametrize("kind", ["daily", "regular", "qualifier", "stage"])
+def test_event_race_mods_get_no_death_counts(
     daily_client: TestClient, daily_db: async_sessionmaker[AsyncSession], kind: RaceKind
 ) -> None:
-    """Event qualifiers keep bloodstains off: no death_counts reaches a mod,
-    neither on a death nor on reconnect. The daily run is the control proving
-    both paths do send death_counts on another async race."""
+    """Event races (qualifiers and playoff stages) keep bloodstains off: no
+    death_counts reaches a mod, neither on a death nor on reconnect. The daily
+    and regular runs are the controls proving both paths do send death_counts
+    on an async race and on a synchronous one."""
     race_id, _a_token, b_token = asyncio.run(_seed_race_with_finished_ghost(daily_db, kind=kind))
-    expected = kind != "qualifier"
+    expected = kind in ("daily", "regular")
 
     def saw_death_counts(mod: ModTestClient) -> bool:
         seen = False
