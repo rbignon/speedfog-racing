@@ -218,7 +218,7 @@
 </svelte:head>
 
 <main>
-  <h1>Create Race</h1>
+  <h1>{speedrun ? "Create Speedrun Race" : "Create Race"}</h1>
 
   {#if loading}
     <p class="loading">Loading...</p>
@@ -264,7 +264,9 @@
           type="text"
           id="name"
           bind:value={name}
-          placeholder="e.g. Sunday Showdown"
+          placeholder={speedrun
+            ? "e.g. Speedrun Grind"
+            : "e.g. Sunday Showdown"}
           disabled={creating}
           required
         />
