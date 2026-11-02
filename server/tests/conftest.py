@@ -118,6 +118,22 @@ def _no_outbound_notifications(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _speedrun_dates(monkeypatch):
+    """The Speedrun dates come from the developer's .env too: back to their
+    defaults (no game-version cutoff, boards from their start date), so a
+    raised cutoff never empties a test's Set Seed board. Tests that exercise a
+    date set their own."""
+    from speedfog_racing.config import Settings, settings
+
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", None)
+    monkeypatch.setattr(
+        settings,
+        "speedrun_board_start_date",
+        Settings.model_fields["speedrun_board_start_date"].default,
+    )
+
+
+@pytest.fixture(autouse=True)
 def _mod_dll(tmp_path, monkeypatch):
     """Seed packs append the server's mod DLL: give every test one, so the
     developer's .env (or a missing prod path) never decides a download."""

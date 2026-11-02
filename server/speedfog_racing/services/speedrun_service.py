@@ -10,6 +10,7 @@ histories themselves. See docs/SPEEDRUN.md.
 from collections.abc import AsyncIterator, Collection, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from statistics import median_low
 from typing import Any, Literal
 from uuid import UUID
@@ -31,6 +32,7 @@ from speedfog_racing.models import (
     User,
 )
 from speedfog_racing.schemas import (
+    NotReplayableCode,
     RunType,
     SpeedrunBoardResponse,
     SpeedrunCategory,
@@ -42,6 +44,7 @@ from speedfog_racing.schemas import (
     SpeedrunSeedRun,
     SpeedrunSeedStats,
     UserResponse,
+    as_aware_utc,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.weapons import BASE_ROW_MODULUS
@@ -74,10 +77,19 @@ class CountedRun:
     daily_date: date | None
     seed_number: str
     deaths: int
-    # The seed is excluded from Set Seed: the run leaves the Set Seed board only.
+    # An admin excluded the seed from Set Seed.
     seed_excluded: bool
+    # Why the seed's files can no longer be played (``seed_files_block``):
+    # added before the game-version cutoff, or purged. None when they can.
+    seed_files_block: NotReplayableCode | None
     # False for a run listed on its seed page only (see ``load_unranked_runs``).
     ranked: bool = True
+
+    @property
+    def set_seed_block(self) -> NotReplayableCode | None:
+        """Why the seed can no longer be played in Set Seed (``set_seed_block``):
+        the run leaves the Set Seed boards only. None when it can."""
+        return "excluded" if self.seed_excluded else self.seed_files_block
 
 
 def _pool_config(pool: Pool) -> dict[str, Any]:
@@ -108,6 +120,43 @@ def _archived_layers(config: dict[str, Any]) -> list[int]:
 
 def _category_key(pool: str, layers: int) -> str:
     return f"{pool}@{layers}"
+
+
+def seed_files_block(
+    *, created_at: datetime | None, folder_path: str | None
+) -> NotReplayableCode | None:
+    """Why a seed's files can never be played again: it was added (scanned)
+    before the game-version cutoff (``settings.set_seed_min_seed_date``), or
+    its files are gone (purged). None when neither holds."""
+    cutoff = as_aware_utc(settings.set_seed_min_seed_date)
+    added_at = as_aware_utc(created_at)
+    if cutoff is not None and added_at is not None and added_at < cutoff:
+        return "old_game_version"
+    if not folder_path or not Path(folder_path).is_file():
+        return "purged"
+    return None
+
+
+def set_seed_block(
+    *, excluded: bool, created_at: datetime | None, folder_path: str | None
+) -> NotReplayableCode | None:
+    """Why a played seed cannot be played in Set Seed: an admin excluded it
+    (until a restore), else ``seed_files_block``. None when it can. The Set
+    Seed boards keep only the runs on seeds without one;
+    ``seed_replayability`` builds a seed page's verdict on it. The layer count
+    is not one: it picks the seed's category, archives included
+    (``seed_category``)."""
+    if excluded:
+        return "excluded"
+    return seed_files_block(created_at=created_at, folder_path=folder_path)
+
+
+def _board_start() -> datetime:
+    """``settings.speedrun_board_start_date`` in UTC (a value without an
+    offset reads as UTC)."""
+    start = as_aware_utc(settings.speedrun_board_start_date)
+    assert start is not None
+    return start
 
 
 def seed_category(pool: Pool, total_layers: int) -> tuple[str, str]:
@@ -209,7 +258,6 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             Race.mode,
             Seed.pool_name,
             Seed.seed_number,
-            Seed.set_seed_excluded_at,
             User.id.label("user_id"),
             User.twitch_username,
             User.twitch_display_name,
@@ -255,7 +303,9 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             daily_date=None,
             seed_number=row.seed_number,
             deaths=row.death_count,
-            seed_excluded=row.set_seed_excluded_at is not None,
+            # Never read: an unranked run belongs to no board.
+            seed_excluded=False,
+            seed_files_block=None,
             ranked=False,
         )
         for row in (await db.execute(stmt)).all()
@@ -269,13 +319,16 @@ async def load_counted_runs(
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, races that ``counts_on_boards_clause`` leaves out (a seed that
     was SEEN when drawn, a community race reset after its start), training
-    pools left out, and seeds from an older version of their pool (another layer count
+    pools left out, seeds added before ``settings.speedrun_board_start_date``
+    left out, and seeds from an older version of their pool (another layer count
     than its config) left out, unless that count is declared in the pool's
     ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``.
+    Each run says whether its seed can still be played in Set Seed
+    (``CountedRun.set_seed_block``).
 
-    With ``seed_id``, only that seed's runs, and an old layer count is kept
-    under ``"<pool>@<layers>"`` even when it is not archived (a seed page shows
-    its runs whatever the boards do).
+    With ``seed_id``, only that seed's runs, whenever the seed was added, and
+    an old layer count is kept under ``"<pool>@<layers>"`` even when it is not
+    archived (a seed page shows its runs whatever the boards do).
 
     With ``pool``, only the runs on seeds of that pool: every board of a pool
     (its current layer count and its archives) holds seeds of that pool only."""
@@ -303,6 +356,9 @@ async def load_counted_runs(
             Seed.seed_number,
             Seed.total_layers,
             Seed.set_seed_excluded_at,
+            Seed.id.label("seed_row_id"),
+            Seed.created_at.label("seed_created_at"),
+            Seed.folder_path,
             User.id.label("user_id"),
             User.twitch_username,
             User.twitch_display_name,
@@ -322,12 +378,23 @@ async def load_counted_runs(
     )
     if seed_id is not None:
         stmt = stmt.where(Race.seed_id == seed_id)
+    else:
+        stmt = stmt.where(Seed.created_at >= _board_start())
     if pool is not None:
         stmt = stmt.where(Seed.pool_name == pool)
     users: dict[UUID, UserResponse] = {}
     runs: list[CountedRun] = []
 
     archives = {p.name: _archived_layers(_pool_config(p)) for p in pools}
+    # One verdict per seed: its file check runs once, however many runs it has.
+    blocks: dict[UUID, NotReplayableCode | None] = {}
+
+    def files_block_of(row: Any) -> NotReplayableCode | None:
+        if row.seed_row_id not in blocks:
+            blocks[row.seed_row_id] = seed_files_block(
+                created_at=row.seed_created_at, folder_path=row.folder_path
+            )
+        return blocks[row.seed_row_id]
 
     def category_of(row: Any) -> str | None:
         """The board a row's seed counts for, None when it counts for none."""
@@ -384,6 +451,7 @@ async def load_counted_runs(
                 seed_number=row.seed_number,
                 deaths=row.death_count,
                 seed_excluded=row.set_seed_excluded_at is not None,
+                seed_files_block=files_block_of(row),
             )
         )
 
@@ -399,6 +467,9 @@ async def load_counted_runs(
             Seed.seed_number,
             Seed.total_layers,
             Seed.set_seed_excluded_at,
+            Seed.id.label("seed_row_id"),
+            Seed.created_at.label("seed_created_at"),
+            Seed.folder_path,
             User.id.label("user_id"),
             User.twitch_username,
             User.twitch_display_name,
@@ -417,6 +488,8 @@ async def load_counted_runs(
     )
     if seed_id is not None:
         session_stmt = session_stmt.where(TrainingSession.seed_id == seed_id)
+    else:
+        session_stmt = session_stmt.where(Seed.created_at >= _board_start())
     if pool is not None:
         session_stmt = session_stmt.where(Seed.pool_name == pool)
     for row in (await db.execute(session_stmt)).all():
@@ -441,6 +514,7 @@ async def load_counted_runs(
                 seed_number=row.seed_number,
                 deaths=row.death_count,
                 seed_excluded=row.set_seed_excluded_at is not None,
+                seed_files_block=files_block_of(row),
             )
         )
     return runs
@@ -456,11 +530,15 @@ async def load_categories(db: AsyncSession, runs: Sequence[CountedRun]) -> list[
     if not pools_with_runs:
         return []
     pools = (await db.execute(select(Pool).where(Pool.name.in_(pools_with_runs)))).scalars().all()
-    # Earliest seed per (pool, layer count); a category's release is the
-    # earliest one at its layer count (any count for a pool whose config has none).
+    # Earliest seed per (pool, layer count) since the boards' start; a
+    # category's release is the earliest one at its layer count (any count for
+    # a pool whose config has none).
     first_seeds = await db.execute(
         select(Seed.pool_name, Seed.total_layers, func.min(Seed.created_at))
-        .where(Seed.pool_name.in_(pools_with_runs))
+        .where(
+            Seed.pool_name.in_(pools_with_runs),
+            Seed.created_at >= _board_start(),
+        )
         .group_by(Seed.pool_name, Seed.total_layers)
     )
     seed_dates: dict[str, list[tuple[int, datetime]]] = {}
@@ -526,13 +604,14 @@ def filter_board(
     types: frozenset[RunType],
 ) -> list[CountedRun]:
     """Runs of one category's board: Random Seed keeps blind runs, Set Seed
-    every run on a seed not excluded from Set Seed; ``deathless_only`` keeps
-    runs of Deathless-mode races."""
+    every run on a seed that can still be played in Set Seed (no
+    ``set_seed_block``); ``deathless_only`` keeps runs of Deathless-mode
+    races."""
     return [
         r
         for r in runs
         if r.category == category
-        and (r.blind if sub == "random" else not r.seed_excluded)
+        and (r.blind if sub == "random" else r.set_seed_block is None)
         and (r.deathless or not deathless_only)
         and r.run_type in types
     ]
@@ -582,13 +661,16 @@ def record_history(runs: Sequence[CountedRun]) -> list[CountedRun]:
 def record_seed(
     board: Sequence[CountedRun], ranked: Sequence[tuple[CountedRun, int | None]]
 ) -> SpeedrunRecordSeed | None:
-    """The first ranked row's seed and how many runs of ``board`` (obsolete
-    ones included) are on it."""
+    """The first ranked row's seed, how many runs of ``board`` (obsolete
+    ones included) are on it, and whether it can be played in Set Seed (never
+    in an archive, whose seeds have an older layer count)."""
     if not ranked:
         return None
-    seed_number = ranked[0][0].seed_number
+    record = ranked[0][0]
     return SpeedrunRecordSeed(
-        seed_number=seed_number, runs=sum(1 for r in board if r.seed_number == seed_number)
+        seed_number=record.seed_number,
+        runs=sum(1 for r in board if r.seed_number == record.seed_number),
+        replayable=record.set_seed_block is None and record.category == record.pool,
     )
 
 
@@ -770,9 +852,9 @@ async def build_overview(
         SpeedrunRecentRun(
             **_run_fields(
                 run,
-                # A run on a seed excluded from Set Seed is on no Set Seed board.
+                # A run on a seed blocked from Set Seed is on no Set Seed board.
                 None
-                if run.seed_excluded
+                if run.set_seed_block is not None
                 else place_of(
                     run,
                     filter_board(

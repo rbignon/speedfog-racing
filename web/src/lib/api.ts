@@ -2428,8 +2428,14 @@ export interface SpeedrunBoardResponse {
   runs: SpeedrunRun[];
   /** Successive records, oldest first. */
   history: SpeedrunRun[];
-  /** The record's seed and the runs on it; null on an empty board. */
-  record_seed: { seed_number: string; runs: number } | null;
+  /** The record's seed and the runs on it; null on an empty board.
+   * `replayable` when Set Seed can still play it (the Start a run window
+   * offers it only then). */
+  record_seed: {
+    seed_number: string;
+    runs: number;
+    replayable: boolean;
+  } | null;
 }
 
 /** A run on a seed page; `rank` is its place among the seed's ranked runs

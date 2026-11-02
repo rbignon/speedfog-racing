@@ -1,20 +1,32 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/svelte";
 import SpeedrunBoard from "$lib/components/stats/speedrun/SpeedrunBoard.svelte";
 import {
   fetchSpeedrunBoard,
+  type AuthUser,
   type SpeedrunBoardResponse,
   type SpeedrunCategory,
   type SpeedrunRun,
 } from "$lib/api";
 import { goto } from "$app/navigation";
 import { RUN_TYPES, type SpeedrunParams } from "$lib/speedrun";
+import { auth } from "$lib/stores/auth.svelte";
 
 vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
-  return { ...actual, fetchSpeedrunBoard: vi.fn() };
+  return {
+    ...actual,
+    fetchSpeedrunBoard: vi.fn(),
+    fetchFreshSpeedrunSeeds: vi.fn(async () => ({ fresh: true })),
+  };
 });
 
 function category(pool: string): SpeedrunCategory {
@@ -159,7 +171,7 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
       ...EMPTY,
       runs: [run(true)],
-      record_seed: { seed_number: "363096a4243f", runs: 14 },
+      record_seed: { seed_number: "363096a4243f", runs: 14, replayable: true },
     });
     mount();
 
@@ -179,7 +191,7 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
       ...EMPTY,
       runs: [run(false)],
-      record_seed: { seed_number: "363096a4243f", runs: 1 },
+      record_seed: { seed_number: "363096a4243f", runs: 1, replayable: true },
     });
     mount();
 
@@ -201,7 +213,7 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
           session_id: "s1",
         },
       ],
-      record_seed: { seed_number: "363096a4243f", runs: 1 },
+      record_seed: { seed_number: "363096a4243f", runs: 1, replayable: true },
     });
     mount();
 
@@ -229,7 +241,7 @@ describe("SpeedrunBoard links to seed pages", () => {
     vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
       ...EMPTY,
       runs: [run(true)],
-      record_seed: { seed_number: "363096a4243f", runs: 3 },
+      record_seed: { seed_number: "363096a4243f", runs: 3, replayable: true },
     });
   });
 
@@ -288,5 +300,58 @@ describe("SpeedrunBoard links to seed pages", () => {
 
     await fireEvent.click(rank);
     expect(goto).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("SpeedrunBoard Start a run window", () => {
+  beforeEach(() => {
+    vi.mocked(fetchSpeedrunBoard).mockReset();
+    auth.user = {
+      id: "u1",
+      twitch_username: "runner",
+      twitch_display_name: "Runner",
+      twitch_avatar_url: null,
+      role: "user",
+      locale: null,
+      overlay_settings: null,
+      feedback_prompted_at: null,
+      race_count: 0,
+      daily_count: 0,
+      training_count: 0,
+    } satisfies AuthUser;
+  });
+
+  afterEach(() => {
+    auth.user = null;
+  });
+
+  async function setSeedWindow(replayable: boolean) {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [run(true)],
+      record_seed: { seed_number: "363096a4243f", runs: 1, replayable },
+    });
+    mount({ ...PARAMS, sub: "random" });
+    await screen.findByTestId("wr-seed");
+    await fireEvent.click(screen.getByRole("button", { name: /Start a run/ }));
+    const modal = screen
+      .getByRole("heading", { name: "Start a run" })
+      .closest(".modal") as HTMLElement;
+    await fireEvent.click(
+      within(modal).getByRole("button", { name: "Set Seed" }),
+    );
+    return modal;
+  }
+
+  it("offers the record seed when it can be replayed", async () => {
+    const modal = await setSeedWindow(true);
+
+    expect(within(modal).getByRole("button", { name: "WR" })).toBeTruthy();
+  });
+
+  it("offers no WR button when the record seed cannot be replayed", async () => {
+    const modal = await setSeedWindow(false);
+
+    expect(within(modal).queryByRole("button", { name: "WR" })).toBeNull();
   });
 });

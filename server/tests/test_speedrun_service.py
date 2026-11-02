@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -44,6 +45,9 @@ from speedfog_racing.services.speedrun_service import (
 )
 
 BASE = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
+# An existing file: a seed whose ``folder_path`` points here keeps its files
+# (not purged), so its runs stay on the Set Seed boards.
+SEED_ZIP = str(Path(__file__).parent / "fixtures" / "seed_zip_stub")
 
 
 @pytest.fixture
@@ -137,7 +141,7 @@ async def _add_run(
             pool_name=pool,
             graph_json={"nodes": {}},
             total_layers=layers,
-            folder_path=f"/t/{tag}",
+            folder_path=SEED_ZIP,
             status=SeedStatus.CONSUMED,
             created_at=BASE + timedelta(minutes=minute - 60),
         )
@@ -196,7 +200,7 @@ async def _add_session(
             pool_name=seed_pool,
             graph_json={"nodes": {}},
             total_layers=layers,
-            folder_path=f"/t/{tag}",
+            folder_path=SEED_ZIP,
             status=SeedStatus.CONSUMED,
             created_at=BASE - timedelta(hours=1),
         )
@@ -253,6 +257,7 @@ def _run(
         seed_number=seed,
         deaths=0,
         seed_excluded=False,
+        seed_files_block=None,
     )
 
 
@@ -849,7 +854,7 @@ async def _seed(db, number, pool="sprint", layers=15):
         pool_name=pool,
         graph_json={"nodes": {}},
         total_layers=layers,
-        folder_path=f"/t/{number}",
+        folder_path=SEED_ZIP,
         status=SeedStatus.CONSUMED,
         created_at=BASE,
     )
@@ -931,3 +936,157 @@ async def test_recent_runs_honor_the_configured_count(async_session, pools, monk
         ov = await build_overview(db, await load_counted_runs(db))
 
     assert len(ov.recent_runs) == 2
+
+
+async def _seed_of(db: AsyncSession, part: Participant) -> Seed:
+    race = await db.get(Race, part.race_id)
+    assert race is not None and race.seed_id is not None
+    seed = await db.get(Seed, race.seed_id)
+    assert seed is not None
+    return seed
+
+
+async def test_boards_count_seeds_added_since_the_board_start(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "speedrun_board_start_date", BASE)
+    async with async_session() as db:
+        a = await _user(db, "a")
+        before = await _add_run(db, user=a, igt_ms=500, minute=1)
+        (await _seed_of(db, before)).created_at = BASE - timedelta(seconds=1)
+        at_start = await _add_run(db, user=a, igt_ms=900, minute=2)
+        (await _seed_of(db, at_start)).created_at = BASE
+        solo_before = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 400)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+        before_seed = await _seed_of(db, before)
+        seed_page = await load_counted_runs(db, seed_id=before_seed.id)
+
+    # The solo session's own seed is added an hour before BASE.
+    assert [r.run_id for r in runs] == [at_start.id]
+    assert solo_before.id not in {r.run_id for r in runs}
+    # A seed page lists its runs whatever the boards do.
+    assert [r.run_id for r in seed_page] == [before.id]
+
+
+async def test_categories_start_at_the_board_start(async_session, pools, monkeypatch):
+    monkeypatch.setattr(settings, "speedrun_board_start_date", BASE)
+    async with async_session() as db:
+        a = await _user(db, "a")
+        # Retired pool: played only before the start, so it has no board.
+        await _add_run(db, user=a, igt_ms=800, minute=1, pool="retired")
+        # Sprint: a seed before the start and two after it.
+        await _add_run(db, user=a, igt_ms=700, minute=10)
+        await _add_run(db, user=a, igt_ms=1000, minute=70)
+        await _add_run(db, user=a, igt_ms=1100, minute=90)
+        await db.commit()
+
+        cats = await load_categories(db, await load_counted_runs(db))
+
+    # Seeds are added an hour before their run: 10 -> BASE - 50 min (before),
+    # 70 -> BASE + 10 min, the first seed of the board.
+    assert [(c.pool, _naive(c.released_at)) for c in cats] == [
+        ("sprint", _naive(BASE + timedelta(minutes=10)))
+    ]
+
+
+async def test_set_seed_board_keeps_only_seeds_that_can_be_replayed(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
+    async with async_session() as db:
+        a, b, c, d = [await _user(db, n) for n in "abcd"]
+        kept = await _add_run(db, user=a, igt_ms=1000, minute=61)
+        purged = await _add_run(db, user=b, igt_ms=900, minute=62)
+        (await _seed_of(db, purged)).folder_path = "/nonexistent/seed.zip"
+        old_version = await _add_run(db, user=c, igt_ms=800, minute=30)
+        excluded = await _add_run(db, user=d, igt_ms=700, minute=63)
+        (await _seed_of(db, excluded)).set_seed_excluded_at = BASE
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    def board(sub):
+        return {
+            r.run_id
+            for r in filter_board(
+                runs,
+                category="sprint",
+                sub=sub,
+                deathless_only=False,
+                types=frozenset(RUN_TYPES),
+            )
+        }
+
+    assert board("set") == {kept.id}
+    # Random Seed keeps blind runs whatever their seed's files or version.
+    assert board("random") == {kept.id, purged.id, old_version.id, excluded.id}
+
+
+async def test_recent_run_on_a_purged_or_too_old_seed_has_no_place(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
+    async with async_session() as db:
+        a, b, c = [await _user(db, n) for n in "abc"]
+        await _add_run(db, user=a, igt_ms=1000, minute=61)
+        purged = await _add_run(db, user=b, igt_ms=900, minute=62)
+        (await _seed_of(db, purged)).folder_path = "/nonexistent/seed.zip"
+        await _add_run(db, user=c, igt_ms=800, minute=30)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1, 900: None, 800: None}
+
+
+async def test_record_seed_says_whether_the_record_can_be_replayed(async_session, pools):
+    async with async_session() as db:
+        a, b = await _user(db, "a"), await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1000, minute=1)
+        purged = await _add_run(db, user=b, igt_ms=900, minute=2)
+        (await _seed_of(db, purged)).folder_path = "/nonexistent/seed.zip"
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+        types = frozenset(RUN_TYPES)
+        random_board = await build_board(
+            db,
+            runs,
+            category="sprint",
+            sub="random",
+            deathless_only=False,
+            types=types,
+            include_obsolete=False,
+        )
+        set_board = await build_board(
+            db,
+            runs,
+            category="sprint",
+            sub="set",
+            deathless_only=False,
+            types=types,
+            include_obsolete=False,
+        )
+
+    assert random_board.record_seed is not None and not random_board.record_seed.replayable
+    assert set_board.record_seed is not None and set_board.record_seed.replayable
+
+
+async def test_an_archive_record_seed_cannot_be_replayed(async_session, pools, archived_pool):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        await _add_run(db, user=a, igt_ms=900, minute=3, pool="veteran", layers=25)
+        await db.commit()
+
+        board = await build_board(
+            db,
+            await load_counted_runs(db),
+            category="veteran@25",
+            sub="set",
+            deathless_only=False,
+            types=frozenset(RUN_TYPES),
+            include_obsolete=False,
+        )
+
+    # Its files are there, but the pool plays 30 layers now.
+    assert board.record_seed is not None and not board.record_seed.replayable

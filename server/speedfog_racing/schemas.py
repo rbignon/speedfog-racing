@@ -1081,6 +1081,9 @@ class SpeedrunRecordSeed(BaseModel):
     seed_number: str
     # Runs of the board on that seed, obsolete ones included.
     runs: int
+    # It can still be played in Set Seed (a Random Seed record may be on a
+    # seed that cannot): the Start a run window offers it only then.
+    replayable: bool
 
 
 class SpeedrunBoardResponse(BaseModel):

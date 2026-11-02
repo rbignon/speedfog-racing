@@ -35,7 +35,7 @@ from speedfog_racing.services.speedrun_service import (
     seed_category,
 )
 
-from .test_speedrun_service import BASE, _add_run, _add_session, _user
+from .test_speedrun_service import BASE, SEED_ZIP, _add_run, _add_session, _user
 
 
 @pytest.fixture
@@ -80,7 +80,7 @@ async def _seed(
     pool: str = "sprint",
     status: SeedStatus = SeedStatus.CONSUMED,
     layers: int = 15,
-    folder_path: str = "/nonexistent/seed.zip",
+    folder_path: str = SEED_ZIP,
 ) -> Seed:
     seed = Seed(
         seed_number=number,
@@ -569,3 +569,85 @@ async def test_purgeable_seeds_keeps_seeds_in_use(async_session, pools):
         await db.commit()
 
     assert await _purgeable(async_session) == {"aaaa00000004"}
+
+
+async def test_top_seed_numbers_leave_out_purged_and_too_old_seeds(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE - timedelta(hours=12))
+    async with async_session() as db:
+        a = await _user(db, "a")
+        kept = await _seed(db, "bbbb00000001")
+        kept.created_at = BASE
+        await _add_run(db, user=a, igt_ms=3000, minute=1, seed=kept)
+        purged = await _seed(db, "bbbb00000002", folder_path="/nonexistent/seed.zip")
+        purged.created_at = BASE
+        await _add_run(db, user=a, igt_ms=1000, minute=2, seed=purged)
+        # Added a day before BASE, before the cutoff.
+        too_old = await _seed(db, "bbbb00000003")
+        await _add_run(db, user=a, igt_ms=2000, minute=3, seed=too_old)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    # Their files cannot be kept for Set Seed anyway, so they take no slot.
+    assert top_seed_numbers(runs, "sprint", 1) == ["bbbb00000001"]
+
+
+async def test_set_seed_board_and_seed_page_agree_on_replayability(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE - timedelta(hours=12))
+    async with async_session() as db:
+        admin = await _user(db, "admin")
+        playable = await _seed(db, "cccc00000001")
+        excluded = await _seed(db, "cccc00000002")
+        excluded.set_seed_excluded_at = BASE
+        excluded.set_seed_excluded_by_id = admin.id
+        purged = await _seed(db, "cccc00000003", folder_path="/nonexistent/seed.zip")
+        too_old = await _seed(db, "cccc00000004")
+        seeds = [playable, excluded, purged, too_old]
+        for seed in seeds:
+            if seed is not too_old:
+                seed.created_at = BASE
+            await _add_run(
+                db, user=await _user(db, seed.seed_number), igt_ms=1000, minute=1, seed=seed
+            )
+        await db.commit()
+
+        board = filter_board(
+            await load_counted_runs(db),
+            category="sprint",
+            sub="set",
+            deathless_only=False,
+            types=frozenset(RUN_TYPES),
+        )
+        on_board = {r.seed_number for r in board}
+        replayable = {s.seed_number for s in seeds if (await seed_replayability(db, s)).replayable}
+
+    assert on_board == replayable == {"cccc00000001"}
+
+
+async def test_an_excluded_seed_that_cannot_be_kept_takes_no_top_place(
+    async_session, pools, monkeypatch
+):
+    monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE - timedelta(hours=12))
+    async with async_session() as db:
+        a = await _user(db, "a")
+        kept = await _seed(db, "dddd00000001")
+        kept.created_at = BASE
+        await _add_run(db, user=a, igt_ms=3000, minute=1, seed=kept)
+        # Excluded and purged: an admin's restore could not bring its files back.
+        purged = await _seed(db, "dddd00000002", folder_path="/nonexistent/seed.zip")
+        purged.created_at = BASE
+        # Excluded and added before the cutoff: never playable again.
+        too_old = await _seed(db, "dddd00000003")
+        for seed in (purged, too_old):
+            seed.set_seed_excluded_at = BASE
+        await _add_run(db, user=a, igt_ms=1000, minute=2, seed=purged)
+        await _add_run(db, user=a, igt_ms=2000, minute=3, seed=too_old)
+        await db.commit()
+
+        runs = await load_counted_runs(db)
+
+    assert top_seed_numbers(runs, "sprint", 1) == ["dddd00000001"]

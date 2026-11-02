@@ -532,7 +532,7 @@ async def test_protection_refused_where_it_keeps_nothing(
     monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
     async with async_session() as db:
         a = await _user(db, "a")
-        purged = await _seed(db, "dead00000001")
+        purged = await _seed(db, "dead00000001", folder_path="/nonexistent/seed.zip")
         purged.created_at = BASE + timedelta(days=1)
         old_version = await _seed(db, "dead00000002", folder_path=seed_zip)
         old_category = await _seed(
@@ -657,7 +657,7 @@ async def test_admin_exclusion_round_trip(test_client, async_session, pools):
     restored = await test_client.delete(url, headers=_auth("admin"))
     assert restored.status_code == 204
     page = await _page(test_client, "badbad000001")
-    assert (page["excluded_reason"], page["not_replayable_code"]) == (None, "purged")
+    assert (page["excluded_reason"], page["not_replayable_code"]) == (None, None)
     assert await excluded_by() is None
     assert await board() == ["a", "b"]
 

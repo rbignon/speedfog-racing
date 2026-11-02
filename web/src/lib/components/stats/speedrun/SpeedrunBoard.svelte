@@ -372,8 +372,8 @@
     <div class="rules">
       <h4>Set Seed and Random Seed</h4>
       <p>
-        <strong>Set Seed</strong>: every run on a played seed, blind or
-        replayed. Replay any seed as often as you like.
+        <strong>Set Seed</strong>: every run on a seed that can still be played,
+        blind or replayed. Replay any seed as often as you like.
       </p>
       <p>
         <strong>Random Seed</strong>: blind runs only, on a seed nobody had
@@ -438,9 +438,9 @@
     categoryName={category.name}
     retired={category.retired}
     initialSeed={startWith}
-    recordSeed={loading || error
+    recordSeed={loading || error || !board?.record_seed?.replayable
       ? null
-      : (board?.record_seed?.seed_number ?? null)}
+      : board.record_seed.seed_number}
     onClose={() => {
       startOpen = false;
       startWith = null;

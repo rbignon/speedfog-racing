@@ -10,7 +10,6 @@ it, and it never makes a prefix ambiguous. See docs/SPEEDRUN.md.
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
@@ -42,6 +41,7 @@ from speedfog_racing.services.speedrun_service import (
     _run_key,
     load_counted_runs,
     seed_category,
+    set_seed_block,
 )
 
 # The shortest seed ID prefix a lookup accepts.
@@ -169,16 +169,20 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
     def not_replayable(code: NotReplayableCode, reason: str) -> Replayability:
         return Replayability(public=True, code=code, reason=reason)
 
-    if seed.set_seed_excluded_at is not None:
+    # The boards read the same verdict (``CountedRun.set_seed_block``).
+    block = set_seed_block(
+        excluded=seed.set_seed_excluded_at is not None,
+        created_at=seed.created_at,
+        folder_path=seed.folder_path,
+    )
+    if block == "excluded":
         return not_replayable(
             "excluded",
             f"An admin excluded this seed from Set Seed: {seed.set_seed_excluded_reason}"
             if seed.set_seed_excluded_reason
             else "An admin excluded this seed from Set Seed.",
         )
-    cutoff = as_aware_utc(settings.set_seed_min_seed_date)
-    created_at = as_aware_utc(seed.created_at)
-    if cutoff is not None and created_at is not None and created_at < cutoff:
+    if block == "old_game_version":
         return not_replayable("old_game_version", OLD_GAME_VERSION_REASON)
     pool = (await db.execute(select(Pool).where(Pool.name == seed.pool_name))).scalar_one_or_none()
     if pool is not None:
@@ -189,7 +193,7 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
                 f"Built for an older version of {format_pool_display_name(pool)}"
                 f" ({seed.total_layers} layers, {current_layers} today).",
             )
-    if not Path(seed.folder_path).is_file():
+    if block == "purged":
         return not_replayable("purged", PURGED_REASON)
     return Replayability(public=True, code=None, reason=None)
 
@@ -222,10 +226,13 @@ def top_seed_numbers(runs: Sequence[CountedRun], category: str, n: int) -> list[
     """The seed numbers of ``category``'s seeds by their best counted run
     (every run type, blind or replay, Deathless or not), fastest first, the
     first ``n``: the Set Seed board's seeds, excluded seeds included (an admin
-    may restore one, and a purged zip cannot be rebuilt)."""
+    may restore one, and a purged zip cannot be rebuilt). Seeds whose files
+    can never be played again (``seed_files_block``: added before the
+    game-version cutoff, or already purged), excluded or not, take no place:
+    there are no files worth keeping."""
     best: dict[str, CountedRun] = {}
     for run in runs:
-        if run.category != category:
+        if run.category != category or run.seed_files_block is not None:
             continue
         current = best.get(run.seed_number)
         if current is None or _run_key(run) < _run_key(current):

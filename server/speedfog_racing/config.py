@@ -1,6 +1,6 @@
 """Application configuration using Pydantic settings."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # Set Seed (docs/SPEEDRUN.md). Seeds added (scanned) before this instant
     # are not replayable (raised once per game patch); None disables the cutoff.
     set_seed_min_seed_date: datetime | None = None
+    # The Speedrun boards count runs on seeds added (scanned) from this instant on;
+    # older runs stay on their race and seed pages. Unlike the cutoff above, it is
+    # not raised on a game patch.
+    speedrun_board_start_date: datetime = datetime(2026, 9, 1, tzinfo=UTC)
     # How many of each category's best Set Seed seeds keep their files once discarded.
     set_seed_kept_top_seeds: int = 10
     # Seeds a player can protect from the purge at once.

@@ -279,7 +279,7 @@ DISCARDED ──reroll or deletion──→ stays DISCARDED (never released back
 
 A DISCARDED seed's zip is kept while any of these holds, so a played seed stays replayable on Set Seed:
 
-- it is one of the `SET_SEED_KEPT_TOP_SEEDS` (10) best seeds of its category's Set Seed board, counting seeds excluded from Set Seed (an admin may restore one, and a purged zip cannot be rebuilt);
+- it is one of the `SET_SEED_KEPT_TOP_SEEDS` (10) best seeds of its category's Set Seed board, counting seeds excluded from Set Seed (an admin may restore one, and a purged zip cannot be rebuilt) but not the already purged ones nor those added before `SET_SEED_MIN_SEED_DATE` or `SPEEDRUN_BOARD_START_DATE`, so they take no place;
 - a player protected it (`seed_protections`, at most `SEED_PROTECTION_LIMIT` seeds each, no expiry);
 - its last race or solo session is less than `SEED_PURGE_GRACE_DAYS` (30) days old (a race counts from its finish, else its start, else its creation; a session from its finish, else its creation), or a race in SETUP or RUNNING, or an ACTIVE session, is on it now.
 

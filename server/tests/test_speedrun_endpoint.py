@@ -23,6 +23,8 @@ from speedfog_racing.models import (
     UserRole,
 )
 
+from .test_speedrun_service import SEED_ZIP
+
 BASE = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 
 
@@ -72,7 +74,7 @@ async def _add_run(
         pool_name=pool,
         graph_json={"nodes": {}},
         total_layers=layers,
-        folder_path=f"/t/{tag}",
+        folder_path=SEED_ZIP,
         status=SeedStatus.CONSUMED,
     )
     db.add(seed)
@@ -215,7 +217,7 @@ async def test_board_types_accept_solo(test_client, async_session, sprint_runs):
             pool_name="sprint",
             graph_json={"nodes": {}},
             total_layers=15,
-            folder_path="/t/solo",
+            folder_path=SEED_ZIP,
             status=SeedStatus.CONSUMED,
         )
         db.add(seed)
@@ -237,7 +239,7 @@ async def test_board_types_accept_solo(test_client, async_session, sprint_runs):
 
     assert [(r["igt_ms"], r["race_id"], r["blind"]) for r in solo["runs"]] == [(500, None, True)]
     assert solo["runs"][0]["session_id"] is not None
-    assert solo["record_seed"] == {"seed_number": "solo-seed", "runs": 1}
+    assert solo["record_seed"] == {"seed_number": "solo-seed", "runs": 1, "replayable": True}
     assert [r["igt_ms"] for r in races["runs"]] == [1000, 1100]
 
 
