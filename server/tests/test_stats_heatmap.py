@@ -54,7 +54,6 @@ async def _race_with_participants(
         status=RaceStatus.FINISHED,
         is_public=is_public,
         daily_date=daily_date,
-        exclude_from_stats=daily_date is not None,
         started_at=started_at,
     )
     db.add(race)
@@ -135,7 +134,6 @@ async def test_scope_weighting_and_daily_join_time(async_session):
             organizer_id=org.id,
             status=RaceStatus.RUNNING,
             daily_date=started.date(),
-            exclude_from_stats=True,
             started_at=datetime(2026, 7, 13, 8, 0, tzinfo=UTC),
         )
         db.add(daily_race)

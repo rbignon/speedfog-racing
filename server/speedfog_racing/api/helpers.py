@@ -204,7 +204,6 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         deathless=race.deathless,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
-        exclude_from_stats=race.exclude_from_stats,
         mode=race.mode,
         seed_was_seen=race.seed_was_seen,
         participant_count=participant_count,

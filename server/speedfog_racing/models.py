@@ -434,10 +434,6 @@ class Race(Base):
     # the one race auto-created per day. Combined with the partial unique
     # index above, this enforces at most one daily per day.
     daily_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    # Skip stats aggregations for this race (Daily Seeds, calibration runs, etc.).
-    exclude_from_stats: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="0", nullable=False
-    )
     # Never changed after creation. Every mode counts for the speedrun.fog
     # boards (see ``race_unranked_reason`` for the races that do not).
     mode: Mapped[RunMode] = mapped_column(
@@ -802,10 +798,9 @@ class ChatMessageReaction(Base):
 def counts_for_community_stats() -> ColumnElement[bool]:
     """Race filter for the statistics that describe blind play.
 
-    Normal races count (dailies and event races included, whatever their
-    ``exclude_from_stats``); Speedrun and Set Seed races (a replay, or a
-    possibly fished draw) stay out. Lives here so the services can use it
-    without importing the API layer.
+    Normal races count, Daily Seeds and event races included; Speedrun and
+    Set Seed races (a replay, or a possibly fished draw) stay out. Lives here
+    so the services can use it without importing the API layer.
     """
     return Race.mode == RunMode.NORMAL
 

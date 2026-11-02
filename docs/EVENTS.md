@@ -485,7 +485,7 @@ count there. See `daily_points` in
    and under Advanced options, Late joiners and Auto-end both at the
    qualifier's length in minutes (10080 for a week; attaching refuses two
    different values), then an attach to its slot from the Races tab. Attaching
-   sets `exclude_from_stats` and hides the race from the public listings. To
+   hides the race from the public listings. To
    check a seed, release the seeds, download the pack as the organizer (a
    participant of the race), and re-roll a seed that does not suit (a re-roll
    withdraws the release). A second account added through the race page's
@@ -601,14 +601,14 @@ shows no bracket and the attached stage races go unrecognised.
 
 `POST /api/admin/races/{race_id}/event` with `{event_id, slot}` attaches a
 race; `{event_id: null}` detaches it, clearing both `event_id` and
-`event_slot` and leaving `exclude_from_stats` unchanged. Attaching validates:
+`event_slot`. Attaching validates:
 
 - The slot must exist for the event's config (a known mode and seed index for
   a `qualifier:<mode>:<n>` slot, a known stage or showcase and race index for
   a `<stage>:<n>` slot).
 - A `qualifier:<mode>:<n>` slot requires the race's seed pool to equal the
   mode key, and `late_join_window_minutes` and `race_duration_minutes` both
-  set and equal; attaching then sets `exclude_from_stats` on the race.
+  set and equal.
 - A stage slot requires `max_participants` to be null or at least the stage's
   field size: the number of `seeds` for a seeded stage, the sum of its
   sources' `advance` for a stage fed by others. A showcase slot takes any
@@ -629,10 +629,6 @@ broadcasts), so its runs count on the speedrun boards. A race whose seeds are
 out keeps its seed, as does one whose pool has no AVAILABLE seed left; the
 attach stands either way, and the admin Races tab flags a race left on a SEEN
 seed. See "Ranked races" in [SPEEDRUN.md](SPEEDRUN.md).
-
-`exclude_from_stats` is read only by the community-wide trait-score recompute
-(`stats_service.recalculate_all_stats`); it has no effect on the event's own
-ladder, on the race listings, or on the event page.
 
 An attached race, whatever its slot, shows no bloodstains at the fog gates:
 the server sends its mods no `death_counts` (see
@@ -1147,5 +1143,5 @@ fetched is left out rather than replaced by a placeholder.
 
 - [RACE_LIFECYCLE.md](RACE_LIFECYCLE.md) for the underlying race and
   participant state machines that event races reuse as-is.
-- [DAILY_SEED.md](DAILY_SEED.md) for `exclude_from_stats`, the other
-  race-level flag events reuse.
+- [DAILY_SEED.md](DAILY_SEED.md) for Daily Seeds, the other races the
+  platform runs on top of regular races.

@@ -450,7 +450,6 @@ class RaceResponse(BaseModel):
     deathless: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
-    exclude_from_stats: bool = False
     mode: RunMode
     # The race drew a SEEN seed: it counts on no speedrun board until a reroll.
     seed_was_seen: bool = False
@@ -549,7 +548,6 @@ class RaceDetailResponse(BaseModel):
     deathless: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
-    exclude_from_stats: bool = False
     mode: RunMode
     # Why the race's finishers count on no Speedrun board (a seen seed, a
     # community race reset after its start or re-rolled without a seed

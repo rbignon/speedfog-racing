@@ -360,7 +360,6 @@ async def test_attach_validates_slot_pool_and_uniqueness(test_client, users, asy
             headers=ADMIN,
         )
         assert ok.status_code == 200
-        assert ok.json()["exclude_from_stats"] is True
         assert ok.json()["event_id"] == event_id
         assert ok.json()["event_slot"] == "qualifier:standard:1"
         # The race page reads the slot from the detail endpoint.
@@ -504,9 +503,7 @@ async def test_attach_qualifier_rejects_unset_window(test_client, users, async_s
 
 
 @pytest.mark.asyncio
-async def test_attach_stage_slot_succeeds_without_excluding_from_stats(
-    test_client, users, async_session
-):
+async def test_attach_stage_slot_succeeds(test_client, users, async_session):
     _, orga = users
     async with async_session() as db:
         race = await _race(db, orga, "standard", "s6", max_participants=2)
@@ -521,7 +518,7 @@ async def test_attach_stage_slot_succeeds_without_excluding_from_stats(
             headers=ADMIN,
         )
     assert response.status_code == 200, response.text
-    assert response.json()["exclude_from_stats"] is False
+    assert response.json()["event_slot"] == "semi_a:1"
 
 
 @pytest.mark.asyncio

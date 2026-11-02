@@ -90,7 +90,6 @@ async def test_partial_unique_index_blocks_two_dailies_same_day(mig_async_sessio
                 status=RaceStatus.RUNNING,
                 is_public=True,
                 daily_date=today,
-                exclude_from_stats=True,
                 started_at=started,
             )
         )
@@ -103,7 +102,6 @@ async def test_partial_unique_index_blocks_two_dailies_same_day(mig_async_sessio
                 status=RaceStatus.RUNNING,
                 is_public=True,
                 daily_date=today,
-                exclude_from_stats=True,
                 started_at=started,
             )
         )

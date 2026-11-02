@@ -159,7 +159,6 @@ async def _add_run(
         seed_was_seen=seed_was_seen,
         seed_played=seed_played,
         rerolled_without_report=rerolled_without_report,
-        exclude_from_stats=kind in ("daily", "event"),
         # daily_date is unique: one Daily Seed per day.
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if kind == "daily" else None,
         event_id=(await _event(db)).id if kind == "event" else None,
@@ -383,22 +382,6 @@ async def test_races_count_unless_on_a_seen_seed_or_a_reset_or_rerolled_communit
     assert {run_id for run_id, race in races.items() if race_counts_on_boards(race)} == counted
     assert {r.blind for r in runs if r.run_id in (set_seed.id, reset_set_seed.id)} == {False}
     assert {r.blind for r in runs if r.run_id not in (set_seed.id, reset_set_seed.id)} == {True}
-
-
-async def test_speedrun_race_excluded_from_stats_still_counts(async_session, pools):
-    """A community race created in speedrun mode carries ``exclude_from_stats``
-    (it stays out of the site's other stats), yet its runs are on the boards."""
-    async with async_session() as db:
-        a = await _user(db, "a")
-        speedrun = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.SPEEDRUN)
-        race = await db.get(Race, speedrun.race_id)
-        assert race is not None
-        race.exclude_from_stats = True
-        await db.commit()
-
-        runs = await load_counted_runs(db)
-
-    assert [(r.run_id, r.blind) for r in runs] == [(speedrun.id, True)]
 
 
 async def test_finished_at_falls_back_to_race_start(async_session, pools):

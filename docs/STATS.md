@@ -16,7 +16,7 @@ Each seed receives an intrinsic difficulty score at ingestion time, computed fro
 
 ## Which Races Feed Which Stats
 
-Speedrun and Set Seed races are created with `exclude_from_stats` set, and the statistics that describe blind play leave them out. The shared filter is `counts_for_community_stats()` (`models.py`, `mode = NORMAL`): normal races, Daily Seeds and event races count.
+The statistics that describe blind play leave Speedrun and Set Seed races out. The shared filter is `counts_for_community_stats()` (`models.py`, `mode = NORMAL`): normal races, Daily Seeds and event races count.
 
 **Filtered:** the zone and boss stats (all of `/zones`, `/zones/index`, `/zones/{node_id}`, `/bosses` share one loader), `/weapons`, behavioral traits (history, participation and abandon counts, the finished-race count of `GET /users/{username}/traits`, the dominant-trait qualification, and `update_player_traits`, which does nothing for a race that fails the filter), and the per-pool stats of `GET /users/{username}/pool-stats` (the race side by the filter above; the training side counts practice sessions only, so ranked solo sessions in Speedrun or Set Seed mode never feed the profile's runs or Best Time).
 
@@ -282,7 +282,7 @@ The `/speedrun` page (Set Seed and Random Seed boards per category) is documente
 
 ## Recalculation
 
-`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then rebuilds trait scores in one batched pass over every player who finished, or abandoned with in-game time, a finished race. Races with `exclude_from_stats` set do not select players (a player seen only in excluded races gets no scores). Since each score is computed from the player's full history, this gives the same result as replaying races one by one. This ensures consistency after formula changes or bug fixes. The endpoint then drops the cached player profiles, so `/stats` shows the new traits right away instead of after the cache TTL.
+`recalculate_all_stats` (admin endpoint) refreshes seed difficulty scores, clears all trait data, then rebuilds trait scores in one batched pass over every player who finished, or abandoned with in-game time, a finished race. It selects players through `counts_for_community_stats`, as the race-end updates do: a player seen only in Daily Seeds or qualifiers keeps their scores, one seen only in speedrun or Set Seed races gets none. Since each score is computed from the player's full history, this gives the same result as replaying races one by one. This ensures consistency after formula changes or bug fixes. The endpoint then drops the cached player profiles, so `/stats` shows the new traits right away instead of after the cache TTL.
 
 ---
 

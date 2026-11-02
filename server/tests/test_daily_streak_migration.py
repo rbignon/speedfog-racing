@@ -132,7 +132,6 @@ async def test_backfill_computes_streak_from_participations(streak_async_session
                 name=f"Daily Seed - {d.isoformat()}",
                 organizer_id=user.id,
                 daily_date=d,
-                exclude_from_stats=True,
                 status=RaceStatus.FINISHED,
             )
             db.add(race)
@@ -195,7 +194,6 @@ async def test_backfill_counts_a_disqualified_daily_as_a_miss(streak_async_sessi
                 name=f"Daily Seed - {d.isoformat()}",
                 organizer_id=user.id,
                 daily_date=d,
-                exclude_from_stats=True,
                 status=RaceStatus.FINISHED,
             )
             db.add(race)
@@ -254,7 +252,6 @@ async def test_backfill_long_gap_after_history_breaks_streak(
                 name=f"Daily Seed - {d.isoformat()}",
                 organizer_id=user.id,
                 daily_date=d,
-                exclude_from_stats=True,
                 status=RaceStatus.FINISHED,
             )
             db.add(race)

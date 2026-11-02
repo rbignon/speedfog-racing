@@ -35,13 +35,13 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.services.stats_service import resolve_dominant_traits, update_player_traits
 
-# (name, mode, exclude_from_stats, igt_ms, counts)
+# (name, mode, igt_ms, counts)
 _RACES = [
-    ("normal", RunMode.NORMAL, False, 300_000, True),
-    ("speedrun", RunMode.SPEEDRUN, True, 100_000, False),
-    ("set_seed", RunMode.SET_SEED, True, 90_000, False),
-    # A Daily Seed carries exclude_from_stats, yet a normal race feeds zone stats.
-    ("daily", RunMode.NORMAL, True, 250_000, True),
+    ("normal", RunMode.NORMAL, 300_000, True),
+    ("speedrun", RunMode.SPEEDRUN, 100_000, False),
+    ("set_seed", RunMode.SET_SEED, 90_000, False),
+    # A Daily Seed is a normal race: it feeds zone stats.
+    ("daily", RunMode.NORMAL, 250_000, True),
 ]
 
 
@@ -82,7 +82,7 @@ async def _user(db, name: str) -> User:
     return user
 
 
-async def _race(db, organizer, player, name, mode, excluded, igt, daily=False) -> Race:
+async def _race(db, organizer, player, name, mode, igt, daily=False) -> Race:
     seed = Seed(
         seed_number=f"seed-{name}-{player.twitch_username}",
         pool_name="standard",
@@ -101,7 +101,6 @@ async def _race(db, organizer, player, name, mode, excluded, igt, daily=False) -
         is_public=True,
         started_at=datetime.now(UTC),
         mode=mode,
-        exclude_from_stats=excluded,
         daily_date=date.today() if daily else None,
     )
     db.add(race)
@@ -128,10 +127,8 @@ async def world(async_session):
         organizer = await _user(db, "org")
         player = await _user(db, "alice")
         races = {}
-        for name, mode, excluded, igt, _counts in _RACES:
-            races[name] = await _race(
-                db, organizer, player, name, mode, excluded, igt, daily=name == "daily"
-            )
+        for name, mode, igt, _counts in _RACES:
+            races[name] = await _race(db, organizer, player, name, mode, igt, daily=name == "daily")
         await db.commit()
         return {name: race.id for name, race in races.items()}
 
@@ -224,11 +221,11 @@ async def test_ranked_finishes_do_not_qualify_for_a_dominant_trait(async_session
         ranked_heavy = await _user(db, "r1")
         for user in qualified:
             for i in range(3):
-                await _race(db, organizer, user, f"n{i}", RunMode.NORMAL, False, 1000)
+                await _race(db, organizer, user, f"n{i}", RunMode.NORMAL, 1000)
         for i in range(2):
-            await _race(db, organizer, ranked_heavy, f"n{i}", RunMode.NORMAL, False, 1000)
+            await _race(db, organizer, ranked_heavy, f"n{i}", RunMode.NORMAL, 1000)
         for i in range(3):
-            await _race(db, organizer, ranked_heavy, f"s{i}", RunMode.SPEEDRUN, True, 1000)
+            await _race(db, organizer, ranked_heavy, f"s{i}", RunMode.SPEEDRUN, 1000)
         for user in [*qualified, ranked_heavy]:
             db.add(PlayerTraitScores(user_id=user.id, rusher=50))
         await db.commit()

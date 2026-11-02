@@ -173,8 +173,8 @@ async def test_create_speedrun_race(test_client, async_session, pools):
     normal = await _create(test_client, {"pool_name": "sprint"})
 
     assert speedrun.status_code == 201, speedrun.text
-    assert (speedrun.json()["mode"], speedrun.json()["exclude_from_stats"]) == ("speedrun", True)
-    assert (normal.json()["mode"], normal.json()["exclude_from_stats"]) == ("normal", False)
+    assert speedrun.json()["mode"] == "speedrun"
+    assert normal.json()["mode"] == "normal"
     seed = await _race_seed(async_session, speedrun.json()["id"])
     assert (seed.pool_name, seed.status) == ("sprint", SeedStatus.CONSUMED)
     assert await _available_count(async_session, "sprint") == 2
@@ -236,11 +236,7 @@ async def test_create_set_seed_race(test_client, async_session, pools, seed_zip)
 
     assert race.status_code == 201, race.text
     body = race.json()
-    assert (body["mode"], body["exclude_from_stats"], body["pool_name"]) == (
-        "set_seed",
-        True,
-        "sprint",
-    )
+    assert (body["mode"], body["pool_name"]) == ("set_seed", "sprint")
     assert (on_retired.status_code, on_retired.json()["pool_name"]) == (201, "off")
     seed = await _race_seed(async_session, body["id"])
     assert (seed.seed_number, seed.status) == ("5eed00000001", SeedStatus.CONSUMED)
@@ -307,13 +303,13 @@ async def test_mode_is_immutable(test_client, async_session, pools):
 
     patched = await test_client.patch(
         f"/api/races/{race_id}",
-        json={"mode": "normal", "exclude_from_stats": False},
+        json={"mode": "normal"},
         headers=_auth("org"),
     )
 
     assert patched.status_code == 200, patched.text
     fetched = (await test_client.get(f"/api/races/{race_id}")).json()
-    assert (fetched["mode"], fetched["exclude_from_stats"]) == ("speedrun", True)
+    assert fetched["mode"] == "speedrun"
 
 
 async def test_reroll_refused_for_set_seed_race(test_client, async_session, pools, seed_zip):
@@ -415,7 +411,6 @@ async def test_setup_reroll_and_delete_leave_the_seed_seen(test_client, async_se
             status=RaceStatus.RUNNING,
             is_public=True,
             daily_date=started.date(),
-            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
         )
@@ -842,7 +837,6 @@ async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, po
             status=RaceStatus.RUNNING,
             is_public=True,
             daily_date=started.date(),
-            exclude_from_stats=True,
             started_at=started,
             seeds_released_at=started,
         )

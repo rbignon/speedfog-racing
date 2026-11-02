@@ -139,7 +139,6 @@ async def create_daily_seed_if_needed(
             name=f"Daily - {today.isoformat()} - {pool_label}",
             organizer_id=system_user.id,
             daily_date=today,
-            exclude_from_stats=True,
             is_public=True,
             open_registration=True,
             max_participants=None,

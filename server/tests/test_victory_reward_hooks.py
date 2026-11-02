@@ -52,7 +52,6 @@ async def _make_race(db, organizer, *, is_public=True, daily_date=None) -> Race:
         status=RaceStatus.FINISHED,
         is_public=is_public,
         daily_date=daily_date,
-        exclude_from_stats=daily_date is not None,
         started_at=datetime.now(UTC),
         finished_at=datetime.now(UTC),
     )

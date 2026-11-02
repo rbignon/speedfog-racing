@@ -278,7 +278,6 @@ async def _race(
         race_duration_minutes=10080,
         event_id=event.id if event else None,
         event_slot=slot,
-        exclude_from_stats=slot is not None and slot.startswith("qualifier:"),
     )
     db.add(race)
     await db.flush()

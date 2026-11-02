@@ -87,7 +87,6 @@ async def _add_run(
         started_at=BASE,
         mode=mode,
         deathless=deathless,
-        exclude_from_stats=daily,
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if daily else None,
     )
     db.add(race)

@@ -238,8 +238,8 @@ These settings were set for the season-one event and can change again.
 | `custom_rules`                                       | rules text shown to players                                                                                     |
 | `private_dag`                                        | map hidden from spectators until the race finishes (display only, see Who can see what)                         |
 | `deathless`                                          | the first death eliminates the runner (detected through the game's death counter)                               |
+| `mode`                                               | `NORMAL` (blind), `SPEEDRUN` (blind, drawn above the pool's floor) or `SET_SEED` (a replay: the seed was known) |
 | `daily_date`                                         | set on daily seeds                                                                                              |
-| `exclude_from_stats`                                 | kept out of the platform's statistics                                                                           |
 | `event_id`, `event_slot`                             | attachment to an event: `qualifier:<mode>:<n>`, `<stage>:<n>` (playoffs), `<showcase>:<n>` (exhibition matches) |
 | `config`                                             | race-level settings                                                                                             |
 | `is_target`                                          | under review: started at or after `since`, or attached to the event under review                                |

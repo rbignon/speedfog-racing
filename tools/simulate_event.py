@@ -801,7 +801,6 @@ async def simulate(
                     max_participants=None,
                     late_join_window_minutes=qualifier_minutes,
                     race_duration_minutes=qualifier_minutes,
-                    exclude_from_stats=True,
                     daily_date=None,
                     custom_rules="Same seed for everyone; one sitting per run.",
                 )
@@ -861,7 +860,6 @@ async def simulate(
                     max_participants=4,
                     late_join_window_minutes=None,
                     race_duration_minutes=120,
-                    exclude_from_stats=False,
                     daily_date=None,
                     custom_rules=None,
                 )

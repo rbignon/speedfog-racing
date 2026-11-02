@@ -535,7 +535,6 @@ async def recalculate_all_stats(db: AsyncSession) -> None:
                 .join(Race, Participant.race_id == Race.id)
                 .where(
                     Race.status == RaceStatus.FINISHED,
-                    Race.exclude_from_stats.is_(False),
                     counts_for_community_stats(),
                     _SCORED_PARTICIPATION,
                 )

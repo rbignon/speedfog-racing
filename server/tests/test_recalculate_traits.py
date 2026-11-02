@@ -1,6 +1,6 @@
-"""recalculate_all_stats selects players from non-excluded races in the trait rebuild."""
+"""recalculate_all_stats rebuilds the traits of every player the race-end updates score."""
 
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from sqlalchemy import select
@@ -13,10 +13,11 @@ from speedfog_racing.models import (
     PlayerTraitScores,
     Race,
     RaceStatus,
+    RunMode,
     User,
     UserRole,
 )
-from speedfog_racing.services.stats_service import recalculate_all_stats
+from speedfog_racing.services.stats_service import recalculate_all_stats, update_player_traits
 
 
 @pytest.fixture
@@ -33,18 +34,18 @@ def async_session(async_engine):
     return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
-async def test_excluded_race_feeds_no_traits(async_session):
+async def test_speedrun_race_feeds_no_traits(async_session):
     async with async_session() as db:
         player = User(twitch_id="p", twitch_username="p", api_token="tp", role=UserRole.USER)
         org = User(twitch_id="o", twitch_username="o", api_token="to", role=UserRole.USER)
         db.add_all([player, org])
         await db.flush()
         race = Race(
-            name="daily",
+            name="speedrun",
             organizer_id=org.id,
             status=RaceStatus.FINISHED,
             is_public=True,
-            exclude_from_stats=True,
+            mode=RunMode.SPEEDRUN,
             started_at=datetime.now(UTC),
         )
         db.add(race)
@@ -68,14 +69,14 @@ async def test_excluded_race_feeds_no_traits(async_session):
 
 async def test_rebuild_scores_finishers_and_playing_quitters_only(async_session):
     """The rebuild scores users who finished, or quit after starting (igt > 0),
-    a finished non-excluded race; never-started quitters and players seen only
-    in excluded races get no row."""
+    a finished normal-mode race; never-started quitters and players seen only
+    in speedrun or Set Seed races get no row."""
     async with async_session() as db:
         users = {
             name: User(
                 twitch_id=name, twitch_username=name, api_token=f"t{name}", role=UserRole.USER
             )
-            for name in ("finisher", "quitter", "no_show", "excluded_only", "org")
+            for name in ("finisher", "quitter", "no_show", "speedrun_only", "org")
         }
         db.add_all(users.values())
         await db.flush()
@@ -85,20 +86,20 @@ async def test_rebuild_scores_finishers_and_playing_quitters_only(async_session)
             status=RaceStatus.FINISHED,
             started_at=datetime.now(UTC),
         )
-        excluded = Race(
-            name="excluded",
+        speedrun = Race(
+            name="speedrun",
             organizer_id=users["org"].id,
             status=RaceStatus.FINISHED,
-            exclude_from_stats=True,
+            mode=RunMode.SPEEDRUN,
             started_at=datetime.now(UTC),
         )
-        db.add_all([included, excluded])
+        db.add_all([included, speedrun])
         await db.flush()
         for race, name, status, igt in (
             (included, "finisher", ParticipantStatus.FINISHED, 1000),
             (included, "quitter", ParticipantStatus.ABANDONED, 500),
             (included, "no_show", ParticipantStatus.ABANDONED, 0),
-            (excluded, "excluded_only", ParticipantStatus.FINISHED, 1000),
+            (speedrun, "speedrun_only", ParticipantStatus.FINISHED, 1000),
         ):
             db.add(
                 Participant(
@@ -115,3 +116,56 @@ async def test_rebuild_scores_finishers_and_playing_quitters_only(async_session)
 
         scored = set((await db.execute(select(PlayerTraitScores.user_id))).scalars().all())
         assert scored == {users["finisher"].id, users["quitter"].id}
+
+
+def _scores(row: PlayerTraitScores) -> tuple[object, ...]:
+    return (
+        row.user_id,
+        row.rusher,
+        row.cautious,
+        row.resilient,
+        row.rage_quitter,
+        row.explorer,
+        row.pathfinder,
+        row.boss_slayer,
+    )
+
+
+async def test_rebuild_scores_a_daily_only_player_like_the_race_end_update(async_session):
+    """A Daily Seed feeds its finishers' traits when it ends, so the full
+    rebuild scores a player seen only in Daily Seeds too."""
+    async with async_session() as db:
+        player = User(twitch_id="d", twitch_username="d", api_token="td", role=UserRole.USER)
+        org = User(twitch_id="o", twitch_username="o", api_token="to", role=UserRole.USER)
+        db.add_all([player, org])
+        await db.flush()
+        daily = Race(
+            name="daily",
+            organizer_id=org.id,
+            status=RaceStatus.FINISHED,
+            is_public=True,
+            daily_date=date(2026, 10, 1),
+            started_at=datetime.now(UTC),
+        )
+        db.add(daily)
+        await db.flush()
+        db.add(
+            Participant(
+                race_id=daily.id,
+                user_id=player.id,
+                status=ParticipantStatus.FINISHED,
+                igt_ms=1000,
+                zone_history=[{"z": 1}, {"z": 2}],
+            )
+        )
+        await db.commit()
+        player_id = player.id
+
+        await update_player_traits(daily.id, db)
+        after_race = [_scores(r) for r in (await db.execute(select(PlayerTraitScores))).scalars()]
+        await recalculate_all_stats(db)
+        db.expire_all()
+        rebuilt = [_scores(r) for r in (await db.execute(select(PlayerTraitScores))).scalars()]
+
+    assert [user_id for user_id, *_ in after_race] == [player_id]
+    assert rebuilt == after_race

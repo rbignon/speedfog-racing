@@ -509,7 +509,6 @@ async def _make_daily_running_race(
             daily_date=DAILY_DATE,
             late_join_window_minutes=1440,
             race_duration_minutes=1440,
-            exclude_from_stats=True,
         )
         db.add(race)
         await db.flush()

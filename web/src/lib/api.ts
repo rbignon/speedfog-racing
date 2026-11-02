@@ -83,7 +83,6 @@ export interface Race {
   deathless: boolean;
   custom_rules: string | null;
   daily_date: string | null;
-  exclude_from_stats: boolean;
   mode: RunMode;
   /** The race drew a seen seed: it counts on no Speedrun board until a
    * reroll. Only list payloads (`RaceResponse`) carry it, not a race's

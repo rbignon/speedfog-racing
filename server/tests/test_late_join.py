@@ -128,7 +128,6 @@ def _make_race(
         race_duration_minutes=race_duration_minutes,
         private_dag=private_dag,
         deathless=deathless,
-        exclude_from_stats=False,
         mode=RunMode.NORMAL,
         seed_was_seen=False,
         created_at=datetime.now(UTC),

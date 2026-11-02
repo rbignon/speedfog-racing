@@ -193,7 +193,6 @@ async def _race(
         race_duration_minutes=WEEK,
         event_id=event.id,
         event_slot=slot,
-        exclude_from_stats=True,
     )
     db.add(race)
     await db.flush()

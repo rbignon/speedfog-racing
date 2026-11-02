@@ -212,7 +212,6 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         deathless=race.deathless,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
-        exclude_from_stats=race.exclude_from_stats,
         mode=race.mode,
         unranked_reason=race_unranked_reason(race),
         unranked_code=race_unranked_code(race),
@@ -386,9 +385,6 @@ async def create_race(
         deathless=request.deathless,
         custom_rules=(request.custom_rules or "").strip() or None,
         mode=request.mode,
-        # Ranked races (a replay, or a possibly fished draw) stay out of the
-        # community statistics, which describe blind play.
-        exclude_from_stats=request.mode != RunMode.NORMAL,
     )
     if seed is not None:
         race.seed_id = seed.id

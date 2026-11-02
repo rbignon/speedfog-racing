@@ -1864,8 +1864,6 @@ async def admin_attach_race_to_event(
 
     race.event_id = event.id
     race.event_slot = request.slot
-    if slot.kind == "qualifier":
-        race.exclude_from_stats = True
     try:
         await db.commit()
     except IntegrityError as exc:
