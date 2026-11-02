@@ -171,19 +171,25 @@ def test_only_races_that_can_count_schedule_the_check():
             daily_date=None,
             event_id=None,
             seed_was_seen=False,
+            seed_played=False,
             is_public=False,
             discord_event_id=None,
         )
         return MagicMock(**{**defaults, **kw})
 
     cases = [
-        (race(), False),
+        (race(), True),
         (race(mode=RunMode.SPEEDRUN), True),
         (race(mode=RunMode.SET_SEED), True),
         (race(daily_date=object()), True),
         (race(event_id=uuid.uuid4()), True),
-        # An event race created as a normal race on a SEEN seed counts nowhere.
+        # A race on a SEEN seed counts nowhere, an event race included.
+        (race(seed_was_seen=True), False),
         (race(event_id=uuid.uuid4(), seed_was_seen=True), False),
+        # A reset keeps a community race off the boards, not an event race.
+        (race(seed_played=True), False),
+        (race(event_id=uuid.uuid4(), seed_played=True), True),
+        (race(daily_date=object(), seed_played=True), True),
     ]
     for r, expected in cases:
         with patch(

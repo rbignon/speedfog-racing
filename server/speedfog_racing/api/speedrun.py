@@ -96,7 +96,7 @@ async def get_seed_page(
     user: User | None = Depends(get_current_user_optional),
 ) -> SpeedrunSeedResponse:
     """A played seed's page: its runs (counted ones with their place, finished
-    normal-race runs unranked) and map once no blind run on it is in progress,
+    runs of races off the boards unranked) and map once no blind run on it is in progress,
     whether it is replayable, and what keeps its files."""
     found = await resolve_seed_or_404(db, seed)
     replayability = await seed_replayability(db, found)

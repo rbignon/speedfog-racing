@@ -40,9 +40,7 @@ _RACES = [
     ("normal", RunMode.NORMAL, False, 300_000, True),
     ("speedrun", RunMode.SPEEDRUN, True, 100_000, False),
     ("set_seed", RunMode.SET_SEED, True, 90_000, False),
-    # Finished before the mode existed: backfilled as speedrun, flag left off.
-    ("backfilled", RunMode.SPEEDRUN, False, 200_000, True),
-    # Daily Seeds are excluded from the speedrun boards but still feed zone stats.
+    # A Daily Seed carries exclude_from_stats, yet a normal race feeds zone stats.
     ("daily", RunMode.NORMAL, True, 250_000, True),
 ]
 
@@ -150,8 +148,8 @@ async def test_weapon_stats_count_only_counted_races(test_client, world):
         response = await client.get("/api/stats/weapons")
     assert response.status_code == 200
     (combo,) = response.json()["combos"]
-    # normal, backfilled and daily: one tick each
-    assert combo["total_ticks"] == 3
+    # normal and daily: one tick each
+    assert combo["total_ticks"] == 2
 
 
 async def test_pool_stats_best_time_ignores_ranked_races(test_client, world):
@@ -160,8 +158,8 @@ async def test_pool_stats_best_time_ignores_ranked_races(test_client, world):
     assert response.status_code == 200
     standard = next(p for p in response.json()["pools"] if p["pool_name"] == "standard")
     # daily is excluded by daily_date; speedrun and set_seed by the predicate
-    assert standard["race"]["runs"] == 2
-    assert standard["race"]["best_time_ms"] == 200_000
+    assert standard["race"]["runs"] == 1
+    assert standard["race"]["best_time_ms"] == 300_000
 
 
 async def test_pool_stats_training_block_ignores_ranked_solo_sessions(
@@ -198,7 +196,8 @@ async def test_traits_finished_race_count_ignores_ranked_races(test_client, worl
     async with test_client as client:
         response = await client.get("/api/users/alice/traits")
     assert response.status_code == 200
-    assert response.json()["finished_races"] == 3
+    # normal and daily
+    assert response.json()["finished_races"] == 2
 
 
 async def test_race_history_still_lists_every_race(test_client, world):

@@ -1255,6 +1255,10 @@
         </header>
       </div>
 
+      {#if initialRace.unranked_reason}
+        <p class="unranked-notice">{initialRace.unranked_reason}</p>
+      {/if}
+
       {#if editingRules || modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
           {#if modeRuleLines.length > 0}
@@ -1978,6 +1982,14 @@
     padding: 0.75rem 1rem;
     border-left: 3px solid var(--color-danger);
     color: var(--color-danger);
+  }
+
+  .unranked-notice {
+    margin: 0 0 1rem;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--color-text-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   .race-header-wrapper {

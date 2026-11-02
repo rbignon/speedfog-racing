@@ -36,6 +36,13 @@
   );
   // A reset would replay the seed and count the second attempt as blind.
   let canReset = $derived(race.mode !== "speedrun");
+  // A reset community race then counts on no Speedrun board until a reroll
+  // (the server's race_unranked_reason); an event race's reset is the admins' call.
+  let resetLeavesBoards = $derived(
+    race.mode === "normal" &&
+      race.daily_date === null &&
+      race.event_id === null,
+  );
 
   let reportBuggy = $state(false);
   let reportReason = $state("");
@@ -139,7 +146,9 @@
   function handleReset() {
     requestConfirm({
       title: "Reset Race",
-      message: "Reset this race? All participant progress will be cleared.",
+      message: resetLeavesBoards
+        ? "Reset this race? All participant progress will be cleared, and the race will count on no Speedrun board until its seed is re-rolled."
+        : "Reset this race? All participant progress will be cleared.",
       confirmLabel: "Reset",
       danger: true,
       async action() {

@@ -30,6 +30,8 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.services.speedrun_service import (
+    RESET_UNRANKED_REASON,
+    SEEN_SEED_UNRANKED_REASON,
     load_counted_runs,
     load_unranked_runs,
     race_counts_on_boards,
@@ -516,6 +518,38 @@ async def test_other_races_still_reset(test_client, async_session, pools, mode, 
     assert reset.json()["status"] == "setup"
 
 
+async def _unranked_reason(client: AsyncClient, race_id: str) -> str | None:
+    response = await client.get(f"/api/races/{race_id}")
+    assert response.status_code == 200, response.text
+    reason: str | None = response.json()["unranked_reason"]
+    return reason
+
+
+@pytest.mark.parametrize(
+    ("kind", "reason"), [("community", RESET_UNRANKED_REASON), ("event", None)]
+)
+async def test_a_reset_community_race_counts_on_no_board_until_a_reroll(
+    test_client, async_session, pools, kind, reason
+):
+    """Its runners would replay a seed they played; an event race's reset is
+    the admins' call. A reroll gives the race a seed nobody played."""
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.RUNNING)
+    if kind == "event":
+        async with async_session() as db:
+            race = await db.get(Race, UUID(race_id))
+            assert race is not None
+            race.event_id = (await _event(db)).id
+            await db.commit()
+    assert await _unranked_reason(test_client, race_id) is None
+
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+    assert await _unranked_reason(test_client, race_id) == reason
+
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) is None
+
+
 @pytest.mark.parametrize("mode", ["normal", "speedrun"])
 async def test_discarded_seed_stays_discarded(test_client, async_session, pools, mode):
     """A race whose pool was discarded since its creation: rerolling or deleting
@@ -658,6 +692,24 @@ async def test_normal_race_rerolls_never_draw_back_a_seed_they_gave_up(
     other = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     assert (await _race_seed(async_session, other)).seed_number in gave_up
     assert await _seed_was_seen(async_session, other)
+
+
+async def test_a_community_race_on_a_seen_seed_says_it_counts_on_no_board(
+    test_client, async_session, pools
+):
+    """At the floor (2 here) a normal race takes a SEEN seed first; its reroll
+    moves on to the AVAILABLE reserve, which puts the race back on the boards."""
+    async with async_session() as db:
+        await _staff(db, "org")
+        await _available(db, "sprint", 2)
+        await _seen(db, "sprint", 1)
+        await db.commit()
+
+    race_id = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
+    assert await _unranked_reason(test_client, race_id) == SEEN_SEED_UNRANKED_REASON
+
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) is None
 
 
 async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, pools):

@@ -547,6 +547,9 @@ class RaceDetailResponse(BaseModel):
     daily_date: date | None = None
     exclude_from_stats: bool = False
     mode: RunMode
+    # Why the race's finishers count on no Speedrun board (a seen seed, a
+    # community race reset after its start), null when they can count.
+    unranked_reason: str | None = None
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None
@@ -1094,7 +1097,8 @@ class SpeedrunSeedRun(SpeedrunRun):
 
     run_type: RunType
     zone_history: list[dict[str, Any]] | None
-    # False for a finished run of a normal race: listed, never placed.
+    # False for a finished run of a race off the boards (a seen seed, a reset
+    # community race): listed, never placed.
     ranked: bool = True
 
 

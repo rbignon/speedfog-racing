@@ -324,11 +324,19 @@ async def test_kept_reasons(test_client, async_session, pools):
                 SeedProtection(user_id=b.id, seed_id=kept.id),
             ]
         )
-        # A normal community race does not count, so its seed is on no board.
+        # A race on a seen seed does not count, so its seed is on no board.
         forgotten = await _seed(db, "c0de00000003", status=SeedStatus.DISCARDED)
         await _played_at(
             db,
-            await _add_run(db, user=b, igt_ms=900, minute=3, mode=RunMode.NORMAL, seed=forgotten),
+            await _add_run(
+                db,
+                user=b,
+                igt_ms=900,
+                minute=3,
+                mode=RunMode.NORMAL,
+                seed=forgotten,
+                seed_was_seen=True,
+            ),
             now - timedelta(days=40),
         )
         await db.commit()
@@ -494,12 +502,16 @@ async def test_protection_limit_message_follows_the_setting(
     assert (second.status_code, second.json()["detail"]) == (409, "You already protect 1 seed")
 
 
-async def test_finisher_of_a_normal_race_can_protect(test_client, async_session, pools, seed_zip):
+async def test_finisher_of_an_unranked_race_can_protect(
+    test_client, async_session, pools, seed_zip
+):
     """Any finished run makes a player eligible, not only a counted one."""
     async with async_session() as db:
         a = await _user(db, "a")
         seed = await _seed(db, "f00d00000002", folder_path=seed_zip)
-        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed)
+        await _add_run(
+            db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
         await db.commit()
 
     page = await _page(test_client, "f00d00000002", viewer="a")
@@ -672,16 +684,28 @@ async def test_race_and_session_responses_carry_kind(test_client, async_session,
     assert (await test_client.get(f"/api/training/{ranked.id}")).json()["mode"] == "speedrun"
 
 
-async def test_seed_page_lists_normal_race_runs_as_unranked(test_client, async_session, pools):
+async def test_seed_page_lists_runs_of_races_off_the_boards_as_unranked(
+    test_client, async_session, pools
+):
+    """A race on a seen seed, and a community race reset after its start."""
     history = [{"node_id": "start", "igt_ms": 0}]
     async with async_session() as db:
         a = await _user(db, "a")
         b = await _user(db, "b")
         seed = await _seed(db, "00a1b2000001")
         await _add_run(
-            db, user=a, igt_ms=900, minute=1, mode=RunMode.NORMAL, zone_history=history, seed=seed
+            db,
+            user=a,
+            igt_ms=900,
+            minute=1,
+            mode=RunMode.NORMAL,
+            zone_history=history,
+            seed=seed,
+            seed_was_seen=True,
         )
-        await _add_run(db, user=b, igt_ms=1100, minute=2, mode=RunMode.NORMAL, seed=seed)
+        await _add_run(
+            db, user=b, igt_ms=1100, minute=2, mode=RunMode.NORMAL, seed=seed, seed_played=True
+        )
         await db.commit()
 
     data = await _page(test_client, "00a1b2000001")
@@ -703,9 +727,13 @@ async def test_unranked_runs_never_shift_ranked_places(test_client, async_sessio
         seed = await _seed(db, "00a1b2000002")
         ranked_a = await _add_run(db, user=a, igt_ms=1000, minute=1, seed=seed)
         # Faster than every ranked run, and slower than the second one.
-        fast = await _add_run(db, user=c, igt_ms=500, minute=2, mode=RunMode.NORMAL, seed=seed)
+        fast = await _add_run(
+            db, user=c, igt_ms=500, minute=2, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
         ranked_b = await _add_run(db, user=b, igt_ms=1200, minute=3, seed=seed)
-        slow = await _add_run(db, user=c, igt_ms=1500, minute=4, mode=RunMode.NORMAL, seed=seed)
+        slow = await _add_run(
+            db, user=c, igt_ms=1500, minute=4, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
         await db.commit()
 
     data = await _page(test_client, "00a1b2000002")
@@ -719,15 +747,23 @@ async def test_unranked_runs_never_shift_ranked_places(test_client, async_sessio
     assert data["stats"] == {"best_igt_ms": 500, "median_igt_ms": 1000, "runs": 4, "players": 3}
 
 
-async def test_unranked_runs_leave_out_other_modes_and_unfit_runs(
-    test_client, async_session, pools
-):
+async def test_unranked_runs_leave_out_counted_and_unfit_runs(test_client, async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         banned = await _user(db, "banned", banned=True)
         seed = await _seed(db, "00a1b2000003")
-        kept = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed)
-        await _add_run(db, user=banned, igt_ms=800, minute=2, mode=RunMode.NORMAL, seed=seed)
+        kept = await _add_run(
+            db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
+        await _add_run(
+            db,
+            user=banned,
+            igt_ms=800,
+            minute=2,
+            mode=RunMode.NORMAL,
+            seed=seed,
+            seed_was_seen=True,
+        )
         await _add_run(
             db,
             user=a,
@@ -736,6 +772,7 @@ async def test_unranked_runs_leave_out_other_modes_and_unfit_runs(
             mode=RunMode.NORMAL,
             status=ParticipantStatus.DISQUALIFIED,
             seed=seed,
+            seed_was_seen=True,
         )
         await _add_run(
             db,
@@ -746,19 +783,22 @@ async def test_unranked_runs_leave_out_other_modes_and_unfit_runs(
             status=ParticipantStatus.ABANDONED,
             finished=False,
             seed=seed,
+            seed_was_seen=True,
         )
         await _add_run(
             db, user=a, igt_ms=600, minute=5, mode=RunMode.NORMAL, kind="event", seed=seed
         )
+        community = await _add_run(db, user=a, igt_ms=650, minute=6, mode=RunMode.NORMAL, seed=seed)
         await db.commit()
 
     data = await _page(test_client, "00a1b2000003")
 
-    by_type = {r["run_type"]: r for r in data["runs"]}
     assert [r["run_id"] for r in data["runs"] if not r["ranked"]] == [str(kept.id)]
-    # The event race is a counted run, whatever its mode.
-    assert by_type["event"]["ranked"] is True
-    assert data["stats"]["runs"] == 2
+    # A community race and an event race in normal mode count.
+    ranked = {(r["run_id"], r["run_type"]) for r in data["runs"] if r["ranked"]}
+    assert (str(community.id), "race") in ranked
+    assert "event" in {run_type for _, run_type in ranked}
+    assert data["stats"]["runs"] == 3
 
 
 async def test_daily_and_unfinished_race_runs_are_not_unranked(async_session, pools):
@@ -776,6 +816,7 @@ async def test_daily_and_unfinished_race_runs_are_not_unranked(async_session, po
             mode=RunMode.NORMAL,
             race_status=RaceStatus.RUNNING,
             seed=seed,
+            seed_was_seen=True,
         )
         await db.commit()
 
@@ -788,7 +829,9 @@ async def test_unranked_runs_stay_out_of_the_summary_record(test_client, async_s
         b = await _user(db, "b")
         seed = await _seed(db, "00a1b2000004")
         await _add_run(db, user=a, igt_ms=1000, minute=1, seed=seed)
-        await _add_run(db, user=b, igt_ms=400, minute=2, mode=RunMode.NORMAL, seed=seed)
+        await _add_run(
+            db, user=b, igt_ms=400, minute=2, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
         await db.commit()
 
     response = await test_client.get("/api/speedrun/seeds/00a1b2000004/summary")
@@ -803,7 +846,9 @@ async def test_unranked_runs_stay_hidden_while_a_blind_run_is_in_progress(
         a = await _user(db, "a")
         b = await _user(db, "b")
         seed = await _seed(db, "00a1b2000005")
-        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed)
+        await _add_run(
+            db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
         await _add_run(
             db,
             user=b,

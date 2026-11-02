@@ -106,7 +106,11 @@ from speedfog_racing.services.seed_pack_service import (
 )
 from speedfog_racing.services.seed_service import SpeedrunFloorError, draw_speedrun_seed
 from speedfog_racing.services.set_seed_service import seed_replayability
-from speedfog_racing.services.speedrun_service import _is_training, _pool_config
+from speedfog_racing.services.speedrun_service import (
+    _is_training,
+    _pool_config,
+    race_unranked_reason,
+)
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 from speedfog_racing.websocket import (
     broadcast_race_info_update,
@@ -209,6 +213,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         daily_date=race.daily_date,
         exclude_from_stats=race.exclude_from_stats,
         mode=race.mode,
+        unranked_reason=race_unranked_reason(race),
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
         seed_total_layers=race.seed.total_layers if race.seed else None,
@@ -390,9 +395,9 @@ async def create_race(
     await db.flush()
 
     if seed is None:
-        # A normal race counts on no board when it is created, so it may draw
-        # a SEEN seed (an event may attach it later: the draw prefers
-        # AVAILABLE seeds while the pool is above its floor).
+        # A normal race may draw a SEEN seed, which keeps it off the boards
+        # (``race_unranked_reason``); the draw prefers AVAILABLE seeds while the
+        # pool is above its floor, and an event may attach the race later.
         try:
             await assign_seed_to_race(db, race, request.pool_name, allow_seen=True)
         except ValueError as e:

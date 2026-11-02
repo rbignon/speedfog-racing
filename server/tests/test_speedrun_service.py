@@ -34,8 +34,10 @@ from speedfog_racing.services.speedrun_service import (
     load_categories,
     load_counted_runs,
     load_main_weapons,
+    load_unranked_runs,
     main_weapon,
     place_of,
+    race_counts_on_boards,
     rank_board,
     record_history,
     record_seed,
@@ -124,6 +126,8 @@ async def _add_run(
     layers: int = 15,
     mode: RunMode = RunMode.SPEEDRUN,
     seed: Seed | None = None,
+    seed_was_seen: bool = False,
+    seed_played: bool = False,
 ) -> Participant:
     """One race with a single participant, on ``seed`` or on its own seed."""
     tag = uuid.uuid4().hex[:10]
@@ -147,6 +151,8 @@ async def _add_run(
         started_at=BASE + timedelta(minutes=minute - 30),
         deathless=deathless,
         mode=mode,
+        seed_was_seen=seed_was_seen,
+        seed_played=seed_played,
         exclude_from_stats=kind in ("daily", "event"),
         # daily_date is unique: one Daily Seed per day.
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if kind == "daily" else None,
@@ -272,24 +278,72 @@ async def test_load_counted_runs_inclusion_rules(async_session, pools):
     assert {r.run_id for r in runs} == {race_p.id, daily_p.id, event_p.id}
 
 
-async def test_normal_community_races_do_not_count(async_session, pools):
+async def test_races_count_unless_on_a_seen_seed_or_a_reset_community_race(async_session, pools):
+    """Every mode counts, community races included. A seed SEEN when drawn
+    keeps any race off the boards; a reset keeps only a community race off
+    (an event race's reset is the admins' call, a Set Seed race is a replay
+    anyway). The Python rule, the SQL clause and the seed page's unranked
+    list agree: every finished run is either counted or unranked."""
     async with async_session() as db:
         a = await _user(db, "a")
-        await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL)
+        normal = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL)
         speedrun = await _add_run(db, user=a, igt_ms=1100, minute=2, mode=RunMode.SPEEDRUN)
         set_seed = await _add_run(db, user=a, igt_ms=1200, minute=3, mode=RunMode.SET_SEED)
         daily = await _add_run(db, user=a, igt_ms=1300, minute=4, kind="daily", mode=RunMode.NORMAL)
         event = await _add_run(db, user=a, igt_ms=1400, minute=5, kind="event", mode=RunMode.NORMAL)
+        seen = await _add_run(
+            db, user=a, igt_ms=1500, minute=6, mode=RunMode.NORMAL, seed_was_seen=True
+        )
+        seen_event = await _add_run(
+            db, user=a, igt_ms=1600, minute=7, kind="event", mode=RunMode.NORMAL, seed_was_seen=True
+        )
+        reset = await _add_run(
+            db, user=a, igt_ms=1700, minute=8, mode=RunMode.NORMAL, seed_played=True
+        )
+        reset_event = await _add_run(
+            db, user=a, igt_ms=1800, minute=9, kind="event", mode=RunMode.NORMAL, seed_played=True
+        )
+        reset_set_seed = await _add_run(
+            db, user=a, igt_ms=1900, minute=10, mode=RunMode.SET_SEED, seed_played=True
+        )
+        reset_daily = await _add_run(
+            db, user=a, igt_ms=2000, minute=11, kind="daily", mode=RunMode.NORMAL, seed_played=True
+        )
         await db.commit()
+        everyone = [
+            normal,
+            speedrun,
+            set_seed,
+            daily,
+            event,
+            seen,
+            seen_event,
+            reset,
+            reset_event,
+            reset_set_seed,
+            reset_daily,
+        ]
+        races: dict[uuid.UUID, Race] = {}
+        for p in everyone:
+            race = await db.get(Race, p.race_id)
+            assert race is not None
+            races[p.id] = race
 
         runs = await load_counted_runs(db)
+        unranked = {
+            run.run_id
+            for race in races.values()
+            for run in await load_unranked_runs(db, race.seed_id)
+        }
 
     by_id = {r.run_id: r for r in runs}
-    assert set(by_id) == {speedrun.id, set_seed.id, daily.id, event.id}
-    assert by_id[speedrun.id].blind is True
-    assert by_id[set_seed.id].blind is False
-    assert by_id[daily.id].blind is True
-    assert by_id[event.id].blind is True
+    counted = {normal.id, speedrun.id, set_seed.id, daily.id, event.id, reset_event.id}
+    counted |= {reset_set_seed.id, reset_daily.id}
+    assert set(by_id) == counted
+    assert unranked == {seen.id, seen_event.id, reset.id}
+    assert {run_id for run_id, race in races.items() if race_counts_on_boards(race)} == counted
+    assert {r.blind for r in runs if r.run_id in (set_seed.id, reset_set_seed.id)} == {False}
+    assert {r.blind for r in runs if r.run_id not in (set_seed.id, reset_set_seed.id)} == {True}
 
 
 async def test_speedrun_race_excluded_from_stats_still_counts(async_session, pools):

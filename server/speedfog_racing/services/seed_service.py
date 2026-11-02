@@ -349,8 +349,9 @@ async def get_available_seed(
 ) -> Seed | None:
     """Get a random seed to draw from the pool.
 
-    By default only AVAILABLE seeds are drawn. With ``allow_seen`` (normal
-    races only: nothing that counts on the boards), SEEN seeds join the
+    By default only AVAILABLE seeds are drawn. With ``allow_seen`` (the races
+    ``race_draws_fresh_seeds`` leaves out: community races in normal mode, which
+    a SEEN seed keeps off the boards), SEEN seeds join the
     draw: while the pool has more AVAILABLE seeds than its speedrun floor,
     one uniform draw over its SEEN and AVAILABLE seeds, so SEEN seeds leave
     the pool at their share of it instead of piling up; at or under the
@@ -474,7 +475,7 @@ async def assign_seed_to_race(
         race: Race to assign seed to
         pool_name: Name of the pool to pick from
         allow_seen: Whether a SEEN seed may be drawn (see ``get_available_seed``);
-            only for a race that does not count on the boards
+            only for a race that ``race_draws_fresh_seeds`` leaves out
 
     Returns:
         The assigned Seed

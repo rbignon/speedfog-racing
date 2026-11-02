@@ -8,6 +8,7 @@ function race(mode: RunMode, extra: Partial<RaceDetail> = {}): RaceDetail {
     id: "race-1",
     mode,
     daily_date: null,
+    event_id: null,
     seeds_released_at: null,
     is_public: true,
     open_registration: false,
@@ -79,6 +80,25 @@ describe("RaceControls: Reset Race", () => {
     await openMenu(container);
     expect(hasButton(container, "Reset Race")).toBe(true);
   });
+
+  it.each([
+    ["a community race", race("normal"), true],
+    ["an event race", race("normal", { event_id: "event-1" }), false],
+    ["a Set Seed race", race("set_seed"), false],
+  ])(
+    "says whether resetting %s keeps it off the Speedrun boards",
+    async (_label, r, warned) => {
+      const { container, getByText } = mount(r, "finished");
+      await openMenu(container);
+      const reset = [...container.querySelectorAll("button")].find((b) =>
+        b.textContent?.includes("Reset Race"),
+      )!;
+      await fireEvent.click(reset);
+      expect(
+        getByText(/^Reset this race\?/).textContent?.includes("Speedrun board"),
+      ).toBe(warned);
+    },
+  );
 
   it.each(["running", "finished"])(
     "is not offered on a speedrun race (%s)",

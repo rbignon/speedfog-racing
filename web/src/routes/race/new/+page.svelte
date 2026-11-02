@@ -608,8 +608,9 @@
                   Speedrun race
                 </label>
                 <p class="hint">
-                  Counts on the Speedrun boards. The game modes above then count
-                  only the fresh seeds a speedrun race can draw.
+                  Always a fresh seed and no reset, so the race is sure to count
+                  on the Speedrun boards. The game modes above then count only
+                  the fresh seeds a speedrun race can draw.
                 </p>
               </div>
             {/if}

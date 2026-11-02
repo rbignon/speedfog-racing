@@ -21,7 +21,6 @@ from sqlalchemy import (
     UniqueConstraint,
     Uuid,
     func,
-    or_,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSON
@@ -68,8 +67,10 @@ class SeedStatus(enum.Enum):
     """Seed availability status.
 
     SEEN: drawn for a race that never started (rerolled or deleted in SETUP, or
-    a restored report), so its map may have been seen. Only normal races draw
-    it again; every draw that counts on the boards takes AVAILABLE seeds only.
+    a restored report), so its map may have been seen. Only community races in
+    normal mode draw it again, and such a race then counts on no board; every
+    draw that must count (speedrun races and solo runs, Daily Seeds, event
+    races' rerolls) takes AVAILABLE seeds only.
     """
 
     AVAILABLE = "available"
@@ -431,8 +432,8 @@ class Race(Base):
     exclude_from_stats: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
-    # Never changed after creation. Only SPEEDRUN and SET_SEED community races
-    # count for the speedrun.fog boards.
+    # Never changed after creation. Every mode counts for the speedrun.fog
+    # boards (see ``race_unranked_reason`` for the races that do not).
     mode: Mapped[RunMode] = mapped_column(
         Enum(RunMode),
         default=RunMode.NORMAL,
@@ -795,12 +796,12 @@ class ChatMessageReaction(Base):
 def counts_for_community_stats() -> ColumnElement[bool]:
     """Race filter for the statistics that describe blind play.
 
-    Speedrun and Set Seed races are created with ``exclude_from_stats`` and stay
-    out; normal races (dailies and event races included) and older races whose
-    flag is off keep counting. Lives here so the services can use it without
-    importing the API layer.
+    Normal races count (dailies and event races included, whatever their
+    ``exclude_from_stats``); Speedrun and Set Seed races (a replay, or a
+    possibly fished draw) stay out. Lives here so the services can use it
+    without importing the API layer.
     """
-    return or_(Race.mode == RunMode.NORMAL, Race.exclude_from_stats.is_(False))
+    return Race.mode == RunMode.NORMAL
 
 
 def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:

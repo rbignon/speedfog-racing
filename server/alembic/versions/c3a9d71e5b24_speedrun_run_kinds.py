@@ -5,9 +5,8 @@ Revises: 99ed26786aea
 Create Date: 2026-10-29 10:00:00.000000
 
 Races and training sessions record one immutable mode (normal, speedrun,
-set_seed). Existing rows become normal, except the finished community races
-(a seed, no daily, no event, counted in stats), which become speedrun races so
-the boards keep the runs they counted before modes existed.
+set_seed). Existing rows become normal: the boards count normal races, so the
+finished community races keep the runs they counted before modes existed.
 """
 
 from collections.abc import Sequence
@@ -31,13 +30,6 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("mode", mode_enum, server_default="NORMAL", nullable=False))
     with op.batch_alter_table("races") as batch_op:
         batch_op.add_column(sa.Column("mode", mode_enum, server_default="NORMAL", nullable=False))
-    op.execute(
-        sa.text(
-            "UPDATE races SET mode = 'SPEEDRUN' WHERE status = 'FINISHED' "
-            "AND seed_id IS NOT NULL AND daily_date IS NULL AND event_id IS NULL "
-            "AND exclude_from_stats = false"
-        )
-    )
 
 
 def downgrade() -> None:
