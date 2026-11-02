@@ -86,6 +86,12 @@ def test_excluded_seed_blind_run_only_random():
     assert set(_by_sub(new_records([old, new], {new.run_id}))) == {"random"}
 
 
+def test_a_purged_seed_run_still_holds_its_records():
+    old = replace(_run("a", 3000, 1), seed_files_block="purged")
+    new = _run("b", 4000, 2)
+    assert new_records([old, new], {new.run_id}) == []
+
+
 def test_only_the_fastest_new_run_of_a_board_is_a_record():
     old = _run("a", 5000, 1)
     n1 = _run("b", 4000, 2)

@@ -88,9 +88,23 @@ class CountedRun:
 
     @property
     def set_seed_block(self) -> NotReplayableCode | None:
-        """Why the seed can no longer be played in Set Seed (``set_seed_block``):
-        the run leaves the Set Seed boards only. None when it can."""
+        """Why the seed can no longer be played in Set Seed (``set_seed_block``).
+        None when it can."""
         return "excluded" if self.seed_excluded else self.seed_files_block
+
+    @property
+    def on_set_seed_boards(self) -> bool:
+        """The run counts on the Set Seed boards: its seed is not excluded and
+        was not added before the game-version cutoff. A purged seed's runs
+        stay there, no longer replayable."""
+        return not self.seed_excluded and self.seed_files_block != "old_game_version"
+
+    @property
+    def replayable(self) -> bool:
+        """The run's seed can still be played in Set Seed: no
+        ``set_seed_block``, and not in an archive, whose seeds have an older
+        layer count."""
+        return self.set_seed_block is None and self.category == self.pool
 
 
 def _pool_config(pool: Pool) -> dict[str, Any]:
@@ -142,8 +156,8 @@ def set_seed_block(
     *, excluded: bool, created_at: datetime | None, folder_path: str | None
 ) -> NotReplayableCode | None:
     """Why a played seed cannot be played in Set Seed: an admin excluded it
-    (until a restore), else ``seed_files_block``. None when it can. The Set
-    Seed boards keep only the runs on seeds without one;
+    (until a restore), else ``seed_files_block``. None when it can.
+    ``CountedRun.replayable`` marks the Set Seed boards' runs with it and
     ``seed_replayability`` builds a seed page's verdict on it. The layer count
     is not one: it picks the seed's category, archives included
     (``seed_category``)."""
@@ -315,7 +329,8 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
                 equipped_name_template_id=row.equipped_name_template_id,
             ),
             pool=row.pool_name,
-            # Never read: an unranked run belongs to no board.
+            # Never read: an unranked run belongs to no board, and its seed
+            # page row takes the page's replayability (``build_seed_runs``).
             category=row.pool_name,
             deathless=bool(row.deathless),
             # An event race lands here when it drew a SEEN seed.
@@ -330,7 +345,7 @@ async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun
             daily_date=None,
             seed_number=row.seed_number,
             deaths=row.death_count,
-            # Never read: an unranked run belongs to no board.
+            # Never read, as ``category`` above.
             seed_excluded=False,
             seed_files_block=None,
             ranked=False,
@@ -351,8 +366,9 @@ async def load_counted_runs(
     left out, and seeds from an older version of their pool (another layer count
     than its config) left out, unless that count is declared in the pool's
     ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``.
-    Each run says whether its seed can still be played in Set Seed
-    (``CountedRun.set_seed_block``).
+    Each run says whether it is on the Set Seed boards
+    (``CountedRun.on_set_seed_boards``) and whether its seed can still be
+    played there (``CountedRun.replayable``).
 
     With ``seed_id``, only that seed's runs, whenever the seed was added, and
     an old layer count is kept under ``"<pool>@<layers>"`` even when it is not
@@ -632,14 +648,13 @@ def filter_board(
     types: frozenset[RunType],
 ) -> list[CountedRun]:
     """Runs of one category's board: Random Seed keeps blind runs, Set Seed
-    every run on a seed that can still be played in Set Seed (no
-    ``set_seed_block``); ``deathless_only`` keeps runs of Deathless-mode
-    races."""
+    every run ``on_set_seed_boards``; ``deathless_only`` keeps runs of
+    Deathless-mode races."""
     return [
         r
         for r in runs
         if r.category == category
-        and (r.blind if sub == "random" else r.set_seed_block is None)
+        and (r.blind if sub == "random" else r.on_set_seed_boards)
         and (r.deathless or not deathless_only)
         and r.run_type in types
     ]
@@ -690,15 +705,14 @@ def record_seed(
     board: Sequence[CountedRun], ranked: Sequence[tuple[CountedRun, int | None]]
 ) -> SpeedrunRecordSeed | None:
     """The first ranked row's seed, how many runs of ``board`` (obsolete
-    ones included) are on it, and whether it can be played in Set Seed (never
-    in an archive, whose seeds have an older layer count)."""
+    ones included) are on it, and whether it can be played in Set Seed."""
     if not ranked:
         return None
     record = ranked[0][0]
     return SpeedrunRecordSeed(
         seed_number=record.seed_number,
         runs=sum(1 for r in board if r.seed_number == record.seed_number),
-        replayable=record.set_seed_block is None and record.category == record.pool,
+        replayable=record.replayable,
     )
 
 
@@ -804,6 +818,7 @@ def _run_fields(
         "seed_number": run.seed_number,
         "deaths": run.deaths,
         "weapon": weapons.get(run.run_id),
+        "replayable": run.replayable,
     }
 
 
@@ -875,7 +890,7 @@ async def build_overview(
     # run type, Deathless filter off): each player's successive records there.
     by_player: dict[tuple[str, UUID], list[CountedRun]] = {}
     for run in runs:
-        if run.set_seed_block is None:
+        if run.on_set_seed_boards:
             by_player.setdefault((run.category, run.user.id), []).append(run)
     personal_bests = [pb for group in by_player.values() for pb in record_history(group)]
     recent = sorted(personal_bests, key=lambda r: r.finished_at, reverse=True)[
@@ -951,13 +966,18 @@ def seed_stats(runs: Sequence[CountedRun]) -> SpeedrunSeedStats:
 
 
 async def build_seed_runs(
-    db: AsyncSession, runs: Sequence[CountedRun], unranked: Sequence[CountedRun] = ()
+    db: AsyncSession,
+    runs: Sequence[CountedRun],
+    unranked: Sequence[CountedRun] = (),
+    *,
+    replayable: bool,
 ) -> list[SpeedrunSeedRun]:
     """A seed page's run list from the seed's counted runs and its ``unranked``
     ones: every run by time, each player's best counted run ranked and the
     others (slower counted runs, unranked runs) without a rank, with its zone
     history (and the weapon decoded from it). Unranked runs never take part in
-    the ranking."""
+    the ranking. Every row carries the page's ``replayable``: they share one
+    seed, and an unranked run knows nothing of its seed's state."""
     every_run = [*runs, *unranked]
     histories = await load_zone_histories(
         db,
@@ -970,7 +990,7 @@ async def build_seed_runs(
     rows.sort(key=lambda row: _run_key(row[0]))
     return [
         SpeedrunSeedRun(
-            **_run_fields(run, rank, weapons),
+            **{**_run_fields(run, rank, weapons), "replayable": replayable},
             run_type=run.run_type,
             zone_history=histories.get(run.run_id),
             ranked=run.ranked,

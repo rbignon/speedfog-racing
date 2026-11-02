@@ -61,6 +61,7 @@ function run(blind: boolean): SpeedrunRun {
     blind,
     deaths: 0,
     weapon: null,
+    replayable: true,
   };
 }
 
@@ -165,6 +166,34 @@ describe("SpeedrunBoard Set Seed columns and WR seed", () => {
     await waitFor(() => expect(fetchSpeedrunBoard).toHaveBeenCalledTimes(2));
     await screen.findByRole("columnheader", { name: "Time" });
     expect(screen.queryByRole("columnheader", { name: "Run" })).toBeNull();
+  });
+
+  it("marks the seeds that can no longer be replayed", async () => {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [
+        { ...run(true), seed_number: "dead00000001", replayable: false },
+        {
+          ...run(false),
+          run_id: "p2",
+          race_id: "r2",
+          seed_number: "abcdef000001",
+        },
+      ],
+      record_seed: { seed_number: "dead00000001", runs: 1, replayable: false },
+    });
+    mount();
+
+    const gone = await screen.findByRole("link", { name: "dead00" });
+    const kept = screen.getByRole("link", { name: "abcdef" });
+    expect(gone.getAttribute("title")).toBe("No longer replayable");
+    expect(kept.getAttribute("title")).toBeNull();
+    const band = screen.getByTestId("wr-seed");
+    expect(
+      within(band)
+        .getByRole("link", { name: "dead00000001" })
+        .getAttribute("title"),
+    ).toBe("No longer replayable");
   });
 
   it("shows the WR seed band from record_seed", async () => {

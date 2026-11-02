@@ -213,7 +213,14 @@
       data-testid="wr-seed"
     >
       <span class="chip wr-chip">WR seed</span>
-      <a class="seed" href={seedHref}>{board.record_seed.seed_number}</a>
+      <a
+        class="seed"
+        class:gone={!board.record_seed.replayable}
+        href={seedHref}
+        title={board.record_seed.replayable
+          ? undefined
+          : "No longer replayable"}>{board.record_seed.seed_number}</a
+      >
       <span class="wr-time"><SpeedrunTime ms={recordRun.igt_ms} /></span>
       <SpeedrunPlayer user={recordRun.user} />
       <span
@@ -382,8 +389,10 @@
     <div class="rules">
       <h4>Set Seed and Random Seed</h4>
       <p>
-        <strong>Set Seed</strong>: every run on a seed that can still be played,
-        blind or replayed. Replay any seed as often as you like.
+        <strong>Set Seed</strong>: every run, blind or replayed, except on a
+        seed an admin excluded. Replay any seed as often as you like while its
+        files are kept on the server; a struck-through seed can no longer be
+        played.
       </p>
       <p>
         <strong>Random Seed</strong>: blind runs only, on a seed nobody had
@@ -599,6 +608,11 @@
   .wr-seed a.seed:hover {
     color: var(--color-purple);
     border-color: var(--color-purple);
+  }
+
+  .wr-seed .seed.gone {
+    color: var(--color-text-disabled);
+    text-decoration: line-through;
   }
 
   .wr-time {

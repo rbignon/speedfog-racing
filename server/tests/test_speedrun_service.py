@@ -1050,7 +1050,7 @@ async def test_categories_start_at_the_board_start(async_session, pools, monkeyp
     ]
 
 
-async def test_set_seed_board_keeps_only_seeds_that_can_be_replayed(
+async def test_set_seed_board_leaves_out_excluded_and_too_old_seeds(
     async_session, pools, monkeypatch
 ):
     monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
@@ -1078,14 +1078,13 @@ async def test_set_seed_board_keeps_only_seeds_that_can_be_replayed(
             )
         }
 
-    assert board("set") == {kept.id}
+    # A purged seed's run stays: deleting its files does not undo the run.
+    assert board("set") == {kept.id, purged.id}
     # Random Seed keeps blind runs whatever their seed's files or version.
     assert board("random") == {kept.id, purged.id, old_version.id, excluded.id}
 
 
-async def test_recent_run_on_a_purged_or_too_old_seed_is_not_listed(
-    async_session, pools, monkeypatch
-):
+async def test_recent_runs_keep_purged_seeds_not_too_old_ones(async_session, pools, monkeypatch):
     monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
     async with async_session() as db:
         a, b, c = [await _user(db, n) for n in "abc"]
@@ -1097,15 +1096,50 @@ async def test_recent_run_on_a_purged_or_too_old_seed_is_not_listed(
 
         ov = await build_overview(db, await load_counted_runs(db))
 
-    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1}
+    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {900: 1, 1000: 2}
+
+
+async def test_a_best_on_a_purged_seed_still_holds_off_slower_runs(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        best = await _add_run(db, user=a, igt_ms=900, minute=1)
+        (await _seed_of(db, best)).folder_path = "/nonexistent/seed.zip"
+        await _add_run(db, user=a, igt_ms=1000, minute=2)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    assert [r.run_id for r in ov.recent_runs] == [best.id]
+
+
+async def test_set_seed_board_marks_runs_whose_seed_cannot_be_replayed(async_session, pools):
+    async with async_session() as db:
+        a, b = await _user(db, "a"), await _user(db, "b")
+        await _add_run(db, user=a, igt_ms=1000, minute=1)
+        purged = await _add_run(db, user=b, igt_ms=900, minute=2)
+        (await _seed_of(db, purged)).folder_path = "/nonexistent/seed.zip"
+        await db.commit()
+
+        board = await build_board(
+            db,
+            await load_counted_runs(db),
+            category="sprint",
+            sub="set",
+            deathless_only=False,
+            types=frozenset(RUN_TYPES),
+            include_obsolete=False,
+        )
+
+    assert [(r.igt_ms, r.replayable) for r in board.runs] == [(900, False), (1000, True)]
+    assert board.record_seed is not None and not board.record_seed.replayable
 
 
 async def test_record_seed_says_whether_the_record_can_be_replayed(async_session, pools):
     async with async_session() as db:
         a, b = await _user(db, "a"), await _user(db, "b")
         await _add_run(db, user=a, igt_ms=1000, minute=1)
-        purged = await _add_run(db, user=b, igt_ms=900, minute=2)
-        (await _seed_of(db, purged)).folder_path = "/nonexistent/seed.zip"
+        excluded = await _add_run(db, user=b, igt_ms=900, minute=2)
+        (await _seed_of(db, excluded)).set_seed_excluded_at = BASE
         await db.commit()
 
         runs = await load_counted_runs(db)

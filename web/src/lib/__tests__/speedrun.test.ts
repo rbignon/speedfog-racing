@@ -460,6 +460,7 @@ function record(user: string, igt: number, day: number): SpeedrunRun {
     blind: true,
     deaths: 0,
     weapon: null,
+    replayable: true,
   };
 }
 

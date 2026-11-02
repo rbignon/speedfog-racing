@@ -615,17 +615,15 @@ async def test_set_seed_board_and_seed_page_agree_on_replayability(
             )
         await db.commit()
 
-        board = filter_board(
-            await load_counted_runs(db),
-            category="sprint",
-            sub="set",
-            deathless_only=False,
-            types=frozenset(RUN_TYPES),
-        )
-        on_board = {r.seed_number for r in board}
+        runs = await load_counted_runs(db)
         replayable = {s.seed_number for s in seeds if (await seed_replayability(db, s)).replayable}
 
-    assert on_board == replayable == {"cccc00000001"}
+    board = filter_board(
+        runs, category="sprint", sub="set", deathless_only=False, types=frozenset(RUN_TYPES)
+    )
+    # A purged seed's run stays on the board; every run is marked like its seed page.
+    assert {r.seed_number for r in board} == {"cccc00000001", "cccc00000003"}
+    assert {r.seed_number for r in runs if r.replayable} == replayable == {"cccc00000001"}
 
 
 async def test_an_excluded_seed_that_cannot_be_kept_takes_no_top_place(

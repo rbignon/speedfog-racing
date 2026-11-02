@@ -169,7 +169,7 @@ async def seed_replayability(db: AsyncSession, seed: Seed) -> Replayability:
     def not_replayable(code: NotReplayableCode, reason: str) -> Replayability:
         return Replayability(public=True, code=code, reason=reason)
 
-    # The boards read the same verdict (``CountedRun.set_seed_block``).
+    # The board rows' marker reads the same verdict (``CountedRun.replayable``).
     block = set_seed_block(
         excluded=seed.set_seed_excluded_at is not None,
         created_at=seed.created_at,

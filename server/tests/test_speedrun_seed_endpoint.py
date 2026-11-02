@@ -719,6 +719,25 @@ async def test_seed_page_lists_runs_of_races_off_the_boards_as_unranked(
     assert data["stats"] == {"best_igt_ms": 900, "median_igt_ms": 900, "runs": 2, "players": 2}
 
 
+async def test_every_seed_page_row_says_whether_the_seed_can_be_replayed(
+    test_client, async_session, pools
+):
+    """A purged seed: its counted and unranked rows alike are not replayable."""
+    async with async_session() as db:
+        a, b = await _user(db, "a"), await _user(db, "b")
+        seed = await _seed(db, "00a1b2000009", folder_path="/nonexistent/seed.zip")
+        await _add_run(db, user=a, igt_ms=900, minute=1, seed=seed)
+        await _add_run(
+            db, user=b, igt_ms=1000, minute=2, mode=RunMode.NORMAL, seed=seed, seed_was_seen=True
+        )
+        await db.commit()
+
+    data = await _page(test_client, "00a1b2000009")
+
+    assert data["not_replayable_code"] == "purged"
+    assert [(r["ranked"], r["replayable"]) for r in data["runs"]] == [(True, False), (False, False)]
+
+
 async def test_unranked_runs_never_shift_ranked_places(test_client, async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")

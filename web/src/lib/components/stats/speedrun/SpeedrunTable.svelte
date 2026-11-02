@@ -81,7 +81,13 @@
             >{speedrunAgo(run.finished_at, now)}</td
           >
           <td>
-            <a class="seed" href={seedHref}>{run.seed_number.slice(0, 6)}</a>
+            <a
+              class="seed"
+              class:gone={!run.replayable}
+              href={seedHref}
+              title={run.replayable ? undefined : "No longer replayable"}
+              >{run.seed_number.slice(0, 6)}</a
+            >
           </td>
           <td class="route-cell" title={run.weapon ? route : undefined}
             >{route}</td
@@ -197,6 +203,15 @@
 
   .seed:hover {
     color: var(--color-purple-hover);
+  }
+
+  .seed.gone {
+    color: var(--color-text-disabled);
+    text-decoration: line-through;
+  }
+
+  .seed.gone:hover {
+    color: var(--color-text-secondary);
   }
 
   /* Not .route: app.css owns that global class (the cards' route strip,

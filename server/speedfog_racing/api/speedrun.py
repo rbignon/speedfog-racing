@@ -131,7 +131,9 @@ async def get_seed_page(
             else None
         ),
         graph_json=found.graph_json if replayability.public else None,
-        runs=await build_seed_runs(db, shown_runs, shown_unranked),
+        runs=await build_seed_runs(
+            db, shown_runs, shown_unranked, replayable=replayability.replayable
+        ),
         stats=seed_stats([*shown_runs, *shown_unranked]),
     )
 

@@ -2401,6 +2401,9 @@ export interface SpeedrunRun {
   blind: boolean;
   deaths: number;
   weapon: number[] | null;
+  /** The seed can still be played in Set Seed (a purged seed's runs stay on
+   * the Set Seed boards). */
+  replayable: boolean;
 }
 
 /** A recent personal best; `rank` carries its place on its Set Seed board. */

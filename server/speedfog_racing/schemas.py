@@ -1052,6 +1052,9 @@ class SpeedrunRun(BaseModel):
     seed_number: str
     deaths: int
     weapon: list[int] | None
+    # The seed can still be played in Set Seed (a purged seed's runs stay on
+    # the Set Seed boards).
+    replayable: bool
 
 
 class SpeedrunRecentRun(SpeedrunRun):
@@ -1086,8 +1089,9 @@ class SpeedrunRecordSeed(BaseModel):
     seed_number: str
     # Runs of the board on that seed, obsolete ones included.
     runs: int
-    # It can still be played in Set Seed (a Random Seed record may be on a
-    # seed that cannot): the Start a run window offers it only then.
+    # It can still be played in Set Seed (a record may be on a seed that
+    # cannot, a purged one for instance): the Start a run window offers it
+    # only then.
     replayable: bool
 
 

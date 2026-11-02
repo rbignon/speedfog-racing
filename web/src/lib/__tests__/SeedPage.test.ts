@@ -73,6 +73,7 @@ function seedRun(
     seed_number: SEED,
     deaths: 0,
     weapon: null,
+    replayable: true,
     run_type: blind ? "race" : "solo",
     zone_history: [
       { node_id: "start", igt_ms: 0 },

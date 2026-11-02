@@ -11,8 +11,8 @@ import type {
 
 export const RUN_TYPES: SpeedrunRunType[] = ["race", "daily", "event", "solo"];
 
-/** Set Seed: every run on a seed that can still be played, whether the seed
- * was chosen or served. Random Seed: blind runs only. */
+/** Set Seed: every run but those on an excluded or too old seed, whether the
+ * seed was chosen or served. Random Seed: blind runs only. */
 export type SpeedrunSub = "set" | "random";
 
 export type SpeedrunView = "board" | "history-chart" | "history-list";
