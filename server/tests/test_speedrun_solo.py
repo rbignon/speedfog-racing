@@ -9,9 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from speedfog_racing.api import training as training_api
 from speedfog_racing.config import settings
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
@@ -30,6 +31,7 @@ from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.training_service import (
     SpeedrunStartError,
     _require_under_unfinished_limit,
+    abandon_active_session,
     create_set_seed_session,
     create_speedrun_session,
     expire_speedrun_sessions,
@@ -406,6 +408,101 @@ async def test_expiry_never_overwrites_a_finished_session(async_session, pools):
     async with async_session() as db:
         row = await db.get(TrainingSession, done.id)
         assert row is not None and row.status == TrainingSessionStatus.FINISHED
+
+
+async def test_an_abandon_never_overwrites_a_finish_it_raced(async_session, pools):
+    """The abandon click read the run ACTIVE, then its finish committed first:
+    the finish stands, and the abandon reports it changed nothing."""
+    async with async_session() as db:
+        user = await _user(db, "a")
+        session = await _add_session(
+            db, user, "sprint", RunMode.SPEEDRUN, 5000, status=TrainingSessionStatus.ACTIVE
+        )
+        await db.commit()
+        # The finish lands after the abandon's read: the loaded object stays ACTIVE.
+        await db.execute(
+            update(TrainingSession)
+            .where(TrainingSession.id == session.id)
+            .values(status=TrainingSessionStatus.FINISHED)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+        assert session.status == TrainingSessionStatus.ACTIVE
+
+        abandoned = await abandon_active_session(db, session, now=BASE)
+        await db.commit()
+
+    assert not abandoned
+    async with async_session() as db:
+        row = await db.get(TrainingSession, session.id)
+        assert row is not None and row.status == TrainingSessionStatus.FINISHED
+
+
+async def test_an_abandon_request_that_lost_the_race_names_the_finish(
+    test_client, async_session, pools
+):
+    """The endpoint read the run ACTIVE, the finish committed before its
+    update: 400 naming the status the run is really in, never a 200."""
+    async with async_session() as db:
+        user = await _user(db, "a")
+        session = await _add_session(
+            db, user, "sprint", RunMode.SPEEDRUN, 5000, status=TrainingSessionStatus.ACTIVE
+        )
+        await db.commit()
+
+    async def finish_first(db: AsyncSession, raced: TrainingSession, *, now: datetime) -> bool:
+        async with async_session() as other:
+            await other.execute(
+                update(TrainingSession)
+                .where(TrainingSession.id == raced.id)
+                .values(status=TrainingSessionStatus.FINISHED)
+            )
+            await other.commit()
+        return await abandon_active_session(db, raced, now=now)
+
+    with patch.object(training_api, "abandon_active_session", finish_first):
+        response = await test_client.post(f"/api/training/{session.id}/abandon", headers=_auth("a"))
+
+    assert response.status_code == 400, response.text
+    assert "'finished'" in response.json()["detail"]
+
+
+async def test_an_abandon_ends_an_active_run(async_session, pools):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        started = await _add_session(
+            db,
+            user,
+            "sprint",
+            RunMode.SPEEDRUN,
+            5000,
+            status=TrainingSessionStatus.ACTIVE,
+            zone_history=[{"node_id": "start", "igt_ms": 0}],
+        )
+        untouched = await _add_session(
+            db, user, "sprint", RunMode.SPEEDRUN, 0, status=TrainingSessionStatus.ACTIVE
+        )
+        await db.commit()
+
+        assert await abandon_active_session(db, started, now=BASE)
+        assert await abandon_active_session(db, untouched, now=BASE)
+        await db.commit()
+
+    async with async_session() as db:
+        statuses = {
+            row.id: (row.status, row.finished_at)
+            for row in [
+                await db.get(TrainingSession, started.id),
+                await db.get(TrainingSession, untouched.id),
+            ]
+            if row is not None
+        }
+    # Progress makes it ABANDONED, none CANCELLED.
+    assert {k: v[0] for k, v in statuses.items()} == {
+        started.id: TrainingSessionStatus.ABANDONED,
+        untouched.id: TrainingSessionStatus.CANCELLED,
+    }
+    assert all(v[1] is not None for v in statuses.values())
 
 
 FINAL_BOSS_GRAPH: dict[str, Any] = {

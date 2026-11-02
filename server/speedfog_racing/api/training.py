@@ -44,7 +44,10 @@ from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
-from speedfog_racing.services.training_service import create_training_session
+from speedfog_racing.services.training_service import (
+    abandon_active_session,
+    create_training_session,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -249,22 +252,20 @@ async def abandon_session(
 ) -> TrainingSessionDetailResponse:
     """Abandon an active training session."""
     session = await _get_session_or_404(db, session_id, user.id)
-    if session.status != TrainingSessionStatus.ACTIVE:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Cannot abandon session in status '{session.status.value}'",
-        )
-
-    has_progress = bool(session.zone_history)
-    session.status = (
-        TrainingSessionStatus.ABANDONED if has_progress else TrainingSessionStatus.CANCELLED
+    if session.status == TrainingSessionStatus.ACTIVE:
+        # A finish or an expiry committed since the read wins: the refusal
+        # below then names the status it left.
+        abandoned = await abandon_active_session(db, session, now=datetime.now(UTC))
+        await db.commit()
+        # The update bypassed the loaded object: read the row again.
+        db.expire(session)
+        session = await _get_session_or_404(db, session_id, user.id)
+        if abandoned:
+            return _build_detail_response(session)
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Cannot abandon session in status '{session.status.value}'",
     )
-    session.finished_at = datetime.now(UTC)
-    await db.commit()
-
-    # Reload for response
-    session = await _get_session_or_404(db, session_id, user.id)
-    return _build_detail_response(session)
 
 
 @router.get("/{session_id}/pack-ticket", response_model=DownloadTicketResponse)

@@ -345,6 +345,33 @@ async def create_set_seed_session(
     return session
 
 
+async def abandon_active_session(
+    db: AsyncSession, session: TrainingSession, *, now: datetime
+) -> bool:
+    """End a session the player gives up: ABANDONED with progress, CANCELLED
+    without. One conditional UPDATE, so a finish or an expiry committed since
+    the session was read stands. False when it was no longer ACTIVE. The
+    caller commits; ``session`` is not updated in memory."""
+    result = await db.execute(
+        update(TrainingSession)
+        .where(
+            TrainingSession.id == session.id,
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+        )
+        .values(
+            status=(
+                TrainingSessionStatus.ABANDONED
+                if session.zone_history
+                else TrainingSessionStatus.CANCELLED
+            ),
+            finished_at=now,
+        )
+        .returning(TrainingSession.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def expire_speedrun_sessions(db: AsyncSession, *, now: datetime) -> list[uuid.UUID]:
     """Abandon ACTIVE Speedrun-mode sessions older than the TTL.
 

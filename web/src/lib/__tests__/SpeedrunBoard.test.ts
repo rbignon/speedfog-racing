@@ -389,3 +389,39 @@ describe("SpeedrunBoard record history", () => {
     ).toEqual(["/daily/2026-10-01", "/training/s1"]);
   });
 });
+
+describe("SpeedrunBoard WR seed band while another board loads", () => {
+  beforeEach(() => {
+    vi.mocked(fetchSpeedrunBoard).mockReset();
+  });
+
+  async function switchPool(next: Promise<SpeedrunBoardResponse>) {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValueOnce({
+      ...EMPTY,
+      runs: [run(true)],
+      record_seed: { seed_number: "363096a4243f", runs: 3, replayable: true },
+    });
+    const view = mount();
+    await screen.findByTestId("wr-seed");
+    vi.mocked(fetchSpeedrunBoard).mockReturnValueOnce(next);
+    await view.rerender({ params: { ...PARAMS, pool: "dl" } });
+    return view;
+  }
+
+  it("hides the previous board's record while the next one loads, keeping its place", async () => {
+    await switchPool(new Promise(() => {}));
+
+    await waitFor(() => expect(fetchSpeedrunBoard).toHaveBeenCalledTimes(2));
+    const band = screen.getByTestId("wr-seed");
+    expect(band.classList).toContain("pending");
+    expect(band.getAttribute("aria-hidden")).toBe("true");
+    expect(band.hasAttribute("inert")).toBe(true);
+  });
+
+  it("hides it beside a load error", async () => {
+    await switchPool(Promise.reject(new Error("Boom")));
+
+    await screen.findByText("Boom");
+    expect(screen.queryByTestId("wr-seed")).toBeNull();
+  });
+});

@@ -243,7 +243,7 @@ Simpler than race mode:
 
 - `ACTIVE` on creation. `race_start` is sent immediately after `auth_ok` (no READY phase).
 - `FINISHED` on `finish_event` flag detection.
-- `ABANDONED` on explicit `POST /training/{id}/abandon`.
+- `ABANDONED` on explicit `POST /training/{id}/abandon` (`CANCELLED` without any progress), in one conditional update (`abandon_active_session`): a finish or an expiry committed after the request read the session stands, and the request answers 400 with that status.
 - Seeds are **not** marked CONSUMED for training (practice) sessions; Speedrun-mode sessions do consume theirs (see Seed Status). A per-user exclusion list avoids replaying seeds; when all seeds have been used, the list resets.
 
 ---

@@ -199,9 +199,19 @@
     </div>
   {/if}
 
-  {#if board?.record_seed && recordRun}
+  <!-- The record of the board on screen only: while the next one loads (its
+       category or filters may differ) the band keeps its place, hidden and
+       inert, so the toolbar and its open popover stay put; none beside a
+       load error. -->
+  {#if board?.record_seed && recordRun && !error}
     {@const seedHref = speedrunSeedHref(recordRun)}
-    <div class="wr-seed" data-testid="wr-seed">
+    <div
+      class="wr-seed"
+      class:pending={loading}
+      aria-hidden={loading ? "true" : undefined}
+      inert={loading}
+      data-testid="wr-seed"
+    >
       <span class="chip wr-chip">WR seed</span>
       <a class="seed" href={seedHref}>{board.record_seed.seed_number}</a>
       <span class="wr-time"><SpeedrunTime ms={recordRun.igt_ms} /></span>
@@ -553,6 +563,10 @@
   .subcategories .segmented button.on {
     background: var(--color-gold);
     color: var(--color-ink-on-accent);
+  }
+
+  .wr-seed.pending {
+    visibility: hidden;
   }
 
   .wr-seed {

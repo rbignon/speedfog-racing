@@ -2,6 +2,7 @@
   import type { WsParticipant } from "$lib/websocket";
   import { SKULL_PATH } from "$lib/components/SkullIcon.svelte";
   import ZoomableSvg from "./ZoomableSvg.svelte";
+  import FollowViewport from "./FollowViewport.svelte";
   import NodePopup from "./NodePopup.svelte";
   import {
     computeConnections,
@@ -53,6 +54,11 @@
     myParticipantId: string;
     /** No background and no label halo, for an OBS overlay. */
     transparent?: boolean;
+    /** Keep the runner in view, `maxLayers` wide, as the full map does in
+     * an OBS overlay (no zoom, pan or popups then). */
+    follow?: boolean;
+    maxLayers?: number;
+    labelFontSize?: number;
     onzonecodex?: (
       nodeId: string,
       displayName: string,
@@ -65,8 +71,15 @@
     participants,
     myParticipantId,
     transparent = false,
+    follow = false,
+    maxLayers = 5,
+    labelFontSize = LABEL_FONT_SIZE,
     onzonecodex,
   }: Props = $props();
+
+  // The follow viewport frames on the runners it is given: mine only, so
+  // the others' depth never moves my view.
+  let myself = $derived(participants.filter((p) => p.id === myParticipantId));
 
   // Parse once, reuse for layout and visibility
   let graph = $derived(parseDagGraph(graphJson));
@@ -313,13 +326,7 @@
 </script>
 
 {#if layout.nodes.length > 0}
-  <ZoomableSvg
-    width={layout.width}
-    height={layout.height}
-    {transparent}
-    onnodeclick={onNodeClick}
-    onpanstart={closePopup}
-  >
+  {#snippet dagContent()}
     <defs>
       <filter
         id="player-glow-prog"
@@ -488,7 +495,7 @@
 
         <!-- Death icon (opposite side of label, only for discovered nodes) -->
         {#if isDiscovered(node) && nodesWithDeaths.has(node.id)}
-          {@const ds = (LABEL_FONT_SIZE - 1) / 24}
+          {@const ds = (labelFontSize - 1) / 24}
           {@const baseline = labelAbove.has(node.id)
             ? node.y + nodeRadius(node) + LABEL_OFFSET_Y - 2
             : node.y - nodeRadius(node) - 6}
@@ -508,7 +515,7 @@
             x={labelX(node)}
             y={labelY(node)}
             text-anchor={labelAbove.has(node.id) ? "start" : "end"}
-            font-size={LABEL_FONT_SIZE}
+            font-size={labelFontSize}
             fill={LABEL_COLOR}
             class="dag-label"
             class:transparent-label={transparent}
@@ -534,7 +541,29 @@
         <title>{playerDot.displayName}</title>
       </circle>
     {/if}
-  </ZoomableSvg>
+  {/snippet}
+  {#if follow}
+    <FollowViewport
+      width={layout.width}
+      height={layout.height}
+      participants={myself}
+      nodeMap={nodeById}
+      {transparent}
+      {maxLayers}
+    >
+      {@render dagContent()}
+    </FollowViewport>
+  {:else}
+    <ZoomableSvg
+      width={layout.width}
+      height={layout.height}
+      {transparent}
+      onnodeclick={onNodeClick}
+      onpanstart={closePopup}
+    >
+      {@render dagContent()}
+    </ZoomableSvg>
+  {/if}
   {#if popupData}
     <NodePopup
       data={popupData}

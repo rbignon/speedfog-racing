@@ -84,6 +84,9 @@
         participants={dagParticipants}
         myParticipantId={dagParticipants[0].id}
         transparent
+        {follow}
+        {maxLayers}
+        {labelFontSize}
       />
     {:else}
       <MetroDagFull
