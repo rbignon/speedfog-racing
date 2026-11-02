@@ -2403,7 +2403,7 @@ export interface SpeedrunRun {
   weapon: number[] | null;
 }
 
-/** A recent run; `rank` carries its place on its board. */
+/** A recent personal best; `rank` carries its place on its Set Seed board. */
 export interface SpeedrunRecentRun extends SpeedrunRun {
   pool: string;
   category: string;

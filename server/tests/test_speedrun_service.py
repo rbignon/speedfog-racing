@@ -523,14 +523,14 @@ async def test_build_overview_recent_runs_and_places(async_session, pools):
         await _add_run(db, user=c, igt_ms=1050, minute=3, kind="event")
         await _add_run(db, user=a, igt_ms=2000, minute=4, pool="standard")
         await _add_run(db, user=b, igt_ms=1900, minute=5, pool="standard")
-        await _add_run(db, user=c, igt_ms=1500, minute=6, kind="daily", deathless=True)
+        await _add_run(db, user=c, igt_ms=1020, minute=6, kind="daily", deathless=True)
         await db.commit()
 
         ov = await build_overview(db, await load_counted_runs(db))
 
     assert (ov.runs, ov.players) == (6, 3)
-    assert [r.igt_ms for r in ov.recent_runs] == [1500, 1900, 2000, 1050, 1100]
-    assert [r.rank for r in ov.recent_runs] == [3, 1, 2, 2, 3]
+    assert [r.igt_ms for r in ov.recent_runs] == [1020, 1900, 2000, 1050, 1100]
+    assert [r.rank for r in ov.recent_runs] == [2, 1, 2, 2, 3]
     assert (ov.recent_runs[0].category, ov.recent_runs[0].deathless) == ("Sprint", True)
 
 
@@ -759,7 +759,51 @@ async def test_recent_run_place_is_on_the_set_board(async_session, pools):
     assert by_igt == {900: 1, 1000: 2, 1500: 2}
 
 
-async def test_recent_run_on_an_excluded_seed_has_no_place(async_session, pools):
+async def test_recent_runs_list_personal_bests_only(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        first = await _add_run(db, user=a, igt_ms=1000, minute=1)
+        await _add_run(db, user=a, igt_ms=1200, minute=2)
+        improved = await _add_run(db, user=a, igt_ms=900, minute=3)
+        await _add_run(db, user=a, igt_ms=900, minute=4)
+        other_category = await _add_run(db, user=a, igt_ms=2000, minute=5, pool="standard")
+        b_first = await _add_run(db, user=b, igt_ms=1100, minute=6, deathless=True)
+        b_replay = await _add_run(db, user=b, igt_ms=1050, minute=7, mode=RunMode.SET_SEED)
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    # A run is listed when it beats every earlier run of its player in its
+    # category: a's slower 1200 and the tie at 900 are not, a's first run in
+    # another category is, and so is b's first run, slower than a's best.
+    assert [r.run_id for r in ov.recent_runs] == [
+        b_replay.id,
+        b_first.id,
+        other_category.id,
+        improved.id,
+        first.id,
+    ]
+
+
+async def test_recent_personal_bests_span_run_kinds(async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        deathless = await _add_run(db, user=a, igt_ms=1000, minute=1, deathless=True)
+        await _add_session(
+            db, a, "sprint", RunMode.SET_SEED, 1050, finished_at=BASE + timedelta(minutes=2)
+        )
+        await _add_run(db, user=a, igt_ms=1020, minute=3, kind="daily")
+        await db.commit()
+
+        ov = await build_overview(db, await load_counted_runs(db))
+
+    # One board for every run type, deathless or not: the slower solo replay
+    # and Daily Seed do not beat the deathless race.
+    assert [r.run_id for r in ov.recent_runs] == [deathless.id]
+
+
+async def test_recent_run_on_an_excluded_seed_is_not_listed(async_session, pools):
     async with async_session() as db:
         a = await _user(db, "a")
         b = await _user(db, "b")
@@ -774,9 +818,9 @@ async def test_recent_run_on_an_excluded_seed_has_no_place(async_session, pools)
 
         ov = await build_overview(db, await load_counted_runs(db))
 
-    # The excluded seed's run is on no Set Seed board, so it has no place
-    # there, and the other run's place ignores it.
-    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1, 900: None}
+    # The excluded seed's run is on no Set Seed board, so it is no personal
+    # best there, and the other run's place ignores it.
+    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1}
 
 
 @pytest.fixture
@@ -1039,7 +1083,7 @@ async def test_set_seed_board_keeps_only_seeds_that_can_be_replayed(
     assert board("random") == {kept.id, purged.id, old_version.id, excluded.id}
 
 
-async def test_recent_run_on_a_purged_or_too_old_seed_has_no_place(
+async def test_recent_run_on_a_purged_or_too_old_seed_is_not_listed(
     async_session, pools, monkeypatch
 ):
     monkeypatch.setattr(settings, "set_seed_min_seed_date", BASE)
@@ -1053,7 +1097,7 @@ async def test_recent_run_on_a_purged_or_too_old_seed_has_no_place(
 
         ov = await build_overview(db, await load_counted_runs(db))
 
-    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1, 900: None, 800: None}
+    assert {r.igt_ms: r.rank for r in ov.recent_runs} == {1000: 1}
 
 
 async def test_record_seed_says_whether_the_record_can_be_replayed(async_session, pools):

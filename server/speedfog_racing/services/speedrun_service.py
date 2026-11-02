@@ -871,7 +871,14 @@ async def build_overview(
 ) -> SpeedrunOverviewResponse:
     categories = await load_categories(db, runs)
     names = {c.pool: c.name for c in categories}
-    recent = sorted(runs, key=lambda r: r.finished_at, reverse=True)[
+    # Recent runs are personal bests on their category's Set Seed board (every
+    # run type, Deathless filter off): each player's successive records there.
+    by_player: dict[tuple[str, UUID], list[CountedRun]] = {}
+    for run in runs:
+        if run.set_seed_block is None:
+            by_player.setdefault((run.category, run.user.id), []).append(run)
+    personal_bests = [pb for group in by_player.values() for pb in record_history(group)]
+    recent = sorted(personal_bests, key=lambda r: r.finished_at, reverse=True)[
         : settings.speedrun_recent_runs_count
     ]
     weapons = await _weapons_for(db, recent)
@@ -880,10 +887,7 @@ async def build_overview(
         SpeedrunRecentRun(
             **_run_fields(
                 run,
-                # A run on a seed blocked from Set Seed is on no Set Seed board.
-                None
-                if run.set_seed_block is not None
-                else place_of(
+                place_of(
                     run,
                     filter_board(
                         runs,

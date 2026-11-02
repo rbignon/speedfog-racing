@@ -1055,7 +1055,7 @@ class SpeedrunRun(BaseModel):
 
 
 class SpeedrunRecentRun(SpeedrunRun):
-    """A recent run; ``rank`` carries its place on its board."""
+    """A recent personal best; ``rank`` carries its place on its Set Seed board."""
 
     pool: str
     category: str
