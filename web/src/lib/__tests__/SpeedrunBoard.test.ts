@@ -355,3 +355,37 @@ describe("SpeedrunBoard Start a run window", () => {
     expect(within(modal).queryByRole("button", { name: "WR" })).toBeNull();
   });
 });
+
+describe("SpeedrunBoard record history", () => {
+  beforeEach(() => {
+    vi.mocked(fetchSpeedrunBoard).mockReset();
+  });
+
+  it("links each record's time to the run's own page", async () => {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [run(true)],
+      history: [
+        { ...run(true), run_id: "d1", daily_date: "2026-10-01" },
+        {
+          ...run(true),
+          run_id: "s1",
+          race_id: null,
+          race_name: null,
+          session_id: "s1",
+          igt_ms: 1_200_000,
+        },
+      ],
+    });
+    const { container } = mount({ ...PARAMS, view: "history-list" });
+
+    await waitFor(() =>
+      expect(container.querySelectorAll("a.time")).toHaveLength(2),
+    );
+    expect(
+      [...container.querySelectorAll("a.time")].map((a) =>
+        a.getAttribute("href"),
+      ),
+    ).toEqual(["/daily/2026-10-01", "/training/s1"]);
+  });
+});

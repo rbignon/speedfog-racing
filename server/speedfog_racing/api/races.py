@@ -1862,6 +1862,7 @@ async def apply_seed_reroll(
             seed_played=race.seed_played,
             seed_was_seen=race.seed_was_seen,
             rerolled_seed_ids=race.rerolled_seed_ids,
+            rerolled_without_report=race.rerolled_without_report,
             seeds_released_at=new_seeds_released_at,
         )
     )

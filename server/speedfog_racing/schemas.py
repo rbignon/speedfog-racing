@@ -548,7 +548,8 @@ class RaceDetailResponse(BaseModel):
     exclude_from_stats: bool = False
     mode: RunMode
     # Why the race's finishers count on no Speedrun board (a seen seed, a
-    # community race reset after its start), null when they can count.
+    # community race reset after its start or re-rolled without a seed
+    # report), null when they can count.
     unranked_reason: str | None = None
     participant_count: int
     seed_number: str | None = None

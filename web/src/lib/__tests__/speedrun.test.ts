@@ -21,7 +21,7 @@ import {
   speedrunGainParts,
   speedrunOverlayRows,
   speedrunOverlayUrl,
-  speedrunRaceHref,
+  speedrunRunHref,
   speedrunRaceNewHref,
   speedrunSeedHref,
   speedrunTimeParts,
@@ -91,14 +91,24 @@ describe("speedrunTimeParts", () => {
   });
 });
 
-describe("speedrunRaceHref", () => {
+describe("speedrunRunHref", () => {
   it("links a Daily Seed to its day and any other race to its page", () => {
-    expect(speedrunRaceHref({ race_id: "r1", daily_date: "2026-08-08" })).toBe(
-      "/daily/2026-08-08",
-    );
-    expect(speedrunRaceHref({ race_id: "r1", daily_date: null })).toBe(
-      "/race/r1",
-    );
+    expect(
+      speedrunRunHref({
+        race_id: "r1",
+        daily_date: "2026-08-08",
+        session_id: null,
+      }),
+    ).toBe("/daily/2026-08-08");
+    expect(
+      speedrunRunHref({ race_id: "r1", daily_date: null, session_id: null }),
+    ).toBe("/race/r1");
+  });
+
+  it("links a solo run to its session", () => {
+    expect(
+      speedrunRunHref({ race_id: null, daily_date: null, session_id: "s1" }),
+    ).toBe("/training/s1");
   });
 });
 

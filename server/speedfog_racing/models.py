@@ -420,6 +420,13 @@ class Race(Base):
     seed_was_seen: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # A reroll without a seed report gave up a seed this race could have
+    # counted on (neither SEEN when drawn nor played before a reset): its
+    # organizer may have looked at that seed first, so a community race counts
+    # on no board (see ``race_counts_on_boards``). Never cleared.
+    rerolled_without_report: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # The ids (as strings) of the seeds this race's rerolls gave up, oldest
     # first, NULL before its first reroll: its later rerolls never draw one
     # back, so they cannot cycle through the seeds it already rejected.

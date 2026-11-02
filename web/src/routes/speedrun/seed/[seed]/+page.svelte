@@ -13,7 +13,8 @@
   import { MetroDagFull } from "$lib/dag";
   import { formatIgt } from "$lib/dag/popupData";
   import { RaceReplay } from "$lib/replay";
-  import { speedrunRaceHref } from "$lib/speedrun";
+  import UserLink from "$lib/components/UserLink.svelte";
+  import { speedrunRunHref } from "$lib/speedrun";
 
   let { data } = $props();
 
@@ -76,6 +77,13 @@
     Object.fromEntries(seed.runs.map((r) => [r.run_id, r.rank] as const)),
   );
   let replays = $derived(seed.runs.filter((r) => !r.blind).length);
+  // The one ticked run, whose own page (race, Daily Seed or solo session)
+  // the map bar links; none while several runs are compared.
+  let tickedRun = $derived.by(() => {
+    if (selectedIds.size !== 1) return null;
+    const [id] = selectedIds;
+    return seed.runs.find((r) => r.run_id === id) ?? null;
+  });
 
   // The race page's selection: a click ticks one run alone (or clears it),
   // Ctrl+click adds or removes one. The set is replaced, never mutated.
@@ -111,6 +119,16 @@
       month: "short",
       day: "numeric",
       year: "numeric",
+    });
+  }
+
+  // A Daily Seed's day is its UTC rotation date, the same everywhere.
+  function formatRotationDay(date: string): string {
+    return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      timeZone: "UTC",
     });
   }
 </script>
@@ -158,9 +176,10 @@
             {seed.category_name}
             {#if seed.origin}
               · first played {#if seed.origin.race_id}in <a
-                  href={speedrunRaceHref({
+                  href={speedrunRunHref({
                     race_id: seed.origin.race_id,
                     daily_date: seed.origin.daily_date,
+                    session_id: null,
                   })}>{seed.origin.race_name}</a
                 >{:else}solo{/if} on {formatDay(seed.origin.played_at)}
             {/if}
@@ -178,17 +197,30 @@
 
       {#if seed.graph_json}
         {#if participants.length > 0}
-          <div class="dag-view-toggle">
-            <button
-              class="toggle-btn"
-              class:active={dagView === "map"}
-              onclick={() => (dagView = "map")}>Map</button
-            >
-            <button
-              class="toggle-btn"
-              class:active={dagView === "replay"}
-              onclick={() => (dagView = "replay")}>Replay</button
-            >
+          <div class="map-bar">
+            <div class="dag-view-toggle">
+              <button
+                class="toggle-btn"
+                class:active={dagView === "map"}
+                onclick={() => (dagView = "map")}>Map</button
+              >
+              <button
+                class="toggle-btn"
+                class:active={dagView === "replay"}
+                onclick={() => (dagView = "replay")}>Replay</button
+              >
+            </div>
+            {#if tickedRun}
+              {@const href = speedrunRunHref(tickedRun)}
+              <p class="ticked-run">
+                <UserLink user={tickedRun.user} /> played it
+                {#if tickedRun.daily_date}in the <a {href}
+                    >Daily Seed of {formatRotationDay(tickedRun.daily_date)}</a
+                  >{:else if tickedRun.race_id}in <a {href}
+                    >{tickedRun.race_name}</a
+                  >{:else}<a {href}>solo</a>{/if}
+              </p>
+            {/if}
           </div>
         {/if}
         <div class="dag-wrapper">
@@ -409,6 +441,28 @@
       left: 0;
       right: auto;
     }
+  }
+
+  .map-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+  }
+
+  .ticked-run {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-disabled);
+  }
+
+  .ticked-run a {
+    color: var(--color-purple);
+    text-decoration: none;
+  }
+
+  .ticked-run a:hover {
+    color: var(--color-purple-hover);
   }
 
   .dag-view-toggle {

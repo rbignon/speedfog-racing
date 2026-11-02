@@ -30,6 +30,7 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.services.speedrun_service import (
+    REROLLED_UNRANKED_REASON,
     RESET_UNRANKED_REASON,
     SEEN_SEED_UNRANKED_REASON,
     load_counted_runs,
@@ -692,6 +693,58 @@ async def test_normal_race_rerolls_never_draw_back_a_seed_they_gave_up(
     other = (await _create(test_client, {"pool_name": "sprint"})).json()["id"]
     assert (await _race_seed(async_session, other)).seed_number in gave_up
     assert await _seed_was_seen(async_session, other)
+
+
+@pytest.mark.parametrize(
+    ("mode", "kind", "reason"),
+    [
+        (RunMode.NORMAL, "community", REROLLED_UNRANKED_REASON),
+        (RunMode.SPEEDRUN, "community", REROLLED_UNRANKED_REASON),
+        (RunMode.NORMAL, "event", None),
+    ],
+)
+async def test_a_reroll_without_a_report_takes_a_community_race_off_the_boards(
+    test_client, async_session, pools, mode, kind, reason
+):
+    """Its organizer may have looked at the seed before giving it up (its
+    starting class, or its map in the race's data), so the next one is no
+    blind draw; an event race's reroll is the admins' call."""
+    race_id = await _ranked_race_in(async_session, mode, RaceStatus.SETUP)
+    if kind == "event":
+        async with async_session() as db:
+            race = await db.get(Race, UUID(race_id))
+            assert race is not None
+            race.event_id = (await _event(db)).id
+            await db.commit()
+
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) == reason
+
+
+async def test_a_reported_reroll_keeps_the_race_on_the_boards(test_client, async_session, pools):
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.SETUP)
+
+    rerolled = await _reroll(test_client, race_id, report_buggy=True, report_reason="Softlock")
+    assert rerolled.status_code == 200, rerolled.text
+    assert await _unranked_reason(test_client, race_id) is None
+
+    # A later reroll without a report gives up a seed that could count.
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) == REROLLED_UNRANKED_REASON
+
+
+async def test_only_the_first_reroll_off_a_played_seed_is_free(test_client, async_session, pools):
+    """A reset race's seed could not count, so the reroll that replaces it
+    gives the race its first countable seed, like a new race; the next reroll
+    gives that one up."""
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.RUNNING)
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) is None
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    assert await _unranked_reason(test_client, race_id) == REROLLED_UNRANKED_REASON
 
 
 async def test_a_community_race_on_a_seen_seed_says_it_counts_on_no_board(

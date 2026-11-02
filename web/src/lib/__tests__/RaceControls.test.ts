@@ -63,6 +63,40 @@ describe("RaceControls: Re-roll Seed", () => {
     );
     expect(hasButton(container, "Re-roll Seed")).toBe(true);
   });
+
+  const WARNING = /count on no Speedrun board/;
+
+  async function openReroll(r: RaceDetail) {
+    const view = mount(r, "setup");
+    const reroll = [...view.container.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Re-roll Seed"),
+    )!;
+    await fireEvent.click(reroll);
+    return view;
+  }
+
+  it("warns that a reroll without a report takes a community race off the boards", async () => {
+    const { getByLabelText, queryByText } = await openReroll(race("speedrun"));
+    expect(queryByText(WARNING)).not.toBeNull();
+
+    await fireEvent.click(getByLabelText("Report this seed as buggy"));
+    expect(queryByText(WARNING)).toBeNull();
+  });
+
+  it.each([
+    ["an event race", race("normal", { event_id: "event-1" })],
+    [
+      "a race already off the boards",
+      race("normal", { unranked_reason: "Reset race: ..." }),
+    ],
+    [
+      "a training pool's race",
+      race("normal", { pool_config: { type: "training" } as never }),
+    ],
+  ])("gives no board warning on %s", async (_label, r) => {
+    const { queryByText } = await openReroll(r);
+    expect(queryByText(WARNING)).toBeNull();
+  });
 });
 
 describe("RaceControls: Reset Race", () => {
@@ -85,6 +119,11 @@ describe("RaceControls: Reset Race", () => {
     ["a community race", race("normal"), true],
     ["an event race", race("normal", { event_id: "event-1" }), false],
     ["a Set Seed race", race("set_seed"), false],
+    [
+      "a training pool's race",
+      race("normal", { pool_config: { type: "training" } as never }),
+      false,
+    ],
   ])(
     "says whether resetting %s keeps it off the Speedrun boards",
     async (_label, r, warned) => {

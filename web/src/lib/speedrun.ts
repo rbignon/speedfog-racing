@@ -126,12 +126,16 @@ export function speedrunTimeParts(ms: number): SpeedrunTimePart[] {
   ];
 }
 
-/** A Daily Seed run links to its day, any other run to its race. */
-export function speedrunRaceHref(run: {
-  race_id: string;
+/** A run's own page: a Daily Seed run's day, a race run's race, a solo run's
+ * session. */
+export function speedrunRunHref(run: {
+  race_id: string | null;
   daily_date: string | null;
+  session_id: string | null;
 }): string {
-  return run.daily_date ? `/daily/${run.daily_date}` : `/race/${run.race_id}`;
+  if (run.daily_date) return `/daily/${run.daily_date}`;
+  if (run.race_id) return `/race/${run.race_id}`;
+  return `/training/${run.session_id}`;
 }
 
 /** A seed's page (`/speedrun/seed/<n>`), focused on one of its runs when

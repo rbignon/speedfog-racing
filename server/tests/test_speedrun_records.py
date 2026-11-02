@@ -172,6 +172,7 @@ def test_only_races_that_can_count_schedule_the_check():
             event_id=None,
             seed_was_seen=False,
             seed_played=False,
+            rerolled_without_report=False,
             is_public=False,
             discord_event_id=None,
         )
@@ -190,6 +191,10 @@ def test_only_races_that_can_count_schedule_the_check():
         (race(seed_played=True), False),
         (race(event_id=uuid.uuid4(), seed_played=True), True),
         (race(daily_date=object(), seed_played=True), True),
+        # So does an unreported reroll; the admins reroll event races.
+        (race(rerolled_without_report=True), False),
+        (race(mode=RunMode.SPEEDRUN, rerolled_without_report=True), False),
+        (race(event_id=uuid.uuid4(), rerolled_without_report=True), True),
     ]
     for r, expected in cases:
         with patch(

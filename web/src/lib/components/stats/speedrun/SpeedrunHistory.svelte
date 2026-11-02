@@ -4,7 +4,7 @@
     historyTimeline,
     speedrunDay,
     speedrunDaysLater,
-    speedrunSeedHref,
+    speedrunRunHref,
     type SpeedrunView,
   } from "$lib/speedrun";
   import SpeedrunHistoryChart from "./SpeedrunHistoryChart.svelte";
@@ -84,7 +84,7 @@
             {entry.kind === "new"
               ? "set a new record time of"
               : "improved their time to"}
-            <a class="time" href={speedrunSeedHref(entry.run)}
+            <a class="time" href={speedrunRunHref(entry.run)}
               ><SpeedrunTime ms={entry.run.igt_ms} /></a
             > !
           </p>

@@ -38,10 +38,22 @@
   let canReset = $derived(race.mode !== "speedrun");
   // A reset community race then counts on no Speedrun board until a reroll
   // (the server's race_unranked_reason); an event race's reset is the admins' call.
+  // A training pool's races count on no board in the first place.
+  let onBoardsPool = $derived(race.pool_config?.type !== "training");
   let resetLeavesBoards = $derived(
     race.mode === "normal" &&
       race.daily_date === null &&
-      race.event_id === null,
+      race.event_id === null &&
+      onBoardsPool,
+  );
+  // A reroll without a seed report takes a community race off the Speedrun
+  // boards (the server's race_unranked_reason), unless the race already
+  // counts on none: then the reroll gives it its first countable seed.
+  let rerollLeavesBoards = $derived(
+    race.daily_date === null &&
+      race.event_id === null &&
+      !race.unranked_reason &&
+      onBoardsPool,
   );
 
   let reportBuggy = $state(false);
@@ -489,6 +501,11 @@
         <input type="checkbox" bind:checked={reportBuggy} />
         Report this seed as buggy
       </label>
+      {#if rerollLeavesBoards && !reportBuggy}
+        <p class="report-hint">
+          Without a seed report, this race will count on no Speedrun board.
+        </p>
+      {/if}
       {#if reportBuggy}
         <input
           class="report-reason"
@@ -631,6 +648,12 @@
   .report-check input[type="checkbox"] {
     accent-color: var(--color-gold);
     cursor: pointer;
+  }
+
+  .report-hint {
+    margin: 0 0 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-warning);
   }
 
   .report-reason {

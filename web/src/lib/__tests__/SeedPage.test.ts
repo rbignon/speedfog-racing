@@ -165,6 +165,56 @@ describe("seed page: the run it was opened on", () => {
   });
 });
 
+describe("seed page: the ticked run's own page", () => {
+  function runLink(container: HTMLElement): HTMLAnchorElement | null {
+    return container.querySelector(".ticked-run a:not(.user-link)");
+  }
+
+  it("links a ticked race run to its race", () => {
+    const { container } = renderPage(seed(), "p-2");
+
+    const line = container.querySelector(".ticked-run");
+    expect(line?.textContent?.replace(/\s+/g, " ").trim()).toBe(
+      "bob played it in Race one",
+    );
+    expect(runLink(container)?.getAttribute("href")).toBe("/race/r1");
+  });
+
+  it("links a ticked solo run to its session and a Daily Seed run to its day", () => {
+    const solo = renderPage(seed(), "s-1");
+    expect(solo.container.querySelector(".ticked-run")?.textContent).toContain(
+      "played it solo",
+    );
+    expect(runLink(solo.container)?.getAttribute("href")).toBe("/training/s-1");
+    solo.unmount();
+
+    const daily = {
+      ...seedRun("d-1", "dave", 1_400_000, true),
+      run_type: "daily" as const,
+      daily_date: "2026-10-01",
+    };
+    const day = renderPage(seed({ runs: [daily] }), "d-1");
+    expect(day.container.querySelector(".ticked-run")?.textContent).toContain(
+      "played it in the Daily Seed of Oct 1, 2026",
+    );
+    expect(runLink(day.container)?.getAttribute("href")).toBe(
+      "/daily/2026-10-01",
+    );
+  });
+
+  it("shows no line unless exactly one run is ticked", async () => {
+    const none = renderPage(seed());
+    expect(none.container.querySelector(".ticked-run")).toBeNull();
+    none.unmount();
+
+    const { container } = renderPage(seed(), "p-2");
+    const alice = [...container.querySelectorAll("li.participant")][0];
+    await fireEvent.click(alice, { ctrlKey: true });
+    expect(selectedNames(container)).toHaveLength(2);
+    expect(container.querySelector(".ticked-run")).toBeNull();
+  });
+});
+
 describe("seed page: the run list's places", () => {
   it("shows the server's ranks: shared on a tie, none on a slower run", () => {
     const { container } = renderPage(
