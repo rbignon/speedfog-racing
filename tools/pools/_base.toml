@@ -71,9 +71,3 @@ reduce_upgrade_cost = true
 dlc = true
 item_preset = true
 allcraft = true
-
-[plugin.halloween]
-enabled = true
-ambushes = false
-greeters = false
-jumpscares = 0  # explicit: gameplay, not theme (writers before the opt-in default armed 3)
