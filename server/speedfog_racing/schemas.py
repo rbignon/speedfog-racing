@@ -518,6 +518,10 @@ class PendingInviteResponse(BaseModel):
     token: str | None = None
 
 
+# Why a race's finishers count on no Speedrun board (``race_unranked_code``).
+UnrankedCode = Literal["seen_seed", "reset", "rerolled"]
+
+
 class RaceDetailResponse(BaseModel):
     """Detailed race information with participants."""
 
@@ -551,6 +555,8 @@ class RaceDetailResponse(BaseModel):
     # community race reset after its start or re-rolled without a seed
     # report), null when they can count.
     unranked_reason: str | None = None
+    # The same reason as a code, for the web to branch on.
+    unranked_code: UnrankedCode | None = None
     participant_count: int
     seed_number: str | None = None
     seed_total_layers: int | None

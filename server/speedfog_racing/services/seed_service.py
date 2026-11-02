@@ -524,10 +524,10 @@ async def reroll_seed_for_race(
     played). When ``reporter_id`` is provided, it is marked REPORTED instead
     and the report fields are populated. A DISCARDED seed stays DISCARDED.
 
-    Without ``reporter_id``, giving up a seed the race could count on (neither
-    SEEN when drawn nor played) sets ``Race.rerolled_without_report``, which
-    keeps a community race off the Speedrun boards for good: its organizer
-    may have looked at that seed first (``race_unranked_reason``).
+    Without ``reporter_id``, giving up a seed that was not SEEN when drawn
+    sets ``Race.rerolled_without_report``, which keeps a community race off
+    the Speedrun boards for good: its organizer may have looked at that seed
+    first (``race_unranked_reason``).
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
 
@@ -580,10 +580,11 @@ async def reroll_seed_for_race(
 
     # A new list, so the ORM sees the JSON column change.
     race.rerolled_seed_ids = [*rerolled, str(old_seed.id)]
-    # Giving up a seed the race could have counted on, unreported: the
-    # organizer may have looked at it first. A SEEN or played seed could not
-    # count, so the reroll off it only gives the race its first countable seed.
-    if reporter_id is None and not race.seed_was_seen and not race.seed_played:
+    # Giving up a seed unreported: the organizer may have looked at it first.
+    # A SEEN seed could not count, so the reroll off it only gives the race
+    # its first countable seed. A played one could not either, but start,
+    # reset and reroll would fish as well as any reroll.
+    if reporter_id is None and not race.seed_was_seen:
         race.rerolled_without_report = True
 
     # Assign new seed

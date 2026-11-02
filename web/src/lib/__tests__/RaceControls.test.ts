@@ -14,6 +14,8 @@ function race(mode: RunMode, extra: Partial<RaceDetail> = {}): RaceDetail {
     open_registration: false,
     max_participants: null,
     participants: [],
+    unranked_reason: null,
+    unranked_code: null,
     ...extra,
   } as unknown as RaceDetail;
 }
@@ -86,8 +88,18 @@ describe("RaceControls: Re-roll Seed", () => {
   it.each([
     ["an event race", race("normal", { event_id: "event-1" })],
     [
-      "a race already off the boards",
-      race("normal", { unranked_reason: "Reset race: ..." }),
+      "a race already off the boards for a reroll",
+      race("normal", {
+        unranked_code: "rerolled",
+        unranked_reason: "Re-rolled race: ...",
+      }),
+    ],
+    [
+      "a race on a seen seed (its reroll is free)",
+      race("normal", {
+        unranked_code: "seen_seed",
+        unranked_reason: "Seen seed: ...",
+      }),
     ],
     [
       "a training pool's race",
@@ -96,6 +108,16 @@ describe("RaceControls: Re-roll Seed", () => {
   ])("gives no board warning on %s", async (_label, r) => {
     const { queryByText } = await openReroll(r);
     expect(queryByText(WARNING)).toBeNull();
+  });
+
+  it("warns on a reset race, which only a reported reroll puts back", async () => {
+    const { queryByText } = await openReroll(
+      race("normal", {
+        unranked_code: "reset",
+        unranked_reason: "Reset race: ...",
+      }),
+    );
+    expect(queryByText(WARNING)).not.toBeNull();
   });
 });
 
@@ -120,6 +142,14 @@ describe("RaceControls: Reset Race", () => {
     ["an event race", race("normal", { event_id: "event-1" }), false],
     ["a Set Seed race", race("set_seed"), false],
     [
+      "a race already off for a reroll",
+      race("normal", {
+        unranked_code: "rerolled",
+        unranked_reason: "Re-rolled race: ...",
+      }),
+      false,
+    ],
+    [
       "a training pool's race",
       race("normal", { pool_config: { type: "training" } as never }),
       false,
@@ -133,9 +163,9 @@ describe("RaceControls: Reset Race", () => {
         b.textContent?.includes("Reset Race"),
       )!;
       await fireEvent.click(reset);
-      expect(
-        getByText(/^Reset this race\?/).textContent?.includes("Speedrun board"),
-      ).toBe(warned);
+      const message = getByText(/^Reset this race\?/).textContent ?? "";
+      expect(message.includes("Speedrun board")).toBe(warned);
+      expect(message.includes("re-rolled with a seed report")).toBe(warned);
     },
   );
 

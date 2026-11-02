@@ -36,23 +36,30 @@
   );
   // A reset would replay the seed and count the second attempt as blind.
   let canReset = $derived(race.mode !== "speedrun");
-  // A reset community race then counts on no Speedrun board until a reroll
-  // (the server's race_unranked_reason); an event race's reset is the admins' call.
+  // Whether the race could still count on the Speedrun boards after a reroll
+  // with a seed report: it counts today, or a reset already keeps it off (the
+  // server's race_unranked_code). A seen seed's reroll is free, and a race off
+  // for a reroll stays off for good. Missing on an older server: then warn.
+  let reportCanKeepOnBoards = $derived(
+    !race.unranked_code || race.unranked_code === "reset",
+  );
   // A training pool's races count on no board in the first place.
   let onBoardsPool = $derived(race.pool_config?.type !== "training");
+  // A reset community race then counts on no Speedrun board until a reroll
+  // with a seed report; an event race's reset is the admins' call.
   let resetLeavesBoards = $derived(
     race.mode === "normal" &&
       race.daily_date === null &&
       race.event_id === null &&
-      onBoardsPool,
+      onBoardsPool &&
+      reportCanKeepOnBoards,
   );
   // A reroll without a seed report takes a community race off the Speedrun
-  // boards (the server's race_unranked_reason), unless the race already
-  // counts on none: then the reroll gives it its first countable seed.
+  // boards, or keeps a reset one off.
   let rerollLeavesBoards = $derived(
     race.daily_date === null &&
       race.event_id === null &&
-      !race.unranked_reason &&
+      reportCanKeepOnBoards &&
       onBoardsPool,
   );
 
@@ -159,7 +166,7 @@
     requestConfirm({
       title: "Reset Race",
       message: resetLeavesBoards
-        ? "Reset this race? All participant progress will be cleared, and the race will count on no Speedrun board until its seed is re-rolled."
+        ? "Reset this race? All participant progress will be cleared, and the race will count on no Speedrun board unless its seed is re-rolled with a seed report."
         : "Reset this race? All participant progress will be cleared.",
       confirmLabel: "Reset",
       danger: true,

@@ -526,14 +526,26 @@ async def _unranked_reason(client: AsyncClient, race_id: str) -> str | None:
     return reason
 
 
+async def _unranked_code(client: AsyncClient, race_id: str) -> str | None:
+    response = await client.get(f"/api/races/{race_id}")
+    assert response.status_code == 200, response.text
+    code: str | None = response.json()["unranked_code"]
+    return code
+
+
 @pytest.mark.parametrize(
-    ("kind", "reason"), [("community", RESET_UNRANKED_REASON), ("event", None)]
+    ("kind", "after_reset", "after_reroll"),
+    [
+        ("community", RESET_UNRANKED_REASON, REROLLED_UNRANKED_REASON),
+        ("event", None, None),
+    ],
 )
-async def test_a_reset_community_race_counts_on_no_board_until_a_reroll(
-    test_client, async_session, pools, kind, reason
+async def test_a_reset_community_race_counts_on_no_board_until_a_reported_reroll(
+    test_client, async_session, pools, kind, after_reset, after_reroll
 ):
     """Its runners would replay a seed they played; an event race's reset is
-    the admins' call. A reroll gives the race a seed nobody played."""
+    the admins' call. An unreported reroll gives the race a new seed its
+    organizer could fish for (start, reset, reroll), so it stays off."""
     race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.RUNNING)
     if kind == "event":
         async with async_session() as db:
@@ -545,10 +557,40 @@ async def test_a_reset_community_race_counts_on_no_board_until_a_reroll(
 
     reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
     assert reset.status_code == 200, reset.text
-    assert await _unranked_reason(test_client, race_id) == reason
+    assert await _unranked_reason(test_client, race_id) == after_reset
 
     assert (await _reroll(test_client, race_id)).status_code == 200
-    assert await _unranked_reason(test_client, race_id) is None
+    assert await _unranked_reason(test_client, race_id) == after_reroll
+
+
+async def test_a_race_off_for_a_reroll_stays_off_through_a_reset(test_client, async_session, pools):
+    """The unreported reroll is for good: once the race is reset, the reason
+    it shows is still the reroll, so no seed report is suggested in vain."""
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.SETUP)
+    assert (await _reroll(test_client, race_id)).status_code == 200
+    async with async_session() as db:
+        race = await db.get(Race, UUID(race_id))
+        assert race is not None
+        race.status = RaceStatus.RUNNING
+        race.started_at = datetime.now(UTC)
+        await db.commit()
+
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+    assert await _unranked_code(test_client, race_id) == "rerolled"
+
+
+async def test_a_reported_reroll_puts_a_reset_race_back_on_the_boards(
+    test_client, async_session, pools
+):
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.RUNNING)
+    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
+    assert reset.status_code == 200, reset.text
+    assert await _unranked_code(test_client, race_id) == "reset"
+
+    rerolled = await _reroll(test_client, race_id, report_buggy=True, report_reason="Softlock")
+    assert rerolled.status_code == 200, rerolled.text
+    assert await _unranked_code(test_client, race_id) is None
 
 
 @pytest.mark.parametrize("mode", ["normal", "speedrun"])
@@ -719,6 +761,7 @@ async def test_a_reroll_without_a_report_takes_a_community_race_off_the_boards(
 
     assert (await _reroll(test_client, race_id)).status_code == 200
     assert await _unranked_reason(test_client, race_id) == reason
+    assert await _unranked_code(test_client, race_id) == ("rerolled" if reason else None)
 
 
 async def test_a_reported_reroll_keeps_the_race_on_the_boards(test_client, async_session, pools):
@@ -729,20 +772,6 @@ async def test_a_reported_reroll_keeps_the_race_on_the_boards(test_client, async
     assert await _unranked_reason(test_client, race_id) is None
 
     # A later reroll without a report gives up a seed that could count.
-    assert (await _reroll(test_client, race_id)).status_code == 200
-    assert await _unranked_reason(test_client, race_id) == REROLLED_UNRANKED_REASON
-
-
-async def test_only_the_first_reroll_off_a_played_seed_is_free(test_client, async_session, pools):
-    """A reset race's seed could not count, so the reroll that replaces it
-    gives the race its first countable seed, like a new race; the next reroll
-    gives that one up."""
-    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.RUNNING)
-    reset = await test_client.post(f"/api/races/{race_id}/reset", headers=_auth("org"))
-    assert reset.status_code == 200, reset.text
-
-    assert (await _reroll(test_client, race_id)).status_code == 200
-    assert await _unranked_reason(test_client, race_id) is None
     assert (await _reroll(test_client, race_id)).status_code == 200
     assert await _unranked_reason(test_client, race_id) == REROLLED_UNRANKED_REASON
 

@@ -109,6 +109,7 @@ from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.speedrun_service import (
     _is_training,
     _pool_config,
+    race_unranked_code,
     race_unranked_reason,
 )
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
@@ -214,6 +215,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         exclude_from_stats=race.exclude_from_stats,
         mode=race.mode,
         unranked_reason=race_unranked_reason(race),
+        unranked_code=race_unranked_code(race),
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
         seed_total_layers=race.seed.total_layers if race.seed else None,

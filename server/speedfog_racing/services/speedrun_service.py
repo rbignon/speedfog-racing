@@ -43,6 +43,7 @@ from speedfog_racing.schemas import (
     SpeedrunRun,
     SpeedrunSeedRun,
     SpeedrunSeedStats,
+    UnrankedCode,
     UserResponse,
     as_aware_utc,
 )
@@ -198,26 +199,41 @@ REROLLED_UNRANKED_REASON = (
 )
 
 
+_UNRANKED_REASONS: dict[UnrankedCode, str] = {
+    "seen_seed": SEEN_SEED_UNRANKED_REASON,
+    "reset": RESET_UNRANKED_REASON,
+    "rerolled": REROLLED_UNRANKED_REASON,
+}
+
+
 def race_unranked_reason(race: Race) -> str | None:
+    """``race_unranked_code`` as players read it, None when the race can count."""
+    code = race_unranked_code(race)
+    return _UNRANKED_REASONS[code] if code is not None else None
+
+
+def race_unranked_code(race: Race) -> UnrankedCode | None:
     """Why a race's finishers count on no board, None when they can count (its
-    seed's pool and layer count still decide which board). Its seed was SEEN
-    when drawn (``Race.seed_was_seen``: a community race may draw one, and an
-    event race is created as a normal race and attached to its event later),
-    or it is a community race (normal mode, neither a Daily Seed nor an event
-    race) reset after its start, so its runners replay a seed they played
-    (``Race.seed_played``, cleared by a reroll; an event race's reset is the
-    admins' call), or a community race (any mode) whose seed was re-rolled
+    seed's pool and layer count still decide which board). A community race
+    (any mode, neither a Daily Seed nor an event race) whose seed was re-rolled
     without a seed report (``Race.rerolled_without_report``): its organizer
     may have looked at the seeds it gave up, starting class or map, before
-    keeping one (the admins reroll Daily Seeds and event races). Python twin
-    of ``counts_on_boards_clause``; keep them in step."""
-    if race.seed_was_seen:
-        return SEEN_SEED_UNRANKED_REASON
+    keeping one (the admins reroll Daily Seeds and event races). Its seed was
+    SEEN when drawn (``Race.seed_was_seen``: a community race may draw one,
+    and an event race is created as a normal race and attached to its event
+    later). A community race in normal mode reset after its start, so its
+    runners replay a seed they played (``Race.seed_played``; an event race's
+    reset is the admins' call; a reroll clears it, and only a reported one
+    puts the race back on the boards). The reroll comes first since nothing
+    clears it: a race shows the reason that only ends with the race. Python
+    twin of ``counts_on_boards_clause``; keep them in step."""
     community = race.daily_date is None and race.event_id is None
-    if race.seed_played and race.mode == RunMode.NORMAL and community:
-        return RESET_UNRANKED_REASON
     if race.rerolled_without_report and community:
-        return REROLLED_UNRANKED_REASON
+        return "rerolled"
+    if race.seed_was_seen:
+        return "seen_seed"
+    if race.seed_played and race.mode == RunMode.NORMAL and community:
+        return "reset"
     return None
 
 

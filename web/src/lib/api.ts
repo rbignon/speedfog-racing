@@ -184,6 +184,9 @@ export interface PendingInvite {
   token: string | null;
 }
 
+/** Why a race counts on no Speedrun board (the server's race_unranked_code). */
+export type UnrankedCode = "seen_seed" | "reset" | "rerolled";
+
 export interface RaceDetail extends Race {
   seed_number: string | null;
   seed_total_layers: number | null;
@@ -196,6 +199,8 @@ export interface RaceDetail extends Race {
    * community race reset after its start or re-rolled without a seed report),
    * null when they can count. */
   unranked_reason: string | null;
+  /** The same reason as a code. */
+  unranked_code: UnrankedCode | null;
   /** The slug of the event the race is attached to (`event_id`): clients
    * address events by slug, and no public endpoint resolves an event id. */
   event_slug: string | null;
