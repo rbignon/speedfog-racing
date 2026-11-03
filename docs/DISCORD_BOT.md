@@ -82,7 +82,7 @@ DISCORD_CHANNEL_ID=123456789012345678
 # Used for race URLs in notifications and scheduled events
 BASE_URL=https://your-domain.com
 
-# events.malenia.win calendar (optional): public scheduled races are mirrored there
+# events.malenia.win calendar (optional): public scheduled normal races are mirrored there
 MALENIA_API_TOKEN=your-bearer-token
 # Defaults to https://events.malenia.win/api; override only if needed
 MALENIA_API_BASE=https://events.malenia.win/api
@@ -123,7 +123,7 @@ When `DISCORD_WEBHOOK_URL` is set (or, for speedrun and Set Seed races and recor
 - **Race finished**: with podium (top 3 times; normal races only, a Daily Seed's podium goes in the next day's post)
 - **Speedrun record**: "New <category> · Set Seed record" (or "Random Seed record") each time a finished race or ranked solo session sets a strictly faster time than every other counted run of that board (a tie is not a record). Fields: Time, Runner, Seed (first 6 characters), Previous ("<time> by <name>" or "First record") and Run (Blind or Replay); the title links to the seed page focused on the run. No role ping. One announcement per board and finish (a run that is a record on both boards posts twice). See `docs/SPEEDRUN.md`.
 
-Speedrun and Set Seed races (`Race.mode`, see `docs/SPEEDRUN.md`) are announced at their creation only: no started or finished embed, and no Discord scheduled event (Bot, below), so their records are the only follow-up posts. Their created embed, and every speedrun record, goes to `DISCORD_SPEEDRUN_WEBHOOK_URL` when it is set, so the community race channel stays free of them; without it they go to `DISCORD_WEBHOOK_URL`. Either way a speedrun or Set Seed race never mentions `@Runner` (its created embed switches mentions off).
+Speedrun and Set Seed races (`Race.mode`, see `docs/SPEEDRUN.md`) are announced at their creation only: no started or finished embed, and no calendar event (neither a Discord scheduled event nor an events.malenia.win one, Bot below), so their records are the only follow-up posts. Their created embed, and every speedrun record, goes to `DISCORD_SPEEDRUN_WEBHOOK_URL` when it is set, so the community race channel stays free of them; without it they go to `DISCORD_WEBHOOK_URL`. Either way a speedrun or Set Seed race never mentions `@Runner` (its created embed switches mentions off).
 
 ### Solo/Training Live Notifications (Webhook)
 
@@ -139,7 +139,7 @@ It also hears about the Daily Seed's pools: a "Daily Seed not created: no fresh 
 
 ### Scheduled Events (Bot)
 
-When `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set, public normal races with a scheduled time automatically create Discord scheduled events (a speedrun or Set Seed race gets none; an event created before that rule keeps following the table):
+When `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set, public normal races with a scheduled time automatically create Discord scheduled events (a speedrun or Set Seed race gets none):
 
 | Race action                    | Discord event                        |
 | ------------------------------ | ------------------------------------ |
@@ -152,7 +152,7 @@ When `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set, public normal races wit
 
 Events link to the race page URL.
 
-The same lifecycle also publishes public scheduled races to the community calendar at events.malenia.win, when `MALENIA_API_TOKEN` is set, speedrun and Set Seed races included. Both providers are driven together by `services/calendar_sync.py`, so a race create, reschedule, or delete updates the Discord event and the malenia event in one place. malenia has no active/completed status, so only create/update/delete are mirrored (the Discord-only ACTIVE/COMPLETED transitions on start/finish have no counterpart).
+The same lifecycle also publishes public scheduled races to the community calendar at events.malenia.win, when `MALENIA_API_TOKEN` is set, under the same rule (normal races only). Both providers are driven together by `services/calendar_sync.py`, so a race create, reschedule, or delete updates the Discord event and the malenia event in one place. malenia has no active/completed status, so only create/update/delete are mirrored (the Discord-only ACTIVE/COMPLETED transitions on start/finish have no counterpart).
 
 The event's participant list is kept in sync with the race participants: joining, accepting an invite, or being added to a public scheduled race adds the runner to the malenia event, leaving or being removed takes them off. Unknown Twitch logins are created on malenia automatically, so every participant resolves. Participant sync is malenia-only (Discord scheduled events have no bot-addable participant list).
 
@@ -180,7 +180,7 @@ When `DISCORD_GUILD_ID` and `DISCORD_RUNNER_ROLE_ID` are set:
 
 - Check that `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` are set
 - The race must be **public** and have a **scheduled_at** time
-- The race must be a **normal** race: a speedrun or Set Seed race gets none
+- The race must be a **normal** race: a speedrun or Set Seed race gets none (nor on events.malenia.win)
 - Check server logs for Discord API errors
 
 **Webhook notifications not posting:**

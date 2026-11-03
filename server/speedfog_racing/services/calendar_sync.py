@@ -40,24 +40,17 @@ _LOAD_OPTS = (
 
 
 def _qualifies(race: Race) -> bool:
-    return bool(race.is_public and race.scheduled_at)
+    # A speedrun or Set Seed race is announced by its Discord creation post alone.
+    return bool(race.is_public and race.scheduled_at and race.mode == RunMode.NORMAL)
 
 
 async def _create_on_providers(session: AsyncSession, race: Race) -> None:
-    """Create the event on both providers, persist ids, and seed malenia participants.
-
-    A speedrun or Set Seed race gets the malenia event only: on Discord it is
-    announced by its creation post alone.
-    """
+    """Create the event on both providers, persist ids, and seed malenia participants."""
     assert race.scheduled_at is not None  # guaranteed by _qualifies
     mode_display = format_pool_display_name(race.seed.pool if race.seed else None)
     participant_logins = [p.user.twitch_username for p in race.participants]
-    discord_id = (
-        await create_scheduled_event(
-            race_name=race.name, race_id=str(race.id), scheduled_at=race.scheduled_at
-        )
-        if race.mode == RunMode.NORMAL
-        else None
+    discord_id = await create_scheduled_event(
+        race_name=race.name, race_id=str(race.id), scheduled_at=race.scheduled_at
     )
     malenia_id = await create_calendar_event(
         race_name=race.name,

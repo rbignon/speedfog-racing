@@ -110,23 +110,19 @@ async def test_create_public_scheduled_creates_both_and_persists(async_session):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
-async def test_create_ranked_race_skips_only_the_discord_event(async_session, mode):
-    """A speedrun or Set Seed race gets no Discord scheduled event; the
-    malenia calendar still lists it."""
+async def test_ranked_race_gets_no_calendar_event(async_session, mode):
+    """A speedrun or Set Seed race is on neither calendar, at its creation or
+    after a PATCH, though it is public and scheduled."""
     from speedfog_racing.services import calendar_sync
 
     race_id = await _make_race(async_session, mode=mode)
     with _patch_providers(async_session) as (_m, mc_d, mc_m, *_):
-        mc_d.return_value = "discord-id"
-        mc_m.return_value = "malenia-id"
         await calendar_sync.create_calendar_events(race_id)
+        await calendar_sync.update_calendar_events(
+            race_id, scheduled_changed=True, metadata_changed=True
+        )
         mc_d.assert_not_called()
-        mc_m.assert_called_once()
-
-    async with async_session() as db:
-        race = await db.get(Race, race_id)
-        assert race.discord_event_id is None
-        assert race.malenia_event_id == "malenia-id"
+        mc_m.assert_not_called()
 
 
 @pytest.mark.asyncio
