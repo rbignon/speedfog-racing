@@ -2265,6 +2265,132 @@ def test_training_stale_save_self_heals(training_ws_client, training_session_dat
         assert resp["participants"][0]["zone_history"] is None
 
 
+# =============================================================================
+# Set Seed reset: the installed pack plays a fresh attempt
+# =============================================================================
+
+
+def test_a_set_seed_reset_replays_the_run_on_the_same_pack(
+    training_ws_client, training_session_data, async_session
+):
+    """The reset drops the mod with 1000, which it reconnects after; the pack's
+    token authenticates again and the server waits for a New Game: the old
+    save is refused until a new character's IGT comes in."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from starlette.websockets import WebSocketDisconnect
+
+    sid = training_session_data["session_id"]
+    _set_session_mode(async_session, sid, RunMode.SET_SEED)
+    auth = {
+        "type": "auth",
+        "mod_token": training_session_data["mod_token"],
+        "protocol_version": "1.9",
+    }
+    headers = {"Authorization": f"Bearer {training_session_data['api_token']}"}
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+            ws.send_json(auth)
+            assert ws.receive_json()["type"] == "auth_ok"
+            assert ws.receive_json()["type"] == "race_start"
+            ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+            assert ws.receive_json()["type"] == "leaderboard_update"
+
+            # The reset waits for the mod's handler, which ends once the mod
+            # answers the close: post it aside and play the mod here.
+            pending = pool.submit(
+                training_ws_client.post, f"/api/training/{sid}/reset", headers=headers
+            )
+            with pytest.raises(WebSocketDisconnect) as closed:
+                for _ in range(10):
+                    ws.receive_json()
+            assert closed.value.code == 1000
+        response = pending.result(timeout=5)
+        assert response.status_code == 200, response.text
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json(auth)
+        assert ws.receive_json()["type"] == "auth_ok"
+        assert ws.receive_json()["type"] == "race_start"
+        # Still on the save of the attempt the reset dropped.
+        ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 3})
+        refused = ws.receive_json()
+        assert (refused["type"], refused["code"], refused["message"]) == (
+            "error",
+            "fresh_save_required",
+            "Please start a New Game",
+        )
+        # The new character.
+        ws.send_json({"type": "status_update", "igt_ms": 500, "death_count": 0})
+        accepted = ws.receive_json()
+        assert accepted["type"] == "leaderboard_update"
+        assert accepted["participants"][0]["igt_ms"] == 500
+
+    async def _check() -> None:
+        async with async_session() as db:
+            session = await db.get(TrainingSession, uuid.UUID(sid))
+            assert session is not None
+            assert session.status == TrainingSessionStatus.ACTIVE
+            assert (session.igt_ms, session.death_count) == (500, 0)
+            assert session.zone_history == [
+                {"node_id": "limgrave_start", "igt_ms": 0, "type": "spawn"}
+            ]
+
+    asyncio.run(_check())
+
+
+def test_a_set_seed_reset_clears_the_run_for_its_spectators(
+    training_ws_client, training_session_data, async_session
+):
+    """The run's page empties at once: the progress back to zero, then an
+    empty zone history (a client keeps the one it holds when a
+    leaderboard_update carries none)."""
+    sid = training_session_data["session_id"]
+
+    async def _played() -> None:
+        async with async_session() as db:
+            session = await db.get(TrainingSession, uuid.UUID(sid))
+            assert session is not None
+            session.mode = RunMode.SET_SEED
+            session.igt_ms = 90_000
+            session.death_count = 4
+            session.zone_history = [
+                {"node_id": "limgrave_start", "igt_ms": 0, "type": "spawn"},
+                {"node_id": "stormveil_01", "igt_ms": 60_000},
+            ]
+            session.current_zone = "stormveil_01"
+            await db.commit()
+
+    asyncio.run(_played())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as spectator:
+        spectator.send_json({"type": "auth"})
+        assert spectator.receive_json()["participants"][0]["current_layer"] == 1
+
+        response = training_ws_client.post(
+            f"/api/training/{sid}/reset",
+            headers={"Authorization": f"Bearer {training_session_data['api_token']}"},
+        )
+        assert response.status_code == 200, response.text
+
+        board = spectator.receive_json()
+        assert board["type"] == "leaderboard_update"
+        runner = board["participants"][0]
+        assert (
+            runner["igt_ms"],
+            runner["death_count"],
+            runner["current_zone"],
+            runner["current_layer"],
+        ) == (0, 0, None, 0)
+        history = spectator.receive_json()
+        assert (history["type"], history["participant_id"], history["history"]) == (
+            "zone_history",
+            sid,
+            [],
+        )
+
+
 def test_training_status_update_rejected_when_session_inactive(
     training_ws_client, training_session_data, async_session
 ):

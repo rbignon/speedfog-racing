@@ -2175,6 +2175,19 @@ export async function abandonTrainingSession(
 }
 
 /**
+ * Restart an active Set Seed run from scratch on the pack already installed.
+ */
+export async function resetTrainingSession(
+  id: string,
+): Promise<TrainingSessionDetail> {
+  const response = await fetch(`${API_BASE}/training/${id}/reset`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<TrainingSessionDetail>(response);
+}
+
+/**
  * Invalidate a ranked solo run (admin only): it leaves boards and seed pages.
  */
 export async function invalidateSession(

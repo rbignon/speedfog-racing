@@ -10,6 +10,8 @@ from fastapi import WebSocket
 from speedfog_racing.websocket.handler import close_evicted
 
 SEND_TIMEOUT = 5.0
+# How long close_mod(wait=True) waits for the closed connection's handler.
+TEARDOWN_TIMEOUT = 5.0
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,9 @@ class TrainingModConnection:
     websocket: WebSocket
     user_id: uuid.UUID
     mod_version: str | None = None
+    # Set by the connection's handler once it has torn down: none of its
+    # writes can land after that (see close_mod).
+    torn_down: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 @dataclass
@@ -101,17 +106,18 @@ class TrainingConnectionManager:
         user_id: uuid.UUID,
         websocket: WebSocket,
         mod_version: str | None = None,
-    ) -> None:
-        """Register a mod connection, replacing any existing one.
+    ) -> TrainingModConnection:
+        """Register a mod connection, replacing any existing one, and return it.
 
         If a previous connection exists (likely a ghost after a network drop),
         it is closed with code 4000 so the old handler's receive loop exits.
         """
         room = self.get_or_create_room(session_id)
         existing = room.mod
-        room.mod = TrainingModConnection(
+        connection = TrainingModConnection(
             websocket=websocket, user_id=user_id, mod_version=mod_version
         )
+        room.mod = connection
         if existing is not None:
             logger.info(f"Mod replaced for training session {session_id}")
             try:
@@ -123,6 +129,7 @@ class TrainingConnectionManager:
                 )
         else:
             logger.info(f"Mod connected to training session {session_id}")
+        return connection
 
     async def disconnect_mod(self, session_id: uuid.UUID, websocket: WebSocket) -> None:
         room = self.rooms.get(session_id)
@@ -161,15 +168,28 @@ class TrainingConnectionManager:
             if room.mod is None and not room.spectators:
                 del self.rooms[session_id]
 
-    async def close_mod(self, session_id: uuid.UUID, *, code: int, reason: str) -> None:
-        """Close a session's mod connection, if any (e.g. the account got banned)."""
+    async def close_mod(
+        self, session_id: uuid.UUID, *, code: int, reason: str, wait: bool = False
+    ) -> None:
+        """Close a session's mod connection, if any (e.g. the account got banned).
+
+        With ``wait``, return only once its handler has torn down (at most
+        ``TEARDOWN_TIMEOUT``): a message it was handling has then committed,
+        so a change the caller makes next cannot be written over.
+        """
         room = self.get_room(session_id)
         if room is None or room.mod is None:
             return
+        connection = room.mod
         try:
-            await room.mod.websocket.close(code=code, reason=reason)
+            await connection.websocket.close(code=code, reason=reason)
         except Exception:
             pass
+        if wait:
+            try:
+                await asyncio.wait_for(connection.torn_down.wait(), timeout=TEARDOWN_TIMEOUT)
+            except TimeoutError:
+                logger.warning("Training mod handler still running after close: %s", session_id)
 
     def is_mod_connected(self, session_id: uuid.UUID) -> bool:
         room = self.rooms.get(session_id)

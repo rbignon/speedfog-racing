@@ -1057,6 +1057,7 @@ Solo practice mode. Uses the same protocol messages as competitive races but wit
 | GET    | `/api/training`                  | Bearer           | List user's training sessions                                                          |
 | GET    | `/api/training/{id}`             | -                | Training session detail (public read-only)                                             |
 | POST   | `/api/training/{id}/abandon`     | Bearer           | Abandon session (ACTIVE → ABANDONED)                                                   |
+| POST   | `/api/training/{id}/reset`       | Bearer           | Restart an ACTIVE Set Seed run on the same pack (owner; see `SPEEDRUN.md`)             |
 | GET    | `/api/training/{id}/pack-ticket` | Bearer           | Mint a short-lived download ticket for the training pack (same gating as the download) |
 | GET    | `/api/training/{id}/pack`        | Bearer or ticket | Download training seed pack (ZIP with `training = true`)                               |
 
@@ -1276,7 +1277,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 | Code   | Reason                                                    | Endpoints                                    |
 | ------ | --------------------------------------------------------- | -------------------------------------------- |
-| `1000` | Normal closure: room shutdown or race reset               | All                                          |
+| `1000` | Normal closure: room shutdown, race or Set Seed run reset | All                                          |
 | `1013` | Evicted from the room after a failed or timed-out send    | Mod, Spectator, Training, Training Spec      |
 | `4000` | Replaced by a new connection (same participant)           | Mod, Training                                |
 | `4001` | Auth timeout (no message within deadline) or race deleted | Mod, Training, Training Spec                 |
@@ -1286,7 +1287,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 **Close code notes:**
 
-- `1000` (race reset): non-permanent; mods reconnect silently and resume where they left off.
+- `1000` (race reset, Set Seed solo reset): non-permanent; mods reconnect silently and resume where they left off (after a Set Seed solo reset, on the fresh attempt, where a save past 60 s of IGT gets `fresh_save_required` until a New Game).
 - `1013` (eviction): non-permanent; the client reconnects and receives a fresh state. Sent when a broadcast to the connection failed or exceeded the 5s send timeout, or when the server could not build a `race_state` to broadcast (spectators are then closed so their reconnect resyncs).
 - `4001` (race deleted): permanent; organizer deleted the race mid-session. No reconnect.
 - `4008` (rate limit): mod or spectator sending messages too frequently; treated as permanent (code >= 4000), no reconnect.

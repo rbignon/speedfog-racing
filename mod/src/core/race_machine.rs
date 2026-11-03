@@ -2595,6 +2595,73 @@ mod tests {
         assert!(!m.flag_buffer.has_deferred());
     }
 
+    #[test]
+    fn a_solo_reset_reconnect_tracks_the_new_character() {
+        // A Set Seed solo reset drops the connection with 1000 (not
+        // permanent): the mod reconnects, gets auth_ok and race_start again
+        // (a solo run starts on connection), and a player who kept the game
+        // running leaves the old save for a New Game. A finish the old save
+        // latched (one the server dropped) must not block the new
+        // character's, and the switch from a long run reads as neither a
+        // quit-out nor a wrong save.
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.handle_message(MachineMessage::RaceStart(0), now);
+        m.tick(
+            tick_in(snap(Some(1_799_000), true), true, None),
+            now + ms(10),
+        );
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1_800_000), true),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            now + ms(150),
+        );
+        assert_eq!(sent_flags(&fx), vec![900]);
+        let message_id = sent_message_ids(&fx)[0];
+        m.handle_message(MachineMessage::EventFlagAck { message_id }, now + ms(200));
+
+        let reset = now + secs(5);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            reset,
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            reset + ms(500),
+        );
+        m.handle_message(
+            auth_ok("running", &[100, 200, 900], Some(900)),
+            reset + ms(600),
+        );
+        m.handle_message(MachineMessage::RaceStart(0), reset + ms(600));
+        // Still in the old save for a moment, then the main menu.
+        m.tick(
+            tick_in(snap(Some(1_801_000), true), true, None),
+            reset + secs(1),
+        );
+        m.tick(tick_in(snap(None, false), true, None), reset + secs(10));
+
+        // New Game.
+        let fx = m.tick(tick_in(snap(Some(300), true), true, None), reset + secs(40));
+        assert!(!m.wrong_save);
+        assert_eq!(penalty_ms(&fx), None);
+        assert!(m.triggered_flags.is_empty());
+
+        // The new character's finish goes out.
+        let fx = m.tick(
+            tick_in(
+                snap(Some(60_000), true),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            reset + secs(100),
+        );
+        assert_eq!(sent_flags(&fx), vec![900]);
+    }
+
     // ------------------------------------------------------------------
     // Zone reveal scenarios
     // ------------------------------------------------------------------

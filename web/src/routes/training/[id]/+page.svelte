@@ -9,6 +9,7 @@
     fetchTrainingSession,
     fetchTrainingSessions,
     abandonTrainingSession,
+    resetTrainingSession,
     cancelSessionInvalidation,
     downloadTrainingPack,
     fetchTrainingGhosts,
@@ -52,6 +53,8 @@
   let abandoning = $state(false);
   let downloading = $state(false);
   let showAbandonConfirm = $state(false);
+  let resetting = $state(false);
+  let showResetConfirm = $state(false);
   let showObsModal = $state(false);
   let showFeedback = $state(false);
   let showDownloadModal = $state(false);
@@ -121,6 +124,8 @@
   );
 
   let isRanked = $derived(session !== null && session.mode !== "normal");
+  // A Random Seed attempt must stay blind: only a Set Seed run resets.
+  let canReset = $derived(session?.mode === "set_seed");
   let isInvalidated = $derived(session?.invalidated === true);
 
   let graphJson = $derived(
@@ -262,6 +267,19 @@
       showAbandonConfirm = false;
     } finally {
       abandoning = false;
+    }
+  }
+
+  async function handleReset() {
+    resetting = true;
+    error = null;
+    try {
+      session = await resetTrainingSession(sessionId);
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to reset the run.";
+    } finally {
+      showResetConfirm = false;
+      resetting = false;
     }
   }
 
@@ -442,6 +460,14 @@
           >
             {downloading ? "Preparing..." : "Download Pack"}
           </button>
+          {#if canReset}
+            <button
+              class="btn btn-outline"
+              onclick={() => (showResetConfirm = true)}
+            >
+              Reset
+            </button>
+          {/if}
           <button
             class="btn btn-danger"
             onclick={() => (showAbandonConfirm = true)}
@@ -622,6 +648,18 @@
     loading={abandoning}
     onConfirm={handleAbandon}
     onCancel={() => (showAbandonConfirm = false)}
+  />
+{/if}
+
+{#if showResetConfirm}
+  <ConfirmModal
+    title="Reset Run"
+    message="Reset this run? Your progress will be cleared. Close the game before you confirm, then relaunch it and start a New Game: the pack already installed plays the new attempt."
+    confirmLabel="Reset"
+    danger
+    loading={resetting}
+    onConfirm={handleReset}
+    onCancel={() => (showResetConfirm = false)}
   />
 {/if}
 

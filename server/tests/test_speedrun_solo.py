@@ -1,5 +1,7 @@
 """Ranked solo runs: POST /api/speedrun/solo, fresh-seeds and the seed summary."""
 
+import asyncio
+import json
 import logging
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -11,6 +13,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from starlette.websockets import WebSocketDisconnect
 
 from speedfog_racing.api import training as training_api
 from speedfog_racing.config import settings
@@ -35,6 +38,7 @@ from speedfog_racing.services.training_service import (
     create_set_seed_session,
     create_speedrun_session,
     expire_speedrun_sessions,
+    reset_set_seed_session,
 )
 
 from .test_set_seed_service import _seed
@@ -505,6 +509,235 @@ async def test_an_abandon_ends_an_active_run(async_session, pools):
     assert all(v[1] is not None for v in statuses.values())
 
 
+async def _reset(client: AsyncClient, session_id: uuid.UUID, who: str = "a") -> Any:
+    return await client.post(f"/api/training/{session_id}/reset", headers=_auth(who))
+
+
+async def test_only_the_owner_of_an_active_set_seed_run_can_reset_it(
+    test_client, async_session, pools
+):
+    """A Random Seed attempt must stay blind and a practice run counts on no
+    board: neither resets. Nor does a run that ended: a finished one holds a
+    time on the boards, which a new run keeps."""
+    async with async_session() as db:
+        owner = await _user(db, "a")
+        await _user(db, "b")
+        banned = await _user(db, "banned", banned=True)
+        active = TrainingSessionStatus.ACTIVE
+        random_seed = await _add_session(db, owner, "sprint", RunMode.SPEEDRUN, 5000, status=active)
+        practice = await _add_session(
+            db, owner, "training_sprint", RunMode.NORMAL, 5000, status=active
+        )
+        finished = await _add_session(db, owner, "sprint", RunMode.SET_SEED, 5000)
+        playing = await _add_session(db, owner, "sprint", RunMode.SET_SEED, 5000, status=active)
+        banned_run = await _add_session(db, banned, "sprint", RunMode.SET_SEED, 5000, status=active)
+        await db.commit()
+
+    for refused in (random_seed, practice):
+        response = await _reset(test_client, refused.id)
+        assert (response.status_code, response.json()["detail"]) == (
+            400,
+            "Only a Set Seed run can be reset: start a new run instead",
+        )
+    over = await _reset(test_client, finished.id)
+    assert over.status_code == 400 and "'finished'" in over.json()["detail"]
+    assert (await _reset(test_client, playing.id, "b")).status_code == 403
+    assert (await test_client.post(f"/api/training/{playing.id}/reset")).status_code == 401
+    assert (await _reset(test_client, banned_run.id, "banned")).status_code == 403
+
+    async with async_session() as db:
+        for untouched in (random_seed, practice, finished, playing, banned_run):
+            row = await db.get(TrainingSession, untouched.id)
+            assert row is not None and row.igt_ms == 5000
+
+
+async def test_a_reset_clears_the_attempt_and_keeps_the_run(test_client, async_session, pools):
+    """Same id and mod token, so the pack already installed plays the new
+    attempt. The cheat detections, an admin invalidation and the live
+    notification stamp belong to the run, not to the attempt: they stay."""
+    flags = {"one_shot": {"igt_ms": 1000, "node_id": "start", "detected_at": BASE.isoformat()}}
+    async with async_session() as db:
+        owner = await _user(db, "a")
+        session = await _add_session(
+            db,
+            owner,
+            "sprint",
+            RunMode.SET_SEED,
+            5000,
+            status=TrainingSessionStatus.ACTIVE,
+            finished_at=None,
+            zone_history=[{"node_id": "start", "igt_ms": 0, "type": "spawn"}],
+        )
+        session.current_zone = "start"
+        session.last_igt_change_at = BASE
+        session.debug_flags = flags
+        session.invalidated_at = BASE
+        session.invalidation_reason = "Debug flags"
+        session.discord_notified_at = BASE
+        await db.commit()
+        token = session.mod_token
+
+    response = await _reset(test_client, session.id)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert (body["id"], body["status"], body["igt_ms"], body["death_count"]) == (
+        str(session.id),
+        "active",
+        0,
+        0,
+    )
+    assert (body["zone_history"], body["invalidated"]) == (None, True)
+    async with async_session() as db:
+        row = await db.get(TrainingSession, session.id)
+        assert row is not None
+        assert (row.current_zone, row.last_igt_change_at, row.finished_at) == (None, None, None)
+        assert (row.mod_token, row.debug_flags) == (token, flags)
+        assert row.discord_notified_at is not None
+        # SQL NULL, not the JSON value null that predicates like
+        # json_array_length choke on (PostgreSQL).
+        cleared = await db.scalar(
+            select(TrainingSession.id).where(TrainingSession.zone_history.is_(None))
+        )
+        assert cleared == session.id
+
+
+async def test_a_reset_never_overwrites_a_finish_it_raced(async_session, pools):
+    """The reset click read the run ACTIVE, then its finish committed first:
+    the finished time stands, and the reset reports it changed nothing."""
+    async with async_session() as db:
+        user = await _user(db, "a")
+        session = await _add_session(
+            db, user, "sprint", RunMode.SET_SEED, 5000, status=TrainingSessionStatus.ACTIVE
+        )
+        await db.commit()
+        await db.execute(
+            update(TrainingSession)
+            .where(TrainingSession.id == session.id)
+            .values(status=TrainingSessionStatus.FINISHED)
+        )
+        await db.commit()
+
+        assert not await reset_set_seed_session(db, session.id)
+        await db.commit()
+
+    async with async_session() as db:
+        row = await db.get(TrainingSession, session.id)
+        assert row is not None
+        assert (row.status, row.igt_ms) == (TrainingSessionStatus.FINISHED, 5000)
+
+
+async def test_a_reset_request_that_lost_the_race_names_the_finish(
+    test_client, async_session, pools
+):
+    """The endpoint read the run ACTIVE, the finish committed before its
+    update: 400 naming the status the run is really in, never a 200."""
+    async with async_session() as db:
+        user = await _user(db, "a")
+        session = await _add_session(
+            db, user, "sprint", RunMode.SET_SEED, 5000, status=TrainingSessionStatus.ACTIVE
+        )
+        await db.commit()
+
+    async def finish_first(db: AsyncSession, session_id: uuid.UUID) -> bool:
+        async with async_session() as other:
+            await other.execute(
+                update(TrainingSession)
+                .where(TrainingSession.id == session_id)
+                .values(status=TrainingSessionStatus.FINISHED)
+            )
+            await other.commit()
+        return await reset_set_seed_session(db, session_id)
+
+    with patch.object(training_api, "reset_set_seed_session", finish_first):
+        response = await _reset(test_client, session.id)
+
+    assert response.status_code == 400, response.text
+    assert "'finished'" in response.json()["detail"]
+
+
+class _ModSocket:
+    """A mod's socket as its handler sees it: messages the test queues, and a
+    server-side close that ends the receive after the queued ones."""
+
+    def __init__(self) -> None:
+        self.inbox: asyncio.Queue[str | None] = asyncio.Queue()
+
+    async def accept(self) -> None:
+        pass
+
+    async def receive_text(self) -> str:
+        message = await self.inbox.get()
+        if message is None:
+            raise WebSocketDisconnect(1000)
+        return message
+
+    async def send_text(self, message: str) -> None:
+        pass
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        self.inbox.put_nowait(None)
+
+
+async def test_a_reset_waits_for_the_update_the_mod_handler_is_writing(
+    test_client, async_session, pools, monkeypatch
+):
+    """The mod's status_update was read before the reset and is committed
+    after it: written over the cleared row, it would bring the dropped attempt
+    back (its history, IGT and deaths) and let the old save skip the New Game
+    gate. The reset waits for the closed connection's handler to finish."""
+    from speedfog_racing.websocket.training import manager, mod
+
+    # A teardown that never signals then hangs the reset past the test's
+    # timeout instead of passing once the wait gives up.
+    monkeypatch.setattr(manager, "TEARDOWN_TIMEOUT", 60.0)
+
+    async with async_session() as db:
+        session = await _add_session(
+            db, await _user(db, "a"), "sprint", RunMode.SET_SEED, 1000,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+            zone_history=_history("start", "mid"),
+            seed=await _graph_seed(db, FINAL_BOSS_GRAPH),
+        )  # fmt: skip
+        session.current_zone = "mid"
+        session.death_count = 0
+        session.discord_notified_at = BASE
+        await db.commit()
+
+    socket = _ModSocket()
+    handler = mod.TrainingModHandler(socket, session.id, async_session)  # type: ignore[arg-type]
+    read, release = asyncio.Event(), asyncio.Event()
+    load = handler._load_entity_for_status_update
+
+    async def read_then_hold(db: AsyncSession) -> TrainingSession | None:
+        entity = await load(db)
+        read.set()
+        await release.wait()
+        return entity
+
+    auth = {"type": "auth", "mod_token": session.mod_token, "protocol_version": "1.9"}
+    with patch.object(handler, "_load_entity_for_status_update", read_then_hold):
+        running = asyncio.create_task(handler.run())
+        socket.inbox.put_nowait(json.dumps(auth))
+        socket.inbox.put_nowait(
+            json.dumps({"type": "status_update", "igt_ms": 2000, "death_count": 1})
+        )
+        await asyncio.wait_for(read.wait(), timeout=5)
+
+        reset = asyncio.create_task(_reset(test_client, session.id))
+        # Room for the reset to run through while the update is held.
+        await asyncio.wait({reset}, timeout=0.5)
+        release.set()
+        response = await asyncio.wait_for(reset, timeout=10)
+        await asyncio.wait_for(running, timeout=5)
+
+    assert response.status_code == 200, response.text
+    async with async_session() as db:
+        row = await db.get(TrainingSession, session.id)
+        assert row is not None
+        assert (row.igt_ms, row.death_count, row.zone_history) == (0, 0, None)
+
+
 FINAL_BOSS_GRAPH: dict[str, Any] = {
     "nodes": {
         "start": {"type": "start", "layer": 0},
@@ -617,6 +850,9 @@ async def test_ranked_finish_needs_the_final_zone_in_the_history(
         sent.assert_awaited_once()
         assert "Finish not counted" in sent.await_args.args[0]
         assert "code" not in sent.await_args.kwargs
+        # The cheapest way out: a Set Seed run resets on the pack installed.
+        way_out = "Reset" if mode == RunMode.SET_SEED else "Abandon"
+        assert f"{way_out} the run from its page" in sent.await_args.args[0]
     if counted:
         alert.assert_not_called()
     else:
@@ -647,6 +883,39 @@ async def test_practice_finish_needs_no_final_zone(async_session, pools):
     broadcast.assert_awaited_once()
     check.assert_not_called()
     alert.assert_not_called()
+
+
+async def test_a_reset_landing_inside_a_finish_leaves_no_empty_finished_run(async_session, pools):
+    """A reset commits after the finish checked the final zone and before it
+    marks the run FINISHED: a run with no IGT and no history must never reach
+    the boards nor announce a record, so the finish is dropped."""
+    from speedfog_racing.websocket.training import mod
+
+    async with async_session() as db:
+        session = await _add_session(
+            db, await _user(db, "a"), "sprint", RunMode.SET_SEED, 5000,
+            status=TrainingSessionStatus.ACTIVE, finished_at=None,
+            zone_history=_history("start", "mid", "end"),
+            seed=await _graph_seed(db, FINAL_BOSS_GRAPH),
+        )  # fmt: skip
+        await db.commit()
+    async with async_session() as db:
+        entity = await mod._load_session(db, session.id)
+        assert await reset_set_seed_session(db, session.id)
+        await db.commit()
+
+    with (
+        # The check read the history before the reset cleared it.
+        patch.object(mod, "reached_final_zone", return_value=True),
+        patch.object(mod, "_broadcast_status_change", new_callable=AsyncMock) as broadcast,
+        patch.object(mod, "schedule_speedrun_record_check") as check,
+    ):
+        handler = mod.TrainingModHandler(MagicMock(), session.id, async_session)
+        await handler._handle_finish_event(entity, 5000, None)
+
+    broadcast.assert_not_awaited()
+    check.assert_not_called()
+    assert await _status(async_session, session.id) == TrainingSessionStatus.ACTIVE
 
 
 async def test_finish_never_overwrites_an_abandoned_session(async_session, pools):

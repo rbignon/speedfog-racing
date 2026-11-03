@@ -372,6 +372,33 @@ async def abandon_active_session(
     return result.scalar_one_or_none() is not None
 
 
+async def reset_set_seed_session(db: AsyncSession, session_id: uuid.UUID) -> bool:
+    """Clear the attempt of an ACTIVE Set Seed run so the player replays it on
+    the pack already installed (same id, same mod token). One conditional
+    UPDATE, so a finish committed since the run was read stands. The cheat
+    detections, an admin invalidation and the live notification stamp belong
+    to the run and stay. False when it was no longer an ACTIVE Set Seed run.
+    The caller commits."""
+    result = await db.execute(
+        update(TrainingSession)
+        .where(
+            TrainingSession.id == session_id,
+            TrainingSession.status == TrainingSessionStatus.ACTIVE,
+            TrainingSession.mode == RunMode.SET_SEED,
+        )
+        .values(
+            igt_ms=0,
+            death_count=0,
+            zone_history=None,
+            current_zone=None,
+            last_igt_change_at=None,
+        )
+        .returning(TrainingSession.id)
+        .execution_options(synchronize_session=False)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def expire_speedrun_sessions(db: AsyncSession, *, now: datetime) -> list[uuid.UUID]:
     """Abandon ACTIVE Speedrun-mode sessions older than the TTL.
 

@@ -18,6 +18,7 @@ from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
+    RunMode,
     Seed,
     TrainingSession,
     TrainingSessionStatus,
@@ -47,7 +48,10 @@ from speedfog_racing.services.seed_pack_service import (
 from speedfog_racing.services.training_service import (
     abandon_active_session,
     create_training_session,
+    reset_set_seed_session,
 )
+from speedfog_racing.websocket.training.manager import training_manager
+from speedfog_racing.websocket.training.mod import broadcast_session_reset
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +269,52 @@ async def abandon_session(
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=f"Cannot abandon session in status '{session.status.value}'",
+    )
+
+
+@router.post("/{session_id}/reset", response_model=TrainingSessionDetailResponse)
+async def reset_session(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_not_banned),
+) -> TrainingSessionDetailResponse:
+    """Restart an active Set Seed run from scratch on the pack already installed.
+
+    Only Set Seed: a Random Seed attempt must stay blind, and a finished run
+    keeps its time on the boards (a new run replays the seed instead).
+    """
+    session = await _get_session_or_404(db, session_id, user.id)
+    if session.mode != RunMode.SET_SEED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only a Set Seed run can be reset: start a new run instead",
+        )
+    if session.status == TrainingSessionStatus.ACTIVE:
+        dropped_igt_ms, dropped_zones = session.igt_ms, len(session.zone_history or [])
+        # Dropped before the state changes, like a race reset, and waited for:
+        # a message its handler was writing would bring the old attempt back.
+        # 1000 is not permanent: the mod reconnects and the fresh-save gate
+        # asks for a New Game while the old save is loaded.
+        await training_manager.close_mod(session_id, code=1000, reason="Run reset", wait=True)
+        reset = await reset_set_seed_session(db, session_id)
+        await db.commit()
+        # The update bypassed the loaded object: read the row again.
+        db.expire(session)
+        session = await _get_session_or_404(db, session_id, user.id)
+        if reset:
+            # The attempt leaves nothing in the database: the log keeps it.
+            logger.info(
+                "Reset set seed session %s for user %s (dropped attempt: igt_ms=%d, zones=%d)",
+                session_id,
+                user.id,
+                dropped_igt_ms,
+                dropped_zones,
+            )
+            await broadcast_session_reset(session)
+            return _build_detail_response(session)
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Cannot reset session in status '{session.status.value}'",
     )
 
 

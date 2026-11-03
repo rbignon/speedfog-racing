@@ -50,7 +50,7 @@ from speedfog_racing.websocket.schemas import (
     extract_spawn_items,
     resolve_phantom_skin_for_auth_ok,
 )
-from speedfog_racing.websocket.training.manager import training_manager
+from speedfog_racing.websocket.training.manager import TrainingModConnection, training_manager
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,15 @@ RANKED_SOLO_OLD_MOD_MESSAGE = (
 )
 
 # Uncoded error sent when a ranked finish is dropped (the final boss zone was
-# never recorded): the mod shows it as status text.
+# never recorded): the mod shows it as status text. It names the run's
+# cheapest way out: a Set Seed run resets on the pack installed.
 FINISH_NOT_COUNTED_MESSAGE = (
     "Finish not counted: the final boss zone was never recorded. The admins were notified. "
     "Abandon the run from its page to start another."
+)
+SET_SEED_FINISH_NOT_COUNTED_MESSAGE = (
+    "Finish not counted: the final boss zone was never recorded. The admins were notified. "
+    "Reset the run from its page to play it again."
 )
 
 
@@ -128,6 +133,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         self._session_id = session_id  # Typed alias for self.entity_id
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
+        self._connection: TrainingModConnection | None = None
 
     @property
     def log_ref(self) -> str:
@@ -278,7 +284,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
         session = self._auth_session
         del self._auth_session  # Release reference
 
-        await training_manager.connect_mod(
+        self._connection = await training_manager.connect_mod(
             session_id, self._user_id, self.websocket, mod_version=self.mod_version
         )
         await _broadcast_participant_update(session, spectator_only=True)
@@ -314,14 +320,20 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
     async def _on_disconnect(self) -> None:
         session_id = self._session_id
-        await training_manager.disconnect_mod(session_id, self.websocket)
         try:
-            async with self.session_maker() as db:
-                disc_session = await _load_session(db, session_id)
-                if disc_session:
-                    await _broadcast_participant_update(disc_session, spectator_only=True)
-        except Exception:
-            pass
+            await training_manager.disconnect_mod(session_id, self.websocket)
+            try:
+                async with self.session_maker() as db:
+                    disc_session = await _load_session(db, session_id)
+                    if disc_session:
+                        await _broadcast_participant_update(disc_session, spectator_only=True)
+            except Exception:
+                pass
+        finally:
+            # Last: a close_mod(wait=True) caller acts once this broadcast,
+            # read before its change, is out.
+            if self._connection is not None:
+                self._connection.torn_down.set()
 
     # ------------------------------------------------------------------
     # Ranked sessions (speedrun, set_seed): the race's anti-cheat checks.
@@ -463,17 +475,24 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                     # The mod decides "finished" from the server's status and
                     # sends the finish flag once, so tell the runner. An
                     # uncoded error is shown as status text by every mod.
-                    await self._send_error(FINISH_NOT_COUNTED_MESSAGE)
+                    await self._send_error(
+                        SET_SEED_FINISH_NOT_COUNTED_MESSAGE
+                        if entity.mode == RunMode.SET_SEED
+                        else FINISH_NOT_COUNTED_MESSAGE
+                    )
                     return
             # Conditional, like the expiry: an expiry or an abandon that landed
             # since the base class's check keeps its status, and this finish
-            # is dropped (no broadcast, no record check).
+            # is dropped (no broadcast, no record check). So is one a Set Seed
+            # reset emptied since the check above: a finished run with no
+            # history and no IGT must never reach the boards.
             finished = (
                 await db.execute(
                     update(TrainingSession)
                     .where(
                         TrainingSession.id == session_id,
                         TrainingSession.status == TrainingSessionStatus.ACTIVE,
+                        TrainingSession.zone_history.is_not(None),
                     )
                     .values(status=TrainingSessionStatus.FINISHED, finished_at=datetime.now(UTC))
                     .returning(TrainingSession.id)
@@ -482,7 +501,10 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             ).scalar_one_or_none()
             await db.commit()
             if finished is None:
-                logger.info("Finish dropped: training=%s is no longer active", session_id)
+                logger.info(
+                    "Finish dropped: training=%s is no longer active or a reset emptied it",
+                    session_id,
+                )
                 return
             session = await _load_session(db, session_id)
             if not session:
@@ -667,6 +689,14 @@ async def _broadcast_participant_update(
         await room.broadcast_to_spectators(payload)
     else:
         await room.broadcast_to_all(payload)
+
+
+async def broadcast_session_reset(session: TrainingSession) -> None:
+    """Show spectators a run back at its start: the cleared progress, then an
+    empty zone history (a client keeps the one it holds when a
+    leaderboard_update carries none)."""
+    await _broadcast_participant_update(session, spectator_only=True)
+    await _broadcast_zone_history(session.id, [])
 
 
 async def _broadcast_status_change(session_id: uuid.UUID, new_status: str) -> None:

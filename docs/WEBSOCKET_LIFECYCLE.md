@@ -253,6 +253,8 @@ RaceRoom:
 2. Closes all mod and spectator WebSocket connections with the given code.
 3. Mod clients detect the close and reconnect automatically.
 
+A Set Seed solo reset (`POST /api/training/{id}/reset`, see `SPEEDRUN.md`) closes the session's mod connection the same way, with `training_manager.close_mod(session_id, code=1000, wait=True)`, and waits for its handler to tear down (at most `TEARDOWN_TIMEOUT`, 5 s) before clearing the attempt: a message the handler was writing would otherwise land on the cleared run. The handler signals its end (`TrainingModConnection.torn_down`) after its disconnect broadcast, so the closed connection's broadcast never reaches spectators after the reset's. Spectators stay connected and get the cleared state (`broadcast_session_reset`).
+
 ---
 
 ## Scaling

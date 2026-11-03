@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, waitFor, within } from "@testing-library/svelte";
 
 vi.mock("$app/state", () => ({
   page: {
@@ -14,6 +14,7 @@ vi.mock("$lib/api", async () => {
     fetchTrainingSession: vi.fn(),
     fetchTrainingSessions: vi.fn(),
     fetchTrainingGhosts: vi.fn(),
+    resetTrainingSession: vi.fn(),
   };
 });
 
@@ -22,6 +23,8 @@ import {
   fetchTrainingGhosts,
   fetchTrainingSession,
   fetchTrainingSessions,
+  resetTrainingSession,
+  type AuthUser,
   type TrainingSessionDetail,
 } from "$lib/api";
 import { auth } from "$lib/stores/auth.svelte";
@@ -106,5 +109,104 @@ describe("training session page: ghosts", () => {
     liveStatus("finished");
     await Promise.resolve();
     expect(fetchTrainingGhosts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("training session page: reset", () => {
+  function user(id: string): AuthUser {
+    return {
+      id,
+      twitch_username: `user-${id}`,
+      twitch_display_name: null,
+      twitch_avatar_url: null,
+      role: "user",
+      locale: null,
+      overlay_settings: null,
+      feedback_prompted_at: null,
+      race_count: 0,
+      daily_count: 0,
+      training_count: 0,
+    };
+  }
+
+  function run(
+    status: TrainingSessionDetail["status"],
+    mode: TrainingSessionDetail["mode"],
+    igt_ms = 0,
+  ): TrainingSessionDetail {
+    return { ...session(status), mode, igt_ms };
+  }
+
+  beforeEach(() => {
+    vi.mocked(resetTrainingSession).mockReset();
+  });
+
+  afterEach(() => {
+    auth.user = null;
+  });
+
+  it("is offered only on the owner's active Set Seed run", async () => {
+    // A Random Seed attempt stays blind, a practice run counts nowhere, and
+    // a finished run keeps its time on the boards.
+    const cases: [TrainingSessionDetail, string, boolean][] = [
+      [run("active", "set_seed"), "u1", true],
+      [run("active", "speedrun"), "u1", false],
+      [run("active", "normal"), "u1", false],
+      [run("finished", "set_seed"), "u1", false],
+      [run("active", "set_seed"), "u2", false],
+    ];
+    for (const [loaded, viewer, offered] of cases) {
+      auth.user = user(viewer);
+      vi.mocked(fetchTrainingSession).mockResolvedValue(loaded);
+      const { findByText, queryByRole, unmount } = render(TrainingPage);
+      await findByText("IGT");
+      expect(
+        queryByRole("button", { name: "Reset" }) !== null,
+        `${loaded.mode} ${loaded.status} seen by ${viewer}`,
+      ).toBe(offered);
+      unmount();
+    }
+  });
+
+  it("restarts the run once confirmed and tells how to go on in game", async () => {
+    auth.user = user("u1");
+    vi.mocked(fetchTrainingSession).mockResolvedValue(
+      run("active", "set_seed", 90_000),
+    );
+    vi.mocked(resetTrainingSession).mockResolvedValue(
+      run("active", "set_seed", 0),
+    );
+    const { findByRole } = render(TrainingPage);
+
+    await fireEvent.click(await findByRole("button", { name: "Reset" }));
+    const modal = document.querySelector<HTMLElement>(".modal")!;
+    // A new character needs a fresh game launch: the mod gives the care
+    // package's Ashes of War once per launch.
+    expect(modal.textContent).toContain("Close the game");
+    expect(modal.textContent).toContain("start a New Game");
+    expect(resetTrainingSession).not.toHaveBeenCalled();
+    await fireEvent.click(within(modal).getByRole("button", { name: "Reset" }));
+
+    // The cleared progress reaches the page through its live connection.
+    expect(resetTrainingSession).toHaveBeenCalledWith("s1");
+    await waitFor(() => expect(document.querySelector(".modal")).toBeNull());
+  });
+
+  it("names the refusal of a run that ended meanwhile", async () => {
+    auth.user = user("u1");
+    vi.mocked(fetchTrainingSession).mockResolvedValue(
+      run("active", "set_seed", 90_000),
+    );
+    vi.mocked(resetTrainingSession).mockRejectedValue(
+      new Error("Cannot reset session in status 'finished'"),
+    );
+    const { findByRole, findByText } = render(TrainingPage);
+
+    await fireEvent.click(await findByRole("button", { name: "Reset" }));
+    const modal = document.querySelector<HTMLElement>(".modal")!;
+    await fireEvent.click(within(modal).getByRole("button", { name: "Reset" }));
+
+    await findByText("Cannot reset session in status 'finished'");
+    expect(document.querySelector(".modal")).toBeNull();
   });
 });
