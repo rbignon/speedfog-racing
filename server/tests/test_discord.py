@@ -1,6 +1,10 @@
 """Test Discord webhook notifications."""
 
-from unittest.mock import AsyncMock, patch
+import asyncio
+import uuid
+from collections.abc import Awaitable, Callable
+from datetime import date
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -13,6 +17,7 @@ from speedfog_racing.discord import (
     build_podium,
     create_scheduled_event,
     delete_scheduled_event,
+    fire_race_finished_notifications,
     notify_finish_dropped,
     notify_race_created,
     notify_race_finished,
@@ -43,7 +48,6 @@ def race_kwargs():
         "participant_count": 4,
         "organizer_name": "TestOrganizer",
         "organizer_avatar_url": "https://example.com/avatar.png",
-        "mode": RunMode.NORMAL,
     }
 
 
@@ -70,7 +74,6 @@ def finished_kwargs():
             {"name": "Player2", "igt": "15:00"},
             {"name": "Player3", "igt": "18:22"},
         ],
-        "mode": RunMode.NORMAL,
     }
 
 
@@ -328,10 +331,10 @@ MAIN_HOOK = "https://discord.com/api/webhooks/main"
 SPEEDRUN_HOOK = "https://discord.com/api/webhooks/speedrun"
 
 
-async def _post_lifecycle(
-    mode: RunMode, speedrun_hook: str | None, created_kwargs, race_kwargs, finished_kwargs
+async def _posts(
+    speedrun_hook: str | None, *notifications: Callable[[], Awaitable[None]]
 ) -> list[tuple[str, dict]]:
-    """Created, started and finished notifications of one race, as posted."""
+    """The given notifications, as posted."""
     mock_response = AsyncMock()
     mock_response.status_code = 204
     with (
@@ -346,48 +349,82 @@ async def _post_lifecycle(
         mock_client.post.return_value = mock_response
         mock_client_cls.return_value.__aenter__.return_value = mock_client
 
-        await notify_race_created(**created_kwargs, mode=mode)
-        await notify_race_started(**{**race_kwargs, "mode": mode})
-        await notify_race_finished(**{**finished_kwargs, "mode": mode})
+        for notify in notifications:
+            await notify()
 
     return [(c.args[0], c.kwargs["json"]) for c in mock_client.post.call_args_list]
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
-async def test_ranked_race_posts_to_the_speedrun_channel_without_ping(
-    mode, created_kwargs, race_kwargs, finished_kwargs
-):
-    posts = await _post_lifecycle(mode, SPEEDRUN_HOOK, created_kwargs, race_kwargs, finished_kwargs)
+async def test_ranked_race_posts_to_the_speedrun_channel_without_ping(mode, created_kwargs):
+    posts = await _posts(SPEEDRUN_HOOK, lambda: notify_race_created(**created_kwargs, mode=mode))
 
-    assert [url for url, _ in posts] == [SPEEDRUN_HOOK] * 3
-    assert all("content" not in payload for _, payload in posts)
+    assert [url for url, _ in posts] == [SPEEDRUN_HOOK]
+    assert "content" not in posts[0][1]
     # Mentions are switched off outright, whatever the embed holds.
     assert posts[0][1]["allowed_mentions"] == {"parse": []}
 
 
 @pytest.mark.asyncio
-async def test_ranked_race_falls_back_to_the_main_channel_still_without_ping(
-    created_kwargs, race_kwargs, finished_kwargs
-):
-    posts = await _post_lifecycle(
-        RunMode.SPEEDRUN, None, created_kwargs, race_kwargs, finished_kwargs
-    )
+async def test_ranked_race_falls_back_to_the_main_channel_still_without_ping(created_kwargs):
+    posts = await _posts(None, lambda: notify_race_created(**created_kwargs, mode=RunMode.SPEEDRUN))
 
-    assert [url for url, _ in posts] == [MAIN_HOOK] * 3
-    assert all("content" not in payload for _, payload in posts)
+    assert [url for url, _ in posts] == [MAIN_HOOK]
+    assert "content" not in posts[0][1]
 
 
 @pytest.mark.asyncio
 async def test_normal_race_stays_on_the_main_channel_with_its_ping(
     created_kwargs, race_kwargs, finished_kwargs
 ):
-    posts = await _post_lifecycle(
-        RunMode.NORMAL, SPEEDRUN_HOOK, created_kwargs, race_kwargs, finished_kwargs
+    posts = await _posts(
+        SPEEDRUN_HOOK,
+        lambda: notify_race_created(**created_kwargs, mode=RunMode.NORMAL),
+        lambda: notify_race_started(**race_kwargs),
+        lambda: notify_race_finished(**finished_kwargs),
     )
 
     assert [url for url, _ in posts] == [MAIN_HOOK] * 3
     assert posts[0][1]["content"] == "<@&999>"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "daily_date", "posted"),
+    [
+        (RunMode.NORMAL, None, True),
+        (RunMode.SPEEDRUN, None, False),
+        (RunMode.SET_SEED, None, False),
+        (RunMode.NORMAL, date(2026, 11, 3), False),
+    ],
+)
+async def test_finished_embed_only_for_normal_community_races(mode, daily_date, posted):
+    """A speedrun or Set Seed race is announced at its creation only, a Daily
+    Seed by its own daily post; their finish still checks the records."""
+    race = MagicMock(
+        id=uuid.uuid4(),
+        mode=mode,
+        daily_date=daily_date,
+        event_id=None,
+        seed_was_seen=False,
+        seed_played=False,
+        rerolled_without_report=False,
+        is_public=True,
+        participants=[],
+        discord_event_id=None,
+    )
+    with (
+        patch("speedfog_racing.discord.notify_race_finished", new_callable=AsyncMock) as notify,
+        patch(
+            "speedfog_racing.services.speedrun_records.schedule_speedrun_record_check"
+        ) as scheduled,
+    ):
+        fire_race_finished_notifications(race)
+        await asyncio.sleep(0)
+
+    assert notify.called is posted
+    assert scheduled.called
 
 
 @pytest.mark.asyncio
@@ -678,8 +715,6 @@ async def test_http_error_suppressed(race_kwargs):
 @pytest.mark.asyncio
 async def test_discord_api_request_sends_with_bot_auth():
     """Should send authenticated request to Discord API."""
-    from unittest.mock import MagicMock
-
     mock_response = MagicMock()
     mock_response.status_code = 200
     mock_response.json.return_value = {"id": "123"}
@@ -977,8 +1012,6 @@ def test_format_igt():
 
 def test_build_podium():
     """Should extract top 3 finishers sorted by IGT."""
-    from unittest.mock import MagicMock
-
     from speedfog_racing.models import ParticipantStatus
 
     def make_participant(name: str, igt: int, finished: bool = True) -> MagicMock:

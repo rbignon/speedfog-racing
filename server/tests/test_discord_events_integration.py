@@ -13,6 +13,7 @@ from speedfog_racing.main import app
 from speedfog_racing.models import (
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -356,6 +357,48 @@ async def test_start_race_activates_discord_event(test_client, organizer, seed, 
             assert resp.status_code == 200, resp.text
             await asyncio.sleep(0.1)
             mock_status.assert_called_once_with("discord-event-start", 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "posted"),
+    [(RunMode.NORMAL, True), (RunMode.SPEEDRUN, False), (RunMode.SET_SEED, False)],
+)
+async def test_start_race_notifies_normal_races_only(
+    test_client, organizer, seed, async_session, mode, posted
+):
+    """A speedrun or Set Seed race is announced at its creation only."""
+    from speedfog_racing.models import Participant
+
+    second_user = await _make_second_user(async_session)
+    async with async_session() as db:
+        race = Race(
+            name="Start Notification Test",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.SETUP,
+            is_public=True,
+            mode=mode,
+            seeds_released_at=datetime.now(UTC),
+        )
+        db.add(race)
+        await db.flush()
+        db.add(Participant(race_id=race.id, user_id=organizer.id, color_index=0))
+        db.add(Participant(race_id=race.id, user_id=second_user.id, color_index=1))
+        await db.commit()
+        race_id = str(race.id)
+
+    with patch(
+        "speedfog_racing.api.races.notify_race_started", new_callable=AsyncMock
+    ) as mock_notify:
+        async with test_client as client:
+            resp = await client.post(
+                f"/api/races/{race_id}/start",
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200, resp.text
+            await asyncio.sleep(0.1)
+            assert mock_notify.called is posted
 
 
 # =============================================================================

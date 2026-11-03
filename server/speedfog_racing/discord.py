@@ -337,11 +337,9 @@ async def notify_race_started(
     participant_count: int,
     organizer_name: str,
     organizer_avatar_url: str | None,
-    mode: RunMode,
     registration_closes_at: datetime | None = None,
 ) -> None:
-    """Send Discord notification when a race is started (a speedrun or Set
-    Seed race's to the speedrun channel)."""
+    """Send Discord notification when a race is started."""
     label, color = _race_label_and_color(pool)
     display_pool = format_pool_display_name(pool)
     safe_name = _escape_discord_md(race_name)
@@ -371,7 +369,7 @@ async def notify_race_started(
     if organizer_avatar_url:
         embed["thumbnail"] = {"url": organizer_avatar_url}
 
-    await _send_webhook(embed, speedrun=mode != RunMode.NORMAL)
+    await _send_webhook(embed)
 
 
 def _format_igt(igt_ms: int) -> str:
@@ -407,10 +405,8 @@ async def notify_race_finished(
     pool: Pool | None,
     participant_count: int,
     podium: list[dict[str, str]],
-    mode: RunMode,
 ) -> None:
-    """Send Discord notification when a race finishes (a speedrun or Set Seed
-    race's to the speedrun channel).
+    """Send Discord notification when a race finishes.
 
     podium is a list of {"name": ..., "igt": ...} dicts for top finishers.
     """
@@ -435,7 +431,7 @@ async def notify_race_finished(
         ],
     }
 
-    await _send_webhook(embed, speedrun=mode != RunMode.NORMAL)
+    await _send_webhook(embed)
 
 
 async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> None:
@@ -528,7 +524,8 @@ async def notify_speedrun_record(change: RecordChange) -> None:
 def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:
     """Fire-and-forget Discord notifications for a finished race.
 
-    Creates background tasks for the webhook notification (public races)
+    Creates background tasks for the webhook notification (public normal
+    races, not a Daily Seed), the speedrun record check (races that can count)
     and the scheduled event status update (if a Discord event exists).
 
     The `forced` flag is plumbed through so future logic (daily seed Discord
@@ -538,8 +535,9 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
     del forced  # currently unused, reserved for future copy differentiation
     # Daily Seeds already announced themselves at creation (notify_daily_seed_created
     # carries yesterday's podium). Posting the regular finished-race embed again at
-    # T+24h would double the channel traffic, so we suppress it here.
-    if race.is_public and race.daily_date is None:
+    # T+24h would double the channel traffic, so we suppress it here. Speedrun and
+    # Set Seed races are announced at creation only; their records post on their own.
+    if race.is_public and race.daily_date is None and race.mode == RunMode.NORMAL:
         task = asyncio.create_task(
             notify_race_finished(
                 race_name=race.name,
@@ -547,7 +545,6 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
                 pool=race.seed.pool if race.seed else None,
                 participant_count=len(race.participants),
                 podium=build_podium(race.participants),
-                mode=race.mode,
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

@@ -1732,8 +1732,9 @@ async def start_race(
         await room.broadcast_chat_participants(start_participants_json)
         await room.broadcast_chat_public(start_public_json, race)
 
-    # Fire-and-forget Discord notification (public races only)
-    if race.is_public:
+    # Fire-and-forget Discord notification (public races only). Speedrun and Set
+    # Seed races are announced at creation only.
+    if race.is_public and race.mode == RunMode.NORMAL:
         registration_closes_at, _ = compute_late_join_deadlines(race)
         task = asyncio.create_task(
             notify_race_started(
@@ -1744,7 +1745,6 @@ async def start_race(
                 organizer_name=race.organizer.twitch_display_name or race.organizer.twitch_username,
                 organizer_avatar_url=race.organizer.twitch_avatar_url,
                 registration_closes_at=registration_closes_at,
-                mode=race.mode,
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)

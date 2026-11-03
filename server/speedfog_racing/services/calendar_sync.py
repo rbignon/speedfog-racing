@@ -28,7 +28,7 @@ from speedfog_racing.malenia import (
     remove_event_participant_by_login,
     update_calendar_event,
 )
-from speedfog_racing.models import Participant, Race
+from speedfog_racing.models import Participant, Race, RunMode
 from speedfog_racing.services.pool_service import format_pool_display_name
 
 # Seed.pool is lazy="joined", so loading the seed brings the pool along.
@@ -44,12 +44,20 @@ def _qualifies(race: Race) -> bool:
 
 
 async def _create_on_providers(session: AsyncSession, race: Race) -> None:
-    """Create the event on both providers, persist ids, and seed malenia participants."""
+    """Create the event on both providers, persist ids, and seed malenia participants.
+
+    A speedrun or Set Seed race gets the malenia event only: on Discord it is
+    announced by its creation post alone.
+    """
     assert race.scheduled_at is not None  # guaranteed by _qualifies
     mode_display = format_pool_display_name(race.seed.pool if race.seed else None)
     participant_logins = [p.user.twitch_username for p in race.participants]
-    discord_id = await create_scheduled_event(
-        race_name=race.name, race_id=str(race.id), scheduled_at=race.scheduled_at
+    discord_id = (
+        await create_scheduled_event(
+            race_name=race.name, race_id=str(race.id), scheduled_at=race.scheduled_at
+        )
+        if race.mode == RunMode.NORMAL
+        else None
     )
     malenia_id = await create_calendar_event(
         race_name=race.name,

@@ -22,7 +22,7 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 - Sets `started_at` to current time.
 - Broadcasts `race_start` to mods, `zone_update` for start node (per-mod, localized), `race_status_change` to all, and full `race_state` to each spectator.
-- Discord notification: `notify_race_started()` + event status set to ACTIVE.
+- Discord notification: `notify_race_started()` (public normal races only: a speedrun or Set Seed race is announced at creation only) + event status set to ACTIVE (if event exists).
 
 **RUNNING → FINISHED** (four paths)
 
@@ -87,7 +87,7 @@ Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_f
 - `speedrun`: the same pool checks, plus a training pool refused for parity with Speedrun-mode solo runs (unknown, disabled or training pool: 400 "Mode '<pool>' is not available"), then a draw through `draw_speedrun_seed`, so the pool's floor applies (409 "No fresh seed right now"); the seed is CONSUMED.
 - `set_seed`: `seed` names a played seed (full number or prefix) and the race takes its pool from it: `pool_name` is ignored and the pool-enabled check skipped, so a retired category's seed stays playable. The seed is found and checked like a Set Seed solo run (404 "Unknown seed", 409 "Ambiguous seed ID", 409 with the not-replayable reason); the race consumes nothing and leaves the seed's status alone.
 
-`seed` is required for `set_seed` and refused for the other modes (422). Every refusal comes before the commit, so it creates no race. `PATCH /api/races/{id}` has no `mode`: such a key is ignored. The Discord announcement of a public open race says "New Speedrun race" or "New Set Seed race" for those modes, and a Set Seed race's also shows its seed number (a drawn seed is never shown); those modes post to the speedrun channel and never ping `@Runner` (see "Race Notifications" in `DISCORD_BOT.md`).
+`seed` is required for `set_seed` and refused for the other modes (422). Every refusal comes before the commit, so it creates no race. `PATCH /api/races/{id}` has no `mode`: such a key is ignored. The Discord announcement of a public open race says "New Speedrun race" or "New Set Seed race" for those modes, and a Set Seed race's also shows its seed number (a drawn seed is never shown); those modes post to the speedrun channel, never ping `@Runner`, post no started or finished embed and get no Discord scheduled event (see "Race Notifications" in `DISCORD_BOT.md`).
 
 ### Deathless
 
@@ -282,7 +282,8 @@ Arrival order is join order: the `Race.participants` relationship is ordered by 
 2. `race_status_change(finished)` → all
 3. `leaderboard_update` → all
 4. `fire_race_finished_notifications(race)`, fires on **all** finish paths:
-   - Discord webhook (public races only, with podium)
+   - Discord webhook (public normal races only, with podium; not for a Daily Seed, a speedrun or a Set Seed race)
+   - speedrun record check (races that can count on the boards, see "Record announcements" in `SPEEDRUN.md`)
    - Discord scheduled event → COMPLETED (if event exists)
    - malenia calendar event → no transition (malenia has no active/completed status)
 

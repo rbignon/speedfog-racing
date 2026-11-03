@@ -9,7 +9,16 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
-from speedfog_racing.models import Participant, Race, RaceStatus, Seed, SeedStatus, User, UserRole
+from speedfog_racing.models import (
+    Participant,
+    Race,
+    RaceStatus,
+    RunMode,
+    Seed,
+    SeedStatus,
+    User,
+    UserRole,
+)
 
 
 @pytest.fixture
@@ -96,6 +105,27 @@ async def test_create_public_scheduled_creates_both_and_persists(async_session):
     async with async_session() as db:
         race = await db.get(Race, race_id)
         assert race.discord_event_id == "discord-id"
+        assert race.malenia_event_id == "malenia-id"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", [RunMode.SPEEDRUN, RunMode.SET_SEED])
+async def test_create_ranked_race_skips_only_the_discord_event(async_session, mode):
+    """A speedrun or Set Seed race gets no Discord scheduled event; the
+    malenia calendar still lists it."""
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session, mode=mode)
+    with _patch_providers(async_session) as (_m, mc_d, mc_m, *_):
+        mc_d.return_value = "discord-id"
+        mc_m.return_value = "malenia-id"
+        await calendar_sync.create_calendar_events(race_id)
+        mc_d.assert_not_called()
+        mc_m.assert_called_once()
+
+    async with async_session() as db:
+        race = await db.get(Race, race_id)
+        assert race.discord_event_id is None
         assert race.malenia_event_id == "malenia-id"
 
 
