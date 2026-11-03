@@ -8,6 +8,7 @@ pub mod debug_flags;
 pub mod flag_buffer;
 pub mod format;
 pub mod igt_fix;
+pub mod livesplit;
 pub mod map_utils;
 pub mod profile;
 pub mod protocol;
@@ -20,6 +21,7 @@ pub use format::{
     format_time_into, gap_from_player, is_seed_stale, parse_splits, write_participant_right_text,
     GapRunner, LeaderboardLayout, LeaderboardMode, LeaderboardView,
 };
+pub use livesplit::{LiveSplitSync, LsCommand, LsSnapshot, RunView, SyncOutput, TimerPhase};
 pub use map_utils::format_map_id;
 pub use protocol::{
     is_permanent_close, ClientMessage, ParticipantInfo, RaceInfo, SeedInfo, ServerMessage,
