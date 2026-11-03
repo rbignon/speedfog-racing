@@ -633,8 +633,8 @@
                 </label>
                 <p class="hint">
                   Always a fresh seed and no reset, so the race counts on the
-                  Speedrun boards unless its seed is re-rolled without a seed
-                  report. The game modes above then count only the fresh seeds a
+                  Speedrun boards; a seed re-roll asks for a reason, sent to the
+                  admins. The game modes above then count only the fresh seeds a
                   speedrun race can draw.
                 </p>
               </div>

@@ -339,7 +339,10 @@ async def test_speedrun_reroll_respects_floor(test_client, async_session, pools)
     before = await _race_seed(async_session, race_id)
     version = await _version(async_session, race_id)
 
-    reroll = await _reroll(test_client, race_id)
+    # The missing report is refused before the draw meets the floor.
+    unreported = await _reroll(test_client, race_id)
+    assert unreported.status_code == 400, unreported.text
+    reroll = await _reroll(test_client, race_id, report_buggy=True, report_reason="Bad classes")
 
     assert (reroll.status_code, reroll.json()["detail"]) == (409, "No fresh seed right now")
     after = await _race_seed(async_session, race_id)
@@ -374,14 +377,16 @@ async def test_setup_reroll_and_delete_leave_the_seed_seen(test_client, async_se
     for mode in ("normal", "speedrun"):
         race_id = (await _create(test_client, {"pool_name": "sprint", "mode": mode})).json()["id"]
 
-        unreleased = await current(race_id)
-        assert (await _reroll(test_client, race_id)).status_code == 200
-        assert await _status(async_session, unreleased) == SeedStatus.SEEN, mode
+        # A speedrun race's reroll always carries a report.
+        if mode == "normal":
+            unreleased = await current(race_id)
+            assert (await _reroll(test_client, race_id)).status_code == 200
+            assert await _status(async_session, unreleased) == SeedStatus.SEEN
 
-        released = await current(race_id)
-        await release(race_id)
-        assert (await _reroll(test_client, race_id)).status_code == 200
-        assert await _status(async_session, released) == SeedStatus.SEEN, mode
+            released = await current(race_id)
+            await release(race_id)
+            assert (await _reroll(test_client, race_id)).status_code == 200
+            assert await _status(async_session, released) == SeedStatus.SEEN
 
         reported = await current(race_id)
         await release(race_id)
@@ -611,7 +616,11 @@ async def test_discarded_seed_stays_discarded(test_client, async_session, pools,
     reported, reported_seed = await discarded_race()
     deleted, deleted_seed = await discarded_race()
 
-    assert (await _reroll(test_client, rerolled)).status_code == 200
+    # A speedrun race's reroll always carries a report.
+    plain: dict[str, Any] = (
+        {} if mode == "normal" else {"report_buggy": True, "report_reason": "Bad classes"}
+    )
+    assert (await _reroll(test_client, rerolled, **plain)).status_code == 200
     assert (
         await _reroll(test_client, reported, report_buggy=True, report_reason="Broken gate")
     ).status_code == 200
@@ -733,20 +742,17 @@ async def test_normal_race_rerolls_never_draw_back_a_seed_they_gave_up(
 
 
 @pytest.mark.parametrize(
-    ("mode", "kind", "reason"),
-    [
-        (RunMode.NORMAL, "community", REROLLED_UNRANKED_REASON),
-        (RunMode.SPEEDRUN, "community", REROLLED_UNRANKED_REASON),
-        (RunMode.NORMAL, "event", None),
-    ],
+    ("kind", "reason"),
+    [("community", REROLLED_UNRANKED_REASON), ("event", None)],
 )
 async def test_a_reroll_without_a_report_takes_a_community_race_off_the_boards(
-    test_client, async_session, pools, mode, kind, reason
+    test_client, async_session, pools, kind, reason
 ):
     """Its organizer may have looked at the seed before giving it up (its
     starting class, or its map in the race's data), so the next one is no
-    blind draw; an event race's reroll is the admins' call."""
-    race_id = await _ranked_race_in(async_session, mode, RaceStatus.SETUP)
+    blind draw; an event race's reroll is the admins' call. A speedrun race
+    cannot be rerolled without a report (see below)."""
+    race_id = await _ranked_race_in(async_session, RunMode.NORMAL, RaceStatus.SETUP)
     if kind == "event":
         async with async_session() as db:
             race = await db.get(Race, UUID(race_id))
@@ -769,6 +775,43 @@ async def test_a_reported_reroll_keeps_the_race_on_the_boards(test_client, async
     # A later reroll without a report gives up a seed that could count.
     assert (await _reroll(test_client, race_id)).status_code == 200
     assert await _unranked_reason(test_client, race_id) == REROLLED_UNRANKED_REASON
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {},
+        {"report_buggy": True},
+        {"report_buggy": True, "report_reason": "   "},
+        # The route drops a reason sent without the report.
+        {"report_reason": "Bad classes"},
+    ],
+)
+async def test_a_speedrun_race_reroll_needs_a_report_with_a_reason(
+    test_client, async_session, pools, body
+):
+    """A speedrun race must count: each reroll goes to the admins as a seed
+    report instead of taking the race off the boards."""
+    race_id = await _ranked_race_in(async_session, RunMode.SPEEDRUN, RaceStatus.SETUP)
+    version = await _version(async_session, race_id)
+
+    refused = await _reroll(test_client, race_id, **body)
+
+    assert (refused.status_code, refused.json()["detail"]) == (
+        400,
+        "A speedrun race's seed re-roll needs a seed report with a reason",
+    )
+    seed = await _race_seed(async_session, race_id)
+    assert (seed.seed_number, seed.status) == ("5e1f00000002", SeedStatus.CONSUMED)
+    assert await _version(async_session, race_id) == version
+
+    rerolled = await _reroll(test_client, race_id, report_buggy=True, report_reason="Bad classes")
+    assert rerolled.status_code == 200, rerolled.text
+    async with async_session() as db:
+        old = await db.get(Seed, seed.id)
+        assert old is not None
+        assert (old.status, old.reported_reason) == (SeedStatus.REPORTED, "Bad classes")
+    assert await _unranked_reason(test_client, race_id) is None
 
 
 async def test_a_community_race_on_a_seen_seed_says_it_counts_on_no_board(
@@ -822,7 +865,7 @@ async def test_ranked_draws_never_take_seen_seeds(test_client, async_session, po
         await db.commit()
     speedrun = (await _create(test_client, {"pool_name": "sprint", "mode": "speedrun"})).json()
     assert (await _race_seed(async_session, speedrun["id"])).seed_number not in seen
-    reroll = await _reroll(test_client, speedrun["id"])
+    reroll = await _reroll(test_client, speedrun["id"], report_buggy=True, report_reason="Softlock")
     assert (reroll.status_code, reroll.json()["detail"]) == (409, "No fresh seed right now")
 
     # At the floor, a normal race would take a SEEN seed: a Daily Seed's reroll

@@ -1,7 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
 import RaceControls from "$lib/components/RaceControls.svelte";
-import type { RaceDetail, RunMode } from "$lib/api";
+import { rerollSeed, type RaceDetail, type RunMode } from "$lib/api";
+
+vi.mock("$lib/api", async () => {
+  const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
+  return { ...actual, rerollSeed: vi.fn() };
+});
 
 function race(mode: RunMode, extra: Partial<RaceDetail> = {}): RaceDetail {
   return {
@@ -78,11 +83,82 @@ describe("RaceControls: Re-roll Seed", () => {
   }
 
   it("warns that a reroll without a report takes a community race off the boards", async () => {
-    const { getByLabelText, queryByText } = await openReroll(race("speedrun"));
+    const { getByLabelText, queryByText } = await openReroll(race("normal"));
     expect(queryByText(WARNING)).not.toBeNull();
 
     await fireEvent.click(getByLabelText("Report this seed as buggy"));
     expect(queryByText(WARNING)).toBeNull();
+  });
+
+  describe("on a speedrun race", () => {
+    beforeEach(() => {
+      vi.mocked(rerollSeed).mockReset();
+      vi.mocked(rerollSeed).mockResolvedValue(race("speedrun"));
+    });
+
+    function confirmButton(container: HTMLElement): HTMLButtonElement {
+      return [...container.querySelectorAll(".actions button")].find((b) =>
+        b.textContent?.includes("Re-roll"),
+      ) as HTMLButtonElement;
+    }
+
+    it("always reports the seed, so the race never leaves the boards", async () => {
+      const { queryByLabelText, queryByText } = await openReroll(
+        race("speedrun"),
+      );
+      expect(queryByLabelText("Report this seed as buggy")).toBeNull();
+      expect(queryByText(WARNING)).toBeNull();
+      expect(queryByLabelText("Reason for the re-roll")).not.toBeNull();
+    });
+
+    it("promises the boards only to a race that still counts", async () => {
+      const KEEPS = /keeps counting on the Speedrun boards/;
+      const counting = await openReroll(race("speedrun"));
+      expect(counting.queryByText(KEEPS)).not.toBeNull();
+      counting.unmount();
+
+      const off = await openReroll(
+        race("speedrun", {
+          unranked_code: "rerolled",
+          unranked_reason: "Re-rolled race: ...",
+        }),
+      );
+      expect(off.queryByText(KEEPS)).toBeNull();
+      expect(
+        off.queryByText(/goes to the admins as a seed report/),
+      ).not.toBeNull();
+    });
+
+    it.each(["", "   "])(
+      "keeps the window open without a reason (%j)",
+      async (reason) => {
+        const { container, getByLabelText, queryByText } = await openReroll(
+          race("speedrun"),
+        );
+        await fireEvent.input(getByLabelText("Reason for the re-roll"), {
+          target: { value: reason },
+        });
+        await fireEvent.click(confirmButton(container));
+
+        expect(queryByText("A reason is required.")).not.toBeNull();
+        expect(getByLabelText("Reason for the re-roll")).not.toBeNull();
+        expect(rerollSeed).not.toHaveBeenCalled();
+      },
+    );
+
+    it("sends the trimmed reason as a seed report", async () => {
+      const { container, getByLabelText } = await openReroll(race("speedrun"));
+      await fireEvent.input(getByLabelText("Reason for the re-roll"), {
+        target: { value: "  Softlock at the start  " },
+      });
+      await fireEvent.click(confirmButton(container));
+
+      expect(rerollSeed).toHaveBeenCalledWith(
+        "race-1",
+        true,
+        "Softlock at the start",
+      );
+    });
   });
 
   it.each([

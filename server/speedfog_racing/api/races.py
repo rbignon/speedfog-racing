@@ -1826,8 +1826,10 @@ async def apply_seed_reroll(
 
     Raises:
         HTTPException: 409 when a speedrun race's pool is at its floor or the
-            race changed concurrently, 400 when no seed can be drawn. Nothing
-            is committed then; a caller that goes on rolls the session back.
+            race changed concurrently, 400 when no seed can be drawn, for a
+            Set Seed race, or for a speedrun race without a seed report and
+            a reason. Nothing is committed then; a caller that goes on rolls
+            the session back.
     """
     race_id = race.id
     is_daily = race.daily_date is not None

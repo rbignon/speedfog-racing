@@ -63,6 +63,10 @@
       onBoardsPool,
   );
 
+  // A speedrun race must count: its reroll always goes to the admins as a
+  // seed report with a reason (the server refuses one without).
+  let reportRequired = $derived(race.mode === "speedrun");
+
   let reportBuggy = $state(false);
   let reportReason = $state("");
 
@@ -81,15 +85,21 @@
     message: string;
     confirmLabel: string;
     danger?: boolean;
+    // An error to show in the window instead of going on, or null.
+    validate?: () => string | null;
     action: () => Promise<void>;
   } | null>(null);
+  let confirmError = $state<string | null>(null);
 
   function requestConfirm(opts: NonNullable<typeof pendingConfirm>) {
+    confirmError = null;
     pendingConfirm = opts;
   }
 
   async function executeConfirm() {
     if (!pendingConfirm) return;
+    confirmError = pendingConfirm.validate?.() ?? null;
+    if (confirmError) return;
     const action = pendingConfirm.action;
     pendingConfirm = null;
     await action();
@@ -110,8 +120,9 @@
 
   function handleReroll() {
     // Daily reroll discards every in-flight run, so the bug-report opt-in
-    // is on by default; for setup races we keep the legacy "ask me" flow.
-    reportBuggy = isDaily;
+    // is on by default; a speedrun race always reports; other setup races
+    // keep the "ask me" flow.
+    reportBuggy = isDaily || reportRequired;
     reportReason = "";
     const message = isDaily
       ? "Rerolling will discard all current and finished runs for this Daily Seed. The new seed will be released immediately. Continue?"
@@ -122,6 +133,8 @@
       title: "Re-roll Seed",
       message,
       confirmLabel: "Re-roll",
+      validate: () =>
+        reportRequired && !reportReason.trim() ? "A reason is required." : null,
       async action() {
         loading = true;
         error = null;
@@ -500,20 +513,39 @@
     message={pendingConfirm.message}
     confirmLabel={pendingConfirm.confirmLabel}
     danger={pendingConfirm.danger ?? false}
+    error={confirmError}
     onConfirm={executeConfirm}
     onCancel={() => (pendingConfirm = null)}
   >
     {#if pendingConfirm.title === "Re-roll Seed"}
-      <label class="report-check">
-        <input type="checkbox" bind:checked={reportBuggy} />
-        Report this seed as buggy
-      </label>
-      {#if rerollLeavesBoards && !reportBuggy}
-        <p class="report-hint">
-          Without a seed report, this race will count on no Speedrun board.
+      {#if reportRequired}
+        <label class="report-field">
+          Reason for the re-roll
+          <input
+            class="report-reason"
+            type="text"
+            placeholder="Why re-roll this seed?"
+            bind:value={reportReason}
+            maxlength="500"
+          />
+        </label>
+        <p class="report-note">
+          A speedrun race's re-roll goes to the admins as a seed report{reportCanKeepOnBoards
+            ? ", so the race keeps counting on the Speedrun boards."
+            : "."}
         </p>
+      {:else}
+        <label class="report-check">
+          <input type="checkbox" bind:checked={reportBuggy} />
+          Report this seed as buggy
+        </label>
+        {#if rerollLeavesBoards && !reportBuggy}
+          <p class="report-hint">
+            Without a seed report, this race will count on no Speedrun board.
+          </p>
+        {/if}
       {/if}
-      {#if reportBuggy}
+      {#if reportBuggy && !reportRequired}
         <input
           class="report-reason"
           type="text"
@@ -661,6 +693,24 @@
     margin: 0 0 0.5rem;
     font-size: var(--font-size-sm);
     color: var(--color-warning);
+  }
+
+  .report-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
+  }
+
+  .report-field .report-reason {
+    margin-bottom: 0.5rem;
+  }
+
+  .report-note {
+    margin: 0 0 0.75rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
   }
 
   .report-reason {

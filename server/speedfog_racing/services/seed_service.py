@@ -527,17 +527,22 @@ async def reroll_seed_for_race(
     Without ``reporter_id``, giving up a seed that was not SEEN when drawn
     sets ``Race.rerolled_without_report``, which keeps a community race off
     the Speedrun boards for good: its organizer may have looked at that seed
-    first (``race_unranked_reason``).
+    first (``race_unranked_reason``). A speedrun race's reroll always needs
+    a report with a reason, so it stays on the boards and the admins see
+    every seed it gave up.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
 
     Raises:
         SpeedrunFloorError: A speedrun race's pool is at or under its floor.
-        ValueError: A Set Seed race (it keeps its seed), or no other seed
-            available in the pool.
+        ValueError: A Set Seed race (it keeps its seed), a speedrun race
+            rerolled without a report or a reason, or no other seed available
+            in the pool.
     """
     if race.mode == RunMode.SET_SEED:
         raise ValueError("A Set Seed race keeps its seed")
+    if race.mode == RunMode.SPEEDRUN and (reporter_id is None or not (report_reason or "").strip()):
+        raise ValueError("A speedrun race's seed re-roll needs a seed report with a reason")
     old_seed = race.seed
     if old_seed is None:
         raise ValueError("Race has no seed assigned")
