@@ -66,9 +66,6 @@
   let shownCategory = $derived(
     seedMode === "set" && summary ? summary.category_name : categoryName,
   );
-  let setBoard = $derived(
-    summary ? `${summary.category_name} · Set Seed` : "Set Seed",
-  );
   // " · WR <time> by <player>" for a seed with a run, nothing otherwise.
   let recordText = $derived.by(() => {
     const record = summary?.record;
@@ -282,12 +279,11 @@
         <strong class="board">{categoryName} · Random Seed</strong>, and on Set
         Seed too.
       {:else if chosenFormat === "solo"}
-        The seed sets the category. Spoiler available. Ranked on
-        <strong class="board">{setBoard}</strong>.
+        Spoiler available. Ranked on
+        <strong class="board">{shownCategory} · Set Seed</strong>.
       {:else}
-        The seed sets the category, and <strong
-          >runners may already know it</strong
-        >. Ranked on <strong class="board">{setBoard}</strong> only.
+        <strong>Runners may already know this seed</strong>. Ranked on
+        <strong class="board">{shownCategory} · Set Seed</strong> only.
       {/if}
     </p>
 

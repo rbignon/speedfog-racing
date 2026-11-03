@@ -360,11 +360,14 @@ describe("Start a run: Set Seed", () => {
     );
     const { container } = renderWindow();
     const category = () => text(container.querySelector(".category-chip"));
+    const board = () => text(container.querySelector(".explain .board"));
     expect(category()).toBe("Standard");
 
     await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
+    expect(board()).toBe("Standard · Set Seed");
     await typeSeed(SEED);
     await waitFor(() => expect(category()).toBe("Boss Rush"));
+    expect(board()).toBe("Boss Rush · Set Seed");
 
     // Random Seed draws from the board's category.
     await fireEvent.click(screen.getByRole("button", { name: "Random Seed" }));
@@ -374,6 +377,7 @@ describe("Start a run: Set Seed", () => {
 
     await typeSeed("");
     expect(category()).toBe("Standard");
+    expect(board()).toBe("Standard · Set Seed");
   });
 });
 
