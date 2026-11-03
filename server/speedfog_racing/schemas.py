@@ -557,6 +557,8 @@ class RaceDetailResponse(BaseModel):
     unranked_code: UnrankedCode | None = None
     participant_count: int
     seed_number: str | None = None
+    # The seed's speedrun category key (null without a seed).
+    category: str | None = None
     seed_total_layers: int | None
     seed_total_nodes: int | None = None
     seed_total_paths: int | None = None
@@ -759,6 +761,8 @@ class TrainingSessionDetailResponse(BaseModel):
     created_at: datetime
     finished_at: datetime | None = None
     seed_number: str | None = None
+    # The seed's speedrun category key.
+    category: str | None = None
     seed_total_layers: int | None = None
     seed_total_nodes: int | None = None
     seed_total_paths: int | None = None
@@ -1174,6 +1178,26 @@ class SpeedrunSeedSummary(BaseModel):
     replayable: bool
     not_replayable_reason: str | None
     record: SpeedrunRecordHolder | None
+
+
+class LiveSplitReference(BaseModel):
+    """A run a LiveSplit file compares against: its time and its first-arrival
+    IGT per layer (the finish under the seed's layer count)."""
+
+    igt_ms: int
+    user: UserResponse
+    layer_entry_igts: dict[int, int]
+
+
+class LiveSplitCategoryResponse(BaseModel):
+    """What a LiveSplit file of a category needs: the Random Seed record and
+    the viewer's best run (null for a logged-out viewer or one without a run)."""
+
+    category: str
+    category_name: str
+    total_layers: int | None
+    wr: LiveSplitReference | None
+    pb: LiveSplitReference | None
 
 
 class SpeedrunSeedResponse(BaseModel):

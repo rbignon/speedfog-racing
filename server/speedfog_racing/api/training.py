@@ -45,6 +45,7 @@ from speedfog_racing.services.seed_pack_service import (
     sanitize_filename,
     stream_seed_pack_with_config,
 )
+from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.services.training_service import (
     abandon_active_session,
     create_training_session,
@@ -141,6 +142,7 @@ def _build_detail_response(
         created_at=session.created_at,
         finished_at=session.finished_at,
         seed_number=seed.seed_number,
+        category=seed_category(seed.pool, seed.total_layers)[0] if seed.pool else None,
         seed_total_layers=seed.total_layers,
         seed_total_nodes=seed.graph_json.get("total_nodes") if seed.graph_json else None,
         seed_total_paths=seed.graph_json.get("total_paths") if seed.graph_json else None,

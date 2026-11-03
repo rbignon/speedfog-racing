@@ -20,6 +20,8 @@ from speedfog_racing.database import get_db
 from speedfog_racing.models import Seed, SeedProtection, User
 from speedfog_racing.rate_limit import limiter
 from speedfog_racing.schemas import (
+    LiveSplitCategoryResponse,
+    LiveSplitReference,
     PoolConfig,
     SpeedrunRecordHolder,
     SpeedrunSeedResponse,
@@ -29,6 +31,8 @@ from speedfog_racing.schemas import (
     TrainingSessionDetailResponse,
 )
 from speedfog_racing.services import get_pool
+from speedfog_racing.services.livesplit_service import pick_references, reference_arrivals
+from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.seed_service import has_fresh_speedrun_seed
 from speedfog_racing.services.set_seed_service import (
     SeedLookupError,
@@ -40,6 +44,9 @@ from speedfog_racing.services.set_seed_service import (
     seed_replayability,
 )
 from speedfog_racing.services.speedrun_service import (
+    CountedRun,
+    _layers_count,
+    _pool_config,
     build_seed_runs,
     load_counted_runs,
     load_unranked_runs,
@@ -135,6 +142,52 @@ async def get_seed_page(
             db, shown_runs, shown_unranked, replayable=replayability.replayable
         ),
         stats=seed_stats([*shown_runs, *shown_unranked]),
+    )
+
+
+@router.get("/livesplit/{category}", response_model=LiveSplitCategoryResponse)
+async def get_livesplit_category(
+    category: str,
+    db: AsyncSession = Depends(get_db),
+    user: User | None = Depends(get_current_user_optional),
+) -> LiveSplitCategoryResponse:
+    """What a LiveSplit file of a category needs: the Random Seed record and the
+    viewer's best run, each with the IGT of its first arrival on every layer.
+    A category without runs (a training one included) answers without
+    references; 404 when its pool does not exist."""
+    pool_name, _, suffix = category.partition("@")
+    pool = await get_pool(db, pool_name)
+    if pool is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown category")
+    every_run = await _cached("speedrun:runs", load_counted_runs, db)
+    wr, pb = pick_references(every_run, category=category, viewer_id=user.id if user else None)
+    category_name = format_pool_display_name(pool)
+    layers: int | None = _layers_count(_pool_config(pool))
+    if suffix:
+        if not suffix.isdigit():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown category")
+        category_name += f" ({suffix} layers)"
+        layers = int(suffix)
+
+    async def reference(run: CountedRun | None) -> LiveSplitReference | None:
+        if run is None:
+            return None
+        return LiveSplitReference(
+            igt_ms=run.igt_ms,
+            user=run.user,
+            layer_entry_igts=await reference_arrivals(db, run),
+        )
+
+    wr_reference = await reference(wr)
+    if layers is None and wr_reference is not None:
+        # The finish entry sits under the seed's last layer.
+        layers = max(wr_reference.layer_entry_igts)
+    return LiveSplitCategoryResponse(
+        category=category,
+        category_name=category_name,
+        total_layers=layers,
+        wr=wr_reference,
+        pb=await reference(pb),
     )
 
 

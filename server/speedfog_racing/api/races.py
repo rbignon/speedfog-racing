@@ -111,6 +111,7 @@ from speedfog_racing.services.speedrun_service import (
     _pool_config,
     race_unranked_code,
     race_unranked_reason,
+    seed_category,
 )
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 from speedfog_racing.websocket import (
@@ -217,6 +218,11 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         unranked_code=race_unranked_code(race),
         participant_count=len(race.participants),
         seed_number=race.seed.seed_number if race.seed else None,
+        category=(
+            seed_category(race.seed.pool, race.seed.total_layers)[0]
+            if race.seed and race.seed.pool
+            else None
+        ),
         seed_total_layers=race.seed.total_layers if race.seed else None,
         seed_total_nodes=_seed_total_nodes(race.seed) if race.seed else None,
         seed_total_paths=_seed_total_paths(race.seed) if race.seed else None,
