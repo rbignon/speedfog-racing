@@ -12,9 +12,10 @@ layer 0, where the run starts); this doc and the code keep the graph's
 
 ## Requirements
 
-- LiveSplit 1.8.29 or later: its pipe server (`\\.\pipe\LiveSplit`) is
-  always on from that version. No component to install, nothing to
-  activate.
+- LiveSplit 1.8.31 or later: its pipe server (`\\.\pipe\LiveSplit`) is
+  always on from 1.8.29, and 1.8.31 added the `getcustomvariablevalue`
+  command the mod reads the file's identity with (see "How the mod
+  links"). No component to install, nothing to activate.
 - No SoulSplitter. It writes the game's timer (its auto start writes 0 into
   the IGT, its blackscreen write-back can lower the IGT the mod reports), so
   SpeedFog runs allow LiveSplit only without it. SpeedFog files name their
@@ -50,7 +51,7 @@ from run data the site already serves.
 
 ## Where to download
 
-Five surfaces, through `downloadSeedSplits` and `downloadCategorySplits`
+Five pages, through `downloadSeedSplits` and `downloadCategorySplits`
 (`web/src/lib/livesplit-download.ts`):
 
 - **Seed page**, "Play this seed in Set Seed" card, "LiveSplit splits": the
@@ -58,9 +59,10 @@ Five surfaces, through `downloadSeedSplits` and `downloadCategorySplits`
 - **Solo session page** (owner, active session), "LiveSplit splits" after
   "Download Pack": the seed file for a Set Seed session, the category file
   for any other. Hidden while the session has no category.
-- **Race page and Daily Seed page**, in the download window ("Before you
-  race"), "Download LiveSplit splits": the seed file for a Set Seed race,
-  the category file otherwise. Absent while the race has no category.
+- **Race page**, in the download window ("Before you race"), "Download
+  LiveSplit splits": the seed file for a Set Seed race, the category file
+  otherwise. Absent while the race has no category.
+- **Daily Seed page**, in the same download window, alike.
 - **Speedrun board toolbar**, "LiveSplit", before "Start a run": the file of
   the selected category.
 
@@ -79,8 +81,19 @@ after an answer out of step. A failed attempt costs nothing visible. The
 mod log notes each link and each loss, and the first failure of each kind
 (not every retry), under the `[LIVESPLIT]` prefix.
 
-On link, the thread reads the file's identity from two custom variables of
-the open splits, `SpeedFog seed` (a seed file) and `SpeedFog category` (a
+On link, the thread first checks LiveSplit's version: it writes
+`getcustomvariablevalue SpeedFog seed` and `gettimerphase` back to back,
+then reads one line. LiveSplit before 1.8.31 does not know the first
+command and drops it without an answer, so that line answers the second: a
+timer phase, which no variable's answer (a seed number, a category key or
+`-`) ever is (`livesplit_too_old`). The mod then closes the pipe without
+linking, shows a status once (until LiveSplit closes or a link comes up),
+and tries again every 60 seconds instead of 5: each try leaves an "Invalid
+command" line in LiveSplit's log. A newer LiveSplit answers both lines,
+and both are read.
+
+The thread then reads the file's identity from two custom variables of the
+open splits, `SpeedFog seed` (a seed file) and `SpeedFog category` (a
 category file), then LiveSplit's timer: its phase, split index and game
 time.
 
@@ -107,6 +120,7 @@ within a second, as a new link would.
 | LiveSplit: these splits are for another run       | The file names another seed, or another category.            |
 | LiveSplit: open SpeedFog splits to track this run | The file is not a SpeedFog file.                             |
 | Reset LiveSplit to track this run                 | LiveSplit runs a timer the mod does not own (see Ownership). |
+| LiveSplit 1.8.31 or later needed                  | The open LiveSplit is too old to link (see above).           |
 
 ## Timing
 
@@ -114,7 +128,9 @@ LiveSplit's Game Time is the IGT the mod reports to the server: held over
 menu reloads, held during blackscreen fades, quit-out penalties included
 (`RaceMachine::live_igt_ms`). LiveSplit's own game time stays paused
 (`alwayspausegametime`); the mod sets it with `setgametime` about 30 times a
-second while the run is live and the mod owns the timer.
+second while the run is live and the mod owns the timer. Before a save
+loads after a launch, the IGT is unknown: nothing is pushed then, rather
+than a placeholder 0.
 
 The run is **live** while it runs past its countdown, the local runner has
 neither finished nor left it (abandon, disqualification), and the loaded
@@ -194,6 +210,12 @@ relaunched, the pipe lost and back) with a run that is not fresh:
   track this run". The player's reset frees it: the mod then starts it and
   catches up.
 
+The game time check needs the run's IGT. A link that comes up before it is
+known (the title screen after a relaunch, before the save loads) leaves a
+Running timer whose split index fits the run alone, without a command or a
+status, and the first poll that knows the IGT adopts it or asks for the
+reset.
+
 **Catch-up** splits each depth LiveSplit is missing, each with its own
 arrival IGT, until LiveSplit's split index matches the depths reached.
 
@@ -202,8 +224,9 @@ arrival IGT, until LiveSplit's split index matches the depths reached.
 If the player resets a timer the mod owns during a run, the mod leaves it
 stopped for the rest of that attempt on that link: no restart, no catch-up,
 even if the player starts it again by hand. The next attempt takes it
-again, and so does a new link (LiveSplit or the game restarted, or the pipe
-dropped), which restarts it and catches up.
+again, and so does a new link (LiveSplit or the game restarted, the pipe
+dropped, or the open splits file changed to one for this run), which
+restarts it and catches up.
 
 A reset in the second or so between the mod's `starttimer` and LiveSplit's
 next answer is not recognized as the player's: the timer stays stopped, and
@@ -212,12 +235,14 @@ a start by hand is then driven.
 ## Performance
 
 Per frame, `RaceTracker::update` does, inside
-`profile_span!("livesplit_publish")`, one atomic store of the IGT and a
-`try_recv` on the status channel. On the run's transitions (its liveness,
-a new attempt, a new depth: about 30 per run), `execute_effects` does one
-`try_send` of the run view. Nothing on the frame thread formats, allocates,
-does I/O or blocks, but for the overlay string of a status (a few per
-session).
+`profile_span!("livesplit_publish")`, one atomic store of the IGT (0 while
+it is unknown: a known IGT is never 0) and a `try_recv` on the status
+channel. On the run's transitions (its liveness,
+a new attempt, a new depth: about 30 per run), `emit_run_view` builds a run
+view (its allocation, only on such a change) and `execute_effects` does one
+`try_send` of it. Nothing else on the frame thread allocates, but for the
+overlay string of a status (a few per session), and nothing formats, does
+I/O or blocks.
 
 The `livesplit` thread does the rest. Every 10 ms it loads the IGT, then
 applies every run view queued before it, then, while linked, pushes game
@@ -236,8 +261,13 @@ connection starts in step.
 
 If LiveSplit hangs, only the thread waits: the game keeps running, and run
 views queue on the channel (64 of them, far more than a stall should
-gather). On shutdown the mod waits at most 200 ms for the thread, then
-leaves it behind rather than hang the game's exit on a frozen LiveSplit.
+gather). Past that, a new view takes the oldest queued one off rather than
+being dropped: views are cumulative, so the newest holds every arrival so
+far, the final split included.
+
+When the mod is ejected (hudhook drops the overlay), it waits at most
+200 ms for the thread, then leaves it behind rather than hang on a frozen
+LiveSplit. A game exit waits for nothing: the process ends with the thread.
 
 ## Code map
 

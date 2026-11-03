@@ -591,8 +591,7 @@ impl RaceTracker {
             profile_span!("livesplit_publish");
             // After every run view of this frame was queued (execute_effects):
             // the LiveSplit thread reads the IGT, then the views queued before it.
-            self.livesplit
-                .publish_igt(self.machine.live_igt_ms().unwrap_or(0));
+            self.livesplit.publish_igt(self.machine.live_igt_ms());
             while let Some(status) = self.livesplit.poll_status() {
                 self.machine.set_status(status.to_string(), now);
             }

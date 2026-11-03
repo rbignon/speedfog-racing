@@ -14,13 +14,16 @@
 //! the fix is disabled and racing proceeds on vanilla IGT; a game patch
 //! affects every participant of a seed identically.
 //!
-//! Another tool hooking this site does not disable the fix. SoulSplitter's
+//! Another tool hooking this site leaves the IGT the same. SoulSplitter's
 //! soulmods hooks the very same address with ilhook: its detour sits after
-//! the pattern, whose bytes stay intact, so the scan still finds one match
-//! and the two hooks stack. The one installed last runs first; the one
-//! installed first runs last and its xmm1 wins. Both apply the same
-//! truncation fix, so the IGT is the same either way (each accumulator keeps
-//! its own sub-millisecond remainder).
+//! the pattern, whose bytes stay intact, so the scan still finds one match.
+//! Installed before soulmods', this hook stacks with it: the one installed
+//! last runs first; the one installed first runs last and its xmm1 wins.
+//! Installed after it, this hook may fail (ilhook then has to relocate the
+//! jump soulmods wrote there) and log "Failed to install truncation-fix
+//! hook": soulmods' fix then runs alone. Both apply the same truncation fix,
+//! so the IGT is the same either way (each accumulator keeps its own
+//! sub-millisecond remainder).
 
 use ilhook::x64::{CallbackOption, HookFlags, HookType, Hooker, Registers};
 use parking_lot::Mutex;

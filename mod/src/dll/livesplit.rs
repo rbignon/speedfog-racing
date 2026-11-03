@@ -12,7 +12,7 @@
 //! LiveSplit handles a connection's lines in order. Nothing is read without
 //! a query first, so an answer always follows every command written before.
 
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -22,17 +22,21 @@ use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
 use crate::core::livesplit::{
-    parse_timer_phase, parse_timespan, parse_variable, LiveSplitSync, LsCommand, LsSnapshot,
-    RunView, SyncOutput, LS_VAR_CATEGORY, LS_VAR_SEED,
+    livesplit_too_old, parse_timer_phase, parse_timespan, parse_variable, LiveSplitSync, LsCommand,
+    LsSnapshot, RunView, SyncOutput, LS_VAR_CATEGORY, LS_VAR_SEED, STATUS_TOO_OLD,
 };
 use crate::profile_span;
 
-/// LiveSplit's pipe server, always on since LiveSplit 1.8.29.
+/// LiveSplit's pipe server, always on since LiveSplit 1.8.29; the mod needs
+/// 1.8.31 or later, for `getcustomvariablevalue`.
 const PIPE_PATH: &str = r"\\.\pipe\LiveSplit";
 /// Loop period: how often queued run views reach the sync.
 const TICK: Duration = Duration::from_millis(10);
 /// Delay between two connection attempts while unlinked.
 const RETRY_INTERVAL: Duration = Duration::from_secs(5);
+/// Delay before trying again a LiveSplit found too old to link: each try
+/// leaves an "Invalid command" line in its log.
+const TOO_OLD_RETRY_INTERVAL: Duration = Duration::from_secs(60);
 /// How often LiveSplit's timer is read while linked.
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// Game time push period, about 30 Hz.
@@ -41,6 +45,12 @@ const PUSH_INTERVAL: Duration = Duration::from_millis(33);
 const SHUTDOWN_GRACE: Duration = Duration::from_millis(200);
 /// Longest answer line accepted: anything longer is no LiveSplit answer.
 const MAX_ANSWER_BYTES: u64 = 4096;
+/// The IGT atomic's value while the IGT is unknown (the title screen after a
+/// launch): a known IGT is never 0, as `RaceMachine::held_igt_ms` takes a
+/// zero reading for none.
+const IGT_UNKNOWN: u32 = 0;
+/// Run views the channel holds; past it the oldest is dropped.
+const RUN_QUEUE: usize = 64;
 
 // =============================================================================
 // CLIENT
@@ -50,6 +60,9 @@ const MAX_ANSWER_BYTES: u64 = 4096;
 /// non-blocking, and allocation-free but for a failure's log line.
 pub struct LiveSplitClient {
     run_tx: Sender<RunView>,
+    /// The thread's receiver too: on a full channel, takes the oldest view
+    /// off to make room for the newest.
+    run_rx: Receiver<RunView>,
     status_rx: Receiver<&'static str>,
     igt: Arc<AtomicU32>,
     shutdown: Arc<AtomicBool>,
@@ -60,16 +73,17 @@ impl LiveSplitClient {
     /// Spawns the `livesplit` thread, which links to LiveSplit whenever it
     /// runs.
     pub fn start() -> Self {
-        let (run_tx, run_rx) = bounded::<RunView>(64);
+        let (run_tx, run_rx) = bounded::<RunView>(RUN_QUEUE);
         let (status_tx, status_rx) = bounded::<&'static str>(64);
-        let igt = Arc::new(AtomicU32::new(0));
+        let igt = Arc::new(AtomicU32::new(IGT_UNKNOWN));
         let shutdown = Arc::new(AtomicBool::new(false));
 
+        let thread_run_rx = run_rx.clone();
         let thread_igt = Arc::clone(&igt);
         let thread_shutdown = Arc::clone(&shutdown);
         let handle = thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                livesplit_thread(run_rx, status_tx, thread_igt, thread_shutdown);
+                livesplit_thread(thread_run_rx, status_tx, thread_igt, thread_shutdown);
             }));
             if let Err(panic_info) = result {
                 error!(
@@ -81,6 +95,7 @@ impl LiveSplitClient {
 
         Self {
             run_tx,
+            run_rx,
             status_rx,
             igt,
             shutdown,
@@ -89,16 +104,31 @@ impl LiveSplitClient {
     }
 
     /// Queues a run view for the thread (rare: on the run's transitions).
+    /// Views are cumulative and the newest one counts (it holds the latest
+    /// arrivals, a final split included), so a full channel (a LiveSplit
+    /// stalled for a long while) drops the oldest view, never this one.
     pub fn send_run(&self, view: RunView) {
-        if let Err(e) = self.run_tx.try_send(view) {
-            warn!("[LIVESPLIT] Failed to queue run view: {}", e);
+        let view = match self.run_tx.try_send(view) {
+            Ok(()) => return,
+            Err(TrySendError::Full(view)) => view,
+            Err(e) => {
+                warn!("[LIVESPLIT] Failed to queue run view: {}", e);
+                return;
+            }
+        };
+        let _ = self.run_rx.try_recv();
+        match self.run_tx.try_send(view) {
+            Ok(()) => warn!("[LIVESPLIT] Run view queue full, dropped the oldest view"),
+            Err(e) => warn!("[LIVESPLIT] Failed to queue run view: {}", e),
         }
     }
 
-    /// Stores the frame's IGT, after the frame's run views were queued: the
-    /// Release store publishes them with it (see `LiveSplitSync::push_due`).
-    pub fn publish_igt(&self, igt_ms: u32) {
-        self.igt.store(igt_ms, Ordering::Release);
+    /// Stores the frame's IGT (None while unknown, stored as `IGT_UNKNOWN`),
+    /// after the frame's run views were queued: the Release store publishes
+    /// them with it (see `LiveSplitSync::push_due`).
+    pub fn publish_igt(&self, igt_ms: Option<u32>) {
+        self.igt
+            .store(igt_ms.unwrap_or(IGT_UNKNOWN), Ordering::Release);
     }
 
     /// The next overlay status the thread asked for, if any.
@@ -111,7 +141,8 @@ impl Drop for LiveSplitClient {
     /// Stops the thread without hanging on a frozen LiveSplit: the thread
     /// checks the flag every tick, but a pipe write or read blocks for as
     /// long as LiveSplit does not take it. Past a short grace the thread is
-    /// left behind (detached) rather than joined.
+    /// left behind (detached) rather than joined. Runs when the mod is
+    /// ejected (hudhook drops the overlay), never at game exit.
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Relaxed);
         let Some(handle) = self.handle.take() else {
@@ -147,6 +178,7 @@ fn livesplit_thread(
         pipe: None,
         status_tx,
         open_error: None,
+        too_old: false,
         file_seed: None,
         file_category: None,
     };
@@ -158,7 +190,7 @@ fn livesplit_thread(
     while !shutdown.load(Ordering::Relaxed) {
         // The IGT first, then every view queued before it, then the push:
         // a push never gets ahead of an arrival the sync has not seen.
-        let igt_ms = igt.load(Ordering::Acquire);
+        let igt_ms = Some(igt.load(Ordering::Acquire)).filter(|&v| v != IGT_UNKNOWN);
         while let Ok(view) = run_rx.try_recv() {
             let out = link.sync.on_run(view, igt_ms);
             link.execute(out);
@@ -167,9 +199,8 @@ fn livesplit_thread(
         let now = Instant::now();
         if link.pipe.is_none() {
             if now >= next_connect {
-                next_connect = now + RETRY_INTERVAL;
                 next_poll = now + POLL_INTERVAL;
-                link.connect(igt_ms);
+                next_connect = now + link.connect(igt_ms);
             }
         } else {
             if now >= next_poll {
@@ -196,34 +227,59 @@ struct Link {
     status_tx: Sender<&'static str>,
     /// The last connection failure logged, so a retry loop logs it once.
     open_error: Option<io::ErrorKind>,
+    /// The last attempt found a LiveSplit too old to link, so a run of such
+    /// attempts is logged and shown once.
+    too_old: bool,
     /// The file identity the sync last checked, from the link's snapshot.
     file_seed: Option<String>,
     file_category: Option<String>,
 }
 
 impl Link {
-    /// Opens the pipe and reads LiveSplit's state; links on success.
-    fn connect(&mut self, igt_ms: u32) {
+    /// Opens the pipe, checks LiveSplit's version and reads its state; links
+    /// on success. Returns how long to wait before the next attempt while
+    /// unlinked: longer for a LiveSplit too old to link.
+    fn connect(&mut self, igt_ms: Option<u32>) -> Duration {
         profile_span!("livesplit_connect");
-        let snapshot = Pipe::open().and_then(|mut pipe| Ok((read_snapshot(&mut pipe)?, pipe)));
+        let snapshot = Pipe::open().and_then(|mut pipe| {
+            if !reads_variables(&mut pipe)? {
+                return Ok(None);
+            }
+            Ok(Some((read_snapshot(&mut pipe)?, pipe)))
+        });
         let (ls, pipe) = match snapshot {
-            Ok(linked) => linked,
+            Ok(Some(linked)) => linked,
+            Ok(None) => {
+                // The pipe is closed: an older LiveSplit is never driven.
+                self.open_error = None;
+                if !self.too_old {
+                    info!(
+                        "[LIVESPLIT] LiveSplit older than 1.8.31, not linked; retrying every 60 s"
+                    );
+                    let _ = self.status_tx.try_send(STATUS_TOO_OLD);
+                    self.too_old = true;
+                }
+                return TOO_OLD_RETRY_INTERVAL;
+            }
             Err(e) => {
                 if self.open_error != Some(e.kind()) {
                     info!(error = %e, "[LIVESPLIT] LiveSplit unavailable, retrying every 5 s");
                     self.open_error = Some(e.kind());
                 }
-                return;
+                self.too_old = false;
+                return RETRY_INTERVAL;
             }
         };
         self.open_error = None;
+        self.too_old = false;
         self.pipe = Some(pipe);
         self.link(ls, igt_ms);
+        RETRY_INTERVAL
     }
 
     /// Feeds LiveSplit's state to the sync as a new link, which checks the
     /// file and resets what belonged to the previous link.
-    fn link(&mut self, ls: LsSnapshot, igt_ms: u32) {
+    fn link(&mut self, ls: LsSnapshot, igt_ms: Option<u32>) {
         info!(
             phase = ?ls.phase,
             split_index = ls.split_index,
@@ -241,7 +297,7 @@ impl Link {
     /// Reads LiveSplit's state and feeds it to the sync. The sync checks the
     /// file on link only, so a poll that finds another file open (the player
     /// opened the run's splits after the link, or another run's) links anew.
-    fn poll(&mut self, igt_ms: u32) {
+    fn poll(&mut self, igt_ms: Option<u32>) {
         profile_span!("livesplit_poll");
         let Some(pipe) = self.pipe.as_mut() else {
             return;
@@ -304,6 +360,24 @@ impl Link {
         let out = self.sync.on_unlink();
         self.execute(out);
     }
+}
+
+/// Whether LiveSplit answers `getcustomvariablevalue` (1.8.31 or later),
+/// read on a new connection. The variable query and `gettimerphase` go out
+/// back to back: an older LiveSplit drops the first without an answer, so
+/// the first line read answers the second (`livesplit_too_old`). A newer
+/// one answers both, and both answers are read, which keeps every later
+/// answer in step with its query.
+fn reads_variables(pipe: &mut Pipe) -> io::Result<bool> {
+    let variable_query = format!("getcustomvariablevalue {LS_VAR_SEED}");
+    pipe.send(&variable_query)?;
+    pipe.send("gettimerphase")?;
+    if livesplit_too_old(pipe.read_answer(&variable_query)?) {
+        return Ok(false);
+    }
+    let answer = pipe.read_answer("gettimerphase")?;
+    parse_timer_phase(answer).ok_or_else(|| unexpected("gettimerphase", answer))?;
+    Ok(true)
 }
 
 /// LiveSplit's state: the file's identity, then the timer. An answer that
@@ -372,11 +446,16 @@ impl Pipe {
         self.writer.write_all(&self.line)
     }
 
-    /// Writes a `get*` query and reads its one-line answer, without the line
-    /// ending. A missing line ending (LiveSplit closed the pipe, or the line
-    /// is too long to be an answer) is an error.
+    /// Writes a `get*` query and reads its one-line answer (`read_answer`).
     fn query(&mut self, query: &str) -> io::Result<&str> {
         self.send(query)?;
+        self.read_answer(query)
+    }
+
+    /// Reads the next line, the answer to `query`, written earlier, without
+    /// the line ending. A missing line ending (LiveSplit closed the pipe, or
+    /// the line is too long to be an answer) is an error.
+    fn read_answer(&mut self, query: &str) -> io::Result<&str> {
         self.answer.clear();
         (&mut self.reader)
             .take(MAX_ANSWER_BYTES)
