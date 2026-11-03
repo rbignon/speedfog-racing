@@ -4334,3 +4334,49 @@ class TestModVersionHandshake:
                 )
                 == "1.17.0"
             )
+
+
+def test_auth_ok_carries_livesplit_seed_fields(integration_client, race_with_participants):
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        auth = mod0.auth()
+
+    assert auth["seed"]["flag_layers"] == {"9000000": 1, "9000001": 2, "9000002": 3}
+    assert auth["seed"]["seed_number"] == "s999999"
+    assert auth["seed"]["category"] == "standard"
+
+
+def test_auth_ok_carries_the_runners_arrivals(integration_client, race_with_participants):
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        mod0.receive_until_type("leaderboard_update")
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        auth = mod0.auth()
+
+    me = next(p for p in auth["participants"] if p["id"] == auth["participant_id"])
+    assert me["layer_entry_igts"] == {"0": 0, "1": 10000}

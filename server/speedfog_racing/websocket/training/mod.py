@@ -28,12 +28,15 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.speedrun_records import schedule_speedrun_record_check
+from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
     BaseModHandler,
     extract_event_ids,
+    extract_flag_layers,
     reached_final_zone,
 )
+from speedfog_racing.websocket.race.manager import build_leader_splits
 from speedfog_racing.websocket.schemas import (
     RANKED_SOLO_MIN_PROTOCOL,
     AuthOkMessage,
@@ -269,8 +272,15 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 death_flags=death_flags,
                 items_spawned_flag=items_spawned_flag,
                 phantom_skins=phantom_skins,
+                flag_layers=extract_flag_layers(seed.graph_json)
+                if seed and seed.graph_json
+                else {},
+                seed_number=seed.seed_number if seed else None,
+                category=(
+                    seed_category(seed.pool, seed.total_layers)[0] if seed and seed.pool else None
+                ),
             ),
-            participants=[build_training_participant_info(session)],
+            participants=[build_training_participant_info(session, with_layer_entry_igts=True)],
             phantom_skin=phantom_skin,
         )
         await self.websocket.send_text(message.model_dump_json())
@@ -611,6 +621,7 @@ def build_training_participant_info(
     mod_connected: bool = True,
     include_zone_history: bool = False,
     graph_json: dict[str, Any] | None = None,
+    with_layer_entry_igts: bool = False,
 ) -> ParticipantInfo:
     """Build ParticipantInfo from a training session, computing layer/tier from progress.
 
@@ -618,6 +629,9 @@ def build_training_participant_info(
     leaderboard_update broadcasts). The spectator bootstrap (_send_initial_state)
     passes include_zone_history=True to seed the client's local store; subsequent
     changes arrive as zone_history snapshots.
+
+    ``with_layer_entry_igts`` (auth_ok only) adds the first arrival per layer,
+    the finish counting as layer ``total_layers``.
 
     ``graph_json`` is the seed's graph when the caller already holds it decoded
     (the session was then loaded without it); otherwise it is read from the seed.
@@ -648,6 +662,12 @@ def build_training_participant_info(
     # "active" → "playing" (MetroDagLive/Leaderboard expect "playing"/"finished")
     status = "playing" if session.status == TrainingSessionStatus.ACTIVE else session.status.value
 
+    layer_entry_igts: dict[int, int] | None = None
+    if with_layer_entry_igts and graph:
+        layer_entry_igts = build_leader_splits(session.zone_history, graph)
+        if session.status == TrainingSessionStatus.FINISHED and seed:
+            layer_entry_igts[seed.total_layers] = session.igt_ms
+
     return ParticipantInfo(
         id=str(session.id),
         twitch_username=session.user.twitch_username,
@@ -661,6 +681,7 @@ def build_training_participant_info(
         color_index=0,
         mod_connected=mod_connected,
         zone_history=session.zone_history if include_zone_history else None,
+        layer_entry_igts=layer_entry_igts,
     )
 
 

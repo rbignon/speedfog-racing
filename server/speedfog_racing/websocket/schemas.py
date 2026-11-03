@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.9"
+PROTOCOL_VERSION = "1.10"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
@@ -272,6 +272,10 @@ class SeedInfo(BaseModel):
     death_flags: dict[str, list[int]] = Field(default_factory=dict)
     items_spawned_flag: int | None = None
     phantom_skins: dict[str, PhantomSkinDirective] = Field(default_factory=dict)
+    # LiveSplit: layer of every fog flag, the seed's identity and its category key.
+    flag_layers: dict[str, int] = Field(default_factory=dict)
+    seed_number: str | None = None
+    category: str | None = None
 
 
 async def resolve_phantom_skin_for_auth_ok(

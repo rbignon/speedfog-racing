@@ -962,6 +962,39 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         assert start["type"] == "race_start"
 
 
+def test_training_auth_ok_carries_livesplit_fields(
+    training_ws_client, training_session_data, async_session
+):
+    """auth_ok names the seed and its flag depths, and lists the first arrival
+    per layer (a revisit adds nothing)."""
+
+    async def seed_history() -> None:
+        async with async_session() as db:
+            session = await db.get(TrainingSession, uuid.UUID(training_session_data["session_id"]))
+            session.zone_history = [
+                {"node_id": "limgrave_start", "igt_ms": 0, "type": "spawn"},
+                {"node_id": "stormveil_01", "igt_ms": 5000, "type": "fog"},
+                {"node_id": "limgrave_start", "igt_ms": 7000, "type": "backtrack"},
+                {"node_id": "stormveil_01", "igt_ms": 9000, "type": "fog"},
+            ]
+            await db.commit()
+
+    asyncio.run(seed_history())
+    sid = training_session_data["session_id"]
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json({"type": "auth", "mod_token": training_session_data["mod_token"]})
+        auth_ok = ws.receive_json()
+
+    assert auth_ok["seed"]["flag_layers"] == {
+        "1040292800": 0,
+        "1040292801": 1,
+        "1040292802": 2,
+    }
+    assert auth_ok["seed"]["seed_number"] == "train_001"
+    assert auth_ok["seed"]["category"] == "training_standard"
+    assert auth_ok["participants"][0]["layer_entry_igts"] == {"0": 0, "1": 5000}
+
+
 def test_training_auth_ok_forwards_quit_out_penalty(
     training_ws_client, training_session_data, monkeypatch
 ):

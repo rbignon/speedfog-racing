@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
-from speedfog_racing.websocket.handler import parse_zone_query_input
+from speedfog_racing.websocket.handler import extract_flag_layers, parse_zone_query_input
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     RaceRoom,
@@ -2061,3 +2061,16 @@ class TestModLogRef:
         for handler in handlers:
             assert str(handler._participant_id) in handler.log_ref
             assert str(race_id) in handler.log_ref
+
+
+def test_extract_flag_layers_maps_each_flag_to_its_node_layer():
+    graph = {
+        "nodes": {"a": {"layer": 1}, "b": {"layer": 2}},
+        "event_map": {"10": "a", "11": "b", "12": "gone"},
+        "finish_event": 13,
+    }
+    assert extract_flag_layers(graph) == {"10": 1, "11": 2}  # unknown node dropped
+
+
+def test_extract_flag_layers_without_event_map_is_empty():
+    assert extract_flag_layers({"nodes": {}}) == {}

@@ -22,7 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from speedfog_racing.config import settings
 from speedfog_racing.services.grace_service import load_graces_mapping, resolve_zone_query
 from speedfog_racing.services.i18n import translate_zone_update
-from speedfog_racing.services.layer_service import compute_zone_update, get_start_node
+from speedfog_racing.services.layer_service import (
+    compute_zone_update,
+    get_layer_for_node,
+    get_start_node,
+)
 from speedfog_racing.services.weapons import bump_combo, filter_equipped
 from speedfog_racing.versioning import evaluate_mod_compat
 from speedfog_racing.websocket.schemas import (
@@ -221,6 +225,20 @@ def extract_event_ids(graph_json: dict[str, Any]) -> tuple[list[int], int | None
             event_ids.append(finish_event_id)
 
     return event_ids, finish_event_id
+
+
+def extract_flag_layers(graph_json: dict[str, Any]) -> dict[str, int]:
+    """Map each fog flag of ``event_map`` to the layer of its node.
+
+    The finish flag is not in ``event_map``. Flags whose node is missing from
+    ``nodes`` are dropped (``get_layer_for_node`` would report layer 0).
+    """
+    nodes = graph_json.get("nodes", {})
+    return {
+        flag: get_layer_for_node(node_id, graph_json)
+        for flag, node_id in graph_json.get("event_map", {}).items()
+        if node_id in nodes
+    }
 
 
 def reached_final_zone(

@@ -45,11 +45,13 @@ from speedfog_racing.services.layer_service import (
     get_start_node,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.websocket.handler import (
     SEND_TIMEOUT,
     BaseModHandler,
     clamp_igt,
     extract_event_ids,
+    extract_flag_layers,
 )
 from speedfog_racing.websocket.race.manager import (
     manager,
@@ -340,7 +342,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         graph = seed.graph_json if seed else None
         sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
         participant_infos: list[ParticipantInfo] = [
-            participant_to_info(p, connected_ids=connected_ids, graph_json=graph)
+            participant_to_info(
+                p,
+                connected_ids=connected_ids,
+                graph_json=graph,
+                layer_entry_igts=p.layer_entry_igts,
+            )
             for p in sorted_participants
         ]
 
@@ -364,6 +371,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 death_flags=death_flags,
                 items_spawned_flag=items_spawned_flag,
                 phantom_skins=phantom_skins,
+                flag_layers=extract_flag_layers(seed.graph_json)
+                if seed and seed.graph_json
+                else {},
+                seed_number=seed.seed_number if seed else None,
+                category=(
+                    seed_category(seed.pool, seed.total_layers)[0] if seed and seed.pool else None
+                ),
             ),
             participants=participant_infos,
             phantom_skin=phantom_skin,
