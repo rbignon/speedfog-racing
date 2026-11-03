@@ -195,8 +195,8 @@ export interface RaceDetail extends Race {
   pending_invites: PendingInvite[];
   pool_config: PoolConfig | null;
   /** Why the race's finishers count on no Speedrun board (a seen seed, a
-   * community race reset after its start or re-rolled without a seed report),
-   * null when they can count. */
+   * normal community race reset after its start or re-rolled without a seed
+   * report), null when they can count. */
   unranked_reason: string | null;
   /** The same reason as a code. */
   unranked_code: UnrankedCode | null;
@@ -2463,8 +2463,9 @@ export interface SpeedrunBoardResponse {
  * (null for a player's slower runs and for unranked runs). */
 export interface SpeedrunSeedRun extends SpeedrunRun {
   run_type: SpeedrunRunType;
-  /** False for a finished run of a race off the boards (a seen seed, a reset
-   * or re-rolled community race): listed, never placed. */
+  /** False for a finished run of a race off the boards (a seen seed, a normal
+   * community race reset or re-rolled without a seed report): listed, never
+   * placed. */
   ranked: boolean;
   zone_history: Array<{
     node_id: string;

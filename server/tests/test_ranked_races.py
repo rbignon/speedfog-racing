@@ -736,16 +736,18 @@ async def test_normal_race_rerolls_never_draw_back_a_seed_they_gave_up(
     ("mode", "kind", "reason"),
     [
         (RunMode.NORMAL, "community", REROLLED_UNRANKED_REASON),
-        (RunMode.SPEEDRUN, "community", REROLLED_UNRANKED_REASON),
+        (RunMode.SPEEDRUN, "community", None),
         (RunMode.NORMAL, "event", None),
     ],
 )
-async def test_a_reroll_without_a_report_takes_a_community_race_off_the_boards(
+async def test_a_reroll_without_a_report_takes_a_normal_race_off_the_boards(
     test_client, async_session, pools, mode, kind, reason
 ):
     """Its organizer may have looked at the seed before giving it up (its
-    starting class, or its map in the race's data), so the next one is no
-    blind draw; an event race's reroll is the admins' call."""
+    starting class, or its map in the race's data), so a normal race rerolled
+    to grind a category leaves the boards. A speedrun race's reroll is a
+    Random Seed reset, as when grinding a category; an event race's reroll is
+    the admins' call."""
     race_id = await _ranked_race_in(async_session, mode, RaceStatus.SETUP)
     if kind == "event":
         async with async_session() as db:

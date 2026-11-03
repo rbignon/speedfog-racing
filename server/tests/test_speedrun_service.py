@@ -284,13 +284,14 @@ async def test_load_counted_runs_inclusion_rules(async_session, pools):
     assert {r.run_id for r in runs} == {race_p.id, daily_p.id, event_p.id}
 
 
-async def test_races_count_unless_on_a_seen_seed_or_a_reset_or_rerolled_community_race(
+async def test_races_count_unless_on_a_seen_seed_or_a_reset_or_rerolled_normal_race(
     async_session, pools
 ):
     """Every mode counts, community races included. A seed SEEN when drawn
     keeps any race off the boards; a reset keeps only a community race off
     (an event race's reset is the admins' call, a Set Seed race is a replay
-    anyway), and so does a reroll without a report (the admins reroll Daily
+    anyway), and so does a reroll without a report, on a normal race only (a
+    speedrun race's reroll is a Random Seed reset; the admins reroll Daily
     Seeds and event races). The Python rule, the SQL clause and the seed
     page's unranked list agree: every finished run is either counted or
     unranked."""
@@ -377,8 +378,9 @@ async def test_races_count_unless_on_a_seen_seed_or_a_reset_or_rerolled_communit
     by_id = {r.run_id: r for r in runs}
     counted = {normal.id, speedrun.id, set_seed.id, daily.id, event.id, reset_event.id}
     counted |= {reset_set_seed.id, reset_daily.id, rerolled_event.id, rerolled_daily.id}
+    counted |= {rerolled_speedrun.id}
     assert set(by_id) == counted
-    assert unranked == {seen.id, seen_event.id, reset.id, rerolled.id, rerolled_speedrun.id}
+    assert unranked == {seen.id, seen_event.id, reset.id, rerolled.id}
     assert {run_id for run_id, race in races.items() if race_counts_on_boards(race)} == counted
     assert {r.blind for r in runs if r.run_id in (set_seed.id, reset_set_seed.id)} == {False}
     assert {r.blind for r in runs if r.run_id not in (set_seed.id, reset_set_seed.id)} == {True}

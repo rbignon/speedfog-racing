@@ -229,10 +229,12 @@ def race_unranked_reason(race: Race) -> str | None:
 def race_unranked_code(race: Race) -> UnrankedCode | None:
     """Why a race's finishers count on no board, None when they can count (its
     seed's pool and layer count still decide which board). A community race
-    (any mode, neither a Daily Seed nor an event race) whose seed was re-rolled
-    without a seed report (``Race.rerolled_without_report``): its organizer
-    may have looked at the seeds it gave up, starting class or map, before
-    keeping one (the admins reroll Daily Seeds and event races). Its seed was
+    (neither a Daily Seed nor an event race) in normal mode whose seed was
+    re-rolled without a seed report (``Race.rerolled_without_report``): its
+    organizer may have looked at the seeds it gave up, starting class or map,
+    before keeping one, and a normal race must not become a way to grind a
+    category (a speedrun race's reroll is a Random Seed reset, the usual way
+    to grind one; the admins reroll Daily Seeds and event races). Its seed was
     SEEN when drawn (``Race.seed_was_seen``: a community race may draw one,
     and an event race is created as a normal race and attached to its event
     later). A community race in normal mode reset after its start, so its
@@ -242,7 +244,7 @@ def race_unranked_code(race: Race) -> UnrankedCode | None:
     clears it: a race shows the reason that only ends with the race. Python
     twin of ``counts_on_boards_clause``; keep them in step."""
     community = race.daily_date is None and race.event_id is None
-    if race.rerolled_without_report and community:
+    if race.rerolled_without_report and race.mode == RunMode.NORMAL and community:
         return "rerolled"
     if race.seed_was_seen:
         return "seen_seed"
@@ -270,6 +272,7 @@ def counts_on_boards_clause() -> ColumnElement[bool]:
         ),
         or_(
             Race.rerolled_without_report.is_(False),
+            Race.mode != RunMode.NORMAL,
             Race.daily_date.is_not(None),
             Race.event_id.is_not(None),
         ),
@@ -279,9 +282,9 @@ def counts_on_boards_clause() -> ColumnElement[bool]:
 async def load_unranked_runs(db: AsyncSession, seed_id: UUID) -> list[CountedRun]:
     """The runs a seed page lists without counting them: finished participants
     of finished races that ``race_counts_on_boards`` leaves out (on a seed that
-    was SEEN when drawn, or a community race reset after its start or re-rolled
-    without a seed report), banned
-    users left out. Disqualified and unfinished participants are not finished.
+    was SEEN when drawn, or a normal community race reset after its start or
+    re-rolled without a seed report), banned users left out. Disqualified and
+    unfinished participants are not finished.
     Only the seed page merges these in; the boards, records and purge never
     see them."""
     stmt = (
@@ -360,10 +363,10 @@ async def load_counted_runs(
     """Every run the boards count: finished participants of finished races and
     finished ranked solo sessions (speedrun or set_seed mode), banned users
     left out, races that ``counts_on_boards_clause`` leaves out (a seed that
-    was SEEN when drawn, a community race reset after its start or re-rolled
-    without a seed report), training
-    pools left out, seeds added before ``settings.speedrun_board_start_date``
-    left out, and seeds from an older version of their pool (another layer count
+    was SEEN when drawn, a normal community race reset after its start or
+    re-rolled without a seed report), training pools left out, seeds added
+    before ``settings.speedrun_board_start_date`` left out, and seeds from an
+    older version of their pool (another layer count
     than its config) left out, unless that count is declared in the pool's
     ``archived_layers``: those runs count under the category ``"<pool>@<layers>"``.
     Each run says whether it is on the Set Seed boards

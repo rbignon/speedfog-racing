@@ -525,9 +525,10 @@ async def reroll_seed_for_race(
     and the report fields are populated. A DISCARDED seed stays DISCARDED.
 
     Without ``reporter_id``, giving up a seed that was not SEEN when drawn
-    sets ``Race.rerolled_without_report``, which keeps a community race off
-    the Speedrun boards for good: its organizer may have looked at that seed
-    first (``race_unranked_reason``).
+    sets ``Race.rerolled_without_report``, which keeps a normal community
+    race off the Speedrun boards for good: its organizer may have looked at
+    that seed first (``race_unranked_reason``). A speedrun race keeps
+    counting: its reroll is a Random Seed reset.
 
     Note: ``race.seed`` must be eager-loaded (selectinload) before calling.
 
