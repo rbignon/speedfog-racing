@@ -290,7 +290,9 @@ describe("RewardsPicker", () => {
     const nameSpan = container.querySelectorAll(".template-name")[1];
     const style = nameSpan?.getAttribute("style") ?? "";
     expect(style).toContain("linear-gradient");
-    expect(style).toContain("background-clip: text");
+    // The DOM may serialize the clip as a longhand or fold it into the
+    // `background` shorthand (`background: linear-gradient(...) text`).
+    expect(style).toMatch(/background-clip: text|background: [^;]* text;/);
   });
 
   it("badge tiles expose description via title attribute", () => {
