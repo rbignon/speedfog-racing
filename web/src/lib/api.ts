@@ -1998,8 +1998,11 @@ export async function fetchReportedSeeds(): Promise<ReportedSeed[]> {
 }
 
 export interface CheatDetection {
-  participant_id: string;
-  race_id: string;
+  // A race detection names its participant and race; a ranked solo run, its
+  // session, with race_name naming the run ("Solo · <pool> · Set Seed").
+  participant_id: string | null;
+  race_id: string | null;
+  session_id: string | null;
   race_name: string;
   user: User;
   debug_flags: DebugFlags;
@@ -2009,7 +2012,8 @@ export interface CheatDetection {
 }
 
 /**
- * Fetch participants with cheat detections, most recent first (admin only).
+ * Fetch race participants and ranked solo runs with cheat detections, most
+ * recent first (admin only).
  */
 export async function fetchCheatDetections(): Promise<CheatDetection[]> {
   const response = await fetch(`${API_BASE}/admin/cheat-detections`, {

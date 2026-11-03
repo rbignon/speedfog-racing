@@ -2,10 +2,10 @@
 
 The race mod notices the game's own debug flags, the switches the practice
 tool and TarnishedTool toggle ("One shot", "No death", infinite stamina...),
-warns the runner and reports the detection to the race organizer and the
-admins. It targets the easy, opportunistic cheat; anything client-side can
-be bypassed by a determined cheater (patching the DLL, scripting the mod
-WebSocket), which is out of scope.
+warns the runner and reports the detection to the admins and, in a race,
+to its organizer. It targets the easy, opportunistic cheat; anything
+client-side can be bypassed by a determined cheater (patching the DLL,
+scripting the mod WebSocket), which is out of scope.
 
 ## What is watched
 
@@ -46,7 +46,7 @@ wire names and carry the same human-readable labels.
    so far are dropped: they belong to a save that is not the race run. It keeps the flags seen since the
    race start and sends their names in every `status_update`
    (`debug_flags`, protocol 1.5). While a flag is on, the overlay shows a red
-   "CHEAT TOOL DETECTED / Reported to the race organizer" banner; it never
+   "CHEAT TOOL DETECTED / Reported to the admins" banner; it never
    names the flag. Nothing is read or shown before the start, so the banner
    cannot be used to probe which options are watched.
 2. **Server.** On an accepted `status_update`, each flag not yet stored is
@@ -60,7 +60,8 @@ wire names and carry the same human-readable labels.
    `training_sessions.debug_flags` (first observation wins), the admin
    Discord alert titles the run "Solo · <pool> · Random Seed" (or "Set Seed")
    and links `/training/<session id>`, and the IGT plausibility check (wrong
-   save) runs against `last_igt_change_at`. There is no spectator push.
+   save) runs against `last_igt_change_at`. There is no spectator push; the
+   detection shows on the session page and in /admin's Cheat tab (step 4).
    The mod reads the flags in a solo session only when `auth_ok` carries
    `race.ranked` (protocol 1.9), so a ranked session refuses an older mod at
    auth. A ranked finish also counts only once the zone history reached the
@@ -70,7 +71,10 @@ wire names and carry the same human-readable labels.
    Normal practice sessions skip all of it.
 4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists
-   every detection in the Cheat tab (`GET /api/admin/cheat-detections`).
+   every detection in the Cheat tab (`GET /api/admin/cheat-detections`),
+   race participants and ranked solo runs together, most recent first: a
+   race row links its race page, a solo row (`session_id`, named like its
+   Discord alert) its session page.
 
 There is no automatic sanction: the race staff decide (see Sanctions).
 

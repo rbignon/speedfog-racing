@@ -431,6 +431,54 @@ async def test_cheat_detections_zone_names_skip_missing_nodes_and_fall_back(
     assert by_user == {"flagged_df": {}, "other_df": {"node_x": "node_x"}}
 
 
+async def test_cheat_detections_list_ranked_solo_runs(df_client, df_session, df_users):
+    # A ranked solo run has no participant: its row names the run as the
+    # admin alert does and carries the session id, in the same time order.
+    await _flagged_race(df_session, df_users, detected={"flagged": "2026-09-01T10:00:00+00:00"})
+    async with df_session() as db:
+        db.add(Pool(name="sprint", config={"name": "Sprint", "type": "race"}))
+        seed = Seed(
+            seed_number="df_solo",
+            pool_name="sprint",
+            graph_json={"nodes": {"node_a": {"display_name": "Gate"}}},
+            total_layers=5,
+            folder_path="/test/df_solo",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        flagged = TrainingSession(
+            user_id=df_users["other"].id,
+            seed_id=seed.id,
+            mode=RunMode.SET_SEED,
+            debug_flags={
+                "one_shot": {**FLAGS["one_shot"], "detected_at": "2026-09-02T10:00:00+00:00"}
+            },
+        )
+        clean = TrainingSession(
+            user_id=df_users["flagged"].id, seed_id=seed.id, mode=RunMode.SET_SEED
+        )
+        db.add_all([flagged, clean])
+        await db.commit()
+        session_id = str(flagged.id)
+
+    async with df_client as client:
+        resp = await client.get(
+            "/api/admin/cheat-detections",
+            headers={"Authorization": f"Bearer {df_users['admin'].api_token}"},
+        )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert [(d["user"]["twitch_username"], d["session_id"]) for d in data] == [
+        ("other_df", session_id),
+        ("flagged_df", None),
+    ]
+    solo = data[0]
+    assert (solo["participant_id"], solo["race_id"]) == (None, None)
+    assert solo["race_name"] == "Solo · Sprint · Set Seed"
+    assert solo["zone_names"] == {"node_a": "Gate"}
+
+
 async def test_cheat_detections_requires_admin(df_client, df_users):
     async with df_client as client:
         resp = await client.get(

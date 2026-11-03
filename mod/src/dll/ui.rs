@@ -537,7 +537,7 @@ impl RaceTracker {
         if self.cheat_warning_active() {
             let danger = self.cached_colors.danger;
             ui.text_colored(danger, "CHEAT TOOL DETECTED");
-            ui.text_colored(danger, "Reported to the race organizer");
+            ui.text_colored(danger, "Reported to the admins");
         }
     }
 

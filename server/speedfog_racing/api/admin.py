@@ -118,6 +118,7 @@ from speedfog_racing.services.speedrun_service import _is_training, _pool_config
 from speedfog_racing.services.stats_service import recalculate_all_stats
 from speedfog_racing.websocket.race.manager import manager as race_manager
 from speedfog_racing.websocket.training.manager import training_manager
+from speedfog_racing.websocket.training.mod import ranked_run_name
 
 logger = logging.getLogger(__name__)
 
@@ -1126,10 +1127,14 @@ CHEAT_DETECTIONS_LIMIT = 100
 
 
 class CheatDetectionResponse(BaseModel):
-    """A race participant whose mod reported game debug flags."""
+    """A race participant or a ranked solo run whose mod reported game debug
+    flags."""
 
-    participant_id: uuid.UUID
-    race_id: uuid.UUID
+    # A race detection names its participant and race; a ranked solo run, its
+    # session, with race_name naming the run as the admin alert does.
+    participant_id: uuid.UUID | None = None
+    race_id: uuid.UUID | None = None
+    session_id: uuid.UUID | None = None
     race_name: str
     user: UserResponse
     debug_flags: dict[str, dict[str, Any]]
@@ -1144,9 +1149,9 @@ async def list_cheat_detections(
     db: AsyncSession = Depends(get_db),
     _admin: User = Depends(require_admin),
 ) -> list[CheatDetectionResponse]:
-    """Participants with debug flags detected, most recent first (capped).
-    Requires admin role."""
-    result = await db.execute(
+    """Race participants and ranked solo runs with debug flags detected, most
+    recent first (capped). Requires admin role."""
+    participants = await db.execute(
         select(Participant)
         .where(Participant.debug_flags.is_not(None))
         .options(
@@ -1154,19 +1159,44 @@ async def list_cheat_detections(
             selectinload(Participant.race).selectinload(Race.seed),
         )
     )
+    # Only ranked sessions record flags (TrainingModHandler._record_debug_flags).
+    sessions = await db.execute(
+        select(TrainingSession)
+        .where(TrainingSession.debug_flags.is_not(None))
+        .options(selectinload(TrainingSession.user), selectinload(TrainingSession.seed))
+    )
+    # (flags, user, seed, participant_id, race_id, session_id, name)
+    entries: list[
+        tuple[
+            dict[str, dict[str, Any]] | None,
+            User,
+            Seed | None,
+            uuid.UUID | None,
+            uuid.UUID | None,
+            uuid.UUID | None,
+            str,
+        ]
+    ] = [
+        (p.debug_flags, p.user, p.race.seed, p.id, p.race_id, None, p.race.name)
+        for p in participants.scalars().all()
+    ] + [
+        # Seed.pool is joined-loaded with the seed.
+        (s.debug_flags, s.user, s.seed, None, None, s.id, ranked_run_name(s.seed.pool, s.mode))
+        for s in sessions.scalars().all()
+    ]
     rows: list[CheatDetectionResponse] = []
-    for p in result.scalars().all():
-        flags = p.debug_flags
+    for flags, user, seed, participant_id, race_id, session_id, name in entries:
         if not flags:
             continue
-        graph_json = p.race.seed.graph_json if p.race.seed else None
+        graph_json = seed.graph_json if seed else None
         node_ids = {f.get("node_id") for f in flags.values()}
         rows.append(
             CheatDetectionResponse(
-                participant_id=p.id,
-                race_id=p.race_id,
-                race_name=p.race.name,
-                user=user_response(p.user),
+                participant_id=participant_id,
+                race_id=race_id,
+                session_id=session_id,
+                race_name=name,
+                user=user_response(user),
                 debug_flags=flags,
                 zone_names={
                     node_id: get_display_name_for_node(node_id, graph_json)

@@ -2157,7 +2157,7 @@
           <thead>
             <tr>
               <th>Player</th>
-              <th>Race</th>
+              <th>Run</th>
               <th>Flags</th>
               <th>IGT</th>
               <th>Zone</th>
@@ -2165,16 +2165,18 @@
             </tr>
           </thead>
           <tbody>
-            {#each cheatDetections as d (d.participant_id)}
+            {#each cheatDetections as d (d.participant_id ?? d.session_id)}
               {@const flags =
-                detectionRows({ [d.participant_id]: d.debug_flags })[0]
-                  ?.flags ?? []}
+                detectionRows({ detection: d.debug_flags })[0]?.flags ?? []}
               {@const first = flags[0]}
               <tr>
                 <td><UserLink user={d.user} /></td>
                 <td>
-                  <a href="/race/{d.race_id}" class="username-link"
-                    >{d.race_name}</a
+                  <a
+                    href={d.session_id
+                      ? `/training/${d.session_id}`
+                      : `/race/${d.race_id}`}
+                    class="username-link">{d.race_name}</a
                   >
                 </td>
                 <td>{flags.map((f) => f.label).join(", ")}</td>

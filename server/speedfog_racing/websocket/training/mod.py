@@ -585,13 +585,18 @@ def solo_run_name(pool: Pool | None, mode: RunMode) -> str:
     return name
 
 
+def ranked_run_name(pool: Pool | None, mode: RunMode) -> str:
+    """How admin alerts and the admin Cheat tab name a ranked solo run:
+    "Solo · <pool> · Random Seed" (or "Set Seed")."""
+    return f"Solo \u00b7 {solo_run_name(pool, mode)}"
+
+
 async def _ranked_run_name(db: AsyncSession, entity: TrainingSession) -> str:
-    """How admin alerts name a ranked solo run: "Solo · <pool> · Random Seed"
-    (or "Set Seed")."""
+    """``ranked_run_name`` for a session loaded without its seed's pool."""
     pool = (
         await db.execute(select(Pool).where(Pool.name == entity.seed.pool_name))
     ).scalar_one_or_none()
-    return f"Solo \u00b7 {solo_run_name(pool, entity.mode)}"
+    return ranked_run_name(pool, entity.mode)
 
 
 def maybe_schedule_record_check(session_id: uuid.UUID, mode: RunMode) -> None:
