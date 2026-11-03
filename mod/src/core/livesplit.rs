@@ -178,6 +178,9 @@ pub struct LiveSplitSync {
     run: Option<RunView>,
     /// LiveSplit as last read or driven; None while unlinked.
     ls: Option<LsSnapshot>,
+    /// The phase LiveSplit last reported (on link or poll), unlike `ls.phase`,
+    /// which also follows the commands sent.
+    reported_phase: Option<TimerPhase>,
     /// Whether the linked file is for this run; None until a link meets a run.
     file_matches: Option<bool>,
     /// The attempt the ownership flags below belong to.
@@ -210,16 +213,22 @@ impl LiveSplitSync {
     /// waits for the first `on_run` when no run is known yet.
     pub fn on_link(&mut self, ls: LsSnapshot, igt_ms: u32) -> Vec<SyncOutput> {
         let mut out = Vec::new();
+        self.drop_link();
+        self.reported_phase = Some(ls.phase);
         self.ls = Some(ls);
-        self.file_matches = None;
         self.check_file(&mut out);
         self.reconcile(igt_ms, &mut out);
         out
     }
 
-    /// LiveSplit's timer, polled while linked. A NotRunning answer means the
-    /// player reset it: an owned timer stays stopped until the next attempt,
-    /// a foreign one is now free to start.
+    /// LiveSplit's timer, polled while linked. The answers must be read after
+    /// every command returned by earlier calls was written: one thread doing
+    /// request and response in turn on one connection, whose lines LiveSplit
+    /// handles in order.
+    ///
+    /// NotRunning after LiveSplit reported another phase means the player
+    /// reset it: an owned timer stays stopped until the next attempt, a
+    /// foreign one is now free to start.
     pub fn on_poll(
         &mut self,
         phase: TimerPhase,
@@ -230,12 +239,16 @@ impl LiveSplitSync {
         let mut out = Vec::new();
         if let Some(ls) = self.ls.as_mut() {
             if phase == TimerPhase::NotRunning {
-                if self.owned && ls.phase != TimerPhase::NotRunning {
+                // Against what LiveSplit reported, not the phase the mod's own
+                // starttimer set: a NotRunning read before LiveSplit handled
+                // that start is no player reset.
+                if self.owned && self.reported_phase != Some(TimerPhase::NotRunning) {
                     self.owned = false;
                     self.stopped_by_player = true;
                 }
                 self.awaiting_reset = false;
             }
+            self.reported_phase = Some(phase);
             ls.phase = phase;
             ls.split_index = split_index;
             ls.game_time_ms = game_time_ms;
@@ -247,17 +260,19 @@ impl LiveSplitSync {
     /// The pipe dropped. No reconcile: there is nothing to drive.
     pub fn on_unlink(&mut self) -> Vec<SyncOutput> {
         let mut out = Vec::new();
-        if self.ls.take().is_some() {
+        if self.drop_link() {
             out.push(Status(STATUS_UNLINKED));
         }
-        self.file_matches = None;
-        self.owned = false;
-        self.awaiting_reset = false;
-        self.stopped_by_player = false;
         out
     }
 
     /// Game time to push now, or None; never lower than the last value pushed.
+    ///
+    /// A split takes the higher of its arrival IGT and the last push, so a
+    /// push must never get ahead of an arrival it has not seen. The frame
+    /// thread queues a `RunView` before it stores that frame's IGT (Release);
+    /// the caller loads the IGT (Acquire), feeds every queued `RunView` to
+    /// `on_run`, then calls `push_due` with the IGT it loaded.
     pub fn push_due(&mut self, igt_ms: u32) -> Option<LsCommand> {
         let ls = self.ls.as_ref()?;
         let run = self.run.as_ref()?;
@@ -267,6 +282,16 @@ impl LiveSplitSync {
         }
         self.pushed_ms = self.pushed_ms.max(igt_ms);
         Some(SetGameTime(self.pushed_ms))
+    }
+
+    /// Forgets everything that belongs to the current link; true if one was up.
+    fn drop_link(&mut self) -> bool {
+        self.reported_phase = None;
+        self.file_matches = None;
+        self.owned = false;
+        self.awaiting_reset = false;
+        self.stopped_by_player = false;
+        self.ls.take().is_some()
     }
 
     /// Matches the linked file against the run, once both are known.
@@ -578,7 +603,14 @@ mod tests {
     fn player_reset_mid_run_stays_stopped_until_next_attempt() {
         let mut sync = started();
         assert!(sync
+            .on_poll(TimerPhase::Running, 0, Some(50_000), 50_000)
+            .is_empty());
+        assert!(sync
             .on_poll(TimerPhase::NotRunning, -1, None, 60_000)
+            .is_empty());
+        // Restarted by hand: still not the mod's timer in this attempt.
+        assert!(sync
+            .on_poll(TimerPhase::Running, 0, Some(0), 62_000)
             .is_empty());
         assert!(sync
             .on_run(view(1, false, true, &[(1, 65_000)], LAYERS), 65_000)
@@ -586,7 +618,53 @@ mod tests {
         assert_eq!(sync.push_due(66_000), None);
 
         let out = sync.on_run(view(2, true, true, &[], LAYERS), 1_000);
-        assert_eq!(cmds(&out), [StartTimer]);
+        assert_eq!(cmds(&out), [Reset, StartTimer]);
+    }
+
+    #[test]
+    fn stale_not_running_poll_after_a_start_is_not_a_player_reset() {
+        let mut sync = started();
+        // Answered before LiveSplit handled the starttimer: still the phase
+        // LiveSplit reported on link, so nothing was reset by the player.
+        assert!(sync
+            .on_poll(TimerPhase::NotRunning, -1, None, 1_000)
+            .is_empty());
+        assert!(sync
+            .on_poll(TimerPhase::Running, 0, Some(1_000), 2_000)
+            .is_empty());
+        let out = sync.on_run(view(1, false, true, &[(1, 65_000)], LAYERS), 65_000);
+        assert_eq!(cmds(&out), [SetGameTime(65_000), Split]);
+    }
+
+    #[test]
+    fn relink_without_unlink_onto_another_seed_is_not_driven() {
+        let mut sync = started();
+        let other_seed = LsSnapshot {
+            file_seed: Some("s2".to_string()),
+            ..snap(TimerPhase::Running, 0, Some(5_000))
+        };
+        assert_eq!(sync.on_link(other_seed, 5_000), [Status(STATUS_OTHER_RUN)]);
+        assert_eq!(sync.push_due(6_000), None);
+        assert!(sync
+            .on_run(view(1, false, true, &[(1, 65_000)], LAYERS), 65_000)
+            .is_empty());
+    }
+
+    #[test]
+    fn relink_without_unlink_onto_a_stopped_timer_starts_it() {
+        let mut sync = started();
+        sync.on_run(view(1, false, true, &[(1, 65_000)], LAYERS), 65_000);
+        let out = sync.on_link(snap(TimerPhase::NotRunning, -1, None), 70_000);
+        assert_eq!(
+            cmds(&out),
+            [
+                SwitchToGameTime,
+                AlwaysPauseGameTime,
+                StartTimer,
+                SetGameTime(65_000),
+                Split
+            ]
+        );
     }
 
     #[test]
@@ -695,12 +773,15 @@ mod tests {
         let reached = view(1, false, true, &[(1, 65_000), (2, 130_000)], LAYERS);
         sync.on_run(reached, 130_000);
         assert_eq!(sync.push_due(140_000), Some(SetGameTime(140_000)));
+        // The player reset LiveSplit: stopped for the rest of this link.
+        sync.on_poll(TimerPhase::Running, 2, Some(140_000), 141_000);
+        sync.on_poll(TimerPhase::NotRunning, -1, None, 142_000);
         assert_eq!(sync.on_unlink(), [Status(STATUS_UNLINKED)]);
         assert!(sync.on_unlink().is_empty());
         assert_eq!(sync.push_due(145_000), None);
 
-        // The player reset LiveSplit while the link was down: the new timer's
-        // splits take the arrival IGTs, below the old timer's last push.
+        // A new link starts a new timer, whose splits take the arrival IGTs,
+        // below the old timer's last push.
         let out = sync.on_link(snap(TimerPhase::NotRunning, -1, None), 150_000);
         assert_eq!(
             cmds(&out),
