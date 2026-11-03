@@ -93,7 +93,8 @@ class TestCompareGraphs:
 @pytest.fixture
 def restore(tmp_path, monkeypatch):
     """Runs main() on a stored standard seed (Halloween plugin on) whose
-    regeneration writes the given graph, without database or speedfog."""
+    regeneration writes the given graph, or fails with the given log when the
+    graph is None, without database or speedfog."""
     stored = StoredSeed(
         "abc123def456",
         "standard",
@@ -107,11 +108,14 @@ def restore(tmp_path, monkeypatch):
 
     monkeypatch.setattr(regenerate_seed, "load_seed", fake_load_seed)
 
-    def run(regenerated_graph):
+    def run(regenerated_graph, log=""):
         def fake_run_speedfog(
             speedfog_path, config_path, output_dir, game_dir, *, verbose, seed
         ):
             assert seed == stored.graph_json["seed"]
+            (output_dir / "generation.log").write_text(log, encoding="utf-8")
+            if regenerated_graph is None:
+                return None
             seed_dir = output_dir / str(seed)
             (seed_dir / "modengine2").mkdir(parents=True)
             (seed_dir / "modengine2" / "config_speedfog.toml").write_text(
@@ -165,3 +169,37 @@ class TestMain:
         monkeypatch.setattr(regenerate_seed, "load_seed", no_seed)
         assert restore(_graph()) == 1
         assert not (tmp_path / "out").exists()
+
+    def test_seed_that_no_longer_generates_explains_why(
+        self, restore, tmp_path, capsys
+    ):
+        log = (
+            "warning: `VIRTUAL_ENV=...` does not match the project environment\n"
+            "Error: Generation failed: Validation failed: Layer 26: mixed types\n"
+        )
+        assert restore(None, log) == 1
+        out = capsys.readouterr().out
+        assert "speedfog: Error: Generation failed: Validation failed" in out
+        assert "VIRTUAL_ENV" not in out
+        assert "changed since the seed was generated" in out
+        kept = tmp_path / "out" / "standard_failed" / "seed_abc123def456"
+        assert (kept / "generation.log").read_text(encoding="utf-8") == log
+
+    def test_other_speedfog_failures_are_not_blamed_on_the_generator(
+        self, restore, capsys
+    ):
+        assert restore(None, "Error: Item Randomizer failed\n") == 1
+        out = capsys.readouterr().out
+        assert "speedfog: Error: Item Randomizer failed" in out
+        assert "changed since the seed was generated" not in out
+
+    def test_invalid_config_is_not_blamed_on_the_seed(self, restore, capsys):
+        log = "Error: Generation failed: Invalid configuration: unknown zone\n"
+        assert restore(None, log) == 1
+        out = capsys.readouterr().out
+        assert "no seed of this pool would generate" in out
+        assert "changed since the seed was generated" not in out
+
+    def test_log_without_error_lines_points_to_the_log(self, restore, capsys):
+        assert restore(None, "Traceback (most recent call last):\nKeyError: 'x'\n") == 1
+        assert "See generation.log" in capsys.readouterr().out

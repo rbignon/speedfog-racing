@@ -199,6 +199,36 @@ def _print_differences(title: str, lines: list[str]) -> None:
         print(f"  ... and {len(lines) - MAX_PRINTED_DIFFERENCES} more")
 
 
+def _print_speedfog_failure(log_path: Path) -> None:
+    """Speedfog's own error lines, and what a generation failure means here."""
+    log = (
+        log_path.read_text(encoding="utf-8", errors="replace")
+        if log_path.is_file()
+        else ""
+    )
+    errors = [line.strip() for line in log.splitlines() if line.startswith("Error")]
+    print("Error: speedfog generation failed")
+    for line in errors:
+        print(f"  speedfog: {line}")
+    if not errors:
+        print("  See generation.log in the directory kept below.")
+    generation = [e for e in errors if e.startswith("Error: Generation failed")]
+    # speedfog checks the config before any attempt, whatever the seed.
+    if any("Invalid configuration" in e for e in generation):
+        print(
+            "  The pool's config no longer fits this speedfog checkout: no seed of"
+            " this pool would generate."
+        )
+    elif generation:
+        print(
+            "  A fixed seed gets a single attempt and this one no longer yields a"
+            " valid graph: the generator, its data (data/clusters.json, rebuilt"
+            " from zone_metadata.toml) or the pool's config changed since the seed"
+            " was generated, so it cannot be restored with this speedfog checkout"
+            " and pool config."
+        )
+
+
 def main() -> int:
     args = parse_args()
 
@@ -241,7 +271,7 @@ def main() -> int:
             seed=rng_seed,
         )
         if seed_dir is None:
-            print("Error: speedfog generation failed")
+            _print_speedfog_failure(temp_path / "generation.log")
             return 1
 
         regenerated = json.loads((seed_dir / "graph.json").read_text(encoding="utf-8"))
