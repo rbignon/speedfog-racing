@@ -52,7 +52,10 @@ ssh "$SERVER" bash << 'ENDSSH'
     if [ ! -d .venv ]; then
         sudo -H -u speedfog python3 -m venv .venv
     fi
-    sudo -H -u speedfog .venv/bin/pip install --quiet .
+    # Editable, so the console scripts ([project.scripts] in pyproject.toml) import the
+    # synced source tree like the service does: a regular install copies the package
+    # into site-packages without server/data/, which the code reads.
+    sudo -H -u speedfog .venv/bin/pip install --quiet -e .
 
     echo "  Running database migrations..."
     sudo -H -u speedfog .venv/bin/alembic upgrade head
