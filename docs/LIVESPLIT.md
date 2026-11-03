@@ -29,7 +29,25 @@ The `.lss` files the site generates are described with the web side.
 
 ## Where to download
 
-The download buttons are described with the web side.
+Five surfaces, through `downloadSeedSplits` and `downloadCategorySplits`
+(`web/src/lib/livesplit-download.ts`):
+
+- **Seed page**, "Play this seed in Set Seed" card, "LiveSplit splits": the
+  seed file, for everyone (the viewer's own best run is the PB).
+- **Solo session page** (owner, active session), "LiveSplit splits" after
+  "Download Pack": the seed file for a Set Seed session, the category file
+  for any other. Hidden while the session has no category.
+- **Race page and Daily Seed page**, in the download window ("Before you
+  race"), "Download LiveSplit splits": the seed file for a Set Seed race,
+  the category file otherwise. Absent while the race has no category.
+- **Speedrun board toolbar**, "LiveSplit", before "Start a run": the file of
+  the selected category.
+
+A category file takes its layer count from the page when it has one, else
+from the endpoint. The data comes from `GET /api/speedrun/livesplit/{category}`
+(optional Bearer auth, `404 Unknown category`): the category's name and layer
+count, the record (`wr`) and the viewer's best run (`pb`), each with its
+per-layer arrival IGTs. A failure shows in the surface's own error line.
 
 ## How the mod links
 

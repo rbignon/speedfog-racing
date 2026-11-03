@@ -7,6 +7,7 @@
     unprotectSeed,
     type SpeedrunSeed,
   } from "$lib/api";
+  import { downloadSeedSplits } from "$lib/livesplit-download";
   import { seedPageHref, setSeedRaceNewHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import SpeedrunRules from "./SpeedrunRules.svelte";
@@ -41,6 +42,16 @@
     } catch (e) {
       startError = e instanceof Error ? e.message : "Failed to start the run.";
       starting = false;
+    }
+  }
+
+  async function downloadSplits() {
+    startError = null;
+    try {
+      await downloadSeedSplits(seed.seed_number, auth.user?.id ?? null);
+    } catch (e) {
+      startError =
+        e instanceof Error ? e.message : "Failed to build the splits.";
     }
   }
 
@@ -106,6 +117,9 @@
           onclick={rememberPage}>Login with Twitch</a
         >
       {/if}
+      <button type="button" class="btn btn-secondary" onclick={downloadSplits}
+        >LiveSplit splits</button
+      >
     </div>
     {#if startError}
       <p class="start-error" role="alert">{startError}</p>

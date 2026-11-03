@@ -187,6 +187,8 @@ export interface PendingInvite {
 export type UnrankedCode = "seen_seed" | "reset" | "rerolled";
 
 export interface RaceDetail extends Race {
+  /** The category key (`<pool>` or `<pool>@<layers>`), null before a seed. */
+  category: string | null;
   seed_number: string | null;
   seed_total_layers: number | null;
   seed_total_nodes: number | null;
@@ -2099,6 +2101,8 @@ export interface TrainingSession {
 }
 
 export interface TrainingSessionDetail extends TrainingSession {
+  /** The category key (`<pool>` or `<pool>@<layers>`), null before a seed. */
+  category: string | null;
   seed_number: string | null;
   seed_total_paths: number | null;
   zone_history: Array<{
@@ -2736,6 +2740,36 @@ export async function fetchSpeedrunSeed(
   if (response.status === 404) throw new SeedLookupError("unknown");
   if (response.status === 409) throw new SeedLookupError("ambiguous");
   return handleResponse<SpeedrunSeed>(response);
+}
+
+/** A run on a LiveSplit category answer: its time and per-layer arrival IGTs
+ * (string layer keys; the finish is under the key equal to total_layers). */
+export interface LiveSplitReference {
+  igt_ms: number;
+  user: User;
+  layer_entry_igts: Record<string, number>;
+}
+
+/** What a category's splits file is built from: the category's record and the
+ * viewer's best run, either null without one. */
+export interface LiveSplitCategory {
+  category: string;
+  category_name: string;
+  total_layers: number | null;
+  wr: LiveSplitReference | null;
+  pb: LiveSplitReference | null;
+}
+
+/** The data behind a category's LiveSplit file. Throws "Unknown category" on
+ * a 404. */
+export async function fetchLiveSplitCategory(
+  category: string,
+): Promise<LiveSplitCategory> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/livesplit/${encodeURIComponent(category)}`,
+    { headers: getAuthHeaders() },
+  );
+  return handleResponse<LiveSplitCategory>(response);
 }
 
 /** What the Set Seed field shows while a player types a seed ID. */

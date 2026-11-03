@@ -12,6 +12,7 @@
     customRules?: string | null;
     tips?: string[] | null;
     deathless?: boolean;
+    onDownloadSplits?: () => void;
   }
 
   let {
@@ -24,6 +25,7 @@
     customRules = null,
     tips = null,
     deathless = false,
+    onDownloadSplits,
   }: Props = $props();
 
   const ruleLines = $derived(
@@ -133,6 +135,14 @@
       </svg>
       {downloading ? "Preparing..." : actionLabel}
     </button>
+    {#if onDownloadSplits}
+      <button type="button" class="splits-btn" onclick={onDownloadSplits}>
+        Download LiveSplit splits
+      </button>
+      <p class="splits-hint">
+        Auto-splits through the SpeedFog mod (LiveSplit 1.8.29 or later)
+      </p>
+    {/if}
     {#if error}
       <span class="download-error">{error}</span>
     {/if}
@@ -266,6 +276,31 @@
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.5;
+  }
+
+  .splits-btn {
+    display: block;
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: transparent;
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+  }
+
+  .splits-btn:hover {
+    border-color: var(--color-text-secondary);
+  }
+
+  .splits-hint {
+    margin: 0.3rem 0 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs, 0.75rem);
+    text-align: center;
   }
 
   .download-btn {

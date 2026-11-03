@@ -42,6 +42,10 @@
   import ConfirmModal from "$lib/components/ConfirmModal.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import { goto } from "$app/navigation";
+  import {
+    downloadCategorySplits,
+    downloadSeedSplits,
+  } from "$lib/livesplit-download";
   import { raceSeedPageHref } from "$lib/speedrun";
   import { deleteRace, getTwitchLoginUrl } from "$lib/api";
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
@@ -150,6 +154,26 @@
       message_id: messageId,
       emoji,
     });
+  }
+
+  async function handleDownloadSplits() {
+    downloadError = null;
+    try {
+      if (initialRace.mode === "set_seed" && initialRace.seed_number) {
+        await downloadSeedSplits(
+          initialRace.seed_number,
+          auth.user?.id ?? null,
+        );
+      } else if (initialRace.category) {
+        await downloadCategorySplits(
+          initialRace.category,
+          initialRace.seed_total_layers,
+        );
+      }
+    } catch (e) {
+      downloadError =
+        e instanceof Error ? e.message : "Failed to build the splits.";
+    }
   }
 
   async function handleDownload() {
@@ -1731,6 +1755,9 @@
         deathless={liveDeathless}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
+        onDownloadSplits={initialRace.category
+          ? handleDownloadSplits
+          : undefined}
       />
     {/if}
 

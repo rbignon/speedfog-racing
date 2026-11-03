@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    downloadCategorySplits,
+    downloadSeedSplits,
+  } from "$lib/livesplit-download";
   import { isOutOfRace } from "$lib/format";
   import { untrack } from "svelte";
   import { goto } from "$app/navigation";
@@ -478,6 +482,26 @@
     }
   }
 
+  async function handleDownloadSplits() {
+    downloadError = null;
+    try {
+      if (initialRace.mode === "set_seed" && initialRace.seed_number) {
+        await downloadSeedSplits(
+          initialRace.seed_number,
+          auth.user?.id ?? null,
+        );
+      } else if (initialRace.category) {
+        await downloadCategorySplits(
+          initialRace.category,
+          initialRace.seed_total_layers,
+        );
+      }
+    } catch (e) {
+      downloadError =
+        e instanceof Error ? e.message : "Failed to build the splits.";
+    }
+  }
+
   async function handleDownload() {
     downloading = true;
     downloadError = null;
@@ -858,6 +882,7 @@
       customRules={initialRace.custom_rules ?? null}
       actionLabel="Download Seed Pack"
       deathless={initialRace.deathless}
+      onDownloadSplits={initialRace.category ? handleDownloadSplits : undefined}
     />
   {/if}
 

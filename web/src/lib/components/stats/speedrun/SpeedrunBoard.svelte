@@ -14,6 +14,7 @@
     type SpeedrunParams,
     type SpeedrunSub,
   } from "$lib/speedrun";
+  import { downloadCategorySplits } from "$lib/livesplit-download";
   import SpeedrunHistory from "./SpeedrunHistory.svelte";
   import SpeedrunOverlayModal from "./SpeedrunOverlayModal.svelte";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -51,9 +52,21 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let filtersOpen = $state(false);
+  async function downloadSplits() {
+    if (!pool) return;
+    splitsError = null;
+    try {
+      await downloadCategorySplits(pool, null);
+    } catch (e) {
+      splitsError =
+        e instanceof Error ? e.message : "Failed to build the splits.";
+    }
+  }
+
   let rulesOpen = $state(false);
   let moreOpen = $state(false);
   let overlayOpen = $state(false);
+  let splitsError = $state<string | null>(null);
   // The seed the URL opened the window on, forgotten once it closes: the
   // toolbar button opens it fresh.
   let startOpen = $state(untrack(() => startSeed !== null));
@@ -367,6 +380,9 @@
       Rules
     </button>
     {#if pool && category}
+      <button type="button" class="tool" onclick={downloadSplits}>
+        LiveSplit
+      </button>
       <button
         type="button"
         class="tool submit"
@@ -384,6 +400,10 @@
       </button>
     {/if}
   </div>
+
+  {#if splitsError}
+    <p class="message error" role="alert">{splitsError}</p>
+  {/if}
 
   {#if rulesOpen && category}
     <div class="rules">

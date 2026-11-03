@@ -1,6 +1,10 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { page } from "$app/state";
+  import {
+    downloadCategorySplits,
+    downloadSeedSplits,
+  } from "$lib/livesplit-download";
   import { sessionSeedPageHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
@@ -296,6 +300,23 @@
     }
   }
 
+  async function handleDownloadSplits() {
+    if (!session) return;
+    error = null;
+    try {
+      if (session.mode === "set_seed" && session.seed_number) {
+        await downloadSeedSplits(session.seed_number, auth.user?.id ?? null);
+      } else if (session.category) {
+        await downloadCategorySplits(
+          session.category,
+          session.seed_total_layers,
+        );
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to build the splits.";
+    }
+  }
+
   async function handleDownload() {
     downloading = true;
     error = null;
@@ -460,6 +481,11 @@
           >
             {downloading ? "Preparing..." : "Download Pack"}
           </button>
+          {#if session.category}
+            <button class="btn btn-outline" onclick={handleDownloadSplits}>
+              LiveSplit splits
+            </button>
+          {/if}
           {#if canReset}
             <button
               class="btn btn-outline"
