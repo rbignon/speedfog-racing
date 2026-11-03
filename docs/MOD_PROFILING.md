@@ -11,14 +11,17 @@ UI over TCP port `8086`. You can see:
 
 - Per-frame CPU cost of ImGui rendering (`frame` and `imgui_window` spans).
 - Per-frame cost of `RaceTracker::update` and its sub-blocks (`tracker_update`,
-  `ws_poll`, `frame_snapshot`, `event_flag_poll`, `loading_exit_scan`).
+  `ws_poll`, `frame_snapshot`, `event_flag_poll`, `loading_exit_scan`,
+  `livesplit_publish`).
 - Leaderboard rebuild cost (`render_leaderboard`, `refresh_leaderboard_cache`,
   `leaderboard_rows`).
 - Game memory reads (`read_igt`, `read_deaths`, `read_position`,
   `is_position_readable`, `read_loading_byte`).
 - Event flag reader hot paths (`event_flag.find_category_page`,
   `event_flag.resolve_category`, `event_flag.is_flag_set_cached`, etc.).
-- A separate timeline for the WebSocket worker thread (`ws-worker`).
+- A separate timeline for the WebSocket worker thread (`ws-worker`), and one
+  for the LiveSplit pipe thread (`livesplit`: `livesplit_connect`,
+  `livesplit_poll`).
 
 ## Prerequisites
 

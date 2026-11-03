@@ -23,6 +23,7 @@ use crate::profile_span;
 
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
+use super::livesplit::LiveSplitClient;
 use super::websocket::RaceWebSocketClient;
 
 #[cfg(debug_assertions)]
@@ -229,6 +230,9 @@ pub struct RaceTracker {
     // WebSocket
     pub(crate) ws_client: RaceWebSocketClient,
 
+    // LiveSplit pipe link (its own thread)
+    livesplit: LiveSplitClient,
+
     // Config
     pub(crate) config: RaceConfig,
     pub(crate) cached_colors: CachedColors,
@@ -373,12 +377,15 @@ impl RaceTracker {
         let mut ws_client = RaceWebSocketClient::new(config.server.clone());
         ws_client.connect();
 
+        let livesplit = LiveSplitClient::start();
+
         info!("RaceTracker initialized");
 
         Some(Self {
             game_state,
             event_flag_reader,
             ws_client,
+            livesplit,
             config,
             cached_colors,
             font_data,
@@ -580,6 +587,17 @@ impl RaceTracker {
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
 
+        {
+            profile_span!("livesplit_publish");
+            // After every run view of this frame was queued (execute_effects):
+            // the LiveSplit thread reads the IGT, then the views queued before it.
+            self.livesplit
+                .publish_igt(self.machine.live_igt_ms().unwrap_or(0));
+            while let Some(status) = self.livesplit.poll_status() {
+                self.machine.set_status(status.to_string(), now);
+            }
+        }
+
         #[cfg(debug_assertions)]
         {
             if self.show_debug
@@ -741,8 +759,7 @@ impl RaceTracker {
                 Effect::StartPhantomSkin { name, speffects } => {
                     self.start_phantom_skin(name, speffects)
                 }
-                // Not driven yet: no LiveSplit link in the shell so far.
-                Effect::LiveSplitRun(_) => {}
+                Effect::LiveSplitRun(view) => self.livesplit.send_run(*view),
             }
         }
     }

@@ -10,10 +10,17 @@
 //! accumulator and overwrites xmm1 with a whole-millisecond value, so the
 //! game's own cast loses nothing.
 //!
-//! Failure policy: warn + continue. If the pattern is missing (game patch,
-//! or another IGT tool such as SoulSplitter already patched these bytes),
+//! Failure policy: warn + continue. If the pattern is missing (game patch),
 //! the fix is disabled and racing proceeds on vanilla IGT; a game patch
 //! affects every participant of a seed identically.
+//!
+//! Another tool hooking this site does not disable the fix. SoulSplitter's
+//! soulmods hooks the very same address with ilhook: its detour sits after
+//! the pattern, whose bytes stay intact, so the scan still finds one match
+//! and the two hooks stack. The one installed last runs first; the one
+//! installed first runs last and its xmm1 wins. Both apply the same
+//! truncation fix, so the IGT is the same either way (each accumulator keeps
+//! its own sub-millisecond remainder).
 
 use ilhook::x64::{CallbackOption, HookFlags, HookType, Hooker, Registers};
 use parking_lot::Mutex;
@@ -89,8 +96,7 @@ pub fn install() {
     };
     let Some(match_addr) = scan_pattern_unique(base, size, INCREMENT_IGT_PATTERN) else {
         warn!(
-            "[IGT] increment-IGT pattern absent or ambiguous (game patch, or another \
-             IGT tool already hooked it); truncation fix disabled"
+            "[IGT] increment-IGT pattern absent or ambiguous (game patch); truncation fix disabled"
         );
         return;
     };

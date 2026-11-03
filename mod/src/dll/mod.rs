@@ -3,6 +3,7 @@
 pub mod config;
 pub mod death_icon;
 pub mod hotkey;
+pub mod livesplit;
 pub mod tracker;
 pub mod ui;
 pub mod websocket;
