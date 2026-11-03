@@ -1,15 +1,19 @@
-"""Tests for the graph comparison of regenerate_seed.py."""
+"""Tests for regenerate_seed.py: the graph comparison and what main() writes."""
 
 from __future__ import annotations
 
 import json
 import sys
-import uuid
 import zipfile
 
 import pytest
 import regenerate_seed
-from regenerate_seed import StoredSeed, compare_graphs, json_differences
+from regenerate_seed import (
+    SeedNotFoundError,
+    StoredSeed,
+    compare_graphs,
+    json_differences,
+)
 
 
 def _graph(**overrides):
@@ -97,8 +101,11 @@ def restore(tmp_path, monkeypatch):
         "/srv/seeds/standard/seed_abc123def456.zip",
     )
 
-    async def fake_load_seed(seed_id):
+    async def fake_load_seed(seed_number):
+        assert seed_number == "abc123"
         return stored
+
+    monkeypatch.setattr(regenerate_seed, "load_seed", fake_load_seed)
 
     def run(regenerated_graph):
         def fake_run_speedfog(
@@ -115,14 +122,13 @@ def restore(tmp_path, monkeypatch):
             )
             return seed_dir
 
-        monkeypatch.setattr(regenerate_seed, "load_seed", fake_load_seed)
         monkeypatch.setattr(regenerate_seed, "run_speedfog", fake_run_speedfog)
         monkeypatch.setattr(
             sys,
             "argv",
             [
                 "regenerate_seed.py",
-                str(uuid.uuid4()),
+                "abc123",
                 "--game-dir",
                 str(tmp_path),
                 "--speedfog-path",
@@ -149,3 +155,13 @@ class TestMain:
         assert not (tmp_path / "out" / "standard" / "seed_abc123def456.zip").exists()
         kept = tmp_path / "out" / "standard_failed" / "seed_abc123def456"
         assert (kept / "860847648" / "graph.json").is_file()
+
+    def test_unknown_seed_number_stops_before_generating(
+        self, restore, monkeypatch, tmp_path
+    ):
+        async def no_seed(seed_number):
+            raise SeedNotFoundError("no played seed 'abc123'")
+
+        monkeypatch.setattr(regenerate_seed, "load_seed", no_seed)
+        assert restore(_graph()) == 1
+        assert not (tmp_path / "out").exists()

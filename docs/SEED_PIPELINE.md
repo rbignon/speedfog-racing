@@ -290,10 +290,10 @@ A seed added (scanned, `Seed.created_at`) before `SET_SEED_MIN_SEED_DATE` is pur
 A purged zip (a record seed's, say) can be rebuilt on a dev machine from the seed's row in the local database, a recent copy of production's:
 
 ```bash
-cd server && uv run python ../tools/regenerate_seed.py <seed id> --game-dir "/path/to/ELDEN RING/Game"
+cd server && uv run python ../tools/regenerate_seed.py <seed number> --game-dir "/path/to/ELDEN RING/Game"
 ```
 
-`<seed id>` is `seeds.id` (a UUID), not the seed number. The tool reruns speedfog on its current checkout (`SPEEDFOG_PATH` or `--speedfog-path`, as for `generate_pool.py`) with the stored graph's RNG seed (`graph_json["seed"]`, passed as `--seed`) and the pool's current `tools/pools/` config, then compares the regenerated `graph.json` with `Seed.graph_json`:
+`<seed number>` is `seeds.seed_number` as shown on the seed page, resolved the same way (`resolve_seed`: the full number or a unique prefix of at least 6 characters, among played seeds outside training pools). The tool reruns speedfog on its current checkout (`SPEEDFOG_PATH` or `--speedfog-path`, as for `generate_pool.py`) with the stored graph's RNG seed (`graph_json["seed"]`, passed as `--seed`) and the pool's current `tools/pools/` config, then compares the regenerated `graph.json` with `Seed.graph_json`:
 
 - Any difference outside `plugins` (a generator or pool change since the seed was generated) aborts: no zip, the run's directory is kept in `<output>/<pool>_failed/`, and the seed cannot be restored this way.
 - `plugins` mirrors the pool's `[plugin.*]` tables, which are switched on and off over time (the Halloween theme, for one): its differences are printed as warnings, and the rebuilt seed plays with today's plugin settings.

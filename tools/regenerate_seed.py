@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Regenerate a seed's zip from its database row, e.g. a purged speedrun seed.
 
-Reads the seed from the local database (its pool, seed number and stored
-graph), reruns speedfog on the current checkout with the graph's RNG seed and
-the pool's current config, and writes ``seed_<seed_number>.zip`` only when the
-regenerated graph.json matches the stored one. A generator or pool change that
+Finds the seed in the local database by its seed number, as its seed page
+does, and reads its pool and stored graph; reruns speedfog on the current
+checkout with the graph's RNG seed and the pool's current config; writes
+``seed_<seed_number>.zip`` only when the regenerated graph.json matches the
+stored one. A generator or pool change that
 alters the graph makes it fail: the seed then cannot be restored this way.
 
 The ``plugins`` block is compared but never blocks: it mirrors the pool's
@@ -12,7 +13,7 @@ The ``plugins`` block is compared but never blocks: it mirrors the pool's
 of the graph is the run itself. Its differences are printed as warnings.
 
 Usage (from server/, which holds the database settings):
-    cd server && uv run python ../tools/regenerate_seed.py <seed-id> \\
+    cd server && uv run python ../tools/regenerate_seed.py <seed-number> \\
         --game-dir "/path/to/ELDEN RING/Game"
 
 Requires the same tools as generate_pool.py (speedfog checkout, uv, game
@@ -30,7 +31,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import uuid
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -52,6 +52,10 @@ class StoredSeed(NamedTuple):
     pool_name: str
     graph_json: dict[str, Any]
     folder_path: str
+
+
+class SeedNotFoundError(Exception):
+    """No seed, or several, match the given seed number."""
 
 
 def _short(value: Any, limit: int = 60) -> str:
@@ -103,17 +107,31 @@ def compare_graphs(
     return errors, warnings
 
 
-async def load_seed(seed_id: uuid.UUID) -> StoredSeed | None:
-    """The seed row, read through the server's settings (server/.env)."""
+async def load_seed(seed_number: str) -> StoredSeed:
+    """The seed named by ``seed_number`` as its seed page finds it (the full
+    number or a unique prefix, among played seeds outside training pools),
+    read through the server's settings (server/.env)."""
     # Imported here so the comparison helpers load without the server package.
     from speedfog_racing.database import engine, get_db_context
-    from speedfog_racing.models import Seed
+    from speedfog_racing.services.set_seed_service import (
+        SEED_PREFIX_MIN,
+        SeedLookupError,
+        resolve_seed,
+    )
 
     try:
         async with get_db_context() as db:
-            seed = await db.get(Seed, seed_id)
-            if seed is None:
-                return None
+            try:
+                seed = await resolve_seed(db, seed_number)
+            except SeedLookupError as e:
+                if e.kind == "ambiguous":
+                    raise SeedNotFoundError(
+                        f"{seed_number!r} matches several seeds: give more characters"
+                    ) from e
+                raise SeedNotFoundError(
+                    f"no played seed {seed_number!r} outside training pools"
+                    f" in the database (a prefix needs {SEED_PREFIX_MIN}+ characters)"
+                ) from e
             return StoredSeed(
                 seed.seed_number, seed.pool_name, seed.graph_json, seed.folder_path
             )
@@ -141,7 +159,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Regenerate a seed's zip and check its graph against the database"
     )
-    parser.add_argument("seed_id", type=uuid.UUID, help="Seed id (seeds.id, a UUID)")
+    parser.add_argument(
+        "seed_number",
+        help="Seed number as on its seed page (seeds.seed_number), or a unique"
+        " prefix of 6+ characters",
+    )
     parser.add_argument(
         "--game-dir",
         type=Path,
@@ -180,9 +202,10 @@ def _print_differences(title: str, lines: list[str]) -> None:
 def main() -> int:
     args = parse_args()
 
-    seed = asyncio.run(load_seed(args.seed_id))
-    if seed is None:
-        print(f"Error: no seed {args.seed_id} in the database")
+    try:
+        seed = asyncio.run(load_seed(args.seed_number))
+    except SeedNotFoundError as e:
+        print(f"Error: {e}")
         return 1
     rng_seed = seed.graph_json.get("seed")
     if not isinstance(rng_seed, int) or rng_seed <= 0:
