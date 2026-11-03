@@ -980,13 +980,18 @@ def test_training_auth_ok_forwards_quit_out_penalty(
 
 
 @pytest.mark.parametrize(
-    ("mode", "ranked"),
-    [(RunMode.NORMAL, False), (RunMode.SPEEDRUN, True), (RunMode.SET_SEED, True)],
+    ("mode", "ranked", "name"),
+    [
+        (RunMode.NORMAL, False, "Standard"),
+        (RunMode.SPEEDRUN, True, "Standard \u00b7 Random Seed"),
+        (RunMode.SET_SEED, True, "Standard \u00b7 Set Seed"),
+    ],
 )
 def test_training_auth_ok_tells_the_mod_whether_the_run_is_ranked(
-    training_ws_client, training_session_data, async_session, mode, ranked
+    training_ws_client, training_session_data, async_session, mode, ranked, name
 ):
-    """The mod reads debug flags in a solo session only when auth_ok says it is ranked."""
+    """The mod reads debug flags in a solo session only when auth_ok says it is
+    ranked, and names a ranked run after the board it counts on."""
 
     async def set_mode() -> None:
         async with async_session() as db:
@@ -1007,6 +1012,7 @@ def test_training_auth_ok_tells_the_mod_whether_the_run_is_ranked(
         auth_ok = ws.receive_json()
         assert auth_ok["type"] == "auth_ok"
         assert auth_ok["race"]["ranked"] is ranked
+        assert auth_ok["race"]["name"] == name
 
 
 def _set_session_mode(async_session, session_id: str, mode: RunMode) -> None:
@@ -2196,6 +2202,20 @@ def test_training_spectator_owner(training_ws_client, training_session_data):
         msg = ws.receive_json()
         assert msg["type"] == "race_state"
         assert msg["seed"] is not None
+
+
+def test_training_spectator_names_a_ranked_run_like_the_mod(
+    training_ws_client, training_session_data, async_session
+):
+    """Spectators get the ranked run's name the mod shows, not the bare pool."""
+    sid = training_session_data["session_id"]
+    _set_session_mode(async_session, sid, RunMode.SET_SEED)
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws:
+        ws.send_json({"type": "auth"})
+        msg = ws.receive_json()
+        assert msg["type"] == "race_state"
+        assert msg["race"]["name"] == "Standard \u00b7 Set Seed"
 
 
 # =============================================================================

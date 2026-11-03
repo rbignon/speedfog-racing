@@ -247,7 +247,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             participant_id=str(session.id),
             race=RaceInfo(
                 id=str(session.id),
-                name=format_pool_display_name(seed.pool) if seed else "Solo",
+                name=solo_run_name(seed.pool, session.mode) if seed else "Solo",
                 status="running",
                 started_at=session.created_at.isoformat() if session.created_at else None,
                 quit_out_penalty_ms=settings.quit_out_penalty_ms,
@@ -551,13 +551,25 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             await _broadcast_zone_history(self._session_id, entity.zone_history or [])
 
 
+def solo_run_name(pool: Pool | None, mode: RunMode) -> str:
+    """How the mod names a solo run: its pool, followed for a ranked run by
+    its kind as the Speedrun boards name it ("Standard · Random Seed" for a
+    blind Speedrun-mode run, "Standard · Set Seed" for a replay)."""
+    name = format_pool_display_name(pool)
+    if mode == RunMode.SPEEDRUN:
+        return f"{name} \u00b7 Random Seed"
+    if mode == RunMode.SET_SEED:
+        return f"{name} \u00b7 Set Seed"
+    return name
+
+
 async def _ranked_run_name(db: AsyncSession, entity: TrainingSession) -> str:
-    """How admin alerts name a ranked solo run: "Solo · <category> · <mode>"."""
+    """How admin alerts name a ranked solo run: "Solo · <pool> · Random Seed"
+    (or "Set Seed")."""
     pool = (
         await db.execute(select(Pool).where(Pool.name == entity.seed.pool_name))
     ).scalar_one_or_none()
-    mode_label = "Speedrun" if entity.mode == RunMode.SPEEDRUN else "Set Seed"
-    return f"Solo \u00b7 {format_pool_display_name(pool)} \u00b7 {mode_label}"
+    return f"Solo \u00b7 {solo_run_name(pool, entity.mode)}"
 
 
 def maybe_schedule_record_check(session_id: uuid.UUID, mode: RunMode) -> None:

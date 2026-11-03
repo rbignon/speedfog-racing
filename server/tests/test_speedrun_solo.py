@@ -620,9 +620,9 @@ async def test_ranked_finish_needs_the_final_zone_in_the_history(
     if counted:
         alert.assert_not_called()
     else:
-        mode_label = "Speedrun" if mode == RunMode.SPEEDRUN else "Set Seed"
+        board = "Random Seed" if mode == RunMode.SPEEDRUN else "Set Seed"
         alert.assert_called_once_with(
-            run_name=f"Solo \u00b7 Sprint \u00b7 {mode_label}",
+            run_name=f"Solo \u00b7 Sprint \u00b7 {board}",
             session_id=str(session.id),
             player_name="a",
             seed_number=seed.seed_number,

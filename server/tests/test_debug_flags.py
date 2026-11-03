@@ -138,7 +138,7 @@ async def test_ranked_session_records_debug_flags_and_alerts(df_session) -> None
     kwargs = fire.call_args.kwargs
     assert kwargs["session_id"] == str(entity.id)
     assert kwargs["race_id"] is None
-    assert kwargs["race_name"] == "Solo \u00b7 Sprint \u00b7 Speedrun"
+    assert kwargs["race_name"] == "Solo \u00b7 Sprint \u00b7 Random Seed"
     assert (kwargs["flags"], kwargs["igt_ms"]) == (["one_shot"], 83000)
 
 

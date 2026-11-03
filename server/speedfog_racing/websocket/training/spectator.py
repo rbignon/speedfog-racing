@@ -14,7 +14,6 @@ from speedfog_racing.auth import get_user_by_token
 from speedfog_racing.config import settings
 from speedfog_racing.models import TrainingSession, TrainingSessionStatus
 from speedfog_racing.services.i18n import translate_graph_json
-from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.websocket.handler import BaseSpectatorHandler
 from speedfog_racing.websocket.schemas import (
     RaceInfo,
@@ -22,7 +21,10 @@ from speedfog_racing.websocket.schemas import (
     SeedInfo,
 )
 from speedfog_racing.websocket.training.manager import training_manager
-from speedfog_racing.websocket.training.mod import build_training_participant_info
+from speedfog_racing.websocket.training.mod import (
+    build_training_participant_info,
+    solo_run_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +139,7 @@ async def _send_initial_state(
     message = RaceStateMessage(
         race=RaceInfo(
             id=str(session.id),
-            name=format_pool_display_name(seed.pool) if seed else "Solo",
+            name=solo_run_name(seed.pool, session.mode) if seed else "Solo",
             status="running"
             if session.status == TrainingSessionStatus.ACTIVE
             else session.status.value,
