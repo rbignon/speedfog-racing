@@ -192,6 +192,18 @@ describe("buildLss", () => {
     ]);
   });
 
+  it("measures the first gold from IGT 0, like the first split", () => {
+    // The spawn entry lands a few seconds in: depth 1 still starts at 0.
+    const late = [
+      { node_id: "start", igt_ms: 2_000 },
+      { node_id: "a1", igt_ms: 10_000 },
+      { node_id: "a2", igt_ms: 20_000 },
+    ];
+    const file = seedLssFile(seed([run("r", "u1", 50_000, late)]), "u1")!;
+    expect(file.pb![0]).toBe(10_000);
+    expect(file.golds).toEqual([10_000, 10_000, 30_000]);
+  });
+
   it("times a back-out at the next layer's first arrival and names the node taken", () => {
     // a1 first, back to the start, then b1: layer 1 is entered at 10s, left
     // through b1; layer 2 at 40s.

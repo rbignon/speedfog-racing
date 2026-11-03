@@ -140,7 +140,7 @@
         Download LiveSplit splits
       </button>
       <p class="splits-hint">
-        Auto-splits through the SpeedFog mod (LiveSplit 1.8.29 or later)
+        Auto-splits through the SpeedFog mod (LiveSplit 1.8.31 or later)
       </p>
     {/if}
     {#if error}

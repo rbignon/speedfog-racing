@@ -44,9 +44,10 @@ from run data the site already serves.
   file takes the viewer's Random Seed PB and the Random Seed WR from
   `GET /api/speedrun/livesplit/{category}`. A missing reference leaves its
   comparison empty.
-- **Golds** (best segments) are the viewer's fastest time on each depth over
-  their runs on the seed (seed file) or the segments of their PB (category
-  file).
+- **Golds** (best segments) are the viewer's fastest time on each segment
+  over their runs on the seed (seed file) or the segments of their PB
+  (category file), each timed from the previous split as LiveSplit times
+  it: the first one from IGT 0, like its split.
 - **Game Time only**: every time is in Game Time, the IGT the site records.
 
 ## Where to download

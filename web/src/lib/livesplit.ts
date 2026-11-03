@@ -121,14 +121,17 @@ export function seedLssFile(
       exitName(pbTimeline, k) ?? exitName(wrTimeline, k) ?? `Depth ${k + 1}`,
   );
 
+  // Segments as LiveSplit times them: the first one from IGT 0, not from
+  // the run's first history entry.
   let golds: (number | null)[] | null = null;
   if (mine.length > 0) {
     const g: (number | null)[] = Array.from({ length: total }, () => null);
     for (const r of mine) {
-      timeline(r).layers.forEach((v, k) => {
-        const t = v?.timeOnLayerMs ?? null;
-        if (t !== null && (g[k] === null || t < g[k]!)) g[k] = t;
-      });
+      segmentTimes(splitTimesFromTimeline(timeline(r), total)).forEach(
+        (t, k) => {
+          if (t !== null && (g[k] === null || t < g[k]!)) g[k] = t;
+        },
+      );
     }
     golds = g;
   }
