@@ -472,8 +472,8 @@ mod tests {
     /// A linked sync that started LiveSplit on attempt 1 (owned, index 0).
     fn started() -> LiveSplitSync {
         let mut sync = LiveSplitSync::new();
-        sync.on_run(view(1, true, true, &[], LAYERS), Some(0));
-        sync.on_link(snap(TimerPhase::NotRunning, -1, None), Some(0));
+        sync.on_run(view(1, true, true, &[], LAYERS), None);
+        sync.on_link(snap(TimerPhase::NotRunning, -1, None), None);
         sync
     }
 
@@ -761,9 +761,9 @@ mod tests {
             ..snap(TimerPhase::NotRunning, -1, None)
         };
         // Linked before any run: the check waits for the first view.
-        assert!(sync.on_link(other_seed, Some(0)).is_empty());
+        assert!(sync.on_link(other_seed, None).is_empty());
         assert_eq!(
-            sync.on_run(view(1, true, true, &[], LAYERS), Some(0)),
+            sync.on_run(view(1, true, true, &[], LAYERS), None),
             [Status(STATUS_OTHER_RUN)]
         );
         assert!(sync
@@ -788,8 +788,8 @@ mod tests {
             seed_number: Some("s7".to_string()),
             ..view(1, true, true, &[], LAYERS)
         };
-        sync.on_run(other_seed, Some(0));
-        let out = sync.on_link(category_file(Some("standard")), Some(0));
+        sync.on_run(other_seed, None);
+        let out = sync.on_link(category_file(Some("standard")), None);
         assert_eq!(
             cmds(&out),
             [SwitchToGameTime, AlwaysPauseGameTime, StartTimer]
@@ -800,16 +800,16 @@ mod tests {
             category: Some("sprint".to_string()),
             ..view(1, true, true, &[], LAYERS)
         };
-        sync.on_run(sprint, Some(0));
+        sync.on_run(sprint, None);
         assert_eq!(
-            sync.on_link(category_file(Some("standard")), Some(0)),
+            sync.on_link(category_file(Some("standard")), None),
             [Status(STATUS_OTHER_RUN)]
         );
 
         let mut sync = LiveSplitSync::new();
-        sync.on_run(view(1, true, true, &[], LAYERS), Some(0));
+        sync.on_run(view(1, true, true, &[], LAYERS), None);
         assert_eq!(
-            sync.on_link(category_file(None), Some(0)),
+            sync.on_link(category_file(None), None),
             [Status(STATUS_NOT_SPEEDFOG)]
         );
     }
@@ -829,12 +829,12 @@ mod tests {
     #[test]
     fn nothing_starts_before_the_run_is_live() {
         let mut sync = LiveSplitSync::new();
-        sync.on_run(view(1, true, false, &[], LAYERS), Some(0));
-        let out = sync.on_link(snap(TimerPhase::Ended, 3, Some(1_800_000)), Some(0));
+        sync.on_run(view(1, true, false, &[], LAYERS), None);
+        let out = sync.on_link(snap(TimerPhase::Ended, 3, Some(1_800_000)), None);
         assert_eq!(cmds(&out), [SwitchToGameTime, AlwaysPauseGameTime]);
-        assert_eq!(sync.push_due(Some(0)), None);
+        assert_eq!(sync.push_due(Some(1_000)), None);
 
-        let out = sync.on_run(view(1, true, true, &[], LAYERS), Some(0));
+        let out = sync.on_run(view(1, true, true, &[], LAYERS), None);
         assert_eq!(cmds(&out), [Reset, StartTimer]);
     }
 
