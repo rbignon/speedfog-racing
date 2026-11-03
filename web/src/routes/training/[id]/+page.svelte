@@ -691,7 +691,7 @@
   <DownloadModal
     {downloading}
     error={null}
-    actionLabel="Download Training Pack"
+    actionLabel="Download Solo Pack"
     rules={session?.pool_config?.rules ?? null}
     tips={starterTips}
     onClose={() => (showDownloadModal = false)}
