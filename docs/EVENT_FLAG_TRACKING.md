@@ -97,6 +97,10 @@ At the `position_readable` rising edge:
    - Send `zone_query { grace_entity_id, map_id, position, play_region_id }`.
    - Clear captured grace entity ID.
 
+### LiveSplit Depth Tracking
+
+Captured fog flags and the finish also feed the depth tracker that drives LiveSplit. At each capture site (10Hz poll, loading-exit rescan, reconnect rescan), the mod looks up the layer the flag leads to in `auth_ok.seed.flag_layers` (the finish counts as layer `total_layers`) and records it at the capture IGT. This happens only while the run is live: race running past its countdown, runner neither finished nor out, no wrong save. The tracker is a high watermark with a single entry point: a layer is recorded only when it is deeper than every layer already recorded, so a back-out or a revisit records nothing. At `auth_ok`, the local runner's `layer_entry_igts` seed it, which is the catch-up after a relaunch. A new attempt starts on a real race start (setup to running) with no layer reached, or on a per-save flush that lands on a fresh character (IGT at most 60 seconds), which also clears the layers; a backup restore further in keeps them. Without `flag_layers` (an older server), LiveSplit is left alone.
+
 ### Zone Reveal Timing
 
 Separate from the loading exit event dispatch above, zone reveal has its own logic:

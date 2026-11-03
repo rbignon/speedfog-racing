@@ -741,6 +741,8 @@ impl RaceTracker {
                 Effect::StartPhantomSkin { name, speffects } => {
                     self.start_phantom_skin(name, speffects)
                 }
+                // Not driven yet: no LiveSplit link in the shell so far.
+                Effect::LiveSplitRun(_) => {}
             }
         }
     }

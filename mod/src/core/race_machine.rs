@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::protocol::{
     ConditionKind, ExitInfo, ParticipantInfo, ParticipantStatus, RaceInfo, RaceStatus, SeedInfo,
 };
@@ -281,6 +282,9 @@ pub enum Effect {
         name: String,
         speffects: Vec<i32>,
     },
+    /// The run as the LiveSplit driver sees it, emitted when its liveness,
+    /// attempt or arrivals change, and only for a seed with flag layers.
+    LiveSplitRun(Box<RunView>),
 }
 
 // =============================================================================
@@ -395,6 +399,16 @@ pub struct RaceMachine {
     pub config_seed_id: String,
     /// Training mode: the server auto-starts, so `ready` is never sent.
     pub training: bool,
+    /// First IGT on each layer in this attempt, `total_layers + 1` long (see
+    /// `RunView::arrivals`). Only `record_arrival` records an arrival; auth
+    /// sizes it and a new attempt clears it.
+    run_arrivals: Vec<Option<u32>>,
+    /// Changes with every new attempt at the run (see `RunView::attempt`).
+    run_attempt: u32,
+    /// The arrivals or the attempt changed since the last `LiveSplitRun`.
+    run_view_changed: bool,
+    /// `live` of the last `LiveSplitRun`.
+    run_view_live: bool,
 }
 
 impl RaceMachine {
@@ -447,6 +461,10 @@ impl RaceMachine {
             last_received_debug: None,
             config_seed_id,
             training,
+            run_arrivals: Vec::new(),
+            run_attempt: 0,
+            run_view_changed: false,
+            run_view_live: false,
         }
     }
 
@@ -501,6 +519,12 @@ impl RaceMachine {
         }
     }
 
+    /// The held, freeze-adjusted IGT of the current frame: the game time the
+    /// LiveSplit driver pushes.
+    pub fn live_igt_ms(&self) -> Option<u32> {
+        self.held_igt_ms(self.frame_snapshot.igt_ms)
+    }
+
     /// Configured quit-out penalty, 0 when no race is known (nothing to
     /// penalize outside a race anyway).
     fn quit_out_penalty_ms(&self) -> u32 {
@@ -520,6 +544,12 @@ impl RaceMachine {
             && !self.am_i_finished()
             && !self.is_countdown_active(now)
             && !self.wrong_save
+    }
+
+    /// The run is live for LiveSplit: running past the countdown, the local
+    /// runner neither finished nor out, on the run's save.
+    fn run_live(&self, now: Instant) -> bool {
+        self.freeze_gate_open(now) && !self.am_i_abandoned()
     }
 
     /// Whether the debug-flag read may run: racing for real (not a practice
@@ -808,6 +838,27 @@ impl RaceMachine {
                 self.race_state.seed = Some(seed);
                 self.race_state.participants = participants;
                 self.bump_leaderboard_version();
+
+                // The run's arrivals, sized for this seed (those recorded
+                // before a reconnect stay), then merged with the local
+                // runner's arrivals the server knows: the catch-up after a
+                // relaunch.
+                let total_layers = self.race_state.seed.as_ref().map_or(0, |s| s.total_layers);
+                let len = usize::try_from(total_layers).unwrap_or(0) + 1;
+                if self.run_arrivals.len() != len {
+                    self.run_arrivals.resize(len, None);
+                    self.run_view_changed = true;
+                }
+                if let Some(igts) = self
+                    .my_participant()
+                    .and_then(|p| p.layer_entry_igts.clone())
+                {
+                    for layer in 1..=total_layers {
+                        if let Some(igt) = igts.get(&layer).and_then(|&v| u32::try_from(v).ok()) {
+                            self.record_arrival(layer, igt);
+                        }
+                    }
+                }
             }
             MachineMessage::AuthError(msg) => {
                 self.last_received_debug = Some(format!("auth_error({})", msg));
@@ -823,6 +874,12 @@ impl RaceMachine {
                         Some(now + Duration::from_secs(countdown_seconds as u64));
                 } else {
                     self.race_state.countdown_end = None;
+                }
+                // A real start (not the race_start a solo server sends after
+                // every auth_ok, its run already running) with no depth
+                // reached is a new attempt at the run.
+                if !self.is_race_running() && self.run_arrivals.iter().all(Option::is_none) {
+                    self.start_attempt();
                 }
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
@@ -1076,6 +1133,7 @@ impl RaceMachine {
                 self.permanent_error = Some(msg);
             }
         }
+        self.emit_run_view(now, &mut effects);
         effects
     }
 }
@@ -1159,6 +1217,13 @@ impl RaceMachine {
     /// and returns the effects to execute, in order. Mirrors the pre-machine
     /// `RaceTracker::update()` body exactly (minus shell concerns).
     pub fn tick(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
+        let mut effects = self.tick_frame(input, now);
+        self.emit_run_view(now, &mut effects);
+        effects
+    }
+
+    /// `tick` before the run view, which follows every path a frame takes.
+    fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         self.frame_snapshot = input.snapshot;
 
@@ -1228,6 +1293,11 @@ impl RaceMachine {
                     self.triggered_flags.clear();
                     self.flag_buffer.clear_deferred();
                     self.flag_buffer.clear_pending();
+                    // A fresh character is a new attempt at the run; a backup
+                    // restore further in is the same attempt.
+                    if current_igt <= FRESH_RUN_MAX_IGT_MS {
+                        self.start_attempt();
+                    }
                 }
                 // A forward IGT jump across an unload beyond WRONG_SAVE_FORWARD_SLACK_MS
                 // means a different, further-along save was loaded (not the race save):
@@ -1389,6 +1459,7 @@ impl RaceMachine {
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
+                                self.record_capture(flag_id, igt_ms, now);
                                 if input.connected
                                     && self.is_race_running()
                                     && !self.am_i_finished()
@@ -1411,6 +1482,7 @@ impl RaceMachine {
                             });
                             cleared.insert(flag_id);
                             self.flag_buffer.defer(flag_id, igt_ms);
+                            self.record_capture(flag_id, igt_ms, now);
                             info!(flag_id, "[RACE] Event flag caught at loading exit");
                         }
                     }
@@ -1508,6 +1580,7 @@ impl RaceMachine {
                         // finish_event: one-shot, use triggered_flags guard
                         if !self.triggered_flags.contains(&flag_id) {
                             self.triggered_flags.insert(flag_id);
+                            self.record_capture(flag_id, igt_ms, now);
                             if input.connected
                                 && self.is_race_running()
                                 && !self.am_i_finished()
@@ -1531,6 +1604,7 @@ impl RaceMachine {
                         });
                         cleared.insert(flag_id);
                         self.flag_buffer.defer(flag_id, igt_ms);
+                        self.record_capture(flag_id, igt_ms, now);
                         info!(flag_id, "[RACE] Event flag deferred until loading exit");
                     }
                 }
@@ -1629,6 +1703,7 @@ impl RaceMachine {
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
+                                self.record_capture(flag_id, igt_ms, now);
                                 effects.push(self.queue_event_flag(flag_id, igt_ms));
                                 self.last_sent_debug =
                                     Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
@@ -1640,6 +1715,7 @@ impl RaceMachine {
                                 value: false,
                             });
                             cleared.insert(flag_id);
+                            self.record_capture(flag_id, igt_ms, now);
                             effects.push(self.queue_event_flag(flag_id, igt_ms));
                             self.last_sent_debug =
                                 Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
@@ -1767,6 +1843,87 @@ impl RaceMachine {
                 info!(message_id, "[RACE] Replaying in-flight zone query");
             }
         }
+    }
+
+    /// The single entry point of every arrival: local fog and finish
+    /// captures (`record_capture`) and the server's arrivals at auth.
+    /// Records `layer` at `igt_ms` only when it is deeper than every arrival
+    /// recorded (a back-out or a revisit records nothing) and within
+    /// `1..=total_layers`.
+    ///
+    /// The LiveSplit sync splits a timer it owns on a new arrival whatever
+    /// `live` says, so no arrival may come from a wrong save. None does:
+    /// flag polling and the loading-exit rescan stop while `wrong_save` is
+    /// set. Any new caller must keep it that way.
+    fn record_arrival(&mut self, layer: i32, igt_ms: u32) {
+        let Ok(layer) = usize::try_from(layer) else {
+            return;
+        };
+        if layer == 0
+            || layer >= self.run_arrivals.len()
+            || self.run_arrivals[layer..].iter().any(Option::is_some)
+        {
+            return;
+        }
+        info!(layer, igt_ms, "[RACE] New depth reached");
+        self.run_arrivals[layer] = Some(igt_ms);
+        self.run_view_changed = true;
+    }
+
+    /// A local fog or finish capture: records the depth it leads to while
+    /// the run is live. A capture before the start, after the runner's
+    /// finish or exit, or after the race is over is no arrival.
+    fn record_capture(&mut self, flag_id: u32, igt_ms: u32, now: Instant) {
+        if !self.run_live(now) {
+            return;
+        }
+        let Some(seed) = self.race_state.seed.as_ref() else {
+            return;
+        };
+        let layer = if self.finish_event == Some(flag_id) {
+            Some(seed.total_layers)
+        } else {
+            seed.flag_layers.get(&flag_id).copied()
+        };
+        if let Some(layer) = layer {
+            self.record_arrival(layer, igt_ms);
+        }
+    }
+
+    /// A new attempt at the run: no depth reached yet.
+    fn start_attempt(&mut self) {
+        self.run_attempt = self.run_attempt.wrapping_add(1);
+        self.run_arrivals.fill(None);
+        self.run_view_changed = true;
+        info!(attempt = self.run_attempt, "[RACE] New attempt at the run");
+    }
+
+    /// Appends a `LiveSplitRun` when the run's liveness, attempt or arrivals
+    /// changed since the last one. Ends every `tick` and `handle_message`:
+    /// an unchanged frame costs a few comparisons and allocates nothing.
+    fn emit_run_view(&mut self, now: Instant, effects: &mut Vec<Effect>) {
+        let Some(seed) = self.race_state.seed.as_ref() else {
+            return;
+        };
+        // An old server sends no flag layers: LiveSplit is left alone.
+        if seed.flag_layers.is_empty() {
+            return;
+        }
+        let live = self.run_live(now);
+        if live == self.run_view_live && !self.run_view_changed {
+            return;
+        }
+        let view = RunView {
+            live,
+            attempt: self.run_attempt,
+            fresh: self.run_arrivals.iter().all(Option::is_none),
+            arrivals: self.run_arrivals.clone(),
+            seed_number: seed.seed_number.clone(),
+            category: seed.category.clone(),
+        };
+        self.run_view_live = live;
+        self.run_view_changed = false;
+        effects.push(Effect::LiveSplitRun(Box::new(view)));
     }
 }
 
@@ -4307,5 +4464,306 @@ mod tests {
             "out of the race: same gates as an abandon"
         );
         assert!(!m.pre_tick(now + ms(100), true, true).debug_flags);
+    }
+
+    // ------------------------------------------------------------------
+    // LiveSplit run view
+    // ------------------------------------------------------------------
+
+    /// auth_ok from a protocol 1.10 server: flags 100 and 200 lead to layers
+    /// 1 and 2 (of 3), 900 is the finish; `arrivals` is the local runner's
+    /// `layer_entry_igts`.
+    fn ls_auth_ok(status: &str, my_status: &str, arrivals: &[(i32, i32)]) -> MachineMessage {
+        let mut seed = test_seed(&[100, 200, 900], Some(900), "{}");
+        seed.flag_layers = HashMap::from([(100, 1), (200, 2)]);
+        seed.seed_number = Some("s1".to_string());
+        let mut me = test_participant("p1", my_status, 0);
+        me.layer_entry_igts = Some(arrivals.iter().copied().collect());
+        MachineMessage::AuthOk {
+            participant_id: "p1".to_string(),
+            race: test_race(status),
+            seed,
+            participants: vec![me],
+            phantom_skin: None,
+            latest_mod_version: None,
+        }
+    }
+
+    /// Machine authed with `ls_auth_ok`, and the effects of that auth_ok.
+    fn ls_machine(
+        status: &str,
+        my_status: &str,
+        arrivals: &[(i32, i32)],
+        training: bool,
+        now: Instant,
+    ) -> (RaceMachine, Vec<Effect>) {
+        let mut m = RaceMachine::new(1, String::new(), training, now);
+        let fx = m.handle_message(ls_auth_ok(status, my_status, arrivals), now);
+        (m, fx)
+    }
+
+    fn run_views(effects: &[Effect]) -> Vec<&RunView> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::LiveSplitRun(view) => Some(view.as_ref()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn fog_capture_records_its_depth_at_the_capture_igt() {
+        let now = Instant::now();
+        let (mut m, _) = ls_machine("running", "playing", &[], false, now);
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(vec![(100, true)])),
+            now + ms(150),
+        );
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert_eq!(views[0].arrivals, vec![None, Some(60_000), None, None]);
+        assert!(views[0].live);
+        assert!(!views[0].fresh);
+    }
+
+    #[test]
+    fn back_out_to_a_reached_depth_records_nothing() {
+        let now = Instant::now();
+        let (mut m, _) = ls_machine("running", "playing", &[], false, now);
+        let t1 = now + ms(150);
+        m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(vec![(100, true)])),
+            t1,
+        );
+        // Loading screen, then the exit scan catches the next fog's flag.
+        m.tick(tick_in(snap(Some(60_100), false), true, None), t1 + ms(50));
+        let fx = m.tick(
+            tick_in(snap(Some(60_200), true), true, Some(vec![(200, true)])),
+            t1 + ms(80),
+        );
+        assert_eq!(
+            run_views(&fx)[0].arrivals,
+            vec![None, Some(60_000), Some(60_200), None]
+        );
+
+        // Back out through the first fog: layer 1 again.
+        let fx = m.tick(
+            tick_in(snap(Some(90_000), true), true, Some(vec![(100, true)])),
+            t1 + ms(300),
+        );
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: 100,
+            value: false
+        }));
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn finish_records_the_last_depth() {
+        let now = Instant::now();
+        let (mut m, _) = ls_machine("running", "playing", &[(1, 5_000), (2, 9_000)], false, now);
+        let fx = m.tick(
+            tick_in(snap(Some(1_800_000), true), true, Some(vec![(900, true)])),
+            now + ms(150),
+        );
+        assert_eq!(
+            run_views(&fx)[0].arrivals,
+            vec![None, Some(5_000), Some(9_000), Some(1_800_000)]
+        );
+    }
+
+    #[test]
+    fn auth_ok_fills_arrivals_from_the_server() {
+        let (_, fx) = ls_machine(
+            "running",
+            "playing",
+            &[(0, 0), (1, 5_000)],
+            false,
+            Instant::now(),
+        );
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert_eq!(views[0].arrivals, vec![None, Some(5_000), None, None]);
+        assert!(!views[0].fresh);
+        assert_eq!(views[0].seed_number.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn race_start_without_progress_bumps_the_attempt() {
+        let now = Instant::now();
+        let (mut m, fx) = ls_machine("setup", "ready", &[], false, now);
+        let before = run_views(&fx)[0].attempt;
+
+        let fx = m.handle_message(MachineMessage::RaceStart(3), now);
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert_eq!(views[0].attempt, before.wrapping_add(1));
+        assert!(views[0].fresh);
+        assert!(!views[0].live, "still in the countdown");
+
+        // The countdown ends: the same attempt goes live.
+        let fx = m.tick(tick_in(snap(Some(1_000), true), true, None), now + secs(4));
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert!(views[0].live);
+        assert_eq!(views[0].attempt, before.wrapping_add(1));
+    }
+
+    #[test]
+    fn race_start_with_progress_keeps_the_attempt() {
+        let now = Instant::now();
+        let (mut m, fx) = ls_machine("setup", "ready", &[(1, 5_000)], false, now);
+        let before = run_views(&fx)[0].attempt;
+
+        let fx = m.handle_message(MachineMessage::RaceStart(0), now);
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert!(views[0].live);
+        assert_eq!(views[0].attempt, before);
+    }
+
+    #[test]
+    fn a_solo_race_start_keeps_the_attempt() {
+        // A solo session's auth_ok already says running, and its server
+        // sends race_start after every auth_ok, reconnects included: no
+        // start, so no new attempt that would restart LiveSplit mid-run.
+        let now = Instant::now();
+        let (mut m, fx) = ls_machine("running", "playing", &[], true, now);
+        let first = run_views(&fx)[0].clone();
+        assert!(first.live && first.fresh);
+        let fx = m.handle_message(MachineMessage::RaceStart(0), now);
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
+
+        // A reconnect before the first fog.
+        m.tick(
+            tick_in(snap(Some(180_000), true), true, None),
+            now + secs(180),
+        );
+        let t = now + secs(181);
+        let mut fx = m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t,
+        );
+        fx.extend(m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t,
+        ));
+        fx.extend(m.handle_message(ls_auth_ok("running", "playing", &[]), t));
+        fx.extend(m.handle_message(MachineMessage::RaceStart(0), t));
+        fx.extend(m.tick(tick_in(snap(Some(181_000), true), true, None), t));
+        assert!(
+            run_views(&fx).iter().all(|v| v.attempt == first.attempt),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn fresh_character_after_a_save_reload_starts_a_new_attempt() {
+        let now = Instant::now();
+        let (mut m, fx) = ls_machine("running", "playing", &[], false, now);
+        let before = run_views(&fx)[0].attempt;
+        m.tick(
+            tick_in(snap(Some(600_000), true), true, Some(vec![(100, true)])),
+            now + ms(150),
+        );
+
+        // A backup restore is the same run: nothing changes.
+        m.tick(tick_in(snap(None, false), true, None), now + secs(5));
+        let fx = m.tick(
+            tick_in(snap(Some(500_000), false), true, None),
+            now + secs(20),
+        );
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
+
+        // Back to the title, then a New Game.
+        m.tick(tick_in(snap(None, false), true, None), now + secs(25));
+        let fx = m.tick(
+            tick_in(snap(Some(20_000), false), true, None),
+            now + secs(40),
+        );
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert_eq!(views[0].attempt, before.wrapping_add(1));
+        assert!(views[0].fresh);
+        assert_eq!(views[0].arrivals, vec![None; 4]);
+    }
+
+    #[test]
+    fn wrong_save_turns_the_view_not_live_and_back() {
+        let now = Instant::now();
+        let (mut m, fx) = ls_machine("running", "playing", &[], false, now);
+        let attempt = run_views(&fx)[0].attempt;
+        m.tick(tick_in(snap(Some(10_000), true), true, None), now);
+        m.tick(tick_in(snap(None, false), true, None), now);
+        let fx = m.tick(tick_in(snap(Some(7_200_000), false), true, None), now);
+        assert!(m.wrong_save);
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert!(!views[0].live);
+        assert_eq!(views[0].attempt, attempt);
+
+        // The race save comes back.
+        m.tick(tick_in(snap(None, false), true, None), now + secs(90));
+        let fx = m.tick(
+            tick_in(snap(Some(9_000), false), true, None),
+            now + secs(90),
+        );
+        assert!(!m.wrong_save);
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert!(views[0].live);
+        assert_eq!(views[0].attempt, attempt);
+    }
+
+    #[test]
+    fn no_view_without_flag_layers() {
+        // An old server's auth_ok has no flag layers: LiveSplit is left alone.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        let mut fx = m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+        fx.extend(m.handle_message(MachineMessage::RaceStart(0), now));
+        fx.extend(m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(vec![(100, true)])),
+            now + ms(150),
+        ));
+        fx.extend(m.tick(
+            tick_in(snap(Some(90_000), true), true, Some(vec![(900, true)])),
+            now + ms(300),
+        ));
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn steady_frames_emit_no_view() {
+        let now = Instant::now();
+        let (mut m, _) = ls_machine("running", "playing", &[(1, 5_000)], false, now);
+        for i in 1..=10 {
+            let fx = m.tick(
+                tick_in(
+                    snap(Some(60_000), true),
+                    true,
+                    Some(vec![(100, false), (200, false), (900, false)]),
+                ),
+                now + ms(150 * i),
+            );
+            assert!(run_views(&fx).is_empty(), "tick {i}: {fx:?}");
+        }
+    }
+
+    #[test]
+    fn an_abandoned_runner_captures_no_depth() {
+        let now = Instant::now();
+        let (mut m, _) = ls_machine("running", "playing", &[], false, now);
+        let mut me = m.race_state.participants[0].clone();
+        me.status = ParticipantStatus::Abandoned;
+        let fx = m.handle_message(MachineMessage::PlayerUpdate(me), now);
+        assert!(!run_views(&fx)[0].live);
+
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(vec![(100, true)])),
+            now + ms(150),
+        );
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
     }
 }
