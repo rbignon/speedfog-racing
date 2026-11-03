@@ -2,6 +2,43 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.32.0] - 2026-11-03
+
+### Speedrun
+
+- **New Speedrun page** in the navbar, with speedrun.com style boards (it replaces the speedrun.fog tab of the Stats page). Each game mode is a category with two boards:
+  - **Set Seed**: every run, blind or replayed. **Any seed played since September 1st can be replayed**, as often as you like while its files are kept on the server, so you can route a seed and grind it
+  - **Random Seed**: blind runs only, on seeds the runner had never seen
+- The boards count races, Daily Seeds, event races and the solo runs started from the Speedrun page, on the seeds generated since **September 1st** (Elden Ring 1.17). A community race counts unless it was **reset after its start**, its seed was **re-rolled without a seed report**, or it drew a seed an earlier race had shown before giving it up
+- **Start a run** from a board: Random Seed or Set Seed (type a seed ID, or click **WR** for the record seed), solo or race
+  - A **Random Seed solo run** gets a fresh seed nobody has played. Its page stays blind (no spoiler, no full map, no ghosts) until the run ends. It expires after 24 hours, and you cannot start a new one after leaving 3 unfinished within 24 hours
+  - These solo runs get the races' **cheat tool detection**, and a finish counts only once you reached the final boss
+- **Seed pages**: every played seed has its own page, with all the runs on it, its map, the replay and the layer comparison, and whether it can still be replayed. Click a board row, or the seed badge of a finished race, Daily Seed or Speedrun solo run, to open it, then replay the seed solo or open a race on it from there
+  - A player who finished a run on a seed can **protect** it (up to 3 seeds), so its files are never deleted from the server (a seed out of its pool may otherwise lose them after 30 days without a run, unless it is among its category's 10 best). A seed that can no longer be replayed is struck through on the boards
+- **OBS overlay** for the boards: the top players, the next ones cycling, and your own best pinned at the bottom
+
+### Races
+
+- **Rules update** for races, Daily Seeds and ranked runs: skips are allowed **within a zone**, but **no sequence break**: reaching a zone other than through its fog gate is forbidden
+- **Your seed pack always carries the latest SpeedFog mod**, whatever the seed's age: the mod is added when you download it
+- The left sidebar of the race and Daily Seed pages **folds away** to give the map more room
+
+### Seeds
+
+- The **Halloween theme** is over: new seeds get the usual boss and item names, icons and fog gates back
+- **Gaol Cave** and **Dragonbarrow Cave** can no longer be entered at the drop-down into their boss arena (Frenzied Duelist, Beastmen of Farum Azula)
+
+### Website
+
+- **New skips**: Rennala Skip (Raya Lucaria Academy), Taylew Forge Skip, and a backwards route through Castle Ensis
+- Fix: the **activity heatmap** of the Stats page counted a race at its start, so the async qualifiers piled up on the same few hours. Each runner now counts when they joined, and only if they played
+- Fix: the **Before you race** window and other dialogs now scroll when taller than the screen
+
+### Speedfog × Ignite Season One
+
+- **Season One rewards**: the playoff runners get the **Kindled** name style, the Top 32 champion the **Phoenix** name style and the **Season One Champion** badge
+- **No more bloodstains at the fog gates in event races** (qualifiers, playoffs, showcases), so a playoff runner can no longer read where their opponents died
+
 ## [1.31.0] - 2026-10-20
 
 ### Elden Ring 1.17.2
