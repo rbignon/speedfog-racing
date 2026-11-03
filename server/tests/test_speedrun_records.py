@@ -127,7 +127,7 @@ async def test_record_announced_once(async_session, pools):
     assert first == 2  # Set Seed and Random Seed
     assert send.await_count == first
     embed = send.await_args_list[0].args[0]
-    assert "record" in embed["title"]
+    assert "Record" in embed["title"]
     assert f"?run={p.id}" in embed["url"]
 
 
