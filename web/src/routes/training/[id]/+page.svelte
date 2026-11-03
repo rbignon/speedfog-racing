@@ -53,6 +53,7 @@
   let session = $state<TrainingSessionDetail | null>(null);
   let loading = $state(true);
   let error = $state<string | null>(null);
+  let splitsError = $state<string | null>(null);
   let showFullDag = $state(false);
   let abandoning = $state(false);
   let downloading = $state(false);
@@ -302,7 +303,7 @@
 
   async function handleDownloadSplits() {
     if (!session) return;
-    error = null;
+    splitsError = null;
     try {
       if (session.mode === "set_seed" && session.seed_number) {
         await downloadSeedSplits(session.seed_number, auth.user?.id ?? null);
@@ -313,7 +314,8 @@
         );
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : "Failed to build the splits.";
+      splitsError =
+        e instanceof Error ? e.message : "Failed to build the splits.";
     }
   }
 
@@ -504,6 +506,9 @@
           <a href="/training" class="btn btn-primary">New Run</a>
         {/if}
       </div>
+      {#if splitsError}
+        <p class="splits-error" role="alert">{splitsError}</p>
+      {/if}
     {/if}
 
     {#if auth.isAdmin && isRanked}
@@ -827,6 +832,12 @@
     height: 18px;
     border-radius: 50%;
     object-fit: cover;
+  }
+
+  .splits-error {
+    margin: -1rem 0 1.5rem;
+    color: var(--color-danger);
+    font-size: var(--font-size-sm);
   }
 
   .error-banner {

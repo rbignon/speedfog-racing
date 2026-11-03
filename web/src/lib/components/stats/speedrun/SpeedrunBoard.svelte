@@ -75,6 +75,12 @@
 
   let pool = $derived(resolvePool(params, categories));
   let category = $derived(categories.find((c) => c.pool === pool) ?? null);
+
+  // An error from one category's splits does not follow the selection.
+  $effect(() => {
+    void pool;
+    splitsError = null;
+  });
   let active = $derived(categories.filter((c) => !c.retired));
   let retired = $derived(categories.filter((c) => c.retired));
   let showRetired = $derived(moreOpen || (category?.retired ?? false));
