@@ -77,8 +77,8 @@ describe("RaceControls: Re-roll Seed", () => {
     return view;
   }
 
-  it("warns that a reroll without a report takes a normal race off the boards", async () => {
-    const { getByLabelText, queryByText } = await openReroll(race("normal"));
+  it("warns that a reroll without a report takes a community race off the boards", async () => {
+    const { getByLabelText, queryByText } = await openReroll(race("speedrun"));
     expect(queryByText(WARNING)).not.toBeNull();
 
     await fireEvent.click(getByLabelText("Report this seed as buggy"));
@@ -86,7 +86,6 @@ describe("RaceControls: Re-roll Seed", () => {
   });
 
   it.each([
-    ["a speedrun race (its reroll is a Random Seed reset)", race("speedrun")],
     ["an event race", race("normal", { event_id: "event-1" })],
     [
       "a race already off the boards for a reroll",

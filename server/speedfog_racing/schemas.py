@@ -550,7 +550,7 @@ class RaceDetailResponse(BaseModel):
     daily_date: date | None = None
     mode: RunMode
     # Why the race's finishers count on no Speedrun board (a seen seed, a
-    # normal community race reset after its start or re-rolled without a seed
+    # community race reset after its start or re-rolled without a seed
     # report), null when they can count.
     unranked_reason: str | None = None
     # The same reason as a code, for the web to branch on.

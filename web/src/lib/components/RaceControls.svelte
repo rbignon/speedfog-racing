@@ -54,12 +54,10 @@
       onBoardsPool &&
       reportCanKeepOnBoards,
   );
-  // A reroll without a seed report takes a normal community race off the
-  // Speedrun boards, or keeps a reset one off. A speedrun race's reroll is a
-  // Random Seed reset and keeps it on.
+  // A reroll without a seed report takes a community race off the Speedrun
+  // boards, or keeps a reset one off.
   let rerollLeavesBoards = $derived(
-    race.mode === "normal" &&
-      race.daily_date === null &&
+    race.daily_date === null &&
       race.event_id === null &&
       reportCanKeepOnBoards &&
       onBoardsPool,
