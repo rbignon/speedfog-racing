@@ -47,9 +47,9 @@ ssh "$SERVER" bash -s "$APP_DIR" << 'ENDSSH'
     APP_DIR="$1"
     # Written beside the live file, then renamed over it: a download never
     # reads a half-written DLL.
-    sudo install -D -o speedfog -g speedfog -m 644 /tmp/speedfog_racing.dll \
+    sudo -H -u speedfog install -D -o speedfog -g speedfog -m 644 /tmp/speedfog_racing.dll \
         "$APP_DIR/mod/speedfog_racing.dll.new"
-    sudo mv -f "$APP_DIR/mod/speedfog_racing.dll.new" "$APP_DIR/mod/speedfog_racing.dll"
+    sudo -H -u speedfog mv -f "$APP_DIR/mod/speedfog_racing.dll.new" "$APP_DIR/mod/speedfog_racing.dll"
     rm /tmp/speedfog_racing.dll
 ENDSSH
 
