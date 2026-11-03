@@ -38,9 +38,22 @@ rm /tmp/speedfog-web.tar.gz
 # --- Remote deploy ---
 
 echo "==> Uploading server code..."
+# Only the git-tracked files leave this machine, as they are in the working tree:
+# they are copied to a temporary directory first, which leaves untracked local files
+# (dumps, scratch scripts, caches) behind. The excludes still matter: they keep
+# --delete off the server's .venv, .env and caches.
+UNTRACKED="$(git -C "$REPO_DIR" ls-files --others --exclude-standard server)"
+if [ -n "$UNTRACKED" ]; then
+    echo "  WARNING: untracked files not deployed (git add a new file to ship it):"
+    while IFS= read -r path; do echo "    $path"; done <<< "$UNTRACKED"
+fi
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+git -C "$REPO_DIR" ls-files -z server \
+    | rsync -a --from0 --files-from=- --ignore-missing-args "$REPO_DIR/" "$STAGE_DIR/"
 rsync -a --delete --omit-dir-times --chmod=g+w \
     --exclude='.venv' --exclude='__pycache__' --exclude='.ruff_cache' --exclude='.mypy_cache' --exclude='.env' \
-    "$REPO_DIR/server/" "$SERVER:$APP_DIR/server/"
+    "$STAGE_DIR/server/" "$SERVER:$APP_DIR/server/"
 
 echo "==> Deploying on server..."
 ssh "$SERVER" bash << 'ENDSSH'

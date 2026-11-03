@@ -100,7 +100,7 @@ The script:
 1. Checks that the server has a mod DLL (see below), and stops otherwise
 2. Builds the SvelteKit frontend locally
 3. Uploads the build archive via scp
-4. Syncs server code via rsync (preserves `.venv` and `.env`)
+4. Syncs the git-tracked server files via rsync, as they are in the working tree: untracked local files are not sent (a new file must be `git add`ed to ship, and the script lists the untracked ones it leaves out), and files deleted or untracked locally are removed from the server, except its `.venv`, `.env` and caches
 5. Installs/updates Python dependencies on the VPS, with the server package installed editable (`pip install -e .`) so the console scripts (`[project.scripts]` in `server/pyproject.toml`, e.g. `speedfog-scan-seeds`) run the synced code and find `server/data/`
 6. Runs database migrations
 7. Swaps the frontend build atomically
