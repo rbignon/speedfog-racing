@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.9";
+pub const PROTOCOL_VERSION: &str = "1.10";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -190,6 +190,19 @@ where
     Ok(Option::<HashMap<String, i32>>::deserialize(deserializer)?.map(crate::core::parse_splits))
 }
 
+/// Reads an event flag -> layer map sent with String keys (see
+/// `deserialize_layer_map`). A key that is not a u32 is dropped.
+fn deserialize_flag_layers<'de, D>(deserializer: D) -> Result<HashMap<u32, i32>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<HashMap<String, i32>>::deserialize(deserializer)?
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(k, v)| k.parse::<u32>().ok().map(|k| (k, v)))
+        .collect())
+}
+
 /// Participant info in leaderboard
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ParticipantInfo {
@@ -354,6 +367,16 @@ pub struct SeedInfo {
     /// concrete SpEffect IDs etc.
     #[serde(default)]
     pub phantom_skins: HashMap<String, PhantomSkin>,
+    /// Event flag -> layer for the LiveSplit driver: the layer a flag arrival
+    /// means. Empty from an old server, which disables LiveSplit driving.
+    #[serde(default, deserialize_with = "deserialize_flag_layers")]
+    pub flag_layers: HashMap<u32, i32>,
+    /// Seed number, matched against the LiveSplit seed custom variable.
+    #[serde(default)]
+    pub seed_number: Option<String>,
+    /// Race category, matched against the LiveSplit category custom variable.
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// Exit info in zone_update message
@@ -472,7 +495,7 @@ mod tests {
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains(r#""type":"auth""#));
         assert!(json.contains(r#""mod_token":"test123""#));
-        assert!(json.contains(r#""protocol_version":"1.9""#));
+        assert!(json.contains(&format!(r#""protocol_version":"{}""#, PROTOCOL_VERSION)));
         assert!(json.contains(&format!(r#""mod_version":"{}""#, env!("CARGO_PKG_VERSION"))));
     }
 
@@ -594,6 +617,44 @@ mod tests {
         match msg {
             ServerMessage::AuthOk { seed, .. } => {
                 assert_eq!(seed.event_ids, vec![9000001, 9000042, 9000100]);
+            }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_auth_ok_livesplit_fields_inside_a_server_message() {
+        let json = r#"{"type": "auth_ok", "participant_id": "p", "race": {"id": "r", "name": "R", "status": "running"},
+            "seed": {"total_layers": 3, "flag_layers": {"100": 1, "200": 2, "x": 9},
+                     "seed_number": "abc123", "category": "standard@25"},
+            "participants": [{"id": "p", "twitch_username": "u", "status": "playing", "current_layer": 1,
+                              "igt_ms": 0, "death_count": 0, "layer_entry_igts": {"0": 0, "1": 5000}}]}"#;
+        match serde_json::from_str::<ServerMessage>(json).unwrap() {
+            ServerMessage::AuthOk {
+                seed, participants, ..
+            } => {
+                assert_eq!(seed.flag_layers, HashMap::from([(100, 1), (200, 2)]));
+                assert_eq!(seed.seed_number.as_deref(), Some("abc123"));
+                assert_eq!(seed.category.as_deref(), Some("standard@25"));
+                assert_eq!(
+                    participants[0].layer_entry_igts,
+                    Some(HashMap::from([(0, 0), (1, 5000)]))
+                );
+            }
+            _ => panic!("Expected AuthOk"),
+        }
+    }
+
+    #[test]
+    fn test_auth_ok_without_livesplit_fields_from_old_server() {
+        let json = r#"{"type": "auth_ok", "participant_id": "p",
+            "race": {"id": "r", "name": "R", "status": "running"},
+            "seed": {"total_layers": 3}, "participants": []}"#;
+        match serde_json::from_str::<ServerMessage>(json).unwrap() {
+            ServerMessage::AuthOk { seed, .. } => {
+                assert!(seed.flag_layers.is_empty());
+                assert!(seed.seed_number.is_none());
+                assert!(seed.category.is_none());
             }
             _ => panic!("Expected AuthOk"),
         }
