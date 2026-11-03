@@ -304,10 +304,6 @@
           {#each RUN_RULES as rule (rule.lead)}
             <li><strong>{rule.lead}</strong>{rule.rest}</li>
           {/each}
-          <li>
-            <strong>No LiveSplit</strong>: IGT is tracked automatically by the
-            mod
-          </li>
         </ul>
       </div>
     {/if}
@@ -814,6 +810,39 @@
           If your IGT doesn't change for 30 minutes (game closed, stuck, or
           AFK), the server marks you as abandoned. The race can finish once all
           participants are done or abandoned.
+        </p>
+      </div>
+    {/if}
+
+    <button
+      id="faq-livesplit"
+      class="accordion"
+      class:open={isOpen("faq-livesplit")}
+      aria-expanded={isOpen("faq-livesplit")}
+      onclick={() => toggleDetail("faq-livesplit")}
+    >
+      <span>Can I use LiveSplit?</span>
+      <span class="chevron"></span>
+    </button>
+    {#if isOpen("faq-livesplit")}
+      <div class="panel">
+        <p>
+          Yes, with LiveSplit 1.8.29 or later and without SoulSplitter, which
+          writes the game timer. Download the splits file from a seed page (Play
+          this seed in Set Seed), a Set Seed run page, the download window of a
+          race or Daily Seed, or the Speedrun board, and open it in LiveSplit.
+          Then launch the game as usual.
+        </p>
+        <p>
+          The mod links on its own (the overlay says "LiveSplit linked"),
+          switches LiveSplit to Game Time, starts the timer, splits on each new
+          depth and stops on the final boss. The times match the ones on the
+          site.
+        </p>
+        <p>
+          Reset LiveSplit yourself between attempts, or let the mod reset a
+          leftover timer when a new run starts. "SpeedFog WR" is a separate
+          comparison: right-click LiveSplit and pick Compare Against to use it.
         </p>
       </div>
     {/if}

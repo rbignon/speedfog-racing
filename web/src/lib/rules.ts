@@ -15,4 +15,8 @@ export const RUN_RULES: RunRule[] = [
     lead: "No sequence break",
     rest: ": reaching a zone other than through its fog gate is forbidden",
   },
+  {
+    lead: "LiveSplit allowed only without SoulSplitter",
+    rest: ": SoulSplitter writes the game timer",
+  },
 ];

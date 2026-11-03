@@ -25,7 +25,28 @@ layer 0, where the run starts); this doc and the code keep the graph's
 
 ## The file
 
-The `.lss` files the site generates are described with the web side.
+The `.lss` files are built in the browser by `web/src/lib/livesplit.ts`,
+from run data the site already serves.
+
+- **GameName** is `SpeedFog`, never "Elden Ring": LiveSplit would wake a
+  SoulSplitter the player once activated for Elden Ring.
+- **CategoryName** is the category's name; a seed file adds
+  " · Seed <n>".
+- **Custom variables** `SpeedFog seed` (seed file) or `SpeedFog category`
+  (category file). The mod reads them on link to check the file matches the
+  run (see "How the mod links").
+- **Segments**: one per depth. A seed file names each after the zone the
+  viewer's best run left that depth through, else the seed's best counted
+  run, else "Depth k". A category file names them "Depth k".
+- **Comparisons**: "Personal Best" and "SpeedFog WR". A seed file takes the
+  viewer's best run on the seed and the seed's best counted run; a category
+  file takes the viewer's Random Seed PB and the Random Seed WR from
+  `GET /api/speedrun/livesplit/{category}`. A missing reference leaves its
+  comparison empty.
+- **Golds** (best segments) are the viewer's fastest time on each depth over
+  their runs on the seed (seed file) or the segments of their PB (category
+  file).
+- **Game Time only**: every time is in Game Time, the IGT the site records.
 
 ## Where to download
 
