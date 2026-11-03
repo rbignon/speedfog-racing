@@ -279,11 +279,28 @@ DISCARDED ──reroll or deletion──→ stays DISCARDED (never released back
 
 A DISCARDED seed's zip is kept while any of these holds, so a played seed stays replayable on Set Seed:
 
-- it is one of the `SET_SEED_KEPT_TOP_SEEDS` (10) best seeds of its category's Set Seed board, counting seeds excluded from Set Seed (an admin may restore one, and a purged zip cannot be rebuilt) but not the already purged ones nor those added before `SET_SEED_MIN_SEED_DATE` or `SPEEDRUN_BOARD_START_DATE`, so they take no place;
+- it is one of the `SET_SEED_KEPT_TOP_SEEDS` (10) best seeds of its category's Set Seed board, counting seeds excluded from Set Seed (an admin may restore one, while a purged zip can be rebuilt only when the current generator still reproduces its graph, see below) but not the already purged ones nor those added before `SET_SEED_MIN_SEED_DATE` or `SPEEDRUN_BOARD_START_DATE`, so they take no place;
 - a player protected it (`seed_protections`, at most `SEED_PROTECTION_LIMIT` seeds each, no expiry);
 - its last race or solo session is less than `SEED_PURGE_GRACE_DAYS` (30) days old (a race counts from its finish, else its start, else its creation; a session from its finish, else its creation), or a race in SETUP or RUNNING, or an ACTIVE session, is on it now.
 
 A seed added (scanned, `Seed.created_at`) before `SET_SEED_MIN_SEED_DATE` is purgeable whatever its reasons. Seeds that are not DISCARDED are never purged. `services/set_seed_service.py::purgeable_seeds` applies the rules; the CLI `speedfog-purgeable-seeds [--pool P] [--older-than DAYS]` prints one `folder_path` per line (logs on stderr). `deploy/cleanup-seeds.sh` runs it on the VPS and deletes only the listed zips (dry-run unless `--execute`); its second phase, which deletes DISCARDED rows no race or session references, also skips protected seeds. Settings are described in `docs/SPEEDRUN.md`.
+
+### Restoring a purged seed (`tools/regenerate_seed.py`)
+
+A purged zip (a record seed's, say) can be rebuilt on a dev machine from the seed's row in the local database, a recent copy of production's:
+
+```bash
+cd server && uv run python ../tools/regenerate_seed.py <seed id> --game-dir "/path/to/ELDEN RING/Game"
+```
+
+`<seed id>` is `seeds.id` (a UUID), not the seed number. The tool reruns speedfog on its current checkout (`SPEEDFOG_PATH` or `--speedfog-path`, as for `generate_pool.py`) with the stored graph's RNG seed (`graph_json["seed"]`, passed as `--seed`) and the pool's current `tools/pools/` config, then compares the regenerated `graph.json` with `Seed.graph_json`:
+
+- Any difference outside `plugins` (a generator or pool change since the seed was generated) aborts: no zip, the run's directory is kept in `<output>/<pool>_failed/`, and the seed cannot be restored this way.
+- `plugins` mirrors the pool's `[plugin.*]` tables, which are switched on and off over time (the Halloween theme, for one): its differences are printed as warnings, and the rebuilt seed plays with today's plugin settings.
+- The graph does not carry what reaches the Item Randomizer only: the pool's `[item_randomizer]` table (difficulty, `item_preset_path`, ...) and the randomizer itself. A change there since the seed's generation goes unnoticed and moves items. Every pool `[item_randomizer]` change so far came with a care package change, which the graph does carry (`item_preset_path` on 2026-09-18).
+- The speedfog commit is printed, flagged when its tracked files have uncommitted changes, which the graph may not show either.
+
+On a match, the post-processing of `generate_pool.py` applies and the zip is written as `<output>/<pool>/seed_<seed_number>.zip` (default output `tools/output/restored/`). The tool prints the commands that copy it back to the seed's `folder_path` on the VPS, owned by `speedfog` like the zips `deploy-seeds.sh` extracts, and that refuse to overwrite a zip already there (the local database cannot tell whether prod still has it). The database needs no change: once the file is back, the seed is no longer `purged` (its zip is checked each time the counted runs load, so within one cache TTL). The restored zip then follows the retention rules above: if nothing keeps it (a top seed, a protection, a recent run), or if it was added before `SET_SEED_MIN_SEED_DATE`, the next cleanup purges it again.
 
 ---
 
@@ -310,7 +327,8 @@ tools/
 │   └── training.toml
 ├── assets/
 │   └── speedfog_racing.dll
-└── generate_pool.py
+├── generate_pool.py
+└── regenerate_seed.py       # Rebuilds a purged seed's zip
 ```
 
 ## Zip Internal Structure

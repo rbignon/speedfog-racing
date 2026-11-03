@@ -271,27 +271,33 @@ def run_speedfog(
     game_dir: Path,
     *,
     verbose: bool = False,
+    seed: int | None = None,
 ) -> Path | None:
     """Run speedfog to generate a single seed.
 
     Returns the path to the generated seed directory, or None on failure.
     Stdout/stderr are always captured to ``output_dir/generation.log``.
     If verbose is True, output is also printed to the terminal.
+    ``seed`` fixes speedfog's RNG seed (single attempt, no reroll); by
+    default speedfog draws seeds until one generates.
     """
+    command = [
+        "uv",
+        "run",
+        "speedfog",
+        str(config_path.absolute()),
+        "-o",
+        str(output_dir),
+        "--game-dir",
+        str(game_dir),
+    ]
+    if seed is not None:
+        command += ["--seed", str(seed)]
     log_path = output_dir / "generation.log"
     with open(log_path, "w", encoding="utf-8") as log_file:
         try:
             proc = subprocess.Popen(
-                [
-                    "uv",
-                    "run",
-                    "speedfog",
-                    str(config_path.absolute()),
-                    "-o",
-                    str(output_dir),
-                    "--game-dir",
-                    str(game_dir),
-                ],
+                command,
                 cwd=speedfog_path,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,

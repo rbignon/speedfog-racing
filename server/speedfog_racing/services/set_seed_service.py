@@ -226,7 +226,8 @@ def top_seed_numbers(runs: Sequence[CountedRun], category: str, n: int) -> list[
     """The seed numbers of ``category``'s seeds by their best counted run
     (every run type, blind or replay, Deathless or not), fastest first, the
     first ``n``: the Set Seed board's seeds, excluded seeds included (an admin
-    may restore one, and a purged zip cannot be rebuilt). Seeds whose files
+    may restore one, while a purged zip can be rebuilt only when the current
+    generator still reproduces its graph). Seeds whose files
     can never be played again (``seed_files_block``: added before the
     game-version cutoff, or already purged), excluded or not, take no place:
     there are no files worth keeping."""
