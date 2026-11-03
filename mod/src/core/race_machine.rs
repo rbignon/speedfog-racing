@@ -875,10 +875,11 @@ impl RaceMachine {
                 } else {
                     self.race_state.countdown_end = None;
                 }
-                // A real start (not the race_start a solo server sends after
-                // every auth_ok, its run already running) with no depth
-                // reached is a new attempt at the run.
-                if !self.is_race_running() && self.run_arrivals.iter().all(Option::is_none) {
+                // A real start is a new attempt at the run, a re-run after a
+                // race reset included: the voided run's depths go. The
+                // race_start a solo server sends after every auth_ok, its
+                // run already running, is no start.
+                if !self.is_race_running() {
                     self.start_attempt();
                 }
                 // Immediately reflect running status so is_race_running() gates open
@@ -4611,16 +4612,42 @@ mod tests {
     }
 
     #[test]
-    fn race_start_with_progress_keeps_the_attempt() {
+    fn a_race_reset_restarts_the_attempt_without_the_voided_depths() {
         let now = Instant::now();
-        let (mut m, fx) = ls_machine("setup", "ready", &[(1, 5_000)], false, now);
-        let before = run_views(&fx)[0].attempt;
+        let (mut m, _) = ls_machine("setup", "ready", &[], false, now);
+        m.handle_message(MachineMessage::RaceStart(0), now);
+        let fx = m.tick(
+            tick_in(snap(Some(30_000), true), true, Some(vec![(100, true)])),
+            now + ms(150),
+        );
+        let voided = run_views(&fx)[0].clone();
+        assert_eq!(voided.arrivals[1], Some(30_000));
 
-        let fx = m.handle_message(MachineMessage::RaceStart(0), now);
+        // The organizer resets the race: the server closes the connection,
+        // the mod reconnects into setup, then the re-run starts.
+        let t = now + secs(60);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t,
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t,
+        );
+        m.handle_message(ls_auth_ok("setup", "ready", &[]), t);
+        let fx = m.handle_message(MachineMessage::RaceStart(3), t);
         let views = run_views(&fx);
         assert_eq!(views.len(), 1, "{fx:?}");
-        assert!(views[0].live);
-        assert_eq!(views[0].attempt, before);
+        assert_eq!(views[0].attempt, voided.attempt.wrapping_add(1));
+        assert!(views[0].fresh);
+        assert_eq!(views[0].arrivals, vec![None; 4]);
+
+        // The re-run's first fog counts again.
+        let fx = m.tick(
+            tick_in(snap(Some(40_000), true), true, Some(vec![(100, true)])),
+            t + secs(4),
+        );
+        assert_eq!(run_views(&fx)[0].arrivals[1], Some(40_000));
     }
 
     #[test]
