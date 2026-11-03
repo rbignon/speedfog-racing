@@ -150,6 +150,22 @@ describe("/race/new: the Speedrun race option", () => {
     ).toBe("true");
   });
 
+  it("names the selected pool in the race name suggestion", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6),
+      uwyg_rush: pool("UWYG Boss Rush", 2, 4),
+    });
+    await openPage("?mode=speedrun&pool=uwyg_rush");
+    const nameInput = screen.getByLabelText("Race Name") as HTMLInputElement;
+    expect(nameInput.placeholder).toBe("e.g. UWYG Boss Rush Grinding");
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Standard/ }));
+    expect(nameInput.placeholder).toBe("e.g. Standard Grinding");
+
+    await fireEvent.click((await speedrunOption())!);
+    expect(nameInput.placeholder).toBe("e.g. Sunday Showdown");
+  });
+
   it("stays off when ?pool= alone picks the pool", async () => {
     await openPage("?pool=sprint");
 
@@ -287,8 +303,14 @@ describe("/race/new?seed=: a Set Seed race", () => {
 
     await screen.findByText("Change seed");
     expect(fetchSpeedrunSeedSummary).toHaveBeenCalledWith("363096");
+    expect(screen.getByRole("heading", { level: 1 }).textContent?.trim()).toBe(
+      "Create Set Seed Race",
+    );
+    // The heading's tag names the seed in full, not the URL's short form.
+    expect(
+      screen.getByRole("link", { name: `Seed ${SEED}` }).getAttribute("href"),
+    ).toBe(`/speedrun/seed/${SEED}`);
     const banner = container.querySelector(".set-seed-banner");
-    expect(banner?.textContent).toContain(SEED);
     expect(banner?.textContent).toContain(
       "Runners may already know this seed.",
     );
@@ -298,6 +320,18 @@ describe("/race/new?seed=: a Set Seed race", () => {
     expect(screen.queryByRole("tablist")).toBeNull();
     expect(await speedrunOption()).toBeNull();
     expect(screen.getByText(`Seed ${SEED}, fixed: no reroll`)).toBeTruthy();
+  });
+
+  it("names the seed's pool, not the first listed one, in the race name suggestion", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
+      summary({ category: "sprint", category_name: "Sprint" }),
+    );
+    await openPage(`?seed=${SEED}`);
+    await screen.findByText("Change seed");
+
+    expect(
+      (screen.getByLabelText("Race Name") as HTMLInputElement).placeholder,
+    ).toBe("e.g. Sprint Grinding");
   });
 
   it("creates the race on the seed, in Set Seed mode", async () => {
@@ -334,6 +368,9 @@ describe("/race/new?seed=: a Set Seed race", () => {
     await openPage("?seed=zzzzzz");
 
     await screen.findByText("Unknown seed");
+    // The heading's tag keeps the URL's ID, with no seed page to link to.
+    expect(screen.getByText("Seed zzzzzz")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /^Seed / })).toBeNull();
     expect(
       (screen.getByRole("button", { name: "Create Race" }) as HTMLButtonElement)
         .disabled,
@@ -350,6 +387,10 @@ describe("/race/new?seed=: a Set Seed race", () => {
     flushSync();
 
     await waitFor(() => expect(screen.queryByText("Change seed")).toBeNull());
+    expect(screen.getByRole("heading", { level: 1 }).textContent?.trim()).toBe(
+      "Create Race",
+    );
+    expect(screen.queryByText(/^Seed /)).toBeNull();
     expect(screen.getByRole("tablist")).toBeTruthy();
     expect((await speedrunOption())?.checked).toBe(false);
   });

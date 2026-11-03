@@ -15,6 +15,7 @@
   import PoolTabs from "$lib/components/PoolTabs.svelte";
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
   import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
+  import { formatPoolName } from "$lib/utils/format";
   import {
     parseRaceNewParams,
     seedPageHref,
@@ -88,6 +89,16 @@
   // (a retired category's seed stays replayable): no card then.
   let seedConfig = $derived(
     seedSummary ? (pools[seedSummary.category]?.pool_config ?? null) : null,
+  );
+  // The game mode a Speedrun or Set Seed race's name suggestion names: the
+  // selected pool, or the seed's category as the server names it (its pool
+  // need not be listed).
+  let suggestedPool = $derived(
+    setSeed !== null
+      ? (seedSummary?.category_name ?? null)
+      : speedrun
+        ? selectedConfig?.name || formatPoolName(poolName)
+        : null,
   );
   // A Set Seed race draws nothing from the pools: it only needs its seed.
   // Otherwise the selected pool itself must have something to draw (another
@@ -218,7 +229,24 @@
 </svelte:head>
 
 <main>
-  <h1>{speedrun ? "Create Speedrun Race" : "Create Race"}</h1>
+  <div class="page-header">
+    <h1>
+      {setSeed !== null
+        ? "Create Set Seed Race"
+        : speedrun
+          ? "Create Speedrun Race"
+          : "Create Race"}
+    </h1>
+    {#if setSeed !== null}
+      {#if seedSummary}
+        <a class="seed-badge" href={seedPageHref(seedSummary.seed_number)}
+          >Seed {seedSummary.seed_number}</a
+        >
+      {:else}
+        <span class="seed-badge">Seed {setSeed}</span>
+      {/if}
+    {/if}
+  </div>
 
   {#if loading}
     <p class="loading">Loading...</p>
@@ -226,14 +254,8 @@
     {#if setSeed !== null}
       <section class="set-seed-banner">
         <div class="banner-head">
-          <span class="chip set-seed-chip">Set Seed</span>
           {#if seedSummary}
-            <a class="banner-seed" href={seedPageHref(seedSummary.seed_number)}
-              >{seedSummary.seed_number}</a
-            >
             <span class="banner-category">{seedSummary.category_name}</span>
-          {:else}
-            <span class="banner-seed">{setSeed}</span>
           {/if}
           <a
             class="banner-change"
@@ -264,8 +286,8 @@
           type="text"
           id="name"
           bind:value={name}
-          placeholder={speedrun
-            ? "e.g. Speedrun Grind"
+          placeholder={suggestedPool
+            ? `e.g. ${suggestedPool} Grinding`
             : "e.g. Sunday Showdown"}
           disabled={creating}
           required
@@ -653,14 +675,37 @@
     padding: 2rem;
   }
 
+  .page-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-bottom: 2rem;
+  }
+
   h1 {
+    margin: 0;
     color: var(--color-text);
     font-family: var(--font-display);
     font-size: 1.9rem;
     font-weight: 700;
     letter-spacing: 0.03em;
     text-transform: uppercase;
-    margin-bottom: 2rem;
+  }
+
+  a.seed-badge:hover {
+    color: var(--color-purple-hover);
+  }
+
+  .seed-badge {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.2rem 0.5rem;
+    color: var(--color-text-secondary);
   }
 
   form {
@@ -791,23 +836,12 @@
     gap: 0.5rem 0.7rem;
   }
 
-  .set-seed-chip {
-    color: var(--color-gold);
-    border-color: var(--color-gold);
-  }
-
-  .banner-seed {
-    font-family: var(--font-mono);
-    color: var(--color-text);
-  }
-
-  a.banner-seed,
   .banner-change {
+    margin-left: auto;
     color: var(--color-purple);
     text-decoration: none;
   }
 
-  a.banner-seed:hover,
   .banner-change:hover {
     color: var(--color-purple-hover);
   }
@@ -815,10 +849,6 @@
   .banner-category {
     color: var(--color-text);
     font-weight: 600;
-  }
-
-  .banner-change {
-    margin-left: auto;
   }
 
   .set-seed-banner .banner-reason {
