@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections import defaultdict
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -47,6 +48,7 @@ from speedfog_racing.schemas import (
 from speedfog_racing.services.seed_nodes import NodeDisplay, SeedNodes, load_seed_nodes
 from speedfog_racing.services.speedrun_service import RUN_TYPES as SPEEDRUN_RUN_TYPES
 from speedfog_racing.services.speedrun_service import (
+    CountedRun,
     SpeedrunSub,
     build_board,
     build_overview,
@@ -111,7 +113,8 @@ T = TypeVar("T")
 # (at most one per key) recomputes it, so nobody ever waits on a refresh.
 # Entries are only evicted when a refresh raises HTTPException (the data
 # legitimately no longer resolves; serving the stale value forever would mask
-# the error) or when a writer drops one (``forget_player_profiles``), so the
+# the error) or when a writer drops one (``forget_player_profiles``,
+# ``forget_speedrun_caches``, ``replace_speedrun_pool_runs``), so the
 # dict's size is bounded by the number of distinct keys ever requested, not by
 # time. Like the seed projection cache
 # (``services.seed_nodes``), this is fine because the key space is small in
@@ -127,6 +130,10 @@ STATS_CACHE_TTL = 900.0
 
 _stats_cache: dict[str, tuple[float, Any]] = {}
 _stats_cache_locks: dict[str, asyncio.Lock] = {}
+# Bumped by every writer that drops or replaces a group of keys (a key's group
+# is the part before its first ":"): a value computed while its group's count
+# moved may predate the write, so its caller gets it but it is not cached.
+_stats_cache_generations: defaultdict[str, int] = defaultdict(int)
 # Strong references to in-flight background refreshes, at most one per key;
 # doubles as the "already refreshing" guard (single-threaded event loop, no
 # await between the membership check and the insert).
@@ -144,9 +151,15 @@ async def _cached(key: str, compute: Callable[[AsyncSession], Awaitable[T]], db:
         hit = _stats_cache.get(key)
         if hit is not None and hit[0] > monotonic():
             return cast(T, hit[1])
+        generation = _generation(key)
         value = await compute(db)
-        _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
+        if _generation(key) == generation:
+            _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
         return value
+
+
+def _generation(key: str) -> int:
+    return _stats_cache_generations[key.split(":", 1)[0]]
 
 
 def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]]) -> None:
@@ -155,11 +168,15 @@ def _schedule_refresh(key: str, compute: Callable[[AsyncSession], Awaitable[T]])
 
     async def _refresh() -> None:
         try:
+            generation = _generation(key)
             # The refresh outlives the request that triggered it, and the
             # request's session closes with the request, so open a fresh one.
             async with async_session_maker() as db:
                 value = await compute(db)
-            _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
+            # Past a write, the stale entry (or none) stays: the next request
+            # refreshes again.
+            if _generation(key) == generation:
+                _stats_cache[key] = (monotonic() + STATS_CACHE_TTL, value)
         except HTTPException as exc:
             # The data legitimately no longer resolves: evict so the next
             # request takes the cold path and surfaces the error to the client
@@ -847,6 +864,7 @@ def forget_player_profiles() -> None:
     For writers that replace the trait scores wholesale and must not leave the
     previous profiles on /stats for a whole cache TTL.
     """
+    _stats_cache_generations["players"] += 1
     _stats_cache.pop("players", None)
 
 
@@ -857,7 +875,43 @@ def forget_speedrun_caches() -> None:
     For writers that change which runs a board holds and must not leave the
     previous boards up for a whole cache TTL.
     """
+    _stats_cache_generations["speedrun"] += 1
     for key in [key for key in _stats_cache if key.startswith("speedrun:")]:
+        del _stats_cache[key]
+
+
+def speedrun_cache_generation() -> int:
+    """To read before loading runs for ``replace_speedrun_pool_runs``."""
+    return _stats_cache_generations["speedrun"]
+
+
+def replace_speedrun_pool_runs(pool: str, runs: Sequence[CountedRun], *, generation: int) -> None:
+    """Swap one pool's runs in the cached counted run list for ``runs``, a
+    fresh ``load_counted_runs(db, pool=pool)``, and drop every value derived
+    from the list (overview, boards): the next request rebuilds them from the
+    list in memory.
+
+    For writers that just added runs to a pool's boards and already hold that
+    pool's runs: unlike ``forget_speedrun_caches``, nobody pays a reload of
+    every counted run (over a second of event loop on a large history). The
+    list keeps its expiry, since the other pools' runs are no fresher. With
+    no cached list, only the derived values go: a list holding one pool would
+    hide every other pool's runs.
+
+    ``generation`` is ``speedrun_cache_generation()`` read before the load.
+    When another writer ran since, the load may predate that write (another
+    finish, an exclusion), so every speedrun value is dropped instead.
+    """
+    if generation != _stats_cache_generations["speedrun"]:
+        forget_speedrun_caches()
+        return
+    _stats_cache_generations["speedrun"] += 1
+    hit = _stats_cache.get("speedrun:runs")
+    if hit is not None:
+        expires_at, cached = hit
+        kept = [run for run in cached if run.pool != pool]
+        _stats_cache["speedrun:runs"] = (expires_at, [*kept, *runs])
+    for key in [k for k in _stats_cache if k.startswith("speedrun:") and k != "speedrun:runs"]:
         del _stats_cache[key]
 
 

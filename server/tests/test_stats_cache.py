@@ -211,3 +211,48 @@ async def test_refresh_raising_http_exception_evicts_entry(monkeypatch):
     with pytest.raises(HTTPException):
         await _cached("swr4", compute, None)
     assert calls == 3
+
+
+async def test_a_build_overlapping_a_write_to_its_group_is_not_cached():
+    """A speedrun board built from the run list a finish is about to replace
+    must not stay cached for a whole TTL: its caller still gets it, the next
+    request rebuilds. Another group's build is not affected."""
+    gate = asyncio.Event()
+
+    async def compute(db) -> str:
+        await gate.wait()
+        return "built before the write"
+
+    board = asyncio.create_task(_cached("speedrun:board:x", compute, None))
+    zones = asyncio.create_task(_cached("zone_family:x:30", compute, None))
+    await asyncio.sleep(0)
+    stats_module.forget_speedrun_caches()
+    gate.set()
+
+    assert await board == "built before the write"
+    assert await zones == "built before the write"
+    assert "speedrun:board:x" not in stats_module._stats_cache
+    assert "zone_family:x:30" in stats_module._stats_cache
+
+
+async def test_a_refresh_overlapping_a_write_to_its_group_is_not_cached(monkeypatch):
+    fake_now = 1000.0
+    monkeypatch.setattr(stats_module, "monotonic", lambda: fake_now)
+    monkeypatch.setattr(stats_module, "async_session_maker", lambda: FakeSessionCtx())
+    gate = asyncio.Event()
+
+    async def compute(db) -> str:
+        if db == "bg-session":
+            await gate.wait()
+            return "refreshed before the write"
+        return "v1"
+
+    await _cached("speedrun:runs", compute, None)
+    fake_now += stats_module.STATS_CACHE_TTL + 1
+    assert await _cached("speedrun:runs", compute, None) == "v1"
+    await asyncio.sleep(0)
+    stats_module.forget_speedrun_caches()
+    gate.set()
+    await stats_module._refresh_tasks["speedrun:runs"]
+
+    assert "speedrun:runs" not in stats_module._stats_cache

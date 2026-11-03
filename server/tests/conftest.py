@@ -149,10 +149,16 @@ def _mod_dll(tmp_path, monkeypatch):
 @pytest.fixture(autouse=True)
 def _clear_stats_cache():
     """Clear the public stats TTL cache between tests to avoid cross-test pollution."""
-    from speedfog_racing.api.stats import _refresh_tasks, _stats_cache, _stats_cache_locks
+    from speedfog_racing.api.stats import (
+        _refresh_tasks,
+        _stats_cache,
+        _stats_cache_generations,
+        _stats_cache_locks,
+    )
 
     _stats_cache.clear()
     _stats_cache_locks.clear()
+    _stats_cache_generations.clear()
     # Cancel before clearing: a test that triggered a stale hit without
     # awaiting the refresh would otherwise leak a pending task into the
     # closing event loop ("Task was destroyed but it is pending").

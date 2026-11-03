@@ -3,6 +3,8 @@
 A finished race or ranked solo session is checked once, off the request path:
 its runs are compared with every other counted run of the boards of its pool
 (a finish cannot change the boards of another pool, so those are not loaded).
+The same load refreshes that pool's runs in the cached boards, so a finish
+shows on /speedrun without waiting for the stats cache TTL.
 """
 
 import asyncio
@@ -95,7 +97,11 @@ def new_records(
 async def check_speedrun_records(
     *, race_id: UUID | None = None, session_id: UUID | None = None
 ) -> None:
-    """Announce the records set by a finished race's or session's runs."""
+    """Put a finished race's or session's runs on the cached boards and
+    announce the records they set."""
+    # Local import: the API layer imports the services.
+    from speedfog_racing.api.stats import replace_speedrun_pool_runs, speedrun_cache_generation
+
     async with async_session_maker() as db:
         if race_id is not None:
             pool_stmt = select(Seed.pool_name).join(Race, Race.seed_id == Seed.id)
@@ -110,6 +116,7 @@ async def check_speedrun_records(
         pool = (await db.execute(pool_stmt)).scalar_one_or_none()
         if pool is None:
             return
+        generation = speedrun_cache_generation()
         runs = await load_counted_runs(db, pool=pool)
         new_ids = {
             r.run_id
@@ -119,6 +126,7 @@ async def check_speedrun_records(
         }
         if not new_ids:
             return
+        replace_speedrun_pool_runs(pool, runs, generation=generation)
         categories = await load_categories(db, runs)
     names = {c.pool: c.name for c in categories}
     if len(_announced) > _ANNOUNCED_CAP:
