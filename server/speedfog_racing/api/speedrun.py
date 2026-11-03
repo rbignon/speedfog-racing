@@ -154,7 +154,8 @@ async def get_livesplit_category(
     """What a LiveSplit file of a category needs: the Random Seed record and the
     viewer's best run, each with the IGT of its first arrival on every layer.
     A category without runs (a training one included) answers without
-    references; 404 when its pool does not exist."""
+    references, and so does a reference on a seed whose page is not public (a
+    blind run on it in progress); 404 when its pool does not exist."""
     pool_name, _, suffix = category.partition("@")
     pool = await get_pool(db, pool_name)
     if pool is None:
@@ -172,11 +173,10 @@ async def get_livesplit_category(
     async def reference(run: CountedRun | None) -> LiveSplitReference | None:
         if run is None:
             return None
-        return LiveSplitReference(
-            igt_ms=run.igt_ms,
-            user=run.user,
-            layer_entry_igts=await reference_arrivals(db, run),
-        )
+        arrivals = await reference_arrivals(db, run)
+        if arrivals is None:
+            return None
+        return LiveSplitReference(igt_ms=run.igt_ms, user=run.user, layer_entry_igts=arrivals)
 
     wr_reference = await reference(wr)
     if layers is None and wr_reference is not None:

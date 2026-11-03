@@ -341,12 +341,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         connected_ids = set(room.mods.keys()) if room else set()
         graph = seed.graph_json if seed else None
         sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
+        # The local runner's own arrivals seed its LiveSplit run. Nobody
+        # else's: on an async race every later leaderboard is projected.
         participant_infos: list[ParticipantInfo] = [
             participant_to_info(
                 p,
                 connected_ids=connected_ids,
                 graph_json=graph,
-                layer_entry_igts=p.layer_entry_igts,
+                layer_entry_igts=p.layer_entry_igts if p.id == participant.id else None,
             )
             for p in sorted_participants
         ]

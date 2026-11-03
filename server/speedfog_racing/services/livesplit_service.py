@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.models import Seed
+from speedfog_racing.services.set_seed_service import seed_replayability
 from speedfog_racing.services.speedrun_service import (
     RUN_TYPES,
     CountedRun,
@@ -37,10 +38,19 @@ def pick_references(
     return wr, pb
 
 
-async def reference_arrivals(db: AsyncSession, run: CountedRun) -> dict[int, int]:
+async def reference_arrivals(db: AsyncSession, run: CountedRun) -> dict[int, int] | None:
     """Layer -> IGT of the run's first arrival on it, plus the finish IGT under
-    the seed's last layer."""
-    seed = (await db.execute(select(Seed).where(Seed.seed_number == run.seed_number))).scalar_one()
+    the seed's last layer. None when the seed's page is not public (a blind
+    run on it is in progress, which the run's pacing would spoil) or the seed
+    is gone."""
+    # Seed numbers are unique per pool only.
+    seed = (
+        await db.execute(
+            select(Seed).where(Seed.seed_number == run.seed_number, Seed.pool_name == run.pool)
+        )
+    ).scalar_one_or_none()
+    if seed is None or not (await seed_replayability(db, seed)).public:
+        return None
     histories = await load_zone_histories(
         db,
         {run.run_id} if run.session_id is None else set(),

@@ -3,10 +3,10 @@
 import pytest
 from sqlalchemy import select
 
-from speedfog_racing.models import Pool, RunMode, Seed
+from speedfog_racing.models import ParticipantStatus, Pool, RaceStatus, RunMode, Seed
 
 from .test_speedrun_seed_endpoint import _auth, async_engine, async_session, pools, test_client
-from .test_speedrun_service import _add_run, _add_session, _user
+from .test_speedrun_service import _add_run, _add_session, _seed, _user
 
 __all__ = ["async_engine", "async_session", "pools", "test_client"]
 
@@ -91,6 +91,44 @@ async def test_reference_arrivals_are_first_arrivals_plus_the_finish(
     data = (await _get(test_client, "sprint")).json()
     assert data["total_layers"] == 3
     assert data["wr"]["layer_entry_igts"] == {"0": 0, "1": 5000, "2": 9000, "3": 12000}
+
+
+async def test_a_seed_number_shared_with_another_pool_is_no_error(
+    test_client, async_session, pools
+):
+    # Seed numbers are unique per pool only.
+    async with async_session() as db:
+        await _seed(db, "123456789", pool="standard")
+        seed = await _seed(db, "123456789")
+        await _add_run(db, user=await _user(db, "a"), igt_ms=900, minute=1, seed=seed)
+        await db.commit()
+    response = await _get(test_client, "sprint")
+    assert response.status_code == 200
+    assert response.json()["wr"]["layer_entry_igts"] == {"15": 900}
+
+
+async def test_a_seed_with_a_blind_run_in_progress_gives_no_reference(
+    test_client, async_session, pools
+):
+    async with async_session() as db:
+        a, b = await _user(db, "a"), await _user(db, "b")
+        seed = await _seed(db, "123456789")
+        await _add_run(db, user=a, igt_ms=900, minute=1, seed=seed)
+        # A community race on the SEEN seed: its runners must not get its pacing.
+        await _add_run(
+            db,
+            user=b,
+            igt_ms=0,
+            minute=2,
+            seed=seed,
+            race_status=RaceStatus.RUNNING,
+            status=ParticipantStatus.PLAYING,
+            finished=False,
+        )
+        await db.commit()
+    data = (await _get(test_client, "sprint", "a")).json()
+    assert (data["wr"], data["pb"]) == (None, None)
+    assert data["total_layers"] == 15
 
 
 async def test_a_training_category_answers_without_references(test_client, async_session, pools):

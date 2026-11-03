@@ -4349,16 +4349,19 @@ def test_auth_ok_carries_livesplit_seed_fields(integration_client, race_with_par
     assert auth["seed"]["category"] == "standard"
 
 
-def test_auth_ok_carries_the_runners_arrivals(integration_client, race_with_participants):
+def test_auth_ok_carries_the_local_runners_arrivals_only(
+    integration_client, race_with_participants
+):
     race_id = race_with_participants["race_id"]
     organizer = race_with_participants["organizer"]
     players = race_with_participants["players"]
 
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
-        mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_ready()
-        mod0.receive()  # leaderboard_update
+    for player in players[:2]:
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, player["mod_token"])
+            assert mod.auth()["type"] == "auth_ok"
+            mod.send_ready()
+            mod.receive()  # leaderboard_update
 
     response = integration_client.post(
         f"/api/races/{race_id}/start",
@@ -4366,13 +4369,14 @@ def test_auth_ok_carries_the_runners_arrivals(integration_client, race_with_part
     )
     assert response.status_code == 200
 
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
-        mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth()["type"] == "auth_ok"
-        mod0.send_status_update(igt_ms=1000, death_count=0)
-        mod0.receive_until_type("leaderboard_update")
-        mod0.send_event_flag(9000000, igt_ms=10000)
-        mod0.receive_until_type("leaderboard_update")
+    for player, flag_igt in zip(players[:2], (10000, 12000), strict=True):
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, player["mod_token"])
+            assert mod.auth()["type"] == "auth_ok"
+            mod.send_status_update(igt_ms=1000, death_count=0)
+            mod.receive_until_type("leaderboard_update")
+            mod.send_event_flag(9000000, igt_ms=flag_igt)
+            mod.receive_until_type("leaderboard_update")
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
@@ -4380,3 +4384,8 @@ def test_auth_ok_carries_the_runners_arrivals(integration_client, race_with_part
 
     me = next(p for p in auth["participants"] if p["id"] == auth["participant_id"])
     assert me["layer_entry_igts"] == {"0": 0, "1": 10000}
+    # Another runner's real splits stay off auth_ok (an async race projects
+    # every later leaderboard).
+    others = [p for p in auth["participants"] if p["id"] != auth["participant_id"]]
+    assert len(others) == 2
+    assert all(p["layer_entry_igts"] is None for p in others)

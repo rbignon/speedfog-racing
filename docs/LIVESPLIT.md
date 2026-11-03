@@ -70,7 +70,10 @@ A category file takes its layer count from the page when it has one, else
 from the endpoint. The data comes from `GET /api/speedrun/livesplit/{category}`
 (optional Bearer auth, `404 Unknown category`): the category's name and layer
 count, the record (`wr`) and the viewer's best run (`pb`), each with its
-per-layer arrival IGTs. A failure shows in the surface's own error line.
+per-layer arrival IGTs. A reference on a seed whose page is not public (a
+blind run on it in progress, a community race on a seen seed for one) is
+null, as the seed's own page hides its runs: its pacing would spoil that
+run. A failure shows in the surface's own error line.
 
 ## How the mod links
 
