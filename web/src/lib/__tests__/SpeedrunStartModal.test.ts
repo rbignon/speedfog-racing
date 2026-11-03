@@ -255,8 +255,8 @@ describe("Start a run: Set Seed", () => {
       expect(fetchSpeedrunSeedSummary).toHaveBeenCalledWith("363096"),
     );
     await waitFor(() =>
-      expect(text(container.querySelector(".seed-check"))).toContain(
-        "Standard · replayable · WR 25:43 by Abisxoxo",
+      expect(text(container.querySelector(".seed-check"))).toBe(
+        "✓ Replayable · WR 25:43 by Abisxoxo",
       ),
     );
     expect(fetchSpeedrunSeedSummary).toHaveBeenCalledTimes(1);
@@ -278,17 +278,19 @@ describe("Start a run: Set Seed", () => {
   it("gives the reason a seed cannot be replayed and disables Start", async () => {
     vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
       summary({
+        category_name: "Boss Rush",
         replayable: false,
         not_replayable_reason: "Its files were deleted.",
       }),
     );
-    renderWindow({ initialSeed: SEED });
+    const { container } = renderWindow({ initialSeed: SEED });
 
     await screen.findByText(/Its files were deleted\./);
     expect(
       (screen.getByRole("button", { name: "Start solo" }) as HTMLButtonElement)
         .disabled,
     ).toBe(true);
+    expect(text(container.querySelector(".category-chip"))).toBe("Boss Rush");
   });
 
   it("starts a Set Seed solo run on the full seed number", async () => {
@@ -344,12 +346,34 @@ describe("Start a run: Set Seed", () => {
 
     await typeSeed("aaaaaa0");
     await waitFor(() =>
-      expect(text(container.querySelector(".seed-check"))).toContain("Sprint"),
+      expect(text(container.querySelector(".category-chip"))).toBe("Sprint"),
     );
-    answerFirst(summary({ category_name: "Standard" }));
+    answerFirst(summary({ category_name: "Boss Rush" }));
     await sleep(10);
 
-    expect(text(container.querySelector(".seed-check"))).toContain("Sprint");
+    expect(text(container.querySelector(".category-chip"))).toBe("Sprint");
+  });
+
+  it("shows the seed's category, and the board's again without a seed", async () => {
+    vi.mocked(fetchSpeedrunSeedSummary).mockResolvedValue(
+      summary({ category: "boss_rush", category_name: "Boss Rush" }),
+    );
+    const { container } = renderWindow();
+    const category = () => text(container.querySelector(".category-chip"));
+    expect(category()).toBe("Standard");
+
+    await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
+    await typeSeed(SEED);
+    await waitFor(() => expect(category()).toBe("Boss Rush"));
+
+    // Random Seed draws from the board's category.
+    await fireEvent.click(screen.getByRole("button", { name: "Random Seed" }));
+    expect(category()).toBe("Standard");
+    await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
+    expect(category()).toBe("Boss Rush");
+
+    await typeSeed("");
+    expect(category()).toBe("Standard");
   });
 });
 

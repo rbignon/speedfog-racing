@@ -62,6 +62,10 @@
   let canRace = $derived(auth.canCreateRace);
   let chosenFormat = $derived<Format>(canRace ? format : "solo");
   let typed = $derived(seedInput.trim());
+  // Set Seed plays the seed's category, Random Seed draws from the board's.
+  let shownCategory = $derived(
+    seedMode === "set" && summary ? summary.category_name : categoryName,
+  );
   let setBoard = $derived(
     summary ? `${summary.category_name} · Set Seed` : "Set Seed",
   );
@@ -183,29 +187,30 @@
     </p>
 
     <div class="config-row">
-      <span class="row-label">Seed</span>
+      <span class="row-label">Category</span>
+      <span class="chip category-chip">{shownCategory}</span>
+    </div>
+
+    <!-- The board's subcategories, in its order. -->
+    <div class="config-row">
+      <span class="row-label">Subcategory</span>
       <div class="segmented">
-        <button
-          type="button"
-          class:on={seedMode === "random"}
-          aria-pressed={seedMode === "random"}
-          onclick={() => chooseSeedMode("random")}>Random Seed</button
-        >
         <button
           type="button"
           class:on={seedMode === "set"}
           aria-pressed={seedMode === "set"}
           onclick={() => chooseSeedMode("set")}>Set Seed</button
         >
+        <button
+          type="button"
+          class:on={seedMode === "random"}
+          aria-pressed={seedMode === "random"}
+          onclick={() => chooseSeedMode("random")}>Random Seed</button
+        >
       </div>
     </div>
 
-    {#if seedMode === "random"}
-      <div class="config-row">
-        <span class="row-label">Category</span>
-        <span class="chip category-chip">{categoryName}</span>
-      </div>
-    {:else}
+    {#if seedMode === "set"}
       <div class="config-row">
         <label for="start-run-seed" class="row-label">Seed ID</label>
         <input
@@ -230,11 +235,11 @@
         <p class="config-hint seed-check bad">{lookupError}</p>
       {:else if summary?.replayable}
         <p class="config-hint seed-check ok">
-          &#10003; <strong>{summary.category_name}</strong> · replayable{recordText}
+          &#10003; Replayable{recordText}
         </p>
       {:else if summary}
         <p class="config-hint seed-check bad">
-          <strong>{summary.category_name}</strong> · {summary.not_replayable_reason}
+          {summary.not_replayable_reason}
         </p>
       {:else if checking}
         <p class="config-hint seed-check">Checking...</p>
@@ -410,7 +415,7 @@
   }
 
   .row-label {
-    min-width: 4.5rem;
+    min-width: 5rem;
   }
 
   .segmented {
@@ -525,5 +530,13 @@
     justify-content: flex-end;
     gap: 0.6rem;
     margin-top: 1.1rem;
+  }
+
+  /* Keeps the Subcategory label and its two buttons on one line down to
+     360px phones. */
+  @media (max-width: 400px) {
+    .modal {
+      padding: 1.5rem 1rem;
+    }
   }
 </style>

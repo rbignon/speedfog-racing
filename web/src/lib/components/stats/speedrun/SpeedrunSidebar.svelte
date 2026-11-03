@@ -56,7 +56,7 @@
   {/if}
 
   <section class="sr-panel">
-    <h3>Recent runs</h3>
+    <h3>Recent PBs</h3>
     {#each overview.recent_runs as run (`${run.race_id ?? run.session_id}:${run.user.id}`)}
       <div class="recent">
         <button type="button" class="category" onclick={() => onpick(run.pool)}
@@ -83,6 +83,14 @@
       <p class="empty">No runs yet.</p>
     {/each}
   </section>
+
+  <p class="parody">
+    This page deliberately parodies <a
+      href="https://www.speedrun.com"
+      target="_blank"
+      rel="noopener noreferrer">speedrun.com</a
+    >. SpeedFog is not affiliated with it.
+  </p>
 </aside>
 
 <style>
@@ -206,5 +214,13 @@
     padding: 0.55rem 0.8rem 0.8rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-sm);
+  }
+
+  .parody {
+    margin: 0;
+    padding: 0 0.8rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
   }
 </style>

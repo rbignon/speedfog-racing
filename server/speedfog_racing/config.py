@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     speedrun_solo_unfinished_limit: int = 3
     # Hours back the unfinished Speedrun solo sessions are counted.
     speedrun_solo_unfinished_window_hours: int = 24
-    # Personal bests the Speedrun page's Recent runs panel lists.
+    # Personal bests the Speedrun page's Recent PBs panel lists.
     speedrun_recent_runs_count: int = 5
     # Most practiced seeds panel of the Speedrun tab: how many seeds it lists...
     speedrun_practiced_seeds_count: int = 5

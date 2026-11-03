@@ -25,7 +25,7 @@
 
 <main class="speedrun-page">
   <div class="page-header">
-    <h1>Speedrun</h1>
+    <h1>Speedrun <span class="beta-badge">Beta</span></h1>
     <p class="subtitle">
       Every category, on blind seeds and on seeds you can replay.
     </p>
@@ -55,6 +55,17 @@
     letter-spacing: 0.03em;
     text-transform: uppercase;
     color: var(--color-text);
+  }
+
+  .beta-badge {
+    padding: 0.1em 0.4em;
+    background: var(--color-gold);
+    border-radius: var(--radius-sm);
+    color: var(--color-ink-on-accent);
+    font-size: 0.4em;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    vertical-align: super;
   }
 
   .subtitle {
