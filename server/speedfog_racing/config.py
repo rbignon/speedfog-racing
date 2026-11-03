@@ -40,8 +40,11 @@ class Settings(BaseSettings):
     discord_webhook_url: str | None = None
     discord_training_webhook_url: str | None = None
     discord_admin_webhook_url: str | None = None
-    # Speedrun and Set Seed races and speedrun records (main webhook when unset)
+    # Speedrun and Set Seed races, and speedrun records while the records webhook
+    # is unset (main webhook when unset)
     discord_speedrun_webhook_url: str | None = None
+    # Speedrun records (speedrun webhook, else main, when unset)
+    discord_records_webhook_url: str | None = None
     base_url: str = "https://speedfog.racing"
 
     # Discord bot (optional, enables scheduled events + runner role)

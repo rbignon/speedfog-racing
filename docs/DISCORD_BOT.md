@@ -69,8 +69,10 @@ Add these to your `server/.env`:
 ```bash
 # Discord webhook (race notifications in a channel)
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-# Optional: speedrun and Set Seed races and speedrun records in their own channel
+# Optional: speedrun and Set Seed races in their own channel (records too, unless set below)
 DISCORD_SPEEDRUN_WEBHOOK_URL=https://discord.com/api/webhooks/...
+# Optional: speedrun records alone in a channel of their own
+DISCORD_RECORDS_WEBHOOK_URL=https://discord.com/api/webhooks/...
 
 # Discord bot (scheduled events, runner role, interactions)
 DISCORD_BOT_TOKEN=your-bot-token
@@ -88,18 +90,19 @@ MALENIA_API_TOKEN=your-bearer-token
 MALENIA_API_BASE=https://events.malenia.win/api
 ```
 
-| Variable                       | Required for    | Description                                                                                       |
-| ------------------------------ | --------------- | ------------------------------------------------------------------------------------------------- |
-| `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                                                   |
-| `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel)                               |
-| `DISCORD_ADMIN_WEBHOOK_URL`    | Notifications   | Webhook URL for cheat detections, sanctions and Daily Seed pool alerts (private admin channel)    |
-| `DISCORD_SPEEDRUN_WEBHOOK_URL` | Notifications   | Webhook URL for speedrun and Set Seed races and speedrun records (`DISCORD_WEBHOOK_URL` if unset) |
-| `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                                                   |
-| `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                                                            |
-| `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                                               |
-| `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                                                     |
-| `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                                                             |
-| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.racing`)                                      |
+| Variable                       | Required for    | Description                                                                                                                                    |
+| ------------------------------ | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DISCORD_WEBHOOK_URL`          | Notifications   | Webhook URL for race create/start/finish embeds                                                                                                |
+| `DISCORD_TRAINING_WEBHOOK_URL` | Notifications   | Webhook URL for solo/training live notifications (separate channel)                                                                            |
+| `DISCORD_ADMIN_WEBHOOK_URL`    | Notifications   | Webhook URL for cheat detections, sanctions and Daily Seed pool alerts (private admin channel)                                                 |
+| `DISCORD_SPEEDRUN_WEBHOOK_URL` | Notifications   | Webhook URL for speedrun and Set Seed races, and speedrun records unless `DISCORD_RECORDS_WEBHOOK_URL` is set (`DISCORD_WEBHOOK_URL` if unset) |
+| `DISCORD_RECORDS_WEBHOOK_URL`  | Notifications   | Webhook URL for speedrun records alone (`DISCORD_SPEEDRUN_WEBHOOK_URL` if unset)                                                               |
+| `DISCORD_BOT_TOKEN`            | Bot API calls   | Bot token from Developer Portal                                                                                                                |
+| `DISCORD_GUILD_ID`             | Events + roles  | Your Discord server ID                                                                                                                         |
+| `DISCORD_RUNNER_ROLE_ID`       | Role management | The Runner role ID to assign/remove                                                                                                            |
+| `DISCORD_PUBLIC_KEY`           | Interactions    | Ed25519 public key for signature verification                                                                                                  |
+| `DISCORD_CHANNEL_ID`           | Runner message  | Channel for the Runner button message                                                                                                          |
+| `BASE_URL`                     | URLs            | Base URL for race links (default: `https://speedfog.racing`)                                                                                   |
 
 ## 8. Post the Runner Button Message
 
@@ -116,14 +119,14 @@ This posts a message with two buttons ("Become a Runner" / "Remove Runner") in t
 
 ### Race Notifications (Webhook)
 
-When `DISCORD_WEBHOOK_URL` is set (or, for speedrun and Set Seed races and records, `DISCORD_SPEEDRUN_WEBHOOK_URL`), race lifecycle events post embeds:
+When `DISCORD_WEBHOOK_URL` is set (or, for speedrun and Set Seed races, `DISCORD_SPEEDRUN_WEBHOOK_URL`; for records, `DISCORD_RECORDS_WEBHOOK_URL` or `DISCORD_SPEEDRUN_WEBHOOK_URL`), race lifecycle events post embeds:
 
 - **Race created**: with pool, organizer, schedule info. Mentions `@Runner` if `DISCORD_RUNNER_ROLE_ID` is set. Skipped for invite-only races (open registration disabled), since only invited players can join.
 - **Race started**: with participant count (normal races only)
 - **Race finished**: with podium (top 3 times; normal races only, a Daily Seed's podium goes in the next day's post)
 - **Speedrun record**: "New <category> · Set Seed record" (or "Random Seed record") each time a finished race or ranked solo session sets a strictly faster time than every other counted run of that board (a tie is not a record). Fields: Time, Runner, Seed (first 6 characters), Previous ("<time> by <name>" or "First record") and Run (Blind or Replay); the title links to the seed page focused on the run. No role ping. One announcement per board and finish (a run that is a record on both boards posts twice). See `docs/SPEEDRUN.md`.
 
-Speedrun and Set Seed races (`Race.mode`, see `docs/SPEEDRUN.md`) are announced at their creation only: no started or finished embed, and no calendar event (neither a Discord scheduled event nor an events.malenia.win one, Bot below), so their records are the only follow-up posts. Their created embed, and every speedrun record, goes to `DISCORD_SPEEDRUN_WEBHOOK_URL` when it is set, so the community race channel stays free of them; without it they go to `DISCORD_WEBHOOK_URL`. Either way a speedrun or Set Seed race never mentions `@Runner` (its created embed switches mentions off).
+Speedrun and Set Seed races (`Race.mode`, see `docs/SPEEDRUN.md`) are announced at their creation only: no started or finished embed, and no calendar event (neither a Discord scheduled event nor an events.malenia.win one, Bot below), so their records are the only follow-up posts. Their created embed goes to `DISCORD_SPEEDRUN_WEBHOOK_URL` when it is set, so the community race channel stays free of them; without it, to `DISCORD_WEBHOOK_URL`. Every speedrun record goes to `DISCORD_RECORDS_WEBHOOK_URL` when it is set, so records do not get lost among those race announcements; without it, to the same channel as the speedrun races. Either way a speedrun or Set Seed race never mentions `@Runner` (its created embed switches mentions off).
 
 ### Solo/Training Live Notifications (Webhook)
 

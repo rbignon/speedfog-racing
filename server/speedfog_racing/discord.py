@@ -216,14 +216,19 @@ async def _send_webhook(
     content: str | None = None,
     allowed_mentions: dict[str, object] | None = None,
     speedrun: bool = False,
+    record: bool = False,
 ) -> None:
     """Send an embed to the Discord webhook. No-op if webhook URL is not configured.
 
     ``speedrun`` posts to the speedrun webhook instead, when one is configured.
+    ``record`` posts to the records webhook, when one is configured, else as
+    ``speedrun``.
     """
     webhook_url = settings.discord_webhook_url
-    if speedrun and settings.discord_speedrun_webhook_url:
+    if (speedrun or record) and settings.discord_speedrun_webhook_url:
         webhook_url = settings.discord_speedrun_webhook_url
+    if record and settings.discord_records_webhook_url:
+        webhook_url = settings.discord_records_webhook_url
     if not webhook_url:
         return
 
@@ -495,7 +500,7 @@ async def notify_daily_seed_created(race: Race, previous_race: Race | None) -> N
 
 
 async def notify_speedrun_record(change: RecordChange) -> None:
-    """Announce a new Set Seed or Random Seed record on the speedrun webhook."""
+    """Announce a new Set Seed or Random Seed record on the records webhook."""
     run = change.run
     sub_label = "Set Seed" if change.sub == "set" else "Random Seed"
     runner = _escape_discord_md(run.user.twitch_display_name or run.user.twitch_username)
@@ -518,7 +523,7 @@ async def notify_speedrun_record(change: RecordChange) -> None:
             {"name": "Run", "value": "Blind" if run.blind else "Replay", "inline": True},
         ],
     }
-    await _send_webhook(embed, allowed_mentions={"parse": []}, speedrun=True)
+    await _send_webhook(embed, allowed_mentions={"parse": []}, record=True)
 
 
 def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> None:

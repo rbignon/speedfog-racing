@@ -329,12 +329,14 @@ async def test_created_notification_names_the_race_mode(created_kwargs):
 
 MAIN_HOOK = "https://discord.com/api/webhooks/main"
 SPEEDRUN_HOOK = "https://discord.com/api/webhooks/speedrun"
+RECORDS_HOOK = "https://discord.com/api/webhooks/records"
 
 
 async def _posts(
     speedrun_hook: str | None, *notifications: Callable[[], Awaitable[None]]
 ) -> list[tuple[str, dict]]:
-    """The given notifications, as posted."""
+    """The given notifications, as posted (a records channel is always set: race
+    posts must never land there)."""
     mock_response = AsyncMock()
     mock_response.status_code = 204
     with (
@@ -343,6 +345,7 @@ async def _posts(
     ):
         mock_settings.discord_webhook_url = MAIN_HOOK
         mock_settings.discord_speedrun_webhook_url = speedrun_hook
+        mock_settings.discord_records_webhook_url = RECORDS_HOOK
         mock_settings.discord_runner_role_id = "999"
         mock_settings.base_url = "https://speedfog.racing"
         mock_client = AsyncMock()
@@ -429,9 +432,16 @@ async def test_finished_embed_only_for_normal_community_races(mode, daily_date, 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("speedrun_hook", "expected"), [(SPEEDRUN_HOOK, SPEEDRUN_HOOK), (None, MAIN_HOOK)]
+    ("records_hook", "speedrun_hook", "expected"),
+    [
+        (RECORDS_HOOK, SPEEDRUN_HOOK, RECORDS_HOOK),
+        (RECORDS_HOOK, None, RECORDS_HOOK),
+        (None, SPEEDRUN_HOOK, SPEEDRUN_HOOK),
+        (None, None, MAIN_HOOK),
+    ],
 )
-async def test_speedrun_record_goes_to_the_speedrun_channel(speedrun_hook, expected):
+async def test_speedrun_record_goes_to_the_records_channel(records_hook, speedrun_hook, expected):
+    """Records have their own channel, else the speedrun one, else the main one."""
     mock_response = AsyncMock()
     mock_response.status_code = 204
     change = RecordChange(
@@ -447,6 +457,7 @@ async def test_speedrun_record_goes_to_the_speedrun_channel(speedrun_hook, expec
     ):
         mock_settings.discord_webhook_url = MAIN_HOOK
         mock_settings.discord_speedrun_webhook_url = speedrun_hook
+        mock_settings.discord_records_webhook_url = records_hook
         mock_settings.base_url = "https://speedfog.racing"
         mock_client = AsyncMock()
         mock_client.post.return_value = mock_response
@@ -1066,14 +1077,9 @@ def test_tests_never_reach_the_real_discord_or_calendar() -> None:
     # Settings reads the developer's .env, which can hold the real webhooks:
     # a test that forgets to stub a notification must post nowhere.
     # Names only in the failure, never the secret values.
-    from speedfog_racing.config import settings
+    from speedfog_racing.config import Settings, settings
 
-    names = (
-        "discord_webhook_url",
-        "discord_training_webhook_url",
-        "discord_admin_webhook_url",
-        "discord_speedrun_webhook_url",
-        "discord_bot_token",
-        "malenia_api_token",
-    )
+    # Every webhook and token setting, so a new one forgotten in conftest's
+    # blanking fixture fails here.
+    names = [n for n in Settings.model_fields if n.endswith(("_webhook_url", "_token"))]
     assert [name for name in names if getattr(settings, name) is not None] == []
