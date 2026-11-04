@@ -33,6 +33,17 @@ use crate::dll::config::RaceConfig;
 #[cfg(target_os = "windows")]
 use crate::dll::RaceTracker;
 
+/// The crate version as `speedfog-racing-mod-v<version>` between NULs, so a
+/// tool reading the DLL with `strings` can tell which build it is. Rust packs
+/// string literals back to back without terminators, so a bare version
+/// literal can fuse with its neighbour into one printable run; the NULs keep
+/// this one on a line of its own. No code reads it: `#[used]` keeps it, since
+/// on MSVC targets it becomes an `/INCLUDE:` linker directive that
+/// `/OPT:REF` honours.
+#[cfg(target_os = "windows")]
+#[used]
+static VERSION_MARKER: &str = concat!("\0speedfog-racing-mod-v", env!("CARGO_PKG_VERSION"), "\0");
+
 /// Keeps the log writer alive for the DLL's lifetime. Its Drop impl flushes
 /// remaining buffered messages when DLL_PROCESS_DETACH triggers cleanup.
 #[cfg(target_os = "windows")]

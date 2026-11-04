@@ -20,11 +20,15 @@ fi
 
 # Every pack gets this DLL: refuse one built from another version than the
 # checkout's (a stale tools/assets copy, an older download). The DLL embeds
-# its crate version as a bare string (e.g. 1.31.0); grep -c reads the whole
-# stream, since an early exit would kill strings with SIGPIPE under pipefail.
+# its crate version between NULs as speedfog-racing-mod-v<version>
+# (VERSION_MARKER in mod/src/lib.rs), so strings prints it on a line of its
+# own; the bare version literal can fuse with a neighbouring string. grep -c
+# reads the whole stream, since an early exit would kill strings with SIGPIPE
+# under pipefail.
 LOCAL_VERSION=$(awk -F'"' '/^version = /{print $2; exit}' "$REPO_DIR/mod/Cargo.toml")
-if [ "$(strings "$MOD_DLL" | grep -cxF "$LOCAL_VERSION" || true)" -eq 0 ]; then
-    echo "==> ERROR: $MOD_DLL is not mod $LOCAL_VERSION (mod/Cargo.toml)."
+if [ "$(strings "$MOD_DLL" | grep -cxF "speedfog-racing-mod-v$LOCAL_VERSION" || true)" -eq 0 ]; then
+    echo "==> ERROR: $MOD_DLL does not carry speedfog-racing-mod-v$LOCAL_VERSION (mod/Cargo.toml):"
+    echo "    another version, or a build from before the version marker."
     echo "    Fetch this version's build with ./tools/download-mod.sh"
     exit 1
 fi

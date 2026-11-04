@@ -121,8 +121,11 @@ download, whatever the seed's generation date. A mod release is therefore:
 
 `deploy-mod.sh` refuses an empty file and a DLL that does not carry the
 checkout's mod version (the `[package]` version of `mod/Cargo.toml`, which the
-DLL embeds as a bare string): a stale `tools/assets/` copy or an older download
-never reaches every pack. It prints the version it ships (and the hash it
+DLL embeds between NULs as `speedfog-racing-mod-v<version>`, `VERSION_MARKER`
+in `mod/src/lib.rs`): a stale `tools/assets/` copy or an older download never
+reaches every pack. The check reads that marker, not the bare version string,
+which the linker may fuse with a neighbouring literal; a build from before the
+marker has none and is refused. It prints the version it ships (and the hash it
 replaces), does nothing when the server already runs that exact build, and
 swaps the file atomically (written beside it, then renamed over it). No
 restart: the server notices the new file on the next download. Players get the
