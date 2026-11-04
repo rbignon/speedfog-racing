@@ -492,9 +492,10 @@ class DebugFlagsDetectedMessage(BaseModel):
 class ExitInfo(BaseModel):
     """Exit info for zone_update message.
 
-    ``to_name`` carries the destination zone's display name, except when
-    the destination has been discovered and hosts a boss: it then carries
-    the actual boss name(s), ", "-joined (one per arena phase).
+    ``to_name`` carries the destination zone's display name once the
+    destination is discovered (visited, or any destination on a Set Seed
+    run), the actual boss name(s), ", "-joined (one per arena phase), when
+    it hosts a boss, and ``UNDISCOVERED_EXIT_NAME`` while undiscovered.
     """
 
     text: str

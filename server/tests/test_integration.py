@@ -25,6 +25,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     PhantomSkinUnlock,
     Race,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -2685,7 +2686,7 @@ def test_zone_update_content(integration_client, race_with_participants):
         # node_a has one exit to node_b, which is not yet discovered
         assert len(zu["exits"]) == 1
         assert zu["exits"][0]["text"] == "Gate to B"
-        assert zu["exits"][0]["to_name"] == "Raya Lucaria"
+        assert zu["exits"][0]["to_name"] == "???"
         assert zu["exits"][0]["discovered"] is False
 
         # Now trigger flag 9000001 -> node_b
@@ -2695,6 +2696,58 @@ def test_zone_update_content(integration_client, race_with_participants):
         assert zu2["node_id"] == "node_b"
         assert zu2["display_name"] == "Raya Lucaria"
         assert zu2["exits"] == []  # node_b has no exits
+
+
+def test_set_seed_race_zone_updates_reveal_exits(
+    integration_client, integration_db, race_with_participants
+):
+    """A Set Seed race names every exit's destination, visited or not, from
+    the start node's zone_update on."""
+    import asyncio
+
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+
+    async def make_set_seed() -> None:
+        async with integration_db() as db:
+            await db.execute(
+                update(Race).where(Race.id == uuid.UUID(race_id)).values(mode=RunMode.SET_SEED)
+            )
+            await db.commit()
+
+    asyncio.run(make_set_seed())
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+
+        integration_client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {organizer.api_token}"},
+        )
+        start = mod0.receive_until_type("zone_update")
+        assert start["node_id"] == "start_node"
+        assert [(ex["to_name"], ex["discovered"]) for ex in start["exits"]] == [
+            ("Stormveil Castle", True),
+            ("Raya Lucaria", True),
+        ]
+
+        mod0.send_status_update(igt_ms=1000, death_count=0)
+        mod0.send_event_flag(9000000, igt_ms=10000)
+        zu = mod0.receive_until_type("zone_update")
+        assert zu["node_id"] == "node_a"
+        assert [(ex["to_name"], ex["discovered"]) for ex in zu["exits"]] == [("Raya Lucaria", True)]
+
+    # A reconnect while running resends the current zone, still revealed
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth(drain=False)["type"] == "auth_ok"
+        zu = mod0.receive_until_type("zone_update")
+        assert zu["node_id"] == "node_a"
+        assert [(ex["to_name"], ex["discovered"]) for ex in zu["exits"]] == [("Raya Lucaria", True)]
 
 
 # =============================================================================

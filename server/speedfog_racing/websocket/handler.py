@@ -531,6 +531,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
         super().__init__(websocket, entity_id, session_maker)
         self.mod_version: str | None = None
         self.mod_protocol_version: str | None = None
+        # Set at auth: the run's seed is known beforehand (Set Seed), so its
+        # zone_updates name every exit's destination, visited or not.
+        self._reveal_exits = False
         self._message_handlers = {
             "status_update": self._handle_status_update,
             "event_flag": self._handle_event_flag,
@@ -664,7 +667,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
         message_id: int | None = None,
     ) -> None:
         """Send a zone_update unicast to the originating mod."""
-        msg = compute_zone_update(node_id, graph_json, zone_history, is_first_visit=is_first_visit)
+        msg = compute_zone_update(
+            node_id,
+            graph_json,
+            zone_history,
+            is_first_visit=is_first_visit,
+            reveal_exits=self._reveal_exits,
+        )
         if msg:
             if message_id is not None:
                 msg["message_id"] = message_id

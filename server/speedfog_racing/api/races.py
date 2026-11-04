@@ -1723,6 +1723,7 @@ async def start_race(
         started_at=started_iso,
         graph_json=race.seed.graph_json if race.seed else None,
         countdown_seconds=settings.countdown_seconds,
+        reveal_exits=race.mode == RunMode.SET_SEED,
     )
     # Push the refreshed RaceInfo (race_ends_at, etc.) so mods that authed
     # while the race was in setup pick up the now-populated deadlines without

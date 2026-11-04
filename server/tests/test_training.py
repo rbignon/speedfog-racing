@@ -1143,6 +1143,56 @@ def test_ranked_solo_finish_counts_once_the_final_zone_is_reached(
     check.assert_called_once_with(session_id=uuid.UUID(sid))
 
 
+@pytest.mark.parametrize(
+    ("mode", "revealed"),
+    [(RunMode.SET_SEED, True), (RunMode.SPEEDRUN, False), (RunMode.NORMAL, False)],
+)
+def test_solo_zone_update_reveals_exits_only_on_set_seed(
+    training_ws_client, training_session_data, training_seed, async_session, mode, revealed
+):
+    """A Set Seed run names an exit's destination before it is visited; the
+    other modes keep it hidden."""
+    sid = training_session_data["session_id"]
+    _set_session_mode(async_session, sid, mode)
+
+    async def add_exit() -> None:
+        async with async_session() as db:
+            seed = await db.get(Seed, training_seed.id)
+            graph = dict(seed.graph_json)
+            nodes = dict(graph["nodes"])
+            nodes["stormveil_01"] = {
+                **nodes["stormveil_01"],
+                "exits": [{"text": "Main gate", "fog_id": 1, "to": "liurnia_01"}],
+            }
+            nodes["liurnia_01"] = {**nodes["liurnia_01"], "display_name": "Liurnia"}
+            graph["nodes"] = nodes
+            seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(add_exit())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
+        ws.send_json(
+            {
+                "type": "auth",
+                "mod_token": training_session_data["mod_token"],
+                "protocol_version": "1.9",
+            }
+        )
+        assert ws.receive_json()["type"] == "auth_ok"
+        assert ws.receive_json()["type"] == "race_start"
+        ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+        assert ws.receive_json()["type"] == "leaderboard_update"
+        ws.send_json({"type": "event_flag", "flag_id": 1040292801, "igt_ms": 3000})
+        assert ws.receive_json()["type"] == "leaderboard_update"
+        zu = ws.receive_json()
+
+    assert zu["type"] == "zone_update"
+    assert [(ex["to_name"], ex["discovered"]) for ex in zu["exits"]] == [
+        ("Liurnia", True) if revealed else ("???", False)
+    ]
+
+
 def test_training_auth_ok_expands_random_phantom_skin(
     training_ws_client, training_session_data, training_seed, async_session
 ):

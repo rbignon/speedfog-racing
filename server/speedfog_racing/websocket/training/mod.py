@@ -193,6 +193,7 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
             seed = session.seed
             self._cached_graph_json = seed.graph_json if seed else None
+            self._reveal_exits = session.mode == RunMode.SET_SEED
 
             # Send auth_ok
             await self._send_auth_ok_msg(db, session)

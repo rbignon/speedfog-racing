@@ -28,6 +28,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RunMode,
 )
 from speedfog_racing.rewards.service import RewardsService
 from speedfog_racing.services.daily_streak_service import (
@@ -292,6 +293,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 self.locale = participant.user.locale
 
             self._cached_graph_json = _get_graph_json(participant)
+            self._reveal_exits = race.mode == RunMode.SET_SEED
 
             # Send auth_ok
             await self._send_auth_ok(db, participant)
@@ -1145,8 +1147,13 @@ async def broadcast_race_start(
     started_at: str | None = None,
     graph_json: dict[str, Any] | None = None,
     countdown_seconds: int = 0,
+    reveal_exits: bool = False,
 ) -> None:
-    """Broadcast race start to all connections (mods + spectators)."""
+    """Broadcast race start to all connections (mods + spectators).
+
+    ``reveal_exits`` (a Set Seed race) names every exit of the start node's
+    zone_update, as the mod handler does for the zones after it.
+    """
     room = manager.get_room(race_id)
     if room:
         # Send race_start to mods
@@ -1158,7 +1165,13 @@ async def broadcast_race_start(
             start_node = get_start_node(graph_json)
             if start_node:
                 for conn in room.mods.values():
-                    msg = compute_zone_update(start_node, graph_json, None, is_first_visit=True)
+                    msg = compute_zone_update(
+                        start_node,
+                        graph_json,
+                        None,
+                        is_first_visit=True,
+                        reveal_exits=reveal_exits,
+                    )
                     if msg:
                         msg = translate_zone_update(msg, conn.locale)
                         try:

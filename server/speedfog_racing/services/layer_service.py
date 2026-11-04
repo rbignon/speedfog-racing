@@ -2,6 +2,10 @@
 
 from typing import Any
 
+# Stands in for an unvisited destination's name in zone_update, so the
+# server alone decides what the overlay may name.
+UNDISCOVERED_EXIT_NAME = "???"
+
 
 def _format_zone_name(zone_id: str) -> str:
     """Convert zone_id like 'volcano_drawingroom' to 'Volcano Drawingroom'."""
@@ -57,8 +61,13 @@ def compute_zone_update(
     zone_history: list[dict[str, Any]] | None,
     *,
     is_first_visit: bool = False,
+    reveal_exits: bool = False,
 ) -> dict[str, Any] | None:
     """Compute a zone_update message payload for a given node.
+
+    An exit names its destination once the destination is in
+    ``zone_history``, or always with ``reveal_exits`` (a run on a seed known
+    beforehand), which treats every exit as discovered.
 
     Returns a dict matching ZoneUpdateMessage shape, or None if node not found.
     """
@@ -110,10 +119,10 @@ def compute_zone_update(
             from_zone_label = full_name.rsplit(" - ", 1)[-1]
         to_node = nodes.get(to_id, {}) if isinstance(to_id, str) else {}
         to_name = to_node.get("display_name", to_id) if isinstance(to_node, dict) else str(to_id)
-        discovered = isinstance(to_id, str) and to_id in discovered_ids
+        discovered = reveal_exits or (isinstance(to_id, str) and to_id in discovered_ids)
         ex: dict[str, Any] = {
             "text": text,
-            "to_name": to_name,
+            "to_name": to_name if discovered else UNDISCOVERED_EXIT_NAME,
             "discovered": discovered,
         }
         if discovered and isinstance(to_node, dict):

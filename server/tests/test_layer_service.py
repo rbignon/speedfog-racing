@@ -1,6 +1,7 @@
 """Unit tests for layer service."""
 
 from speedfog_racing.services.layer_service import (
+    UNDISCOVERED_EXIT_NAME,
     _format_zone_name,
     compute_zone_update,
     get_layer_for_node,
@@ -153,10 +154,11 @@ def test_compute_zone_update_basic():
     assert result["is_first_visit"] is False
     assert len(result["exits"]) == 2
     assert result["exits"][0]["text"] == "Soldier of Godrick front"
-    assert result["exits"][0]["to_name"] == "Road's End Catacombs"
     assert result["exits"][0]["discovered"] is False
-    assert result["exits"][1]["to_name"] == "Ruin-Strewn Precipice"
     assert result["exits"][1]["discovered"] is False
+    # The server keeps an unvisited destination's name to itself
+    assert result["exits"][0]["to_name"] == UNDISCOVERED_EXIT_NAME
+    assert result["exits"][1]["to_name"] == UNDISCOVERED_EXIT_NAME
 
 
 def test_compute_zone_update_discovered():
@@ -168,7 +170,21 @@ def test_compute_zone_update_discovered():
     result = compute_zone_update("cave_e235", GRAPH_WITH_EXITS, zone_history=history)
     assert result is not None
     assert result["exits"][0]["discovered"] is True  # catacombs_a123 in history
+    assert result["exits"][0]["to_name"] == "Road's End Catacombs"
     assert result["exits"][1]["discovered"] is False  # precipice_b456 not in history
+    assert result["exits"][1]["to_name"] == UNDISCOVERED_EXIT_NAME
+
+
+def test_compute_zone_update_reveal_exits():
+    """reveal_exits names every destination as if it had been visited."""
+    result = compute_zone_update(
+        "cave_e235", GRAPH_WITH_EXITS, zone_history=None, reveal_exits=True
+    )
+    assert result is not None
+    assert [(ex["to_name"], ex["discovered"]) for ex in result["exits"]] == [
+        ("Road's End Catacombs", True),
+        ("Ruin-Strewn Precipice", True),
+    ]
 
 
 def test_compute_zone_update_node_not_found():
@@ -500,9 +516,23 @@ def test_to_bosses_empty_boss_name_treated_as_absent():
 
 
 def test_to_bosses_absent_when_undiscovered():
-    """Undiscovered boss destinations keep the plain zone name (no to_bosses)."""
+    """Undiscovered boss destinations get no to_bosses."""
     history = [{"node_id": "hub_1234", "igt_ms": 0}]
     result = compute_zone_update("hub_1234", GRAPH_WITH_BOSSES, zone_history=history)
     assert result is not None
     for ex in result["exits"]:
         assert "to_bosses" not in ex
+
+
+def test_to_bosses_revealed_without_a_visit():
+    """reveal_exits also gives the boss behind a gate never crossed."""
+    history = [{"node_id": "hub_1234", "igt_ms": 0}]
+    result = compute_zone_update(
+        "hub_1234", GRAPH_WITH_BOSSES, zone_history=history, reveal_exits=True
+    )
+    assert result is not None
+    assert result["exits"][0]["to_bosses"] == ["Mimic Tear"]
+    assert result["exits"][1]["to_bosses"] == [
+        "Red Wolf of Radagon",
+        "Metyr, Mother of Fingers",
+    ]
