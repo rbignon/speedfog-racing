@@ -12,6 +12,7 @@
 import type { SpeedrunSeed, SpeedrunSeedRun } from "$lib/api";
 import { parseDagGraph } from "$lib/dag";
 import { parseNodeLayers } from "$lib/dag/popupData";
+import { shortName } from "$lib/highlights";
 import { buildRunnerTimeline, type RunnerTimeline } from "$lib/layer-gaps";
 
 /** Never "Elden Ring": LiveSplit would wake the SoulSplitter autosplitter. */
@@ -92,8 +93,13 @@ export function seedLssFile(
   if (!seed.graph_json) return null;
   const total = seed.total_layers;
   const nodeLayers = parseNodeLayers(seed.graph_json);
+  // The name the map labels the node with (the last leg of its label, the
+  // fought boss on a boss arena), not cut to the map's label width.
   const labels = new Map(
-    parseDagGraph(seed.graph_json).nodes.map((n) => [n.id, n.labelName]),
+    parseDagGraph(seed.graph_json).nodes.map((n) => [
+      n.id,
+      shortName(n.labelName),
+    ]),
   );
   const timeline = (r: SpeedrunSeedRun) =>
     buildRunnerTimeline(

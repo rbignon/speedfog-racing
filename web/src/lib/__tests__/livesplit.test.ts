@@ -219,6 +219,24 @@ describe("buildLss", () => {
     expect(file.segmentNames).toEqual(["Chapel", "Cave B", "Maliketh"]);
   });
 
+  it("names segments as the map labels them, the fought boss on an arena", () => {
+    const g = graph("Leyndell - Erdtree Entrance");
+    const nodes = g.nodes as Record<string, Record<string, unknown>>;
+    nodes.start.display_name = "Chapel of Anticipation";
+    nodes.a1 = {
+      type: "boss_arena",
+      display_name: "Caelid - Gael Tunnel - Magma Wyrm",
+      randomized_bosses: ["Tree Sentinel"],
+      layer: 1,
+    };
+    const file = seedLssFile(seed([run("r", "u1", 70_000, DIRECT)], g), "u1")!;
+    expect(file.segmentNames).toEqual([
+      "Chapel of Anticipation",
+      "Tree Sentinel",
+      "Erdtree Entrance",
+    ]);
+  });
+
   it("escapes zone names in the XML", () => {
     const g = graph(`Godrick's "Hall" & <Keep>`);
     const file = seedLssFile(seed([run("r", "u1", 70_000, DIRECT)], g), "u1")!;

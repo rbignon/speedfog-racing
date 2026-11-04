@@ -44,7 +44,9 @@ from run data the site already serves.
   run (see "How the mod links").
 - **Segments**: one per depth. A seed file names each after the zone the
   viewer's best run left that depth through, else the seed's best counted
-  run, else "Depth k". A category file names them "Depth k".
+  run, else "Depth k". The name is the one the map shows for that zone (the
+  boss actually fought on a boss arena, without the area prefix), but not
+  cut to the map's label width. A category file names them "Depth k".
 - **Comparisons**: "Personal Best" and "SpeedFog WR". A seed file takes the
   viewer's best run on the seed and the seed's best counted run; a category
   file takes the viewer's Random Seed PB and the Random Seed WR from
