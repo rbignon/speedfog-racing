@@ -829,10 +829,10 @@
         <p>
           Yes, with LiveSplit 1.8.31 or later and without SoulSplitter, which
           writes the game timer. Download the splits file from a seed page (Play
-          this seed in Set Seed), a solo run page, the download window of a race
-          or Daily Seed, or the Speedrun board, and open it in LiveSplit. Then
-          launch the game as usual. Don't run LiveSplit as administrator, or the
-          mod cannot drive it (the overlay tells you so).
+          this seed in Set Seed), the Speedrun board, or the page of a Speedrun
+          or Set Seed race or solo run, and open it in LiveSplit. Then launch
+          the game as usual. Don't run LiveSplit as administrator, or the mod
+          cannot drive it (the overlay tells you so).
         </p>
         <p>
           The mod links on its own (the overlay says "LiveSplit linked"),

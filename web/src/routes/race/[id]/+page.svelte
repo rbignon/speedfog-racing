@@ -1755,7 +1755,7 @@
         deathless={liveDeathless}
         onClose={() => (showDownloadModal = false)}
         onDownload={handleDownload}
-        onDownloadSplits={initialRace.category
+        onDownloadSplits={initialRace.mode !== "normal" && initialRace.category
           ? handleDownloadSplits
           : undefined}
       />

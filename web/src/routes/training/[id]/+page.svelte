@@ -483,7 +483,7 @@
           >
             {downloading ? "Preparing..." : "Download Pack"}
           </button>
-          {#if session.category}
+          {#if session.mode !== "normal" && session.category}
             <button class="btn btn-outline" onclick={handleDownloadSplits}>
               LiveSplit splits
             </button>

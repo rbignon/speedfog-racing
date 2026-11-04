@@ -58,18 +58,21 @@ from run data the site already serves.
 
 ## Where to download
 
-Five pages, through `downloadSeedSplits` and `downloadCategorySplits`
-(`web/src/lib/livesplit-download.ts`):
+Four pages, through `downloadSeedSplits` and `downloadCategorySplits`
+(`web/src/lib/livesplit-download.ts`). The run pages offer it for Speedrun
+and Set Seed runs only: a normal race, solo session or Daily Seed (always
+normal) gets none, where splits are of little use.
 
 - **Seed page**, "Play this seed in Set Seed" card, "LiveSplit splits": the
   seed file, for everyone (the viewer's own best run is the PB).
-- **Solo session page** (owner, active session), "LiveSplit splits" after
-  "Download Pack": the seed file for a Set Seed session, the category file
-  for any other. Hidden while the session has no category.
-- **Race page**, in the download window ("Before you race"), "Download
-  LiveSplit splits": the seed file for a Set Seed race, the category file
-  otherwise. Absent while the race has no category.
-- **Daily Seed page**, in the same download window, alike.
+- **Solo session page** (owner, active Speedrun or Set Seed session),
+  "LiveSplit splits" after "Download Pack": the seed file for a Set Seed
+  session, the category file for a Speedrun one. Hidden while the session
+  has no category.
+- **Race page** (Speedrun or Set Seed race), in the download window
+  ("Before you race"), "Download LiveSplit splits": the seed file for a Set
+  Seed race, the category file for a Speedrun one. Absent while the race
+  has no category.
 - **Speedrun board toolbar**, "LiveSplit", before "Start a run": the file of
   the selected category.
 
