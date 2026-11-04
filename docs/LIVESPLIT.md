@@ -82,12 +82,12 @@ A dedicated thread, `livesplit`, owns the pipe. It tries to open it as soon
 as the mod starts, then again at most 5 seconds after its last attempt
 whenever it is unlinked: LiveSplit absent or closed, or the pipe dropped
 after an answer out of step. A failed attempt costs nothing visible. The
-mod log notes each link and each loss, and the first failure of each kind
-(not every retry), under the `[LIVESPLIT]` prefix.
+mod log notes each pipe opening, each link and each loss, and the first
+failure of each kind (not every retry), under the `[LIVESPLIT]` prefix.
 
 On link, the thread first checks LiveSplit's version: it writes
-`getcustomvariablevalue SpeedFog seed` and `gettimerphase` back to back,
-then reads one line. LiveSplit before 1.8.31 does not know the first
+`getcustomvariablevalue SpeedFog seed` and `gettimerphase` in a single
+write, then reads one line. LiveSplit before 1.8.31 does not know the first
 command and drops it without an answer, so that line answers the second: a
 timer phase, which no variable's answer (a seed number, a category key or
 `-`) ever is (`livesplit_too_old`). The mod then closes the pipe without
@@ -262,6 +262,18 @@ answers exactly one line, the others answer nothing, and LiveSplit handles
 a connection's lines in order. An answer that is no timer phase or no split
 index means the connection is out of step: the link drops, and a new
 connection starts in step.
+
+LiveSplit's pipe has no buffer (.NET's default size, 0), so each side waits
+on the other: a write returns only once LiveSplit has read it, and an
+answer holds LiveSplit until the mod reads it. Nothing is written while an
+answer is unread. The version check's two lines go out in one write for
+that reason: as two writes, the second would wait for LiveSplit to read it
+while LiveSplit waits for the mod to read the first answer, and the link
+would hang right after its pipe-opening log line. For the same reason, an
+extra answer line would hang the link rather than read as out of step. None
+comes today: from 1.8.29 to the current source, LiveSplit answers only the
+`get*` queries among the commands the mod sends, and the mod reads each of
+those answers.
 
 If LiveSplit hangs, only the thread waits: the game keeps running, and run
 views queue on the channel (64 of them, far more than a stall should

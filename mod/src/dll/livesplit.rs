@@ -11,6 +11,11 @@
 //! command answers exactly one line, the other commands answer nothing, and
 //! LiveSplit handles a connection's lines in order. Nothing is read without
 //! a query first, so an answer always follows every command written before.
+//!
+//! LiveSplit's pipe has no buffer (.NET's default size, 0): a write returns
+//! only once LiveSplit has read it, and an answer holds LiveSplit until the
+//! mod reads it. So nothing is written while an answer is unread: lines
+//! sent before reading go out in one write (`Pipe::send_together`).
 
 use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
 use std::fs::{File, OpenOptions};
@@ -242,6 +247,13 @@ impl Link {
     fn connect(&mut self, igt_ms: Option<u32>) -> Duration {
         profile_span!("livesplit_connect");
         let snapshot = Pipe::open().and_then(|mut pipe| {
+            // A pipe write or read blocks while LiveSplit does not take it:
+            // this line with no result after it (linked, too old or an
+            // error) points there. Not repeated while an old LiveSplit is
+            // retried, whose result is logged once.
+            if !self.too_old {
+                info!("[LIVESPLIT] Pipe open, checking LiveSplit's version");
+            }
             if !reads_variables(&mut pipe)? {
                 return Ok(None);
             }
@@ -364,14 +376,16 @@ impl Link {
 
 /// Whether LiveSplit answers `getcustomvariablevalue` (1.8.31 or later),
 /// read on a new connection. The variable query and `gettimerphase` go out
-/// back to back: an older LiveSplit drops the first without an answer, so
-/// the first line read answers the second (`livesplit_too_old`). A newer
-/// one answers both, and both answers are read, which keeps every later
-/// answer in step with its query.
+/// together: an older LiveSplit drops the first without an answer, so the
+/// first line read answers the second (`livesplit_too_old`). A newer one
+/// answers both, and both answers are read, which keeps every later answer
+/// in step with its query.
+///
+/// In one write, never two: the second write would wait for LiveSplit to
+/// read it, while LiveSplit waits for the mod to read its first answer.
 fn reads_variables(pipe: &mut Pipe) -> io::Result<bool> {
     let variable_query = format!("getcustomvariablevalue {LS_VAR_SEED}");
-    pipe.send(&variable_query)?;
-    pipe.send("gettimerphase")?;
+    pipe.send_together(&[&variable_query, "gettimerphase"])?;
     if livesplit_too_old(pipe.read_answer(&variable_query)?) {
         return Ok(false);
     }
@@ -440,9 +454,17 @@ impl Pipe {
 
     /// Writes one command line.
     fn send(&mut self, command: &str) -> io::Result<()> {
+        self.send_together(&[command])
+    }
+
+    /// Writes command lines in a single write, which returns once LiveSplit
+    /// has read them all (see the module doc).
+    fn send_together(&mut self, commands: &[&str]) -> io::Result<()> {
         self.line.clear();
-        self.line.extend_from_slice(command.as_bytes());
-        self.line.push(b'\n');
+        for command in commands {
+            self.line.extend_from_slice(command.as_bytes());
+            self.line.push(b'\n');
+        }
         self.writer.write_all(&self.line)
     }
 

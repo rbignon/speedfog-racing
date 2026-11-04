@@ -177,8 +177,8 @@ pub fn parse_variable(s: &str) -> Option<String> {
 
 /// Whether LiveSplit is too old to link (before 1.8.31, which added
 /// `getcustomvariablevalue`), from the first line answering a
-/// `getcustomvariablevalue` query and a `gettimerphase` query written back
-/// to back. An older LiveSplit drops a command it does not know without an
+/// `getcustomvariablevalue` query and a `gettimerphase` query sent in one
+/// write. An older LiveSplit drops a command it does not know without an
 /// answer, so its first line answers the phase query; a variable's answer
 /// (a seed number, a category key or `-`) is never a phase name.
 pub fn livesplit_too_old(first_answer: &str) -> bool {
