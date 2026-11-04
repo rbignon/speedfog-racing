@@ -831,13 +831,14 @@
           writes the game timer. Download the splits file from a seed page (Play
           this seed in Set Seed), a solo run page, the download window of a race
           or Daily Seed, or the Speedrun board, and open it in LiveSplit. Then
-          launch the game as usual.
+          launch the game as usual. Don't run LiveSplit as administrator, or the
+          mod cannot drive it (the overlay tells you so).
         </p>
         <p>
           The mod links on its own (the overlay says "LiveSplit linked"),
-          switches LiveSplit to Game Time, starts the timer, splits on each new
-          depth and stops on the final boss. The times should match the ones on
-          the site.
+          switches LiveSplit to Game Time, starts the timer once you are in
+          game, splits on each new depth and stops on the final boss. The times
+          should match the ones on the site.
         </p>
         <p>
           Reset LiveSplit yourself between attempts, or let the mod reset a

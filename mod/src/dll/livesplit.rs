@@ -28,7 +28,7 @@ use tracing::{error, info, warn};
 
 use crate::core::livesplit::{
     livesplit_too_old, parse_timer_phase, parse_timespan, parse_variable, LiveSplitSync, LsCommand,
-    LsSnapshot, RunView, SyncOutput, LS_VAR_CATEGORY, LS_VAR_SEED, STATUS_TOO_OLD,
+    LsSnapshot, RunView, SyncOutput, LS_VAR_CATEGORY, LS_VAR_SEED, STATUS_ELEVATED, STATUS_TOO_OLD,
 };
 use crate::profile_span;
 
@@ -187,19 +187,36 @@ fn livesplit_thread(
         file_seed: None,
         file_category: None,
     };
+    // The newest view's liveness, and whether the run was live with a known
+    // IGT on the previous tick (the moment a timer starts).
+    let mut run_live = false;
+    let mut was_ready = false;
     let start = Instant::now();
     let mut next_connect = start;
     let mut next_poll = start;
     let mut next_push = start;
+    let mut igt_was_known = false;
 
     while !shutdown.load(Ordering::Relaxed) {
         // The IGT first, then every view queued before it, then the push:
         // a push never gets ahead of an arrival the sync has not seen.
         let igt_ms = Some(igt.load(Ordering::Acquire)).filter(|&v| v != IGT_UNKNOWN);
+        // A start or an adoption that waited for the IGT is decided as soon
+        // as it is known (the save loaded), not at the next poll.
+        let igt_now_known = igt_ms.is_some() && !igt_was_known;
+        igt_was_known = igt_ms.is_some();
         while let Ok(view) = run_rx.try_recv() {
+            run_live = view.live;
             let out = link.sync.on_run(view, igt_ms);
             link.execute(out);
         }
+        // A denied pipe is first met at launch, its status shown during the
+        // startup logos: shown again when the timer would start, in game.
+        let ready = run_live && igt_ms.is_some();
+        if ready && !was_ready && link.open_error == Some(io::ErrorKind::PermissionDenied) {
+            let _ = link.status_tx.try_send(STATUS_ELEVATED);
+        }
+        was_ready = ready;
 
         let now = Instant::now();
         if link.pipe.is_none() {
@@ -208,7 +225,7 @@ fn livesplit_thread(
                 next_connect = now + link.connect(igt_ms);
             }
         } else {
-            if now >= next_poll {
+            if now >= next_poll || igt_now_known {
                 next_poll = now + POLL_INTERVAL;
                 link.poll(igt_ms);
             }
@@ -275,7 +292,18 @@ impl Link {
             }
             Err(e) => {
                 if self.open_error != Some(e.kind()) {
-                    info!(error = %e, "[LIVESPLIT] LiveSplit unavailable, retrying every 5 s");
+                    if e.kind() == io::ErrorKind::PermissionDenied {
+                        // Windows lets a program that is not elevated read an
+                        // elevated one's pipe, not write to it: the usual
+                        // cause, another user account's LiveSplit the rare one.
+                        info!(
+                            error = %e,
+                            "[LIVESPLIT] Pipe denied, likely LiveSplit runs as administrator and the game does not; retrying every 5 s"
+                        );
+                        let _ = self.status_tx.try_send(STATUS_ELEVATED);
+                    } else {
+                        info!(error = %e, "[LIVESPLIT] LiveSplit unavailable, retrying every 5 s");
+                    }
                     self.open_error = Some(e.kind());
                 }
                 self.too_old = false;

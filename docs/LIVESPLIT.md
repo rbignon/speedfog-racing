@@ -22,6 +22,12 @@ layer 0, where the run starts); this doc and the code keep the graph's
   game `SpeedFog`, not "Elden Ring", so a SoulSplitter the player once
   activated for Elden Ring does not wake up on them. Its IGT hook itself
   stacks harmlessly with the mod's (see `docs/IGT_TIMING.md`).
+- LiveSplit not run as administrator, unless the game is too: Windows lets
+  a program that is not elevated read an elevated one's pipe, not write to
+  it. Opening it then fails with "Access is denied" (os error 5): the
+  overlay shows a status at the first failure (often during the startup
+  logos) and again when the run starts in game (live, the IGT known), and
+  the mod keeps trying every 5 seconds.
 - LiveSplit and the game can start in any order.
 
 ## The file
@@ -81,9 +87,10 @@ run. A failure shows in the surface's own error line.
 A dedicated thread, `livesplit`, owns the pipe. It tries to open it as soon
 as the mod starts, then again at most 5 seconds after its last attempt
 whenever it is unlinked: LiveSplit absent or closed, or the pipe dropped
-after an answer out of step. A failed attempt costs nothing visible. The
-mod log notes each pipe opening, each link and each loss, and the first
-failure of each kind (not every retry), under the `[LIVESPLIT]` prefix.
+after an answer out of step. A failed attempt costs nothing visible, but
+for a LiveSplit run as administrator (see Requirements). The mod log notes
+each pipe opening, each link and each loss, and the first failure of each
+kind (not every retry), under the `[LIVESPLIT]` prefix.
 
 On link, the thread first checks LiveSplit's version: it writes
 `getcustomvariablevalue SpeedFog seed` and `gettimerphase` in a single
@@ -117,14 +124,15 @@ within a second, as a new link would.
 
 **Overlay statuses** (each shown for a few seconds):
 
-| Status                                            | When                                                         |
-| ------------------------------------------------- | ------------------------------------------------------------ |
-| LiveSplit linked                                  | The link is up and the open file is for this run.            |
-| LiveSplit disconnected                            | A link that was up dropped.                                  |
-| LiveSplit: these splits are for another run       | The file names another seed, or another category.            |
-| LiveSplit: open SpeedFog splits to track this run | The file is not a SpeedFog file.                             |
-| Reset LiveSplit to track this run                 | LiveSplit runs a timer the mod does not own (see Ownership). |
-| LiveSplit 1.8.31 or later needed                  | The open LiveSplit is too old to link (see above).           |
+| Status                                               | When                                                         |
+| ---------------------------------------------------- | ------------------------------------------------------------ |
+| LiveSplit linked                                     | The link is up and the open file is for this run.            |
+| LiveSplit disconnected                               | A link that was up dropped.                                  |
+| LiveSplit: these splits are for another run          | The file names another seed, or another category.            |
+| LiveSplit: open SpeedFog splits to track this run    | The file is not a SpeedFog file.                             |
+| Reset LiveSplit to track this run                    | LiveSplit runs a timer the mod does not own (see Ownership). |
+| LiveSplit 1.8.31 or later needed                     | The open LiveSplit is too old to link (see above).           |
+| LiveSplit runs as administrator: restart it normally | The game, not elevated, cannot write to LiveSplit's pipe.    |
 
 ## Timing
 
@@ -134,7 +142,7 @@ menu reloads, held during blackscreen fades, quit-out penalties included
 (`alwayspausegametime`); the mod sets it with `setgametime` about 30 times a
 second while the run is live and the mod owns the timer. Before a save
 loads after a launch, the IGT is unknown: nothing is pushed then, rather
-than a placeholder 0.
+than a placeholder 0, and no timer starts (see Start and attempts).
 
 The run is **live** while it runs past its countdown, the local runner has
 neither finished nor left it (abandon, disqualification), and the loaded
@@ -154,10 +162,13 @@ may differ from the site's.
 An attempt with no depth reached yet is **fresh**. When a fresh attempt is
 live, the mod takes the timer: one still Running, Paused or Ended from
 earlier is reset first (`reset`), then the mod sends `starttimer` and game
-time. The pipe's reset opens no dialog and records the attempt as a manual
-reset does (attempt history, golds, a PB when it finished faster). An
-attempt that is not fresh when the link comes up is caught up instead (see
-Ownership).
+time. Both wait for a known IGT: the timer starts once the player is in
+game, not on the title screen after a launch, where it would run before
+the save loads. The mod reads LiveSplit's state as soon as the IGT turns
+known, so the start follows the save load at once. The pipe's reset opens
+no dialog and records the attempt as a manual reset does (attempt history,
+golds, a PB when it finished faster). An attempt that is not fresh when the
+link comes up is caught up instead (see Ownership).
 
 A new attempt is:
 
@@ -171,8 +182,9 @@ A new attempt is:
   over.
 
 Since a fresh attempt always takes the timer, a relaunch, or a pipe drop
-and relink, before the first fog of an attempt restarts LiveSplit's timer:
-one more attempt in LiveSplit's history, no split lost.
+and relink, before the first fog of an attempt restarts LiveSplit's timer
+(after a relaunch, once the save loads): one more attempt in LiveSplit's
+history, no split lost.
 
 ## Splits
 
@@ -205,7 +217,7 @@ or a Running one it adopted.
 When the link comes up during a live run (LiveSplit opened late, the game
 relaunched, the pipe lost and back) with a run that is not fresh:
 
-- a NotRunning timer is started, then caught up;
+- a NotRunning timer is started once the IGT is known, then caught up;
 - a Running timer is **adopted** when it looks like this run's: its split
   index is at most the depths reached, and its game time is within 60
   seconds (`ADOPT_TOLERANCE_MS`) of the run's IGT;
@@ -251,10 +263,11 @@ I/O or blocks.
 The `livesplit` thread does the rest. Every 10 ms it loads the IGT, then
 applies every run view queued before it, then, while linked, pushes game
 time every 33 ms and reads LiveSplit's state every second; while unlinked it
-tries the pipe every 5 seconds. The frame thread queues a view before it
-stores the frame's IGT (a Release store, read with Acquire), so a push never
-gets ahead of an arrival the thread has not applied: that is what keeps
-split times exact.
+tries the pipe every 5 seconds. The IGT turning known (a save loaded) reads
+LiveSplit's state at once, without waiting for the next second. The frame
+thread queues a view before it stores the frame's IGT (a Release store,
+read with Acquire), so a push never gets ahead of an arrival the thread has
+not applied: that is what keeps split times exact.
 
 Every answer is read right after its `get*` query, on the same connection
 and thread, after every earlier command was written: each `get*` command
