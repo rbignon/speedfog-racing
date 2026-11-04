@@ -119,6 +119,13 @@ download, whatever the seed's generation date. A mod release is therefore:
 ./deploy/deploy-mod.sh      # installs it on the VPS
 ```
 
+`download-mod.sh` takes the newest run of this repository's master (a push or
+a manual run, never a pull request) and refuses it while it is still running
+or when it did not succeed, rather than falling back to an older build: wait
+for it, or pass the run id of the build to ship (`./tools/download-mod.sh
+<run-id>`). It reads the run list unfiltered, since GitHub's status filter can
+leave out a recently finished run.
+
 `deploy-mod.sh` refuses an empty file and a DLL that does not carry the
 checkout's mod version (the `[package]` version of `mod/Cargo.toml`, which the
 DLL embeds between NULs as `speedfog-racing-mod-v<version>`, `VERSION_MARKER`

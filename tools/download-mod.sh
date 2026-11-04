@@ -3,7 +3,7 @@
 # Requires: gh (GitHub CLI), authenticated.
 #
 # Usage:
-#   ./tools/download-mod.sh              # download the latest successful build of master
+#   ./tools/download-mod.sh              # download master's latest build (refused unless it succeeded)
 #   ./tools/download-mod.sh <run-id>     # download from a specific workflow run
 
 set -euo pipefail
@@ -28,22 +28,39 @@ if [[ "${1:-}" ]]; then
     RUN_ID="$1"
     echo "Using specified run: $RUN_ID"
 else
-    # master only: a branch or PR build must not reach every seed pack.
-    echo "Finding latest successful build of master from $WORKFLOW..."
-    RUN_ID=$(gh run list \
-        --repo "$REPO" \
-        --workflow "$WORKFLOW" \
-        --branch master \
-        --status success \
-        --limit 1 \
-        --json databaseId \
-        --jq '.[0].databaseId')
+    # master only: a branch or PR build must not reach every seed pack. A
+    # master build is a push or manual run on this repository's master: the
+    # branch name alone does not tell, a pull request from a fork's master
+    # carries it too. The runs are judged here, not through the API's status
+    # filter, which can leave out a recently finished run and would silently
+    # hand back an older build.
+    RUN_WINDOW=50
+    echo "Finding the latest build of master from $WORKFLOW..."
+    LATEST=$(gh api "repos/$REPO/actions/workflows/$WORKFLOW/runs?per_page=$RUN_WINDOW" --jq "
+        [.workflow_runs[]
+         | select(.head_branch == \"master\"
+                  and .head_repository.full_name == \"$REPO\"
+                  and (.event == \"push\" or .event == \"workflow_dispatch\"))]
+        | max_by(.created_at) // empty
+        | \"\(.id) \(.status) \(.conclusion // \"none\") \(.head_sha[0:10])\"")
 
-    if [[ -z "$RUN_ID" || "$RUN_ID" == "null" ]]; then
-        echo "Error: no successful workflow run found." >&2
+    if [[ -z "$LATEST" ]]; then
+        echo "Error: no build of master among the last $RUN_WINDOW runs of $WORKFLOW." >&2
         exit 1
     fi
-    echo "Latest successful run: $RUN_ID"
+    read -r RUN_ID RUN_STATUS RUN_CONCLUSION RUN_COMMIT <<< "$LATEST"
+    # Never fall back to an older build: it could ship under the same version.
+    if [[ "$RUN_STATUS" != "completed" ]]; then
+        echo "Error: master's latest build (run $RUN_ID) is still $RUN_STATUS." >&2
+        echo "Wait for it to finish, or pass the run id of the build to ship." >&2
+        exit 1
+    fi
+    if [[ "$RUN_CONCLUSION" != "success" ]]; then
+        echo "Error: master's latest build (run $RUN_ID) ended in $RUN_CONCLUSION." >&2
+        echo "Fix master, or pass the run id of the build to ship." >&2
+        exit 1
+    fi
+    echo "Latest build of master: run $RUN_ID (commit $RUN_COMMIT)"
 fi
 
 # List artifacts for this run via the REST API
