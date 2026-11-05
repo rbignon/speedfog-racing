@@ -25,13 +25,15 @@
       ),
   );
 
+  // Only normal races are listed here: Speedrun and Set Seed races stay off
+  // the community feed.
   onMount(() => {
-    fetchRaces("setup,running")
+    fetchRaces("setup,running", "normal")
       .then((r) => (races = r))
       .catch((e) => console.error("Failed to fetch races:", e))
       .finally(() => (loadingRaces = false));
 
-    fetchRacesPaginated("finished", 0, FINISHED_PAGE_SIZE)
+    fetchRacesPaginated("finished", 0, FINISHED_PAGE_SIZE, "normal")
       .then((data) => {
         finishedRaces = data.races;
         hasMoreFinished = data.has_more ?? false;
@@ -47,6 +49,7 @@
         "finished",
         finishedRaces.length,
         FINISHED_PAGE_SIZE,
+        "normal",
       );
       finishedRaces = [...finishedRaces, ...data.races];
       hasMoreFinished = data.has_more ?? false;

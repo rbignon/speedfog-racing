@@ -342,12 +342,18 @@ async function handleResponse<T>(response: Response): Promise<T> {
 // =============================================================================
 
 /**
- * Fetch list of races, optionally filtered by status.
+ * Fetch list of races, optionally filtered by status and mode (each a
+ * comma-separated list).
  */
-export async function fetchRaces(status?: string): Promise<Race[]> {
-  const url = status
-    ? `${API_BASE}/races?status=${encodeURIComponent(status)}`
-    : `${API_BASE}/races`;
+export async function fetchRaces(
+  status?: string,
+  mode?: string,
+): Promise<Race[]> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  if (mode) params.set("mode", mode);
+  const query = params.toString();
+  const url = query ? `${API_BASE}/races?${query}` : `${API_BASE}/races`;
 
   const response = await fetch(url, {
     headers: getAuthHeaders(),
@@ -358,18 +364,21 @@ export async function fetchRaces(status?: string): Promise<Race[]> {
 }
 
 /**
- * Fetch list of races with pagination support.
+ * Fetch list of races with pagination support, optionally filtered by mode
+ * (a comma-separated list).
  */
 export async function fetchRacesPaginated(
   status: string,
   offset: number,
   limit: number,
+  mode?: string,
 ): Promise<RaceListResponse> {
   const params = new URLSearchParams({
     status,
     offset: String(offset),
     limit: String(limit),
   });
+  if (mode) params.set("mode", mode);
   const response = await fetch(`${API_BASE}/races?${params}`, {
     headers: getAuthHeaders(),
   });

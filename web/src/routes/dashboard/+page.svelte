@@ -103,7 +103,9 @@
         activity = a;
         activeRaces = r;
         activeTraining = t;
-        joinableRaces = jr;
+        // Races to Join lists normal races only, like /races; the
+        // joinable endpoint itself returns every mode.
+        joinableRaces = jr.filter((race) => race.mode === "normal");
         dailyWeek = week;
       })
       .catch((e) => {

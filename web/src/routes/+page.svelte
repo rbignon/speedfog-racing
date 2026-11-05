@@ -46,12 +46,12 @@
       history.replaceState(null, "", "/");
     }
 
-    fetchRaces("setup,running")
+    fetchRaces("setup,running", "normal")
       .then((r) => (races = r))
       .catch((e) => console.error("Failed to fetch races:", e))
       .finally(() => (loadingRaces = false));
 
-    fetchRacesPaginated("finished", 0, 2)
+    fetchRacesPaginated("finished", 0, 2, "normal")
       .then((data) => (recentRaces = data.races))
       .catch((e) => console.error("Failed to fetch recent races:", e))
       .finally(() => (loadingRecent = false));

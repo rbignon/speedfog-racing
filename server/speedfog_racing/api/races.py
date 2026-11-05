@@ -533,18 +533,20 @@ async def list_joinable_races(
 @router.get("", response_model=RaceListResponse)
 async def list_races(
     status_filter: str | None = Query(None, alias="status"),
+    mode_filter: str | None = Query(None, alias="mode"),
     offset: int = Query(0, ge=0),
     limit: int | None = Query(None, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _user: User | None = Depends(get_current_user_optional),
 ) -> RaceListResponse:
-    """List races, optionally filtered by status with pagination.
+    """List races, optionally filtered by status and mode with pagination.
 
     Without ``limit``, a listing that can include finished races is capped at
     ``DEFAULT_FEED_LIMIT`` (``total``/``has_more`` report the truncation, and
     ``offset`` then applies too).
     """
     status_enums = parse_enum_csv(status_filter, RaceStatus)
+    mode_enums = parse_enum_csv(mode_filter, RunMode, "mode")
     if limit is None and (not status_enums or RaceStatus.FINISHED in status_enums):
         limit = DEFAULT_FEED_LIMIT
     # List rows never render the seed graph nor zone histories: skip both
@@ -578,6 +580,8 @@ async def list_races(
 
     if status_enums:
         query = query.where(Race.status.in_(status_enums))
+    if mode_enums:
+        query = query.where(Race.mode.in_(mode_enums))
 
     # Sort depends on what statuses are requested
     finished_only = status_enums == [RaceStatus.FINISHED]

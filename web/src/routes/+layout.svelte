@@ -86,7 +86,8 @@
     if (auth.isLoggedIn) {
       fetchJoinableRaces()
         .then((races) => {
-          joinableCount = races.length;
+          // Normal races only, like /races.
+          joinableCount = races.filter((r) => r.mode === "normal").length;
         })
         .catch(() => {
           joinableCount = 0;

@@ -23,6 +23,7 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RunMode,
     Seed,
     SeedStatus,
     User,
@@ -437,6 +438,65 @@ async def test_list_races_filter_by_status(test_client, organizer, async_session
         races = response.json()["races"]
         assert len(races) == 1
         assert races[0]["name"] == "Running Race"
+
+
+@pytest.mark.asyncio
+async def test_list_races_filter_by_mode(test_client, organizer, async_session):
+    """Listing races can filter by a comma-separated list of modes, alongside status."""
+    async with async_session() as db:
+        rows = [
+            ("Normal Setup", RunMode.NORMAL, RaceStatus.SETUP),
+            ("Normal Running", RunMode.NORMAL, RaceStatus.RUNNING),
+            ("Speedrun Setup", RunMode.SPEEDRUN, RaceStatus.SETUP),
+            ("Set Seed Running", RunMode.SET_SEED, RaceStatus.RUNNING),
+        ]
+        for i, (name, mode, race_status) in enumerate(rows):
+            seed = Seed(
+                seed_number=f"m{i}",
+                pool_name="standard",
+                graph_json={},
+                total_layers=10,
+                folder_path=f"/test/m{i}",
+                status=SeedStatus.CONSUMED,
+            )
+            db.add(seed)
+            await db.flush()
+            db.add(
+                Race(
+                    name=name,
+                    organizer_id=organizer.id,
+                    seed_id=seed.id,
+                    status=race_status,
+                    mode=mode,
+                )
+            )
+        await db.commit()
+
+    def names(response) -> set[str]:
+        assert response.status_code == 200
+        return {r["name"] for r in response.json()["races"]}
+
+    async with test_client as client:
+        assert names(await client.get("/api/races?mode=normal")) == {
+            "Normal Setup",
+            "Normal Running",
+        }
+        assert names(await client.get("/api/races?mode=speedrun,set_seed")) == {
+            "Speedrun Setup",
+            "Set Seed Running",
+        }
+        assert names(await client.get("/api/races?status=setup&mode=normal")) == {"Normal Setup"}
+        assert len(names(await client.get("/api/races"))) == 4
+
+        # Pagination counts only the races the filter keeps ("Load more" relies on it).
+        page = (await client.get("/api/races?mode=normal&limit=1")).json()
+        assert len(page["races"]) == 1
+        assert page["total"] == 2
+        assert page["has_more"] is True
+
+        response = await client.get("/api/races?mode=normal,bogus")
+        assert response.status_code == 400
+        assert "Invalid mode value" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
