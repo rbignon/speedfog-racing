@@ -453,6 +453,19 @@ async def test_update_user_role_to_user(test_client, admin_user, organizer_user)
 
 
 @pytest.mark.asyncio
+async def test_update_user_role_to_trusted(test_client, admin_user, organizer_user):
+    """Admin can promote an organizer to trusted."""
+    async with test_client as client:
+        response = await client.patch(
+            f"/api/admin/users/{organizer_user.id}",
+            json={"role": "trusted"},
+            headers={"Authorization": f"Bearer {admin_user.api_token}"},
+        )
+        assert response.status_code == 200
+        assert response.json()["role"] == "trusted"
+
+
+@pytest.mark.asyncio
 async def test_update_user_role_to_admin_rejected(test_client, admin_user, regular_user):
     """Cannot set admin role via API."""
     async with test_client as client:

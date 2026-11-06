@@ -1329,6 +1329,7 @@
                       >
                         <option value="user">user</option>
                         <option value="organizer">organizer</option>
+                        <option value="trusted">trusted</option>
                       </select>
                     {/if}
                     {#if user.banned_at}

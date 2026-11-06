@@ -1,7 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, fireEvent } from "@testing-library/svelte";
 import RaceControls from "$lib/components/RaceControls.svelte";
-import { rerollSeed, type RaceDetail, type RunMode } from "$lib/api";
+import {
+  rerollSeed,
+  type AuthUser,
+  type RaceDetail,
+  type RunMode,
+} from "$lib/api";
+import { auth } from "$lib/stores/auth.svelte";
 
 vi.mock("$lib/api", async () => {
   const actual = await vi.importActual<typeof import("$lib/api")>("$lib/api");
@@ -252,6 +258,59 @@ describe("RaceControls: Reset Race", () => {
       await openMenu(container);
       expect(hasButton(container, "Disqualify a runner...")).toBe(true);
       expect(hasButton(container, "Reset Race")).toBe(false);
+    },
+  );
+});
+
+describe("RaceControls: Start Race", () => {
+  afterEach(() => {
+    auth.user = null;
+  });
+
+  function startButton(
+    role: string,
+    participants: number,
+    lateJoin: number | null,
+  ): HTMLButtonElement {
+    auth.user = { id: "u1", role } as unknown as AuthUser;
+    const r = race("speedrun", {
+      seeds_released_at: "2026-11-06T10:00:00Z",
+      late_join_window_minutes: lateJoin,
+      participants: Array.from({ length: participants }, (_, i) => ({
+        id: `p${i}`,
+      })),
+    } as Partial<RaceDetail>);
+    const { container } = mount(r, "setup");
+    return [...container.querySelectorAll("button")].find((b) =>
+      b.textContent?.includes("Start Race"),
+    )!;
+  }
+
+  it.each([
+    // The late-join bet: start alone, the field joins the running race.
+    ["trusted", 1, 30],
+    ["admin", 0, null],
+  ])(
+    "lets role %s start with %i participant(s) and window %s",
+    (role, participants, lateJoin) => {
+      const button = startButton(role, participants, lateJoin);
+      expect(button.disabled).toBe(false);
+      expect(button.title).toBe("");
+    },
+  );
+
+  it.each([
+    // Nobody could join a running race without a window.
+    ["trusted", 1, null, "required without a late-join window"],
+    ["trusted", 0, 30, "At least 1 participant required"],
+    // Starting alone is a trusted right, not an organizer one.
+    ["organizer", 1, 30, "At least 2 participants required"],
+  ])(
+    "keeps role %s with %i participant(s) and window %s waiting",
+    (role, participants, lateJoin, hint) => {
+      const button = startButton(role, participants, lateJoin);
+      expect(button.disabled).toBe(true);
+      expect(button.title).toContain(hint);
     },
   );
 });

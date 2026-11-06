@@ -9,6 +9,7 @@ from sqlalchemy.pool import StaticPool
 
 from speedfog_racing.auth import TwitchUser, get_or_create_user
 from speedfog_racing.database import Base
+from speedfog_racing.models import UserRole
 
 
 def test_twitch_login_redirects(client):
@@ -418,3 +419,19 @@ async def test_me_reports_played_run_counts(played_client) -> None:
     assert data["race_count"] == 1
     assert data["daily_count"] == 1
     assert data["training_count"] == 1
+
+
+@pytest.mark.parametrize(
+    ("role", "minimum", "expected"),
+    [
+        (UserRole.TRUSTED, UserRole.ORGANIZER, True),
+        (UserRole.TRUSTED, UserRole.TRUSTED, True),
+        (UserRole.ADMIN, UserRole.TRUSTED, True),
+        (UserRole.ORGANIZER, UserRole.TRUSTED, False),
+        (UserRole.USER, UserRole.ORGANIZER, False),
+        # The Daily Seed account is off the ladder: it holds no right at all.
+        (UserRole.SYSTEM, UserRole.USER, False),
+    ],
+)
+def test_role_at_least(role: UserRole, minimum: UserRole, expected: bool) -> None:
+    assert role.at_least(minimum) is expected

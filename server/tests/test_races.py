@@ -82,6 +82,23 @@ async def player(async_session):
 
 
 @pytest.fixture
+async def trusted(async_session):
+    """Create a trusted user."""
+    async with async_session() as db:
+        user = User(
+            twitch_id="trusted123",
+            twitch_username="trusted",
+            twitch_display_name="The Trusted",
+            api_token="trusted_token",
+            role=UserRole.TRUSTED,
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        return user
+
+
+@pytest.fixture
 def seed_zip_context():
     """Create a temporary seed zip with mock content."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -232,6 +249,18 @@ async def test_create_race_allowed_for_organizer(test_client, organizer, seed):
         )
         assert response.status_code == 201
         assert response.json()["name"] == "Organizer Race"
+
+
+@pytest.mark.asyncio
+async def test_create_race_allowed_for_trusted(test_client, trusted, seed):
+    """A role above ORGANIZER keeps the right to create races."""
+    async with test_client as client:
+        response = await client.post(
+            "/api/races",
+            json={"name": "Trusted Race", "pool_name": "standard"},
+            headers={"Authorization": f"Bearer {trusted.api_token}"},
+        )
+        assert response.status_code == 201
 
 
 @pytest.mark.asyncio
@@ -1022,6 +1051,47 @@ async def test_admin_can_start_race_with_fewer_than_2_participants(
         )
         assert response.status_code == 200
         assert response.json()["status"] == "running"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("starter", "participates", "late_join", "refusal"),
+    [
+        # The late-join bet: start alone, the field joins the running race.
+        ("trusted", True, 30, None),
+        # Without a window nobody could join once the race runs.
+        ("trusted", True, None, "late-join window"),
+        ("trusted", False, 30, "1 participant"),
+        # Starting alone is a trusted right, not an organizer one.
+        ("organizer", True, 30, "2 participants"),
+    ],
+)
+async def test_solo_start_needs_trusted_role_and_late_join(
+    test_client, organizer, trusted, seed, starter, participates, late_join, refusal
+):
+    user = {"organizer": organizer, "trusted": trusted}[starter]
+    headers = {"Authorization": f"Bearer {user.api_token}"}
+    async with test_client as client:
+        create_response = await client.post(
+            "/api/races",
+            json={
+                "name": "Solo Start",
+                "organizer_participates": participates,
+                "late_join_window_minutes": late_join,
+            },
+            headers=headers,
+        )
+        assert create_response.status_code == 201, create_response.text
+        race_id = create_response.json()["id"]
+        await client.post(f"/api/races/{race_id}/release-seeds", headers=headers)
+
+        response = await client.post(f"/api/races/{race_id}/start", headers=headers)
+        if refusal is None:
+            assert response.status_code == 200, response.text
+            assert response.json()["status"] == "running"
+        else:
+            assert response.status_code == 400
+            assert refusal in response.json()["detail"]
 
 
 @pytest.mark.asyncio

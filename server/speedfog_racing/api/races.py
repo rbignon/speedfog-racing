@@ -325,7 +325,7 @@ async def create_race(
 
     Every refusal is raised before the commit, so it leaves no race behind.
     """
-    if user.role not in {UserRole.ORGANIZER, UserRole.ADMIN}:
+    if not user.role.at_least(UserRole.ORGANIZER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to create races",
@@ -1696,11 +1696,25 @@ async def start_race(
             detail="Seeds must be released before starting the race",
         )
 
-    if len(race.participants) < 2 and user.role != UserRole.ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least 2 participants are required to start a race",
-        )
+    # Two participants make a race. A trusted organizer may start alone when a
+    # late-join window lets the field join the running race; an admin, with anyone.
+    trusted = user.role.at_least(UserRole.TRUSTED)
+    if user.role.at_least(UserRole.ADMIN):
+        min_participants = 0
+    elif trusted and race.late_join_window_minutes is not None:
+        min_participants = 1
+    else:
+        min_participants = 2
+    if len(race.participants) < min_participants:
+        if min_participants == 1:
+            detail = "At least 1 participant is required to start a race"
+        elif trusted:
+            detail = (
+                "At least 2 participants are required to start a race without a late-join window"
+            )
+        else:
+            detail = "At least 2 participants are required to start a race"
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
     await _transition_status(
         db,

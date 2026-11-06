@@ -508,7 +508,7 @@ class UpdateUserRoleRequest(BaseModel):
     role: str
 
 
-_ALLOWED_ROLE_VALUES = {UserRole.USER.value, UserRole.ORGANIZER.value}
+_ALLOWED_ROLE_VALUES = {UserRole.USER.value, UserRole.ORGANIZER.value, UserRole.TRUSTED.value}
 
 
 _training_count_sq = (

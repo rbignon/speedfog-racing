@@ -62,6 +62,8 @@ cargo build --lib --release       # Build DLL (Windows MSVC only)
 
 REST routes (`api/`) and WebSocket handlers (`websocket/`) call into a services layer (`services/`). Models are in `models.py`, Pydantic schemas in `schemas.py`, config in `config.py` (Pydantic settings from `.env`).
 
+User roles form a ladder, user < organizer (every new account) < trusted < admin, so a right granted to a role goes to every role above it: check one with `UserRole.at_least` (web: `auth.canCreateRace`, `auth.isTrusted`), never by listing roles. An admin-only check may stay an equality with `UserRole.ADMIN`, the top rung.
+
 ### WebSocket protocol
 
 Two connection types: **mod connections** (`/ws/mod/{race_id}`) for the in-game overlay sending game state (zones, event flags, IGT), and **spectator connections** (`/ws/race/{race_id}/spectate`) for the web UI receiving live updates. `websocket/manager.py` manages rooms and broadcast. See `docs/PROTOCOL.md` and `docs/WEBSOCKET_LIFECYCLE.md`.
@@ -70,7 +72,7 @@ The wire protocol carries its own version (`PROTOCOL_VERSION`, identical in `ser
 
 ### Race lifecycle
 
-`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned/disqualified. The organizer controls transitions; a race also finishes on its own once every participant reaches a terminal status (deferred while a late-join window is open) or when its `race_duration_minutes` runs out (see `docs/RACE_LIFECYCLE.md`). On finish, race-win and finish-milestone rewards are granted (see `docs/REWARDS.md`) and the participants' behavioral traits are recomputed in the background (see `docs/STATS.md`). There is no ELO or player rating.
+`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned/disqualified. The organizer controls transitions (starting needs 2 participants, 1 for a `trusted` user on a race with a late-join window); a race also finishes on its own once every participant reaches a terminal status (deferred while a late-join window is open) or when its `race_duration_minutes` runs out (see `docs/RACE_LIFECYCLE.md`). On finish, race-win and finish-milestone rewards are granted (see `docs/REWARDS.md`) and the participants' behavioral traits are recomputed in the background (see `docs/STATS.md`). There is no ELO or player rating.
 
 ### Dual chat
 

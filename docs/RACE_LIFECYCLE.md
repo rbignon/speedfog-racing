@@ -18,8 +18,9 @@ SETUP ──→ RUNNING ──→ FINISHED
 
 ### Transitions
 
-**SETUP → RUNNING** (`POST /races/{id}/start`, organizer only)
+**SETUP → RUNNING** (`POST /races/{id}/start`, the race's organizer or an admin)
 
+- The participant minimum depends on the starting user's role (`UserRole.at_least`: roles form a ladder, user < organizer < trusted < admin, every new account being an organizer and an admin granting `trusted` in the admin Users tab): 2; 1 for a `trusted` organizer when the race has a late-join window (`late_join_window_minutes`), so a runner betting on late joiners need not wait for them; none for an admin. A race that stays with one runner grants no race-win reward (2 racers needed) and adds nothing to the per-race traits (2 finishers needed); its finish still counts toward the finished-race milestones (see `REWARDS.md`), and a speedrun one is outside the solo runs' unfinished limit (see `SPEEDRUN.md`). The race page's Start button applies the same rule (`RaceControls.svelte`) and names the missing condition in its tooltip.
 - Sets `started_at` to current time.
 - Broadcasts `race_start` to mods, `zone_update` for start node (per-mod, localized), `race_status_change` to all, and full `race_state` to each spectator.
 - Discord notification: `notify_race_started()` (public normal races only: a speedrun or Set Seed race is announced at creation only) + event status set to ACTIVE (if event exists).

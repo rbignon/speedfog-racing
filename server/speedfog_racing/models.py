@@ -34,8 +34,23 @@ class UserRole(enum.StrEnum):
 
     USER = "user"
     ORGANIZER = "organizer"
+    TRUSTED = "trusted"
     ADMIN = "admin"
     SYSTEM = "system"
+
+    def at_least(self, minimum: "UserRole") -> bool:
+        """Whether this role holds every right of ``minimum``.
+
+        Roles form a ladder, user < organizer < trusted < admin, so a right
+        granted to a role goes to every role above it. SYSTEM (the Daily Seed
+        account, which never logs in) is off the ladder and holds none.
+        """
+        if self not in _ROLE_LADDER:
+            return False
+        return _ROLE_LADDER.index(self) >= _ROLE_LADDER.index(minimum)
+
+
+_ROLE_LADDER = (UserRole.USER, UserRole.ORGANIZER, UserRole.TRUSTED, UserRole.ADMIN)
 
 
 class RaceStatus(enum.Enum):

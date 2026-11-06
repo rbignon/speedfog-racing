@@ -26,7 +26,25 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let seedsReleased = $derived(race.seeds_released_at !== null);
-  let canStart = $derived(race.participants.length >= 2 || auth.isAdmin);
+  // The server's start rule: two participants, one for a trusted organizer
+  // when a late-join window lets the field join the running race, any for an admin.
+  let minParticipants = $derived(
+    auth.isAdmin
+      ? 0
+      : auth.isTrusted && race.late_join_window_minutes !== null
+        ? 1
+        : 2,
+  );
+  let canStart = $derived(race.participants.length >= minParticipants);
+  let startHint = $derived(
+    canStart
+      ? undefined
+      : minParticipants === 1
+        ? "At least 1 participant required"
+        : auth.isTrusted
+          ? "At least 2 participants required without a late-join window"
+          : "At least 2 participants required",
+  );
   let isDaily = $derived(race.daily_date !== null);
   // A Set Seed race keeps its seed whatever its status.
   let keepsSeed = $derived(race.mode === "set_seed");
@@ -325,7 +343,7 @@
             class="btn btn-primary"
             onclick={handleStart}
             disabled={loading || !canStart}
-            title={!canStart ? "At least 2 participants required" : undefined}
+            title={startHint}
           >
             {loading ? "Starting..." : "Start Race"}
           </button>

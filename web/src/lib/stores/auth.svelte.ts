@@ -17,6 +17,16 @@ import {
 const _cachedToken = getStoredToken();
 const _cachedUser = _cachedToken ? getStoredUser() : null;
 
+// Roles form a ladder (as `UserRole.at_least` on the server): a right granted
+// to a role goes to every role above it. "system" is off the ladder.
+const ROLE_LADDER = ["user", "organizer", "trusted", "admin"] as const;
+type LadderRole = (typeof ROLE_LADDER)[number];
+
+function roleAtLeast(role: string | undefined, minimum: LadderRole): boolean {
+  const rank = ROLE_LADDER.indexOf(role as LadderRole);
+  return rank >= 0 && rank >= ROLE_LADDER.indexOf(minimum);
+}
+
 class AuthStore {
   user = $state<AuthUser | null>(_cachedUser);
   token = $state<string | null>(_cachedToken);
@@ -25,9 +35,8 @@ class AuthStore {
 
   isLoggedIn = $derived(this.user !== null);
   isAdmin = $derived(this.user?.role === "admin");
-  canCreateRace = $derived(
-    this.user?.role === "admin" || this.user?.role === "organizer",
-  );
+  isTrusted = $derived(roleAtLeast(this.user?.role, "trusted"));
+  canCreateRace = $derived(roleAtLeast(this.user?.role, "organizer"));
 
   /**
    * Initialize auth state. Cached user is already loaded from localStorage
