@@ -210,3 +210,54 @@ describe("RaceCard ranked race chip", () => {
     ).toBeNull();
   });
 });
+
+describe("RaceCard narrow variant", () => {
+  const minutesAgo = (m: number) =>
+    new Date(Date.now() - m * 60_000).toISOString();
+
+  function dateLine(container: HTMLElement): string | undefined {
+    return container.querySelector(".narrow-date")?.textContent?.trim();
+  }
+
+  it("dates a running race from its start, without the status signals", () => {
+    const { container } = render(RaceCard, {
+      race: raceWith({
+        status: "running",
+        mode: "speedrun",
+        started_at: minutesAgo(25),
+        open_registration: true,
+        can_join: true,
+      }),
+      variant: "narrow",
+    });
+    expect(dateLine(container)).toBe("Started 25m ago");
+    expect(container.querySelector(".race-signals")).toBeNull();
+    expect(container.querySelector(".card-foot")).toBeNull();
+    // The crew row keeps the avatars only: the date has its own line.
+    expect(container.querySelector(".card-crew .ago")).toBeNull();
+    expect(container.querySelector(".join-strip")).not.toBeNull();
+  });
+
+  it("dates an upcoming race by its scheduled time", () => {
+    // Tomorrow at noon, local time: "now + 24h" is not always tomorrow
+    // across a daylight-saving switch.
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(12, 0, 0, 0);
+    const { container } = render(RaceCard, {
+      race: raceWith({ scheduled_at: tomorrow.toISOString() }),
+      variant: "narrow",
+    });
+    expect(dateLine(container)).toMatch(/^Tomorrow, /);
+  });
+
+  it("names the seed type with the short labels", () => {
+    const chip = (mode: Race["mode"]) =>
+      render(RaceCard, { race: raceWith({ mode }), variant: "narrow" })
+        .container.querySelector(".run-mode-chip")
+        ?.textContent?.trim() ?? null;
+    expect(chip("speedrun")).toBe("Random");
+    expect(chip("set_seed")).toBe("Set Seed");
+    expect(chip("normal")).toBeNull();
+  });
+});

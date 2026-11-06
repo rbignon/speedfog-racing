@@ -1,12 +1,14 @@
 <script lang="ts">
   import type { RunMode } from "$lib/api";
 
-  let { mode }: { mode: RunMode } = $props();
+  // `short` names the seed type instead of the mode: "Random" (a speedrun
+  // race's fresh seed) or "Set Seed".
+  let { mode, short = false }: { mode: RunMode; short?: boolean } = $props();
 </script>
 
 {#if mode === "speedrun" || mode === "set_seed"}
   <span class="chip run-mode-chip" class:speedrun={mode === "speedrun"}
-    >{mode === "speedrun" ? "Speedrun" : "Set Seed"}</span
+    >{mode === "speedrun" ? (short ? "Random" : "Speedrun") : "Set Seed"}</span
   >
 {/if}
 

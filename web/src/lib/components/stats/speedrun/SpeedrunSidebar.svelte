@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { SpeedrunOverviewResponse } from "$lib/api";
+  import type { Race, SpeedrunOverviewResponse } from "$lib/api";
+  import RaceCard from "$lib/components/RaceCard.svelte";
   import { ordinal } from "$lib/events";
   import { seedPageHref, speedrunAgo } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
@@ -10,11 +11,26 @@
 
   let {
     overview,
+    races = [],
     onpick,
   }: {
     overview: SpeedrunOverviewResponse;
+    /** Active races (setup or running), split below into live and upcoming. */
+    races?: Race[];
     onpick: (pool: string) => void;
   } = $props();
+
+  let liveRaces = $derived(races.filter((r) => r.status === "running"));
+  // Like /races: a race in setup shows once it has a date, soonest first.
+  let upcomingRaces = $derived(
+    races
+      .filter((r) => r.status === "setup" && r.scheduled_at)
+      .sort(
+        (a, b) =>
+          new Date(a.scheduled_at!).getTime() -
+          new Date(b.scheduled_at!).getTime(),
+      ),
+  );
 
   const now = Date.now();
 
@@ -23,6 +39,24 @@
 </script>
 
 <aside class="sr-side">
+  {#if liveRaces.length > 0}
+    <section class="races">
+      <h3>Live races</h3>
+      {#each liveRaces as race (race.id)}
+        <RaceCard {race} variant="narrow" />
+      {/each}
+    </section>
+  {/if}
+
+  {#if upcomingRaces.length > 0}
+    <section class="races">
+      <h3>Upcoming races</h3>
+      {#each upcomingRaces as race (race.id)}
+        <RaceCard {race} variant="narrow" />
+      {/each}
+    </section>
+  {/if}
+
   <section class="sr-panel">
     <h3>Game stats</h3>
     <div class="game-stats">
@@ -109,6 +143,19 @@
     font-weight: 700;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+  }
+
+  /* Race cards sit on the column itself, not in a panel: their route
+   * line is their top edge. */
+  .races {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .races h3 {
+    padding: 0 0.1rem;
+    font-size: 0.9rem;
   }
 
   .window {

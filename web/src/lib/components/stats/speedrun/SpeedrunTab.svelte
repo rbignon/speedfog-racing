@@ -3,7 +3,9 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
+    fetchRaces,
     fetchSpeedrunOverview,
+    type Race,
     type SpeedrunOverviewResponse,
   } from "$lib/api";
   import { DISCORD_URL } from "$lib/links";
@@ -36,9 +38,15 @@
     params = parseSpeedrunParams(page.url.searchParams);
   });
   let overview = $state<SpeedrunOverviewResponse | null>(null);
+  let races = $state<Race[]>([]);
   let error = $state<string | null>(null);
 
   onMount(async () => {
+    // Speedrun and Set Seed races stay off /races; the side column lists the
+    // active ones. A failed fetch only leaves them out.
+    fetchRaces("setup,running", "speedrun,set_seed")
+      .then((r) => (races = r))
+      .catch((e) => console.error("Failed to fetch speedrun races:", e));
     try {
       const [data] = await Promise.all([
         fetchSpeedrunOverview(),
@@ -90,6 +98,7 @@
       />
       <SpeedrunSidebar
         {overview}
+        {races}
         onpick={(pool) => update(recentRunParams(params, pool))}
       />
     </div>

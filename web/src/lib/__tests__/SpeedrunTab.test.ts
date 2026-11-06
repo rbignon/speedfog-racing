@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { flushSync } from "svelte";
 
@@ -18,11 +18,16 @@ vi.mock("$lib/api", async () => {
     ...actual,
     fetchSpeedrunOverview: vi.fn(),
     fetchSpeedrunBoard: vi.fn(),
+    fetchRaces: vi.fn(),
   };
 });
 
 import SpeedrunTab from "$lib/components/stats/speedrun/SpeedrunTab.svelte";
-import { fetchSpeedrunBoard, fetchSpeedrunOverview } from "$lib/api";
+import {
+  fetchRaces,
+  fetchSpeedrunBoard,
+  fetchSpeedrunOverview,
+} from "$lib/api";
 
 const cat = (pool: string) => ({
   pool,
@@ -50,6 +55,11 @@ describe("SpeedrunTab URL sync", () => {
       history: [],
       record_seed: null,
     });
+    vi.mocked(fetchRaces).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("follows a navigation that changes the URL under the mounted tab", async () => {
@@ -65,5 +75,39 @@ describe("SpeedrunTab URL sync", () => {
         screen.getByRole("button", { name: "Set Seed" }).classList,
       ).toContain("on"),
     );
+  });
+
+  it("hands the fetched races to the side column", async () => {
+    vi.mocked(fetchRaces).mockResolvedValue([
+      {
+        id: "r1",
+        name: "Grind",
+        status: "running",
+        mode: "speedrun",
+        pool_name: "sprint",
+        started_at: new Date().toISOString(),
+        organizer: { id: "u1", twitch_username: "org" },
+        participant_count: 0,
+        participant_previews: [],
+        casters: [],
+      } as never,
+    ]);
+    render(SpeedrunTab);
+
+    const heading = await screen.findByRole("heading", { name: "Live races" });
+    expect(
+      heading.closest("section")?.querySelector('a[href="/race/r1"]'),
+    ).not.toBeNull();
+  });
+
+  it("keeps the board when the race list fails to load", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(fetchRaces).mockRejectedValue(new Error("down"));
+    render(SpeedrunTab);
+
+    expect(
+      await screen.findByRole("button", { name: "Random Seed" }),
+    ).toBeTruthy();
+    expect(screen.queryByText("down")).toBeNull();
   });
 });

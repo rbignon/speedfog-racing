@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Race } from "$lib/api";
   import { goto } from "$app/navigation";
-  import { raceDisplayDate } from "$lib/utils/time";
+  import { raceDisplayDate, timeAgo } from "$lib/utils/time";
   import { formatPoolName } from "$lib/utils/format";
   import { isFrogTitle, statusLabel } from "$lib/format";
   import RunModeChip from "./RunModeChip.svelte";
@@ -9,7 +9,10 @@
   // `title` replaces the displayed race name, `showFoot={false}` drops the
   // players / mode / organizer row and `showRole={false}` the viewer's role
   // mark, for a surrounding surface that already carries that context; the
-  // race keeps its full card everywhere else.
+  // race keeps its full card everywhere else. `variant="narrow"` fits a side
+  // column: no status signals nor foot, the seed type, game mode and deathless
+  // tag on one line, the date on its own, then the avatars, so a JOIN strip
+  // still fits.
   let {
     race,
     variant = "default",
@@ -18,13 +21,14 @@
     showRole = true,
   }: {
     race: Race;
-    variant?: "default" | "compact";
+    variant?: "default" | "compact" | "narrow";
     title?: string;
     showFoot?: boolean;
     showRole?: boolean;
   } = $props();
 
   let isRunning = $derived(race.status === "running");
+  let narrow = $derived(variant === "narrow");
   let isFrog = $derived(isFrogTitle(race.name));
   let displayName = $derived(
     race.organizer.twitch_display_name || race.organizer.twitch_username,
@@ -48,6 +52,11 @@
     race.started_at || (race.scheduled_at && race.status === "setup")
       ? raceDisplayDate(race)
       : "TBD",
+  );
+  let narrowDate = $derived(
+    isRunning && race.started_at
+      ? `Started ${timeAgo(race.started_at)}`
+      : relativeTime,
   );
   let showOpenBadge = $derived(
     (race.open_registration && race.status === "setup") ||
@@ -83,7 +92,8 @@
 <a
   href="/race/{race.id}"
   class="race-card {routeView.classes}"
-  class:compact={variant === "compact"}
+  class:compact={variant !== "default"}
+  class:narrow
   class:joinable={race.can_join}
 >
   <div
@@ -114,18 +124,39 @@
           <span class="race-name" class:frog={isFrog}>{title || race.name}</span
           >
         </div>
-        <div class="race-signals">
-          {#if showOpenBadge}
-            <span class="signal signal-open">Open</span>
-          {/if}
-          {#if roleLabel && showRole}
-            <span class="signal signal-{race.my_role}">{roleLabel}</span>
-          {/if}
-          <span class="signal signal-{race.status}"
-            >{statusLabel(race.status)}</span
-          >
-        </div>
+        {#if !narrow}
+          <div class="race-signals">
+            {#if showOpenBadge}
+              <span class="signal signal-open">Open</span>
+            {/if}
+            {#if roleLabel && showRole}
+              <span class="signal signal-{race.my_role}">{roleLabel}</span>
+            {/if}
+            <span class="signal signal-{race.status}"
+              >{statusLabel(race.status)}</span
+            >
+          </div>
+        {/if}
       </div>
+
+      {#if narrow}
+        <div class="race-meta narrow-line">
+          <RunModeChip mode={race.mode} short />
+          {#if race.pool_name}
+            <span
+              >{race.pool_display_name || formatPoolName(race.pool_name)}</span
+            >
+          {/if}
+          {#if race.deathless}
+            <span class="deathless" title="Dying once eliminates you"
+              >Deathless</span
+            >
+          {/if}
+        </div>
+        <div class="race-meta narrow-line">
+          <span class="ago narrow-date">{narrowDate}</span>
+        </div>
+      {/if}
 
       <div class="card-crew" class:has-winner={winner}>
         <div class="crew">
@@ -172,7 +203,9 @@
         {:else if race.status === "finished"}
           <span class="no-finishers">No finishers</span>
         {/if}
-        <span class="ago">{relativeTime}</span>
+        {#if !narrow}
+          <span class="ago">{relativeTime}</span>
+        {/if}
       </div>
 
       {#if isRunning && race.casters.length > 0}
@@ -208,7 +241,7 @@
         </div>
       {/if}
 
-      {#if showFoot}
+      {#if showFoot && !narrow}
         <div class="card-foot">
           <div class="race-meta">
             <span
@@ -250,7 +283,7 @@
           </span>
         </div>
       {/if}
-      {#if race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
+      {#if !narrow && race.status === "running" && race.open_registration && race.registration_closes_at && new Date(race.registration_closes_at) > new Date()}
         <div class="late-join-note">
           Joinable until {new Date(
             race.registration_closes_at,
@@ -363,6 +396,23 @@
     align-items: center;
     gap: 0.5rem;
     flex-shrink: 0;
+  }
+
+  /* Narrow variant: the type / mode line and the date line under the name */
+  /* A deathless tag wraps under the type and mode beside a JOIN strip:
+   * the wrapped line keeps the card's line spacing (over .race-meta's gap,
+   * declared further down). */
+  .race-meta.narrow-line {
+    row-gap: 0.3rem;
+    margin-top: 0.3rem;
+  }
+
+  .narrow-line .ago {
+    margin-left: 0;
+  }
+
+  .narrow .card-crew {
+    margin-top: 0.4rem;
   }
 
   /* Meta: player count, mode and flags as spaced items in the foot row */

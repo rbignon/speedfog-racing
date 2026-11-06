@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/svelte";
 import SpeedrunSidebar from "$lib/components/stats/speedrun/SpeedrunSidebar.svelte";
-import type { SpeedrunOverviewResponse, SpeedrunPracticedSeed } from "$lib/api";
+import type {
+  Race,
+  SpeedrunOverviewResponse,
+  SpeedrunPracticedSeed,
+} from "$lib/api";
 
 vi.mock("$lib/stores/weaponsCatalogue.svelte", () => ({
   getWeaponName: vi.fn(),
@@ -75,5 +79,99 @@ describe("SpeedrunSidebar practiced seeds", () => {
     render(SpeedrunSidebar, { overview: overview([]), onpick: vi.fn() });
 
     expect(screen.queryByText(/Most practiced seeds/)).toBeNull();
+  });
+});
+
+function race(id: string, overrides: Partial<Race> = {}): Race {
+  return {
+    id,
+    name: id,
+    organizer: {
+      id: "u1",
+      twitch_username: "org",
+      twitch_display_name: "Org",
+      twitch_avatar_url: null,
+    },
+    status: "setup",
+    pool_name: "standard",
+    is_public: true,
+    open_registration: true,
+    max_participants: null,
+    created_at: "2026-11-01T10:00:00Z",
+    scheduled_at: null,
+    started_at: null,
+    finished_at: null,
+    seeds_released_at: null,
+    late_join_window_minutes: null,
+    race_duration_minutes: null,
+    registration_closes_at: null,
+    race_ends_at: null,
+    igt_cutoff_ms: null,
+    private_dag: false,
+    deathless: false,
+    custom_rules: null,
+    daily_date: null,
+    mode: "speedrun",
+    participant_count: 0,
+    participant_previews: [],
+    casters: [],
+    seed_total_layers: 10,
+    my_participant_status: null,
+    my_current_layer: null,
+    my_igt_ms: null,
+    my_death_count: null,
+    can_join: false,
+    my_role: null,
+    event_id: null,
+    event_slot: null,
+    ...overrides,
+  };
+}
+
+describe("SpeedrunSidebar races", () => {
+  const inHours = (h: number) =>
+    new Date(Date.now() + h * 3600_000).toISOString();
+
+  function hrefsUnder(heading: string): string[] {
+    const section = screen
+      .getByRole("heading", { name: heading })
+      .closest("section");
+    if (!section) throw new Error(`no section for ${heading}`);
+    return [...section.querySelectorAll("a")].map(
+      (a) => a.getAttribute("href") ?? "",
+    );
+  }
+
+  it("splits live and upcoming races, upcoming by start time, undated ones left out", () => {
+    render(SpeedrunSidebar, {
+      overview: overview([]),
+      races: [
+        race("later", { scheduled_at: inHours(3) }),
+        race("live", { status: "running", started_at: inHours(-1) }),
+        race("undated"),
+        race("sooner", { scheduled_at: inHours(1), mode: "set_seed" }),
+      ],
+      onpick: vi.fn(),
+    });
+
+    expect(hrefsUnder("Live races")).toEqual(["/race/live"]);
+    expect(hrefsUnder("Upcoming races")).toEqual([
+      "/race/sooner",
+      "/race/later",
+    ]);
+    expect(document.querySelector('a[href="/race/undated"]')).toBeNull();
+  });
+
+  it("shows no race group while nothing is live or scheduled", () => {
+    render(SpeedrunSidebar, {
+      overview: overview([]),
+      races: [race("undated")],
+      onpick: vi.fn(),
+    });
+
+    expect(screen.queryByRole("heading", { name: "Live races" })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { name: "Upcoming races" }),
+    ).toBeNull();
   });
 });
