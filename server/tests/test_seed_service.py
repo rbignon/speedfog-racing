@@ -797,18 +797,15 @@ async def _mixed_pool(db, *, available: int, seen: int, floor: int = 2) -> None:
 
 
 @pytest.mark.asyncio
-async def test_seen_allowed_draw_above_the_floor_mixes_seen_and_available(async_db):
-    """More AVAILABLE seeds than the floor: SEEN and AVAILABLE seeds share one
-    random draw, so SEEN seeds leave the pool at their share of it instead of
-    piling up until the floor."""
-    await _mixed_pool(async_db, available=5, seen=5)
+async def test_seen_allowed_draw_above_the_floor_takes_available(async_db):
+    """More AVAILABLE seeds than the floor: a fresh seed, however many SEEN
+    seeds the pool holds, so a normal race counts on the boards whenever the
+    pool can spare one."""
+    await _mixed_pool(async_db, available=3, seen=20)
 
-    drawn = set()
-    for _ in range(40):
+    for _ in range(20):
         seed = await get_available_seed(async_db, "mix", allow_seen=True)
-        assert seed is not None
-        drawn.add(seed.status)
-    assert drawn == {SeedStatus.AVAILABLE, SeedStatus.SEEN}
+        assert seed is not None and seed.status == SeedStatus.AVAILABLE
 
 
 @pytest.mark.asyncio
@@ -820,7 +817,8 @@ async def test_draw_leaves_out_the_seeds_a_race_rerolled_away_from(async_db):
     seen = [s for s in seeds if s.status == SeedStatus.SEEN]
     available = [s for s in seeds if s.status == SeedStatus.AVAILABLE]
 
-    # Above the floor (3 > 2): one candidate left among the six.
+    # Above the floor (3 > 2), every AVAILABLE seed rerolled away: the SEEN
+    # fallback, with one candidate left among the six.
     rerolled = [s.id for s in seeds if s.id != seen[0].id]
     for _ in range(10):
         seed = await get_available_seed(
@@ -882,12 +880,9 @@ async def test_seen_allowed_draw_uses_the_default_floor(async_db):
             seed = await get_available_seed(async_db, "mix", allow_seen=True)
             assert seed is not None and seed.status == SeedStatus.SEEN
         mock_settings.speedrun_default_floor = 2
-        drawn = set()
-        for _ in range(30):
+        for _ in range(10):
             seed = await get_available_seed(async_db, "mix", allow_seen=True)
-            assert seed is not None
-            drawn.add(seed.status)
-        assert SeedStatus.AVAILABLE in drawn
+            assert seed is not None and seed.status == SeedStatus.AVAILABLE
 
 
 @pytest.mark.asyncio

@@ -351,12 +351,10 @@ async def get_available_seed(
 
     By default only AVAILABLE seeds are drawn. With ``allow_seen`` (the races
     ``race_draws_fresh_seeds`` leaves out: community races in normal mode, which
-    a SEEN seed keeps off the boards), SEEN seeds join the
-    draw: while the pool has more AVAILABLE seeds than its speedrun floor,
-    one uniform draw over its SEEN and AVAILABLE seeds, so SEEN seeds leave
-    the pool at their share of it instead of piling up; at or under the
-    floor, a SEEN seed, else an AVAILABLE one from the reserve the speedrun
-    draws need.
+    a SEEN seed keeps off the boards), SEEN seeds are the fallback stock:
+    while the pool has more AVAILABLE seeds than its speedrun floor, an
+    AVAILABLE seed, else a SEEN one; at or under the floor, a SEEN seed,
+    else an AVAILABLE one from the reserve the speedrun draws need.
 
     Args:
         db: Database session
@@ -373,12 +371,19 @@ async def get_available_seed(
     excluded = {*rerolled_seed_ids, *([exclude_id] if exclude_id is not None else [])}
     if not allow_seen:
         return await _random_seed(db, pool_name, (SeedStatus.AVAILABLE,), excluded)
-    if await _available_count(db, pool_name, exclude_id) > await speedrun_floor(db, pool_name):
-        return await _random_seed(db, pool_name, (SeedStatus.SEEN, SeedStatus.AVAILABLE), excluded)
-    seen = await _random_seed(db, pool_name, (SeedStatus.SEEN,), excluded)
-    if seen is not None:
-        return seen
-    return await _random_seed(db, pool_name, (SeedStatus.AVAILABLE,), excluded)
+    above_floor = await _available_count(db, pool_name, exclude_id) > await speedrun_floor(
+        db, pool_name
+    )
+    order = (
+        (SeedStatus.AVAILABLE, SeedStatus.SEEN)
+        if above_floor
+        else (SeedStatus.SEEN, SeedStatus.AVAILABLE)
+    )
+    for status in order:
+        seed = await _random_seed(db, pool_name, (status,), excluded)
+        if seed is not None:
+            return seed
+    return None
 
 
 class SpeedrunFloorError(ValueError):

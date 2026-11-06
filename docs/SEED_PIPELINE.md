@@ -93,7 +93,7 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 **`get_available_seed(db, pool_name, exclude_id?, *, allow_seen=False, rerolled_seed_ids=())`**:
 
 - Returns a random AVAILABLE seed (`ORDER BY random()`), or `None`. Optional `exclude_id` for reroll (exclude the current seed, from the floor count too); `rerolled_seed_ids` (a reroll's `Race.rerolled_seed_ids`) leaves the seeds the race already gave up out of every candidate set.
-- With `allow_seen` (community races in normal mode only, which a SEEN seed keeps off the boards: `race_draws_fresh_seeds` leaves them out), SEEN seeds join the draw: while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), one uniform draw over its SEEN and AVAILABLE seeds, so SEEN seeds leave the pool at their share of it instead of piling up; at or under the floor, a SEEN seed, else an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
+- With `allow_seen` (community races in normal mode only, which a SEEN seed keeps off the boards: `race_draws_fresh_seeds` leaves them out), SEEN seeds are a fallback stock: while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), an AVAILABLE seed, else a SEEN one; at or under the floor, a SEEN seed, else an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
 
 ### Seed Reroll
 

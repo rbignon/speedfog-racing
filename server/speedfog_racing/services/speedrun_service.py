@@ -193,15 +193,18 @@ def race_draws_fresh_seeds(race: Race) -> bool:
     """Whether a race's seed draws take AVAILABLE seeds only, never SEEN ones:
     a ranked mode, a Daily Seed or an event race. A community race (normal
     mode) may draw a SEEN seed, which keeps that race off the boards
-    (``race_unranked_reason``): SEEN seeds need a consumer, and the other
-    races must never lose their place on the boards to one."""
+    (``race_unranked_reason``), as a fallback when fresh seeds run low (see
+    ``get_available_seed``); the other races must never lose their place on
+    the boards to one."""
     return (
         race.mode in _RANKED_RACE_MODES or race.daily_date is not None or race.event_id is not None
     )
 
 
 SEEN_SEED_UNRANKED_REASON = (
-    "Seen seed: an earlier race showed its map, so this race does not count on the Speedrun boards."
+    "Seen seed: another race drew this seed and gave it up, so its map may be known and this "
+    "race does not count on the Speedrun boards. A race gets such a seed when its game mode "
+    "runs low on fresh ones."
 )
 RESET_UNRANKED_REASON = (
     "Reset race: its runners already played this seed, so this race does not count on the "

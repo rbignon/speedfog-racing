@@ -224,6 +224,31 @@ describe("/race/new: seen seeds", () => {
     ).toBeTruthy();
   });
 
+  it("warns a normal race that a pool at its floor would give it a seen seed", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      // Above its floor: a fresh seed.
+      standard: pool("Standard", 1, 6, 3, 5),
+      // At its floor with seen seeds: one of them.
+      sprint: pool("Sprint", 2, 4, 2, 4),
+      // At its floor without any: the reserve, fresh.
+      long: pool("Long", 3, 3, 0, 5),
+    });
+    await openPage("?pool=sprint");
+    const warning = /Low on fresh seeds right now/;
+
+    expect(screen.getByText(warning)).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Standard/ }));
+    expect(screen.queryByText(warning)).toBeNull();
+    await fireEvent.click(screen.getByRole("tab", { name: /Long/ }));
+    expect(screen.queryByText(warning)).toBeNull();
+
+    // A speedrun race never draws a seen seed.
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+    await fireEvent.click((await speedrunOption())!);
+    expect(screen.queryByText(warning)).toBeNull();
+  });
+
   it("disables Create when the speedrun option leaves the selected pool with nothing to draw", async () => {
     vi.mocked(fetchPoolStats).mockResolvedValue({
       standard: pool("Standard", 1, 3),

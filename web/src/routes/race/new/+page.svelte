@@ -85,6 +85,14 @@
   let selectedAvailable = $derived(
     pools[poolName] ? drawable(pools[poolName]) : 0,
   );
+  // At or under its floor, a pool gives a normal race a SEEN seed first,
+  // which counts on no Speedrun board: say so before the race exists.
+  let drawsSeenSeed = $derived(
+    !speedrun &&
+      pools[poolName] !== undefined &&
+      pools[poolName].seen > 0 &&
+      pools[poolName].available <= pools[poolName].speedrun_floor,
+  );
   // A Set Seed race takes its pool from the seed, which need not be listed
   // (a retired category's seed stays replayable): no card then.
   let seedConfig = $derived(
@@ -348,6 +356,13 @@
                     {selectedAvailable} seed{selectedAvailable !== 1 ? "s" : ""} available
                   {/if}
                 </p>
+                {#if drawsSeenSeed}
+                  <p class="seen-seed-warning">
+                    Low on fresh seeds right now: this race would get a seed
+                    another race gave up, whose map may be known, so it would
+                    not count on the Speedrun boards.
+                  </p>
+                {/if}
               </div>
             {/if}
           </div>
@@ -804,6 +819,15 @@
 
   .seeds-available:first-child {
     margin-top: 0;
+  }
+
+  /* Styled like the race page's notice for a race that counts on no board. */
+  .seen-seed-warning {
+    margin: 0.75rem 0 0;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--color-text-secondary);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
   }
 
   /* A Set Seed race: the seed's banner over the form. */
