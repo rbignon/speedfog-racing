@@ -2,6 +2,35 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.33.0] - 2026-11-08
+
+### LiveSplit
+
+- **LiveSplit is now allowed**, as long as you don't use SoulSplitter (it writes the game timer). The mod links to LiveSplit on its own (the overlay says "LiveSplit linked"), switches it to Game Time, **starts the timer once you are in game, splits at each new depth and stops on the final boss**, with the same in-game times as the site
+- **Download the splits files** from the site: one segment per depth, with "Personal Best" and "SpeedFog WR" comparisons
+  - A **seed file**, whose segments are named after the zones and bosses of your best run on that seed (the seed's best run if you have none), from a seed page (Play this seed in Set Seed), or from the page of a Set Seed race or solo run
+  - A **category file** (Depth 1, Depth 2, ...), compared against the Random Seed record and your own best run, from the Speedrun board's toolbar or the page of a Speedrun race or solo run
+  - A seed still being run blind, such as a regular race on it, gives neither a record nor a personal best, so its pacing spoils nothing
+  - "SpeedFog WR" is a separate comparison: right-click LiveSplit and pick Compare Against to use it
+
+### Speedrun
+
+- A **finished race or solo run shows on the boards right away** (it used to take up to 15 minutes)
+- **Re-rolling the seed of a Speedrun race now asks for a reason**, sent to the admins with the seed you give up, and the race keeps counting on the boards. A Speedrun race whose seed was re-rolled without a report before this release no longer counts
+- **Regular races get a fresh seed whenever the pool can spare one**, so they count on the Random Seed board. A seed an earlier race had already shown is drawn only once the pool runs low on fresh ones, and race creation warns you when a pool is in that state
+- **Set Seed runs name every exit** in the overlay: the seed's map is public, so you see the next zone or boss instead of "???"
+- The **Speedrun page lists the live and upcoming Speedrun and Set Seed races**, which no longer appear on the home page, the dashboard and the Races page (those list regular races only)
+- Once your ranked solo run is over, its page's **New Run** opens the Start a run window of its category in Random Seed, and a Set Seed run gets a **Play Again** button on the same seed
+- A **board or seed page link shared on Discord** (or anywhere else) now shows its own card: the category, the record, its holder and the seed, instead of the site's generic one
+
+### Races
+
+- New **trusted** role, granted by the admins: a trusted organizer can **start a race alone when it has a late-join window**, betting on late joiners, instead of waiting for a second participant
+
+### Seeds
+
+- **Chill** now scales up to **tier 16** (was 14) without its eight hardest major bosses: Malenia, Promised Consort Radahn, Dragonlord Placidusax, Bayle, Scadutree Avatar, Metyr, Godskin Duo and Valiant Gargoyles
+
 ## [1.32.0] - 2026-11-03
 
 ### Speedrun
@@ -9,7 +38,7 @@ All notable changes to SpeedFog Racing are documented in this file.
 - **New Speedrun page** in the navbar, with speedrun.com style boards (it replaces the speedrun.fog tab of the Stats page). Each game mode is a category with two boards:
   - **Set Seed**: every run, blind or replayed. **Any seed played since September 1st can be replayed**, as often as you like while its files are kept on the server, so you can route a seed and grind it
   - **Random Seed**: blind runs only, on seeds the runner had never seen
-- The boards count races, Daily Seeds, event races and the solo runs started from the Speedrun page, on the seeds generated since **September 1st** (Elden Ring 1.17). A community race counts unless it was **reset after its start**, its seed was **re-rolled without a seed report**, or it drew a seed an earlier race had shown before giving it up
+- The boards count races, Daily Seeds, event races and the solo runs started from the Speedrun page, on the seeds generated since **September 1st** (Elden Ring 1.17). A regular race counts unless it was **reset after its start**, its seed was **re-rolled without a seed report**, or it drew a seed an earlier race had shown before giving it up
 - **Start a run** from a board: Random Seed or Set Seed (type a seed ID, or click **WR** for the record seed), solo or race
   - A **Random Seed solo run** gets a fresh seed nobody has played. Its page stays blind (no spoiler, no full map, no ghosts) until the run ends. It expires after 24 hours, and you cannot start a new one after leaving 3 unfinished within 24 hours
   - These solo runs get the races' **cheat tool detection**, and a finish counts only once you reached the final boss

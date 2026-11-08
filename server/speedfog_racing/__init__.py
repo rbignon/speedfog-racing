@@ -1,3 +1,3 @@
 """SpeedFog Racing - Competitive racing platform for SpeedFog."""
 
-__version__ = "1.32.0"
+__version__ = "1.33.0"
