@@ -21,7 +21,7 @@ import resvg_py
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from speedfog_racing.models import Event, ParticipantStatus, Race, RaceStatus, User
-from speedfog_racing.schemas import EVENT_PHASES, EventConfig
+from speedfog_racing.schemas import EVENT_PHASES, EventConfig, as_aware_utc
 from speedfog_racing.services.event_service import (
     JOINABLE_PHASES,
     MIN_UPCOMING_PLAYERS,
@@ -39,6 +39,7 @@ from speedfog_racing.services.event_service import (
     slot_label,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.speedrun_service import CountedRun, SpeedrunSub
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,8 @@ _TEMPLATE_BY_KIND = {
     "event_stage": "og/event_stage.svg.j2",
     "event_brackets": "og/event_brackets.svg.j2",
     "event_winner": "og/event_winner.svg.j2",
+    "speedrun_board": "og/speedrun_board.svg.j2",
+    "speedrun_seed": "og/speedrun_seed.svg.j2",
 }
 
 # Folded into cache filenames so a visual redesign of the templates, or a change
@@ -904,6 +907,249 @@ async def render_event_og(
         return cached.read_bytes()
     ctx = await build_event_context(summary, avatar_lookup=avatar_lookup, logo_lookup=logo_lookup)
     svg = render_svg(summary.kind, ctx)
+    png = await asyncio.to_thread(rasterize_svg, svg)
+    cached.write_bytes(png)
+    return png
+
+
+# --- speedrun.fog -------------------------------------------------------------
+
+# The site's brass, as the Daily Seed card.
+SPEEDRUN_ACCENT_COLOR = DAILY_ACCENT_COLOR
+SPEEDRUN_SUB_LABEL: dict[SpeedrunSub, str] = {"set": "Set Seed", "random": "Random Seed"}
+# Verdigris, the open-race accent: the seed is open to another run.
+_REPLAYABLE_COLOR = ACCENT_COLOR[RaceStatus.SETUP]
+_MUTED_COLOR = "#96a0ad"
+
+# The record holder's name and the time share one line: the name starts after
+# the 80px avatar (x=160), the time ends at the content's right edge (x=1140).
+_RECORD_LINE_WIDTH = 1140 - 160 - 30
+_RECORD_NAME_SIZE = 48
+_RECORD_NAME_FLOOR = 28
+_RECORD_TIME_SIZE = 120
+_CATEGORY_SIZE = 84
+_CATEGORY_FLOOR = 48
+# Barlow Condensed averages 0.42 of its size per glyph in caps, a little more
+# in mixed case (names, times).
+_BARLOW_CAPS_RATIO = 0.42
+_BARLOW_MIXED_RATIO = 0.45
+
+
+@dataclass(frozen=True)
+class SpeedrunBoardCard:
+    """What a board's card shows: one category in Set or Random Seed, Deathless
+    or not, its record (None on an empty board) and how many players rank."""
+
+    category_name: str
+    sub: SpeedrunSub
+    deathless: bool
+    record: CountedRun | None
+    players: int
+
+
+@dataclass(frozen=True)
+class SpeedrunSeedCard:
+    """What a seed page's card shows: the seed, its category, its best counted
+    run (None while a blind run is in progress, or without any), its run and
+    player counts (unranked runs included, as on the page) and whether it can
+    still be replayed."""
+
+    seed_number: str
+    category_name: str
+    record: CountedRun | None
+    runs: int
+    players: int
+    replayable: bool
+
+
+def format_speedrun_time(ms: int) -> str:
+    """speedrun.com style, as the boards show it: ``21m 43s``, ``1h 02m 30s``."""
+    total = ms // 1000
+    hours, minutes, seconds = total // 3600, total // 60 % 60, total % 60
+    if hours:
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
+    return f"{minutes}m {seconds:02d}s"
+
+
+def _run_day(moment: dt.datetime) -> str:
+    """The UTC day a run finished: "5 November 2026". A naive finish (SQLite)
+    is UTC, like the TIMESTAMPTZ column it mirrors."""
+    aware = as_aware_utc(moment)
+    assert aware is not None
+    return f"{_event_day(aware)} {aware.year}"
+
+
+def _count_label(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _record_name(run: CountedRun) -> str:
+    return run.user.twitch_display_name or run.user.twitch_username
+
+
+def _record_kind(run: CountedRun) -> str:
+    return "Blind" if run.blind else "Replay"
+
+
+def _record_summary(run: CountedRun) -> str:
+    """ "23m 43s by Abisxoxo · Replay, 5 November 2026"."""
+    return (
+        f"{format_speedrun_time(run.igt_ms)} by {_record_name(run)} · "
+        f"{_record_kind(run)}, {_run_day(run.finished_at)}"
+    )
+
+
+async def _record_context(run: CountedRun, avatar_lookup: AvatarLookup) -> dict[str, Any]:
+    name = _record_name(run)
+    time = format_speedrun_time(run.igt_ms)
+    time_width = len(time) * _BARLOW_MIXED_RATIO * _RECORD_TIME_SIZE
+    return {
+        "name": name,
+        "name_size": _fitted_size(
+            _display_chars(name),
+            size=_RECORD_NAME_SIZE,
+            floor=_RECORD_NAME_FLOOR,
+            ratio=_BARLOW_MIXED_RATIO,
+            spacing=0,
+            available=_RECORD_LINE_WIDTH - time_width,
+        ),
+        "avatar_b64": _b64(await _resolve(avatar_lookup, run.user.twitch_avatar_url)),
+        "kind": _record_kind(run),
+        "day": _run_day(run.finished_at),
+        "time": time,
+    }
+
+
+def speedrun_board_sub_label(card: SpeedrunBoardCard) -> str:
+    """The board's sub and filter as the page names them: "Set Seed", "Random
+    Seed · Deathless"."""
+    label = SPEEDRUN_SUB_LABEL[card.sub]
+    return f"{label} · Deathless" if card.deathless else label
+
+
+def _seed_counts_label(card: SpeedrunSeedCard) -> str:
+    return f"{_count_label(card.runs, 'run')} · {_count_label(card.players, 'player')}"
+
+
+def _seed_status_label(card: SpeedrunSeedCard) -> str:
+    return "Replayable" if card.replayable else "Not replayable"
+
+
+def _seed_empty_label(card: SpeedrunSeedCard) -> str:
+    """What stands in for a missing record: the page lists unranked runs (a
+    seen seed, a reset race) even when none of them counts."""
+    return "No ranked run yet" if card.runs else "No finished run yet"
+
+
+def speedrun_board_description(card: SpeedrunBoardCard) -> str:
+    """The meta description of a board: its record and player count."""
+    if card.record is None:
+        return "No run yet"
+    return f"World record {_record_summary(card.record)} · {_count_label(card.players, 'player')}"
+
+
+def speedrun_seed_description(card: SpeedrunSeedCard) -> str:
+    """The meta description of a seed page: its record, counts and status."""
+    record = f"Record {_record_summary(card.record)}" if card.record else _seed_empty_label(card)
+    return f"{record} · {_seed_counts_label(card)} · {_seed_status_label(card)}"
+
+
+async def build_speedrun_board_context(
+    card: SpeedrunBoardCard, *, avatar_lookup: AvatarLookup
+) -> dict[str, Any]:
+    return {
+        "accent_color": SPEEDRUN_ACCENT_COLOR,
+        "status_label": "Speedrun",
+        "sub_label": speedrun_board_sub_label(card).upper(),
+        "category": card.category_name,
+        "category_size": _fitted_size(
+            _display_chars(card.category_name),
+            size=_CATEGORY_SIZE,
+            floor=_CATEGORY_FLOOR,
+            ratio=_BARLOW_CAPS_RATIO,
+            spacing=2.5,
+            available=_CONTENT_WIDTH,
+        ),
+        "record": (
+            await _record_context(card.record, avatar_lookup) if card.record is not None else None
+        ),
+        "players_label": _count_label(card.players, "player"),
+        "seed_number": card.record.seed_number if card.record is not None else None,
+    }
+
+
+async def build_speedrun_seed_context(
+    card: SpeedrunSeedCard, *, avatar_lookup: AvatarLookup
+) -> dict[str, Any]:
+    return {
+        "accent_color": SPEEDRUN_ACCENT_COLOR,
+        "status_label": "Speedrun",
+        "category": card.category_name,
+        "seed_number": card.seed_number,
+        "record": (
+            await _record_context(card.record, avatar_lookup) if card.record is not None else None
+        ),
+        "empty_label": _seed_empty_label(card),
+        "counts_label": _seed_counts_label(card),
+        "status": _seed_status_label(card),
+        "status_color": _REPLAYABLE_COLOR if card.replayable else _MUTED_COLOR,
+    }
+
+
+def _record_snapshot(run: CountedRun | None) -> str:
+    """Everything a card draws of its record, so a new record, a renamed
+    holder or a new avatar renders afresh."""
+    if run is None:
+        return "none"
+    return "|".join(
+        (
+            str(run.run_id),
+            _record_name(run),
+            run.user.twitch_avatar_url or "",
+            str(run.igt_ms),
+            run.finished_at.isoformat(),
+            str(run.blind),
+            run.seed_number,
+        )
+    )
+
+
+def _speedrun_cache_key(*parts: object) -> str:
+    snapshot = "|".join(str(part) for part in parts)
+    return hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:12]
+
+
+async def render_speedrun_board_og(
+    card: SpeedrunBoardCard, *, cache_dir: Path, avatar_lookup: AvatarLookup
+) -> bytes:
+    """Rasterized board card, cached on disk per what it shows."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _speedrun_cache_key(
+        card.category_name, card.sub, card.deathless, card.players, _record_snapshot(card.record)
+    )
+    cached = cache_dir / f"speedrun-board-v{_TEMPLATE_VERSION}-{key}.png"
+    if cached.exists():
+        return cached.read_bytes()
+    ctx = await build_speedrun_board_context(card, avatar_lookup=avatar_lookup)
+    svg = render_svg("speedrun_board", ctx)
+    png = await asyncio.to_thread(rasterize_svg, svg)
+    cached.write_bytes(png)
+    return png
+
+
+async def render_speedrun_seed_og(
+    card: SpeedrunSeedCard, *, cache_dir: Path, avatar_lookup: AvatarLookup
+) -> bytes:
+    """Rasterized seed card, cached on disk per seed and what it shows."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = _speedrun_cache_key(
+        card.category_name, card.runs, card.players, card.replayable, _record_snapshot(card.record)
+    )
+    cached = cache_dir / f"speedrun-seed-v{_TEMPLATE_VERSION}-{card.seed_number}-{key}.png"
+    if cached.exists():
+        return cached.read_bytes()
+    ctx = await build_speedrun_seed_context(card, avatar_lookup=avatar_lookup)
+    svg = render_svg("speedrun_seed", ctx)
     png = await asyncio.to_thread(rasterize_svg, svg)
     cached.write_bytes(png)
     return png

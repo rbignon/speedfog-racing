@@ -1,36 +1,63 @@
-"""Open Graph endpoints: dynamic meta HTML + rasterized PNG per race, daily and event."""
+"""Open Graph endpoints: dynamic meta HTML + rasterized PNG per race, daily, event,
+speedrun.fog board and seed page."""
 
 from __future__ import annotations
 
 import datetime as dt
 import functools
 import logging
+from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from urllib.parse import urlencode
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.api.stats import _cached
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Event, Participant, Race
-from speedfog_racing.schemas import EventConfig
+from speedfog_racing.schemas import EventConfig, RunType
 from speedfog_racing.services.avatar_cache import AvatarCache
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.event_service import announce_date, count_finished_before, load_event
 from speedfog_racing.services.og_image import (
     STATUS_LABEL,
+    SpeedrunBoardCard,
+    SpeedrunSeedCard,
     event_og_description,
     format_daily_date,
     format_pool,
     render_daily_og,
     render_event_og,
     render_race_og,
+    render_speedrun_board_og,
+    render_speedrun_seed_og,
+    speedrun_board_description,
+    speedrun_board_sub_label,
+    speedrun_seed_description,
     summarize_event,
+)
+from speedfog_racing.services.set_seed_service import (
+    SeedLookupError,
+    resolve_seed,
+    seed_replayability,
+)
+from speedfog_racing.services.speedrun_service import (
+    RUN_TYPES,
+    SpeedrunSub,
+    filter_board,
+    load_categories,
+    load_counted_runs,
+    load_unranked_runs,
+    rank_board,
+    seed_category,
+    seed_stats,
 )
 
 logger = logging.getLogger(__name__)
@@ -342,6 +369,226 @@ async def og_event_image(slug: str, db: AsyncSession = Depends(get_db)) -> Respo
         )
     except Exception:
         logger.exception("og event image render failed for %s", slug)
+        return fallback
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"},
+    )
+
+
+# --- speedrun.fog -------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _BoardQuery:
+    """A shared board link's filters, as `/speedrun` reads them from its URL."""
+
+    pool: str | None
+    sub: SpeedrunSub
+    deathless: bool
+    types: frozenset[RunType]
+
+
+def _board_query(pool: str, sub: str, deathless: str, types: str) -> _BoardQuery:
+    """Read the page's query string the way the page does: an unknown value
+    falls back to its default (a crawler never gets a 422), `obsolete` and
+    `view` are ignored since they do not change the record."""
+    requested = {t.strip() for t in types.split(",")}
+    kept = frozenset(t for t in RUN_TYPES if t in requested)
+    return _BoardQuery(
+        pool=pool or None,
+        sub="random" if sub == "random" else "set",
+        deathless=deathless == "1",
+        types=kept or frozenset(RUN_TYPES),
+    )
+
+
+def _board_query_string(query: _BoardQuery, pool: str) -> str:
+    """The board's canonical query string: the resolved pool, then only the
+    non-default filters, as the page writes its URL."""
+    params = [("pool", pool)]
+    if query.sub == "random":
+        params.append(("sub", "random"))
+    if query.deathless:
+        params.append(("deathless", "1"))
+    if query.types != frozenset(RUN_TYPES):
+        params.append(("types", ",".join(t for t in RUN_TYPES if t in query.types)))
+    return urlencode(params)
+
+
+async def _load_board_card(
+    db: AsyncSession, query: _BoardQuery
+) -> tuple[SpeedrunBoardCard, str] | None:
+    """The card of the board ``query`` names, with the category key it resolved
+    to: the asked one, else the first category as the page does. None when no
+    run counts on any board."""
+    runs = await _cached("speedrun:runs", load_counted_runs, db)
+    categories = await load_categories(db, runs)
+    if not categories:
+        return None
+    category = next((c for c in categories if c.pool == query.pool), categories[0])
+    board = filter_board(
+        runs,
+        category=category.pool,
+        sub=query.sub,
+        deathless_only=query.deathless,
+        types=query.types,
+    )
+    ranked = rank_board(board, include_obsolete=False)
+    card = SpeedrunBoardCard(
+        category_name=category.name,
+        sub=query.sub,
+        deathless=query.deathless,
+        record=ranked[0][0] if ranked else None,
+        players=len(ranked),
+    )
+    return card, category.pool
+
+
+async def _load_seed_card(db: AsyncSession, text: str) -> SpeedrunSeedCard | None:
+    """The card of the seed page ``text`` names (a seed number or a prefix of
+    one), None for an unknown or ambiguous one. The record and counts are the
+    page's: hidden while a blind run is in progress."""
+    try:
+        seed = await resolve_seed(db, text)
+    except SeedLookupError:
+        return None
+    replayability = await seed_replayability(db, seed)
+    _, category_name = seed_category(seed.pool, seed.total_layers)
+    runs = await load_counted_runs(db, seed_id=seed.id) if replayability.public else []
+    unranked = await load_unranked_runs(db, seed.id) if replayability.public else []
+    stats = seed_stats([*runs, *unranked])
+    return SpeedrunSeedCard(
+        seed_number=seed.seed_number,
+        category_name=category_name,
+        record=min(runs, key=lambda r: (r.igt_ms, r.finished_at)) if runs else None,
+        runs=stats.runs,
+        players=stats.players,
+        replayable=replayability.replayable,
+    )
+
+
+@router.get("/speedrun/meta", response_class=HTMLResponse)
+async def og_speedrun_board_meta(
+    pool: str = Query(default=""),
+    sub: str = Query(default=""),
+    deathless: str = Query(default=""),
+    types: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """HTML stub with a speedrun.fog board's OG tags. Served to crawlers via
+    nginx, which passes the shared link's query string along."""
+    base = settings.base_url.rstrip("/")
+    query = _board_query(pool, sub, deathless, types)
+    try:
+        loaded = await _load_board_card(db, query)
+    except Exception:
+        logger.exception("og speedrun board meta load failed for %s", query)
+        loaded = None
+    if loaded is None:
+        html = _render_html(
+            title=_DEFAULT_TITLE,
+            description=_DEFAULT_DESCRIPTION,
+            og_url=f"{base}/speedrun",
+            og_image=base + "/og-image.png",
+        )
+    else:
+        card, category = loaded
+        query_string = _board_query_string(query, category)
+        html = _render_html(
+            title=(
+                f"{card.category_name} · {speedrun_board_sub_label(card)} · Speedrun"
+                " · SpeedFog Racing"
+            ),
+            description=speedrun_board_description(card),
+            og_url=f"{base}/speedrun?{query_string}",
+            og_image=f"{base}/api/og/speedrun.png?{query_string}",
+        )
+    return HTMLResponse(content=html, headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/speedrun.png")
+async def og_speedrun_board_image(
+    pool: str = Query(default=""),
+    sub: str = Query(default=""),
+    deathless: str = Query(default=""),
+    types: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    """Rasterized board card. Cached on disk per what it shows."""
+    base = settings.base_url.rstrip("/")
+    fallback = RedirectResponse(url=f"{base}/og-image.png", status_code=302)
+    query = _board_query(pool, sub, deathless, types)
+    try:
+        loaded = await _load_board_card(db, query)
+    except Exception:
+        logger.exception("og speedrun board image load failed for %s", query)
+        return fallback
+    if loaded is None:
+        return fallback
+    try:
+        png = await render_speedrun_board_og(
+            loaded[0],
+            cache_dir=Path(settings.og_cache_dir).expanduser(),
+            avatar_lookup=_avatar_cache().get,
+        )
+    except Exception:
+        logger.exception("og speedrun board image render failed for %s", query)
+        return fallback
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=300, stale-while-revalidate=3600"},
+    )
+
+
+@router.get("/speedrun/seed/{seed}/meta", response_class=HTMLResponse)
+async def og_speedrun_seed_meta(seed: str, db: AsyncSession = Depends(get_db)) -> Response:
+    """HTML stub with a seed page's OG tags. Served to crawlers via nginx."""
+    base = settings.base_url.rstrip("/")
+    try:
+        card = await _load_seed_card(db, seed)
+    except Exception:
+        logger.exception("og speedrun seed meta load failed for %s", seed)
+        card = None
+    if card is None:
+        html = _render_html(
+            title=_DEFAULT_TITLE,
+            description=_DEFAULT_DESCRIPTION,
+            og_url=f"{base}/speedrun",
+            og_image=base + "/og-image.png",
+        )
+    else:
+        html = _render_html(
+            title=f"Seed {card.seed_number} · {card.category_name} · SpeedFog Racing",
+            description=speedrun_seed_description(card),
+            og_url=f"{base}/speedrun/seed/{card.seed_number}",
+            og_image=f"{base}/api/og/speedrun/seed/{card.seed_number}.png",
+        )
+    return HTMLResponse(content=html, headers={"Cache-Control": "public, max-age=60"})
+
+
+@router.get("/speedrun/seed/{seed}.png")
+async def og_speedrun_seed_image(seed: str, db: AsyncSession = Depends(get_db)) -> Response:
+    """Rasterized seed card. Cached on disk per seed and what it shows."""
+    base = settings.base_url.rstrip("/")
+    fallback = RedirectResponse(url=f"{base}/og-image.png", status_code=302)
+    try:
+        card = await _load_seed_card(db, seed)
+    except Exception:
+        logger.exception("og speedrun seed image load failed for %s", seed)
+        return fallback
+    if card is None:
+        return fallback
+    try:
+        png = await render_speedrun_seed_og(
+            card,
+            cache_dir=Path(settings.og_cache_dir).expanduser(),
+            avatar_lookup=_avatar_cache().get,
+        )
+    except Exception:
+        logger.exception("og speedrun seed image render failed for %s", seed)
         return fallback
     return Response(
         content=png,

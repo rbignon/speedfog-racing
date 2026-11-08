@@ -1,0 +1,24 @@
+{% extends "og/_base.svg.j2" %}
+{# A played seed's page: the seed, its category, its record and whether it
+   can still be replayed. Same geometry as the board card. #}
+{% block body %}
+  <text x="60" y="225" font-family="Spline Sans Mono" font-size="26" font-weight="500" letter-spacing="4" fill="{{ accent_color }}">{{ category.upper() }}</text>
+  <text x="60" y="305" font-family="Barlow Condensed" font-size="84" font-weight="600" letter-spacing="2.5" fill="#e8e6e1">SEED <tspan font-family="Spline Sans Mono" font-size="60" font-weight="500" letter-spacing="1" fill="{{ accent_color }}">{{ seed_number }}</tspan></text>
+  {% if record %}
+    <g transform="translate(60,360)">
+      <text x="0" y="24" font-family="Spline Sans Mono" font-size="22" font-weight="500" letter-spacing="3" fill="#96a0ad">RECORD</text>
+      <image x="0" y="44" width="80" height="80" clip-path="url(#avatar-clip)" href="{{ record.avatar_b64 }}"/>
+      <text x="100" y="92" font-family="Barlow Condensed" font-size="{{ record.name_size }}" font-weight="600" fill="#e8e6e1">{{ record.name }}</text>
+      <text x="100" y="124" font-family="Spline Sans Mono" font-size="22" fill="#96a0ad">{{ record.kind }} · {{ record.day }}</text>
+    </g>
+    <text x="1140" y="470" text-anchor="end" font-family="Barlow Condensed" font-size="120" font-weight="600" letter-spacing="2" fill="{{ accent_color }}">{{ record.time }}</text>
+  {% else %}
+    <text x="60" y="450" font-family="Barlow Condensed" font-size="56" font-weight="600" letter-spacing="2" fill="#96a0ad">{{ empty_label }}</text>
+  {% endif %}
+{% endblock %}
+{% block meta_left %}
+  <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#e8e6e1">{{ counts_label }}</text>
+{% endblock %}
+{% block meta_right %}
+  <text x="1140" y="570" text-anchor="end" font-family="Spline Sans Mono" font-size="26" fill="{{ status_color }}">{{ status }}</text>
+{% endblock %}
