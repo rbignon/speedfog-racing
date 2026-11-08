@@ -14,13 +14,15 @@
     recentRunParams,
     writeSpeedrunParams,
     type SpeedrunParams,
+    type StartRun,
   } from "$lib/speedrun";
   import { loadCatalogue } from "$lib/stores/weaponsCatalogue.svelte";
   import SpeedrunBoard from "./SpeedrunBoard.svelte";
   import SpeedrunSidebar from "./SpeedrunSidebar.svelte";
 
-  /** Opens the board's Start a run window in Set Seed mode on this seed ID. */
-  let { startSeed = null }: { startSeed?: string | null } = $props();
+  /** Opens the board's Start a run window: in Random Seed mode, or in Set
+   * Seed mode on a seed ID. */
+  let { startRun = null }: { startRun?: StartRun | null } = $props();
 
   // The tab owns its state and mirrors it into the URL, so a board can be
   // shared. `written` is the query string the tab last put there: a different
@@ -94,7 +96,7 @@
         categories={overview.categories}
         {params}
         onchange={update}
-        {startSeed}
+        {startRun}
       />
       <SpeedrunSidebar
         {overview}

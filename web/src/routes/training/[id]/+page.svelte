@@ -1,11 +1,12 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import {
     downloadCategorySplits,
     downloadSeedSplits,
   } from "$lib/livesplit-download";
-  import { sessionSeedPageHref } from "$lib/speedrun";
+  import { sessionSeedPageHref, startRandomRunHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
   import { trainingStore } from "$lib/stores/training.svelte";
@@ -17,6 +18,7 @@
     cancelSessionInvalidation,
     downloadTrainingPack,
     fetchTrainingGhosts,
+    startSpeedrunSolo,
     type TrainingSessionDetail,
     type Ghost,
   } from "$lib/api";
@@ -68,6 +70,7 @@
   let ghosts = $state<Ghost[]>([]);
   // null = unknown (not owner, session still active, or lookup pending/failed).
   let hasActiveSession = $state<boolean | null>(null);
+  let replaying = $state(false);
   let dagView = $state<"map" | "replay">("map");
   let zoneSheetTarget = $state<{
     nodeId: string;
@@ -227,6 +230,7 @@
     // Read locale outside reactive tracking: locale changes mid-session
     // should not trigger a WS reconnect cycle.
     const locale = untrack(() => getEffectiveLocale());
+    replaying = false;
     loadSession();
     trainingStore.connect(sessionId, locale);
 
@@ -316,6 +320,22 @@
     } catch (e) {
       splitsError =
         e instanceof Error ? e.message : "Failed to build the splits.";
+    }
+  }
+
+  // Set Seed only: a new run on the same seed, as the seed page's Play solo.
+  // The button stays disabled until the new session's page replaces this one
+  // (same route, same component: the id change below clears the flag).
+  async function handleReplay() {
+    if (!session?.seed_number) return;
+    replaying = true;
+    error = null;
+    try {
+      const next = await startSpeedrunSolo({ seed: session.seed_number });
+      await goto(`/training/${next.id}`);
+    } catch (e) {
+      error = e instanceof Error ? e.message : "Failed to start the run.";
+      replaying = false;
     }
   }
 
@@ -503,7 +523,22 @@
             Abandon
           </button>
         {:else if hasActiveSession === false}
-          <a href="/training" class="btn btn-primary">New Run</a>
+          {#if session.mode === "speedrun"}
+            <a
+              href={startRandomRunHref(session.pool_name)}
+              class="btn btn-primary">New Run</a
+            >
+          {:else if session.mode === "set_seed" && session.seed_number}
+            <button
+              class="btn btn-primary"
+              disabled={replaying}
+              onclick={handleReplay}
+            >
+              {replaying ? "Starting..." : "Play Again"}
+            </button>
+          {:else}
+            <a href="/training" class="btn btn-primary">New Run</a>
+          {/if}
         {/if}
       </div>
       {#if splitsError}

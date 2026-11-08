@@ -13,6 +13,7 @@
     toggleRunType,
     type SpeedrunParams,
     type SpeedrunSub,
+    type StartRun,
   } from "$lib/speedrun";
   import { downloadCategorySplits } from "$lib/livesplit-download";
   import SpeedrunHistory from "./SpeedrunHistory.svelte";
@@ -27,13 +28,14 @@
     categories,
     params,
     onchange,
-    startSeed = null,
+    startRun = null,
   }: {
     categories: SpeedrunCategory[];
     params: SpeedrunParams;
     onchange: (p: SpeedrunParams) => void;
-    /** Opens the Start a run window in Set Seed mode on this seed ID. */
-    startSeed?: string | null;
+    /** Opens the Start a run window: in Random Seed mode, or in Set Seed
+     * mode on a seed ID. */
+    startRun?: StartRun | null;
   } = $props();
 
   const TYPE_LABELS: Record<SpeedrunRunType, string> = {
@@ -67,10 +69,12 @@
   let moreOpen = $state(false);
   let overlayOpen = $state(false);
   let splitsError = $state<string | null>(null);
-  // The seed the URL opened the window on, forgotten once it closes: the
-  // toolbar button opens it fresh.
-  let startOpen = $state(untrack(() => startSeed !== null));
-  let startWith = $state(untrack(() => startSeed));
+  // The window the URL opened, and the seed it typed in, forgotten once it
+  // closes: the toolbar button opens it fresh.
+  let startOpen = $state(untrack(() => startRun !== null));
+  let startWith = $state(
+    untrack(() => (startRun?.sub === "set" ? startRun.seed : null)),
+  );
   let filtersEl = $state<HTMLElement | null>(null);
 
   let pool = $derived(resolvePool(params, categories));

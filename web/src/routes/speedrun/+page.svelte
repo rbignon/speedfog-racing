@@ -3,12 +3,13 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
   import SpeedrunTab from "$lib/components/stats/speedrun/SpeedrunTab.svelte";
-  import { parseStartSeed } from "$lib/speedrun";
+  import { parseStartRun } from "$lib/speedrun";
 
-  // `?start=set&seed=<n>` opens the Start a run window in Set Seed mode on
-  // that seed. Read once, then dropped from the URL (the board's own keys
-  // stay), so a reload or a shared link shows the board alone.
-  const startSeed = parseStartSeed(page.url.searchParams);
+  // `?start=random` opens the Start a run window in Random Seed mode,
+  // `?start=set&seed=<n>` in Set Seed mode on that seed. Read once, then
+  // dropped from the URL (the board's own keys stay), so a reload or a shared
+  // link shows the board alone.
+  const startRun = parseStartRun(page.url.searchParams);
 
   onMount(() => {
     const url = new URL(page.url);
@@ -31,7 +32,7 @@
     </p>
   </div>
 
-  <SpeedrunTab {startSeed} />
+  <SpeedrunTab {startRun} />
 </main>
 
 <style>

@@ -8,7 +8,7 @@ import {
   parseSpeedrunFloor,
   parseSpeedrunOverlayParams,
   parseSpeedrunParams,
-  parseStartSeed,
+  parseStartRun,
   raceSeedPageHref,
   recentRunParams,
   resolvePool,
@@ -25,6 +25,7 @@ import {
   speedrunRaceNewHref,
   speedrunSeedHref,
   speedrunTimeParts,
+  startRandomRunHref,
   startRunHref,
   toggleRunType,
   writeSpeedrunParams,
@@ -360,20 +361,36 @@ describe("the Start a run window's link", () => {
   it("opens the window on the seed over the seed category's board", () => {
     const url = new URL(startRunHref("standard@25", "363096"), "http://x");
     expect(url.pathname).toBe("/speedrun");
-    expect(parseStartSeed(url.searchParams)).toBe("363096");
+    expect(parseStartRun(url.searchParams)).toEqual({
+      sub: "set",
+      seed: "363096",
+    });
     expect(parseSpeedrunParams(url.searchParams).pool).toBe("standard@25");
   });
 
   it("opens over the default board for a seed without a category", () => {
     const url = new URL(startRunHref(null, "zz 1"), "http://x");
-    expect(parseStartSeed(url.searchParams)).toBe("zz 1");
+    expect(parseStartRun(url.searchParams)).toEqual({
+      sub: "set",
+      seed: "zz 1",
+    });
     expect(url.searchParams.has("pool")).toBe(false);
   });
 
-  it("opens no window without start=set, an empty field without a seed", () => {
-    expect(parseStartSeed(new URLSearchParams("pool=sprint"))).toBeNull();
-    expect(parseStartSeed(new URLSearchParams("start=random"))).toBeNull();
-    expect(parseStartSeed(new URLSearchParams("start=set"))).toBe("");
+  it("opens the window in Random Seed over the board it draws from", () => {
+    const url = new URL(startRandomRunHref("sprint"), "http://x");
+    expect(url.pathname).toBe("/speedrun");
+    expect(parseStartRun(url.searchParams)).toEqual({ sub: "random" });
+    expect(parseSpeedrunParams(url.searchParams).pool).toBe("sprint");
+  });
+
+  it("opens no window without a known start, an empty field without a seed", () => {
+    expect(parseStartRun(new URLSearchParams("pool=sprint"))).toBeNull();
+    expect(parseStartRun(new URLSearchParams("start=race"))).toBeNull();
+    expect(parseStartRun(new URLSearchParams("start=set"))).toEqual({
+      sub: "set",
+      seed: "",
+    });
   });
 });
 

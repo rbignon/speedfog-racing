@@ -195,12 +195,27 @@ export function startRunHref(category: string | null, seed: string): string {
   return `/speedrun?${pool}start=set&seed=${encodeURIComponent(seed)}`;
 }
 
-/** The seed a `/speedrun` URL opens the Start a run window on
- * (`start=set&seed=<n>`): "" for an empty field, null for no window. */
-export function parseStartSeed(search: URLSearchParams): string | null {
-  return search.get("start") === "set"
-    ? (search.get("seed")?.trim() ?? "")
-    : null;
+/** The Start a run window open in Random Seed mode over the board of
+ * `category`, the one it draws from. */
+export function startRandomRunHref(category: string): string {
+  return `/speedrun?pool=${encodeURIComponent(category)}&start=random`;
+}
+
+/** What a `/speedrun` URL opens the Start a run window on: Random Seed
+ * (`start=random`) or Set Seed with `seed` typed in (`start=set&seed=<n>`,
+ * "" for an empty field). */
+export type StartRun = { sub: "random" } | { sub: "set"; seed: string };
+
+/** Null for no window. */
+export function parseStartRun(search: URLSearchParams): StartRun | null {
+  switch (search.get("start")) {
+    case "random":
+      return { sub: "random" };
+    case "set":
+      return { sub: "set", seed: search.get("seed")?.trim() ?? "" };
+    default:
+      return null;
+  }
 }
 
 /** Where a run's seed links to: its seed page, focused on the run. */
