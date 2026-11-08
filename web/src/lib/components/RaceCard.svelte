@@ -339,6 +339,7 @@
 
   .card-inner {
     min-width: 0;
+    min-height: 100%;
   }
 
   .joinable .card-inner {
