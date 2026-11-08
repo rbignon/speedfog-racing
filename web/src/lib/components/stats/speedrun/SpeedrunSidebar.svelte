@@ -265,7 +265,6 @@
 
   .parody {
     margin: 0;
-    padding: 0 0.8rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
     line-height: 1.5;
