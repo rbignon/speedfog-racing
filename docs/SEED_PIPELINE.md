@@ -57,7 +57,7 @@ Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 
 - `[display]`: metadata shown in the web UI (estimated_duration, description, type, sort_order, rules, archived_layers). `archived_layers` is an optional list of older layer counts that keep a retired speedrun board (see `docs/SPEEDRUN.md`); racing-only, never read by the generator. `rules` is an optional multi-line string; each non-empty line becomes a "Mode Rules" bullet, shown in the rules card above the DAG on `/race/[id]` and `/daily/[date]`, in the download modal, and in the pool settings card's "Mode Rules" popover.
 - `[structure]`: seed generation parameters (final_tier, layers_count)
-- `[requirements]`: zone constraints (legacy_dungeons, bosses, mini_dungeons, major_bosses)
+- `[requirements]`: zone constraints (legacy_dungeons, bosses, mini_dungeons, major_bosses) and `exclude_zones`, zones (with the clusters holding them) the generator never puts in the DAG, final boss included
 - `[care_package]`: items granted at each tier (weapons, shields, spells, etc.)
 - `[item_randomizer]`: item rando settings (difficulty, nerf_gargoyles, etc.)
 - `[starting_items]`: items given at start (keys, runes, tears, etc.)

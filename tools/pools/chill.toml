@@ -13,10 +13,22 @@ legacy_dungeons = 3
 bosses = 5
 mini_dungeons = 5
 major_bosses = 9
+# Major bosses too punishing for a relaxed race, never in the DAG (final boss
+# included: "all" below resolves against the filtered pool).
+exclude_zones = [
+    "haligtree_malenia",        # Malenia, Blade of Miquella
+    "enirilim_radahn",          # Promised Consort Radahn
+    "farumazula_placidusax",    # Dragonlord Placidusax
+    "jaggedpeak_bayle",         # Bayle the Dread
+    "scadutree_base",           # Scadutree Avatar
+    "fingergrounds",            # Metyr, Mother of Fingers
+    "farumazula_godskinduo",    # Godskin Duo
+    "siofra_nokron_gargoyles",  # Valiant Gargoyles
+]
 
 [structure]
 layers_count = 30
-final_tier = 14
+final_tier = 16
 tier_curve = "power"
 tier_curve_exponent = 1.5
 first_layer_type = "legacy_dungeon"
@@ -50,7 +62,6 @@ ashes_of_war = 5
 [item_randomizer]
 difficulty = 35
 nerf_gargoyles = true
-nerf_malenia = true
 
 [enemy]
 randomize_bosses = "minor"
