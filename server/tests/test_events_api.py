@@ -1323,30 +1323,64 @@ async def test_newcomer_cut_is_the_announcement(test_client, world, async_sessio
 
 
 @pytest.mark.asyncio
-async def test_listing_runs_from_the_announcement_to_a_week_after_the_end(
+async def test_listing_runs_from_the_announcement_until_a_later_season_is_announced(
     test_client, async_session
 ):
     now = datetime.now(UTC)
     async with async_session() as db:
-        # Announced yesterday, opens in six days: on the bill.
-        await _season_event(db, "soon", now + timedelta(days=6))
-        # Announced tomorrow: not yet.
+        # Over for months, with nothing announced since: still on the bill.
+        await _season_event(db, "long-over", now - timedelta(days=200))
+        # Over before it: gone, whether it started before or after it.
+        await _season_event(db, "older", now - timedelta(days=300))
+        cup_starts_at, cup_qualifier_ends_at, _, cup_config = _season(now - timedelta(days=190))
+        await _event(
+            db,
+            "cup",
+            starts_at=cup_starts_at,
+            qualifier_ends_at=cup_qualifier_ends_at,
+            ends_at=now - timedelta(days=180),
+            config=cup_config,
+        )
+        # Announced tomorrow, or with a config that no longer validates: they
+        # take nothing off the bill.
         await _season_event(db, "later", now + timedelta(days=8))
-        # Over four days ago: still on the bill for a week.
-        await _season_event(db, "just-over", now - timedelta(days=38))
-        # Over eleven days ago: gone.
-        await _season_event(db, "long-over", now - timedelta(days=45))
+        starts_at, qualifier_ends_at, ends_at, _config = _season(now - timedelta(days=100))
+        await _event(
+            db,
+            "broken",
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={"modes": [], "stages": [{"key": "x"}]},
+        )
         await db.commit()
 
-    async with test_client as client:
-        response = await client.get("/api/events")
+    response = await test_client.get("/api/events")
     assert response.status_code == 200
-    data = response.json()
-    # A finished season yields the bill to one still to come.
-    assert [e["slug"] for e in data] == ["soon", "just-over"]
-    by_slug = {e["slug"]: e for e in data}
-    assert by_slug["soon"]["phase"] == "upcoming"
-    assert by_slug["just-over"]["phase"] == "finished"
+    assert [(e["slug"], e["phase"]) for e in response.json()] == [("long-over", "finished")]
+
+    async with async_session() as db:
+        # Announced yesterday, opens in six days: the seasons over before it leave.
+        await _season_event(db, "soon", now + timedelta(days=6))
+        await _season_event(db, "just-over", now - timedelta(days=38))
+        # Finished ahead of its end: listed until then, behind the season to come.
+        starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=30))
+        await _event(
+            db,
+            "wrapped",
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "phase_override": "finished"},
+        )
+        await db.commit()
+
+    response = await test_client.get("/api/events")
+    assert response.status_code == 200
+    assert [(e["slug"], e["phase"]) for e in response.json()] == [
+        ("soon", "upcoming"),
+        ("wrapped", "finished"),
+    ]
 
 
 @pytest.mark.asyncio

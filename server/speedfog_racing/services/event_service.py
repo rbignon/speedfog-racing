@@ -65,10 +65,6 @@ MIN_UPCOMING_PLAYERS = 10
 # count carrying the rest.
 MAX_PLAYER_PREVIEWS = 8
 
-# An event stays on the bill (home page band, navbar link) this long after its
-# end, crowning its champion.
-FEATURED_TAIL = timedelta(days=7)
-
 
 # --- slots ------------------------------------------------------------------
 
@@ -1202,28 +1198,35 @@ async def load_event(db: AsyncSession, slug: str) -> Event | None:
 async def load_featured_events(db: AsyncSession, now: datetime) -> list[Event]:
     """The events on the bill at ``now``, earliest season first, loaded like ``load_event``.
 
-    On the bill means from the announcement (the timeline's first stop) until
-    ``FEATURED_TAIL`` after the end. An event whose stored config no longer
-    validates is left out: the home page must not break on a document the
-    admin tab is repairing. The listing endpoint reorders by phase, which
-    needs the attached races.
+    On the bill means from the announcement (the timeline's first stop) on:
+    once over (past ``ends_at``), an event stays, crowning its champion, until
+    an event ending after it is announced. An event whose stored config no
+    longer validates is left out and takes nothing off the bill: the home page
+    must not break on a document the admin tab is repairing. The listing
+    endpoint reorders by phase, which needs the attached races.
     """
-    stmt = (
-        select(Event)
-        .where(Event.ends_at > now - FEATURED_TAIL)
-        .order_by(Event.starts_at)
-        .options(*_EVENT_LOAD_OPTIONS)
-    )
-    events = (await db.execute(stmt)).scalars().all()
-    featured: list[Event] = []
+    # Every event first, without its races: whether one is still on the bill
+    # depends on the events announced after it.
+    events = (await db.execute(select(Event))).scalars().all()
+    announced: list[tuple[Event, datetime]] = []
     for event in events:
         try:
             config = EventConfig.model_validate(event.config)
         except ValidationError:
             continue
         if announce_date(event, config) <= now:
-            featured.append(event)
-    return featured
+            announced.append((event, event_window(event)[2]))
+    if not announced:
+        return []
+    last_end = max(ends_at for _, ends_at in announced)
+    ids = [event.id for event, ends_at in announced if ends_at > now or ends_at == last_end]
+    stmt = (
+        select(Event)
+        .where(Event.id.in_(ids))
+        .order_by(Event.starts_at)
+        .options(*_EVENT_LOAD_OPTIONS)
+    )
+    return list((await db.execute(stmt)).scalars().all())
 
 
 async def count_finished_before(

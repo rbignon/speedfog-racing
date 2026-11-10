@@ -578,9 +578,9 @@ count there. See `daily_points` in
    races, so until one of them is attached its race cards list nobody:
    create them ahead, runners registered. The casters point the talk scene
    and the slates at the showcase as they would at a stage. Cast Setup only
-   offers the events on the bill (from the announcement to a week after
-   `ends_at`), so a showcase held outside that window needs those URLs
-   written by hand.
+   offers the events on the bill (from the announcement until, once over,
+   a later event is announced, see Home page and navbar), so a showcase
+   held outside that window needs those URLs written by hand.
 
 No manual transition exists: the page follows the dates and the race states.
 `phase_override` is the escape hatch for schedule accidents.
@@ -948,7 +948,10 @@ server's `--reload` restarts on any change there and drops every WebSocket.
 ## Home page and navbar
 
 An event is on the bill from its announcement (the timeline's `announce`
-stop) until `FEATURED_TAIL` (seven days) after `ends_at`, whatever the phase.
+stop), whatever the phase. Once over (past `ends_at`), it stays there,
+crowning its champion, with no expiry: it only leaves when an event ending
+after it is announced (one created but not yet announced takes nothing off
+the bill), so the last event over stays until the next one is announced.
 While it is, `GET /api/events` lists it as a summary that the home page, the
 dashboard and the navbar read through the `featuredEvent` store, which
 features the first entry: the layout refreshes it whenever the signed-in
@@ -982,7 +985,7 @@ nobody yet, nor does a bracket's last stage when it is no final). It skips the s
 newcomer flags (the detail's only database work beyond the load), which a
 newcomers bracket's draw needs, only in those two phases. An
 event whose stored config no longer validates is left out rather than
-breaking the home page.
+breaking the home page, and takes no other event off the bill.
 
 `EventBand` sits between the hero and the Daily Seed on the home page and
 above the Daily Seed on the dashboard: the event page's lockup (a link to

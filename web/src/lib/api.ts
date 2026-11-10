@@ -3131,8 +3131,9 @@ export async function adminListFeedback(params: {
 // --- Events ---------------------------------------------------------------
 
 /**
- * The events on the bill, from the announcement to a week after the end:
- * the seasons still to come or running first, then the finished ones.
+ * The events on the bill, from the announcement until, once over, a later
+ * event is announced: the seasons still to come or running first, then the
+ * finished ones.
  */
 export async function fetchEvents(): Promise<EventSummary[]> {
   const response = await fetch(`${API_BASE}/events`, {
