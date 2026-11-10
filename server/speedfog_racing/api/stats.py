@@ -114,7 +114,8 @@ T = TypeVar("T")
 # Entries are only evicted when a refresh raises HTTPException (the data
 # legitimately no longer resolves; serving the stale value forever would mask
 # the error) or when a writer drops one (``forget_player_profiles``,
-# ``forget_speedrun_caches``, ``replace_speedrun_pool_runs``), so the
+# ``forget_speedrun_caches``, ``replace_speedrun_pool_runs``,
+# ``forget_event_summaries``), so the
 # dict's size is bounded by the number of distinct keys ever requested, not by
 # time. Like the seed projection cache
 # (``services.seed_nodes``), this is fine because the key space is small in
@@ -877,6 +878,17 @@ def forget_speedrun_caches() -> None:
     """
     _stats_cache_generations["speedrun"] += 1
     for key in [key for key in _stats_cache if key.startswith("speedrun:")]:
+        del _stats_cache[key]
+
+
+def forget_event_summaries() -> None:
+    """Drop every cached event summary: the next listing recomputes them.
+
+    For the admin's event saves, which must not leave the home page band on
+    the previous summary for a whole cache TTL.
+    """
+    _stats_cache_generations["event_summary"] += 1
+    for key in [key for key in _stats_cache if key.startswith("event_summary:")]:
         del _stats_cache[key]
 
 

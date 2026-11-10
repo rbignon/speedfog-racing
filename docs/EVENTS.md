@@ -962,6 +962,21 @@ season (kept for its champion) yields the head of the list to one still to
 come, so a season announced right after the last final is what the band
 shows; otherwise the earliest season leads.
 
+A settled event (`settled_events`: over, with no phase override but
+`finished`, and no race running) can no longer change phase, so the listing
+serves its summary from the stats cache (`api/stats.py`, see `STATS.md`)
+instead of loading its races on every visit: a season stays on the bill for
+months after its end, and loading a whole season's races and runners costs
+about half a second a request. The key,
+`event_summary:<id>:<attached races>:<sum of their versions>`, changes
+whenever a race is attached, detached or changes status (every status change
+bumps the race's version), so the last race of a final played past
+`ends_at`, or replayed after a reset, shows at once. Saving the event in the
+admin tab drops every summary (`forget_event_summaries`); a change to a
+participant, such as a disqualification after the end, shows within the
+cache's 15 minutes. The cached summary is built for no viewer: `my_signup`
+is read for each request.
+
 The summary carries the phase, the `players` count and `player_previews`
 under the Open Graph card's rule (everyone who joined an event race other
 than a showcase's, plus the signups while the event can still be joined, the ladder's best first;

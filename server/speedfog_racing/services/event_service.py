@@ -946,7 +946,7 @@ class ResolvedStages:
 def resolve_stages(event: Event, config: EventConfig, now: datetime) -> ResolvedStages:
     """The event's races sorted into slots, the stage results and the phase at ``now``.
 
-    ``event.races`` must be loaded (``load_event``, ``load_featured_events``).
+    ``event.races`` must be loaded (``load_event``, ``load_events``).
     """
     starts_at, qualifier_ends_at, ends_at = event_window(event)
     attached: list[tuple[Slot, Race]] = []
@@ -1195,19 +1195,25 @@ async def load_event(db: AsyncSession, slug: str) -> Event | None:
     return (await db.execute(stmt)).scalar_one_or_none()
 
 
-async def load_featured_events(db: AsyncSession, now: datetime) -> list[Event]:
-    """The events on the bill at ``now``, earliest season first, loaded like ``load_event``.
+async def load_events(db: AsyncSession, ids: Collection[UUID]) -> dict[UUID, Event]:
+    """The events ``ids`` by id, loaded like ``load_event``."""
+    if not ids:
+        return {}
+    stmt = select(Event).where(Event.id.in_(ids)).options(*_EVENT_LOAD_OPTIONS)
+    return {event.id: event for event in (await db.execute(stmt)).scalars()}
+
+
+async def featured_events(db: AsyncSession, now: datetime) -> list[Event]:
+    """The events on the bill at ``now``, earliest season first, without their races.
 
     On the bill means from the announcement (the timeline's first stop) on:
     once over (past ``ends_at``), an event stays, crowning its champion, until
     an event ending after it is announced. An event whose stored config no
     longer validates is left out and takes nothing off the bill: the home page
     must not break on a document the admin tab is repairing. The listing
-    endpoint reorders by phase, which needs the attached races.
+    endpoint loads the races of the ones it summarizes (``load_events``).
     """
-    # Every event first, without its races: whether one is still on the bill
-    # depends on the events announced after it.
-    events = (await db.execute(select(Event))).scalars().all()
+    events = (await db.execute(select(Event).order_by(Event.starts_at))).scalars().all()
     announced: list[tuple[Event, datetime]] = []
     for event in events:
         try:
@@ -1219,14 +1225,44 @@ async def load_featured_events(db: AsyncSession, now: datetime) -> list[Event]:
     if not announced:
         return []
     last_end = max(ends_at for _, ends_at in announced)
-    ids = [event.id for event, ends_at in announced if ends_at > now or ends_at == last_end]
+    return [event for event, ends_at in announced if ends_at > now or ends_at == last_end]
+
+
+async def settled_events(
+    db: AsyncSession, events: Sequence[Event], now: datetime
+) -> dict[UUID, tuple[int, int]]:
+    """The ``events`` whose phase can no longer move, each with a fingerprint of its races.
+
+    Settled means over (past ``ends_at``), with no phase override but
+    ``finished`` and no race running: the phase is ``finished`` for good.
+    The fingerprint, the number of attached races and the sum of their
+    versions, moves whenever a race is attached, detached or changes status
+    (a reset and replay included: every status change bumps the version).
+    What it misses, an edit of the event or of a participant, is for the
+    caller to handle. ``events`` must carry a valid config (``featured_events``).
+    """
+    over: list[UUID] = []
+    for event in events:
+        if event_window(event)[2] > now:
+            continue
+        if EventConfig.model_validate(event.config).phase_override not in (None, "finished"):
+            continue
+        over.append(event.id)
+    if not over:
+        return {}
     stmt = (
-        select(Event)
-        .where(Event.id.in_(ids))
-        .order_by(Event.starts_at)
-        .options(*_EVENT_LOAD_OPTIONS)
+        select(Race.event_id, Race.status, func.count(), func.sum(Race.version))
+        .where(Race.event_id.in_(over))
+        .group_by(Race.event_id, Race.status)
     )
-    return list((await db.execute(stmt)).scalars().all())
+    races = dict.fromkeys(over, (0, 0))
+    running: set[UUID] = set()
+    for event_id, race_status, count, versions in await db.execute(stmt):
+        if race_status == RaceStatus.RUNNING:
+            running.add(event_id)
+        attached, version_sum = races[event_id]
+        races[event_id] = (attached + count, version_sum + versions)
+    return {event_id: races[event_id] for event_id in over if event_id not in running}
 
 
 async def count_finished_before(

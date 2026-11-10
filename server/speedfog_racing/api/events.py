@@ -9,11 +9,12 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api.helpers import participant_preview, race_response
+from speedfog_racing.api.stats import _cached
 from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
@@ -73,10 +74,11 @@ from speedfog_racing.services.event_service import (
     current_stage_race,
     eliminated_runners,
     event_window,
+    featured_events,
     fed_field,
     is_event_joinable,
     load_event,
-    load_featured_events,
+    load_events,
     newcomer_flags,
     next_stage_key,
     on_air_stage_keys,
@@ -86,6 +88,7 @@ from speedfog_racing.services.event_service import (
     resolve_withdrawn,
     score_playoff_race,
     score_race,
+    settled_events,
     showcase_field,
     signature_weapon,
     slot_label,
@@ -275,175 +278,220 @@ async def list_events(
     A finished season (kept for its champion) yields the head of the list to
     one still to come, so a season announced right after the last final is
     what the band shows; otherwise the earliest season leads.
+
+    A settled event (``settled_events``) is summarized from the stats cache:
+    a season stays on the bill for months after its end, and loading its
+    races on every home page visit would cost far more than the band needs.
     """
     now = datetime.now(UTC)
-    summaries: list[EventSummaryResponse] = []
-    for event in await load_featured_events(db, now):
-        starts_at, qualifier_ends_at, ends_at = event_window(event)
-        config = EventConfig.model_validate(event.config)
-
-        resolved = resolve_stages(event, config, now)
-        stage_races, results, phase = resolved.stage_races, resolved.results, resolved.phase
-        final = config.final_stage()
-
-        # The Open Graph card's count and order: everyone who joined an event
-        # race (a showcase's hand-picked runners aside), plus the signups while
-        # the event can still be joined, the ladder's best first and the
-        # runners it could not rank after them; nothing while an upcoming event
-        # has too few of them to advertise.
-        showcase_ids = resolved.showcase_race_ids
-        users: dict[UUID, User] = {
-            p.user_id: p.user
-            for race in event.races
-            if race.id not in showcase_ids
-            for p in race.participants
-        }
-        signed_up: list[UUID] = []
-        if phase in JOINABLE_PHASES:
-            signed_up = [s.user_id for s in event.signups]
-            users.update({s.user_id: s.user for s in event.signups})
-        mode_keys = config.mode_keys()
-        struck = resolve_withdrawn(config.withdrawn, users)
-        ladder = compute_ladder(mode_keys, resolved.qualifier, signed_up=signed_up, struck=struck)
-        ranked_ids = {entry.user_id for entry in ladder}
-        ordered = [users[entry.user_id] for entry in ladder if entry.user_id in users]
-        ordered += sorted(
-            (user for user_id, user in users.items() if user_id not in ranked_ids),
-            key=lambda u: u.twitch_username,
-        )
-        players = len(users)
-        previews = ordered[:MAX_PLAYER_PREVIEWS]
-        if phase == "upcoming" and players < MIN_UPCOMING_PLAYERS:
-            players, previews = 0, []
-
-        # From the cut until the playoffs are over, each bracket's qualified
-        # runners, the forfeits and those a complete stage knocked out flagged.
-        # A newcomers bracket draws on the newcomer flags: the one query the
-        # summary runs beyond the load, only in these phases and only for an
-        # event that has such a bracket.
-        brackets: list[EventSummaryBracketResponse] = []
-        on_air: list[EventStageResponse] = []
-        languages: dict[UUID, str] = {}
-        if phase in ("cut", "playoffs"):
-            newcomers: dict[UUID, bool] = {}
-            if any(b.entry == "newcomers" for b in config.brackets):
-                finished_before = await count_finished_before(
-                    db, set(users), announce_date(event, config)
-                )
-                newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
-            ladder_final = bool(resolved.qualifier) and all(
-                r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
-            )
-            forfeits = resolve_withdrawn(config.forfeits, users)
-            qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
-            walkovers = apply_walkovers(config, resolved, qualified, forfeits)
-            out = eliminated_runners(config, resolved.results, qualified)
-            withdrew = set(forfeits)
-            for bracket, seated in bracket_draw(config, qualified):
-                shown = [user_id for user_id in seated if user_id in users]
-                brackets.append(
-                    EventSummaryBracketResponse(
-                        key=bracket.key,
-                        label=bracket.label,
-                        qualified=[UserResponse.model_validate(users[u]) for u in shown],
-                        eliminated=[u for u in shown if u in out],
-                        forfeited=[u for u in shown if u in withdrew],
-                    )
-                )
-            # The matches on air, shaped as the event page's live zone reads them.
-            on_air_keys = (
-                on_air_stage_keys(config, resolved, walkovers, now) if phase == "playoffs" else []
-            )
-            if on_air_keys:
-                build = _StageBuilder(
-                    config=config,
-                    user=user,
-                    users=users,
-                    newcomers=newcomers,
-                    forfeits=withdrew,
-                    qualified=qualified,
-                    results=results,
-                )
-                for bracket in config.brackets:
-                    for stage in bracket.stages:
-                        if stage.key not in on_air_keys:
-                            continue
-                        on_air.append(
-                            build.stage_response(
-                                stage,
-                                kind=stage.kind,
-                                bracket=bracket.key,
-                                sources=stage.source_keys,
-                                date=resolved.dates[stage.key],
-                                races=stage_races[stage.key],
-                                result=results[stage.key],
-                                field=build.field_of(stage.key),
-                            )
-                        )
-                languages = resolve_caster_languages(
-                    config.caster_languages,
-                    [race for key in on_air_keys for _, race in stage_races[key]],
-                )
-
-        live = None
-        running = next(
-            (
-                (stage, slot, r)
-                for stage in config.stages
-                for slot, r in stage_races[stage.key]
-                if r.status == RaceStatus.RUNNING
-            ),
-            None,
-        )
-        if running is not None:
-            stage, slot, race = running
-            live = EventLiveRaceResponse(
-                race=race_response(race, user),
-                stage_label=stage.label,
-                index=slot.index,
-                races_expected=stage.races,
-            )
-        upcoming_key = next_stage_key(config, resolved, now)
-        upcoming = config.stage(upcoming_key) if upcoming_key else None
-        next_stage = None
-        if upcoming is not None:
-            upcoming_date = resolved.dates[upcoming.key]
-            assert upcoming_date is not None, "next_stage_key only returns dated stages"
-            next_stage = EventNextStageResponse(
-                key=upcoming.key,
-                label=upcoming.label,
-                date=upcoming_date,
-                time_set=stage_time_set(upcoming, stage_races[upcoming.key]),
-            )
-        champion = None
-        if phase == "finished" and final is not None and results[final.key].complete:
-            leader = next(iter(results[final.key].entries), None)
-            if leader is not None and leader.user_id in users:
-                champion = UserResponse.model_validate(users[leader.user_id])
-
-        summaries.append(
-            EventSummaryResponse(
-                slug=event.slug,
-                name=event.name,
-                partner_name=event.partner_name,
-                partner_logo_url=event.partner_logo_url,
-                starts_at=starts_at,
-                qualifier_ends_at=qualifier_ends_at,
-                ends_at=ends_at,
-                phase=phase,
-                my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
-                players=players,
-                player_previews=[UserResponse.model_validate(u) for u in previews],
-                next_stage=next_stage,
-                live=live,
-                champion=champion,
-                brackets=brackets,
-                on_air_stages=on_air,
-                caster_languages=languages,
-            )
-        )
+    billed = await featured_events(db, now)
+    settled = await settled_events(db, billed, now)
+    loaded = await load_events(db, [e.id for e in billed if e.id not in settled])
+    summaries = [
+        await _settled_summary(db, event, settled[event.id], user)
+        if event.id in settled
+        else await _event_summary(db, loaded[event.id], now, user)
+        for event in billed
+    ]
     summaries.sort(key=lambda s: (s.phase == "finished", s.starts_at))
     return summaries
+
+
+async def _settled_summary(
+    db: AsyncSession, event: Event, races: tuple[int, int], user: User | None
+) -> EventSummaryResponse:
+    """A settled event's summary, cached for every viewer but their own signup.
+
+    The key carries the fingerprint of the event's races (``settled_events``),
+    so the last race of a final played past ``ends_at``, or replayed after a
+    reset, shows at once; an edit of the event drops the entries
+    (``forget_event_summaries``), and a participant's (a late
+    disqualification) shows within the cache TTL.
+    """
+    event_id = event.id
+
+    async def compute(session: AsyncSession) -> EventSummaryResponse:
+        loaded = (await load_events(session, [event_id])).get(event_id)
+        if loaded is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
+        return await _event_summary(session, loaded, datetime.now(UTC), None)
+
+    attached, version_sum = races
+    key = f"event_summary:{event_id}:{attached}:{version_sum}"
+    summary = await _cached(key, compute, db)
+    signed_up = user is not None and bool(
+        await db.scalar(
+            select(exists().where(EventSignup.event_id == event_id, EventSignup.user_id == user.id))
+        )
+    )
+    return summary.model_copy(update={"my_signup": signed_up})
+
+
+async def _event_summary(
+    db: AsyncSession, event: Event, now: datetime, user: User | None
+) -> EventSummaryResponse:
+    """``event`` as the listing shows it to ``user``; ``event.races`` must be loaded."""
+    starts_at, qualifier_ends_at, ends_at = event_window(event)
+    config = EventConfig.model_validate(event.config)
+
+    resolved = resolve_stages(event, config, now)
+    stage_races, results, phase = resolved.stage_races, resolved.results, resolved.phase
+    final = config.final_stage()
+
+    # The Open Graph card's count and order: everyone who joined an event
+    # race (a showcase's hand-picked runners aside), plus the signups while
+    # the event can still be joined, the ladder's best first and the
+    # runners it could not rank after them; nothing while an upcoming event
+    # has too few of them to advertise.
+    showcase_ids = resolved.showcase_race_ids
+    users: dict[UUID, User] = {
+        p.user_id: p.user
+        for race in event.races
+        if race.id not in showcase_ids
+        for p in race.participants
+    }
+    signed_up: list[UUID] = []
+    if phase in JOINABLE_PHASES:
+        signed_up = [s.user_id for s in event.signups]
+        users.update({s.user_id: s.user for s in event.signups})
+    mode_keys = config.mode_keys()
+    struck = resolve_withdrawn(config.withdrawn, users)
+    ladder = compute_ladder(mode_keys, resolved.qualifier, signed_up=signed_up, struck=struck)
+    ranked_ids = {entry.user_id for entry in ladder}
+    ordered = [users[entry.user_id] for entry in ladder if entry.user_id in users]
+    ordered += sorted(
+        (user for user_id, user in users.items() if user_id not in ranked_ids),
+        key=lambda u: u.twitch_username,
+    )
+    players = len(users)
+    previews = ordered[:MAX_PLAYER_PREVIEWS]
+    if phase == "upcoming" and players < MIN_UPCOMING_PLAYERS:
+        players, previews = 0, []
+
+    # From the cut until the playoffs are over, each bracket's qualified
+    # runners, the forfeits and those a complete stage knocked out flagged.
+    # A newcomers bracket draws on the newcomer flags: the one query the
+    # summary runs beyond the load, only in these phases and only for an
+    # event that has such a bracket.
+    brackets: list[EventSummaryBracketResponse] = []
+    on_air: list[EventStageResponse] = []
+    languages: dict[UUID, str] = {}
+    if phase in ("cut", "playoffs"):
+        newcomers: dict[UUID, bool] = {}
+        if any(b.entry == "newcomers" for b in config.brackets):
+            finished_before = await count_finished_before(
+                db, set(users), announce_date(event, config)
+            )
+            newcomers = newcomer_flags(finished_before, event.newcomer_threshold, users.keys())
+        ladder_final = bool(resolved.qualifier) and all(
+            r.status == RaceStatus.FINISHED for _, r in resolved.qualifier
+        )
+        forfeits = resolve_withdrawn(config.forfeits, users)
+        qualified = compute_qualified(ladder, config, newcomers, ladder_final, forfeits)
+        walkovers = apply_walkovers(config, resolved, qualified, forfeits)
+        out = eliminated_runners(config, resolved.results, qualified)
+        withdrew = set(forfeits)
+        for bracket, seated in bracket_draw(config, qualified):
+            shown = [user_id for user_id in seated if user_id in users]
+            brackets.append(
+                EventSummaryBracketResponse(
+                    key=bracket.key,
+                    label=bracket.label,
+                    qualified=[UserResponse.model_validate(users[u]) for u in shown],
+                    eliminated=[u for u in shown if u in out],
+                    forfeited=[u for u in shown if u in withdrew],
+                )
+            )
+        # The matches on air, shaped as the event page's live zone reads them.
+        on_air_keys = (
+            on_air_stage_keys(config, resolved, walkovers, now) if phase == "playoffs" else []
+        )
+        if on_air_keys:
+            build = _StageBuilder(
+                config=config,
+                user=user,
+                users=users,
+                newcomers=newcomers,
+                forfeits=withdrew,
+                qualified=qualified,
+                results=results,
+            )
+            for bracket in config.brackets:
+                for stage in bracket.stages:
+                    if stage.key not in on_air_keys:
+                        continue
+                    on_air.append(
+                        build.stage_response(
+                            stage,
+                            kind=stage.kind,
+                            bracket=bracket.key,
+                            sources=stage.source_keys,
+                            date=resolved.dates[stage.key],
+                            races=stage_races[stage.key],
+                            result=results[stage.key],
+                            field=build.field_of(stage.key),
+                        )
+                    )
+            languages = resolve_caster_languages(
+                config.caster_languages,
+                [race for key in on_air_keys for _, race in stage_races[key]],
+            )
+
+    live = None
+    running = next(
+        (
+            (stage, slot, r)
+            for stage in config.stages
+            for slot, r in stage_races[stage.key]
+            if r.status == RaceStatus.RUNNING
+        ),
+        None,
+    )
+    if running is not None:
+        stage, slot, race = running
+        live = EventLiveRaceResponse(
+            race=race_response(race, user),
+            stage_label=stage.label,
+            index=slot.index,
+            races_expected=stage.races,
+        )
+    upcoming_key = next_stage_key(config, resolved, now)
+    upcoming = config.stage(upcoming_key) if upcoming_key else None
+    next_stage = None
+    if upcoming is not None:
+        upcoming_date = resolved.dates[upcoming.key]
+        assert upcoming_date is not None, "next_stage_key only returns dated stages"
+        next_stage = EventNextStageResponse(
+            key=upcoming.key,
+            label=upcoming.label,
+            date=upcoming_date,
+            time_set=stage_time_set(upcoming, stage_races[upcoming.key]),
+        )
+    champion = None
+    if phase == "finished" and final is not None and results[final.key].complete:
+        leader = next(iter(results[final.key].entries), None)
+        if leader is not None and leader.user_id in users:
+            champion = UserResponse.model_validate(users[leader.user_id])
+
+    return EventSummaryResponse(
+        slug=event.slug,
+        name=event.name,
+        partner_name=event.partner_name,
+        partner_logo_url=event.partner_logo_url,
+        starts_at=starts_at,
+        qualifier_ends_at=qualifier_ends_at,
+        ends_at=ends_at,
+        phase=phase,
+        my_signup=user is not None and any(s.user_id == user.id for s in event.signups),
+        players=players,
+        player_previews=[UserResponse.model_validate(u) for u in previews],
+        next_stage=next_stage,
+        live=live,
+        champion=champion,
+        brackets=brackets,
+        on_air_stages=on_air,
+        caster_languages=languages,
+    )
 
 
 @router.get("/{slug}", response_model=EventDetailResponse)

@@ -24,7 +24,11 @@ from speedfog_racing.api.races import (
     remove_participation,
 )
 from speedfog_racing.api.speedrun import resolve_seed_or_404
-from speedfog_racing.api.stats import forget_player_profiles, forget_speedrun_caches
+from speedfog_racing.api.stats import (
+    forget_event_summaries,
+    forget_player_profiles,
+    forget_speedrun_caches,
+)
 from speedfog_racing.api.training import _build_detail_response, _get_session_or_404_public
 from speedfog_racing.auth import BAN_MESSAGE, require_admin
 from speedfog_racing.database import get_db
@@ -1714,6 +1718,7 @@ async def admin_upsert_event(
     event.newcomer_threshold = request.newcomer_threshold
     event.config = request.config.model_dump(mode="json", by_alias=True)
     await db.commit()
+    forget_event_summaries()
     reloaded = await _load_admin_event(db, event.id)
     assert reloaded is not None
     return _admin_event_response(reloaded)

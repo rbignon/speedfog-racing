@@ -214,6 +214,20 @@ async def test_upsert_creates_then_updates(test_client, users):
 
 
 @pytest.mark.asyncio
+async def test_upsert_refreshes_the_cached_summary_of_a_settled_event(test_client, users):
+    # Over since 2026-10-26 with no override: the listing caches its summary.
+    doc = dict(DOC, config=dict(DOC["config"], phase_override=None))
+    async with test_client as client:
+        created = await client.post("/api/admin/events", json=_upsert(doc), headers=ADMIN)
+        assert created.status_code == 200, created.text
+        assert [e["name"] for e in (await client.get("/api/events")).json()] == ["Season One"]
+        renamed = dict(doc, name="Fog Cup")
+        await client.post("/api/admin/events", json=_upsert(renamed), headers=ADMIN)
+        listed = await client.get("/api/events")
+    assert [e["name"] for e in listed.json()] == ["Fog Cup"]
+
+
+@pytest.mark.asyncio
 async def test_upsert_rejects_unknown_mode_pool(test_client, users):
     doc = dict(DOC, config=dict(DOC["config"], modes=[{"key": "nope", "label": "Nope"}]))
     async with test_client as client:

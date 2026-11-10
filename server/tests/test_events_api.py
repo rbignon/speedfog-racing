@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, time, timedelta
+from typing import Any
+from uuid import UUID
 
 import pytest
 from sqlalchemy import select
@@ -24,7 +26,7 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.event_service import load_featured_events
+from speedfog_racing.services.event_service import load_events
 
 from .event_fixtures import bracketed
 
@@ -1838,7 +1840,140 @@ async def test_listing_skips_an_event_whose_config_no_longer_validates(test_clie
 
 
 @pytest.mark.asyncio
-async def test_featured_loader_leaves_the_seed_graphs_behind(async_session):
+async def test_listing_caches_a_settled_event_for_all_but_the_viewers_signup(
+    test_client, async_session
+):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        ana = await _user(db, "ana")
+        await _user(db, "bob")
+        # Over since yesterday, no race running: its summary can no longer move.
+        event = await _season_event(db, "season-one", now - timedelta(days=35))
+        db.add(EventSignup(event_id=event.id, user_id=ana.id))
+        event_id = event.id
+        await db.commit()
+
+    async def listed(token: str) -> list[tuple[str, bool, int]]:
+        response = await test_client.get(
+            "/api/events", headers={"Authorization": f"Bearer {token}"}
+        )
+        return [(s["name"], s["my_signup"], s["players"]) for s in response.json()]
+
+    assert await listed("tok-ana") == [("Season One", True, 0)]
+    async with async_session() as db:
+        stored = await db.get(Event, event_id)
+        assert stored is not None
+        stored.name = "Renamed behind the cache"
+        await db.commit()
+    # Served from the cache, with each viewer's own signup.
+    assert await listed("tok-bob") == [("Season One", False, 0)]
+    assert await listed("tok-ana") == [("Season One", True, 0)]
+
+    # A race attached since: the summary is built again.
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        cleo = await _user(db, "cleo")
+        seed = await _seed(db, "standard", "s1")
+        race = await _race(
+            db, orga, seed, stored, "qualifier:standard:1", status=RaceStatus.FINISHED
+        )
+        await _entry(db, race, cleo, ParticipantStatus.FINISHED, 2_000_000)
+        await db.commit()
+    assert await listed("tok-bob") == [("Renamed behind the cache", False, 1)]
+
+
+@pytest.mark.asyncio
+async def test_listing_never_caches_an_event_kept_open_past_its_end(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        # Over since yesterday, but held in the playoffs by its phase override.
+        starts_at, qualifier_ends_at, ends_at, config = _season(now - timedelta(days=35))
+        event = await _event(
+            db,
+            "season-one",
+            starts_at=starts_at,
+            qualifier_ends_at=qualifier_ends_at,
+            ends_at=ends_at,
+            config={**config, "phase_override": "playoffs"},
+        )
+        event_id = event.id
+        await db.commit()
+
+    (first,) = (await test_client.get("/api/events")).json()
+    assert (first["name"], first["phase"]) == ("Season One", "playoffs")
+    async with async_session() as db:
+        stored = await db.get(Event, event_id)
+        assert stored is not None
+        stored.name = "Season One, extended"
+        await db.commit()
+    (second,) = (await test_client.get("/api/events")).json()
+    assert second["name"] == "Season One, extended"
+
+
+@pytest.mark.asyncio
+async def test_listing_follows_a_final_played_past_the_end(test_client, async_session):
+    now = datetime.now(UTC)
+    async with async_session() as db:
+        orga = await _user(db, "orga", UserRole.ORGANIZER)
+        ana = await _user(db, "ana")
+        bob = await _user(db, "bob")
+        # Over since yesterday, with its final at one race all: the last one decides.
+        event = await _season_event(db, "season-one", now - timedelta(days=35))
+        for i, (winner, loser) in ((1, (ana, bob)), (2, (bob, ana))):
+            seed = await _seed(db, "standard", f"final{i}")
+            race = await _race(
+                db, orga, seed, event, f"final:{i}", status=RaceStatus.FINISHED, is_public=True
+            )
+            await _entry(db, race, winner, ParticipantStatus.FINISHED, 1_000_000)
+            await _entry(db, race, loser, ParticipantStatus.FINISHED, 1_500_000)
+        seed = await _seed(db, "standard", "final3")
+        last = await _race(
+            db, orga, seed, event, "final:3", status=RaceStatus.SETUP, is_public=True
+        )
+        for runner in (ana, bob):
+            await _entry(db, last, runner, ParticipantStatus.REGISTERED, 0, started=False)
+        last_id, ana_id, bob_id = last.id, ana.id, bob.id
+        await db.commit()
+
+    async def summary() -> dict[str, Any]:
+        (listed,) = (await test_client.get("/api/events")).json()
+        return listed
+
+    async def move_last(status: RaceStatus, winner: UUID | None = None) -> None:
+        """Move the last race on as the race lifecycle does, bumping its version."""
+        async with async_session() as db:
+            race = await db.get(Race, last_id)
+            assert race is not None
+            race.status = status
+            race.version += 1
+            entries = await db.execute(select(Participant).where(Participant.race_id == last_id))
+            for p in entries.scalars():
+                if status == RaceStatus.FINISHED:
+                    p.status = ParticipantStatus.FINISHED
+                    p.igt_ms = 1_000_000 if p.user_id == winner else 1_500_000
+                    p.zone_history = [{"node_id": "a"}, {"node_id": "b"}]
+                elif status == RaceStatus.SETUP:
+                    p.status, p.igt_ms, p.zone_history = ParticipantStatus.REGISTERED, 0, []
+            await db.commit()
+
+    before = await summary()
+    assert (before["phase"], before["live"], before["champion"]) == ("finished", None, None)
+    await move_last(RaceStatus.RUNNING)
+    assert (await summary())["live"]["race"]["id"] == str(last_id)
+    # The last race finished: the champion shows at once, not a cache TTL later.
+    await move_last(RaceStatus.FINISHED, winner=ana_id)
+    after = await summary()
+    assert after["live"] is None
+    assert after["champion"]["twitch_username"] == "ana"
+    # Reset, then replayed with the other result: the first finish's summary is gone.
+    await move_last(RaceStatus.SETUP)
+    await move_last(RaceStatus.RUNNING)
+    await move_last(RaceStatus.FINISHED, winner=bob_id)
+    assert (await summary())["champion"]["twitch_username"] == "bob"
+
+
+@pytest.mark.asyncio
+async def test_event_loader_leaves_the_seed_graphs_behind(async_session):
     """Every visitor loads the listing: the races' seed graphs must stay in the database."""
     now = datetime.now(UTC)
     async with async_session() as db:
@@ -1846,10 +1981,11 @@ async def test_featured_loader_leaves_the_seed_graphs_behind(async_session):
         event = await _season_event(db, "season-one", now - timedelta(days=1))
         seed = await _seed(db, "standard", "s1")
         await _race(db, orga, seed, event, "qualifier:standard:1")
+        event_id = event.id
         await db.commit()
 
     async with async_session() as db:
-        (event,) = await load_featured_events(db, now)
+        event = (await load_events(db, [event_id]))[event_id]
         (race,) = event.races
         assert race.seed.pool_name == "standard"
         assert "graph_json" not in race.seed.__dict__
