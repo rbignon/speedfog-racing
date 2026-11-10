@@ -4,9 +4,11 @@
   import {
     fetchFreshSpeedrunSeeds,
     fetchSpeedrunSeedSummary,
+    fetchSpeedrunSoloQuota,
     getTwitchLoginUrl,
     startSpeedrunSolo,
     type SpeedrunSeedSummary,
+    type SpeedrunSoloQuota,
   } from "$lib/api";
   import { formatIgt } from "$lib/dag/popupData";
   import {
@@ -15,6 +17,7 @@
     speedrunRaceNewHref,
   } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
+  import { formatScheduledTime } from "$lib/utils/time";
   import SpeedrunRules from "./SpeedrunRules.svelte";
 
   interface Props {
@@ -73,11 +76,38 @@
     const name = record.user.twitch_display_name ?? record.user.twitch_username;
     return ` · WR ${formatIgt(record.igt_ms)} by ${name}`;
   });
+  // The unfinished Random Seed solo runs a player may leave in the window:
+  // shown once one or none is left, so the limit never comes as a surprise.
+  let quota = $state<SpeedrunSoloQuota | null>(null);
+  let quotaShown = $derived(
+    seedMode === "random" &&
+      chosenFormat === "solo" &&
+      !closed &&
+      quota !== null &&
+      quota.limit - quota.unfinished <= 1,
+  );
+  // Past `frees_at` (a window left open, or a clock ahead of the server's)
+  // the start is let through: the server still refuses one over the limit.
+  let quotaReached = $derived(
+    quotaShown &&
+      quota !== null &&
+      quota.unfinished >= quota.limit &&
+      (quota.frees_at === null || Date.parse(quota.frees_at) > Date.now()),
+  );
   let ready = $derived(
     seedMode === "random"
-      ? !closed && fresh === true
+      ? !closed && fresh === true && !quotaReached
       : summary !== null && summary.replayable,
   );
+
+  // Asked once the viewer is known to be logged in; a failure only leaves
+  // the line out (the server still refuses a start over the limit).
+  $effect(() => {
+    if (!auth.isLoggedIn) return;
+    fetchSpeedrunSoloQuota()
+      .then((q) => (quota = q))
+      .catch(() => (quota = null));
+  });
 
   onMount(() => {
     if (closed) return;
@@ -290,6 +320,19 @@
       <p class="config-hint no-fresh">No fresh seed right now</p>
     {/if}
 
+    {#if quotaShown && quota}
+      <p class="config-hint quota" class:reached={quotaReached}>
+        Unfinished Random Seed runs in the last {quota.window_hours}
+        {quota.window_hours === 1 ? "hour" : "hours"}: {quota.unfinished} of
+        {quota.limit}.
+        {#if quotaReached && quota.frees_at}
+          Next start: {formatScheduledTime(quota.frees_at)}.
+        {:else}
+          At {quota.limit}, new runs wait.
+        {/if}
+      </p>
+    {/if}
+
     <div class="rules">
       <SpeedrunRules />
     </div>
@@ -480,8 +523,13 @@
   }
 
   .seed-check.bad,
-  .no-fresh {
+  .no-fresh,
+  .quota.reached {
     color: var(--color-danger);
+  }
+
+  .quota {
+    color: var(--color-gold);
   }
 
   .explain {

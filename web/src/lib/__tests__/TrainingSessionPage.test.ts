@@ -14,12 +14,14 @@ vi.mock("$lib/api", async () => {
     fetchTrainingSession: vi.fn(),
     fetchTrainingSessions: vi.fn(),
     fetchTrainingGhosts: vi.fn(),
+    fetchSessionPlace: vi.fn(),
     resetTrainingSession: vi.fn(),
   };
 });
 
 import TrainingPage from "../../routes/training/[id]/+page.svelte";
 import {
+  fetchSessionPlace,
   fetchTrainingGhosts,
   fetchTrainingSession,
   fetchTrainingSessions,
@@ -77,6 +79,8 @@ beforeEach(() => {
   vi.mocked(fetchTrainingSessions).mockResolvedValue([]);
   vi.mocked(fetchTrainingGhosts).mockReset();
   vi.mocked(fetchTrainingGhosts).mockResolvedValue([]);
+  vi.mocked(fetchSessionPlace).mockReset();
+  vi.mocked(fetchSessionPlace).mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -109,6 +113,67 @@ describe("training session page: ghosts", () => {
     liveStatus("finished");
     await Promise.resolve();
     expect(fetchTrainingGhosts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("training session page: board place", () => {
+  it("shows where a finished ranked run places, linked to its board", async () => {
+    vi.mocked(fetchTrainingSession).mockResolvedValue(session("finished"));
+    vi.mocked(fetchSessionPlace).mockResolvedValue({
+      category: "standard",
+      category_name: "Standard",
+      sub: "random",
+      place: 4,
+      players: 57,
+      personal_best: true,
+    });
+    const { container } = render(TrainingPage);
+
+    await waitFor(() =>
+      expect(container.querySelector(".place-stat")).toBeTruthy(),
+    );
+    const stat = container.querySelector(".place-stat")!;
+    expect(fetchSessionPlace).toHaveBeenCalledWith("s1");
+    expect(stat.getAttribute("href")).toBe(
+      "/speedrun?pool=standard&sub=random",
+    );
+    expect(stat.textContent?.replace(/\s+/g, "")).toContain("4th/57PB");
+  });
+
+  it("asks 2 s after a run finishes on the page, then once more", async () => {
+    vi.mocked(fetchTrainingSession).mockResolvedValue(session("active"));
+    render(TrainingPage);
+    await waitFor(() => expect(fetchTrainingSession).toHaveBeenCalled());
+    await Promise.resolve();
+
+    vi.useFakeTimers();
+    try {
+      // The record check puts the run on the boards a moment later: the
+      // first answer here is still null.
+      liveStatus("finished");
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1900);
+      expect(fetchSessionPlace).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(fetchSessionPlace).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchSessionPlace).toHaveBeenCalledTimes(2);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fetchSessionPlace).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("asks nothing for a practice session", async () => {
+    vi.mocked(fetchTrainingSession).mockResolvedValue({
+      ...session("finished"),
+      mode: "normal",
+    });
+    render(TrainingPage);
+
+    await waitFor(() => expect(fetchTrainingGhosts).toHaveBeenCalled());
+    expect(fetchSessionPlace).not.toHaveBeenCalled();
   });
 });
 

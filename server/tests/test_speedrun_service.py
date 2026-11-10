@@ -1,6 +1,7 @@
 """speedrun.fog service: which runs count, ranking, record history, weapons."""
 
 import uuid
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ from speedfog_racing.schemas import UserResponse
 from speedfog_racing.services.speedrun_service import (
     RUN_TYPES,
     CountedRun,
+    RunPlace,
     build_board,
     build_overview,
     filter_board,
@@ -42,6 +44,7 @@ from speedfog_racing.services.speedrun_service import (
     rank_board,
     record_history,
     record_seed,
+    run_place,
 )
 
 BASE = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -435,6 +438,46 @@ def test_place_of_counts_other_players_strictly_faster():
     assert place_of(board[1], board) == 2
     assert place_of(board[3], board) == 2
     assert place_of(_run("E", 1000, 5), board) == 1
+
+
+def test_run_place_ranks_a_run_on_its_own_board():
+    a_best = _run("A", 1000, 1)
+    a_slow = _run("A", 1300, 5)
+    b = _run("B", 1200, 2)
+    c_replay = _run("C", 900, 3, blind=False)
+    other_category = _run("D", 800, 4, pool="dl")
+    runs = [a_best, a_slow, b, c_replay, other_category]
+
+    # A blind run ranks on Random Seed: the replay and the other category stay out.
+    assert run_place(a_best, runs) == RunPlace(sub="random", place=1, players=2, personal_best=True)
+    # A slower run places among the other players' bests, and is no PB.
+    assert run_place(a_slow, runs) == RunPlace(
+        sub="random", place=2, players=2, personal_best=False
+    )
+    # A replay ranks on Set Seed, with every run of the category.
+    assert run_place(c_replay, runs) == RunPlace(sub="set", place=1, players=3, personal_best=True)
+
+
+def test_run_place_keeps_the_earliest_of_equal_times_as_the_best():
+    first = _run("A", 1000, 1)
+    later = _run("A", 1000, 2)
+
+    assert run_place(first, [first, later]) == RunPlace(
+        sub="random", place=1, players=1, personal_best=True
+    )
+    placed = run_place(later, [first, later])
+    assert placed is not None and placed.personal_best is False
+
+
+def test_run_place_is_none_for_a_replay_on_no_set_seed_board():
+    replay = replace(_run("A", 1000, 1, blind=False), seed_excluded=True)
+    blind = replace(_run("B", 1100, 2), seed_excluded=True)
+
+    assert run_place(replay, [replay, blind]) is None
+    # Random Seed keeps blind runs whatever their seed's state.
+    assert run_place(blind, [replay, blind]) == RunPlace(
+        sub="random", place=1, players=1, personal_best=True
+    )
 
 
 def test_main_weapon_picks_most_ticks_normalized():

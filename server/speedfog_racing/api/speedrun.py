@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api.stats import _cached
 from speedfog_racing.api.training import _build_detail_response
-from speedfog_racing.auth import get_current_user_optional, require_not_banned
+from speedfog_racing.auth import get_current_user, get_current_user_optional, require_not_banned
 from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Seed, SeedProtection, User
@@ -24,9 +24,11 @@ from speedfog_racing.schemas import (
     LiveSplitReference,
     PoolConfig,
     SpeedrunRecordHolder,
+    SpeedrunRunPlace,
     SpeedrunSeedResponse,
     SpeedrunSeedSummary,
     SpeedrunSeedViewer,
+    SpeedrunSoloQuota,
     StartSpeedrunSoloRequest,
     TrainingSessionDetailResponse,
 )
@@ -50,6 +52,7 @@ from speedfog_racing.services.speedrun_service import (
     build_seed_runs,
     load_counted_runs,
     load_unranked_runs,
+    run_place,
     seed_category,
     seed_stats,
 )
@@ -57,6 +60,7 @@ from speedfog_racing.services.training_service import (
     SpeedrunStartError,
     create_set_seed_session,
     create_speedrun_session,
+    unfinished_quota,
 )
 
 router = APIRouter()
@@ -225,6 +229,53 @@ async def get_fresh_seeds(
     if found is None or not found.enabled or (found.config or {}).get("type", "race") == "training":
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown pool")
     return {"fresh": await has_fresh_speedrun_seed(db, pool)}
+
+
+@router.get("/solo/quota", response_model=SpeedrunSoloQuota | None)
+async def get_solo_quota(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> SpeedrunSoloQuota | None:
+    """The viewer's unfinished Random Seed solo runs against the limit, so the
+    Start a run window can warn before a refusal; null when the limit is off."""
+    quota = await unfinished_quota(db, user.id)
+    if quota is None:
+        return None
+    return SpeedrunSoloQuota(
+        limit=quota.limit,
+        unfinished=quota.unfinished,
+        window_hours=quota.window_hours,
+        frees_at=quota.frees_at,
+    )
+
+
+@router.get("/sessions/{session_id}/place", response_model=SpeedrunRunPlace | None)
+async def get_session_place(
+    session_id: UUID, db: AsyncSession = Depends(get_db)
+) -> SpeedrunRunPlace | None:
+    """Where a finished ranked solo run places on its board (see
+    ``run_place``); null for a session that counts on none (see
+    ``load_counted_runs``), e.g. a practice or unfinished one, an invalidated
+    run, or a replay on an excluded or too old seed. The boards are public,
+    and so is this."""
+    every_run = await _cached("speedrun:runs", load_counted_runs, db)
+    run = next((r for r in every_run if r.session_id == session_id), None)
+    placed = run_place(run, every_run) if run is not None else None
+    if run is None or placed is None:
+        return None
+    pool = await get_pool(db, run.pool)
+    category_name = format_pool_display_name(pool) if pool is not None else run.pool
+    _, _, layers = run.category.partition("@")
+    if layers:
+        category_name += f" ({layers} layers)"
+    return SpeedrunRunPlace(
+        category=run.category,
+        category_name=category_name,
+        sub=placed.sub,
+        place=placed.place,
+        players=placed.players,
+        personal_best=placed.personal_best,
+    )
 
 
 _START_ERROR_STATUS = {

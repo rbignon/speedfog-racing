@@ -730,6 +730,40 @@ def place_of(run: CountedRun, board: Sequence[CountedRun]) -> int:
     return 1 + sum(1 for igt in best.values() if igt < run.igt_ms)
 
 
+@dataclass(frozen=True)
+class RunPlace:
+    sub: SpeedrunSub
+    place: int
+    # Players with a run on the board.
+    players: int
+    # The run is its player's best on the board.
+    personal_best: bool
+
+
+def run_place(run: CountedRun, runs: Sequence[CountedRun]) -> RunPlace | None:
+    """Where ``run`` places on its own board: Random Seed for a blind run, Set
+    Seed for a replay, the Deathless filter off and every run type. None for a
+    replay on no Set Seed board (an excluded or too old seed)."""
+    sub: SpeedrunSub = "random" if run.blind else "set"
+    if sub == "set" and not run.on_set_seed_boards:
+        return None
+    board = filter_board(
+        runs,
+        category=run.category,
+        sub=sub,
+        deathless_only=False,
+        types=frozenset(RUN_TYPES),
+    )
+    # The board's own pick of a player's best: lowest IGT, earliest on a tie.
+    best = min((r for r in board if r.user.id == run.user.id), key=_run_key, default=run)
+    return RunPlace(
+        sub=sub,
+        place=place_of(run, board),
+        players=len({r.user.id for r in board}),
+        personal_best=best.run_id == run.run_id,
+    )
+
+
 def main_weapon(zone_history: list[dict[str, Any]] | None) -> list[int] | None:
     """The weapon combo held for the most ticks over the run (base ids), or
     None without weapon data. Same id coercion as the weapons stats endpoint:

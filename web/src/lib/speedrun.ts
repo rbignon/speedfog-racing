@@ -194,6 +194,13 @@ export function parseRaceNewParams(search: URLSearchParams): RaceNewParams {
   };
 }
 
+/** A category's board, on its Set Seed (the default) or Random Seed
+ * subcategory. */
+export function speedrunBoardHref(category: string, sub: SpeedrunSub): string {
+  const board = `/speedrun?pool=${encodeURIComponent(category)}`;
+  return sub === "random" ? `${board}&sub=random` : board;
+}
+
 /** The Start a run window open in Set Seed mode on `seed`, over the board
  * of `category` (a seed's category key; null for the default board). */
 export function startRunHref(category: string | null, seed: string): string {

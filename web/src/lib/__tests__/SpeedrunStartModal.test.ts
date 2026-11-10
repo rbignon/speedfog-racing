@@ -9,6 +9,7 @@ vi.mock("$lib/api", async () => {
     startSpeedrunSolo: vi.fn(),
     fetchFreshSpeedrunSeeds: vi.fn(),
     fetchSpeedrunSeedSummary: vi.fn(),
+    fetchSpeedrunSoloQuota: vi.fn(),
   };
 });
 
@@ -17,6 +18,7 @@ import SpeedrunStartModal from "$lib/components/stats/speedrun/SpeedrunStartModa
 import {
   fetchFreshSpeedrunSeeds,
   fetchSpeedrunSeedSummary,
+  fetchSpeedrunSoloQuota,
   startSpeedrunSolo,
   type AuthUser,
   type SpeedrunSeedSummary,
@@ -93,6 +95,8 @@ beforeEach(() => {
   vi.mocked(fetchFreshSpeedrunSeeds).mockReset();
   vi.mocked(fetchFreshSpeedrunSeeds).mockResolvedValue({ fresh: true });
   vi.mocked(fetchSpeedrunSeedSummary).mockReset();
+  vi.mocked(fetchSpeedrunSoloQuota).mockReset();
+  vi.mocked(fetchSpeedrunSoloQuota).mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -142,6 +146,72 @@ describe("Start a run: Random Seed", () => {
 
     await screen.findByText("You already have an active solo session");
     expect(goto).not.toHaveBeenCalled();
+  });
+});
+
+describe("Start a run: unfinished Random Seed runs", () => {
+  function quota(unfinished: number) {
+    vi.mocked(fetchSpeedrunSoloQuota).mockResolvedValue({
+      limit: 3,
+      unfinished,
+      window_hours: 24,
+      frees_at:
+        unfinished >= 3
+          ? new Date(Date.now() + 3 * 3_600_000).toISOString()
+          : null,
+    });
+  }
+
+  const line = () => document.querySelector(".quota");
+
+  it("says nothing while two or more can still be left unfinished", async () => {
+    quota(1);
+    renderWindow();
+
+    await waitFor(() => expect(fetchSpeedrunSoloQuota).toHaveBeenCalled());
+    await sleep(0);
+    expect(line()).toBeNull();
+  });
+
+  it("warns once one is left, and still starts", async () => {
+    quota(2);
+    renderWindow();
+
+    await waitFor(() => expect(text(line())).toContain("2 of 3"));
+    const start = screen.getByRole("button", { name: "Start solo" });
+    await waitFor(() =>
+      expect((start as HTMLButtonElement).disabled).toBe(false),
+    );
+  });
+
+  it("disables Start solo at the limit, but not a race or Set Seed", async () => {
+    auth.user = user("organizer");
+    quota(3);
+    renderWindow();
+
+    await waitFor(() => expect(text(line())).toContain("Next start:"));
+    expect(
+      (screen.getByRole("button", { name: "Start solo" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+
+    // A race is not limited: the line goes, and Create race works.
+    await fireEvent.click(screen.getByRole("button", { name: "Race" }));
+    expect(line()).toBeNull();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Create race",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+
+    // Neither is Set Seed.
+    await fireEvent.click(screen.getByRole("button", { name: "Solo" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
+    expect(line()).toBeNull();
   });
 });
 

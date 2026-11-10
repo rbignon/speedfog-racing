@@ -27,6 +27,7 @@ from speedfog_racing.models import (
     SeedStatus,
     TrainingSession,
     TrainingSessionStatus,
+    User,
     UserRole,
 )
 from speedfog_racing.services.seed_service import SpeedrunFloorError
@@ -1250,3 +1251,83 @@ async def test_unfinished_limit_is_429_with_its_own_detail(
     )
     assert response.status_code == 429
     assert "3 unfinished" in response.json()["detail"]
+
+
+async def test_solo_quota_counts_unfinished_runs_and_says_when_one_frees_up(
+    test_client, async_session, pools, limit_3
+):
+    async with async_session() as db:
+        user = await _user(db, "a")
+        await _backdated(db, user, 5)
+        await _backdated(db, user, 4, status=TrainingSessionStatus.FINISHED)
+        await db.commit()
+    under = await test_client.get("/api/speedrun/solo/quota", headers=_auth("a"))
+    assert under.json() == {"limit": 3, "unfinished": 1, "window_hours": 24, "frees_at": None}
+
+    async with async_session() as db:
+        user = (await db.execute(select(User).where(User.twitch_username == "a"))).scalar_one()
+        await _backdated(db, user, 2)
+        await _backdated(db, user, 1, status=TrainingSessionStatus.ACTIVE)
+        await db.commit()
+    at_limit = (await test_client.get("/api/speedrun/solo/quota", headers=_auth("a"))).json()
+    assert at_limit["unfinished"] == 3
+    # The oldest unfinished run (5 h old) leaves the 24-hour window first.
+    assert datetime.fromisoformat(at_limit["frees_at"]) == NOW + timedelta(hours=19)
+
+
+async def test_solo_quota_needs_a_login_and_is_null_without_a_limit(
+    test_client, async_session, pools, monkeypatch
+):
+    async with async_session() as db:
+        await _user(db, "a")
+        await db.commit()
+    assert (await test_client.get("/api/speedrun/solo/quota")).status_code == 401
+    monkeypatch.setattr(settings, "speedrun_solo_unfinished_limit", 0)
+    response = await test_client.get("/api/speedrun/solo/quota", headers=_auth("a"))
+    assert (response.status_code, response.json()) == (200, None)
+
+
+async def test_session_place_reports_where_a_ranked_run_places(test_client, async_session, pools):
+    async with async_session() as db:
+        a = await _user(db, "a")
+        b = await _user(db, "b")
+        await _add_session(db, b, "sprint", RunMode.SPEEDRUN, 1000)
+        mine = await _add_session(db, a, "sprint", RunMode.SPEEDRUN, 1200)
+        practice = await _add_session(db, a, "training_sprint", RunMode.NORMAL, 900)
+        await db.commit()
+        mine_id, practice_id = mine.id, practice.id
+
+    placed = await test_client.get(f"/api/speedrun/sessions/{mine_id}/place")
+    assert placed.json() == {
+        "category": "sprint",
+        "category_name": "Sprint",
+        "sub": "random",
+        "place": 2,
+        "players": 2,
+        "personal_best": True,
+    }
+    # A practice session counts on no board.
+    practice_place = await test_client.get(f"/api/speedrun/sessions/{practice_id}/place")
+    assert (practice_place.status_code, practice_place.json()) == (200, None)
+
+
+async def test_session_place_names_an_archived_category(test_client, async_session, pools):
+    async with async_session() as db:
+        db.add(
+            Pool(
+                name="arch",
+                config={
+                    "name": "Arch",
+                    "type": "race",
+                    "layers_count": 15,
+                    "archived_layers": [12],
+                },
+            )
+        )
+        a = await _user(db, "a")
+        old = await _add_session(db, a, "arch", RunMode.SPEEDRUN, 1000, layers=12)
+        await db.commit()
+        old_id = old.id
+
+    placed = (await test_client.get(f"/api/speedrun/sessions/{old_id}/place")).json()
+    assert (placed["category"], placed["category_name"]) == ("arch@12", "Arch (12 layers)")

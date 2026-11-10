@@ -240,14 +240,27 @@ async def _require_no_active_session(db: AsyncSession, user_id: uuid.UUID) -> No
         raise SpeedrunStartError("active_session", "You already have an active solo session")
 
 
-async def _require_under_unfinished_limit(
+@dataclass(frozen=True)
+class UnfinishedQuota:
+    """A player's unfinished Speedrun solo sessions against the limit."""
+
+    limit: int
+    unfinished: int
+    window_hours: int
+    # At or over the limit: when the oldest session that matters leaves the
+    # window, bringing the count under the limit. None under the limit.
+    frees_at: datetime | None
+
+
+async def unfinished_quota(
     db: AsyncSession, user_id: uuid.UUID, *, now: datetime | None = None
-) -> None:
-    """Refuse a Speedrun solo start when the player has too many unfinished
-    Speedrun sessions in the window (finished runs never count)."""
+) -> UnfinishedQuota | None:
+    """The player's unfinished Speedrun sessions created in the window
+    (finished runs never count, an active one does); None when the limit is
+    off."""
     limit = settings.speedrun_solo_unfinished_limit
     if limit <= 0:
-        return
+        return None
     now = now or datetime.now(UTC)
     hours = settings.speedrun_solo_unfinished_window_hours
     window = timedelta(hours=hours)
@@ -263,20 +276,34 @@ async def _require_under_unfinished_limit(
     )
     created = list(result.scalars())
     count = len(created)
-    if count < limit:
+    frees_at = None
+    if count >= limit:
+        # The session whose leaving the window brings the count under the limit.
+        frees_up = created[count - limit]
+        if frees_up.tzinfo is None:  # SQLite drops the zone; stored values are UTC
+            frees_up = frees_up.replace(tzinfo=UTC)
+        frees_at = frees_up + window
+    return UnfinishedQuota(limit=limit, unfinished=count, window_hours=hours, frees_at=frees_at)
+
+
+async def _require_under_unfinished_limit(
+    db: AsyncSession, user_id: uuid.UUID, *, now: datetime | None = None
+) -> None:
+    """Refuse a Speedrun solo start when the player has too many unfinished
+    Speedrun sessions in the window (finished runs never count)."""
+    now = now or datetime.now(UTC)
+    quota = await unfinished_quota(db, user_id, now=now)
+    if quota is None or quota.frees_at is None:
         return
-    # The session whose leaving the window brings the count under the limit.
-    frees_up = created[count - limit]
-    if frees_up.tzinfo is None:  # SQLite drops the zone; stored values are UTC
-        frees_up = frees_up.replace(tzinfo=UTC)
-    minutes = max(1, -((now - (frees_up + window)) // timedelta(minutes=1)))
+    minutes = max(1, -((now - quota.frees_at) // timedelta(minutes=1)))
     hours_left, minutes_left = divmod(minutes, 60)
     wait = f"{hours_left} h {minutes_left} min" if hours_left else f"{minutes_left} min"
+    hours = quota.window_hours
     unit = "hour" if hours == 1 else "hours"
     raise SpeedrunStartError(
         "unfinished_limit",
-        f"You have {count} unfinished Random Seed runs in the last {hours} {unit} "
-        f"(the limit is {limit}). Finish a run, or try again in {wait}.",
+        f"You have {quota.unfinished} unfinished Random Seed runs in the last {hours} {unit} "
+        f"(the limit is {quota.limit}). Finish a run, or try again in {wait}.",
     )
 
 

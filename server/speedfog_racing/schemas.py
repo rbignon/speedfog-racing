@@ -1180,6 +1180,32 @@ class SpeedrunSeedSummary(BaseModel):
     record: SpeedrunRecordHolder | None
 
 
+class SpeedrunSoloQuota(BaseModel):
+    """The viewer's unfinished Random Seed solo runs against the limit, over
+    the last ``window_hours``. ``frees_at``: at the limit, when a new run can
+    start; null under it."""
+
+    limit: int
+    unfinished: int
+    window_hours: int
+    frees_at: datetime | None
+
+
+class SpeedrunRunPlace(BaseModel):
+    """Where a finished ranked solo run's time places on its board: Random
+    Seed for a blind run, Set Seed for a replay (Deathless filter off, every
+    run type). ``place`` counts the other players whose best is strictly
+    faster; ``personal_best`` says whether the run is its player's best
+    there."""
+
+    category: str
+    category_name: str
+    sub: Literal["set", "random"]
+    place: int
+    players: int
+    personal_best: bool
+
+
 class LiveSplitReference(BaseModel):
     """A run a LiveSplit file compares against: its time and its first-arrival
     IGT per layer (the finish under the seed's layer count)."""

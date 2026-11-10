@@ -6,7 +6,12 @@
     downloadCategorySplits,
     downloadSeedSplits,
   } from "$lib/livesplit-download";
-  import { sessionSeedPageHref, startRandomRunHref } from "$lib/speedrun";
+  import { ordinal } from "$lib/events";
+  import {
+    sessionSeedPageHref,
+    speedrunBoardHref,
+    startRandomRunHref,
+  } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
   import { trainingStore } from "$lib/stores/training.svelte";
@@ -19,7 +24,9 @@
     cancelSessionInvalidation,
     downloadTrainingPack,
     fetchTrainingGhosts,
+    fetchSessionPlace,
     startSpeedrunSolo,
+    type SpeedrunRunPlace,
     type TrainingSessionDetail,
     type Ghost,
   } from "$lib/api";
@@ -264,6 +271,35 @@
       .catch(() => {});
   });
 
+  // Where a finished ranked run's time places on its board, once per
+  // session. A run that finishes on the open page reaches the server's
+  // cached boards a moment later (its record check runs in the background):
+  // the page waits a little, then asks once more if the run is not there yet.
+  let place = $state<{ id: string; place: SpeedrunRunPlace } | null>(null);
+  let placeFor: string | null = null;
+  $effect(() => {
+    const id = session?.id;
+    if (status !== "finished" || !isRanked || isInvalidated) return;
+    if (!id || placeFor === id) return;
+    placeFor = id;
+    const finishedHere = session?.status !== "finished";
+    const ask = (delayMs: number, retry: boolean) =>
+      setTimeout(() => {
+        fetchSessionPlace(id)
+          .then((p) => {
+            if (p === null && retry) ask(5000, false);
+            else if (p !== null && session?.id === id) place = { id, place: p };
+          })
+          .catch(() => {});
+      }, delayMs);
+    ask(finishedHere ? 2000 : 0, finishedHere);
+  });
+  let shownPlace = $derived(
+    place !== null && place.id === session?.id && !isInvalidated
+      ? place.place
+      : null,
+  );
+
   async function loadSession() {
     try {
       session = await fetchTrainingSession(sessionId);
@@ -479,6 +515,25 @@
           )}/{totalLayers}</span
         >
       </div>
+      {#if shownPlace}
+        <a
+          class="stat place-stat"
+          href={speedrunBoardHref(shownPlace.category, shownPlace.sub)}
+          title="Where this time places among the other players' best runs"
+        >
+          <span class="stat-label"
+            >{shownPlace.category_name} &middot; {shownPlace.sub === "random"
+              ? "Random Seed"
+              : "Set Seed"}</span
+          >
+          <span class="stat-value mono"
+            >{ordinal(shownPlace.place)}<span class="place-of"
+              >/{shownPlace.players}</span
+            >{#if shownPlace.personal_best}<span class="chip pb-chip">PB</span
+              >{/if}</span
+          >
+        </a>
+      {/if}
       <div class="stat stat-right">
         <span class="stat-label">Started</span>
         <span class="stat-value stat-date"
@@ -968,6 +1023,30 @@
 
   .stat-right {
     margin-left: auto;
+  }
+
+  .place-stat {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .place-stat:hover .stat-value {
+    color: var(--color-purple);
+  }
+
+  .place-of {
+    margin-left: 0.15rem;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+  }
+
+  .pb-chip {
+    margin-left: 0.5rem;
+    padding: 0.05rem 0.35rem;
+    color: var(--color-gold);
+    border-color: color-mix(in srgb, var(--color-gold) 60%, transparent);
+    font-size: 0.62rem;
+    vertical-align: middle;
   }
 
   .stat-date {

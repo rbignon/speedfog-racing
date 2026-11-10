@@ -2819,6 +2819,46 @@ export async function fetchFreshSpeedrunSeeds(
   return handleResponse<{ fresh: boolean }>(response);
 }
 
+/** The viewer's unfinished Random Seed solo runs over the last
+ * `window_hours`, against the limit. `frees_at`: at the limit, when a new run
+ * can start; null under it. */
+export interface SpeedrunSoloQuota {
+  limit: number;
+  unfinished: number;
+  window_hours: number;
+  frees_at: string | null;
+}
+
+/** The logged-in viewer's quota; null when the limit is off. */
+export async function fetchSpeedrunSoloQuota(): Promise<SpeedrunSoloQuota | null> {
+  const response = await fetch(`${API_BASE}/speedrun/solo/quota`, {
+    headers: getAuthHeaders(),
+  });
+  return handleResponse<SpeedrunSoloQuota | null>(response);
+}
+
+/** Where a finished ranked solo run's time places on its own board (Random
+ * Seed for a blind run, Set Seed for a replay). `place` counts the other
+ * players whose best is strictly faster. */
+export interface SpeedrunRunPlace {
+  category: string;
+  category_name: string;
+  sub: "set" | "random";
+  place: number;
+  players: number;
+  personal_best: boolean;
+}
+
+/** A solo session's board place; null when it counts on no board. */
+export async function fetchSessionPlace(
+  sessionId: string,
+): Promise<SpeedrunRunPlace | null> {
+  const response = await fetch(
+    `${API_BASE}/speedrun/sessions/${encodeURIComponent(sessionId)}/place`,
+  );
+  return handleResponse<SpeedrunRunPlace | null>(response);
+}
+
 /** Start a ranked solo run: Speedrun mode on a fresh seed of `pool`, or Set
  * Seed on a played `seed`. */
 export async function startSpeedrunSolo(

@@ -28,6 +28,7 @@ vi.mock("$lib/api", async () => {
     fetchFreshSpeedrunSeeds: vi.fn(async () => ({ fresh: true })),
     // The window's Seed ID check: left pending, the tests here never read it.
     fetchSpeedrunSeedSummary: vi.fn(() => new Promise(() => {})),
+    fetchSpeedrunSoloQuota: vi.fn(async () => null),
   };
 });
 
