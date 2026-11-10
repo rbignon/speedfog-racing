@@ -1,14 +1,25 @@
 <script lang="ts">
   import type { RunMode } from "$lib/api";
 
-  // `short` names the seed type instead of the mode: "Random" (a speedrun
-  // race's fresh seed) or "Set Seed".
+  // Outside the speedrun boards the chip names both the context and the
+  // subcategory; `short` keeps a short subcategory alone, for narrow cards
+  // inside the speedrun page.
   let { mode, short = false }: { mode: RunMode; short?: boolean } = $props();
+
+  let label = $derived(
+    mode === "speedrun"
+      ? short
+        ? "Random"
+        : "Speedrun · Random Seed"
+      : short
+        ? "Set Seed"
+        : "Speedrun · Set Seed",
+  );
 </script>
 
 {#if mode === "speedrun" || mode === "set_seed"}
   <span class="chip run-mode-chip" class:speedrun={mode === "speedrun"}
-    >{mode === "speedrun" ? (short ? "Random" : "Speedrun") : "Set Seed"}</span
+    >{label}</span
   >
 {/if}
 

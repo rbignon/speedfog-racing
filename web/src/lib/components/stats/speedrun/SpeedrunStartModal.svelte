@@ -178,11 +178,6 @@
       >
     </div>
 
-    <p class="description">
-      A ranked run for this board. To play without a ranking, use
-      <a href="/training">Solo</a>.
-    </p>
-
     <div class="config-row">
       <span class="row-label">Category</span>
       <span class="chip category-chip">{shownCategory}</span>
@@ -279,7 +274,7 @@
         <strong class="board">{categoryName} · Random Seed</strong>, and on Set
         Seed too.
       {:else if chosenFormat === "solo"}
-        Spoiler available. Ranked on
+        Full map available on the run's page. Ranked on
         <strong class="board">{shownCategory} · Set Seed</strong>.
       {:else}
         <strong>Runners may already know this seed</strong>. Ranked on
@@ -384,20 +379,6 @@
 
   .close-btn:hover {
     color: var(--color-text);
-  }
-
-  .description {
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-    margin: 0 0 1rem 0;
-  }
-
-  .description a {
-    color: var(--color-purple);
-  }
-
-  .description a:hover {
-    color: var(--color-purple-hover);
   }
 
   .config-row {

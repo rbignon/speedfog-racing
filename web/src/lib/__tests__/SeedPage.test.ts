@@ -485,16 +485,12 @@ describe("SeedReplayCard", () => {
     await screen.findByText(/You protect 0 of your 3 seeds\./);
   });
 
-  it("tells a viewer without a finished run why they cannot protect it", () => {
+  it("leaves the protect row out for a viewer without a finished run", () => {
     render(SeedReplayCard, {
       props: { seed: seed({ viewer: viewer({ can_protect: false }) }) },
     });
 
-    expect(
-      screen.getByText(
-        "Only players who finished a run on this seed can protect it.",
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByText("Protect this seed")).toBeNull();
     expect(screen.queryByRole("button", { name: "Protect" })).toBeNull();
   });
 

@@ -1325,6 +1325,12 @@
       padding: 1rem;
     }
 
+    /* A long field scrolls in place, so the daily's title and map stay
+       within reach. */
+    .sidebar-section {
+      max-height: 40vh;
+    }
+
     .main-content {
       padding: 1rem;
       overflow-y: visible;

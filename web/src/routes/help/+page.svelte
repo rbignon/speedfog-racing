@@ -1045,9 +1045,9 @@
         </p>
         <p>
           The <strong>Speedrun</strong> page has an
-          <strong>OBS overlay</strong> button too: a leaderboard of the board on screen,
-          with the top players fixed, the next ones cycling, and your own personal
-          best pinned at the bottom (recommended: 400 x 300).
+          <strong>OBS overlay</strong> too, in its Tools menu: a leaderboard of the
+          board on screen, with the top players fixed, the next ones cycling, and
+          your own personal best pinned at the bottom (recommended: 400 x 300).
         </p>
       </div>
     {/if}

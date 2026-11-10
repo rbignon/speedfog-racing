@@ -26,6 +26,8 @@ vi.mock("$lib/api", async () => {
     ...actual,
     fetchSpeedrunBoard: vi.fn(),
     fetchFreshSpeedrunSeeds: vi.fn(async () => ({ fresh: true })),
+    // The window's Seed ID check: left pending, the tests here never read it.
+    fetchSpeedrunSeedSummary: vi.fn(() => new Promise(() => {})),
   };
 });
 
@@ -139,6 +141,39 @@ describe("SpeedrunBoard subcategories", () => {
 
     expect(screen.getByLabelText("Solo runs")).toBeTruthy();
     expect(screen.getByLabelText("Deathless only")).toBeTruthy();
+  });
+
+  it("closes Filters when Tools opens, and Tools on Escape", async () => {
+    mount();
+
+    await fireEvent.click(screen.getByRole("button", { name: /Filters/ }));
+    expect(screen.getByLabelText("Solo runs")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /Tools/ }));
+    expect(screen.queryByLabelText("Solo runs")).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /LiveSplit splits/ }),
+    ).toBeTruthy();
+
+    await fireEvent.keyDown(window, { key: "Escape" });
+    expect(
+      screen.queryByRole("button", { name: /LiveSplit splits/ }),
+    ).toBeNull();
+  });
+
+  it("keeps the streamer tools in the Tools menu, which closes on a pick", async () => {
+    mount();
+
+    expect(screen.queryByRole("button", { name: /OBS overlay/ })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: /Tools/ }));
+    expect(
+      screen.getByRole("button", { name: /LiveSplit splits/ }),
+    ).toBeTruthy();
+    await fireEvent.click(screen.getByRole("button", { name: /OBS overlay/ }));
+
+    expect(screen.getByRole("heading", { name: "OBS Overlay" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /LiveSplit splits/ }),
+    ).toBeNull();
   });
 });
 
@@ -274,18 +309,6 @@ describe("SpeedrunBoard links to seed pages", () => {
     });
   });
 
-  it("opens the record run's seed page from the WR band button", async () => {
-    mount();
-
-    const band = await screen.findByTestId("wr-seed");
-    const open = Array.from(band.querySelectorAll("a")).find(
-      (a) => a.textContent?.trim() === "Open seed",
-    );
-    expect(open?.getAttribute("href")).toBe(
-      "/speedrun/seed/363096a4243f?run=p1",
-    );
-  });
-
   it("links the table's seed cell to the run's seed page", async () => {
     mount();
 
@@ -382,6 +405,46 @@ describe("SpeedrunBoard Start a run window", () => {
     const modal = await setSeedWindow(false);
 
     expect(within(modal).queryByRole("button", { name: "WR" })).toBeNull();
+  });
+
+  it("opens on Set Seed with the record seed typed in from Play seed", async () => {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [run(true)],
+      record_seed: { seed_number: "363096a4243f", runs: 1, replayable: true },
+    });
+    mount({ ...PARAMS, sub: "random" });
+
+    const band = await screen.findByTestId("wr-seed");
+    await fireEvent.click(
+      within(band).getByRole("button", { name: "Play seed" }),
+    );
+
+    const modal = screen
+      .getByRole("heading", { name: "Start a run" })
+      .closest(".modal") as HTMLElement;
+    expect(
+      within(modal)
+        .getByRole("button", { name: "Set Seed" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      (within(modal).getByLabelText("Seed ID") as HTMLInputElement).value,
+    ).toBe("363096a4243f");
+  });
+
+  it("offers no Play seed when the record seed cannot be replayed", async () => {
+    vi.mocked(fetchSpeedrunBoard).mockResolvedValue({
+      ...EMPTY,
+      runs: [run(true)],
+      record_seed: { seed_number: "363096a4243f", runs: 1, replayable: false },
+    });
+    mount();
+
+    const band = await screen.findByTestId("wr-seed");
+    expect(
+      within(band).queryByRole("button", { name: "Play seed" }),
+    ).toBeNull();
   });
 });
 

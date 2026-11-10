@@ -574,6 +574,12 @@
       padding: 1rem;
     }
 
+    /* A long list scrolls in place, so the seed's title and card stay on
+       the first screen. */
+    .sidebar-section {
+      max-height: 40vh;
+    }
+
     .main-content {
       padding: 1rem;
       overflow-y: visible;

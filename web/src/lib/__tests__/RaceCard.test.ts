@@ -197,12 +197,12 @@ describe("RaceCard ranked race chip", () => {
       chipText(
         render(RaceCard, { race: raceWith({ mode: "speedrun" }) }).container,
       ),
-    ).toBe("Speedrun");
+    ).toBe("Speedrun · Random Seed");
     expect(
       chipText(
         render(RaceCard, { race: raceWith({ mode: "set_seed" }) }).container,
       ),
-    ).toBe("Set Seed");
+    ).toBe("Speedrun · Set Seed");
     expect(
       chipText(
         render(RaceCard, { race: raceWith({ mode: "normal" }) }).container,

@@ -1,7 +1,11 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import type { SpeedrunRun } from "$lib/api";
-  import { speedrunAgo, speedrunSeedHref } from "$lib/speedrun";
+  import {
+    RUN_KIND_TITLES,
+    speedrunAgo,
+    speedrunSeedHref,
+  } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -39,7 +43,7 @@
         {#if showRun}<th>Run</th>{/if}
         <th>Date</th>
         <th>Seed</th>
-        <th>Route</th>
+        <th title="Main weapon used">Route</th>
         <th>Deaths</th>
       </tr>
     </thead>
@@ -73,7 +77,11 @@
               ><span
                 class="chip run-chip"
                 class:blind={run.blind}
-                class:replay={!run.blind}>{run.blind ? "Blind" : "Replay"}</span
+                class:replay={!run.blind}
+                title={run.blind
+                  ? RUN_KIND_TITLES.blind
+                  : RUN_KIND_TITLES.replay}
+                >{run.blind ? "Blind" : "Replay"}</span
               ></td
             >
           {/if}

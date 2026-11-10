@@ -7,6 +7,7 @@
   import WeaponsPopover from "./WeaponsPopover.svelte";
   import { aggregateAllCombos } from "$lib/weapons";
   import { formatGapCompact } from "$lib/gap";
+  import { RUN_KIND_TITLES } from "$lib/speedrun";
 
   interface Props {
     participants: WsParticipant[];
@@ -238,7 +239,7 @@
                   class:unranked={runKind === "unranked"}
                   title={runKind === "unranked"
                     ? "Seen seed, reset or re-rolled race: counts on no board"
-                    : undefined}
+                    : RUN_KIND_TITLES[runKind]}
                   >{runKind === "blind"
                     ? "Blind"
                     : runKind === "replay"

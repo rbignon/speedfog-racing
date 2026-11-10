@@ -7,6 +7,7 @@
     type SpeedrunRunType,
   } from "$lib/api";
   import {
+    RUN_KIND_TITLES,
     RUN_TYPES,
     resolvePool,
     speedrunSeedHref,
@@ -66,6 +67,7 @@
   }
 
   let rulesOpen = $state(false);
+  let toolsOpen = $state(false);
   let moreOpen = $state(false);
   let overlayOpen = $state(false);
   let splitsError = $state<string | null>(null);
@@ -76,6 +78,7 @@
     untrack(() => (startRun?.sub === "set" ? startRun.seed : null)),
   );
   let filtersEl = $state<HTMLElement | null>(null);
+  let toolsEl = $state<HTMLElement | null>(null);
 
   let pool = $derived(resolvePool(params, categories));
   let category = $derived(categories.find((c) => c.pool === pool) ?? null);
@@ -152,14 +155,27 @@
     change({ pool, sub });
   }
 
+  // The WR seed band's Play seed: the Start a run window, in Set Seed mode
+  // on the record's seed.
+  function playSeed(seed: string) {
+    startWith = seed;
+    startOpen = true;
+  }
+
   function handleWindowClick(e: MouseEvent) {
     if (filtersOpen && filtersEl && !filtersEl.contains(e.target as Node)) {
       filtersOpen = false;
     }
+    if (toolsOpen && toolsEl && !toolsEl.contains(e.target as Node)) {
+      toolsOpen = false;
+    }
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") filtersOpen = false;
+    if (e.key === "Escape") {
+      filtersOpen = false;
+      toolsOpen = false;
+    }
   }
 </script>
 
@@ -228,6 +244,7 @@
        load error. -->
   {#if board?.record_seed && recordRun && !error}
     {@const seedHref = speedrunSeedHref(recordRun)}
+    {@const recordSeed = board.record_seed}
     <div
       class="wr-seed"
       class:pending={loading}
@@ -250,6 +267,7 @@
         class="chip run-chip"
         class:blind={recordRun.blind}
         class:replay={!recordRun.blind}
+        title={recordRun.blind ? RUN_KIND_TITLES.blind : RUN_KIND_TITLES.replay}
         >{recordRun.blind ? "Blind" : "Replay"}</span
       >
       <span class="wr-runs"
@@ -258,7 +276,15 @@
           : "s"}</span
       >
       <span class="spacer"></span>
-      <a class="tool" href={seedHref}>Open seed</a>
+      <!-- The seed number above links to its page; a seed that can no longer
+           be played has nothing to start. -->
+      {#if recordSeed.replayable && category}
+        <button
+          type="button"
+          class="tool"
+          onclick={() => playSeed(recordSeed.seed_number)}>Play seed</button
+        >
+      {/if}
     </div>
   {/if}
 
@@ -360,18 +386,75 @@
 
     <span class="spacer"></span>
 
+    <!-- Streamer tools, hidden on phones. -->
     {#if pool && category}
-      <button type="button" class="tool" onclick={() => (overlayOpen = true)}>
-        <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
-          <path
-            d="M3 4h18v12H3V4Zm5 16h8M12 16v4"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          />
-        </svg>
-        OBS overlay
-      </button>
+      <div class="tools-menu" bind:this={toolsEl}>
+        <button
+          type="button"
+          class="tool"
+          aria-expanded={toolsOpen}
+          onclick={() => (toolsOpen = !toolsOpen)}
+        >
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+            <path
+              d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linejoin="round"
+            />
+          </svg>
+          Tools
+        </button>
+        {#if toolsOpen}
+          <div class="popover menu">
+            <button
+              type="button"
+              onclick={() => {
+                toolsOpen = false;
+                overlayOpen = true;
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                aria-hidden="true"
+              >
+                <path
+                  d="M3 4h18v12H3V4Zm5 16h8M12 16v4"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+              </svg>
+              OBS overlay
+            </button>
+            <button
+              type="button"
+              onclick={() => {
+                toolsOpen = false;
+                void downloadSplits();
+              }}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 4v11m-5-5 5 5 5-5M4 20h16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+              </svg>
+              LiveSplit splits
+            </button>
+          </div>
+        {/if}
+      </div>
     {/if}
     <button
       type="button"
@@ -390,9 +473,6 @@
       Rules
     </button>
     {#if pool && category}
-      <button type="button" class="tool" onclick={downloadSplits}>
-        LiveSplit
-      </button>
       <button
         type="button"
         class="tool submit"
@@ -713,8 +793,39 @@
     border-color: var(--color-gold-hover);
   }
 
-  .filters {
+  .filters,
+  .tools-menu {
     position: relative;
+  }
+
+  /* Opens toward the board, away from the panel's right edge. */
+  .popover.menu {
+    left: auto;
+    right: 0;
+    gap: 0.15rem;
+    min-width: 11rem;
+    padding: 0.35rem;
+  }
+
+  .menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.55rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-text);
+    font-family: var(--font-family);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .menu button:hover {
+    background: var(--color-bg);
+    color: var(--color-purple);
   }
 
   .popover {
@@ -802,5 +913,11 @@
 
   .message.error {
     color: var(--color-danger);
+  }
+
+  @media (max-width: 768px) {
+    .tools-menu {
+      display: none;
+    }
   }
 </style>

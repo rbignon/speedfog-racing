@@ -12,6 +12,7 @@
   import { joinableStore } from "$lib/stores/joinable.svelte";
   import { rewards } from "$lib/stores/rewards.svelte";
   import { featuredEvent } from "$lib/stores/featuredEvent.svelte";
+  import { navSection } from "$lib/stores/navSection.svelte";
   import NavUserSearch from "$lib/components/NavUserSearch.svelte";
   import FeedbackModal from "$lib/components/FeedbackModal.svelte";
   import AnnouncementBanner from "$lib/components/AnnouncementBanner.svelte";
@@ -34,13 +35,20 @@
   let dailyUnplayed = $state(false);
 
   let adminActive = $derived(page.url.pathname.startsWith("/admin"));
-  let soloActive = $derived(page.url.pathname.startsWith("/training"));
+  // A speedrun or Set Seed race or session belongs to Speedrun, not to the
+  // item its path names.
+  let soloActive = $derived(
+    page.url.pathname.startsWith("/training") && !navSection.speedrun,
+  );
   let dailyActive = $derived(page.url.pathname.startsWith("/daily"));
   let racesActive = $derived(
-    page.url.pathname.startsWith("/races") ||
-      page.url.pathname.startsWith("/race/"),
+    (page.url.pathname.startsWith("/races") ||
+      page.url.pathname.startsWith("/race/")) &&
+      !navSection.speedrun,
   );
-  let speedrunActive = $derived(page.url.pathname.startsWith("/speedrun"));
+  let speedrunActive = $derived(
+    page.url.pathname.startsWith("/speedrun") || navSection.speedrun,
+  );
   let eventActive = $derived(page.url.pathname.startsWith("/events/"));
 
   let userMenuOpen = $state(false);

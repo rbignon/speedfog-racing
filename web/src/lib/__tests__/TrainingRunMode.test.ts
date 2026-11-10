@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/svelte";
+import type { RunMode } from "$lib/api";
 import RunModeChip from "$lib/components/RunModeChip.svelte";
 import { isBlindTrainingSession, trainingMapView } from "$lib/utils/training";
 
@@ -55,15 +56,21 @@ describe("isBlindTrainingSession", () => {
 });
 
 describe("RunModeChip", () => {
-  it("renders the mode text for ranked modes only", () => {
-    expect(
-      render(RunModeChip, { mode: "speedrun" }).container.textContent,
-    ).toContain("Speedrun");
-    expect(
-      render(RunModeChip, { mode: "set_seed" }).container.textContent,
-    ).toContain("Set Seed");
-    expect(
-      render(RunModeChip, { mode: "normal" }).container.textContent?.trim(),
-    ).toBe("");
+  const text = (props: { mode: RunMode; short?: boolean }) =>
+    render(RunModeChip, props).container.textContent?.trim();
+
+  it("names the context and the subcategory outside the speedrun page", () => {
+    expect(text({ mode: "speedrun" })).toBe("Speedrun · Random Seed");
+    expect(text({ mode: "set_seed" })).toBe("Speedrun · Set Seed");
+  });
+
+  it("keeps a short subcategory alone on narrow cards", () => {
+    expect(text({ mode: "speedrun", short: true })).toBe("Random");
+    expect(text({ mode: "set_seed", short: true })).toBe("Set Seed");
+  });
+
+  it("marks nothing on a normal run", () => {
+    expect(text({ mode: "normal" })).toBe("");
+    expect(text({ mode: "normal", short: true })).toBe("");
   });
 });

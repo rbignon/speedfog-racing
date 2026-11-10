@@ -10,6 +10,7 @@
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
   import { trainingStore } from "$lib/stores/training.svelte";
+  import { navSection } from "$lib/stores/navSection.svelte";
   import {
     fetchTrainingSession,
     fetchTrainingSessions,
@@ -77,6 +78,14 @@
     displayName: string;
     zones: string[];
   } | null>(null);
+
+  // A ranked session (Speedrun or Set Seed) lights the navbar's Speedrun item.
+  $effect(() => {
+    navSection.speedrun = session !== null && session.mode !== "normal";
+    return () => {
+      navSection.speedrun = false;
+    };
+  });
 
   function openZoneCodex(nodeId: string, displayName: string, zones: string[]) {
     zoneSheetTarget = { nodeId, displayName, zones };

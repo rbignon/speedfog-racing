@@ -11,6 +11,12 @@ import type {
 
 export const RUN_TYPES: SpeedrunRunType[] = ["race", "daily", "event", "solo"];
 
+/** Tooltips of the Blind and Replay chips, wherever a run carries one. */
+export const RUN_KIND_TITLES = {
+  blind: "The runner did not know the seed beforehand",
+  replay: "Set Seed run: the runner may already know the seed",
+} as const;
+
 /** Set Seed: every run but those on an excluded or too old seed, whether the
  * seed was chosen or served. Random Seed: blind runs only. */
 export type SpeedrunSub = "set" | "random";

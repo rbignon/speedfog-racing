@@ -196,20 +196,15 @@
     color: var(--color-danger);
   }
 
+  /* On phones the parody header would take the first screen; its links live
+     elsewhere (Discord in the navbar, the website is /about). */
   @media (max-width: 768px) {
+    .game-header {
+      display: none;
+    }
+
     .grid {
       grid-template-columns: minmax(0, 1fr);
-    }
-  }
-
-  /* Keeps the title on one line next to the cover, so both stay level. */
-  @media (max-width: 640px) {
-    .title {
-      font-size: 1.3rem;
-    }
-
-    .year {
-      font-size: 1rem;
     }
   }
 </style>

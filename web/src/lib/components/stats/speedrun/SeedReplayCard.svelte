@@ -10,7 +10,6 @@
   import { downloadSeedSplits } from "$lib/livesplit-download";
   import { seedPageHref, setSeedRaceNewHref } from "$lib/speedrun";
   import { auth } from "$lib/stores/auth.svelte";
-  import SpeedrunRules from "./SpeedrunRules.svelte";
 
   let {
     seed,
@@ -86,15 +85,11 @@
     <p>
       Replay it <strong>as many times as you like</strong>. Your runs count on
       the
-      <strong class="board">{seed.category_name} · Set Seed</strong> board, ranked
-      with every blind run on this seed.
+      <strong class="board">{seed.category_name} · Set Seed</strong> board.
     </p>
     <p>
       They never enter <strong>Random Seed</strong>, which stays for blind runs.
     </p>
-    <div class="rules">
-      <SpeedrunRules />
-    </div>
     <div class="start">
       {#if auth.isLoggedIn}
         <button
@@ -126,9 +121,10 @@
     {/if}
   {/if}
 
-  <!-- On a seed that cannot be replayed, only a viewer who protects it gets
-       the row: Unprotect frees the slot. -->
-  {#if viewer && (seed.replayable || viewer.protected)}
+  <!-- Only for a viewer who can act: one who protects the seed (Unprotect
+       frees the slot, even on a seed that cannot be replayed any more), or
+       one who finished a run on a replayable seed. -->
+  {#if viewer && (viewer.protected || (seed.replayable && viewer.can_protect))}
     <div class="protect">
       <div class="protect-text">
         <strong>Protect this seed</strong>
@@ -144,10 +140,6 @@
           disabled={busy}
           onclick={toggleProtection}>Unprotect</button
         >
-      {:else if !viewer.can_protect}
-        <span class="hint"
-          >Only players who finished a run on this seed can protect it.</span
-        >
       {:else}
         <button
           type="button"
@@ -156,7 +148,7 @@
           onclick={toggleProtection}>Protect</button
         >
       {/if}
-      {#if !viewer.protected && seed.protectable && viewer.can_protect && atLimit}
+      {#if !viewer.protected && seed.protectable && atLimit}
         <p class="hint mine">
           To protect this one, unprotect one of yours first:
           <span class="mine-list">
@@ -209,14 +201,9 @@
     color: var(--color-text);
   }
 
-  .rules {
-    margin: 0.9rem 0 1.2rem;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
   .start {
     display: flex;
+    margin-top: 1.1rem;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.6rem;

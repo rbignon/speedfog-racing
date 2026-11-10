@@ -75,8 +75,8 @@ normal) gets none, where splits are of little use.
   ("Before you race"), "Download LiveSplit splits": the seed file for a Set
   Seed race, the category file for a Speedrun one. Absent while the race
   has no category.
-- **Speedrun board toolbar**, "LiveSplit", before "Start a run": the file of
-  the selected category.
+- **Speedrun board toolbar**, "LiveSplit splits" in the Tools menu (hidden
+  on phones): the file of the selected category.
 
 A category file takes its layer count from the page when it has one, else
 from the endpoint. The data comes from `GET /api/speedrun/livesplit/{category}`

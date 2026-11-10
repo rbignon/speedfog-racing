@@ -28,7 +28,11 @@
   <div class="page-header">
     <h1>Speedrun <span class="beta-badge">Beta</span></h1>
     <p class="subtitle">
-      Every category, on blind seeds and on seeds you can replay.
+      Races, Daily Seeds and ranked solo runs you finish count here, timed in
+      game and ranked by category. <strong>Set Seed</strong> ranks every run on
+      seeds you can replay as often as you like, blind ones included.
+      <strong>Random Seed</strong> keeps blind runs only, each on a seed nobody had
+      played.
     </p>
   </div>
 
@@ -73,6 +77,11 @@
     margin: 0;
     color: var(--color-text-secondary);
     font-size: var(--font-size-base);
+    line-height: 1.55;
+  }
+
+  .subtitle strong {
+    color: var(--color-text);
   }
 
   @media (max-width: 640px) {

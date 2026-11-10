@@ -64,6 +64,7 @@
     type RaceDetail,
   } from "$lib/api";
   import { joinableStore } from "$lib/stores/joinable.svelte";
+  import { navSection } from "$lib/stores/navSection.svelte";
 
   let downloading = $state(false);
   let downloadError = $state<string | null>(null);
@@ -216,6 +217,14 @@
     // The Cast Setup panel belongs to one race's casters: it closes on the
     // way to another race, where `?cast=1` reopens it for them.
     showCastSetup = false;
+  });
+
+  // A speedrun or Set Seed race lights the navbar's Speedrun item.
+  $effect(() => {
+    navSection.speedrun = initialRace.mode !== "normal";
+    return () => {
+      navSection.speedrun = false;
+    };
   });
 
   // Live data from WebSocket
@@ -2292,6 +2301,12 @@
       border-right: none;
       border-bottom: 1px solid var(--color-border);
       padding: 1rem;
+    }
+
+    /* A long field scrolls in place, so the race's title and map stay
+       within reach. */
+    .sidebar-section {
+      max-height: 40vh;
     }
 
     .main-content {
