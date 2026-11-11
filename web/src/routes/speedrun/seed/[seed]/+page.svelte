@@ -173,9 +173,8 @@
         <div class="seed-title">
           <h1>Seed {seed.seed_number}</h1>
           <p class="origin">
-            {seed.category_name}
-            {#if seed.origin}
-              · first played {#if seed.origin.race_id}in <a
+            {seed.category_name}{#if seed.origin}, first played {#if seed.origin.race_id}in
+                <a
                   href={speedrunRunHref({
                     race_id: seed.origin.race_id,
                     daily_date: seed.origin.daily_date,

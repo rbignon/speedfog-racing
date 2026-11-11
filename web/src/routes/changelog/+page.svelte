@@ -93,8 +93,7 @@
         href="https://github.com/rbignon/speedfog"
         target="_blank"
         rel="noopener noreferrer">speedfog</a
-      >
-      ·
+      >,
       <a
         href="https://github.com/rbignon/speedfog-racing"
         target="_blank"

@@ -67,7 +67,7 @@ _TEMPLATE_BY_KIND = {
 
 # Folded into cache filenames so a visual redesign of the templates, or a change
 # in how they are rasterized, stops serving stale PNGs. Bump on every refresh.
-_TEMPLATE_VERSION = 5
+_TEMPLATE_VERSION = 6
 
 _FONT_DIR = Path(__file__).resolve().parent.parent / "static" / "fonts"
 
@@ -887,7 +887,7 @@ def event_og_description(summary: EventOgSummary) -> str:
         parts = [summary.caption or summary.status_label]
     if summary.player_count_label:
         parts.append(summary.player_count_label)
-    return " · ".join(parts)
+    return ", ".join(parts)
 
 
 async def render_event_og(
@@ -992,10 +992,10 @@ def _record_kind(run: CountedRun) -> str:
 
 
 def _record_summary(run: CountedRun) -> str:
-    """ "23m 43s by Abisxoxo · Replay, 5 November 2026"."""
+    """ "23m 43s by Abisxoxo (Replay, 5 November 2026)"."""
     return (
-        f"{format_speedrun_time(run.igt_ms)} by {_record_name(run)} · "
-        f"{_record_kind(run)}, {_run_day(run.finished_at)}"
+        f"{format_speedrun_time(run.igt_ms)} by {_record_name(run)} "
+        f"({_record_kind(run)}, {_run_day(run.finished_at)})"
     )
 
 
@@ -1022,13 +1022,13 @@ async def _record_context(run: CountedRun, avatar_lookup: AvatarLookup) -> dict[
 
 def speedrun_board_sub_label(card: SpeedrunBoardCard) -> str:
     """The board's sub and filter as the page names them: "Set Seed", "Random
-    Seed · Deathless"."""
+    Seed (Deathless)"."""
     label = SPEEDRUN_SUB_LABEL[card.sub]
-    return f"{label} · Deathless" if card.deathless else label
+    return f"{label} (Deathless)" if card.deathless else label
 
 
 def _seed_counts_label(card: SpeedrunSeedCard) -> str:
-    return f"{_count_label(card.runs, 'run')} · {_count_label(card.players, 'player')}"
+    return f"{_count_label(card.runs, 'run')}, {_count_label(card.players, 'player')}"
 
 
 def _seed_status_label(card: SpeedrunSeedCard) -> str:
@@ -1045,13 +1045,13 @@ def speedrun_board_description(card: SpeedrunBoardCard) -> str:
     """The meta description of a board: its record and player count."""
     if card.record is None:
         return "No run yet"
-    return f"World record {_record_summary(card.record)} · {_count_label(card.players, 'player')}"
+    return f"World record {_record_summary(card.record)}, {_count_label(card.players, 'player')}"
 
 
 def speedrun_seed_description(card: SpeedrunSeedCard) -> str:
     """The meta description of a seed page: its record, counts and status."""
     record = f"Record {_record_summary(card.record)}" if card.record else _seed_empty_label(card)
-    return f"{record} · {_seed_counts_label(card)} · {_seed_status_label(card)}"
+    return f"{record}, {_seed_counts_label(card)}, {_seed_status_label(card)}"
 
 
 async def build_speedrun_board_context(

@@ -73,8 +73,8 @@ async def test_board_meta_shows_the_record_and_links_the_png(og_test_client, spr
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
     body = r.text
-    assert "Sprint · Set Seed · Speedrun" in body
-    assert "World record 0m 59s by b · Replay, 1 October 2026 · 2 players" in body
+    assert "Sprint - Set Seed - Speedrun" in body
+    assert "World record 0m 59s by b (Replay, 1 October 2026), 2 players" in body
     assert "/api/og/speedrun.png?pool=sprint" in body
     assert "/speedrun?pool=sprint" in body
 
@@ -85,8 +85,8 @@ async def test_board_meta_follows_the_shared_board_filters(og_test_client, sprin
     r = await og_test_client.get("/api/og/speedrun/meta?pool=sprint&sub=random&deathless=1")
     assert r.status_code == 200
     body = r.text
-    assert "Sprint · Random Seed · Deathless · Speedrun" in body
-    assert "World record 1m 01s by a · Blind, 1 October 2026 · 1 player" in body
+    assert "Sprint - Random Seed (Deathless) - Speedrun" in body
+    assert "World record 1m 01s by a (Blind, 1 October 2026), 1 player" in body
     assert "/api/og/speedrun.png?pool=sprint&amp;sub=random&amp;deathless=1" in body
 
 
@@ -95,7 +95,7 @@ async def test_board_meta_unknown_pool_shows_the_first_category(
 ) -> None:
     r = await og_test_client.get("/api/og/speedrun/meta?pool=nope&types=bogus")
     assert r.status_code == 200
-    assert "Sprint · Set Seed · Speedrun" in r.text
+    assert "Sprint - Set Seed - Speedrun" in r.text
     assert "/api/og/speedrun.png?pool=sprint" in r.text
 
 
@@ -122,8 +122,8 @@ async def test_seed_meta_shows_the_record_and_the_status(og_test_client, sprint_
     r = await og_test_client.get("/api/og/speedrun/seed/5eed00000001/meta")
     assert r.status_code == 200
     body = r.text
-    assert "Seed 5eed00000001 · Sprint · SpeedFog Racing" in body
-    assert "Record 0m 59s by b · Replay, 1 October 2026 · 2 runs · 1 player · Replayable" in body
+    assert "Seed 5eed00000001 - Sprint - SpeedFog Racing" in body
+    assert "Record 0m 59s by b (Replay, 1 October 2026), 2 runs, 1 player, Replayable" in body
     assert "/api/og/speedrun/seed/5eed00000001.png" in body
     assert "/speedrun/seed/5eed00000001" in body
 
@@ -141,7 +141,7 @@ async def test_seed_meta_with_unranked_runs_only_counts_them(
 
     r = await og_test_client.get("/api/og/speedrun/seed/5eed00000002/meta")
     assert r.status_code == 200
-    assert "No ranked run yet · 1 run · 1 player · Replayable" in r.text
+    assert "No ranked run yet, 1 run, 1 player, Replayable" in r.text
 
 
 async def test_seed_meta_unknown_seed_falls_back(og_test_client, sprint_runs) -> None:

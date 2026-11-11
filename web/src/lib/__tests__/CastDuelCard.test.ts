@@ -49,7 +49,7 @@ describe("CastDuelCard: states", () => {
         },
       });
       expect(container.querySelector(".dzone")?.textContent).toBe(
-        `${text} · Stormveil`,
+        `${text}: Stormveil`,
       );
     },
   );

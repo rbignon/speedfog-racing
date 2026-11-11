@@ -280,7 +280,7 @@
         {:else if seedSummary}
           <p>
             Runners may already know this seed. Times count on the
-            <strong>{seedSummary.category_name} · Set Seed</strong> board only.
+            <strong>{seedSummary.category_name} - Set Seed</strong> board only.
           </p>
           <SpeedrunRules />
         {/if}
@@ -309,7 +309,7 @@
           <div class="pool-container">
             <div class="seed-mode">
               {#if seedSummary}
-                <strong>{seedSummary.category_name}</strong> · set by the seed
+                <strong>{seedSummary.category_name}</strong>, set by the seed
               {:else}
                 Set by the seed
               {/if}
@@ -491,7 +491,6 @@
             Open
           </label>
           {#if openRegistration}
-            <span class="registration-sep">·</span>
             <label class="inline-max">
               max
               <input
@@ -955,10 +954,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.75rem;
-  }
-
-  .registration-sep {
-    color: var(--color-text-disabled);
   }
 
   .inline-max {

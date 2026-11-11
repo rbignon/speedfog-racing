@@ -1122,7 +1122,7 @@ impl RaceTracker {
     /// Leaderboard with color-coded status, gap timing, and right-aligned values.
     /// Gaps are computed client-side using leader_splits. The local player uses
     /// real-time game memory IGT; other players use the server's latest snapshot.
-    /// Always shows the local player: past the rows the top block holds, a `···`
+    /// Always shows the local player: past the rows the top block holds, a `…`
     /// separator leads to their own rows (see `compute_leaderboard_layout`),
     /// and the centered `mode` measures every gap between them and the row's
     /// runner (see `gap_from_player`).
@@ -1175,7 +1175,7 @@ impl RaceTracker {
 
         // Separator + the local player's rows
         if let Some(window) = &cache.window {
-            ui.text_disabled("  \u{00B7}\u{00B7}\u{00B7}");
+            ui.text_disabled("  \u{2026}");
             for (i, p) in participants
                 .iter()
                 .enumerate()

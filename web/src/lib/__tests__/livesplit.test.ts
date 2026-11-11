@@ -97,7 +97,7 @@ describe("buildLss", () => {
     expect(d.querySelector("parsererror")).toBeNull();
     expect(d.querySelector("Run > GameName")!.textContent).toBe("SpeedFog");
     expect(d.querySelector("Run > CategoryName")!.textContent).toBe(
-      "Pool Name · Seed 42",
+      "Pool Name - Seed 42",
     );
     expect(d.querySelectorAll("Segment")).toHaveLength(3);
     const vars = [...d.querySelectorAll("CustomVariables > Variable")];

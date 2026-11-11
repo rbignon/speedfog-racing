@@ -123,7 +123,7 @@
           ? "DNF"
           : null;
     if (!state) return zone;
-    return zone ? `${state} · ${zone}` : state;
+    return zone ? `${state}: ${zone}` : state;
   });
 </script>
 

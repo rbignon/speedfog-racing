@@ -292,7 +292,7 @@ describe("expandNodePath", () => {
     // Layered DAG: a (L0) → b (L1) → c (L2), a (L0) → d (L1) → c (L2).
     // Zone history: a, c. b and d both unvisited.
     // There is no valid forward-only chain a→c (a→b→c or a→d→c would
-    // require traversing through a layer-1 node, which is fine — they
+    // require traversing through a layer-1 node, which is fine: they
     // are forward transitions). Both paths are equally short; BFS picks
     // whichever it finds first, but both are gameplay-valid because the
     // intermediate is reached via forward edges.

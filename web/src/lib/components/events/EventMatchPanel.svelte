@@ -142,7 +142,7 @@
               class:adv={row.advances}
             >
               {row.total === null
-                ? "·"
+                ? "-"
                 : row.advances
                   ? `adv ${row.total}`
                   : row.total}

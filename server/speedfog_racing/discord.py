@@ -512,7 +512,7 @@ async def notify_speedrun_record(change: RecordChange) -> None:
         previous = f"{_format_igt(change.previous.igt_ms)} by {previous_name}"
     base_url = settings.base_url.rstrip("/")
     embed: dict[str, object] = {
-        "title": f"New {_escape_discord_md(change.category_name)} \u00b7 {sub_label} World Record",
+        "title": f"New {_escape_discord_md(change.category_name)} - {sub_label} World Record",
         "url": f"{base_url}/speedrun/seed/{run.seed_number}?run={run.run_id}",
         "color": 0xF5C542,
         "fields": [

@@ -138,7 +138,7 @@ async def test_ranked_session_records_debug_flags_and_alerts(df_session) -> None
     kwargs = fire.call_args.kwargs
     assert kwargs["session_id"] == str(entity.id)
     assert kwargs["race_id"] is None
-    assert kwargs["race_name"] == "Solo \u00b7 Sprint \u00b7 Random Seed"
+    assert kwargs["race_name"] == "Solo - Sprint - Random Seed"
     assert (kwargs["flags"], kwargs["igt_ms"]) == (["one_shot"], 83000)
 
 
@@ -146,7 +146,7 @@ async def test_session_alert_links_the_training_page() -> None:
     mock_send = AsyncMock()
     with patch("speedfog_racing.discord._send_admin_webhook", mock_send):
         await notify_debug_flags_detected(
-            race_name="Solo \u00b7 Sprint \u00b7 Set Seed",
+            race_name="Solo - Sprint - Set Seed",
             race_id=None,
             session_id="abc",
             player_name="Runner",
@@ -475,7 +475,7 @@ async def test_cheat_detections_list_ranked_solo_runs(df_client, df_session, df_
     ]
     solo = data[0]
     assert (solo["participant_id"], solo["race_id"]) == (None, None)
-    assert solo["race_name"] == "Solo · Sprint · Set Seed"
+    assert solo["race_name"] == "Solo - Sprint - Set Seed"
     assert solo["zone_names"] == {"node_a": "Gate"}
 
 

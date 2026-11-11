@@ -326,7 +326,7 @@ describe("Start a run: Set Seed", () => {
     );
     await waitFor(() =>
       expect(text(container.querySelector(".seed-check"))).toBe(
-        "✓ Replayable · WR 25:43 by Abisxoxo",
+        "✓ Replayable, WR 25:43 by Abisxoxo",
       ),
     );
     expect(fetchSpeedrunSeedSummary).toHaveBeenCalledTimes(1);
@@ -434,10 +434,10 @@ describe("Start a run: Set Seed", () => {
     expect(category()).toBe("Standard");
 
     await fireEvent.click(screen.getByRole("button", { name: "Set Seed" }));
-    expect(board()).toBe("Standard · Set Seed");
+    expect(board()).toBe("Standard - Set Seed");
     await typeSeed(SEED);
     await waitFor(() => expect(category()).toBe("Boss Rush"));
-    expect(board()).toBe("Boss Rush · Set Seed");
+    expect(board()).toBe("Boss Rush - Set Seed");
 
     // Random Seed draws from the board's category.
     await fireEvent.click(screen.getByRole("button", { name: "Random Seed" }));
@@ -447,7 +447,7 @@ describe("Start a run: Set Seed", () => {
 
     await typeSeed("");
     expect(category()).toBe("Standard");
-    expect(board()).toBe("Standard · Set Seed");
+    expect(board()).toBe("Standard - Set Seed");
   });
 });
 

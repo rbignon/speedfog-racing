@@ -252,16 +252,11 @@
     display: flex;
     align-items: baseline;
     flex-wrap: wrap;
+    column-gap: 0.9rem;
     margin-top: 1px;
     font-family: var(--font-mono);
     font-size: 0.75rem;
     color: var(--color-text-secondary);
-  }
-
-  .m > :global(span:not(:first-child))::before {
-    content: "·";
-    margin: 0 0.4rem;
-    color: var(--color-text-disabled);
   }
 
   .m .dnf {

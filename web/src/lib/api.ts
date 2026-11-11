@@ -2010,7 +2010,7 @@ export async function fetchReportedSeeds(): Promise<ReportedSeed[]> {
 
 export interface CheatDetection {
   // A race detection names its participant and race; a ranked solo run, its
-  // session, with race_name naming the run ("Solo · <pool> · Set Seed").
+  // session, with race_name naming the run ("Solo - <pool> - Set Seed").
   participant_id: string | null;
   race_id: string | null;
   session_id: string | null;

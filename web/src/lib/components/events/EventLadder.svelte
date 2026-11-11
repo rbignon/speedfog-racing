@@ -108,7 +108,7 @@
             class:rank-gold={entry.rank === 1}
             class:rank-silver={entry.rank === 2}
             class:rank-bronze={entry.rank === 3}
-            >{entry.rank ?? (entry.withdrawn ? "" : "·")}</span
+            >{entry.rank ?? (entry.withdrawn ? "" : "-")}</span
           >
           <div class="name-line">
             <UserLink user={entry.user} showBadge showAvatar />
@@ -119,7 +119,7 @@
           {#each modes as mode (mode.key)}
             {@const p = entry.mode_points[mode.key]}
             <span class="cell" class:miss={p == null}
-              >{p == null ? "·" : p}</span
+              >{p == null ? "-" : p}</span
             >
           {/each}
           {#if entry.total === null}

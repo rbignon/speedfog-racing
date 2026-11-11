@@ -69,12 +69,12 @@
   let shownCategory = $derived(
     seedMode === "set" && summary ? summary.category_name : categoryName,
   );
-  // " · WR <time> by <player>" for a seed with a run, nothing otherwise.
+  // ", WR <time> by <player>" for a seed with a run, nothing otherwise.
   let recordText = $derived.by(() => {
     const record = summary?.record;
     if (!record) return "";
     const name = record.user.twitch_display_name ?? record.user.twitch_username;
-    return ` · WR ${formatIgt(record.igt_ms)} by ${name}`;
+    return `, WR ${formatIgt(record.igt_ms)} by ${name}`;
   });
   // The unfinished Random Seed solo runs a player may leave in the window:
   // shown once one or none is left, so the limit never comes as a surprise.
@@ -296,19 +296,19 @@
       {#if seedMode === "random" && chosenFormat === "solo"}
         You get <strong>a seed nobody has played</strong>. Map, spoiler and
         ghosts stay hidden until you finish. Ranked on
-        <strong class="board">{categoryName} · Random Seed</strong>, and on Set
+        <strong class="board">{categoryName} - Random Seed</strong>, and on Set
         Seed too.
       {:else if seedMode === "random"}
         Runners get <strong>a seed nobody has played</strong>, drawn when the
         race is created. Ranked on
-        <strong class="board">{categoryName} · Random Seed</strong>, and on Set
+        <strong class="board">{categoryName} - Random Seed</strong>, and on Set
         Seed too.
       {:else if chosenFormat === "solo"}
         Full map available on the run's page. Ranked on
-        <strong class="board">{shownCategory} · Set Seed</strong>.
+        <strong class="board">{shownCategory} - Set Seed</strong>.
       {:else}
         <strong>Runners may already know this seed</strong>. Ranked on
-        <strong class="board">{shownCategory} · Set Seed</strong> only.
+        <strong class="board">{shownCategory} - Set Seed</strong> only.
       {/if}
     </p>
 

@@ -85,10 +85,10 @@
       {#each overview.practiced_seeds as seed (seed.seed_number)}
         <a class="practiced" href={seedPageHref(seed.seed_number)}>
           <span class="seed"
-            >{seed.seed_number.slice(0, 6)} · {seed.category_name}</span
+            >{seed.seed_number.slice(0, 6)} ({seed.category_name})</span
           >
           <span class="counts"
-            >{plural(seed.attempts, "attempt")} · {plural(
+            >{plural(seed.attempts, "attempt")}, {plural(
               seed.players,
               "player",
             )}</span
@@ -113,7 +113,7 @@
             run.user.twitch_username}">{run.category}</a
         >
         <div class="details">
-          {run.blind ? "Blind" : "Replay"}{run.deathless ? " · Deathless" : ""} ({run.weapon
+          {run.blind ? "Blind" : "Replay"}{run.deathless ? ", Deathless" : ""} ({run.weapon
             ? formatCombo(run.weapon, getWeaponName)
             : "–"})
         </div>

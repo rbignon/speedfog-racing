@@ -171,18 +171,18 @@ The old vocabulary (8px radius, colored `border-left`, translucent pill chips) i
 
 ### Daily timetable
 
-The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Riding the plate's top border runs **one continuous week line**: a start triangle before the first day and a filled terminal square after the last day, each taking its rim segment's color (the square is always filled, echoing the hero underline's terminal), with one hollow station centered on each day (straddling the border, punched with its cell's background). Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, and for today the seed's own state: ember with the traveling dot while it runs, brass line and dot while the viewer is riding it, verdigris with no dot once they are done; dashed border-grey for future or missing days; segments meet at hairline-thin breaks aligned with the column separators, reading as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (`Name · IGT`, no tag: the only name a closed cell shows is its winner). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners as brass-ringed avatars + names.
+The week grid is a timetable: one continuous bordered plate with 7 equal columns (`minmax(150px, 1fr)`, horizontal scroll below that) and hairline column separators. Riding the plate's top border runs **one continuous week line**: a start triangle before the first day and a filled terminal square after the last day, each taking its rim segment's color (the square is always filled, echoing the hero underline's terminal), with one hollow station centered on each day (straddling the border, punched with its cell's background). Each day colors its own segment: verdigris when the viewer finished that seed, steel for a closed day without them, and for today the seed's own state: ember with the traveling dot while it runs, brass line and dot while the viewer is riding it, verdigris with no dot once they are done; dashed border-grey for future or missing days; segments meet at hairline-thin breaks aligned with the column separators, reading as tick marks. Day + player count in mono micro-labels, mode name in display caps (a deathless day carries a mono ember `DEATHLESS` micro-label), winner line in mono (name on the left, IGT on the right, no tag: the only name a closed cell shows is its winner). The today cell sits on elevated surface (the old gold glow is retired); the toolbar keeps the streak/freeze info (mono, `❄` in text form, no flame) and the weekly winners as brass-ringed avatars + names.
 
 **The today cell is the button**: the whole cell is one link, with a full-width strip pinned to its bottom edge. Strip hue taxonomy (kept from v1 behavior, hexes retuned):
 
-| Strip                             | Style                                         |
-| --------------------------------- | --------------------------------------------- |
-| `Play now` / `Keep streak`        | Solid verdigris, near-black text (the action) |
-| `In progress`                     | Translucent brass, brass text                 |
-| `❄ Freeze`                        | Translucent frost, frost text                 |
-| Finished result (`12/30 · 41:07`) | Translucent slate, verdigris mono text        |
-| `DNF · IGT`                       | Translucent slate, secondary mono text        |
-| `Abandoned`                       | Translucent slate, disabled text              |
+| Strip                            | Style                                         |
+| -------------------------------- | --------------------------------------------- |
+| `Play now` / `Keep streak`       | Solid verdigris, near-black text (the action) |
+| `In progress`                    | Translucent brass, brass text                 |
+| `❄ Freeze`                       | Translucent frost, frost text                 |
+| Finished result (`12/30, 41:07`) | Translucent slate, verdigris mono text        |
+| `DNF, IGT`                       | Translucent slate, secondary mono text        |
+| `Abandoned`                      | Translucent slate, disabled text              |
 
 Label strips use the display face in caps; result strips (finished, DNF) drop to mono and carry no check icon, the hue does the talking.
 

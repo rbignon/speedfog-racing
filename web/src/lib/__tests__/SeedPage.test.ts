@@ -296,7 +296,7 @@ describe("seed page: where the seed was first played", () => {
 
     const origin = container.querySelector(".origin");
     expect(origin?.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Standard · first played in Race one on Sep 23, 2026",
+      "Standard, first played in Race one on Sep 23, 2026",
     );
     expect(origin?.querySelector("a")?.getAttribute("href")).toBe("/race/r1");
   });
@@ -315,7 +315,7 @@ describe("seed page: where the seed was first played", () => {
 
     const origin = container.querySelector(".origin");
     expect(origin?.textContent?.replace(/\s+/g, " ").trim()).toBe(
-      "Standard · first played solo on Sep 23, 2026",
+      "Standard, first played solo on Sep 23, 2026",
     );
     expect(origin?.querySelector("a")).toBeNull();
   });
@@ -405,9 +405,9 @@ describe("SeedStatusChip", () => {
 
     const tip = screen.getByRole("tooltip");
     expect(tip.textContent).toContain("Files kept");
-    expect(tip.textContent).toContain(
-      "Top 10 seed of Standard · Protected by 2 players",
-    );
+    // Each reason is a label of its own, on its own line.
+    expect(screen.getByText("Top 10 seed of Standard").tagName).toBe("SPAN");
+    expect(screen.getByText("Protected by 2 players").tagName).toBe("SPAN");
   });
 
   it("warns that nothing keeps the files yet", () => {

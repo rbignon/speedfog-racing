@@ -60,8 +60,8 @@ describe("RunModeChip", () => {
     render(RunModeChip, props).container.textContent?.trim();
 
   it("names the context and the subcategory outside the speedrun page", () => {
-    expect(text({ mode: "speedrun" })).toBe("Speedrun · Random Seed");
-    expect(text({ mode: "set_seed" })).toBe("Speedrun · Set Seed");
+    expect(text({ mode: "speedrun" })).toBe("Speedrun - Random Seed");
+    expect(text({ mode: "set_seed" })).toBe("Speedrun - Set Seed");
   });
 
   it("keeps a short subcategory alone on narrow cards", () => {

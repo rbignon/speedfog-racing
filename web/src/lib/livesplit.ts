@@ -143,7 +143,7 @@ export function seedLssFile(
   }
 
   return {
-    categoryName: `${seed.category_name} · Seed ${seed.seed_number}`,
+    categoryName: `${seed.category_name} - Seed ${seed.seed_number}`,
     seedNumber: seed.seed_number,
     categoryKey: null,
     segmentNames,
@@ -237,10 +237,11 @@ export function buildLss(file: LssFile): string {
 /** `SpeedFog - <Category> - Seed <n>.lss` or `SpeedFog - <Category>.lss`,
  * with the characters a file name cannot hold turned into spaces. */
 export function lssFileName(file: LssFile): string {
+  const seedSuffix = ` - Seed ${file.seedNumber}`;
   const category = (
-    file.seedNumber === null
-      ? file.categoryName
-      : file.categoryName.replace(/ · Seed .*$/, "")
+    file.seedNumber !== null && file.categoryName.endsWith(seedSuffix)
+      ? file.categoryName.slice(0, -seedSuffix.length)
+      : file.categoryName
   )
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")

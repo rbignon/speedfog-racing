@@ -72,10 +72,10 @@ describe("content catalog invariants", () => {
     }
   });
 
-  it("never uses an em dash in player-facing strings", () => {
+  it("never uses an em dash or a middle dot in player-facing strings", () => {
     for (const item of CONTENT_ITEMS) {
       const text = [item.title, item.short, item.body ?? ""].join(" ");
-      expect(text.includes("—"), item.id).toBe(false);
+      expect(/[\u2014\u00b7]/.test(text), item.id).toBe(false);
     }
   });
 

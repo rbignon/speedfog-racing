@@ -1501,7 +1501,7 @@
                     title={soloProgressTitle(pool)}
                   >
                     {played}/{pool.available}{exhausted > 0
-                      ? ` · ${exhausted} done`
+                      ? `, ${exhausted} done`
                       : ""}
                   </td>
                 {:else}

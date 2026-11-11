@@ -10,10 +10,10 @@
     mode === "speedrun"
       ? short
         ? "Random"
-        : "Speedrun · Random Seed"
+        : "Speedrun - Random Seed"
       : short
         ? "Set Seed"
-        : "Speedrun · Set Seed",
+        : "Speedrun - Set Seed",
   );
 </script>
 

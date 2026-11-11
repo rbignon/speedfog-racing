@@ -109,7 +109,7 @@
     <span class="brb">Be right back</span>
     <span class="rule"></span>
     <span class="where"
-      >{eventName}<span class="dot">&middot;</span><span class="gold"
+      >{eventName}<span class="sep" aria-hidden="true"></span><span class="gold"
         >{stage.label}</span
       ></span
     >
@@ -117,9 +117,9 @@
   {:else if headline}
     <span class="eyebrow">{headline.provisional ? "Provisional" : " "}</span>
     <span class="headline"
-      >{eventName}<span class="dot">&middot;</span><span class="gold"
+      >{eventName}<span class="sep" aria-hidden="true"></span><span class="gold"
         >{stage.label}</span
-      ><span class="dot">&middot;</span>{headline.title}</span
+      ><span class="sep" aria-hidden="true"></span>{headline.title}</span
     >
     <!-- Before any result the standings beneath already say so: the card
          keeps its line alone rather than repeat them. -->
@@ -259,9 +259,10 @@
     letter-spacing: 0.08em;
   }
 
-  .dot {
-    margin: 0 16px;
-    color: var(--color-text-secondary);
+  /* The parts of a line stand apart by space alone, the stage in gold. */
+  .sep {
+    display: inline-block;
+    width: 0.9em;
   }
 
   .gold {

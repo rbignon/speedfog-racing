@@ -691,14 +691,14 @@ async def test_activity_merges_organizer_into_participant(
         db.add(seed)
         await db.flush()
 
-        # Race A: admin organizes and plays — should produce a single merged row.
+        # Race A: admin organizes and plays, should produce a single merged row.
         race_a = Race(
             name="Self-Hosted",
             organizer_id=admin_user.id,
             seed_id=seed.id,
             status=RaceStatus.FINISHED,
         )
-        # Race B: admin only organizes (regular_user plays) — should keep both rows.
+        # Race B: admin only organizes (regular_user plays), should keep both rows.
         race_b = Race(
             name="Hosted Only",
             organizer_id=admin_user.id,

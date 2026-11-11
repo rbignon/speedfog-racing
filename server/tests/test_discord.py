@@ -1054,7 +1054,7 @@ async def test_finish_dropped_alert_gives_admins_the_evidence():
     mock_send = AsyncMock()
     with patch("speedfog_racing.discord._send_admin_webhook", mock_send):
         await notify_finish_dropped(
-            run_name="Solo \u00b7 Sprint \u00b7 Random Seed",
+            run_name="Solo - Sprint - Random Seed",
             session_id="abc",
             player_name="Some_Runner",
             seed_number="363096a4243f",
@@ -1066,7 +1066,7 @@ async def test_finish_dropped_alert_gives_admins_the_evidence():
     assert embed["url"].endswith("/training/abc")
     values = {f["name"]: f["value"] for f in embed["fields"]}
     assert values == {
-        "Run": "Solo \u00b7 Sprint \u00b7 Random Seed",
+        "Run": "Solo - Sprint - Random Seed",
         "Seed": "363096a4243f",
         "IGT": "1:02:03",
         "Reason": "Final boss zone not reached",

@@ -315,7 +315,7 @@ def test_an_undated_current_stage_shows_no_date_on_the_card() -> None:
     assert summary.kind == "event_stage"
     assert summary.stage_label == "Open final"
     assert summary.stage_date is None
-    assert event_og_description(summary) == "Open final · 2 players"
+    assert event_og_description(summary) == "Open final, 2 players"
 
 
 def test_a_finished_event_crowns_the_winner_of_the_final() -> None:
@@ -618,7 +618,7 @@ def test_the_cut_with_nothing_scheduled_lines_up_each_brackets_draw() -> None:
         ("Newcomers", [["eve", "fay"]], 0),
     ]
     assert summary.caption is None
-    assert event_og_description(summary) == "Playoffs incoming · 7 players"
+    assert event_og_description(summary) == "Playoffs incoming, 7 players"
 
 
 def test_a_struck_runner_leaves_the_draw_and_the_runners_below_move_up() -> None:

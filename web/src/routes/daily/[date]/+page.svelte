@@ -171,7 +171,7 @@
   let raceStatus = $derived(raceStore.race?.status ?? initialRace.status);
   let theme = $derived(dailyTheme(initialRace));
   let kickerLabel = $derived(
-    `DAILY · ${new Date(`${initialRace.daily_date}T00:00:00Z`)
+    `DAILY - ${new Date(`${initialRace.daily_date}T00:00:00Z`)
       .toLocaleDateString("en-US", {
         weekday: "short",
         month: "short",

@@ -116,10 +116,10 @@ describe("SpeedrunSidebar practiced seeds", () => {
       ]),
     });
 
-    const first = screen.getByRole("link", { name: /363096 · Sprint/ });
+    const first = screen.getByRole("link", { name: /363096 \(Sprint\)/ });
     expect(first.getAttribute("href")).toBe("/speedrun/seed/363096a4243f");
-    expect(first.textContent).toContain("3 attempts · 2 players");
-    expect(screen.getByText("1 attempt · 1 player")).toBeTruthy();
+    expect(first.textContent).toContain("3 attempts, 2 players");
+    expect(screen.getByText("1 attempt, 1 player")).toBeTruthy();
   });
 
   it("labels the panel with the window the API reports", () => {

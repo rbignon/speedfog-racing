@@ -222,7 +222,7 @@ since the scene can seat any two runners of the field and the better of the
 shows `–`, never a tie. Deaths stay on the cards, not repeated in the block.
 The duel cards have no Gap row, so their zone line carries the runner's
 state: a runner out of the race reads DNF or DQ before the zone they stopped
-in ("DNF · Stormveil Castle"), and drops out of the gap (the surviving side
+in ("DNF: Stormveil Castle"), and drops out of the gap (the surviving side
 leads); a finished runner's zone line reads "Finished" and their IGT takes
 the finished colour, as in the standings panels.
 
@@ -506,8 +506,9 @@ nothing under it but the Audio scene.
   the stage's label, and the lockup.
 - **End**: the runners going on, each with their Twitch avatar, name (in
   their equipped name template, as in the standings), points and a chip
-  naming the stage their place goes on to, under "<event> · <stage> ·
-  Qualified" (`endHeadline`). They are the runners the standings panel
+  naming the stage their place goes on to, under the event's name, the
+  stage's label in gold and "Qualified", set apart by space alone
+  (`endHeadline`). They are the runners the standings panel
   beneath marks as going on, by the same rule (`stageGoesOn` in
   `web/src/lib/events.ts`): above the cut while the stage is raced, the
   server's verdict once it is complete, so the two never disagree. A stage
@@ -899,8 +900,8 @@ Twitch login when two display names would read the same (OBS wants every
 name unique). A runner's POV source is one source shared by every scene
 that seats them; any other name met twice fails the export with an error
 rather than writing a file whose scene could show the wrong source. The
-collection is named "SpeedFog · <race name>", or
-"SpeedFog · <event name> · <stage label>" for a match.
+collection is named "SpeedFog - <race name>", or
+"SpeedFog - <event name> - <stage label>" for a match.
 
 **Every seat is written out.** Each plate URL names every seat, the auto
 ones included: the runner's username, or `-` (`p<n>=-`, see "URL

@@ -183,8 +183,7 @@
       {#if displayedWeek.my_streak && displayedWeek.my_streak.current > 0}
         <span>{displayedWeek.my_streak.current}-day streak</span>
         {#if displayedWeek.my_streak.freeze_count > 0}
-          <span class="sep" aria-hidden="true">·</span>
-          <span aria-hidden="true">❄</span>
+          <span class="freeze-icon" aria-hidden="true">❄</span>
           <span>
             {displayedWeek.my_streak.freeze_count}
             freeze{displayedWeek.my_streak.freeze_count !== 1 ? "s" : ""}
@@ -355,7 +354,7 @@
               </span>
             {:else if strip?.kind === "dnf"}
               <span class="strip strip-dnf"
-                >{strip.igt ? `DNF · ${strip.igt}` : "DNF"}</span
+                >{strip.igt ? `DNF, ${strip.igt}` : "DNF"}</span
               >
             {:else}
               <span class="strip strip-placeholder" aria-hidden="true"
@@ -749,9 +748,8 @@
     color: var(--color-text-secondary);
   }
 
-  .streak-info .sep {
-    margin: 0 0.25rem;
-    color: var(--color-text-disabled);
+  .streak-info .freeze-icon {
+    margin-left: 0.6rem;
   }
 
   .grid-right {

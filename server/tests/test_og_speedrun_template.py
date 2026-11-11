@@ -45,7 +45,7 @@ def _seed_ctx(**overrides: object) -> dict:
         "seed_number": "69628472728a",
         "record": _record(),
         "empty_label": "No finished run yet",
-        "counts_label": "8 runs · 1 player",
+        "counts_label": "8 runs, 1 player",
         "status": "Replayable",
         "status_color": "#4aae8c",
     }
@@ -59,7 +59,7 @@ def test_board_template_renders_valid_svg_with_the_record() -> None:
     assert root.tag.endswith("svg")
     for text in ("SPEEDRUN", "SET SEED", "STANDARD", "WORLD RECORD", "Abisxoxo", "23m 43s"):
         assert text in svg
-    assert "Replay · 5 November 2026" in svg
+    assert "Replay, 5 November 2026" in svg
     assert "207 players" in svg
     assert "69628472728a" in svg
 
@@ -80,7 +80,7 @@ def test_seed_template_renders_valid_svg_with_the_record() -> None:
     assert root.tag.endswith("svg")
     for text in ("SPEEDRUN", "STANDARD", "69628472728a", "RECORD", "Abisxoxo", "23m 43s"):
         assert text in svg
-    assert "8 runs · 1 player" in svg
+    assert "8 runs, 1 player" in svg
     assert "Replayable" in svg
 
 

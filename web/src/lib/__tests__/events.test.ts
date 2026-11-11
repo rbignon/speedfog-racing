@@ -799,12 +799,12 @@ describe("eventFacts", () => {
 
 describe("stripStagePrefix", () => {
   it("drops the stage label only when the name starts with it", () => {
-    expect(stripStagePrefix("Semi A · Race 1 · Standard", "Semi A")).toBe(
-      "Race 1 · Standard",
-    );
-    expect(stripStagePrefix("Semi B · Race 1 · Standard", "Semi A")).toBe(
-      "Semi B · Race 1 · Standard",
-    );
+    expect(
+      stripStagePrefix("Semi A \u00b7 Race 1 \u00b7 Standard", "Semi A"),
+    ).toBe("Race 1 \u00b7 Standard");
+    expect(
+      stripStagePrefix("Semi B \u00b7 Race 1 \u00b7 Standard", "Semi A"),
+    ).toBe("Semi B \u00b7 Race 1 \u00b7 Standard");
     expect(stripStagePrefix("Semi A", "Semi A")).toBe("Semi A");
     expect(stripStagePrefix("Semi A - Race 1 - Standard", "Semi A")).toBe(
       "Race 1 - Standard",
@@ -1350,7 +1350,7 @@ describe("match table", () => {
     expect(raceCell(race, "ana")).toEqual({ text: "100", tone: "prov" });
     expect(raceCell(race, "bob")).toEqual({ text: "L8/9", tone: "live" });
     expect(raceCell(race, "cleo")).toEqual({ text: "DNF", tone: "out" });
-    expect(raceCell(race, "dan")).toEqual({ text: "·", tone: "todo" });
+    expect(raceCell(race, "dan")).toEqual({ text: "-", tone: "todo" });
     const unknownDepth = {
       ...race,
       race: { ...race.race, seed_total_layers: null },
@@ -1359,8 +1359,8 @@ describe("match table", () => {
   });
 
   it("leaves a race not run yet, or not attached, empty", () => {
-    expect(raceCell(entry(3, {}), "ana")).toEqual({ text: "·", tone: "todo" });
-    expect(raceCell(null, "ana")).toEqual({ text: "·", tone: "todo" });
+    expect(raceCell(entry(3, {}), "ana")).toEqual({ text: "-", tone: "todo" });
+    expect(raceCell(null, "ana")).toEqual({ text: "-", tone: "todo" });
   });
 
   it("ranks the results, tags each seat, and keeps a forfeit at the bottom", () => {
@@ -1396,7 +1396,7 @@ describe("match table", () => {
       ["ana", 2, "#3", false],
       ["cleo", null, "#30", true],
     ]);
-    expect(rows[0].cells.map((c) => c.text)).toEqual(["100", "·"]);
+    expect(rows[0].cells.map((c) => c.text)).toEqual(["100", "-"]);
     expect(rows[2].total).toBeNull();
   });
 
@@ -1480,7 +1480,7 @@ describe("match table", () => {
         },
         time,
       ),
-    ).toBe("Race 2 of 3 · Boss Rush · started 17:02");
+    ).toBe("Race 2 of 3, Boss Rush, started 17:02");
     const next = entry(2, { scheduled_at: "2026-10-18T17:30:00Z" });
     expect(
       liveMatchMeta(
@@ -1518,13 +1518,13 @@ describe("match table", () => {
     });
     expect(
       liveMatchMeta({ stage: done, state: "finished", race: null }, time),
-    ).toBe("Ended 17:15 · Ana and Bob go on");
+    ).toBe("Ended 17:15. Ana and Bob go on");
     expect(
       liveMatchMeta(
         { stage: { ...done, kind: "final" }, state: "finished", race: null },
         time,
       ),
-    ).toBe("Ended 17:15 · Ana wins");
+    ).toBe("Ended 17:15. Ana wins");
   });
 
   it("titles the zone after what it holds", () => {
@@ -2202,7 +2202,7 @@ describe("eventBand", () => {
       fmt,
     );
     expect(state.signal.text).toBe("Live now");
-    expect(state.line).toBe("Semi A · Race 2 of 3");
+    expect(state.line).toBe("Semi A - Race 2 of 3");
     expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
   });
 
@@ -2220,7 +2220,7 @@ describe("eventBand", () => {
       fmt,
     );
     expect(state.signal.text).toBe("Playoffs");
-    expect(state.line).toBe("Next: Final · @2026-10-25T19:00:00Z");
+    expect(state.line).toBe("Next: Final on @2026-10-25T19:00:00Z");
     expect(state.actions).toEqual([{ ...eventPage, kind: "primary" }]);
     expect(eventBand(summaryWith({ phase: "playoffs" }), fmt).line).toBeNull();
   });
@@ -2239,7 +2239,7 @@ describe("eventBand", () => {
     expect(
       eventBand(summaryWith({ phase: "playoffs", next_stage: final }), fmt)
         .line,
-    ).toBe("Next: Final · Sun 25 Oct");
+    ).toBe("Next: Final on Sun 25 Oct");
   });
 
   it("closes on the champion, and on nothing when the final never happened", () => {

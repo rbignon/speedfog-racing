@@ -37,7 +37,9 @@
       {seed.not_replayable_reason}
     {:else if seed.kept_reasons.length > 0}
       <strong>Files kept</strong>
-      <span class="kept">{seed.kept_reasons.join(" · ")}</span>
+      <span class="kept">
+        {#each seed.kept_reasons as reason (reason)}<span>{reason}</span>{/each}
+      </span>
     {:else}
       Files may be purged. Protect this seed to keep them.
     {/if}
@@ -86,7 +88,10 @@
     display: flex;
   }
 
+  /* One reason per line: each is a standalone label. */
   .kept {
+    display: flex;
+    flex-direction: column;
     color: var(--color-text-secondary);
   }
 </style>

@@ -151,9 +151,9 @@ def _daily_meta_html(race: Race | None, *, share_url: str, image_url: str) -> st
     assert race.daily_date is not None
     date_label = format_daily_date(race.daily_date)
     pool_display = format_pool(race)
-    title = f"Daily Seed - {date_label} · SpeedFog Racing"
+    title = f"Daily Seed - {date_label} - SpeedFog Racing"
     description = (
-        f"Daily Seed for {date_label} · {pool_display} pool. "
+        f"Daily Seed for {date_label}, {pool_display} pool. "
         "Race the same seed as everyone else, "
         "compare your time on the daily leaderboard."
     )
@@ -254,11 +254,11 @@ async def og_race_meta(race_id: UUID, db: AsyncSession = Depends(get_db)) -> Res
             og_image=base + "/og-image.png",
         )
     else:
-        title = f"{race.name} · SpeedFog Racing"
+        title = f"{race.name} - SpeedFog Racing"
         status_label = STATUS_LABEL[race.status]
         description = (
-            f"{status_label} race · {len(race.participants)} player(s) · "
-            f"{format_pool(race)} · hosted by "
+            f"{status_label} race, {len(race.participants)} player(s), "
+            f"{format_pool(race)}, hosted by "
             f"{race.organizer.twitch_display_name or race.organizer.twitch_username}"
         )
         html = _render_html(
@@ -337,7 +337,7 @@ async def og_event_meta(slug: str, db: AsyncSession = Depends(get_db)) -> Respon
         event = loaded[0]
         partner = f"SpeedFog × {event.partner_name}" if event.partner_name else "SpeedFog Racing"
         html = _render_html(
-            title=f"{event.name} · {partner}",
+            title=f"{event.name} - {partner}",
             description=event_og_description(summary),
             og_url=f"{base}/events/{slug}",
             og_image=f"{base}/api/og/event/{slug}.png",
@@ -498,8 +498,8 @@ async def og_speedrun_board_meta(
         query_string = _board_query_string(query, category)
         html = _render_html(
             title=(
-                f"{card.category_name} · {speedrun_board_sub_label(card)} · Speedrun"
-                " · SpeedFog Racing"
+                f"{card.category_name} - {speedrun_board_sub_label(card)} - Speedrun"
+                " - SpeedFog Racing"
             ),
             description=speedrun_board_description(card),
             og_url=f"{base}/speedrun?{query_string}",
@@ -561,7 +561,7 @@ async def og_speedrun_seed_meta(seed: str, db: AsyncSession = Depends(get_db)) -
         )
     else:
         html = _render_html(
-            title=f"Seed {card.seed_number} · {card.category_name} · SpeedFog Racing",
+            title=f"Seed {card.seed_number} - {card.category_name} - SpeedFog Racing",
             description=speedrun_seed_description(card),
             og_url=f"{base}/speedrun/seed/{card.seed_number}",
             og_image=f"{base}/api/og/speedrun/seed/{card.seed_number}.png",

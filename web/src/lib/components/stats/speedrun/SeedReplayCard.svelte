@@ -85,7 +85,7 @@
     <p>
       Replay it <strong>as many times as you like</strong>. Your runs count on
       the
-      <strong class="board">{seed.category_name} · Set Seed</strong> board.
+      <strong class="board">{seed.category_name} - Set Seed</strong> board.
     </p>
     <p>
       They never enter <strong>Random Seed</strong>, which stays for blind runs.

@@ -1016,8 +1016,8 @@ def test_training_auth_ok_forwards_quit_out_penalty(
     ("mode", "ranked", "name"),
     [
         (RunMode.NORMAL, False, "Standard"),
-        (RunMode.SPEEDRUN, True, "Standard \u00b7 Random Seed"),
-        (RunMode.SET_SEED, True, "Standard \u00b7 Set Seed"),
+        (RunMode.SPEEDRUN, True, "Standard - Random Seed"),
+        (RunMode.SET_SEED, True, "Standard - Set Seed"),
     ],
 )
 def test_training_auth_ok_tells_the_mod_whether_the_run_is_ranked(
@@ -2298,7 +2298,7 @@ def test_training_spectator_names_a_ranked_run_like_the_mod(
         ws.send_json({"type": "auth"})
         msg = ws.receive_json()
         assert msg["type"] == "race_state"
-        assert msg["race"]["name"] == "Standard \u00b7 Set Seed"
+        assert msg["race"]["name"] == "Standard - Set Seed"
 
 
 # =============================================================================

@@ -44,7 +44,7 @@ async def test_system_user_can_be_inserted_with_null_api_token(mig_async_session
     sets ``api_token`` to NULL. We mirror that here: passing ``api_token=None``
     through the ORM would still trigger ``default=generate_token``, so the
     test confirms the *schema* accepts NULL rather than the ORM construction
-    pattern (which is correct — the ORM is only used by Twitch-authenticated
+    pattern (which is correct: the ORM is only used by Twitch-authenticated
     users that always have a token)."""
     async with mig_async_session() as db:
         await db.execute(

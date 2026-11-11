@@ -90,9 +90,9 @@
           {/if}
           <div class="field">
             {#if column.field}
-              field best {formatTime(column.field.bestMs)} · median {formatTime(
+              field best {formatTime(column.field.bestMs)}, median {formatTime(
                 column.field.medianMs,
-              )} · {column.field.count}
+              )}, {column.field.count}
               {column.field.count === 1 ? "runner" : "runners"}
             {:else}
               no complete run through this node yet

@@ -522,7 +522,7 @@
           title="Where this time places among the other players' best runs"
         >
           <span class="stat-label"
-            >{shownPlace.category_name} &middot; {shownPlace.sub === "random"
+            >{shownPlace.category_name} - {shownPlace.sub === "random"
               ? "Random Seed"
               : "Set Seed"}</span
           >

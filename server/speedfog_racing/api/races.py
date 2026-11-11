@@ -480,7 +480,7 @@ async def list_joinable_races(
 
     now = datetime.now(UTC)
     # SQL pre-filter: SETUP races, or RUNNING races with a late-join window configured.
-    # The actual "window still open" check is computed in Python below — datetime
+    # The actual "window still open" check is computed in Python below: datetime
     # arithmetic on Race.started_at + late_join_window_minutes is dialect-specific
     # (Postgres supports interval math, SQLite used by tests does not), and the
     # row volume here is small enough that an in-memory filter is fine.

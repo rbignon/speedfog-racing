@@ -586,20 +586,20 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
 
 def solo_run_name(pool: Pool | None, mode: RunMode) -> str:
     """How the mod names a solo run: its pool, followed for a ranked run by
-    its kind as the Speedrun boards name it ("Standard · Random Seed" for a
-    blind Speedrun-mode run, "Standard · Set Seed" for a replay)."""
+    its kind as the Speedrun boards name it ("Standard - Random Seed" for a
+    blind Speedrun-mode run, "Standard - Set Seed" for a replay)."""
     name = format_pool_display_name(pool)
     if mode == RunMode.SPEEDRUN:
-        return f"{name} \u00b7 Random Seed"
+        return f"{name} - Random Seed"
     if mode == RunMode.SET_SEED:
-        return f"{name} \u00b7 Set Seed"
+        return f"{name} - Set Seed"
     return name
 
 
 def ranked_run_name(pool: Pool | None, mode: RunMode) -> str:
     """How admin alerts and the admin Cheat tab name a ranked solo run:
-    "Solo · <pool> · Random Seed" (or "Set Seed")."""
-    return f"Solo \u00b7 {solo_run_name(pool, mode)}"
+    "Solo - <pool> - Random Seed" (or "Set Seed")."""
+    return f"Solo - {solo_run_name(pool, mode)}"
 
 
 async def _ranked_run_name(db: AsyncSession, entity: TrainingSession) -> str:

@@ -411,8 +411,8 @@
         onclick={handleToggleVisibility}
         disabled={togglingVisibility}
         title={race.is_public
-          ? "Public — click to make private"
-          : "Private — click to make public"}
+          ? "Public: click to make private"
+          : "Private: click to make public"}
       >
         {#if race.is_public}
           <svg

@@ -265,7 +265,7 @@ export interface MatchCell {
   tone: "points" | "prov" | "live" | "out" | "todo";
 }
 
-const TODO_CELL: MatchCell = { text: "·", tone: "todo" };
+const TODO_CELL: MatchCell = { text: "-", tone: "todo" };
 
 /**
  * What a runner did in one race of a match (`entry` null: no race attached
@@ -407,10 +407,10 @@ export function cutLabel(
 }
 
 /**
- * The line beside a panel's signal: the race being run ("Race 2 of 3 · Boss
- * Rush · started 19:02"), the next one between two ("Next: Boss Rush at
+ * The line beside a panel's signal: the race being run ("Race 2 of 3, Boss
+ * Rush, started 19:02"), the next one between two ("Next: Boss Rush at
  * 19:30", no time while unscheduled), or the end and who goes on ("Ended
- * 21:47 · Ana and Bob go on", a final's "Ended 23:10 · Ana wins").
+ * 21:47. Ana and Bob go on", a final's "Ended 23:10. Ana wins").
  */
 export function liveMatchMeta(
   match: LiveMatch,
@@ -428,7 +428,7 @@ export function liveMatchMeta(
         ...(race.race.started_at
           ? [`started ${formatTime(race.race.started_at)}`]
           : []),
-      ].join(" · ");
+      ].join(", ");
     }
     case "between": {
       const next = nextSlot(stage);
@@ -441,7 +441,7 @@ export function liveMatchMeta(
       const head = ended ? `Ended ${formatTime(ended)}` : "Ended";
       if (stage.kind === "final") {
         const winner = stage.results[0]?.user;
-        return winner ? `${head} · ${name(winner)} wins` : head;
+        return winner ? `${head}. ${name(winner)} wins` : head;
       }
       const going = stage.results
         .filter((e) => e.advances)
@@ -451,7 +451,7 @@ export function liveMatchMeta(
         going.length === 1
           ? going[0]
           : `${going.slice(0, -1).join(", ")} and ${going[going.length - 1]}`;
-      return `${head} · ${who} ${going.length === 1 ? "goes" : "go"} on`;
+      return `${head}. ${who} ${going.length === 1 ? "goes" : "go"} on`;
     }
   }
 }
@@ -571,7 +571,7 @@ export function bracketView<
  * middle-dot separator are recognised.
  */
 export function stripStagePrefix(name: string, stageLabel: string): string {
-  for (const sep of [" - ", " · "]) {
+  for (const sep of [" - ", " \u00b7 "]) {
     const prefix = `${stageLabel}${sep}`;
     if (name.startsWith(prefix)) return name.slice(prefix.length);
   }
@@ -1092,7 +1092,7 @@ export function eventBand(
       if (live) {
         return {
           signal: { cls: "signal-running", text: "Live now" },
-          line: `${live.stage_label} · Race ${live.index} of ${live.races_expected}`,
+          line: `${live.stage_label} - Race ${live.index} of ${live.races_expected}`,
           actions: [pageAction("primary")],
           ...drawn,
         };
@@ -1100,7 +1100,7 @@ export function eventBand(
       return {
         signal: { cls: "signal-running", text: "Playoffs" },
         line: event.next_stage
-          ? `Next: ${event.next_stage.label} · ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
+          ? `Next: ${event.next_stage.label} on ${formatStageDate(event.next_stage.date, event.next_stage.time_set, fmt)}`
           : null,
         actions: [pageAction("primary")],
         ...drawn,

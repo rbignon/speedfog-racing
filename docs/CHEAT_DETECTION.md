@@ -58,7 +58,7 @@ wire names and carry the same human-readable labels.
    **Ranked solo sessions.** `speedrun` and `set_seed` sessions get the same
    server-side checks in `TrainingModHandler`: flags are stored in
    `training_sessions.debug_flags` (first observation wins), the admin
-   Discord alert titles the run "Solo · <pool> · Random Seed" (or "Set Seed")
+   Discord alert titles the run "Solo - <pool> - Random Seed" (or "Set Seed")
    and links `/training/<session id>`, and the IGT plausibility check (wrong
    save) runs against `last_igt_change_at`. There is no spectator push; the
    detection shows on the session page and in /admin's Cheat tab (step 4).

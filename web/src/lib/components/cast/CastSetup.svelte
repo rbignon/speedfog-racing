@@ -468,7 +468,7 @@
       obsFileName("race", race),
       buildObsCollection({
         origin,
-        collectionName: `SpeedFog · ${race.name}`,
+        collectionName: `SpeedFog - ${race.name}`,
         seats: raceSeats(race, slots),
         duelSeats: duelHoleSeats((pins) => raceSeats(race, pins), slots),
         fieldSize: race.participants.length,
@@ -509,7 +509,7 @@
       obsFileName("match", race),
       buildObsCollection({
         origin,
-        collectionName: `SpeedFog · ${ownEvent.name} · ${match.label}`,
+        collectionName: `SpeedFog - ${ownEvent.name} - ${match.label}`,
         seats: seatsFor(slots),
         duelSeats: duelHoleSeats(seatsFor, slots),
         fieldSize: field ? stageFieldSize(field) : race.participants.length,

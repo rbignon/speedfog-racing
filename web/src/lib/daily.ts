@@ -233,7 +233,7 @@ export function cellStrip(
 function finishedScore(day: DailyWeekDay): string {
   const r = day.my_result;
   if (r && r.status === "finished" && r.placement && r.igt_ms != null) {
-    return `${r.placement}/${r.total_starters} · ${formatIgt(r.igt_ms)}`;
+    return `${r.placement}/${r.total_starters}, ${formatIgt(r.igt_ms)}`;
   }
   return "Done";
 }

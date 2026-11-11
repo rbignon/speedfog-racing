@@ -38,7 +38,7 @@
   let layout = $derived(sceneLayout(scene));
   // A showcase is no playoff round: its label stands alone.
   let toplineLabel = $derived(
-    stage.kind === "showcase" ? stage.label : `${stage.label} · Playoff`,
+    stage.kind === "showcase" ? stage.label : `${stage.label} - Playoff`,
   );
 
   // Rendered in the viewer's own timezone, like every other date on the
@@ -49,7 +49,7 @@
     !stage.date
       ? DATE_TO_BE_AGREED
       : stage.time_set
-        ? `${formatEventDay(stage.date)} · ${formatEventTime(stage.date)}`
+        ? `${formatEventDay(stage.date)}, ${formatEventTime(stage.date)}`
         : formatEventDay(stage.date),
   );
 

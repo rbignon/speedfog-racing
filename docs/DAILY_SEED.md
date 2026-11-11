@@ -260,16 +260,16 @@ A skull icon (💀) renders next to the pool name whenever the cell's `deathless
 
 The `today` cell uses the standard neutral border with a soft gold outer glow and a small gold "TODAY" header badge. Both `today` and any played `past` cell carry a full-width bottom strip whose label and color depend on the viewer's participant status:
 
-| Strip                         | Color                    | Condition                                                                    |
-| ----------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
-| `PLAY NOW`                    | green                    | Anonymous, or `my_result == null` on today with no active streak.            |
-| `KEEP STREAK`                 | green (play-now style)   | `my_streak.current > 0` and viewer has not yet qualified today.              |
-| `IN PROGRESS`                 | orange                   | `registered` / `ready` / `playing`.                                          |
-| `✓` + `placement/total · IGT` | green text on muted grey | `finished`. Split layout: check-mark badge on the left, score on the right.  |
-| `ABANDONED`                   | muted grey               | Abandoned, or signed up but never played.                                    |
-| `DISQUALIFIED`                | muted grey               | `disqualified` (see the "Sanctions" section of `CHEAT_DETECTION.md`).        |
-| `❄️ Freeze`                   | blue                     | Past day with `freeze_protected = true` (see [Daily Streak](#daily-streak)). |
-| `✓ DNF · {igt}`               | green (`dnf` variant)    | Past day where viewer abandoned with `qualifies = true`.                     |
+| Strip                        | Color                    | Condition                                                                    |
+| ---------------------------- | ------------------------ | ---------------------------------------------------------------------------- |
+| `PLAY NOW`                   | green                    | Anonymous, or `my_result == null` on today with no active streak.            |
+| `KEEP STREAK`                | green (play-now style)   | `my_streak.current > 0` and viewer has not yet qualified today.              |
+| `IN PROGRESS`                | orange                   | `registered` / `ready` / `playing`.                                          |
+| `✓` + `placement/total, IGT` | green text on muted grey | `finished`. Split layout: check-mark badge on the left, score on the right.  |
+| `ABANDONED`                  | muted grey               | Abandoned, or signed up but never played.                                    |
+| `DISQUALIFIED`               | muted grey               | `disqualified` (see the "Sanctions" section of `CHEAT_DETECTION.md`).        |
+| `❄️ Freeze`                  | blue                     | Past day with `freeze_protected = true` (see [Daily Streak](#daily-streak)). |
+| `✓ DNF, {igt}`               | green (`dnf` variant)    | Past day where viewer abandoned with `qualifies = true`.                     |
 
 Cell bodies are vertically centered between the pool name and the bottom strip so the row lines up regardless of which placeholder a cell shows; past cells the viewer did not participate in render an invisible placeholder strip to keep the same vertical alignment as sibling cells. The grid is horizontally scrollable when seven cells (min 150px each) don't fit; the today cell (or `selectedDate` on `/daily/[date]`) is auto-centered on mount, and mobile adds horizontal scroll-snap so touch-flicking lands cleanly on a cell.
 
@@ -462,7 +462,7 @@ Daily-streak state surfaces through existing responses; no new endpoints are add
 ### Frontend surfaces
 
 - `DailyWeekGrid` consumes `freeze_protected` and the streak-driven strip variants (`KEEP STREAK`, `❄️ Freeze`, `✓ DNF`); see the strip table in [Components > DailyWeekGrid.svelte](#dailyweekgridsvelte) for the conditions.
-- The grid's toolbar carries streak info on the left (`🔥 {N}-day streak · ❄️ {F} freeze[s]`, hidden when `current_streak == 0`, with `· ❄️ {F} freeze[s]` rendered only when `freeze_count > 0`) and prev/next-week arrows on the right. The toolbar row itself is always present so the arrows stay right-aligned regardless. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message; when that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
+- The grid's toolbar carries streak info on the left (`{N}-day streak` then `❄ {F} freeze[s]`, set apart by a margin, hidden when `current_streak == 0`, the freeze part rendered only when `freeze_count > 0`) and prev/next-week arrows on the right. The toolbar row itself is always present so the arrows stay right-aligned regardless. The streak info reads from `displayedWeek.my_streak` and updates live via the `daily_streak_update` WS message; when that message carries `freeze_consumed_for`, the page also patches the matching day's `freeze_protected` so the cell strip flips to "❄️ Freeze" in the same frame as the toolbar (without it, the cell would stay "Abandoned" until the next reload).
 - `UserStatsCards` takes a `streakDisplay?: "current" | "best" | null` prop. `/dashboard` passes `current` (`🔥 N` corner badge on the Daily cell when `current > 0`); `/user/[username]` passes `best` (`🏆 N` when `best > 0`). The badge is hidden when the relevant value is 0.
 
 ## Weekly Points

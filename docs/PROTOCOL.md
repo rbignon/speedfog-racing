@@ -1075,7 +1075,7 @@ Solo practice mode. Uses the same protocol messages as competitive races but wit
 Same protocol as `/ws/mod/{race_id}` with differences:
 
 - **Auth**: Uses `mod_token` from the training session (not a race participant token). A ranked session (Speedrun or Set Seed mode) refuses a mod below protocol 1.9 (see [Protocol Version](#protocol-version))
-- **Run name**: `auth_ok`'s `race.name` is the pool's display name, followed for a ranked session by its kind as the Speedrun boards name it: "Standard · Random Seed" in Speedrun mode, "Standard · Set Seed" in Set Seed mode; a practice session gets the pool's name alone. The training spectator's `race_state` carries the same name
+- **Run name**: `auth_ok`'s `race.name` is the pool's display name, followed for a ranked session by its kind as the Speedrun boards name it: "Standard - Random Seed" in Speedrun mode, "Standard - Set Seed" in Set Seed mode; a practice session gets the pool's name alone. The training spectator's `race_state` carries the same name
 - **No `ready` phase**: Race starts immediately after `auth_ok`
 - **`race_start` sent immediately**: No waiting for other players
 - **Single player**: Only one mod connection per session

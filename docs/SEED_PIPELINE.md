@@ -158,7 +158,7 @@ same way as `get_played_seed_counts`, so a regenerated pool starts back at
 zero; it is `null` for race pools and for training pools whose current
 seeds nobody has played.
 The Seeds tab shows it in the Consumed cell of solo pools as
-`max_played/available`, plus `· N done` in the warning color once someone
+`max_played/available`, plus `, N done` in the warning color once someone
 has run out.
 
 ---

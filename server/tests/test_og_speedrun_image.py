@@ -132,7 +132,7 @@ async def test_board_context_marks_random_seed_deathless_and_blind() -> None:
     card = _board(sub="random", deathless=True, record=_run(blind=True), players=1)
     ctx = await build_speedrun_board_context(card, avatar_lookup=_avatar)
 
-    assert ctx["sub_label"] == "RANDOM SEED · DEATHLESS"
+    assert ctx["sub_label"] == "RANDOM SEED (DEATHLESS)"
     assert ctx["record"]["kind"] == "Blind"
     assert ctx["players_label"] == "1 player"
 
@@ -162,7 +162,7 @@ async def test_seed_context_counts_and_status() -> None:
 
     assert ctx["category"] == "Standard"
     assert ctx["seed_number"] == "69628472728a"
-    assert ctx["counts_label"] == "8 runs · 1 player"
+    assert ctx["counts_label"] == "8 runs, 1 player"
     assert ctx["status"] == "Replayable"
     assert ctx["record"]["time"] == "23m 43s"
 
@@ -174,7 +174,7 @@ async def test_seed_context_without_finished_run() -> None:
 
     assert ctx["record"] is None
     assert ctx["empty_label"] == "No finished run yet"
-    assert ctx["counts_label"] == "0 runs · 0 players"
+    assert ctx["counts_label"] == "0 runs, 0 players"
     assert ctx["status"] == "Not replayable"
 
 
@@ -187,7 +187,7 @@ async def test_seed_context_with_unranked_runs_only() -> None:
 
     assert ctx["record"] is None
     assert ctx["empty_label"] == "No ranked run yet"
-    assert ctx["counts_label"] == "3 runs · 2 players"
+    assert ctx["counts_label"] == "3 runs, 2 players"
 
 
 async def test_record_day_reads_a_naive_finish_as_utc(monkeypatch) -> None:
@@ -210,20 +210,20 @@ async def test_record_day_reads_a_naive_finish_as_utc(monkeypatch) -> None:
 
 def test_board_description_reads_like_the_wr_band() -> None:
     assert speedrun_board_description(_board()) == (
-        "World record 23m 43s by Abisxoxo · Replay, 5 November 2026 · 207 players"
+        "World record 23m 43s by Abisxoxo (Replay, 5 November 2026), 207 players"
     )
     assert speedrun_board_description(_board(record=None, players=0)) == "No run yet"
 
 
 def test_seed_description_reads_the_record_and_the_status() -> None:
     assert speedrun_seed_description(_seed()) == (
-        "Record 23m 43s by Abisxoxo · Replay, 5 November 2026 · 8 runs · 1 player · Replayable"
+        "Record 23m 43s by Abisxoxo (Replay, 5 November 2026), 8 runs, 1 player, Replayable"
     )
     assert speedrun_seed_description(_seed(record=None, runs=0, players=0)) == (
-        "No finished run yet · 0 runs · 0 players · Replayable"
+        "No finished run yet, 0 runs, 0 players, Replayable"
     )
     assert speedrun_seed_description(_seed(record=None, runs=3, players=2)) == (
-        "No ranked run yet · 3 runs · 2 players · Replayable"
+        "No ranked run yet, 3 runs, 2 players, Replayable"
     )
 
 

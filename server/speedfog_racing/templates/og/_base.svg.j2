@@ -33,9 +33,9 @@
 
   {% block body %}{% endblock %}
 
-  {# Meta row (bottom). Default = "{participant_count} · {pool_name}". #}
+  {# Meta row (bottom). Default = "{participant_count}, {pool_name}". #}
   {% block meta_left %}
-    <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">{{ participant_count_label }} · <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
+    <text x="60" y="570" font-family="Spline Sans Mono" font-size="26" fill="#96a0ad">{{ participant_count_label }}, <tspan fill="#e8e6e1">{{ pool_name }}</tspan></text>
   {% endblock %}
   {% block meta_right %}{% endblock %}
 </svg>

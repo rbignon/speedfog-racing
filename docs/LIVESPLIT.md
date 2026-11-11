@@ -38,7 +38,7 @@ from run data the site already serves.
 - **GameName** is `SpeedFog`, never "Elden Ring": LiveSplit would wake a
   SoulSplitter the player once activated for Elden Ring.
 - **CategoryName** is the category's name; a seed file adds
-  " · Seed <n>".
+  " - Seed <n>".
 - **Custom variables** `SpeedFog seed` (seed file) or `SpeedFog category`
   (category file). The mod reads them on link to check the file matches the
   run (see "How the mod links").
