@@ -77,8 +77,6 @@ describe("RaceControls: Re-roll Seed", () => {
     expect(hasButton(container, "Re-roll Seed")).toBe(true);
   });
 
-  const WARNING = /count on no Speedrun board/;
-
   async function openReroll(r: RaceDetail) {
     const view = mount(r, "setup");
     const reroll = [...view.container.querySelectorAll("button")].find((b) =>
@@ -87,14 +85,6 @@ describe("RaceControls: Re-roll Seed", () => {
     await fireEvent.click(reroll);
     return view;
   }
-
-  it("warns that a reroll without a report takes a community race off the boards", async () => {
-    const { getByLabelText, queryByText } = await openReroll(race("normal"));
-    expect(queryByText(WARNING)).not.toBeNull();
-
-    await fireEvent.click(getByLabelText("Report this seed as buggy"));
-    expect(queryByText(WARNING)).toBeNull();
-  });
 
   describe("on a speedrun race", () => {
     beforeEach(() => {
@@ -109,11 +99,8 @@ describe("RaceControls: Re-roll Seed", () => {
     }
 
     it("always reports the seed, so the race never leaves the boards", async () => {
-      const { queryByLabelText, queryByText } = await openReroll(
-        race("speedrun"),
-      );
+      const { queryByLabelText } = await openReroll(race("speedrun"));
       expect(queryByLabelText("Report this seed as buggy")).toBeNull();
-      expect(queryByText(WARNING)).toBeNull();
       expect(queryByLabelText("Reason for the re-roll")).not.toBeNull();
     });
 
@@ -166,41 +153,6 @@ describe("RaceControls: Re-roll Seed", () => {
       );
     });
   });
-
-  it.each([
-    ["an event race", race("normal", { event_id: "event-1" })],
-    [
-      "a race already off the boards for a reroll",
-      race("normal", {
-        unranked_code: "rerolled",
-        unranked_reason: "Re-rolled race: ...",
-      }),
-    ],
-    [
-      "a race on a seen seed (its reroll is free)",
-      race("normal", {
-        unranked_code: "seen_seed",
-        unranked_reason: "Seen seed: ...",
-      }),
-    ],
-    [
-      "a training pool's race",
-      race("normal", { pool_config: { type: "training" } as never }),
-    ],
-  ])("gives no board warning on %s", async (_label, r) => {
-    const { queryByText } = await openReroll(r);
-    expect(queryByText(WARNING)).toBeNull();
-  });
-
-  it("warns on a reset race, which only a reported reroll puts back", async () => {
-    const { queryByText } = await openReroll(
-      race("normal", {
-        unranked_code: "reset",
-        unranked_reason: "Reset race: ...",
-      }),
-    );
-    expect(queryByText(WARNING)).not.toBeNull();
-  });
 });
 
 describe("RaceControls: Reset Race", () => {
@@ -228,6 +180,22 @@ describe("RaceControls: Reset Race", () => {
       race("normal", {
         unranked_code: "rerolled",
         unranked_reason: "Re-rolled race: ...",
+      }),
+      false,
+    ],
+    [
+      "a race already reset",
+      race("normal", {
+        unranked_code: "reset",
+        unranked_reason: "Reset race: ...",
+      }),
+      true,
+    ],
+    [
+      "a race on a seen seed (its reroll is free)",
+      race("normal", {
+        unranked_code: "seen_seed",
+        unranked_reason: "Seen seed: ...",
       }),
       false,
     ],

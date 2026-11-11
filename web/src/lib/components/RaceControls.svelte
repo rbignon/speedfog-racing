@@ -72,14 +72,6 @@
       onBoardsPool &&
       reportCanKeepOnBoards,
   );
-  // A reroll without a seed report takes a community race off the Speedrun
-  // boards, or keeps a reset one off.
-  let rerollLeavesBoards = $derived(
-    race.daily_date === null &&
-      race.event_id === null &&
-      reportCanKeepOnBoards &&
-      onBoardsPool,
-  );
 
   // A speedrun race must count: its reroll always goes to the admins as a
   // seed report with a reason (the server refuses one without).
@@ -557,11 +549,6 @@
           <input type="checkbox" bind:checked={reportBuggy} />
           Report this seed as buggy
         </label>
-        {#if rerollLeavesBoards && !reportBuggy}
-          <p class="report-hint">
-            Without a seed report, this race will count on no Speedrun board.
-          </p>
-        {/if}
       {/if}
       {#if reportBuggy && !reportRequired}
         <input
@@ -705,12 +692,6 @@
   .report-check input[type="checkbox"] {
     accent-color: var(--color-gold);
     cursor: pointer;
-  }
-
-  .report-hint {
-    margin: 0 0 0.5rem;
-    font-size: var(--font-size-sm);
-    color: var(--color-warning);
   }
 
   .report-field {
