@@ -84,21 +84,6 @@ export function resolvePool(
 }
 
 /** Toggles one run type; the last selected type cannot be removed. */
-/** Clicking a recent run opens its category's Set Seed board, where its
- * place was computed: every run type, no deathless filter. */
-export function recentRunParams(
-  current: SpeedrunParams,
-  pool: string,
-): SpeedrunParams {
-  return {
-    ...current,
-    pool,
-    sub: "set",
-    deathless: false,
-    types: [...RUN_TYPES],
-  };
-}
-
 export function toggleRunType(
   types: SpeedrunRunType[],
   t: SpeedrunRunType,

@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import type { Race, SpeedrunOverviewResponse } from "$lib/api";
   import RaceCard from "$lib/components/RaceCard.svelte";
   import { ordinal } from "$lib/events";
-  import { seedPageHref, speedrunAgo } from "$lib/speedrun";
+  import { seedPageHref, speedrunAgo, speedrunSeedHref } from "$lib/speedrun";
   import { getWeaponName } from "$lib/stores/weaponsCatalogue.svelte";
   import { formatCombo } from "$lib/weapons";
   import SpeedrunPlayer from "./SpeedrunPlayer.svelte";
@@ -12,12 +13,10 @@
   let {
     overview,
     races = [],
-    onpick,
   }: {
     overview: SpeedrunOverviewResponse;
     /** Active races (setup or running), split below into live and upcoming. */
     races?: Race[];
-    onpick: (pool: string) => void;
   } = $props();
 
   let liveRaces = $derived(races.filter((r) => r.status === "running"));
@@ -36,6 +35,16 @@
 
   const plural = (n: number, word: string) =>
     `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  // A click on a recent PB opens its run, unless it landed on a link (the
+  // player, the category), came with a modifier key (the category's link
+  // opens a new tab) or ended a text selection.
+  function openRun(e: MouseEvent, href: string) {
+    if ((e.target as Element).closest("a, button")) return;
+    if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+    if (window.getSelection()?.toString()) return;
+    void goto(href);
+  }
 </script>
 
 <aside class="sr-side">
@@ -92,9 +101,16 @@
   <section class="sr-panel">
     <h3>Recent PBs</h3>
     {#each overview.recent_runs as run (`${run.race_id ?? run.session_id}:${run.user.id}`)}
-      <div class="recent">
-        <button type="button" class="category" onclick={() => onpick(run.pool)}
-          >{run.category}</button
+      {@const href = speedrunSeedHref(run)}
+      <!-- A mouse shortcut only: the category link is the keyboard path. -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <div class="recent" onclick={(e) => openRun(e, href)}>
+        <a
+          class="category"
+          {href}
+          aria-label="{run.category}: run by {run.user.twitch_display_name ||
+            run.user.twitch_username}">{run.category}</a
         >
         <div class="details">
           {run.blind ? "Blind" : "Replay"}{run.deathless ? " · Deathless" : ""} ({run.weapon
@@ -214,20 +230,16 @@
     padding: 0.55rem 0.8rem;
     border-top: 1px solid var(--color-border);
     font-size: var(--font-size-sm);
-  }
-
-  .category {
-    padding: 0;
-    background: none;
-    border: none;
-    color: var(--color-gold);
-    font-family: var(--font-family);
-    font-size: var(--font-size-sm);
-    font-weight: 700;
     cursor: pointer;
   }
 
-  .category:hover {
+  .category {
+    color: var(--color-gold);
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .recent:hover .category {
     color: var(--color-gold-hover);
   }
 

@@ -10,7 +10,6 @@ import {
   parseSpeedrunParams,
   parseStartRun,
   raceSeedPageHref,
-  recentRunParams,
   resolvePool,
   seedPageHref,
   sessionSeedPageHref,
@@ -712,26 +711,5 @@ describe("speedrun overlay URL", () => {
     );
     expect(parsed.top).toBe(0);
     expect(parsed.cycle).toBe(0);
-  });
-});
-
-describe("recentRunParams", () => {
-  it("opens the run's category on Set Seed with every filter cleared", () => {
-    const current: SpeedrunParams = {
-      pool: "sprint",
-      sub: "random",
-      deathless: true,
-      types: ["daily"],
-      obsolete: true,
-      view: "history-chart",
-    };
-
-    expect(recentRunParams(current, "standard")).toEqual({
-      ...current,
-      pool: "standard",
-      sub: "set",
-      deathless: false,
-      types: [...RUN_TYPES],
-    });
   });
 });

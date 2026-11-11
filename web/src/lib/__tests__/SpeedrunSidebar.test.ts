@@ -1,11 +1,15 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/svelte";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/svelte";
+import { goto } from "$app/navigation";
 import SpeedrunSidebar from "$lib/components/stats/speedrun/SpeedrunSidebar.svelte";
 import type {
   Race,
   SpeedrunOverviewResponse,
   SpeedrunPracticedSeed,
+  SpeedrunRecentRun,
 } from "$lib/api";
+
+vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 
 vi.mock("$lib/stores/weaponsCatalogue.svelte", () => ({
   getWeaponName: vi.fn(),
@@ -14,16 +18,82 @@ vi.mock("$lib/stores/weaponsCatalogue.svelte", () => ({
 function overview(
   practiced_seeds: SpeedrunPracticedSeed[],
   practiced_seeds_days = 7,
+  recent_runs: SpeedrunRecentRun[] = [],
 ): SpeedrunOverviewResponse {
   return {
     categories: [],
     runs: 0,
     players: 0,
-    recent_runs: [],
+    recent_runs,
     practiced_seeds,
     practiced_seeds_days,
   };
 }
+
+const RECENT: SpeedrunRecentRun = {
+  run_id: "s1",
+  user: {
+    id: "u1",
+    twitch_username: "runner",
+    twitch_display_name: "Runner",
+    twitch_avatar_url: null,
+  },
+  rank: 4,
+  igt_ms: 1_303_998,
+  finished_at: "2026-11-10T12:00:00Z",
+  race_id: null,
+  race_name: null,
+  session_id: "s1",
+  daily_date: null,
+  seed_number: "363096a4243f",
+  blind: false,
+  deaths: 0,
+  weapon: null,
+  replayable: true,
+  pool: "sprint",
+  category: "Sprint",
+  deathless: false,
+};
+
+describe("SpeedrunSidebar recent PBs", () => {
+  beforeEach(() => {
+    vi.mocked(goto).mockReset();
+  });
+
+  it("links each PB to its seed page focused on the run", () => {
+    render(SpeedrunSidebar, { overview: overview([], 7, [RECENT]) });
+
+    expect(
+      screen
+        .getByRole("link", { name: "Sprint: run by Runner" })
+        .getAttribute("href"),
+    ).toBe("/speedrun/seed/363096a4243f?run=s1");
+  });
+
+  it("opens the run on a click anywhere on the row, not on the player's name, a modified click or a text selection", async () => {
+    render(SpeedrunSidebar, { overview: overview([], 7, [RECENT]) });
+
+    const row = screen
+      .getByRole("link", { name: /^Sprint/ })
+      .closest(".recent")!;
+    const ago = row.querySelector(".ago")!;
+    for (const modifier of ["ctrlKey", "metaKey", "shiftKey"]) {
+      await fireEvent.click(ago, { [modifier]: true });
+    }
+    await fireEvent.click(screen.getByRole("link", { name: "Runner" }));
+
+    // Selecting the row's text ends with a click on it.
+    const range = document.createRange();
+    range.selectNodeContents(row);
+    window.getSelection()!.addRange(range);
+    await fireEvent.click(ago);
+    window.getSelection()!.removeAllRanges();
+    expect(goto).not.toHaveBeenCalled();
+
+    await fireEvent.click(ago);
+    expect(goto).toHaveBeenCalledWith("/speedrun/seed/363096a4243f?run=s1");
+  });
+});
 
 describe("SpeedrunSidebar practiced seeds", () => {
   it("lists each seed with its counts, singulars included, linking to its page", () => {
@@ -44,7 +114,6 @@ describe("SpeedrunSidebar practiced seeds", () => {
           players: 1,
         },
       ]),
-      onpick: vi.fn(),
     });
 
     const first = screen.getByRole("link", { name: /363096 · Sprint/ });
@@ -63,20 +132,18 @@ describe("SpeedrunSidebar practiced seeds", () => {
     };
     const { unmount } = render(SpeedrunSidebar, {
       overview: overview([seed], 14),
-      onpick: vi.fn(),
     });
     expect(screen.getByText("14 days")).toBeTruthy();
     unmount();
 
     render(SpeedrunSidebar, {
       overview: overview([seed], 1),
-      onpick: vi.fn(),
     });
     expect(screen.getByText("1 day")).toBeTruthy();
   });
 
   it("hides the panel when no seed was practiced", () => {
-    render(SpeedrunSidebar, { overview: overview([]), onpick: vi.fn() });
+    render(SpeedrunSidebar, { overview: overview([]) });
 
     expect(screen.queryByText(/Most practiced seeds/)).toBeNull();
   });
@@ -151,7 +218,6 @@ describe("SpeedrunSidebar races", () => {
         race("undated"),
         race("sooner", { scheduled_at: inHours(1), mode: "set_seed" }),
       ],
-      onpick: vi.fn(),
     });
 
     expect(hrefsUnder("Live races")).toEqual(["/race/live"]);
@@ -166,7 +232,6 @@ describe("SpeedrunSidebar races", () => {
     render(SpeedrunSidebar, {
       overview: overview([]),
       races: [race("undated")],
-      onpick: vi.fn(),
     });
 
     expect(screen.queryByRole("heading", { name: "Live races" })).toBeNull();

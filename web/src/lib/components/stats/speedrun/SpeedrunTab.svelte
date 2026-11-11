@@ -11,7 +11,6 @@
   import { DISCORD_URL } from "$lib/links";
   import {
     parseSpeedrunParams,
-    recentRunParams,
     writeSpeedrunParams,
     type SpeedrunParams,
     type StartRun,
@@ -98,11 +97,7 @@
         onchange={update}
         {startRun}
       />
-      <SpeedrunSidebar
-        {overview}
-        {races}
-        onpick={(pool) => update(recentRunParams(params, pool))}
-      />
+      <SpeedrunSidebar {overview} {races} />
     </div>
   {/if}
 </div>
