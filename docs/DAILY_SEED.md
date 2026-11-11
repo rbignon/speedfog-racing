@@ -377,7 +377,7 @@ There is no periodic server-side tick beyond what the mods themselves drive at 1
 
 ## Daily Streak
 
-A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to two automatic "freezes" absorbing isolated misses. Updates fire in five places:
+A streak system layered on top of the Daily Seed rewards consistent play. Each day a participant crosses `len(zone_history) >= 2` on the daily, their streak grows by one; missing a day breaks it, with up to seven banked "freezes" (`FREEZE_CAP`) absorbing the misses. Updates fire in five places:
 
 - **Real time** when a participant first crosses `len(zone_history) >= 2` on a daily race, unicasting `daily_streak_update` over WS (see [PROTOCOL.md](PROTOCOL.md#daily_streak_update)).
 - **On explicit abandon** of a daily race without having qualified, `apply_close_day_to_user` runs inside the abandon handler and applies the same close-day branch (freeze or break) immediately, so the UI reflects the outcome without waiting for the rotation. The unique `(race_id, user_id)` constraint forbids re-joining, so there's no recovery window to protect.
@@ -387,6 +387,8 @@ A streak system layered on top of the Daily Seed rewards consistent play. Each d
 
 A migration-time backfill (`_backfill_streaks` inside the Alembic migration) replays each historical user's participation chronologically through the same algorithm so the rollout doesn't reset existing players' streak state.
 
+Revision `051608e6d0ba` raised the freeze cap from 2 to 7 retroactively, so that the first reroll or disqualification, whose `backfill_user` replay applies the current cap to the whole history, does not hand the new cap to its own runners alone. It replays at cap 7 every player whose history the old cap held back: their freeze count can rise, a streak a missed day broke can come back (raising the best streak with it), and the newly protected days get their `daily_streak_freezes` rows. A cap-7 replay never does worse than a cap-2 one, so the migration only adds rows. Hand-inserted vacation rows (see [Extended protection](#extended-protection-vacations)) are recognized by a `consumed_at` earlier than their day's 08:00 UTC start, shared by the whole inserted batch, and are skipped the way the 08:00 tick skips them. A player whose stored state a cap-2 replay does not reproduce, for any reason (a hand edit, a missed 08:00 tick, a best streak kept through a reroll), is left untouched and logged as a warning by the migration, which should not run in the first minutes after 08:00 UTC: until the tick has settled yesterday's misses, every player who missed it reads as drifted.
+
 ### Data model
 
 Four columns on `users`, added by Alembic revision `b28f8a846049`:
@@ -395,12 +397,12 @@ Four columns on `users`, added by Alembic revision `b28f8a846049`:
 | ---------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------- |
 | `daily_current_streak`       | `int`, default `0` | Current consecutive qualifying days. Reset to 0 on a missed day with no freeze available.                |
 | `daily_best_streak`          | `int`, default `0` | High water mark; never decreases, except when a disqualification re-derives it (see above).              |
-| `daily_freeze_count`         | `int`, default `0` | Available freezes, in `[0, 2]`.                                                                          |
+| `daily_freeze_count`         | `int`, default `0` | Available freezes, in `[0, 7]`.                                                                          |
 | `daily_last_qualifying_date` | `date`, nullable   | Most recent `daily_date` the user qualified for. Drives the idempotency guard and the close-tick filter. |
 
 Check constraints (mirrored on the ORM):
 
-- `ck_users_daily_freeze_count_range`: `daily_freeze_count BETWEEN 0 AND 2`.
+- `ck_users_daily_freeze_count_range`: `daily_freeze_count BETWEEN 0 AND 7`.
 - `ck_users_daily_current_streak_nonneg`: `daily_current_streak >= 0`.
 - `ck_users_daily_best_ge_current`: `daily_best_streak >= daily_current_streak`.
 
@@ -419,7 +421,7 @@ One row per freeze-protected day. Written by the close-day evaluator and by the 
 
 ### Extended protection (vacations)
 
-`daily_freeze_count` cannot be raised past 2: `ck_users_daily_freeze_count_range` rejects the write. To cover a longer planned absence, pre-insert ledger rows instead. `apply_close_day_for_all_users` filters its candidates with `NOT EXISTS` on `daily_streak_freezes` for the evaluated date, so a pre-existing row makes the 08:00 tick skip the user entirely: no freeze consumed, `daily_current_streak` and `daily_freeze_count` both untouched. `daily_last_qualifying_date` stays pinned at the pre-absence date, so `apply_qualification` resumes at `current_streak + 1` on the first qualifying day after the return.
+`daily_freeze_count` cannot be raised past 7: `ck_users_daily_freeze_count_range` rejects the write. To cover a longer planned absence, pre-insert ledger rows instead. `apply_close_day_for_all_users` filters its candidates with `NOT EXISTS` on `daily_streak_freezes` for the evaluated date, so a pre-existing row makes the 08:00 tick skip the user entirely: no freeze consumed, `daily_current_streak` and `daily_freeze_count` both untouched. `daily_last_qualifying_date` stays pinned at the pre-absence date, so `apply_qualification` resumes at `current_streak + 1` on the first qualifying day after the return.
 
 The range must start at `daily_last_qualifying_date + 1` and end the day before the user plays again. It is the last qualifying date that matters, not the travel dates: a day already missed before departure still needs a row, and any uncovered date inside the span runs the normal close-day branch and eats a freeze or breaks the streak.
 
@@ -438,7 +440,7 @@ Two caveats:
 ### Streak rules
 
 - Qualification is derived (never persisted as a flag): `len(zone_history) >= 2` on the participant row. A disqualified participation earns no credit (see the disqualification trigger above).
-- A qualifying day increments `current_streak`. The freeze-grant check fires on every multiple of 7 independently: if `freeze_count < 2`, one freeze is granted; otherwise nothing happens that day, but a later multiple after a freeze is consumed can grant one. There is no deferred-grant bookkeeping.
+- A qualifying day increments `current_streak`. The freeze-grant check fires on every multiple of 7 independently: if `freeze_count < FREEZE_CAP` (7), one freeze is granted; otherwise nothing happens that day, but a later multiple after a freeze is consumed can grant one. There is no deferred-grant bookkeeping.
 - A missed day either consumes one freeze (streak preserved, `daily_streak_freezes` row written) or, when `freeze_count == 0`, breaks the streak to 0. `daily_last_qualifying_date` is left untouched on a break so the field always reflects the user's last qualifying participation, never a break event.
 - `best_streak` is rewritten to `max(best_streak, current_streak)` on each qualification, and never decreases otherwise (including on rollback after a reroll, where the prior value is restored as a high water mark), except on purpose when a disqualification re-derives the streak without the disqualified day.
 - Re-applying qualification for the same daily date is a no-op: the evaluator short-circuits when `daily_last_qualifying_date >= D`.

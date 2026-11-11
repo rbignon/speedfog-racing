@@ -132,7 +132,7 @@ class User(Base):
     __tablename__ = "users"
     __table_args__ = (
         CheckConstraint(
-            "daily_freeze_count >= 0 AND daily_freeze_count <= 2",
+            "daily_freeze_count >= 0 AND daily_freeze_count <= 7",
             name="ck_users_daily_freeze_count_range",
         ),
         CheckConstraint(

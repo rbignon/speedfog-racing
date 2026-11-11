@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from speedfog_racing.database import Base
 from speedfog_racing.services.daily_streak_service import (
+    FREEZE_CAP,
+    FREEZE_GRANT_PERIOD,
     StreakState,
     apply_close_day,
     apply_qualification,
@@ -61,11 +63,12 @@ def test_qualification_grants_freeze_at_multiple_of_seven() -> None:
     assert new == s(current=7, best=7, freezes=1, last=date(2026, 5, 12))
 
 
-def test_qualification_freeze_cap_at_two() -> None:
-    # Already at 2 freezes and qualifying for day 14 (multiple of 7).
-    prev = s(current=13, best=13, freezes=2, last=date(2026, 5, 11))
+def test_qualification_freeze_cap() -> None:
+    # Already at the cap and qualifying for a multiple of 7.
+    day = FREEZE_GRANT_PERIOD * (FREEZE_CAP + 1)
+    prev = s(current=day - 1, best=day - 1, freezes=FREEZE_CAP, last=date(2026, 5, 11))
     new = apply_qualification(prev, qualified_for=date(2026, 5, 12))
-    assert new == s(current=14, best=14, freezes=2, last=date(2026, 5, 12))
+    assert new == s(current=day, best=day, freezes=FREEZE_CAP, last=date(2026, 5, 12))
 
 
 def test_qualification_does_not_decrease_best() -> None:
@@ -107,23 +110,25 @@ def test_close_day_with_zero_streak_is_noop() -> None:
 # Combined walk over a synthetic history --------------------------------------
 
 
-def test_walk_two_freezes_absorb_two_misses_third_breaks() -> None:
+def test_walk_capped_freezes_absorb_misses_then_break() -> None:
     state = s()
-    # Qualify days 1..14: freeze at day 7 and day 14, then capped.
-    # Then miss 15, 16, 17.
-    for d in range(1, 15):
-        state = apply_qualification(state, qualified_for=date(2026, 1, d))
-    assert state.current_streak == 14
-    assert state.freeze_count == 2
+    # Qualify one grant period past the cap: a freeze every 7th day until
+    # the cap, then the last multiple grants nothing. Then miss one day more
+    # than the banked freezes.
+    played = FREEZE_GRANT_PERIOD * (FREEZE_CAP + 1)
+    start = date(2026, 1, 1)
+    for i in range(played):
+        state = apply_qualification(state, qualified_for=start + timedelta(days=i))
+    assert state.current_streak == played
+    assert state.freeze_count == FREEZE_CAP
 
-    state, used = apply_close_day(state, missed=date(2026, 1, 15))
-    assert used is True and state.freeze_count == 1 and state.current_streak == 14
+    for i in range(FREEZE_CAP):
+        state, used = apply_close_day(state, missed=start + timedelta(days=played + i))
+        assert used is True and state.freeze_count == FREEZE_CAP - 1 - i
+        assert state.current_streak == played
 
-    state, used = apply_close_day(state, missed=date(2026, 1, 16))
-    assert used is True and state.freeze_count == 0 and state.current_streak == 14
-
-    state, used = apply_close_day(state, missed=date(2026, 1, 17))
-    assert used is False and state.current_streak == 0 and state.best_streak == 14
+    state, used = apply_close_day(state, missed=start + timedelta(days=played + FREEZE_CAP))
+    assert used is False and state.current_streak == 0 and state.best_streak == played
 
 
 # Forward-walk helper --------------------------------------------------------

@@ -25,7 +25,7 @@ from sqlalchemy.sql.elements import ColumnElement
 if TYPE_CHECKING:
     from speedfog_racing.models import Participant, Race, User
 
-FREEZE_CAP = 2
+FREEZE_CAP = 7
 FREEZE_GRANT_PERIOD = 7
 
 
