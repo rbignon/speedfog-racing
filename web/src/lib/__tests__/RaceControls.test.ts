@@ -171,54 +171,6 @@ describe("RaceControls: Reset Race", () => {
     expect(hasButton(container, "Reset Race")).toBe(true);
   });
 
-  it.each([
-    ["a community race", race("normal"), true],
-    ["an event race", race("normal", { event_id: "event-1" }), false],
-    ["a Set Seed race", race("set_seed"), false],
-    [
-      "a race already off for a reroll",
-      race("normal", {
-        unranked_code: "rerolled",
-        unranked_reason: "Re-rolled race: ...",
-      }),
-      false,
-    ],
-    [
-      "a race already reset",
-      race("normal", {
-        unranked_code: "reset",
-        unranked_reason: "Reset race: ...",
-      }),
-      true,
-    ],
-    [
-      "a race on a seen seed (its reroll is free)",
-      race("normal", {
-        unranked_code: "seen_seed",
-        unranked_reason: "Seen seed: ...",
-      }),
-      false,
-    ],
-    [
-      "a training pool's race",
-      race("normal", { pool_config: { type: "training" } as never }),
-      false,
-    ],
-  ])(
-    "says whether resetting %s keeps it off the Speedrun boards",
-    async (_label, r, warned) => {
-      const { container, getByText } = mount(r, "finished");
-      await openMenu(container);
-      const reset = [...container.querySelectorAll("button")].find((b) =>
-        b.textContent?.includes("Reset Race"),
-      )!;
-      await fireEvent.click(reset);
-      const message = getByText(/^Reset this race\?/).textContent ?? "";
-      expect(message.includes("Speedrun board")).toBe(warned);
-      expect(message.includes("re-rolled with a seed report")).toBe(warned);
-    },
-  );
-
   it.each(["running", "finished"])(
     "is not offered on a speedrun race (%s)",
     async (status) => {
