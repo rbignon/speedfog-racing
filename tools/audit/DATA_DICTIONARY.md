@@ -152,7 +152,17 @@ platform works at the time of the export:
   counter then increases by one for each event message the mod sends (fog
   traversal or zone query). Ids from one game process therefore sit close
   together, and a new game process starts from a new, much larger base. The PC
-  clock can be off from the server's.
+  clock can be off from the server's. Mods built from 2026-11-11 on save the
+  fog traversals the server has not acknowledged yet, and the next game
+  process sends them with their original IGT, before anything else. Such an
+  entry carries the previous process's id if it had been sent, or the first
+  id of the new process. Its IGT is the capture time: usually below the IGT
+  the new process's save loaded at, but up to 60 s above it when the save
+  lagged behind the capture, so the next entries can then show a lower IGT
+  without any rollback. With older mods, a
+  traversal still unacknowledged when the game closed (usually after a loss
+  of connection) is missing, and the runner often crosses the same fog again:
+  the recorded first entry is then that second crossing.
 - **IGT.** Elden Ring's timer advances at 0.96 times real time, and only while
   a save is loaded. The mod corrects the game's framerate-dependent rounding
   and holds the timer still during black loading fades (see Changes over time

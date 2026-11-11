@@ -419,6 +419,7 @@ async def reset_set_seed_session(db: AsyncSession, session_id: uuid.UUID) -> boo
             zone_history=None,
             current_zone=None,
             last_igt_change_at=None,
+            reset_count=TrainingSession.reset_count + 1,
         )
         .returning(TrainingSession.id)
         .execution_options(synchronize_session=False)

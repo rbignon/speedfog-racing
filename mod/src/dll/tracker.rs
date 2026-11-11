@@ -24,6 +24,7 @@ use crate::profile_span;
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
 use super::livesplit::LiveSplitClient;
+use super::unacked_store::UnackedStore;
 use super::websocket::RaceWebSocketClient;
 
 #[cfg(debug_assertions)]
@@ -284,6 +285,10 @@ pub struct RaceTracker {
     // every reconnect's auth_ok.
     phantom_skin_name: Option<String>,
 
+    // Saves the unacknowledged event flags next to the DLL (None when the
+    // DLL folder is unknown: nothing survives a restart then).
+    unacked_store: Option<UnackedStore>,
+
     // Throttled debug snapshot to avoid expensive flag reads every frame.
     #[cfg(debug_assertions)]
     debug_info: DebugInfo,
@@ -379,6 +384,22 @@ impl RaceTracker {
 
         let livesplit = LiveSplitClient::start();
 
+        let mut machine = RaceMachine::new(
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64,
+            config_seed_id,
+            config_training,
+            Instant::now(),
+        );
+        // Flags a previous launch closed or crashed before the server
+        // acknowledged them; then the writer for this launch's.
+        if let Some(saved) = dll_dir.as_deref().and_then(UnackedStore::load) {
+            machine.restore_unacked(saved);
+        }
+        let unacked_store = dll_dir.map(UnackedStore::spawn);
+
         info!("RaceTracker initialized");
 
         Some(Self {
@@ -391,15 +412,7 @@ impl RaceTracker {
             font_data,
             overlay_fonts: None,
             death_icon: None,
-            machine: RaceMachine::new(
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64,
-                config_seed_id,
-                config_training,
-                Instant::now(),
-            ),
+            machine,
             show_ui: true,
             #[cfg(debug_assertions)]
             show_debug: false,
@@ -413,6 +426,7 @@ impl RaceTracker {
             phantom_skin_thread: None,
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
             phantom_skin_name: None,
+            unacked_store,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
             #[cfg(debug_assertions)]
@@ -759,6 +773,11 @@ impl RaceTracker {
                     self.start_phantom_skin(name, speffects)
                 }
                 Effect::LiveSplitRun(view) => self.livesplit.send_run(*view),
+                Effect::PersistUnackedFlags(flags) => {
+                    if let Some(ref store) = self.unacked_store {
+                        store.save(flags);
+                    }
+                }
             }
         }
     }

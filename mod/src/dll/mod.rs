@@ -6,6 +6,7 @@ pub mod hotkey;
 pub mod livesplit;
 pub mod tracker;
 pub mod ui;
+pub mod unacked_store;
 pub mod websocket;
 
 // Re-export tracker for lib.rs

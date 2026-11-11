@@ -153,6 +153,8 @@ On `StatusChanged(Reconnecting)`:
 - `deferred_event_flags` are moved to `pending_event_flags` (they were waiting for loading exit, now they need to wait for reconnection too).
 - In-flight `event_flag`s remain in the in-flight map (not moved to pending). They will be replayed with their original `message_id` on reconnect.
 
+These sets also survive a game closed or crashed before the reconnection: see "Surviving a Game Restart" in EVENT_FLAG_TRACKING.md.
+
 On `StatusChanged(Connected)`:
 
 - `ready_sent = false` → `send_ready()` fires again.

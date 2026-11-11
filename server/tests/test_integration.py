@@ -1209,6 +1209,49 @@ def test_status_update_records_debug_flags_first_observation(
     assert _player0_row(integration_db, race_with_participants).debug_flags == flags
 
 
+def test_the_race_names_the_attempt_a_reset_replaces(integration_client, race_with_participants):
+    """The mod drops the flags it saved during another attempt: the attempt id
+    must reach a mod that authed in setup and stayed connected through the
+    start, and a race reset and run again must change it."""
+    race_id = race_with_participants["race_id"]
+    token = race_with_participants["players"][0]["mod_token"]
+    organizer = {"Authorization": f"Bearer {race_with_participants['organizer'].api_token}"}
+
+    def start_with_player0_connected() -> str | None:
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            mod = ModTestClient(ws, token)
+            auth = mod.auth()
+            assert auth["type"] == "auth_ok"
+            assert auth["race"].get("attempt_id") is None, "not started yet"
+            mod.send_ready()
+            mod.receive()
+            response = integration_client.post(f"/api/races/{race_id}/start", headers=organizer)
+            assert response.status_code == 200
+            info = mod.receive_until_type("race_info_update")
+            value: str | None = info["race"].get("attempt_id")
+        # Let the closed connection finish its disconnect.
+        time.sleep(0.3)
+        return value
+
+    def attempt_at_auth() -> str | None:
+        with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
+            auth = ModTestClient(ws, token).auth()
+            assert auth["type"] == "auth_ok"
+            value: str | None = auth["race"].get("attempt_id")
+        time.sleep(0.3)
+        return value
+
+    first = start_with_player0_connected()
+    assert first is not None
+    assert attempt_at_auth() == first, "a reconnection is the same attempt"
+
+    response = integration_client.post(f"/api/races/{race_id}/reset", headers=organizer)
+    assert response.status_code == 200
+    second = start_with_player0_connected()
+    assert second is not None
+    assert second != first
+
+
 def test_status_update_malformed_debug_flags_still_records_igt(
     integration_client, race_with_participants, integration_db
 ):

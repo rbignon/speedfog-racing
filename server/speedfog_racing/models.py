@@ -699,6 +699,9 @@ class TrainingSession(Base):
         JSON(none_as_null=True), nullable=True
     )
     current_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Bumped by each reset of a Set Seed run: the mod drops the event flags it
+    # saved during another attempt (RaceInfo ``attempt_id``).
+    reset_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     discord_notified_at: Mapped[datetime | None] = mapped_column(

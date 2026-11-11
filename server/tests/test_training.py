@@ -2375,7 +2375,8 @@ def test_a_set_seed_reset_replays_the_run_on_the_same_pack(
     with ThreadPoolExecutor(max_workers=1) as pool:
         with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
             ws.send_json(auth)
-            assert ws.receive_json()["type"] == "auth_ok"
+            first = ws.receive_json()
+            assert first["type"] == "auth_ok"
             assert ws.receive_json()["type"] == "race_start"
             ws.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
             assert ws.receive_json()["type"] == "leaderboard_update"
@@ -2394,7 +2395,10 @@ def test_a_set_seed_reset_replays_the_run_on_the_same_pack(
 
     with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws:
         ws.send_json(auth)
-        assert ws.receive_json()["type"] == "auth_ok"
+        second = ws.receive_json()
+        assert second["type"] == "auth_ok"
+        # A new attempt: the mod drops the flags it saved during the old one.
+        assert (first["race"]["attempt_id"], second["race"]["attempt_id"]) == ("0", "1")
         assert ws.receive_json()["type"] == "race_start"
         # Still on the save of the attempt the reset dropped.
         ws.send_json({"type": "status_update", "igt_ms": 120_000, "death_count": 3})

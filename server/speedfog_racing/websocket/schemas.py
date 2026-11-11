@@ -220,6 +220,12 @@ class RaceInfo(BaseModel):
     # The mod ignores this field (no deny_unknown_fields), so it is safe for
     # older mod builds.
     custom_rules: str | None = None
+    # Opaque id of the run's current attempt: changes when a race is reset and
+    # run again, or a Set Seed solo run is reset. The mod saves it with the
+    # event flags the server has not acknowledged, and a relaunch drops those
+    # of another attempt. In RaceInfo, not auth_ok: a mod that authed in setup
+    # gets the race's from the race_info_update pushed at the start.
+    attempt_id: str | None = None
 
 
 def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
@@ -255,6 +261,9 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         seed_id=str(race.seed_id) if race.seed_id else None,
         quit_out_penalty_ms=settings.quit_out_penalty_ms,
         custom_rules=race.custom_rules,
+        # A reset clears started_at and the next start sets a new one; a seed
+        # reroll (a daily's, after its start) is a new attempt too.
+        attempt_id=f"{race.started_at.isoformat()}/{race.seed_id}" if race.started_at else None,
     )
 
 

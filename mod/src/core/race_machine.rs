@@ -285,6 +285,10 @@ pub enum Effect {
     /// The run as the LiveSplit driver sees it, emitted when its liveness,
     /// attempt or arrivals change, and only for a seed with flag layers.
     LiveSplitRun(Box<RunView>),
+    /// Save the event flags the server has not acknowledged yet, so the next
+    /// launch can send them if this process dies first. Emitted only when the
+    /// set changes; an empty list means nothing is left to save.
+    PersistUnackedFlags(UnackedFlags),
 }
 
 // =============================================================================
@@ -295,7 +299,7 @@ use std::collections::HashSet;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
-use crate::core::flag_buffer::{FlagBuffer, SAVE_RELOAD_IGT_DROP_MS};
+use crate::core::flag_buffer::{FlagBuffer, UnackedFlag, UnackedFlags, SAVE_RELOAD_IGT_DROP_MS};
 
 /// Pure race state machine. Owns every piece of plain-data race state and
 /// makes every decision; performs no IO. Fields are `pub` so the Windows
@@ -409,6 +413,34 @@ pub struct RaceMachine {
     run_view_changed: bool,
     /// `live` of the last `LiveSplitRun`.
     run_view_live: bool,
+    /// Unacknowledged flags a previous launch saved, held until this launch
+    /// knows the participant and the IGT of the loaded save
+    /// (`release_restored_flags`).
+    pub restored_flags: Option<UnackedFlags>,
+    /// First in-game IGT of this process: the save loaded at launch, against
+    /// which restored flags are judged.
+    pub first_observed_igt: Option<u32>,
+    /// Restored flags reached the buffers after `ready` went out: send them
+    /// without waiting for a reconnection.
+    pub flush_restored: bool,
+    /// Fingerprint of the unacknowledged flags last handed to the shell for
+    /// saving (0 = nothing saved), so an unchanged set costs no write.
+    pub persisted_fingerprint: u64,
+}
+
+/// Order-independent fingerprint of a set of unacknowledged flags, 0 when
+/// the set is empty.
+fn unacked_fingerprint(flags: impl Iterator<Item = UnackedFlag>) -> u64 {
+    flags.fold(0u64, |acc, flag| {
+        // splitmix64 finalizer over the packed fields.
+        let mut z = ((flag.flag_id as u64) << 32 | flag.igt_ms as u64)
+            ^ flag
+                .message_id
+                .map_or(0, |id| id.rotate_left(17) ^ 0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        acc.wrapping_add(z ^ (z >> 31))
+    })
 }
 
 impl RaceMachine {
@@ -465,6 +497,173 @@ impl RaceMachine {
             run_attempt: 0,
             run_view_changed: false,
             run_view_live: false,
+            restored_flags: None,
+            first_observed_igt: None,
+            flush_restored: false,
+            persisted_fingerprint: 0,
+        }
+    }
+
+    /// Hand over the unacknowledged flags a previous launch saved.
+    pub fn restore_unacked(&mut self, saved: UnackedFlags) {
+        if saved.flags.is_empty() {
+            return;
+        }
+        // Already on disk: no write until the set changes.
+        self.persisted_fingerprint = unacked_fingerprint(saved.flags.iter().copied());
+        // A PC clock set back between launches would otherwise let a new
+        // message reuse a restored id, and the server take it for the old one.
+        if let Some(last_id) = saved.flags.iter().filter_map(|flag| flag.message_id).max() {
+            self.next_event_message_id = self.next_event_message_id.max(last_id.saturating_add(1));
+        }
+        self.restored_flags = Some(saved);
+    }
+
+    /// The server's id of the run's current attempt (`RaceInfo::attempt_id`,
+    /// refreshed by the `race_info_update` of a race start), None from an
+    /// older server. Saved with the unacknowledged flags, so a relaunch drops
+    /// those of an attempt since reset.
+    fn attempt_id(&self) -> Option<&str> {
+        self.race_state.race.as_ref()?.attempt_id.as_deref()
+    }
+
+    /// Every flag the server has not acknowledged: restored from disk,
+    /// buffered (deferred or pending), or in flight.
+    fn unacked_flags(&self) -> impl Iterator<Item = UnackedFlag> + '_ {
+        let restored = self
+            .restored_flags
+            .iter()
+            .flat_map(|saved| saved.flags.iter().copied());
+        let buffered = self
+            .flag_buffer
+            .iter()
+            .map(|&(flag_id, igt_ms)| UnackedFlag {
+                flag_id,
+                igt_ms,
+                message_id: None,
+            });
+        let in_flight = self
+            .in_flight_event_flags
+            .iter()
+            .map(|(&message_id, flag)| UnackedFlag {
+                flag_id: flag.flag_id,
+                igt_ms: flag.igt_ms,
+                message_id: Some(message_id),
+            });
+        restored.chain(buffered).chain(in_flight)
+    }
+
+    /// Hand the unacknowledged flags to the shell for saving when they
+    /// changed since the last save. Runs at the end of every tick and
+    /// message.
+    fn persist_unacked_if_changed(&mut self, effects: &mut Vec<Effect>) {
+        // Per-frame path: nothing unacknowledged and nothing on disk.
+        if self.persisted_fingerprint == 0
+            && self.restored_flags.is_none()
+            && self.flag_buffer.is_empty()
+            && self.in_flight_event_flags.is_empty()
+        {
+            return;
+        }
+        let Some(participant_id) = self.my_participant_id.as_ref() else {
+            return;
+        };
+        crate::profile_span!("persist_unacked");
+        let fingerprint = unacked_fingerprint(self.unacked_flags());
+        if fingerprint == self.persisted_fingerprint {
+            return;
+        }
+        self.persisted_fingerprint = fingerprint;
+        let mut flags: Vec<UnackedFlag> = self.unacked_flags().collect();
+        flags.sort_unstable_by_key(|flag| (flag.igt_ms, flag.message_id, flag.flag_id));
+        effects.push(Effect::PersistUnackedFlags(UnackedFlags {
+            participant_id: participant_id.clone(),
+            attempt_id: self.attempt_id().map(str::to_owned),
+            flags,
+        }));
+    }
+
+    /// Move the flags a previous launch saved into this launch's buffers,
+    /// once the participant is known and a save is loaded. Dropped: another
+    /// participant's flags, those of another attempt (the race was reset and
+    /// run again, or the Set Seed run was reset), those of a race no longer
+    /// running or a run already finished, and a flag captured 60 s or more
+    /// after the loaded save's IGT (a backup restore: the traversal is not in
+    /// that save; same bound as the per-save flush). A kept capture feeds the
+    /// LiveSplit depth tracker like a fresh one.
+    fn release_restored_flags(&mut self, now: Instant) {
+        let Some(saved) = self.restored_flags.as_ref() else {
+            return;
+        };
+        let Some(me) = self.my_participant_id.as_deref() else {
+            return;
+        };
+        if saved.participant_id != me {
+            info!(
+                saved_for = %saved.participant_id,
+                "[RACE] Saved event flags belong to another participant, dropped"
+            );
+            self.restored_flags = None;
+            return;
+        }
+        if saved.attempt_id.as_deref() != self.attempt_id() {
+            info!(
+                saved_attempt = ?saved.attempt_id,
+                attempt = ?self.attempt_id(),
+                "[RACE] Saved event flags belong to another attempt, dropped"
+            );
+            self.restored_flags = None;
+            return;
+        }
+        let Some(save_igt) = self.first_observed_igt else {
+            return;
+        };
+        let Some(saved) = self.restored_flags.take() else {
+            return;
+        };
+        if !self.is_race_running() || self.am_i_finished() {
+            info!(
+                count = saved.flags.len(),
+                "[RACE] Saved event flags dropped (race over or run finished)"
+            );
+            return;
+        }
+        let mut kept = 0;
+        for flag in saved.flags {
+            if crate::core::flag_buffer::detect_save_reload(Some(flag.igt_ms), save_igt) {
+                info!(
+                    flag_id = flag.flag_id,
+                    flag_igt_ms = flag.igt_ms,
+                    save_igt_ms = save_igt,
+                    "[RACE] Saved event flag dropped (not in the loaded save)"
+                );
+                continue;
+            }
+            // The finish flag stays set in the save: without this, the next
+            // scan would report it again at the current IGT.
+            if self.finish_event == Some(flag.flag_id) {
+                self.triggered_flags.insert(flag.flag_id);
+            }
+            match flag.message_id {
+                Some(message_id) => {
+                    self.in_flight_event_flags.insert(
+                        message_id,
+                        BufferedEventFlag {
+                            flag_id: flag.flag_id,
+                            igt_ms: flag.igt_ms,
+                        },
+                    );
+                }
+                None => self.flag_buffer.add_pending(flag.flag_id, flag.igt_ms),
+            }
+            // Never captured by this process: without it, its depth would
+            // be a skipped split until the next auth_ok's catch-up.
+            self.record_capture(flag.flag_id, flag.igt_ms, now);
+            kept += 1;
+        }
+        if kept > 0 {
+            info!(count = kept, "[RACE] Saved event flags restored");
+            self.flush_restored = true;
         }
     }
 
@@ -717,6 +916,16 @@ impl RaceMachine {
     /// Handle one message from the WS worker. Pure: mutates machine state and
     /// returns the side effects for the shell to execute, in order.
     pub fn handle_message(&mut self, msg: MachineMessage, now: Instant) -> Vec<Effect> {
+        let mut effects = self.handle_message_inner(msg, now);
+        // An auth_ok names the participant: restored flags may go now.
+        self.release_restored_flags(now);
+        // After the release, so the depths it records reach LiveSplit now.
+        self.emit_run_view(now, &mut effects);
+        self.persist_unacked_if_changed(&mut effects);
+        effects
+    }
+
+    fn handle_message_inner(&mut self, msg: MachineMessage, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         match msg {
             MachineMessage::StatusChanged(status) => {
@@ -1134,7 +1343,6 @@ impl RaceMachine {
                 self.permanent_error = Some(msg);
             }
         }
-        self.emit_run_view(now, &mut effects);
         effects
     }
 }
@@ -1220,10 +1428,12 @@ impl RaceMachine {
     pub fn tick(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = self.tick_frame(input, now);
         self.emit_run_view(now, &mut effects);
+        self.persist_unacked_if_changed(&mut effects);
         effects
     }
 
-    /// `tick` before the run view, which follows every path a frame takes.
+    /// `tick` before the run view and the unacknowledged-flags save, which
+    /// follow every path a frame takes.
     fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
         self.frame_snapshot = input.snapshot;
@@ -1259,6 +1469,7 @@ impl RaceMachine {
         // reload classification: skip them entirely (no flush, no arming,
         // no reference updates, no freeze recovery).
         if let Some(current_igt) = self.frame_snapshot.igt_ms.filter(|&v| v > 0) {
+            self.first_observed_igt.get_or_insert(current_igt);
             let unload_context =
                 !self.frame_snapshot.position_readable || !self.was_position_readable;
             if self.wrong_save {
@@ -1298,6 +1509,11 @@ impl RaceMachine {
                     // restore further in is the same attempt.
                     if current_igt <= FRESH_RUN_MAX_IGT_MS {
                         self.start_attempt();
+                    }
+                    // Restored flags still held are judged against the save
+                    // now loaded, not the one loaded at launch.
+                    if self.restored_flags.is_some() {
+                        self.first_observed_igt = Some(current_igt);
                     }
                 }
                 // A forward IGT jump across an unload beyond WRONG_SAVE_FORWARD_SLACK_MS
@@ -1349,6 +1565,10 @@ impl RaceMachine {
             }
             self.last_observed_igt = Some(current_igt);
         }
+        // Before any flag read below, so a restored finish is already known,
+        // and before the loading-exit zone query, which comes after them.
+        self.release_restored_flags(now);
+        self.flush_restored_flags(input.connected, now, &mut effects);
 
         if self.frame_snapshot.position_readable {
             self.has_been_in_world = true;
@@ -1679,6 +1899,8 @@ impl RaceMachine {
             self.ready_sent = true;
 
             if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active(now) {
+                self.flush_restored = false;
+
                 // Replay in-flight event flags (sent but not ACKed before disconnect)
                 // with their original message_id for server-side dedup.
                 self.replay_in_flight_event_flags(&mut effects);
@@ -1687,13 +1909,7 @@ impl RaceMachine {
                 self.replay_in_flight_zone_queries(&mut effects);
 
                 // Drain event flags buffered during disconnection (never sent)
-                let pending: Vec<_> = self.flag_buffer.drain_pending().collect();
-                for (flag_id, flag_igt) in pending {
-                    effects.push(self.queue_event_flag(flag_id, flag_igt));
-                    self.last_sent_debug =
-                        Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
-                    info!(flag_id, "[RACE] Buffered event flag sent");
-                }
+                self.send_pending_event_flags(&mut effects);
 
                 // Safety-net rescan: catch any flags still set in memory that polling missed
                 if let Some(ref reads) = input.flag_reads {
@@ -1744,6 +1960,35 @@ impl RaceMachine {
         }
 
         effects
+    }
+
+    /// Send the restored flags once `ready` went out: they are usually
+    /// restored when the save loads, well after the mod connected on the
+    /// title screen. Same sends as a reconnection, without waiting for one;
+    /// before `ready`, the reconnection sends them.
+    fn flush_restored_flags(&mut self, connected: bool, now: Instant, effects: &mut Vec<Effect>) {
+        if !self.flush_restored
+            || !connected
+            || !self.ready_sent
+            || !self.is_race_running()
+            || self.am_i_finished()
+            || self.is_countdown_active(now)
+        {
+            return;
+        }
+        self.flush_restored = false;
+        self.replay_in_flight_event_flags(effects);
+        self.send_pending_event_flags(effects);
+    }
+
+    /// Send the pending event flags (never sent) with fresh message ids.
+    fn send_pending_event_flags(&mut self, effects: &mut Vec<Effect>) {
+        let pending: Vec<_> = self.flag_buffer.drain_pending().collect();
+        for (flag_id, flag_igt) in pending {
+            effects.push(self.queue_event_flag(flag_id, flag_igt));
+            self.last_sent_debug = Some(format!("event_flag({}, igt={})", flag_id, flag_igt));
+            info!(flag_id, "[RACE] Buffered event flag sent");
+        }
     }
 
     /// Register an event flag as in-flight and return its send effect.
@@ -4792,5 +5037,477 @@ mod tests {
             now + ms(150),
         );
         assert!(run_views(&fx).is_empty(), "{fx:?}");
+    }
+
+    // ------------------------------------------------------------------
+    // Unacknowledged flags across game restarts
+    // ------------------------------------------------------------------
+
+    fn unacked(participant: &str, flags: &[(u32, u32, Option<u64>)]) -> UnackedFlags {
+        UnackedFlags {
+            participant_id: participant.to_string(),
+            attempt_id: None,
+            flags: flags
+                .iter()
+                .map(|&(flag_id, igt_ms, message_id)| UnackedFlag {
+                    flag_id,
+                    igt_ms,
+                    message_id,
+                })
+                .collect(),
+        }
+    }
+
+    fn persisted(effects: &[Effect]) -> Vec<&UnackedFlags> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::PersistUnackedFlags(flags) => Some(flags),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `(flag_id, igt_ms, message_id)` of every event_flag sent.
+    fn sent_flag_details(effects: &[Effect]) -> Vec<(u32, u32, u64)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SendEventFlag {
+                    flag_id,
+                    igt_ms,
+                    message_id,
+                } => Some((*flag_id, *igt_ms, *message_id)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A new game process holding what the previous one saved, authed into
+    /// the running race of `running_machine` (as participant p1) and
+    /// connected while still on the title screen.
+    fn relaunched(saved: UnackedFlags, race_status: &str, now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(saved);
+        m.handle_message(auth_ok(race_status, &[100, 200, 900], Some(900)), now);
+        // Title screen: no IGT yet, `ready` goes out.
+        m.tick(tick_in(snap(None, false), true, None), now + ms(10));
+        m
+    }
+
+    #[test]
+    fn unacked_flag_is_saved_until_the_server_acknowledges_it() {
+        let now = Instant::now();
+        let mut m = running_machine(now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        // Fog crossed: captured during the fade, not sent yet.
+        let fx = m.tick(
+            tick_in(
+                snap(Some(1000), true),
+                true,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            now + ms(150),
+        );
+        assert_eq!(persisted(&fx), vec![&unacked("p1", &[(100, 1000, None)])]);
+
+        // Nothing changed: nothing to write.
+        let fx = m.tick(tick_in(snap(Some(1100), false), true, None), now + ms(200));
+        assert!(persisted(&fx).is_empty());
+
+        // Loading exit: sent, saved again with its message id for a replay.
+        let fx = m.tick(
+            tick_in(snap(Some(1300), true), true, Some(vec![])),
+            now + ms(300),
+        );
+        let id = sent_message_ids(&fx)[0];
+        assert_eq!(
+            persisted(&fx),
+            vec![&unacked("p1", &[(100, 1000, Some(id))])]
+        );
+
+        let fx = m.handle_message(
+            MachineMessage::EventFlagAck { message_id: id },
+            now + ms(400),
+        );
+        assert_eq!(persisted(&fx), vec![&unacked("p1", &[])]);
+    }
+
+    #[test]
+    fn flag_lost_with_a_closed_game_is_sent_with_its_capture_igt() {
+        // Daily 2026-10-12: fog crossed offline at ~15:42 IGT, game closed,
+        // relaunched; the mod connects on the title screen, then the save
+        // loads at 16:49.
+        let now = Instant::now();
+        let mut m = relaunched(unacked("p1", &[(100, 942_000, None)]), "running", now);
+
+        let fx = m.tick(
+            tick_in(snap(Some(1_009_414), false), true, None),
+            now + secs(10),
+        );
+        let sent = sent_flag_details(&fx);
+        assert_eq!(sent.len(), 1, "sent without waiting for a reconnection");
+        assert_eq!((sent[0].0, sent[0].1), (100, 942_000));
+    }
+
+    #[test]
+    fn restored_in_flight_flag_is_replayed_with_its_message_id() {
+        let now = Instant::now();
+        let mut m = relaunched(unacked("p1", &[(100, 5_000, Some(42))]), "running", now);
+
+        let fx = m.tick(
+            tick_in(snap(Some(10_000), false), true, None),
+            now + secs(10),
+        );
+        assert_eq!(sent_flag_details(&fx), vec![(100, 5_000, 42)]);
+    }
+
+    #[test]
+    fn restored_flags_ahead_of_a_restored_save_are_dropped() {
+        // The save loads 70 s before the first flag (a backup restore): that
+        // traversal is not in it. The second one, 30 s before, is.
+        let now = Instant::now();
+        let saved = unacked("p1", &[(100, 220_000, None), (200, 120_000, None)]);
+        let mut m = relaunched(saved, "running", now);
+
+        let fx = m.tick(
+            tick_in(snap(Some(150_000), false), true, None),
+            now + secs(10),
+        );
+        let sent: Vec<_> = sent_flag_details(&fx)
+            .iter()
+            .map(|&(flag, igt, _)| (flag, igt))
+            .collect();
+        assert_eq!(sent, vec![(200, 120_000)]);
+    }
+
+    #[test]
+    fn restored_flags_are_judged_against_the_save_loaded_at_launch() {
+        // Launched offline: the save loads 70 s before the flag, the runner
+        // plays on, and only then the mod connects. The later IGT must not
+        // make the stale flag look like part of this save.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p1", &[(100, 1_080_000, None)]));
+        m.tick(
+            tick_in(snap(Some(1_010_000), false), false, None),
+            now + secs(1),
+        );
+        m.tick(
+            tick_in(snap(Some(1_150_000), true), false, None),
+            now + secs(150),
+        );
+
+        m.handle_message(
+            auth_ok("running", &[100, 200, 900], Some(900)),
+            now + secs(151),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(1_151_000), true), true, None),
+            now + secs(152),
+        );
+        assert!(sent_flags(&fx).is_empty());
+    }
+
+    #[test]
+    fn restored_flags_of_another_participant_are_dropped() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p2", &[(100, 942_000, None)]));
+
+        let fx = m.handle_message(auth_ok("running", &[100, 200, 900], Some(900)), now);
+        assert_eq!(persisted(&fx), vec![&unacked("p1", &[])]);
+        m.tick(tick_in(snap(None, false), true, None), now + ms(10));
+        let fx = m.tick(
+            tick_in(snap(Some(1_009_414), false), true, None),
+            now + secs(10),
+        );
+        assert!(sent_flags(&fx).is_empty());
+    }
+
+    /// `auth_ok` of `running_machine`'s race whose attempt is `attempt`.
+    fn auth_ok_attempt(attempt: &str) -> MachineMessage {
+        let mut msg = auth_ok("running", &[100, 200, 900], Some(900));
+        if let MachineMessage::AuthOk { ref mut race, .. } = msg {
+            race.attempt_id = Some(attempt.to_string());
+        }
+        msg
+    }
+
+    /// Flags saved in attempt `saved_in`, restored by a launch whose auth_ok
+    /// names attempt `current`; the New Game loads at 5 s of IGT. Returns the
+    /// event flags sent and the last save.
+    fn restore_across_attempts(saved_in: &str, current: &str) -> (Vec<u32>, UnackedFlags) {
+        let now = Instant::now();
+        let mut saved = unacked("p1", &[(100, 30_000, None)]);
+        saved.attempt_id = Some(saved_in.to_string());
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(saved);
+        let mut fx = m.handle_message(auth_ok_attempt(current), now);
+        fx.extend(m.tick(tick_in(snap(None, false), true, None), now + ms(10)));
+        fx.extend(m.tick(
+            tick_in(snap(Some(5_000), false), true, None),
+            now + secs(10),
+        ));
+        let last_save = persisted(&fx).last().map(|&saved| saved.clone());
+        (sent_flags(&fx), last_save.expect("a save"))
+    }
+
+    #[test]
+    fn restored_flags_of_a_reset_attempt_are_dropped() {
+        // Set Seed reset (or race reset and rerun) with the game closed: the
+        // flag from the first minute of the old attempt is within 60 s of the
+        // New Game's IGT, yet it belongs to the old attempt.
+        let (sent, last_save) = restore_across_attempts("0", "1");
+        assert!(sent.is_empty(), "{sent:?}");
+        assert!(last_save.flags.is_empty());
+        assert_eq!(last_save.attempt_id.as_deref(), Some("1"));
+    }
+
+    #[test]
+    fn restored_flags_of_the_same_attempt_are_sent() {
+        let (sent, _) = restore_across_attempts("1", "1");
+        assert_eq!(sent, vec![100]);
+    }
+
+    #[test]
+    fn a_race_joined_in_setup_saves_its_flags_under_the_started_attempt() {
+        // The usual organized race: auth and ready in setup, the race starts
+        // with the mod connected, then the connection drops and a fog is
+        // crossed before the game closes. The start's race_info_update names
+        // the attempt; without it the flags were saved under none and the
+        // relaunch dropped them.
+        let now = Instant::now();
+        let attempt = "2026-11-11T20:00:00+00:00";
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.handle_message(auth_ok("setup", &[100, 200, 900], Some(900)), now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+        m.handle_message(MachineMessage::RaceStart(0), now + ms(20));
+        let mut race = test_race("running");
+        race.attempt_id = Some(attempt.to_string());
+        m.handle_message(MachineMessage::RaceInfoUpdate(race), now + ms(30));
+
+        let fx = m.tick(
+            tick_in(
+                snap(Some(30_000), true),
+                false,
+                Some(vec![(100, true), (200, false), (900, false)]),
+            ),
+            now + secs(30),
+        );
+        let saved = persisted(&fx).last().map(|&saved| saved.clone());
+        let saved = saved.expect("the capture is saved");
+        assert_eq!(saved.attempt_id.as_deref(), Some(attempt));
+
+        let mut relaunch = RaceMachine::new(2_000_000, String::new(), false, now);
+        relaunch.restore_unacked(saved);
+        relaunch.handle_message(auth_ok_attempt(attempt), now + secs(60));
+        relaunch.tick(tick_in(snap(None, false), true, None), now + secs(61));
+        let fx = relaunch.tick(
+            tick_in(snap(Some(29_000), false), true, None),
+            now + secs(70),
+        );
+        assert_eq!(sent_flags(&fx), vec![100]);
+    }
+
+    #[test]
+    fn a_restored_fog_records_its_depth() {
+        // Crossed offline, game closed: the relaunch must not leave a
+        // skipped split for that depth.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p1", &[(100, 50_000, None)]));
+        m.handle_message(ls_auth_ok("running", "playing", &[]), now);
+        m.tick(tick_in(snap(None, false), true, None), now + ms(10));
+        let fx = m.tick(
+            tick_in(snap(Some(55_000), false), true, None),
+            now + secs(10),
+        );
+        let views = run_views(&fx);
+        assert_eq!(views.len(), 1, "{fx:?}");
+        assert_eq!(views[0].arrivals, vec![None, Some(50_000), None, None]);
+    }
+
+    #[test]
+    fn restored_flags_are_dropped_once_the_race_is_over() {
+        let now = Instant::now();
+        let mut m = relaunched(unacked("p1", &[(100, 942_000, None)]), "finished", now);
+
+        let fx = m.tick(
+            tick_in(snap(Some(1_009_414), false), true, None),
+            now + secs(10),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert_eq!(persisted(&fx), vec![&unacked("p1", &[])]);
+    }
+
+    #[test]
+    fn restored_finish_is_not_sent_again_by_the_loading_exit_scan() {
+        // The finish flag stays set in the save: the scan at the loading exit
+        // sees it too, and must not report it a second time at the later IGT.
+        let now = Instant::now();
+        let mut m = relaunched(unacked("p1", &[(900, 500_000, None)]), "running", now);
+
+        let fx = m.tick(
+            tick_in(snap(Some(520_000), false), true, None),
+            now + secs(10),
+        );
+        let fx2 = m.tick(
+            tick_in(
+                snap(Some(520_100), true),
+                true,
+                Some(vec![(100, false), (200, false), (900, true)]),
+            ),
+            now + secs(11),
+        );
+        let sent: Vec<_> = sent_flag_details(&fx)
+            .into_iter()
+            .chain(sent_flag_details(&fx2))
+            .map(|(flag, igt, _)| (flag, igt))
+            .collect();
+        assert_eq!(sent, vec![(900, 500_000)]);
+    }
+
+    #[test]
+    fn restored_flags_still_held_follow_a_backup_loaded_later() {
+        // Launched offline: the race save loads 10 s after the flag, then
+        // the runner loads a backup 5 minutes older before the mod connects.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p1", &[(100, 1_090_000, None)]));
+        m.tick(
+            tick_in(snap(Some(1_100_000), false), false, None),
+            now + secs(1),
+        );
+        m.tick(
+            tick_in(snap(Some(1_100_500), true), false, None),
+            now + secs(2),
+        );
+        m.tick(tick_in(snap(None, false), false, None), now + secs(5));
+        m.tick(
+            tick_in(snap(Some(800_000), false), false, None),
+            now + secs(8),
+        );
+        m.tick(
+            tick_in(snap(Some(800_100), true), false, None),
+            now + secs(9),
+        );
+
+        m.handle_message(
+            auth_ok("running", &[100, 200, 900], Some(900)),
+            now + secs(10),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(801_000), true), true, None),
+            now + secs(11),
+        );
+        assert!(sent_flags(&fx).is_empty());
+    }
+
+    #[test]
+    fn restored_flags_go_out_before_the_first_zone_query() {
+        // The save's first IGT and the loading exit on the same frame: the
+        // zone query must not reach the server before the older traversal.
+        let now = Instant::now();
+        let mut m = relaunched(unacked("p1", &[(100, 942_000, None)]), "running", now);
+
+        let mut input = tick_in(snap(Some(1_009_414), true), true, None);
+        input.position = Some(PlayerPosition {
+            map_id: 0x10000000,
+            map_id_str: "m16_00_00_00".to_string(),
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+            play_region_id: None,
+        });
+        let fx = m.tick(input, now + secs(10));
+        let flag_at = fx
+            .iter()
+            .position(|e| matches!(e, Effect::SendEventFlag { flag_id: 100, .. }));
+        let query_at = fx
+            .iter()
+            .position(|e| matches!(e, Effect::SendZoneQuery { .. }));
+        assert!(
+            query_at.is_some(),
+            "the loading exit still queries the zone"
+        );
+        assert!(
+            flag_at < query_at,
+            "flag at {flag_at:?}, query at {query_at:?}"
+        );
+    }
+
+    #[test]
+    fn flag_restored_before_the_connection_is_sent_once() {
+        // Launched offline: the save loads before auth_ok, so the flags are
+        // restored before `ready` and go out with the reconnection's sends.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p1", &[(100, 942_000, None)]));
+        m.tick(
+            tick_in(snap(Some(1_009_414), true), false, None),
+            now + secs(1),
+        );
+        m.handle_message(
+            auth_ok("running", &[100, 200, 900], Some(900)),
+            now + secs(2),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(2),
+        );
+
+        let fx1 = m.tick(
+            tick_in(snap(Some(1_010_000), true), true, None),
+            now + secs(3),
+        );
+        let fx2 = m.tick(
+            tick_in(snap(Some(1_011_000), true), true, None),
+            now + secs(4),
+        );
+        let sent: Vec<_> = sent_flag_details(&fx1)
+            .into_iter()
+            .chain(sent_flag_details(&fx2))
+            .map(|(flag, igt, _)| (flag, igt))
+            .collect();
+        assert_eq!(sent, vec![(100, 942_000)]);
+    }
+
+    #[test]
+    fn new_flags_never_reuse_a_restored_message_id() {
+        // The PC clock went back between launches: this launch's ids start
+        // at the id a restored flag already carries.
+        let now = Instant::now();
+        let mut m = relaunched(
+            unacked("p1", &[(100, 5_000, Some(1_000_000))]),
+            "running",
+            now,
+        );
+        m.tick(
+            tick_in(snap(Some(10_000), true), true, None),
+            now + secs(10),
+        );
+
+        // A new fog crossed, then its loading exit.
+        m.tick(
+            tick_in(
+                snap(Some(11_000), true),
+                true,
+                Some(vec![(100, false), (200, true), (900, false)]),
+            ),
+            now + secs(11),
+        );
+        m.tick(
+            tick_in(snap(Some(11_500), false), true, None),
+            now + secs(12),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(12_000), true), true, Some(vec![])),
+            now + secs(13),
+        );
+        let ids = sent_message_ids(&fx);
+        assert_eq!(ids.len(), 1);
+        assert_ne!(ids[0], 1_000_000);
     }
 }

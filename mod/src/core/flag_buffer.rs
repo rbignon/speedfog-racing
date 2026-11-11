@@ -11,6 +11,14 @@
 //! Also exposes `detect_save_reload`, used by the tracker to flush per-save
 //! event-flag state (the buffers above plus `triggered_flags`) when the player
 //! loads a different save mid-session.
+//!
+//! Both stages live in process memory, and a captured regular flag is already
+//! cleared in game memory, so a game closed or crashed before the server
+//! acknowledged a flag would lose the traversal for good. `UnackedFlags` is
+//! the on-disk copy of every flag not acknowledged yet (buffered here or in
+//! flight), restored by the next launch.
+
+use serde::{Deserialize, Serialize};
 
 /// Minimum IGT regression (ms) treated as a save-state rollback (another
 /// save, or a backup restore of this one). Ordinary quit-outs regress by
@@ -29,6 +37,35 @@ pub fn detect_save_reload(prev: Option<u32>, current: u32) -> bool {
         Some(p) => current + SAVE_RELOAD_IGT_DROP_MS <= p,
         None => false,
     }
+}
+
+/// An event flag the server has not acknowledged yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnackedFlag {
+    pub flag_id: u32,
+    /// IGT at capture, which the server records as the traversal time.
+    pub igt_ms: u32,
+    /// Set once the flag was sent: a replay reuses it, so the server
+    /// recognizes a message it already recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<u64>,
+}
+
+/// The unacknowledged flags of one participant, as saved next to the DLL.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnackedFlags {
+    /// Race participant (or training session) the flags belong to.
+    pub participant_id: String,
+    /// The server's id of the attempt they were captured in
+    /// (`RaceInfo::attempt_id`), None from an older server.
+    #[serde(default)]
+    pub attempt_id: Option<String>,
+    pub flags: Vec<UnackedFlag>,
+}
+
+impl UnackedFlags {
+    /// File name, in the DLL's folder (one folder per seed pack).
+    pub const FILENAME: &'static str = "speedfog_racing_unacked.json";
 }
 
 /// Manages event flag buffering across loading screens and disconnections.
@@ -86,6 +123,15 @@ impl FlagBuffer {
 
     pub fn clear_pending(&mut self) {
         self.pending.clear();
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.deferred.is_empty() && self.pending.is_empty()
+    }
+
+    /// Every buffered `(flag_id, igt_ms)`, deferred then pending.
+    pub fn iter(&self) -> impl Iterator<Item = &(u32, u32)> {
+        self.deferred.iter().chain(self.pending.iter())
     }
 }
 

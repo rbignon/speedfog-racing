@@ -284,6 +284,13 @@ pub struct RaceInfo {
     /// Defaults so a server predating the field keeps the feature active.
     #[serde(default = "default_quit_out_penalty_ms")]
     pub quit_out_penalty_ms: u32,
+    /// Opaque id of the run's current attempt: changes when a race is reset
+    /// and run again or its seed re-rolled after the start, or a Set Seed
+    /// solo run is reset. None before a race
+    /// starts (the start's `race_info_update` brings it) and from older
+    /// servers.
+    #[serde(default)]
+    pub attempt_id: Option<String>,
     /// Pre-parsed `race_ends_at` filled by [`RaceInfo::reparse_dates`] after
     /// receipt so the per-frame countdown UI doesn't reparse the string.
     /// Not part of the wire format.
