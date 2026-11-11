@@ -7,13 +7,25 @@
     user,
     raceName,
     inline = false,
-  }: { user: User; raceName?: string; inline?: boolean } = $props();
+    rowHref,
+  }: {
+    user: User;
+    raceName?: string;
+    inline?: boolean;
+    /** The link of the row holding the player: it fills the space around
+     * the name, so the whole row stays one link. Out of the tab order and
+     * hidden from assistive technologies, the row offers it elsewhere. */
+    rowHref?: string;
+  } = $props();
 
   // The equipped badge stands where speedrun.com shows a country flag.
   let badge = $derived(rewards.lookupBadge(user.equipped_badge_id ?? null));
 </script>
 
-<span class="sr-player" class:inline>
+<span class="sr-player" class:inline class:filled={rowHref !== undefined}>
+  {#if rowHref !== undefined}
+    <a class="fill" href={rowHref} tabindex="-1" aria-hidden="true"></a>
+  {/if}
   {#if badge}
     <img
       class="flag"
@@ -52,6 +64,23 @@
     display: inline-flex;
     vertical-align: middle;
     gap: 0.3rem;
+  }
+
+  .filled {
+    position: relative;
+  }
+
+  .fill {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Above the row's link: the name keeps its own, the badge and the bubble
+   * their tooltips. */
+  .filled .name,
+  .filled img.flag,
+  .filled .bubble {
+    position: relative;
   }
 
   .flag {

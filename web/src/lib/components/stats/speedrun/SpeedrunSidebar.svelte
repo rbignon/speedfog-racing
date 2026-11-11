@@ -36,9 +36,12 @@
   const plural = (n: number, word: string) =>
     `${n} ${word}${n === 1 ? "" : "s"}`;
 
-  // A click on a recent PB opens its run, unless it landed on a link (the
-  // player, the category), came with a modifier key (the category's link
-  // opens a new tab) or ended a text selection.
+  // Every part of a recent PB but the player's name and badge is a link to
+  // its run, so the row acts as one link (a modified or middle click opens a
+  // new tab); only the category's link is in the tab order. On the rest (the
+  // margins, the badge), a plain click opens the run too, unless it ended a
+  // text selection; a modified click there does nothing rather than open the
+  // run in this tab.
   function openRun(e: MouseEvent, href: string) {
     if ((e.target as Element).closest("a, button")) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey) return;
@@ -102,7 +105,7 @@
     <h3>Recent PBs</h3>
     {#each overview.recent_runs as run (`${run.race_id ?? run.session_id}:${run.user.id}`)}
       {@const href = speedrunSeedHref(run)}
-      <!-- A mouse shortcut only: the category link is the keyboard path. -->
+      <!-- A mouse fallback for the margins and the badge. -->
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <!-- svelte-ignore a11y_click_events_have_key_events -->
       <div class="recent" onclick={(e) => openRun(e, href)}>
@@ -112,21 +115,25 @@
           aria-label="{run.category}: run by {run.user.twitch_display_name ||
             run.user.twitch_username}">{run.category}</a
         >
-        <div class="details">
+        <a class="details" {href} tabindex="-1">
           {run.blind ? "Blind" : "Replay"}{run.deathless ? ", Deathless" : ""} ({run.weapon
             ? formatCombo(run.weapon, getWeaponName)
             : "–"})
-        </div>
+        </a>
         <div class="line">
-          <span class="place">
+          <a class="place" {href} tabindex="-1">
             {#if run.rank !== null && run.rank <= 3}
               <SpeedrunTrophy place={run.rank} />
             {/if}
             {run.rank !== null ? ordinal(run.rank) : ""}
-          </span>
-          <SpeedrunPlayer user={run.user} />
-          <SpeedrunTime ms={run.igt_ms} />
-          <span class="ago">{speedrunAgo(run.finished_at, now)}</span>
+          </a>
+          <SpeedrunPlayer user={run.user} rowHref={href} />
+          <a class="time" {href} tabindex="-1"
+            ><SpeedrunTime ms={run.igt_ms} /></a
+          >
+          <a class="ago" {href} tabindex="-1"
+            >{speedrunAgo(run.finished_at, now)}</a
+          >
         </div>
       </div>
     {:else}
@@ -234,6 +241,7 @@
   }
 
   .category {
+    display: block;
     color: var(--color-gold);
     font-weight: 700;
     text-decoration: none;
@@ -243,8 +251,10 @@
     color: var(--color-gold-hover);
   }
 
+  /* Padding, not margin: the space between the lines is part of the link. */
   .details {
-    margin: 0.15rem 0 0.35rem;
+    display: block;
+    padding: 0.15rem 0 0.35rem;
     color: var(--color-text-secondary);
     font-size: var(--font-size-xs);
   }
@@ -260,7 +270,12 @@
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    color: inherit;
     font-weight: 700;
+  }
+
+  .time {
+    color: inherit;
   }
 
   .ago {

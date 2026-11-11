@@ -21,9 +21,13 @@
   let shown = $state(PAGE_SIZE);
   // Relative dates are computed once per board, like a page load would.
   const now = Date.now();
-  // A click on the row opens the run's seed page, unless it landed on a link
-  // or a button (the player, the seed cell), came with a modifier key (the
-  // seed cell's link opens a new tab) or ended a text selection.
+  // Every cell is a link to the run's seed page, the player's around the
+  // name, so the row acts as one link (a modified or middle click opens a
+  // new tab); only the seed cell's link is in the tab order, the others still
+  // read out with their cell. On the rest (the player cell's padding, the
+  // badge, the race bubble), a plain click opens the run too, unless it ended
+  // a text selection; a modified click there does nothing rather than open
+  // the run in this tab.
   function openSeed(e: MouseEvent, href: string) {
     if ((e.target as Element).closest("a, button")) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey) return;
@@ -33,7 +37,9 @@
   let visible = $derived(runs.slice(0, shown));
 </script>
 
-<div class="table-wrap">
+<!-- Rows are links to a seed page whose load is heavy (its map): preloading
+     on hover would fetch one per row the pointer crosses. -->
+<div class="table-wrap" data-sveltekit-preload-data="tap">
   <table class="sr-table">
     <thead>
       <tr>
@@ -53,54 +59,67 @@
         {@const route = run.weapon
           ? formatCombo(run.weapon, getWeaponName)
           : "–"}
-        <!-- A mouse shortcut only: the seed cell's link is the keyboard path. -->
+        <!-- A mouse fallback for the player cell's padding, badge and bubble. -->
         <tr
           class:obsolete={run.rank === null}
           onclick={(e) => openSeed(e, seedHref)}
         >
           <td class="rank">
-            {#if run.rank !== null && run.rank <= 3}
-              <span class="trophy"><SpeedrunTrophy place={run.rank} /></span>
-            {:else if run.rank !== null}
-              {run.rank}
-            {/if}
+            <a class="cell" href={seedHref} tabindex="-1">
+              {#if run.rank !== null && run.rank <= 3}
+                <span class="trophy"><SpeedrunTrophy place={run.rank} /></span>
+              {:else if run.rank !== null}
+                {run.rank}
+              {/if}
+            </a>
           </td>
           <td class="left player">
             <SpeedrunPlayer
               user={run.user}
               raceName={run.race_name ?? undefined}
+              rowHref={seedHref}
             />
           </td>
-          <td><SpeedrunTime ms={run.igt_ms} /></td>
-          {#if showRun}
-            <td
-              ><span
-                class="chip run-chip"
-                class:blind={run.blind}
-                class:replay={!run.blind}
-                title={run.blind
-                  ? RUN_KIND_TITLES.blind
-                  : RUN_KIND_TITLES.replay}
-                >{run.blind ? "Blind" : "Replay"}</span
-              ></td
+          <td>
+            <a class="cell" href={seedHref} tabindex="-1"
+              ><SpeedrunTime ms={run.igt_ms} /></a
             >
+          </td>
+          {#if showRun}
+            <td>
+              <a class="cell" href={seedHref} tabindex="-1"
+                ><span
+                  class="chip run-chip"
+                  class:blind={run.blind}
+                  class:replay={!run.blind}
+                  title={run.blind
+                    ? RUN_KIND_TITLES.blind
+                    : RUN_KIND_TITLES.replay}
+                  >{run.blind ? "Blind" : "Replay"}</span
+                ></a
+              >
+            </td>
           {/if}
-          <td title={new Date(run.finished_at).toLocaleString()}
-            >{speedrunAgo(run.finished_at, now)}</td
-          >
+          <td title={new Date(run.finished_at).toLocaleString()}>
+            <a class="cell" href={seedHref} tabindex="-1"
+              >{speedrunAgo(run.finished_at, now)}</a
+            >
+          </td>
           <td>
             <a
-              class="seed"
+              class="cell seed"
               class:gone={!run.replayable}
               href={seedHref}
               title={run.replayable ? undefined : "No longer replayable"}
               >{run.seed_number.slice(0, 6)}</a
             >
           </td>
-          <td class="route-cell" title={run.weapon ? route : undefined}
-            >{route}</td
-          >
-          <td>{run.deaths}</td>
+          <td class="route-cell" title={run.weapon ? route : undefined}>
+            <a class="cell" href={seedHref} tabindex="-1">{route}</a>
+          </td>
+          <td>
+            <a class="cell" href={seedHref} tabindex="-1">{run.deaths}</a>
+          </td>
         </tr>
       {/each}
     </tbody>
@@ -152,11 +171,26 @@
     white-space: nowrap;
   }
 
+  /* A cell's padding sits on its run link, so the whole cell is the link. */
   td {
-    padding: 0.42rem 0.45rem;
+    padding: 0;
     border-top: 1px solid var(--color-border);
     text-align: center;
     white-space: nowrap;
+  }
+
+  .cell,
+  .player {
+    padding: 0.42rem 0.45rem;
+  }
+
+  .cell {
+    display: block;
+    color: inherit;
+  }
+
+  .cell:hover {
+    color: inherit;
   }
 
   .left {
@@ -226,6 +260,9 @@
      which turns pointer events off and would kill this cell's tooltip). */
   .route-cell {
     max-width: 10rem;
+  }
+
+  .route-cell .cell {
     overflow: hidden;
     text-overflow: ellipsis;
   }

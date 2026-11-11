@@ -319,17 +319,36 @@ describe("SpeedrunBoard links to seed pages", () => {
     );
   });
 
-  it("navigates to the seed page on a row click, but not on a link", async () => {
+  it("links every cell to the run, the player's around the name, the seed cell alone in the tab order", async () => {
     mount();
 
     const row = (await screen.findByText("363096")).closest("tr")!;
-    await fireEvent.click(row.querySelector("td.rank")!);
+    const href = "/speedrun/seed/363096a4243f?run=p1";
+    for (const td of row.querySelectorAll("td")) {
+      expect(td.querySelector(`a[href="${href}"]`)).toBeTruthy();
+    }
+    // The cells still read out their data.
+    expect(
+      within(row).getByRole("cell", { name: /^21\s*m\s*43\s*s$/ }),
+    ).toBeTruthy();
+    const tabbable = [...row.querySelectorAll("a")].filter(
+      (a) => a.getAttribute("tabindex") !== "-1",
+    );
+    expect(tabbable.map((a) => a.getAttribute("href"))).toEqual([
+      "/user/runner",
+      href,
+    ]);
+  });
+
+  it("navigates to the seed page on a click around the player's name, but not on the name", async () => {
+    mount();
+
+    const row = (await screen.findByText("363096")).closest("tr")!;
+    await fireEvent.click(row.querySelector("td.player")!);
     expect(goto).toHaveBeenCalledWith("/speedrun/seed/363096a4243f?run=p1");
 
     vi.mocked(goto).mockClear();
-    const player = row.querySelector(".player a");
-    expect(player).toBeTruthy();
-    await fireEvent.click(player!);
+    await fireEvent.click(within(row).getByRole("link", { name: "Runner" }));
     expect(goto).not.toHaveBeenCalled();
   });
 
@@ -337,9 +356,9 @@ describe("SpeedrunBoard links to seed pages", () => {
     mount();
 
     const row = (await screen.findByText("363096")).closest("tr")!;
-    const rank = row.querySelector("td.rank")!;
+    const player = row.querySelector("td.player")!;
     for (const modifier of ["ctrlKey", "metaKey", "shiftKey"]) {
-      await fireEvent.click(rank, { [modifier]: true });
+      await fireEvent.click(player, { [modifier]: true });
     }
     expect(goto).not.toHaveBeenCalled();
 
@@ -347,11 +366,11 @@ describe("SpeedrunBoard links to seed pages", () => {
     const range = document.createRange();
     range.selectNodeContents(row);
     window.getSelection()!.addRange(range);
-    await fireEvent.click(rank);
+    await fireEvent.click(player);
     window.getSelection()!.removeAllRanges();
     expect(goto).not.toHaveBeenCalled();
 
-    await fireEvent.click(rank);
+    await fireEvent.click(player);
     expect(goto).toHaveBeenCalledTimes(1);
   });
 });

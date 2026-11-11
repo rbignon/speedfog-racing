@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { goto } from "$app/navigation";
 import SpeedrunSidebar from "$lib/components/stats/speedrun/SpeedrunSidebar.svelte";
 import type {
@@ -60,25 +60,53 @@ describe("SpeedrunSidebar recent PBs", () => {
     vi.mocked(goto).mockReset();
   });
 
-  it("links each PB to its seed page focused on the run", () => {
+  const RUN_HREF = "/speedrun/seed/363096a4243f?run=s1";
+
+  it("links every part of a PB to its run, the player's around the name, the category alone in the tab order", () => {
     render(SpeedrunSidebar, { overview: overview([], 7, [RECENT]) });
 
-    expect(
-      screen
-        .getByRole("link", { name: "Sprint: run by Runner" })
-        .getAttribute("href"),
-    ).toBe("/speedrun/seed/363096a4243f?run=s1");
+    const category = screen.getByRole("link", {
+      name: "Sprint: run by Runner",
+    });
+    const row = category.closest<HTMLElement>(".recent")!;
+    // The parts still read out their data.
+    for (const name of ["4th", /^21\s*m\s*43\s*s$/]) {
+      expect(within(row).getByRole("link", { name }).getAttribute("href")).toBe(
+        RUN_HREF,
+      );
+    }
+    // The player's part links it around the name.
+    for (const part of [
+      ".details",
+      ".place",
+      ".sr-player",
+      ".sr-time",
+      ".ago",
+    ]) {
+      const el = row.querySelector(part)!;
+      expect(
+        el.closest(`a[href="${RUN_HREF}"]`) ??
+          el.querySelector(`a[href="${RUN_HREF}"]`),
+      ).toBeTruthy();
+    }
+    const tabbable = [...row.querySelectorAll("a")].filter(
+      (a) => a.getAttribute("tabindex") !== "-1",
+    );
+    expect(tabbable.map((a) => a.getAttribute("href"))).toEqual([
+      RUN_HREF,
+      "/user/runner",
+    ]);
   });
 
-  it("opens the run on a click anywhere on the row, not on the player's name, a modified click or a text selection", async () => {
+  it("opens the run on a plain click between the links, not on the player's name, a modified click or a text selection", async () => {
     render(SpeedrunSidebar, { overview: overview([], 7, [RECENT]) });
 
     const row = screen
       .getByRole("link", { name: /^Sprint/ })
       .closest(".recent")!;
-    const ago = row.querySelector(".ago")!;
+    const gap = row.querySelector(".line")!;
     for (const modifier of ["ctrlKey", "metaKey", "shiftKey"]) {
-      await fireEvent.click(ago, { [modifier]: true });
+      await fireEvent.click(gap, { [modifier]: true });
     }
     await fireEvent.click(screen.getByRole("link", { name: "Runner" }));
 
@@ -86,12 +114,12 @@ describe("SpeedrunSidebar recent PBs", () => {
     const range = document.createRange();
     range.selectNodeContents(row);
     window.getSelection()!.addRange(range);
-    await fireEvent.click(ago);
+    await fireEvent.click(gap);
     window.getSelection()!.removeAllRanges();
     expect(goto).not.toHaveBeenCalled();
 
-    await fireEvent.click(ago);
-    expect(goto).toHaveBeenCalledWith("/speedrun/seed/363096a4243f?run=s1");
+    await fireEvent.click(gap);
+    expect(goto).toHaveBeenCalledWith(RUN_HREF);
   });
 });
 
