@@ -364,7 +364,9 @@ Authentication successful. Contains initial race state.
 
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod, no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
-`finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). All other event flags are deferred to loading screen exit.
+`finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). Fog flags are deferred to loading screen exit.
+
+`boss_flags`: sorted defeat flags of every boss node of the seed except the final boss. The mod reports each one once, at once, through `event_flag` and never clears it in game memory; the server records the kill on the node's `zone_history` (see [`event_flag`](#event_flag)). Empty from an older server, and then the mod watches no boss.
 
 `spawn_items`: list of items to spawn at runtime via `func_item_inject`. Used for item types not supported by EMEVD's `DirectlyGivePlayerItem` (e.g., Gem/Ash of War, type 4). Each entry has `id` (EquipParamGem row ID) and `qty` (default 1). The mod spawns these once after game load, using `items_spawned_flag` to prevent re-giving on reconnect or game restart. `null` if no runtime-spawned items exist.
 

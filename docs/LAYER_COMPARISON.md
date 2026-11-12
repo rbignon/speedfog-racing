@@ -149,9 +149,10 @@ from the field's kills (not its depth times). "vs best" is against the
 fastest kill among the selected runners of that column, and the field rank
 is the kill's rank in the field's kills. A kill belongs to its node's depth:
 a runner who left the boss unbeaten for a deeper depth and came back to kill
-it has the detour in that time, never a time from the re-entry.
-A boss column with no kill yet, and every non-boss column, stays a depth column. Rows are sorted by kill time; a runner
-without a recorded kill shows `-`, a live runner its time so far in italics,
+it has the detour in that time, never a time from the re-entry. A boss
+column with no kill yet, and every non-boss column, stays a depth column.
+Rows are sorted by kill time; a runner without a recorded kill shows `-`, a
+live runner its time so far in italics,
 and DNF / DQ, deaths, entry gaps and back-out notes are unchanged. "Depth
 time" restores the plain panel.
 
