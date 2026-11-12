@@ -10,7 +10,7 @@
     | "avg_deaths"
     | "encounters"
     | "max_deaths"
-    | "avg_time_ms"
+    | "median_time_ms"
     | "back_ratio"
     | "display_name";
   let sortKey = $state<SortKey>("avg_deaths");
@@ -91,8 +91,11 @@
             </button>
           </th>
           <th class="th-num">
-            <button class="sort-btn" onclick={() => handleSort("avg_time_ms")}>
-              Avg Time{sortIndicator("avg_time_ms")}
+            <button
+              class="sort-btn"
+              onclick={() => handleSort("median_time_ms")}
+            >
+              Median Time{sortIndicator("median_time_ms")}
             </button>
           </th>
           <th class="th-num">
@@ -109,7 +112,15 @@
             <td class="num">{boss.encounters}</td>
             <td class="num">{boss.avg_deaths.toFixed(1)}</td>
             <td class="num">{boss.max_deaths}</td>
-            <td class="num">{formatIgt(boss.avg_time_ms)}</td>
+            <td
+              class="num"
+              class:fallback={boss.kill_count === 0}
+              title={boss.kill_count > 0
+                ? `median kill, ${boss.kill_count} kills`
+                : "median time in the arena, kills not recorded yet"}
+            >
+              {formatIgt(boss.median_time_ms)}
+            </td>
             <td class="num">{Math.round(boss.back_ratio * 100)}%</td>
           </tr>
         {/each}
@@ -192,6 +203,10 @@
 
   .bosses-table tbody tr:first-child td {
     border-top: none;
+  }
+
+  .fallback {
+    color: var(--color-text-secondary);
   }
 
   .boss-name {

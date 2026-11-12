@@ -65,6 +65,9 @@ DUNGEON_NODE_TYPES = {"legacy_dungeon", "mini_dungeon"}
 # boss_arena is intentionally excluded here (minor encounters), but IS included
 # in stats_service.py's BOSS_NODE_TYPES for trait scoring (Boss Slayer).
 BOSS_NODE_TYPES = {"major_boss", "final_boss"}
+# Kills a boss needs before its time column is a median kill time; below it
+# the column falls back to the median time spent in the arena.
+MIN_KILLS_FOR_KILL_TIME = 5
 
 
 @router.get("/overview", response_model=StatsOverviewResponse)
@@ -618,10 +621,13 @@ def _aggregate_boss_stats(
     # so a player who fights a boss in 50+40 deaths over two visits is counted once
     # with 90 deaths, not as two encounters of 50 and 40.
     # Participants whose only visits are 0-death backtracks (pure transit) are not
-    # counted as encounters at all.
+    # counted as encounters at all, unless a kill was recorded on the node.
+    # Kill time: the first boss_kill_igt_ms on the node minus the first entry's
+    # igt_ms (negative values are left out).
     player_deaths: dict[str, list[int]] = {}
     merged_backed: dict[str, list[bool]] = {}
     merged_times: dict[str, list[int]] = {}
+    merged_kill_times: dict[str, list[int]] = {}
     merged_type: dict[str, str] = {}
 
     latest_boss_name: dict[int, str] = {}
@@ -664,9 +670,19 @@ def _aggregate_boss_stats(
                         continue  # 0-death backtrack, skip
                 fight_deaths.append(deaths)
 
+            kill_igt = next(
+                (
+                    e["boss_kill_igt_ms"]
+                    for _, e in visits
+                    if isinstance(e.get("boss_kill_igt_ms"), int)
+                ),
+                None,
+            )
+
             # Player only passed through the boss arena without fighting: skip
             # entirely so encounters / back_ratio / time aren't inflated.
-            if not fight_deaths:
+            # A recorded kill is a fight even when every visit was a backtrack.
+            if not fight_deaths and kill_igt is None:
                 continue
 
             last_idx, last_entry = visits[-1]
@@ -705,12 +721,21 @@ def _aggregate_boss_stats(
             merged_backed.setdefault(boss_name, []).append(backed_last_visit)
             if time_ms is not None:
                 merged_times.setdefault(boss_name, []).append(time_ms)
+            if kill_igt is not None:
+                first_igt = visits[0][1].get("igt_ms", 0) or 0
+                if kill_igt - first_igt >= 0:
+                    merged_kill_times.setdefault(boss_name, []).append(kill_igt - first_igt)
             merged_type.setdefault(boss_name, node_type)
 
     boss_entries = []
     for display_name, backed_list in merged_backed.items():
         deaths_per_player = player_deaths.get(display_name, [])
         times = merged_times.get(display_name, [])
+        kill_times = merged_kill_times.get(display_name, [])
+        if len(kill_times) >= MIN_KILLS_FOR_KILL_TIME:
+            median_time_ms, kill_count = round(median(kill_times)), len(kill_times)
+        else:
+            median_time_ms, kill_count = (round(median(times)) if times else 0), 0
         total_encounters = len(backed_list)
         backed_count = sum(backed_list)
 
@@ -725,7 +750,8 @@ def _aggregate_boss_stats(
                     else 0.0
                 ),
                 max_deaths=max(deaths_per_player) if deaths_per_player else 0,
-                avg_time_ms=round(sum(times) / len(times)) if times else 0,
+                median_time_ms=median_time_ms,
+                kill_count=kill_count,
                 back_ratio=round(backed_count / total_encounters, 2) if total_encounters else 0.0,
             )
         )

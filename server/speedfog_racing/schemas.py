@@ -884,7 +884,10 @@ class BossStatEntry(BaseModel):
     encounters: int
     avg_deaths: float
     max_deaths: int
-    avg_time_ms: int
+    # Median kill time when kill_count > 0, else median time in the arena.
+    median_time_ms: int
+    # Kills behind median_time_ms; 0 when it falls back.
+    kill_count: int
     back_ratio: float
 
 

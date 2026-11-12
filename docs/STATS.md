@@ -248,11 +248,13 @@ BOSS_NODE_TYPES = {"major_boss", "final_boss"}
 
 For each participant, all visits to boss nodes are collected per node_id. Deaths are summed across that participant's fight visits before being merged across players, so a player who fights a boss in two attempts (e.g. 50 deaths, then backs out and returns to die 40 more times) counts as one encounter with 90 deaths.
 
-Visits where the player passed through without fighting (deaths = 0 and the next zone was already visited) are excluded as 0-death backtracks. A participant whose only visits to a boss are pure backtracks is not counted as an encounter at all.
+Visits where the player passed through without fighting (deaths = 0 and the next zone was already visited) are excluded as 0-death backtracks. A participant whose only visits to a boss are pure backtracks is not counted as an encounter at all, unless a kill was recorded on the node (`boss_kill_igt_ms` on one of their entries there): a kill is a fight, and its deaths count 0.
 
 - **avg_deaths:** Mean of per-participant death totals across all fight visits.
 - **max_deaths:** Maximum per-participant death total across all fight visits.
-- **avg_time:** Time on the last visit only (last visit IGT to next entry IGT, or participant.igt_ms if last in history).
+- **kill time:** Per participant, the first `boss_kill_igt_ms` among their entries on the node minus the `igt_ms` of their first entry on it, so deaths and runbacks before the kill count. A negative value is left out.
+- **median_time_ms:** The median kill time once the boss has at least `MIN_KILLS_FOR_KILL_TIME` (5) kills. Below that it falls back to the median of the last-visit times (last visit IGT to next entry IGT, or participant.igt_ms if last in history; 0 when none). Disqualified runs are outside the input rows already.
+- **kill_count:** The kills behind `median_time_ms`, 0 when it falls back. The web tab dims the fallback cell and its tooltip says which of the two it shows.
 - **back_ratio:** Fraction of participants who, on their last visit to this boss, moved to a previously-visited zone afterward.
 - **encounters:** Number of unique participants who fought this boss.
 

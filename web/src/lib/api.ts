@@ -2563,7 +2563,8 @@ export interface BossStatEntry {
   encounters: number;
   avg_deaths: number;
   max_deaths: number;
-  avg_time_ms: number;
+  median_time_ms: number;
+  kill_count: number;
   back_ratio: number;
 }
 

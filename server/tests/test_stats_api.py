@@ -2166,6 +2166,95 @@ class TestAbandonCountsAsBack:
         # Pure-backtrack visitor: boss should not appear in stats at all
         assert godrick is None
 
+    async def _boss_runs(self, db, kills, *, shape=None, tag="k"):
+        """One finished participant per kill offset (None: no kill recorded)."""
+        for i, kill in enumerate(kills):
+            entry = {"node_id": "godrick_m1n2", "igt_ms": 300_000, "deaths": 1}
+            if kill is not None:
+                entry["boss_kill_igt_ms"] = 300_000 + kill
+            history = [
+                {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                entry,
+                {"node_id": "stormveil_c3d4", "igt_ms": 800_000, "deaths": 0},
+            ]
+            if shape:
+                history = shape(entry)
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.FINISHED,
+                zone_history=history,
+                suffix=f"{tag}{i}",
+            )
+
+    async def _godrick(self, async_session):
+        from speedfog_racing.api.stats import get_boss_stats
+
+        async with async_session() as db:
+            result = await get_boss_stats(pool=None, days=3650, db=db)
+        return next((b for b in result.bosses if b.display_name == "Godrick"), None)
+
+    async def test_boss_time_is_the_median_kill_at_five_kills(self, async_session):
+        async with async_session() as db:
+            await self._boss_runs(db, [60_000, 70_000, 80_000, 90_000, 200_000])
+        godrick = await self._godrick(async_session)
+        assert godrick.median_time_ms == 80_000
+        assert godrick.kill_count == 5
+
+    async def test_boss_time_falls_back_to_the_median_visit_under_five_kills(self, async_session):
+        async with async_session() as db:
+            await self._boss_runs(db, [60_000, 70_000, 80_000, 90_000])
+        godrick = await self._godrick(async_session)
+        assert godrick.median_time_ms == 500_000
+        assert godrick.kill_count == 0
+
+    async def test_boss_kill_time_counts_from_the_first_entry(self, async_session):
+        def shape(entry):
+            return [
+                {"node_id": "godrick_m1n2", "igt_ms": 300_000, "deaths": 1},
+                {"node_id": "start_a1b2", "igt_ms": 400_000, "type": "backtrack"},
+                {
+                    "node_id": "godrick_m1n2",
+                    "igt_ms": 500_000,
+                    "deaths": 1,
+                    "boss_kill_igt_ms": 650_000,
+                },
+            ]
+
+        async with async_session() as db:
+            await self._boss_runs(db, [0] * 5, shape=shape)
+        godrick = await self._godrick(async_session)
+        assert godrick.median_time_ms == 350_000
+        assert godrick.kill_count == 5
+
+    async def test_boss_negative_kill_time_is_left_out(self, async_session):
+        async with async_session() as db:
+            await self._boss_runs(db, [60_000] * 5 + [-10_000])
+        godrick = await self._godrick(async_session)
+        assert godrick.kill_count == 5
+
+    async def test_a_kill_makes_an_encounter(self, async_session):
+        async with async_session() as db:
+            await self._make_participant(
+                db,
+                status=ParticipantStatus.FINISHED,
+                zone_history=[
+                    {"node_id": "start_a1b2", "igt_ms": 0, "type": "spawn"},
+                    {"node_id": "stormveil_c3d4", "igt_ms": 300_000, "deaths": 2},
+                    {
+                        "node_id": "godrick_m1n2",
+                        "igt_ms": 500_000,
+                        "deaths": 0,
+                        "boss_kill_igt_ms": 520_000,
+                    },
+                    {"node_id": "stormveil_c3d4", "igt_ms": 550_000, "deaths": 0},
+                ],
+                suffix="ke1",
+            )
+        godrick = await self._godrick(async_session)
+        assert godrick is not None
+        assert godrick.encounters == 1
+        assert godrick.max_deaths == 0
+
 
 class TestZoneBacktrackRule:
     """A zone is backtracked when the player turns away from it: its entry
