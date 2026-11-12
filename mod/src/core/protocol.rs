@@ -384,6 +384,11 @@ pub struct SeedInfo {
     /// Race category, matched against the LiveSplit category custom variable.
     #[serde(default)]
     pub category: Option<String>,
+    /// Boss defeat flags of every boss node but the final boss (whose kill
+    /// is the finish): each is reported once through event_flag and never
+    /// cleared in game memory. Empty from an old server.
+    #[serde(default)]
+    pub boss_flags: Vec<u32>,
 }
 
 /// Exit info in zone_update message

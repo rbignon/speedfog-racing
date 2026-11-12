@@ -218,7 +218,8 @@ pub struct TickInput {
     pub warp_capture: Option<u32>,
     /// Player position (loading-exit frames only), for zone queries.
     pub position: Option<PlayerPosition>,
-    /// `(flag_id, is_set)` for every readable flag in `event_ids`. `Some`
+    /// `(flag_id, is_set)` for every readable flag in `event_ids`, then for
+    /// every boss defeat flag not reported yet (`boss_flags_to_read`). `Some`
     /// when the shell performed reads this frame (`wants_flag_reads`),
     /// `None` otherwise. Unreadable flags are omitted from the vec.
     pub flag_reads: Option<Vec<(u32, bool)>>,
@@ -318,6 +319,10 @@ pub struct RaceMachine {
     pub next_event_message_id: u64,
     /// finish_event from server, sent immediately (no loading screen on boss kill)
     pub finish_event: Option<u32>,
+    /// Boss defeat flags from the seed, replaced on every auth_ok. One-shot
+    /// like `finish_event` (`triggered_flags`), never cleared in game memory
+    /// (see `capture_boss_kill`).
+    pub boss_flags: HashSet<u32>,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -458,6 +463,7 @@ impl RaceMachine {
             in_flight_zone_queries: HashMap::new(),
             next_event_message_id: seed_message_id,
             finish_event: None,
+            boss_flags: HashSet::new(),
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -639,9 +645,9 @@ impl RaceMachine {
                 );
                 continue;
             }
-            // The finish flag stays set in the save: without this, the next
-            // scan would report it again at the current IGT.
-            if self.finish_event == Some(flag.flag_id) {
+            // The finish and boss defeat flags stay set in the save: without
+            // this, the next scan would report them again at the current IGT.
+            if self.finish_event == Some(flag.flag_id) || self.boss_flags.contains(&flag.flag_id) {
                 self.triggered_flags.insert(flag.flag_id);
             }
             match flag.message_id {
@@ -1008,7 +1014,9 @@ impl RaceMachine {
                     .position(|p| Some(&p.id) == self.my_participant_id.as_ref());
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
-                // Don't clear triggered_flags on reconnect: finish_event is one-shot.
+                self.boss_flags = seed.boss_flags.iter().copied().collect();
+                // Don't clear triggered_flags on reconnect: finish_event and
+                // boss kills are one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
                 // they're cleared in game memory after capture for re-traversal detection.
                 race.reparse_dates();
@@ -1412,6 +1420,16 @@ impl RaceMachine {
             || (connected && !self.ready_sent)
     }
 
+    /// The boss defeat flags the shell reads after `event_ids`: those not
+    /// reported yet. A reported kill is read again only once a save reload
+    /// clears `triggered_flags`.
+    pub fn boss_flags_to_read(&self) -> impl Iterator<Item = u32> + '_ {
+        self.boss_flags
+            .iter()
+            .copied()
+            .filter(|flag_id| !self.triggered_flags.contains(flag_id))
+    }
+
     /// Whether a status_update may fire this frame (gates the weapon read).
     pub fn wants_status_update(&self, now: Instant, igt_ms: u32) -> bool {
         now.duration_since(self.last_status_update) >= Duration::from_secs(1)
@@ -1677,6 +1695,16 @@ impl RaceMachine {
                         if !is_set {
                             continue;
                         }
+                        if self.boss_flags.contains(&flag_id) {
+                            self.capture_boss_kill(
+                                flag_id,
+                                igt_ms,
+                                input.connected,
+                                now,
+                                &mut effects,
+                            );
+                            continue;
+                        }
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
@@ -1795,6 +1823,10 @@ impl RaceMachine {
                 let igt_ms = self.effective_igt_ms();
                 for &(flag_id, is_set) in reads {
                     if !is_set || cleared.contains(&flag_id) {
+                        continue;
+                    }
+                    if self.boss_flags.contains(&flag_id) {
+                        self.capture_boss_kill(flag_id, igt_ms, input.connected, now, &mut effects);
                         continue;
                     }
                     if self.finish_event == Some(flag_id) {
@@ -1917,6 +1949,16 @@ impl RaceMachine {
                         if !is_set || cleared.contains(&flag_id) {
                             continue;
                         }
+                        if self.boss_flags.contains(&flag_id) {
+                            self.capture_boss_kill(
+                                flag_id,
+                                igt_ms,
+                                input.connected,
+                                now,
+                                &mut effects,
+                            );
+                            continue;
+                        }
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
@@ -1979,6 +2021,40 @@ impl RaceMachine {
         self.flush_restored = false;
         self.replay_in_flight_event_flags(effects);
         self.send_pending_event_flags(effects);
+    }
+
+    /// A boss defeat flag found set by a scan, the single place one is
+    /// handled. Reported once (`triggered_flags`, which a save reload
+    /// clears), at once rather than at the next loading exit, and never
+    /// cleared in game memory: clearing a defeat flag would bring the boss
+    /// back. Sent while connected past the countdown, buffered in the
+    /// pending flags otherwise. While the race is not running or the runner
+    /// has finished, it is left unmarked, so a scan of the live run reports
+    /// it. A kill is no depth arrival: it never reaches `record_capture`.
+    fn capture_boss_kill(
+        &mut self,
+        flag_id: u32,
+        igt_ms: u32,
+        connected: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.triggered_flags.contains(&flag_id)
+            || !self.is_race_running()
+            || self.am_i_finished()
+        {
+            return;
+        }
+        self.triggered_flags.insert(flag_id);
+        if connected && !self.is_countdown_active(now) {
+            effects.push(self.queue_event_flag(flag_id, igt_ms));
+            self.last_sent_debug =
+                Some(format!("event_flag({}, igt={}ms) [boss]", flag_id, igt_ms));
+            info!(flag_id, igt_ms, "[RACE] Boss kill sent");
+        } else {
+            self.flag_buffer.add_pending(flag_id, igt_ms);
+            info!(flag_id, igt_ms, "[RACE] Boss kill buffered");
+        }
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -5509,5 +5585,244 @@ mod tests {
         let ids = sent_message_ids(&fx);
         assert_eq!(ids.len(), 1);
         assert_ne!(ids[0], 1_000_000);
+    }
+
+    // ------------------------------------------------------------------
+    // Boss defeat flags
+    // ------------------------------------------------------------------
+
+    /// auth_ok of `auth_ok` (flags [100, 200, 900], finish 900) whose seed
+    /// also names `boss_flags`.
+    fn auth_ok_with_bosses(status: &str, boss_flags: &[u32]) -> MachineMessage {
+        let seed: SeedInfo = serde_json::from_str(&format!(
+            r#"{{"total_layers": 3, "event_ids": [100, 200, 900], "finish_event": 900,
+                 "death_flags": {{}}, "boss_flags": {:?}}}"#,
+            boss_flags
+        ))
+        .unwrap();
+        MachineMessage::AuthOk {
+            participant_id: "p1".to_string(),
+            race: test_race(status),
+            seed,
+            participants: vec![test_participant("p1", "playing", 1)],
+            phantom_skin: None,
+            latest_mod_version: None,
+        }
+    }
+
+    /// `running_machine` with the boss defeat flag 5_000_800.
+    fn running_boss_machine(now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("running", &[5_000_800]), now);
+        m
+    }
+
+    /// `(flag_id, igt_ms)` of every event_flag sent.
+    fn sent_flag_igts(effects: &[Effect]) -> Vec<(u32, u32)> {
+        sent_flag_details(effects)
+            .into_iter()
+            .map(|(flag, igt, _)| (flag, igt))
+            .collect()
+    }
+
+    #[test]
+    fn boss_flag_is_sent_at_once_and_never_cleared() {
+        let now = Instant::now();
+        let mut m = running_boss_machine(now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+        let reads = vec![(100, false), (200, false), (900, false), (5_000_800, true)];
+
+        // Sent in the same poll, not deferred to a loading exit, and left
+        // set in game memory: clearing it would bring the boss back.
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(reads.clone())),
+            now + ms(150),
+        );
+        assert_eq!(sent_flag_igts(&fx), vec![(5_000_800, 60_000)]);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })));
+        assert!(m.triggered_flags.contains(&5_000_800));
+
+        // The flag still reads set: reported once.
+        let fx = m.tick(
+            tick_in(snap(Some(60_200), true), true, Some(reads)),
+            now + ms(300),
+        );
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn boss_flags_to_read_skips_reported_kills() {
+        let now = Instant::now();
+        let mut m = running_boss_machine(now);
+        assert_eq!(m.boss_flags_to_read().collect::<Vec<_>>(), vec![5_000_800]);
+
+        m.tick(
+            tick_in(
+                snap(Some(60_000), true),
+                true,
+                Some(vec![
+                    (100, false),
+                    (200, false),
+                    (900, false),
+                    (5_000_800, true),
+                ]),
+            ),
+            now + ms(150),
+        );
+        assert_eq!(m.boss_flags_to_read().count(), 0);
+    }
+
+    #[test]
+    fn boss_kill_buffered_while_disconnected_then_sent_on_reconnect() {
+        let now = Instant::now();
+        let mut m = running_boss_machine(now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            now + ms(100),
+        );
+        let reads = vec![(100, false), (200, false), (900, false), (5_000_800, true)];
+
+        // Killed while the connection is down: buffered, not sent.
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), false, Some(reads.clone())),
+            now + ms(150),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert!(m.flag_buffer.has_pending());
+
+        // Reconnected, the flag still set: the kill goes out once, with the
+        // IGT it was seen at.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(5),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(65_000), true), true, Some(reads)),
+            now + secs(5) + ms(10),
+        );
+        assert_eq!(sent_flag_igts(&fx), vec![(5_000_800, 60_000)]);
+    }
+
+    #[test]
+    fn boss_flag_ignored_while_the_race_is_not_running() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("setup", &[5_000_800]), now);
+        let reads = vec![(100, false), (200, false), (900, false), (5_000_800, true)];
+
+        // Before the start: no send, no buffer, not marked.
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, Some(reads.clone())),
+            now + ms(150),
+        );
+        assert!(sent_flags(&fx).is_empty());
+        assert!(!m.flag_buffer.has_pending());
+        assert!(!m.triggered_flags.contains(&5_000_800));
+
+        // The race starts: the next poll reports the kill, once.
+        m.handle_message(MachineMessage::RaceStart(0), now + secs(1));
+        let fx = m.tick(
+            tick_in(snap(Some(61_000), true), true, Some(reads.clone())),
+            now + secs(1) + ms(150),
+        );
+        assert_eq!(sent_flag_igts(&fx), vec![(5_000_800, 61_000)]);
+        let fx = m.tick(
+            tick_in(snap(Some(61_200), true), true, Some(reads)),
+            now + secs(1) + ms(300),
+        );
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn boss_flags_are_reported_again_after_a_save_reload() {
+        let now = Instant::now();
+        let mut m = running_boss_machine(now);
+        m.tick(tick_in(snap(Some(599_000), true), true, None), now + ms(10));
+        let reads = vec![(100, false), (200, false), (900, false), (5_000_800, true)];
+        let fx = m.tick(
+            tick_in(snap(Some(600_000), true), true, Some(reads.clone())),
+            now + ms(150),
+        );
+        assert_eq!(sent_flags(&fx), vec![5_000_800]);
+
+        // A backup 200 s older, in which the boss is dead too: the per-save
+        // flush forgets the report, the loading-exit scan makes it again
+        // (the server keeps the first kill).
+        m.tick(tick_in(snap(None, false), true, None), now + secs(5));
+        m.tick(
+            tick_in(snap(Some(400_000), false), true, None),
+            now + secs(8),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(400_100), true), true, Some(reads)),
+            now + secs(9),
+        );
+        assert_eq!(sent_flag_igts(&fx), vec![(5_000_800, 400_100)]);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })));
+    }
+
+    #[test]
+    fn restored_boss_kill_is_not_reported_again_by_the_next_scan() {
+        // The defeat flag stays set in the save: the scan at the loading
+        // exit sees it too, and must not report it a second time at the
+        // later IGT.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1_000_000, String::new(), false, now);
+        m.restore_unacked(unacked("p1", &[(5_000_800, 500_000, None)]));
+        m.handle_message(auth_ok_with_bosses("running", &[5_000_800]), now);
+        m.tick(tick_in(snap(None, false), true, None), now + ms(10));
+
+        let fx = m.tick(
+            tick_in(snap(Some(520_000), false), true, None),
+            now + secs(10),
+        );
+        let fx2 = m.tick(
+            tick_in(
+                snap(Some(520_100), true),
+                true,
+                Some(vec![
+                    (100, false),
+                    (200, false),
+                    (900, false),
+                    (5_000_800, true),
+                ]),
+            ),
+            now + secs(11),
+        );
+        let sent: Vec<_> = sent_flag_igts(&fx)
+            .into_iter()
+            .chain(sent_flag_igts(&fx2))
+            .collect();
+        assert_eq!(sent, vec![(5_000_800, 500_000)]);
+    }
+
+    #[test]
+    fn boss_kill_is_not_a_livesplit_arrival() {
+        let now = Instant::now();
+        let mut auth = ls_auth_ok("running", "playing", &[(1, 5_000)]);
+        if let MachineMessage::AuthOk { seed, .. } = &mut auth {
+            seed.boss_flags = vec![5_000_800];
+        }
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth, now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        let fx = m.tick(
+            tick_in(
+                snap(Some(60_000), true),
+                true,
+                Some(vec![
+                    (100, false),
+                    (200, false),
+                    (900, false),
+                    (5_000_800, true),
+                ]),
+            ),
+            now + ms(150),
+        );
+        assert_eq!(sent_flags(&fx), vec![5_000_800]);
+        assert!(run_views(&fx).is_empty(), "{fx:?}");
+        assert_eq!(m.run_arrivals, vec![None, Some(5_000), None, None]);
     }
 }

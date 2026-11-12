@@ -7,7 +7,8 @@ How the mod detects fog gate traversals and boss kills via EMEVD event flags, an
 The mod reads event flags from Elden Ring's memory at 10Hz. When a flag is detected:
 
 - **Fog gate flags** are deferred until the loading screen exits.
-- **Boss kill (finish_event)** is sent immediately (no loading screen on boss kill).
+- **Final boss kill (finish_event)** is sent immediately (no loading screen on boss kill).
+- **Other boss kills (boss defeat flags)** are sent immediately too, once each, and never cleared.
 
 The server maps `flag_id` → `node_id` via the seed's `event_map`, updates progression, and broadcasts leaderboard/zone updates. Newer protocol versions also attach a client-local `message_id` to each `event_flag`, allowing ACK-based replay after reconnect without duplicating committed history.
 
@@ -45,11 +46,15 @@ The `EVENT_FLAG_BASE` in `../speedfog/speedfog/output.py` is `1050294000`, givin
 
 ### Polling Loop
 
-Every 100ms (`POLL_INTERVAL = 100ms`), the tracker iterates all `event_ids` received from `auth_ok`:
+Every 100ms (`POLL_INTERVAL = 100ms`), the tracker iterates all `event_ids` received from `auth_ok`, then the boss defeat flags not reported yet:
 
 ```
-for each flag_id in event_ids:
-    if flag_id == finish_event:
+for each flag_id in event_ids, then each flag_id in boss_flags not in triggered_flags:
+    if flag_id in boss_flags:
+        if is_flag_set(flag_id) == Some(true) and race running and runner not finished:
+            triggered_flags.insert(flag_id)
+            → send immediately (or buffer if disconnected or in the countdown)
+    elif flag_id == finish_event:
         if flag_id in triggered_flags: skip
         if is_flag_set(flag_id) == Some(true):
             triggered_flags.insert(flag_id)
@@ -62,16 +67,19 @@ for each flag_id in event_ids:
 
 **`finish_event` is one-shot**: Uses `triggered_flags` (HashSet), so the player can only finish once. Preserved across reconnects (so a finish that was sent before disconnect doesn't fire again on reconnect rescan). Cleared on a detected **save reload** so a stale save's pre-set finish_event doesn't block the fresh save's real finish: each frame, if the live IGT regresses by more than 60 seconds (`SAVE_RELOAD_IGT_DROP_MS = 60_000`) from the previous reading, the mod assumes the player loaded a save and flushes `triggered_flags`, `deferred_event_flags`, and `pending_event_flags`. Zero readings are ignored for all reload classification: GameDataMan's play_time transiently reads 0 while a menu reload repopulates it, so 0 carries no information (a real racing save's IGT is never 0 when readable). Elden Ring's IGT is monotonic while a save is in memory; only a menu load repopulates GameDataMan from disk, so a regression always means a save load. The 60-second threshold is chosen to distinguish between legitimate backup restores (regressions larger than 60s, accepted by the server) and quit-out reloads: on a quit-out of the same save, the on-disk IGT value lags the last in-memory reading by the post-flush fade time (typically 1-2 seconds). The quit-out penalty arms only for regressions strictly under 60 seconds; at 60 seconds or more the per-save flag flush fires instead, preventing the mod from re-sending flags for progress the restored save no longer has: the server accepts large rollbacks by design (backup restores are legitimate), so a stale report would be recorded, not bounced.
 
+**Boss defeat flags are one-shot too**: `auth_ok.seed.boss_flags` lists the vanilla defeat flag of every boss node but the final boss, whose kill is the finish. The shell reads them after `event_ids` in the same scans (10Hz poll, loading-exit rescan, reconnect rescan), and only those not in `triggered_flags`, so a reported kill costs no further read. They sit in many categories other than 1050294: each read falls back from the cached category page to a full tree lookup (`is_flag_set_cached`). A flag found set is reported once through `event_flag` (with its `message_id`, ACK and replay, like the other flags) and is **never cleared** in game memory: clearing a defeat flag would bring the boss back. It is sent at once while connected and past the countdown, and buffered in `pending_event_flags` otherwise. While the race is not running or the runner has finished, a set flag is left unmarked, so the first scan of the live run reports it. The reported set follows `finish_event`'s: a save reload flushes it, and a new game process starts without it, so every boss already dead in the loaded save is reported again at the current IGT (except a kill still unacknowledged, restored with its own IGT, see below); the server keeps the first kill, so this changes nothing. A boss kill is no LiveSplit arrival.
+
 **Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection: re-traversing an already-visited fog gate produces a new `event_flag` message.
 
 **Polling runs always**: Even when disconnected or race not running. Flags are cleared after capture (for re-traversal detection), so polling must be continuous.
 
 ### Deferred vs Immediate Flags
 
-| Flag type      | Sent when                | Why                              |
-| -------------- | ------------------------ | -------------------------------- |
-| Fog gate flags | Loading screen exit      | Loading screen = zone transition |
-| `finish_event` | Immediately on detection | No loading screen on boss kills  |
+| Flag type         | Sent when                | Why                              |
+| ----------------- | ------------------------ | -------------------------------- |
+| Fog gate flags    | Loading screen exit      | Loading screen = zone transition |
+| `finish_event`    | Immediately on detection | No loading screen on boss kills  |
+| Boss defeat flags | Immediately on detection | No loading screen on boss kills  |
 
 Fog gate traversal triggers a loading screen. The flag is detected during polling but stored in `deferred_event_flags`. At loading screen exit, all deferred flags are sent.
 
@@ -88,7 +96,7 @@ The loading screen exit is detected by `position_readable && !was_position_reada
 
 At the `position_readable` rising edge:
 
-1. **Forced rescan**: Immediately re-reads all `event_ids` to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral, since boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
+1. **Forced rescan**: Immediately re-reads all `event_ids` (and the boss defeat flags not reported yet) to catch flags set during loading (e.g., Erdtree burn, Maliketh warp cutscene). Newly detected regular flags are cleared in game memory and added to `deferred_event_flags`. A `finish_event` caught here is sent **immediately** if connected (no deferral, since boss kills have no loading screen, but edge cases like Maliketh's cutscene can trigger both a flag and a loading screen).
 
 2. **Deferred flags exist** → send all deferred `event_flag` messages to server. Each send gets a fresh `message_id` and remains in the mod's in-flight set until `event_flag_ack` arrives. This needs the mod connected, the race running and past its countdown, the player not finished and no wrong save frozen. Otherwise, while the race runs and the player has not finished (countdown, disconnection, wrong save), the deferred flags move to `pending_event_flags`, sent at the next reconnection; when the race is not running (setup, or the race is over) or the player has finished, they are dropped. A fog crossed before the race start therefore normally leaves no trace, since its flag is already cleared in game memory (a connection drop before its loading exit parks it in `pending_event_flags` instead).
 
@@ -106,7 +114,7 @@ Captured fog flags and the finish also feed the depth tracker that drives LiveSp
 The deferred, pending and in-flight sets live in process memory, and a captured regular flag is already cleared in game memory. Without a copy, a game closed or crashed before the server acknowledged a flag (typically while offline) would lose that traversal for good: the next launch's scans find nothing, and the runner has to cross the fog again to move the tracker on. The mod therefore saves every unacknowledged event flag (`flag_id`, capture IGT, and the `message_id` once sent) with the participant id and the run's attempt (`race.attempt_id`, refreshed by the `race_info_update` of a race start) in `speedfog_racing_unacked.json`, next to the DLL (one folder per seed pack).
 
 - **Saving.** At the end of each tick and each server message, `RaceMachine` compares a fingerprint of the set with the last saved one and emits `PersistUnackedFlags` only when it changed: a capture, a send and an ack, about three times per fog gate. With nothing unacknowledged and nothing saved, the check costs four emptiness tests per frame. A background thread writes the latest state (temporary file, then rename; three attempts 100 ms apart, for a virus scanner or sync client holding the file) and deletes the file once the set is empty, so a frame never waits on the disk.
-- **Restoring.** The tracker reads the file once at startup. Its flags wait until `auth_ok` names the same participant and the process's first IGT reading (the save loaded at launch, or a save loaded later through a per-save flush while they still wait) is known. They are dropped when they belong to another participant or another attempt (a race reset and run again, or a Set Seed run reset while the game was closed: a fog from the first minute of the old attempt passes the 60 s test below against the New Game's save; the server would ignore it, the history being empty until the New Game's first status update, but the mod would record its depth for LiveSplit in the new attempt), when the race no longer runs or the run is finished, and one by one when the loaded save's IGT sits 60 s or more below the flag's (`detect_save_reload`, the bound of the per-save flush: a restored backup does not contain that traversal). The others go back where they were, in flight with their original `message_id` (the server recognizes a message it already recorded) or pending, and are sent right away with their capture IGT, ahead of the frame's loading-exit zone query and without waiting for a reconnection: the mod usually connects on the title screen, before the save loads. New messages start above the highest restored id, in case the PC clock went back between launches. Each restored capture also feeds the LiveSplit depth tracker, as a fresh one would: the server's `layer_entry_igts` at `auth_ok` do not know it yet, so its depth would otherwise be a skipped split. A restored `finish_event` also joins `triggered_flags`, since the flag stays set in the save and the next scan would otherwise report it again at the later IGT.
+- **Restoring.** The tracker reads the file once at startup. Its flags wait until `auth_ok` names the same participant and the process's first IGT reading (the save loaded at launch, or a save loaded later through a per-save flush while they still wait) is known. They are dropped when they belong to another participant or another attempt (a race reset and run again, or a Set Seed run reset while the game was closed: a fog from the first minute of the old attempt passes the 60 s test below against the New Game's save; the server would ignore it, the history being empty until the New Game's first status update, but the mod would record its depth for LiveSplit in the new attempt), when the race no longer runs or the run is finished, and one by one when the loaded save's IGT sits 60 s or more below the flag's (`detect_save_reload`, the bound of the per-save flush: a restored backup does not contain that traversal). The others go back where they were, in flight with their original `message_id` (the server recognizes a message it already recorded) or pending, and are sent right away with their capture IGT, ahead of the frame's loading-exit zone query and without waiting for a reconnection: the mod usually connects on the title screen, before the save loads. New messages start above the highest restored id, in case the PC clock went back between launches. Each restored capture also feeds the LiveSplit depth tracker, as a fresh one would: the server's `layer_entry_igts` at `auth_ok` do not know it yet, so its depth would otherwise be a skipped split. A restored `finish_event` or boss defeat flag also joins `triggered_flags`, since the flag stays set in the save and the next scan would otherwise report it again at the later IGT; a kill made just before a crash thereby keeps its real IGT.
 
 Zone queries are not saved: the next loading exit queries the zone again.
 

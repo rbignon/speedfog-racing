@@ -563,7 +563,7 @@ impl RaceTracker {
             let ids = &self.machine.event_ids;
             let page = self.event_flag_reader.resolve_category(ids[0]);
             let page_ref = page.as_ref();
-            let reads: Vec<(u32, bool)> = ids
+            let mut reads: Vec<(u32, bool)> = ids
                 .iter()
                 .filter_map(|&flag_id| {
                     self.event_flag_reader
@@ -571,6 +571,16 @@ impl RaceTracker {
                         .map(|set| (flag_id, set))
                 })
                 .collect();
+            {
+                // Boss defeat flags not reported yet. They sit in other
+                // categories: each read falls back to a full lookup.
+                profile_span!("boss_flag_reads");
+                reads.extend(self.machine.boss_flags_to_read().filter_map(|flag_id| {
+                    self.event_flag_reader
+                        .is_flag_set_cached(flag_id, page_ref)
+                        .map(|set| (flag_id, set))
+                }));
+            }
             flag_reads = Some(reads);
         }
 
