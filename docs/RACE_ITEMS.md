@@ -2,7 +2,7 @@
 
 A community race option (`Race.race_items`) that gives a runner a Mario Kart style item for each boss kill. The item hurts other runners, and the rank decides which items a runner can draw: mild or defensive ones for the leader, punitive ones for the runners at the back.
 
-This document is the operational reference for the server side as built so far. Sections for the item use, resolution and removal (and for the mod) are added as those parts land.
+This document is the operational reference for the server side as built so far. Sections for the inventory reconciliation (and for the mod) are added as those parts land.
 
 ---
 
@@ -57,8 +57,31 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 3. **Grant.** The server sends `item_grant {grant_id, item, banner}` to the runner's own mod. The grant id counts up per participant and never repeats.
 4. **Confirm.** The mod spawns the goods and answers `item_received {grant_id}`; the server sets `confirmed` when the id matches the held grant, and ignores anything else.
 5. **Reconnect.** An unconfirmed grant is re-sent right after `auth_ok` at every (re)auth, until the mod confirms it.
+6. **Use.** Using the goods makes the plugin's EMEVD set the item's use flag, which the mod reports at once through `event_flag`. The handler matches use flags (the `use_flag` of each catalog entry, `use_flag_map`, cached per graph) after the usual gates (race running, no countdown, runner playing, initialized history, plausible IGT) and before the `event_map` lookup. It acks the flag and never adds a `zone_history` entry. After the session, the `_on_item_used` hook resolves the use; it does nothing when the race has items off, and outside races (training) it is a no-op.
+7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds exactly the used item: a replay or a stray copy is logged and ignored, so a use never fires twice. It clears the held item and resolves the targets among the playing runners in `sort_leaderboard` order. For each target:
+   - a held Shield blocks the item: the Shield is spent (even when its holder is offline) and its holder gets `item_remove` for `shield` with a banner;
+   - otherwise a target whose mod is connected gets `item_effect` (effect, banner, reminder);
+   - otherwise the target is offline and the effect is dropped, a miss for the sender.
 
-Every read and write of the held items of a race runs under `RaceRoom.items_lock`, so concurrent connections cannot grant or confirm over each other.
+   A self item (Mushroom, Rune Pouch) applies through the game's own use: no target, no `item_effect`. An item with no valid target is still consumed. One `use` event is logged with every target's outcome (`hit`, `blocked` or `offline`).
+
+8. **Result.** The sender gets `item_result` (banner, plus the reminder for a self item). The handler sends the removals, the effects, then the result.
+
+Grants, confirmations and uses run under `RaceRoom.items_lock`, so concurrent connections cannot grant, confirm or spend over each other: two items aimed at one Shield holder spend the Shield once. A grant after a kill and a use also send their messages under the lock, so a later item message to a runner cannot overtake them.
+
+### Result and block banners
+
+The banner title is the catalog `name`. The sender's result line:
+
+| Outcome              | Line                                                                                            |
+| -------------------- | ----------------------------------------------------------------------------------------------- |
+| hits                 | `Hit {name}`, or `Hit {n} runners`; with Shield blocks too, `, {k} blocked` is appended         |
+| Shield blocks only   | `Blocked by {name}'s shield`, or `Blocked by {k} shields`                                       |
+| no target            | `Missed: nobody ahead` (Red Shell), `Missed: nobody behind` (Banana), `Missed: no other runner` |
+| targets, all offline | `Missed`                                                                                        |
+| self item            | `Infinite stamina for {s} s` (Mushroom, with its reminder), `Runes added` (Rune Pouch)          |
+
+The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`.
 
 ## Persistence
 

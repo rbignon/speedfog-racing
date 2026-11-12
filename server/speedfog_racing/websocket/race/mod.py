@@ -61,6 +61,7 @@ from speedfog_racing.websocket.race.items import (
     confirm_grant,
     grant_item,
     pending_grant_message,
+    resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import (
     manager,
@@ -483,6 +484,35 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # The kill is already committed: a failed draw must not drop the socket.
             logger.exception("Race item grant failed: %s", self.log_ref)
 
+    async def _on_item_used(self, entity: Participant, item_key: str, igt_ms: int) -> None:
+        """Resolve a race item use and send its messages (races with items on)."""
+        graph = self._cached_graph_json
+        if not entity.race.race_items or not graph:
+            return
+        try:
+            room = manager.get_or_create_room(self._race_id)
+            # The sends stay under the lock so a later item message to the
+            # same runner cannot overtake them.
+            async with room.items_lock:
+                resolution = await resolve_item_use(
+                    self.session_maker,
+                    self._race_id,
+                    entity.id,
+                    item_key,
+                    igt_ms,
+                    graph,
+                    is_connected=lambda pid: manager.is_mod_connected(self._race_id, pid),
+                )
+                for target_id, removal in resolution.removals:
+                    await room.send_to_mod(target_id, removal.model_dump_json())
+                for target_id, effect in resolution.effects:
+                    await room.send_to_mod(target_id, effect.model_dump_json())
+                if resolution.result is not None:
+                    await room.send_to_mod(entity.id, resolution.result.model_dump_json())
+        except Exception:
+            # The flag is already acked: a failed resolution must not drop the socket.
+            logger.exception("Race item use failed: %s", self.log_ref)
+
     async def _handle_item_received(self, msg: dict[str, Any]) -> None:
         """The mod has the granted goods: confirm the held item."""
         grant_id = msg.get("grant_id")
@@ -526,9 +556,11 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         # A boss kill touches the participant and its race only (validation,
         # the kill, a zone_history snapshot), and the mod re-reports every
         # kill so far in a burst after a game restart or a backup restore:
-        # the status_update load, not the field, seed and casters.
-        if self._cached_graph_json is not None and flag_id in self._boss_flags(
-            self._cached_graph_json
+        # the status_update load, not the field, seed and casters. An item
+        # use needs no more (its resolution loads the field on its own).
+        graph = self._cached_graph_json
+        if graph is not None and (
+            flag_id in self._boss_flags(graph) or flag_id in self._race_item_use_flags(graph)
         ):
             return await self._load_entity_for_status_update(db)
         return await self._load_entity(db)

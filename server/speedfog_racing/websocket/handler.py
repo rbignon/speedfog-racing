@@ -27,6 +27,7 @@ from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_start_node,
 )
+from speedfog_racing.services.race_items import extract_race_item_catalog, use_flag_map
 from speedfog_racing.services.weapons import bump_combo, filter_equipped
 from speedfog_racing.versioning import evaluate_mod_compat
 from speedfog_racing.websocket.schemas import (
@@ -600,6 +601,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
         # _boss_flags): every event_flag needs it, fog flags included.
         self._boss_flags_graph: dict[str, Any] | None = None
         self._boss_flags_map: dict[int, str] = {}
+        # Same for the race item use flags (see _race_item_use_flags).
+        self._item_use_flags_graph: dict[str, Any] | None = None
+        self._item_use_flags_map: dict[int, str] = {}
         self._message_handlers = {
             "status_update": self._handle_status_update,
             "event_flag": self._handle_event_flag,
@@ -893,7 +897,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
     @sentry_breadcrumb
     async def _handle_event_flag(self, msg: dict[str, Any]) -> None:
-        """Handle fog gate traversal or boss kill event flag."""
+        """Handle a fog gate traversal, boss kill or race item use event flag."""
         flag_id = msg.get("flag_id")
         if not isinstance(flag_id, int):
             return
@@ -910,6 +914,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         entity: T | None = None
         killed_node: str | None = None
         is_boss_flag = False
+        used_item: str | None = None
 
         async with self.session_maker() as db:
             entity = await self._load_entity_for_event_flag(db, flag_id)
@@ -953,8 +958,25 @@ class BaseModHandler(BaseHandler, Generic[T]):
             event_map = seed_graph.get("event_map", {})
             finish_event = seed_graph.get("finish_event")
             boss_node = self._boss_flags(seed_graph).get(flag_id)
+            item_key = self._race_item_use_flags(seed_graph).get(flag_id)
 
-            if boss_node is not None:
+            if item_key is not None:
+                # Race item use flag: always acked, never a zone_history
+                # entry. The use is resolved by the hook after the session,
+                # which ignores it unless the runner holds that item, so a
+                # replay or a stray copy changes nothing.
+                logger.info(
+                    "event_flag: flag_id=%d item_use=%s igt_ms=%d message_id=%s %s",
+                    flag_id,
+                    item_key,
+                    igt,
+                    message_id,
+                    self.log_ref,
+                )
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
+                used_item = item_key
+            elif boss_node is not None:
                 # Boss defeat flag: stamp the kill on the node's latest visit.
                 # Always acked, a re-report or a kill with no visit changes
                 # nothing. Neither does a kill at IGT 0 (missing or unreadable
@@ -1096,6 +1118,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
             if killed_node is not None:
                 await self._broadcast_after_boss_kill(entity)
                 await self._on_boss_killed(entity, killed_node, igt)
+            return
+
+        if used_item is not None:
+            await self._on_item_used(entity, used_item, igt)
             return
 
         await self._broadcast_after_event_flag(
@@ -1378,7 +1404,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
     # ------------------------------------------------------------------
     async def _load_entity_for_event_flag(self, db: AsyncSession, flag_id: int) -> T | None:
         """Load the entity for an event_flag. Override to pick a lighter load
-        for flags whose handling needs less (race: boss kills)."""
+        for flags whose handling needs less (race: boss kills, item uses)."""
         return await self._load_entity(db)
 
     def _boss_flags(self, graph_json: dict[str, Any]) -> dict[int, str]:
@@ -1388,6 +1414,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
             self._boss_flags_map = extract_boss_flags(graph_json)
             self._boss_flags_graph = graph_json
         return self._boss_flags_map
+
+    def _race_item_use_flags(self, graph_json: dict[str, Any]) -> dict[int, str]:
+        """Use flag to item key of the seed's race item catalog (empty without
+        the plugin), rebuilt only when the graph object changes."""
+        if graph_json is not self._item_use_flags_graph:
+            self._item_use_flags_map = use_flag_map(extract_race_item_catalog(graph_json))
+            self._item_use_flags_graph = graph_json
+        return self._item_use_flags_map
 
     def _on_igt_change(self, entity: T, igt_ms: int) -> None:
         """Update entity IGT, non-decreasing: after a backup restore the
@@ -1420,6 +1454,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
         re-report or a replay never calls it. ``entity`` comes from
         ``_load_entity_for_event_flag``, a light load on races (no field, seed
         or casters): load anything else in a session of your own."""
+
+    async def _on_item_used(self, entity: T, item_key: str, igt_ms: int) -> None:
+        """Called for each race item use flag, after the ACK, outside the DB
+        session; a replay calls it again, so an override acts only on an item
+        the runner holds. ``entity`` is the same light load as for
+        ``_on_boss_killed``. Override to resolve the use (race)."""
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the

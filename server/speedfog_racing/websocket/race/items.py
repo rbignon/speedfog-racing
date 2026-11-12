@@ -1,4 +1,4 @@
-"""Race items: granting an item after a boss kill and confirming it.
+"""Race items: granting an item after a boss kill, confirming it and resolving a use.
 
 The functions open their own sessions and never touch a socket: the handler
 calls them under the race's ``items_lock`` and sends what they return.
@@ -7,7 +7,8 @@ calls them under the race's ``items_lock`` and sends what they return.
 import logging
 import random
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from sqlalchemy import select
@@ -17,16 +18,40 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.config import settings
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceItemEvent
 from speedfog_racing.services.race_items import (
+    ITEM_RULES,
+    Runner,
+    base_key,
     draw_base_key,
+    effect_payload,
     extract_race_item_catalog,
     grant_banner,
+    reminder_for,
+    resolve_targets,
+    result_banner,
     rune_pouch_variant,
+    shield_banner,
+    target_banner,
     tier_of,
 )
 from speedfog_racing.websocket.race.manager import sort_leaderboard
-from speedfog_racing.websocket.schemas import ItemGrantMessage
+from speedfog_racing.websocket.schemas import (
+    ItemEffectMessage,
+    ItemGrantMessage,
+    ItemRemoveMessage,
+    ItemResultMessage,
+)
 
 logger = logging.getLogger(__name__)
+
+
+async def _load_race(db: AsyncSession, race_id: uuid.UUID) -> Race | None:
+    """The race and its field (participants with their users)."""
+    result = await db.execute(
+        select(Race)
+        .where(Race.id == race_id)
+        .options(selectinload(Race.participants).selectinload(Participant.user))
+    )
+    return result.scalar_one_or_none()
 
 
 async def grant_item(
@@ -44,12 +69,7 @@ async def grant_item(
     from the seed's catalog.
     """
     async with session_maker() as db:
-        result = await db.execute(
-            select(Race)
-            .where(Race.id == race_id)
-            .options(selectinload(Race.participants).selectinload(Participant.user))
-        )
-        race = result.scalar_one_or_none()
+        race = await _load_race(db, race_id)
         if race is None or not race.race_items:
             return None
         me = next((p for p in race.participants if p.id == participant_id), None)
@@ -121,3 +141,122 @@ def pending_grant_message(
     return ItemGrantMessage(
         grant_id=held["grant_id"], item=held["item"], banner=grant_banner(held["item"], entry)
     )
+
+
+@dataclass
+class ItemResolution:
+    """What a use sends: per target an effect or, for a shield holder, the
+    shield's removal, and the sender's result (None when the use is ignored)."""
+
+    result: ItemResultMessage | None = None
+    effects: list[tuple[uuid.UUID, ItemEffectMessage]] = field(default_factory=list)
+    removals: list[tuple[uuid.UUID, ItemRemoveMessage]] = field(default_factory=list)
+
+
+async def resolve_item_use(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    participant_id: uuid.UUID,
+    item_key: str,
+    igt_ms: int,
+    graph_json: Mapping[str, Any],
+    *,
+    is_connected: Callable[[uuid.UUID], bool],
+) -> ItemResolution:
+    """Consume the runner's held item and resolve it on its targets.
+
+    Empty unless the runner holds exactly ``item_key``: a replayed or stray
+    use changes nothing. Targets come from the playing runners in leaderboard
+    order. A held shield blocks the item and is spent, connected or not; a
+    target without a connected mod is a miss. A self item answers the sender
+    only. Logs one ``use`` event with every target's outcome.
+    """
+    async with session_maker() as db:
+        race = await _load_race(db, race_id)
+        sender = (
+            next((p for p in race.participants if p.id == participant_id), None) if race else None
+        )
+        held = sender.held_item if sender else None
+        if race is None or sender is None or not held or held.get("item") != item_key:
+            logger.info(
+                "Race item use ignored (not held): race=%s participant=%s item=%s held=%s",
+                race_id,
+                participant_id,
+                item_key,
+                held.get("item") if held else None,
+            )
+            return ItemResolution()
+        entry = extract_race_item_catalog(graph_json).get(item_key)
+        rule = ITEM_RULES.get(base_key(item_key))
+        if entry is None or rule is None:
+            logger.warning("Race item %s used but unknown: race=%s", item_key, race_id)
+            return ItemResolution()
+
+        sender.held_item = None
+        sender_name = sender.user.twitch_display_name or sender.user.twitch_username
+        by_id = {p.id: p for p in race.participants}
+        resolution = ItemResolution()
+        hits: list[str] = []
+        blocked: list[str] = []
+        offline = 0
+        outcomes: list[dict[str, str]] = []
+        if rule.target != "self":
+            ordered, _ = sort_leaderboard(race.participants, graph_json=dict(graph_json))
+            playing: list[Runner] = []
+            for p in ordered:
+                if p.status == ParticipantStatus.PLAYING:
+                    user = by_id[p.id].user
+                    playing.append(Runner(p.id, user.twitch_display_name or user.twitch_username))
+            payload = effect_payload(item_key, entry)
+            for runner in resolve_targets(rule.target, participant_id, playing):
+                target = by_id[runner.participant_id]
+                target_held = target.held_item
+                if target_held and target_held.get("item") == "shield":
+                    target.held_item = None
+                    resolution.removals.append(
+                        (
+                            target.id,
+                            ItemRemoveMessage(
+                                item="shield", banner=shield_banner(entry.name, sender_name)
+                            ),
+                        )
+                    )
+                    blocked.append(runner.name)
+                    outcome = "blocked"
+                elif payload is not None and is_connected(target.id):
+                    resolution.effects.append(
+                        (
+                            target.id,
+                            ItemEffectMessage(
+                                item=item_key,
+                                effect=payload,
+                                banner=target_banner(item_key, entry, sender_name),
+                                reminder=reminder_for(item_key, entry),
+                            ),
+                        )
+                    )
+                    hits.append(runner.name)
+                    outcome = "hit"
+                else:
+                    offline += 1
+                    outcome = "offline"
+                outcomes.append({"participant_id": str(target.id), "outcome": outcome})
+
+        resolution.result = ItemResultMessage(
+            item=item_key,
+            banner=result_banner(item_key, entry, hits, blocked, offline),
+            # Only a self item affects its sender.
+            reminder=reminder_for(item_key, entry) if rule.target == "self" else None,
+        )
+        db.add(
+            RaceItemEvent(
+                race_id=race_id,
+                participant_id=participant_id,
+                kind="use",
+                item=item_key,
+                igt_ms=igt_ms,
+                targets=outcomes,
+            )
+        )
+        await db.commit()
+        return resolution
