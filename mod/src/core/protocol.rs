@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.10";
+pub const PROTOCOL_VERSION: &str = "1.11";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES

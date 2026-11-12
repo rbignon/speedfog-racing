@@ -119,7 +119,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.10**. It is defined in
+release numbers. Current: **1.11**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -131,6 +131,7 @@ Bump rules:
 
 Version history:
 
+- **1.11** - boss kill times: `boss_flags` on the seed (the defeat flag of every boss node but the final boss), and an optional `boss_kill_igt_ms` on `zone_history` entries. Older mods ignore `boss_flags`, and a newer mod facing an older server finds it empty and watches no boss.
 - **1.10** - LiveSplit: `flag_layers`, `seed_number` and `category` on the seed; the local runner's `layer_entry_igts` on `auth_ok`. The mod drives LiveSplit from them (one segment per layer). Older mods ignore the fields, and a newer mod facing an older server finds them empty or absent and does not drive LiveSplit.
 - **1.9** - ranked runs: `ranked` boolean on the `race` object (RaceInfo), default false. True for a race or a solo session in Speedrun or Set Seed mode. The mod reads and sends debug flags in a solo session only when it is true (races always do). Older mods ignore the field, so a ranked solo session refuses them at auth (see below); a newer mod facing an older server gets false.
 - **1.8** - in-game cutoff: optional `igt_cutoff_ms` on the `race` object (RaceInfo), the in-game time a run must finish by. The server eliminates a playing runner past it; the mod counts the local IGT down to it while the local runner plays. Older mods ignore the field (no countdown on such a race), and a newer mod facing an older server keeps the wall-clock countdown.
@@ -1137,7 +1138,7 @@ Shared schema across all WebSocket messages:
 | `equipped_name_template_id` | `string?`        | Logical id of the active name template (web resolves `background_css` via the catalog). `null` or `"default"` means no override; render with the default style.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `name_template`             | `object?`        | Pre-resolved render payload for the mod overlay: `{ color?: "#RRGGBB", gradient?: ["#RRGGBB","#RRGGBB"] }`. `null` for default users; backgrounds are not transmitted (web-only).                                                                                                                                                                                                                                                                                                                                                                                                               |
 
-`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17, "weapons"?: [int|null, int|null] }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. `weapons` is a list of per-zone combo counters, `[{ "ids": [int, ...], "ticks": int }, ...]`: each `status_update` that observed a tracked weapon bumps its combo's `ticks` (one id when a single hand is tracked, two in mod-reported order). Filtered to the tracked melee/ranged set; absent on entries pre-dating the feature or when the mod didn't report a value (entries from before the counters may carry the old `[left, right]` pair shape). Entries without `type` are treated as `"fog"` for backward compatibility.
+`zone_history` entries: `{ "node_id": "m60_51_36_00", "igt_ms": 123456, "deaths"?: 3, "type"?: "spawn"|"fog"|"backtrack", "message_id"?: 17, "weapons"?: [int|null, int|null], "boss_kill_igt_ms"?: 456789 }`. A node may appear multiple times if the player backtracks; each visit is a separate entry with its own `igt_ms` and optional `deaths` count. The `type` field indicates entry source: `"spawn"` (initial placement on first status_update), `"fog"` (fog gate traversal via event_flag), or `"backtrack"` (zone_query detection from death/teleport/quit-out). `message_id` is optional and only present on newer `"fog"` entries; it is used server-side to make replayed `event_flag` messages idempotent after reconnect. `weapons` is a list of per-zone combo counters, `[{ "ids": [int, ...], "ticks": int }, ...]`: each `status_update` that observed a tracked weapon bumps its combo's `ticks` (one id when a single hand is tracked, two in mod-reported order). Filtered to the tracked melee/ranged set; absent on entries pre-dating the feature or when the mod didn't report a value (entries from before the counters may carry the old `[left, right]` pair shape). `boss_kill_igt_ms` is optional: the IGT of the boss kill, stamped on the most recent visit of the boss's node (the first kill is kept); a kill never appends an entry. Entries without `type` are treated as `"fog"` for backward compatibility.
 
 `name_template` example:
 
@@ -1190,6 +1191,7 @@ Included in `auth_ok` (mod) and `race_state` (spectator):
 | `flag_layers`        | `object`  | yes | no        | Layer of every fog flag `{flag_id: layer}` (the finish flag excluded), for LiveSplit segments       |
 | `seed_number`        | `string?` | yes | no        | The seed's number (LiveSplit `SpeedFog seed`)                                                       |
 | `category`           | `string?` | yes | no        | The seed's speedrun category key, e.g. `standard` or `standard@12` (LiveSplit `SpeedFog category`)  |
+| `boss_flags`         | `int[]`   | yes | no        | Sorted defeat flag of every boss node except the final boss; empty for spectators                   |
 
 ### Leaderboard Sorting
 

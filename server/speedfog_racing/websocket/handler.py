@@ -241,6 +241,47 @@ def extract_flag_layers(graph_json: dict[str, Any]) -> dict[str, int]:
     }
 
 
+def extract_boss_flags(graph_json: dict[str, Any]) -> dict[int, str]:
+    """Map each boss defeat flag of the graph to its node id.
+
+    The final boss is left out (its kill is the run's finish, tracked
+    separately): a ``final_boss`` node, and any node carrying
+    ``finish_boss_defeat_flag``. A flag carried by two nodes cannot say which
+    arena was cleared, so it is dropped.
+    """
+    nodes = graph_json.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return {}
+    finish_flag = graph_json.get("finish_boss_defeat_flag")
+    flags: dict[int, str] = {}
+    shared: set[int] = set()
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict) or node.get("type") == "final_boss":
+            continue
+        flag = node.get("defeat_flag")
+        if not isinstance(flag, int) or isinstance(flag, bool) or flag <= 0:
+            continue
+        if flag == finish_flag:
+            continue
+        if flag in flags:
+            shared.add(flag)
+        flags[flag] = node_id
+    return {flag: node_id for flag, node_id in flags.items() if flag not in shared}
+
+
+def final_boss_node(graph_json: dict[str, Any]) -> str | None:
+    """The id of the graph's ``final_boss`` node, None when it has none or several."""
+    nodes = graph_json.get("nodes", {})
+    if not isinstance(nodes, dict):
+        return None
+    final = [
+        node_id
+        for node_id, node in nodes.items()
+        if isinstance(node, dict) and node.get("type") == "final_boss"
+    ]
+    return final[0] if len(final) == 1 else None
+
+
 def reached_final_zone(
     graph_json: dict[str, Any], zone_history: list[dict[str, Any]] | None
 ) -> bool:
@@ -287,6 +328,27 @@ def attribute_deaths(
             entry["deaths"] = entry.get("deaths", 0) + delta
             break
     return history
+
+
+def record_boss_kill(
+    zone_history: list[dict[str, Any]],
+    node_id: str,
+    igt_ms: int,
+) -> list[dict[str, Any]] | None:
+    """Stamp a boss kill on the most recent visit of ``node_id``.
+
+    Copies entries like ``attribute_deaths``. Returns None when nothing
+    changes: an entry of the node already carries a kill (the first kill is
+    kept) or the history never visited the node.
+    """
+    if any("boss_kill_igt_ms" in e for e in zone_history if e.get("node_id") == node_id):
+        return None
+    history = [dict(e) for e in zone_history]
+    for entry in reversed(history):
+        if entry.get("node_id") == node_id:
+            entry["boss_kill_igt_ms"] = igt_ms
+            return history
+    return None
 
 
 def is_shared_entrance_duplicate(history: list[dict[str, Any]], node_id: str, igt: int) -> bool:

@@ -32,6 +32,7 @@ from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
     BaseModHandler,
+    extract_boss_flags,
     extract_event_ids,
     extract_flag_layers,
     reached_final_zone,
@@ -277,6 +278,9 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
                 flag_layers=extract_flag_layers(seed.graph_json)
                 if seed and seed.graph_json
                 else {},
+                boss_flags=sorted(extract_boss_flags(seed.graph_json))
+                if seed and seed.graph_json
+                else [],
                 seed_number=seed.seed_number if seed else None,
                 category=(
                     seed_category(seed.pool, seed.total_layers)[0] if seed and seed.pool else None

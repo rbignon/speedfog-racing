@@ -51,6 +51,7 @@ from speedfog_racing.websocket.handler import (
     SEND_TIMEOUT,
     BaseModHandler,
     clamp_igt,
+    extract_boss_flags,
     extract_event_ids,
     extract_flag_layers,
 )
@@ -378,6 +379,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 flag_layers=extract_flag_layers(seed.graph_json)
                 if seed and seed.graph_json
                 else {},
+                boss_flags=sorted(extract_boss_flags(seed.graph_json))
+                if seed and seed.graph_json
+                else [],
                 seed_number=seed.seed_number if seed else None,
                 category=(
                     seed_category(seed.pool, seed.total_layers)[0] if seed and seed.pool else None

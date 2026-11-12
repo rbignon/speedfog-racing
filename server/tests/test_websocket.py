@@ -9,7 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from speedfog_racing.models import ParticipantStatus, RaceStatus
-from speedfog_racing.websocket.handler import extract_flag_layers, parse_zone_query_input
+from speedfog_racing.websocket.handler import (
+    extract_boss_flags,
+    extract_flag_layers,
+    final_boss_node,
+    parse_zone_query_input,
+    record_boss_kill,
+)
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
     RaceRoom,
@@ -2074,3 +2080,90 @@ def test_extract_flag_layers_maps_each_flag_to_its_node_layer():
 
 def test_extract_flag_layers_without_event_map_is_empty():
     assert extract_flag_layers({"nodes": {}}) == {}
+
+
+def test_extract_boss_flags_maps_each_defeat_flag_to_its_node():
+    graph = {
+        "nodes": {
+            "a": {"type": "boss_arena", "defeat_flag": 10000800},
+            "b": {"type": "major_boss", "defeat_flag": 1035500800},
+            "c": {"type": "mini_dungeon"},
+            "end": {"type": "final_boss", "defeat_flag": 19000800},
+        },
+        "finish_boss_defeat_flag": 19000800,
+    }
+    assert extract_boss_flags(graph) == {10000800: "a", 1035500800: "b"}
+
+
+def test_extract_boss_flags_skips_the_finish_flag_on_a_non_final_node():
+    graph = {
+        "nodes": {
+            "x": {"type": "boss_arena", "defeat_flag": 19000800},
+            "a": {"type": "boss_arena", "defeat_flag": 10000800},
+        },
+        "finish_boss_defeat_flag": 19000800,
+    }
+    assert extract_boss_flags(graph) == {10000800: "a"}
+
+
+def test_extract_boss_flags_skips_a_final_boss_node_without_finish_flag():
+    graph = {"nodes": {"end": {"type": "final_boss", "defeat_flag": 19000800}}}
+    assert extract_boss_flags(graph) == {}
+
+
+def test_extract_boss_flags_drops_a_flag_shared_by_two_nodes():
+    graph = {
+        "nodes": {
+            "a": {"type": "boss_arena", "defeat_flag": 10000800},
+            "b": {"type": "boss_arena", "defeat_flag": 10000800},
+            "c": {"type": "boss_arena", "defeat_flag": 10000801},
+        }
+    }
+    assert extract_boss_flags(graph) == {10000801: "c"}
+
+
+def test_extract_boss_flags_ignores_missing_or_invalid_flags():
+    graph = {
+        "nodes": {
+            "a": {"type": "boss_arena", "defeat_flag": None},
+            "b": {"type": "boss_arena", "defeat_flag": 0},
+            "c": {"type": "boss_arena", "defeat_flag": "123"},
+            "d": {"type": "boss_arena", "defeat_flag": True},
+        }
+    }
+    assert extract_boss_flags(graph) == {}
+
+
+def test_record_boss_kill_lands_on_the_most_recent_visit():
+    history = [
+        {"node_id": "s", "igt_ms": 0},
+        {"node_id": "a", "igt_ms": 10},
+        {"node_id": "s", "igt_ms": 20},
+        {"node_id": "a", "igt_ms": 30},
+    ]
+    new = record_boss_kill(history, "a", 45)
+    assert new is not None
+    assert new[3]["boss_kill_igt_ms"] == 45 and "boss_kill_igt_ms" not in new[1]
+    assert "boss_kill_igt_ms" not in history[3]
+
+
+def test_record_boss_kill_keeps_the_first_kill():
+    history = [
+        {"node_id": "a", "igt_ms": 10, "boss_kill_igt_ms": 40},
+        {"node_id": "s", "igt_ms": 50},
+        {"node_id": "a", "igt_ms": 60},
+    ]
+    assert record_boss_kill(history, "a", 90) is None
+
+
+def test_record_boss_kill_without_a_visit_is_none():
+    assert record_boss_kill([{"node_id": "s", "igt_ms": 0}], "a", 5) is None
+
+
+def test_final_boss_node():
+    one = {"nodes": {"a": {"type": "boss_arena"}, "end": {"type": "final_boss"}}}
+    none = {"nodes": {"a": {"type": "boss_arena"}}}
+    two = {"nodes": {"e1": {"type": "final_boss"}, "e2": {"type": "final_boss"}}}
+    assert final_boss_node(one) == "end"
+    assert final_boss_node(none) is None
+    assert final_boss_node(two) is None
