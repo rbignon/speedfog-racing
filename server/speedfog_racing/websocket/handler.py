@@ -596,6 +596,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
         # Set at auth: the run's seed is known beforehand (Set Seed), so its
         # zone_updates name every exit's destination, visited or not.
         self._reveal_exits = False
+        # extract_boss_flags of the graph held in _boss_flags_graph (see
+        # _boss_flags): every event_flag needs it, fog flags included.
+        self._boss_flags_graph: dict[str, Any] | None = None
+        self._boss_flags_map: dict[int, str] = {}
         self._message_handlers = {
             "status_update": self._handle_status_update,
             "event_flag": self._handle_event_flag,
@@ -908,7 +912,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
         is_boss_flag = False
 
         async with self.session_maker() as db:
-            entity = await self._load_entity(db)
+            entity = await self._load_entity_for_event_flag(db, flag_id)
             if entity is None:
                 return
 
@@ -948,12 +952,16 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             event_map = seed_graph.get("event_map", {})
             finish_event = seed_graph.get("finish_event")
-            boss_node = extract_boss_flags(seed_graph).get(flag_id)
+            boss_node = self._boss_flags(seed_graph).get(flag_id)
 
             if boss_node is not None:
                 # Boss defeat flag: stamp the kill on the node's latest visit.
-                # Always acked, a re-report or a kill with no visit changes nothing.
-                kill_history = record_boss_kill(entity.zone_history, boss_node, igt)
+                # Always acked, a re-report or a kill with no visit changes
+                # nothing. Neither does a kill at IGT 0 (missing or unreadable
+                # clock): no boss dies at 0, and the first kill is kept for good.
+                kill_history = (
+                    record_boss_kill(entity.zone_history, boss_node, igt) if igt > 0 else None
+                )
                 if kill_history is not None:
                     self._on_igt_change(entity, igt)
                     entity.zone_history = kill_history
@@ -1368,6 +1376,19 @@ class BaseModHandler(BaseHandler, Generic[T]):
     # ------------------------------------------------------------------
     # Virtual methods (with defaults, overridable by subclasses)
     # ------------------------------------------------------------------
+    async def _load_entity_for_event_flag(self, db: AsyncSession, flag_id: int) -> T | None:
+        """Load the entity for an event_flag. Override to pick a lighter load
+        for flags whose handling needs less (race: boss kills)."""
+        return await self._load_entity(db)
+
+    def _boss_flags(self, graph_json: dict[str, Any]) -> dict[int, str]:
+        """``extract_boss_flags`` of ``graph_json``, rebuilt only when the
+        graph object changes (the reference is held, so identity is safe)."""
+        if graph_json is not self._boss_flags_graph:
+            self._boss_flags_map = extract_boss_flags(graph_json)
+            self._boss_flags_graph = graph_json
+        return self._boss_flags_map
+
     def _on_igt_change(self, entity: T, igt_ms: int) -> None:
         """Update entity IGT, non-decreasing: after a backup restore the
         player replays the lost segment with a lower live IGT and the
@@ -1396,7 +1417,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
     async def _on_boss_killed(self, entity: T, node_id: str, igt_ms: int) -> None:
         """Called once per new boss kill, after the commit and the broadcast,
         outside the DB session. Override for features that react to a kill; a
-        re-report or a replay never calls it."""
+        re-report or a replay never calls it. ``entity`` comes from
+        ``_load_entity_for_event_flag``, a light load on races (no field, seed
+        or casters): load anything else in a session of your own."""
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the

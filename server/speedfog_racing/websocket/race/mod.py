@@ -448,6 +448,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             return await _load_participant_no_seed(db, self._participant_id)
         return await _load_participant_light(db, self._participant_id)
 
+    async def _load_entity_for_event_flag(
+        self, db: AsyncSession, flag_id: int
+    ) -> Participant | None:
+        # A boss kill touches the participant and its race only (validation,
+        # the kill, a zone_history snapshot), and the mod re-reports every
+        # kill so far in a burst after a game restart or a backup restore:
+        # the status_update load, not the field, seed and casters.
+        if self._cached_graph_json is not None and flag_id in self._boss_flags(
+            self._cached_graph_json
+        ):
+            return await self._load_entity_for_status_update(db)
+        return await self._load_entity(db)
+
     def _get_graph_json(self, entity: Participant) -> dict[str, Any] | None:
         # Prefer cached graph_json (avoids lazy-loading race.seed when
         # the entity was loaded without it, e.g. _load_participant_no_seed).

@@ -3171,7 +3171,10 @@ def test_training_boss_kill_lands_on_the_nodes_latest_visit(
         ws_spec.receive_json()  # race_state
         with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws_mod:
             ws_mod.send_json({"type": "auth", "mod_token": token})
-            ws_mod.receive_json()  # auth_ok
+            auth_ok = ws_mod.receive_json()
+            assert auth_ok["type"] == "auth_ok"
+            # The mod watches only the flags its seed names.
+            assert auth_ok["seed"]["boss_flags"] == [boss_flag]
             ws_mod.receive_json()  # race_start
             ws_spec.receive_json()  # leaderboard_update (mod_connected)
 

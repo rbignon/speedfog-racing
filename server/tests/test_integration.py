@@ -4584,7 +4584,10 @@ def test_boss_kill_lands_on_the_most_recent_visit(
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth()["type"] == "auth_ok"
+        auth = mod0.auth()
+        assert auth["type"] == "auth_ok"
+        # The mod watches only the flags its seed names.
+        assert auth["seed"]["boss_flags"] == [BOSS_FLAG]
         _walk_to_node_b_twice(mod0)
         mod0.send_event_flag(BOSS_FLAG, igt_ms=55_000, message_id=7)
         assert mod0.receive_until_type("event_flag_ack")["message_id"] == 7
@@ -4595,6 +4598,73 @@ def test_boss_kill_lands_on_the_most_recent_visit(
     assert history[-1]["boss_kill_igt_ms"] == 55_000
     assert "boss_kill_igt_ms" not in history[1]
     assert igt_ms == 55_000
+
+
+def test_boss_kill_at_igt_zero_is_acked_and_ignored(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        # A kill read with no clock: ignored, so the real kill still lands.
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=0, message_id=7)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 7
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=55_000, message_id=8)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 8
+
+    history, _ = _player0_history_and_igt(integration_db, race_with_participants)
+    assert history[-1]["boss_kill_igt_ms"] == 55_000
+
+
+def test_boss_kill_skips_the_full_participant_load(
+    integration_client, race_with_participants, integration_db, monkeypatch
+):
+    """A boss kill loads the participant alone: a re-report burst after a
+    game restart must not load the whole field once per kill."""
+    import speedfog_racing.websocket.race.mod as mod_module
+
+    heavy_loads = 0
+    original_load = mod_module._load_participant
+
+    async def counting_load(db, participant_id):
+        nonlocal heavy_loads
+        heavy_loads += 1
+        return await original_load(db, participant_id)
+
+    monkeypatch.setattr(mod_module, "_load_participant", counting_load)
+    hook_calls: list[tuple[str, int]] = []
+
+    async def recorder(self, entity, node_id, igt_ms):
+        hook_calls.append((node_id, igt_ms))
+
+    monkeypatch.setattr(mod_module.RaceModHandler, "_on_boss_killed", recorder)
+
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        loads_before = heavy_loads
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=55_000, message_id=7)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 7
+        # A fog flag still takes the full load (its broadcasts need the field).
+        mod0.send_event_flag(9000000, igt_ms=60_000)
+        mod0.receive_until_type("player_update")
+        assert heavy_loads - loads_before == 1
+
+    history, _ = _player0_history_and_igt(integration_db, race_with_participants)
+    assert history[3]["boss_kill_igt_ms"] == 55_000
+    # The hook runs last, after the snapshot broadcast: the whole kill path
+    # ran on the light load.
+    assert hook_calls == [("node_b", 55_000)]
 
 
 def test_boss_kill_rereported_later_keeps_the_first(
