@@ -81,6 +81,7 @@ export interface Race {
   igt_cutoff_ms: number | null;
   private_dag: boolean;
   deathless: boolean;
+  race_items: boolean;
   custom_rules: string | null;
   daily_date: string | null;
   mode: RunMode;
@@ -218,6 +219,8 @@ export interface PoolInfo {
   discarded: number;
   played_by_user: number | null;
   pool_config: PoolConfig | null;
+  /** Seeds of the pool carrying the race items plugin. */
+  race_items_available: number;
 }
 
 export type PoolStats = Record<string, PoolInfo>;
@@ -998,6 +1001,7 @@ export async function createRace(
   // its pool from it; the other modes draw from `poolName`.
   mode: RunMode = "normal",
   seed: string | null = null,
+  raceItems: boolean = false,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -1021,6 +1025,7 @@ export async function createRace(
       deathless,
       mode,
       seed,
+      race_items: raceItems,
     }),
   });
   return handleResponse<Race>(response);
@@ -1040,6 +1045,7 @@ export async function updateRace(
     race_duration_minutes?: number | null;
     private_dag?: boolean;
     deathless?: boolean;
+    race_items?: boolean;
     custom_rules?: string | null;
   },
 ): Promise<Race> {

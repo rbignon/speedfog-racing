@@ -61,6 +61,7 @@ export interface WsRaceInfo {
   igt_cutoff_ms?: number | null;
   private_dag?: boolean;
   deathless?: boolean;
+  race_items?: boolean;
   custom_rules?: string | null;
   countdown_seconds?: number;
   // Current seed id, mirrored from the wire RaceInfo for completeness; the web

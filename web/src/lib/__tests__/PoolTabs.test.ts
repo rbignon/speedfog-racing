@@ -12,6 +12,7 @@ function poolInfo(available: number): PoolInfo {
     discarded: 0,
     played_by_user: null,
     pool_config: null,
+    race_items_available: 0,
   };
 }
 

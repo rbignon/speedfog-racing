@@ -31,6 +31,7 @@ function raceWith(overrides: Partial<Race> = {}): Race {
     igt_cutoff_ms: null,
     private_dag: false,
     deathless: false,
+    race_items: false,
     custom_rules: null,
     daily_date: null,
     mode: "normal",

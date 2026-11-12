@@ -16,6 +16,7 @@
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
   import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
   import { formatPoolName } from "$lib/utils/format";
+  import { raceItemsAvailability } from "$lib/raceItems";
   import {
     parseRaceNewParams,
     seedPageHref,
@@ -41,6 +42,7 @@
   let lateJoinWindowMinutes = $state(30);
   let raceDurationMinutes = $state(120);
   let deathless = $state(false);
+  let raceItems = $state(false);
   let privateDag = $state(false);
   let customRules = $state("");
   let speedrun = $state(untrack(() => asked.speedrun));
@@ -117,6 +119,16 @@
       : seedSummary?.replayable === true,
   );
 
+  // The option needs a normal race on a pool holding plugin seeds; a
+  // ticked box that stops qualifying (mode or pool switch) is not sent.
+  let raceItemsAvail = $derived(
+    raceItemsAvailability(
+      setSeed === null && !speedrun ? "normal" : "other",
+      pools[poolName],
+    ),
+  );
+  let raceItemsOn = $derived(raceItems && raceItemsAvail.enabled);
+
   // Advanced-options state grid shown inside the trigger: one entry per
   // option, checked when the option is active for this race (actual
   // state, not deviation from defaults, so "late joiners" starts checked).
@@ -124,6 +136,7 @@
     { label: "late joiners", active: lateJoinEnabled },
     { label: "auto-end", active: autoEndEnabled },
     { label: "deathless", active: deathless },
+    { label: "race items", active: raceItemsOn },
     { label: "private map", active: privateDag },
     { label: "custom rules", active: customRules.trim() !== "" },
     // A Set Seed race's mode is set by its seed.
@@ -223,6 +236,7 @@
         deathless,
         seedSummary ? "set_seed" : speedrun ? "speedrun" : "normal",
         seedSummary?.seed_number ?? null,
+        raceItemsOn,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -602,6 +616,27 @@
                 A player who dies is automatically marked as abandoned.
               </p>
             </div>
+
+            {#if setSeed === null && !speedrun}
+              <div class="form-group">
+                <span>Race items</span>
+                <label class="radio-label">
+                  <input
+                    type="checkbox"
+                    bind:checked={raceItems}
+                    disabled={creating || !raceItemsAvail.enabled}
+                  />
+                  Boss kills give Mario Kart style items
+                </label>
+                <p class="hint">
+                  Items hit other runners. Items races do not count on the
+                  Speedrun boards or the community stats.
+                </p>
+                {#if raceItemsAvail.hint}
+                  <p class="hint">{raceItemsAvail.hint}</p>
+                {/if}
+              </div>
+            {/if}
 
             <div class="form-group">
               <span>Spoiler protection</span>

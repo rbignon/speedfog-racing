@@ -95,6 +95,8 @@
   let rulesSaving = $state(false);
   let deathlessSaving = $state(false);
   let deathlessError = $state<string | null>(null);
+  let raceItemsSaving = $state(false);
+  let raceItemsError = $state<string | null>(null);
   let selectedParticipantIds = $state<Set<string>>(new Set());
   let showDownloadModal = $state(false);
   let deleting = $state(false);
@@ -635,9 +637,16 @@
     raceStore.race?.deathless ?? initialRace.deathless,
   );
   const DEATHLESS_RULE = "Deathless: dying once eliminates you from the race";
-  let displayRuleLines = $derived(
-    liveDeathless ? [DEATHLESS_RULE, ...customRuleLines] : customRuleLines,
+  let liveRaceItems = $derived(
+    raceStore.race?.race_items ?? initialRace.race_items,
   );
+  const RACE_ITEMS_RULE =
+    "Race items: each boss kill gives an item if you hold none; use it from your quick item slot.";
+  let displayRuleLines = $derived([
+    ...(liveDeathless ? [DEATHLESS_RULE] : []),
+    ...(liveRaceItems ? [RACE_ITEMS_RULE] : []),
+    ...customRuleLines,
+  ]);
   let liveOpenRegistration = $derived(
     raceStore.race?.open_registration ?? initialRace.open_registration,
   );
@@ -976,6 +985,19 @@
       deathlessError = e instanceof Error ? e.message : "Failed to update";
     } finally {
       deathlessSaving = false;
+    }
+  }
+
+  async function saveRaceItems(value: boolean) {
+    raceItemsSaving = true;
+    raceItemsError = null;
+    try {
+      await updateRace(initialRace.id, { race_items: value });
+      initialRace = await fetchRace(initialRace.id);
+    } catch (e) {
+      raceItemsError = e instanceof Error ? e.message : "Failed to update";
+    } finally {
+      raceItemsSaving = false;
     }
   }
 
@@ -1706,6 +1728,30 @@
                 </span>
                 {#if deathlessError}
                   <span class="schedule-error">{deathlessError}</span>
+                {/if}
+              </div>
+            {/if}
+            {#if liveRaceItems || (canEditRace && raceStatus === "setup" && initialRace.mode === "normal")}
+              <div class="info-item">
+                <span class="label">Race items</span>
+                <span class="value">
+                  {liveRaceItems ? "Enabled" : "Disabled"}
+                  {#if canEditRace && raceStatus === "setup" && initialRace.mode === "normal"}
+                    <button
+                      class="btn-edit"
+                      onclick={() => saveRaceItems(!liveRaceItems)}
+                      disabled={raceItemsSaving}
+                    >
+                      {raceItemsSaving
+                        ? "..."
+                        : liveRaceItems
+                          ? "Disable"
+                          : "Enable"}
+                    </button>
+                  {/if}
+                </span>
+                {#if raceItemsError}
+                  <span class="schedule-error">{raceItemsError}</span>
                 {/if}
               </div>
             {/if}

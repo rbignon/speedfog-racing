@@ -61,6 +61,7 @@ function pool(
     discarded: 0,
     played_by_user: null,
     pool_config: { name, sort_order: sortOrder } as PoolConfig,
+    race_items_available: 0,
   };
 }
 
