@@ -5,6 +5,7 @@ import {
   buildTimelines,
   chartKey,
   computeFieldStats,
+  computeKillStats,
   fieldRank,
   gapSeries,
   gapTicks,
@@ -765,5 +766,168 @@ describe("buildTimelines", () => {
     const first = buildTimelines([run], NODE_LAYERS, T).get("a");
     const regraphed = buildTimelines([run], new Map(NODE_LAYERS), T).get("a");
     expect(regraphed).not.toBe(first);
+  });
+});
+
+describe("boss kill times", () => {
+  // The boss node is on layer 3; kill times are measured from the first
+  // entry on it within the layer's window.
+  const killRun = (kill: number | null, extra: ZoneHistoryEntry[] = []) =>
+    [
+      at("start", 0),
+      at("a1", 5_000),
+      at("a2", 8_000),
+      at("boss", 10_000),
+      at("start", 12_000, { type: "backtrack" }),
+      at("boss", 20_000, kill === null ? {} : { boss_kill_igt_ms: kill }),
+      ...extra,
+    ] as ZoneHistoryEntry[];
+
+  it("runs a kill time from the first entry on the node to the kill", () => {
+    const t = timeline([...killRun(70_000), at("a1", 90_000)]);
+    expect(t.layers[3]?.kills).toEqual([{ nodeId: "boss", killMs: 60_000 }]);
+    expect(t.layers[1]?.kills).toEqual([]);
+  });
+
+  it("calls a kill below its first entry unknown", () => {
+    const t = timeline(killRun(4_000));
+    expect(t.layers[3]?.kills).toEqual([{ nodeId: "boss", killMs: null }]);
+  });
+
+  it("skips disqualified runs and null kills in the kill stats", () => {
+    const stats = computeKillStats(
+      [
+        timeline(killRun(70_000)),
+        timeline(killRun(40_000)),
+        timeline(killRun(4_000)),
+        timeline(killRun(20_000), "disqualified"),
+        timeline(killRun(null)),
+      ],
+      new Set(["boss"]),
+    );
+    expect(stats.get("boss")).toMatchObject({
+      bestMs: 30_000,
+      medianMs: 45_000,
+      count: 2,
+      samples: [30_000, 60_000],
+    });
+    expect(computeKillStats([timeline(killRun(70_000))], new Set())).toEqual(
+      new Map(),
+    );
+  });
+
+  describe("in the layer detail", () => {
+    const runner = (
+      id: string,
+      history: ZoneHistoryEntry[],
+      status = "playing",
+      igtMs = 50_000,
+    ) => ({ id, igtMs, timeline: timeline(history, status, igtMs) });
+    // Layer 1 has two exit nodes: a1 (boss-like node with kills) and b1.
+    const hist = (node: string, kill?: number) => [
+      at("start", 0),
+      at(node, 10_000, kill === undefined ? {} : { boss_kill_igt_ms: kill }),
+      at("a2", 100_000),
+    ];
+    const runners = [
+      runner("fast", hist("a1", 40_000), "finished"),
+      runner("slow", hist("a1", 70_000), "finished"),
+      runner("other", hist("b1", 25_000), "finished"),
+      runner("hole", hist("a1"), "finished"),
+    ];
+    const gaps = selectionGaps(
+      new Map(runners.map((r) => [r.id, r.timeline])),
+      T,
+    );
+    const depthField = computeFieldStats(runners.map((r) => r.timeline));
+    const killField = computeKillStats(
+      runners.map((r) => r.timeline),
+      new Set(["a1"]),
+    );
+
+    it("compares kill times within the column only", () => {
+      const cols = buildLayerDetail(1, runners, gaps, depthField, killField);
+      const a1 = cols.find((c) => c.nodeId === "a1")!;
+      const b1 = cols.find((c) => c.nodeId === "b1")!;
+      expect(a1.metric).toBe("kill");
+      expect(a1.field).toBe(killField.get("a1"));
+      expect(a1.rows.map((r) => [r.id, r.state, r.timeMs, r.vsBestMs])).toEqual(
+        [
+          ["fast", "done", 30_000, 0],
+          ["slow", "done", 60_000, 30_000],
+          ["hole", "unknown", null, null],
+        ],
+      );
+      expect(a1.rows[1].fieldRank).toBe(2);
+      expect(b1).toEqual(
+        buildLayerDetail(1, runners, gaps, depthField).find(
+          (c) => c.nodeId === "b1",
+        ),
+      );
+      expect(b1.metric).toBe("depth");
+    });
+
+    it("shows a runner resting after the kill with the kill time", () => {
+      const resting = runner("rest", [
+        at("start", 0),
+        at("a1", 10_000, { boss_kill_igt_ms: 45_000 }),
+      ]);
+      const [col] = buildLayerDetail(
+        1,
+        [resting],
+        new Map(),
+        depthField,
+        killField,
+      );
+      expect(col.rows[0]).toMatchObject({ state: "done", timeMs: 35_000 });
+    });
+
+    it("shows a runner still fighting the time since the first entry", () => {
+      const fighting = runner("fight", [at("start", 0), at("a1", 20_000)]);
+      const [col] = buildLayerDetail(
+        1,
+        [fighting],
+        new Map(),
+        depthField,
+        killField,
+      );
+      expect(col.rows[0]).toMatchObject({ state: "live", timeMs: 30_000 });
+    });
+
+    it("puts rows without a kill after, and an out runner reads out", () => {
+      const quit = runner(
+        "quit",
+        [at("start", 0), at("a1", 20_000)],
+        "abandoned",
+      );
+      const fighting = runner("fight", [at("start", 0), at("a1", 20_000)]);
+      const cols = buildLayerDetail(
+        1,
+        [quit, fighting, runners[0]],
+        new Map(),
+        depthField,
+        killField,
+      );
+      expect(cols[0].rows.map((r) => [r.id, r.state])).toEqual([
+        ["fast", "done"],
+        ["fight", "live"],
+        ["quit", "out"],
+      ]);
+    });
+
+    it("keeps the depth mode's column order", () => {
+      // other is the fastest depth column (b1 first), whatever the kills.
+      const depth = buildLayerDetail(1, runners, gaps, depthField);
+      const kill = buildLayerDetail(1, runners, gaps, depthField, killField);
+      expect(kill.map((c) => c.nodeId)).toEqual(depth.map((c) => c.nodeId));
+    });
+
+    it("leaves the detail unchanged without a kill field", () => {
+      const cols = buildLayerDetail(1, runners, gaps, depthField);
+      expect(cols.every((c) => c.metric === "depth")).toBe(true);
+      expect(buildLayerDetail(1, runners, gaps, depthField, null)).toEqual(
+        cols,
+      );
+    });
   });
 });

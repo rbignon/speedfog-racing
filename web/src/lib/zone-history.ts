@@ -18,6 +18,8 @@ export interface ZoneHistoryEntry {
   deaths?: number;
   type?: string;
   weapons?: WeaponCombo[];
+  /** IGT of a boss kill on this visit of the node; the first kill is kept. */
+  boss_kill_igt_ms?: number;
 }
 
 /**

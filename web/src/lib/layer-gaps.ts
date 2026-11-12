@@ -14,6 +14,17 @@ import type { ZoneHistoryEntry } from "$lib/zone-history";
 import { isOutOfRace } from "$lib/format";
 import { BASE_GAP, NODE_AREA } from "$lib/dag/constants";
 
+/** A boss kill on a node of a layer's window. */
+export interface NodeKill {
+  nodeId: string;
+  /** The first kill's IGT minus the first entry on the node within the
+   * window; null when negative (a clock set back: unknown). */
+  killMs: number | null;
+}
+
+/** Shared by every visit without a kill: a timeline holds one per layer. */
+const NO_KILLS: readonly NodeKill[] = [];
+
 export interface LayerVisit {
   /** IGT of the first history entry on a node of this layer. */
   arrivalIgt: number;
@@ -30,6 +41,8 @@ export interface LayerVisit {
   timeThroughNodeMs: number | null;
   /** Deaths of the entries recorded in the layer's time window. */
   deaths: number;
+  /** One per node of the window with a recorded boss kill. */
+  kills: readonly NodeKill[];
 }
 
 export interface RunnerTimeline {
@@ -106,6 +119,24 @@ export function buildRunnerTimeline(
         break;
       }
     }
+    let kills: NodeKill[] | null = null;
+    for (let i = start; i < end; i++) {
+      const { node_id, boss_kill_igt_ms } = entries[i].entry;
+      if (boss_kill_igt_ms === undefined) continue;
+      if (kills?.some((k) => k.nodeId === node_id)) continue;
+      let first = i;
+      for (let j = start; j < i; j++) {
+        if (entries[j].entry.node_id === node_id) {
+          first = j;
+          break;
+        }
+      }
+      const killMs = boss_kill_igt_ms - entries[first].entry.igt_ms;
+      (kills ??= []).push({
+        nodeId: node_id,
+        killMs: killMs < 0 ? null : killMs,
+      });
+    }
 
     let leftIgt: number | null = null;
     if (layer + 1 === totalLayers) {
@@ -128,6 +159,7 @@ export function buildRunnerTimeline(
           ? null
           : leftIgt - exitEntryIgt,
       deaths,
+      kills: kills ?? NO_KILLS,
     };
   }
 
@@ -311,21 +343,44 @@ export function computeFieldStats(
     }
   }
   const stats = new Map<string, NodeFieldStats>();
-  for (const [nodeId, samples] of byNode) {
-    samples.sort((a, b) => a - b);
-    const mid = Math.floor(samples.length / 2);
-    const medianMs =
-      samples.length % 2 === 1
-        ? samples[mid]
-        : (samples[mid - 1] + samples[mid]) / 2;
-    stats.set(nodeId, {
-      bestMs: samples[0],
-      medianMs,
-      count: samples.length,
-      samples,
-    });
-  }
+  for (const [nodeId, samples] of byNode) stats.set(nodeId, statsOf(samples));
   return stats;
+}
+
+/**
+ * The field's kill times per node of `killNodes`: the non-null kill time of
+ * every runner who has one. A disqualified run never sets the reference.
+ */
+export function computeKillStats(
+  timelines: Iterable<RunnerTimeline>,
+  killNodes: ReadonlySet<string>,
+): Map<string, NodeFieldStats> {
+  const byNode = new Map<string, number[]>();
+  for (const timeline of timelines) {
+    if (timeline.status === "disqualified") continue;
+    for (const visit of timeline.layers) {
+      if (!visit) continue;
+      for (const { nodeId, killMs } of visit.kills) {
+        if (killMs === null || !killNodes.has(nodeId)) continue;
+        const samples = byNode.get(nodeId);
+        if (samples) samples.push(killMs);
+        else byNode.set(nodeId, [killMs]);
+      }
+    }
+  }
+  const stats = new Map<string, NodeFieldStats>();
+  for (const [nodeId, samples] of byNode) stats.set(nodeId, statsOf(samples));
+  return stats;
+}
+
+function statsOf(samples: number[]): NodeFieldStats {
+  samples.sort((a, b) => a - b);
+  const mid = Math.floor(samples.length / 2);
+  const medianMs =
+    samples.length % 2 === 1
+      ? samples[mid]
+      : (samples[mid - 1] + samples[mid]) / 2;
+  return { bestMs: samples[0], medianMs, count: samples.length, samples };
 }
 
 /** 1 + the number of strictly faster samples: ties share a rank. */
@@ -362,6 +417,8 @@ export interface DetailRow {
 
 export interface DetailColumn {
   nodeId: string;
+  /** depth: time on the layer; kill: time to the node's boss kill. */
+  metric: "depth" | "kill";
   field: NodeFieldStats | null;
   rows: DetailRow[];
 }
@@ -399,11 +456,16 @@ export function buildLayerDetail(
   runners: DetailRunner[],
   gaps: Map<string, (number | null)[]>,
   field: Map<string, NodeFieldStats>,
+  killField: Map<string, NodeFieldStats> | null = null,
 ): DetailColumn[] {
   const columns = new Map<string, DetailColumn>();
+  const visits = new Map<string, LayerVisit>();
+  const igts = new Map<string, number>();
   for (const { id, igtMs, timeline } of runners) {
     const visit = timeline.layers[layer];
     if (!visit) continue;
+    visits.set(id, visit);
+    igts.set(id, igtMs);
 
     let state: DetailState;
     let timeMs: number | null = null;
@@ -430,7 +492,12 @@ export function buildLayerDetail(
     const backedOut = visit.exitNodeId !== visit.firstNodeId;
     let column = columns.get(visit.exitNodeId);
     if (!column) {
-      column = { nodeId: visit.exitNodeId, field: stats, rows: [] };
+      column = {
+        nodeId: visit.exitNodeId,
+        metric: "depth",
+        field: stats,
+        rows: [],
+      };
       columns.set(visit.exitNodeId, column);
     }
     column.rows.push({
@@ -473,7 +540,62 @@ export function buildLayerDetail(
     if (fa !== fb) return fa < fb ? -1 : 1;
     return a.nodeId.localeCompare(b.nodeId);
   });
+  // The order above is the depth order: the switch never reorders columns.
+  if (killField) {
+    for (const column of result) {
+      const stats = killField.get(column.nodeId);
+      if (stats) toKillColumn(column, stats, layer, runners, visits, igts);
+    }
+  }
   return result;
+}
+
+/** Turns a depth column into a kill column, in place. */
+function toKillColumn(
+  column: DetailColumn,
+  stats: NodeFieldStats,
+  layer: number,
+  runners: DetailRunner[],
+  visits: Map<string, LayerVisit>,
+  igts: Map<string, number>,
+): void {
+  const timelines = new Map(runners.map((r) => [r.id, r.timeline]));
+  for (const row of column.rows) {
+    const visit = visits.get(row.id)!;
+    const timeline = timelines.get(row.id)!;
+    const kill = visit.kills.find((k) => k.nodeId === column.nodeId);
+    row.vsBestMs = null;
+    row.fieldRank = null;
+    row.timeMs = null;
+    if (kill && kill.killMs !== null) {
+      row.state = "done";
+      row.timeMs = kill.killMs;
+      row.fieldRank = fieldRank(stats, kill.killMs);
+    } else if (!kill && layer === timeline.deepestLayer) {
+      if (timeline.status === "playing") {
+        row.state = "live";
+        row.timeMs = Math.max(0, igts.get(row.id)! - visit.exitEntryIgt);
+      } else {
+        row.state = isOutOfRace(timeline.status) ? "out" : "unknown";
+      }
+    } else {
+      row.state = "unknown";
+    }
+  }
+  const best = fastestDone(column);
+  for (const row of column.rows) {
+    if (row.state === "done" && row.timeMs !== null) {
+      row.vsBestMs = row.timeMs - best;
+    }
+  }
+  column.metric = "kill";
+  column.field = stats;
+  column.rows.sort(
+    (a, b) =>
+      STATE_ORDER[a.state] - STATE_ORDER[b.state] ||
+      (a.timeMs ?? 0) - (b.timeMs ?? 0) ||
+      a.id.localeCompare(b.id),
+  );
 }
 
 /** Distance between two layer columns when there is only one to measure. */
