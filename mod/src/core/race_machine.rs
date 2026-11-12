@@ -219,9 +219,11 @@ pub struct TickInput {
     /// Player position (loading-exit frames only), for zone queries.
     pub position: Option<PlayerPosition>,
     /// `(flag_id, is_set)` for every readable flag in `event_ids`, then for
-    /// the boss defeat flags `boss_flags_to_read` names this scan. `Some`
-    /// when the shell performed reads this frame (`wants_flag_reads`),
-    /// `None` otherwise. Unreadable flags are omitted from the vec.
+    /// the boss defeat flags `boss_flags_to_read` names this scan (called
+    /// after the frame's last `handle_message`: the tick moves the rotation
+    /// past that window). `Some` when the shell performed reads this frame
+    /// (`wants_flag_reads`), `None` otherwise. Unreadable flags are omitted
+    /// from the vec.
     pub flag_reads: Option<Vec<(u32, bool)>>,
     /// Weapons for the status_update, read by the shell only when
     /// `wants_status_update` said one may fire this frame.
@@ -1455,14 +1457,17 @@ impl RaceMachine {
             .take(BOSS_FLAG_READS_PER_POLL)
     }
 
-    /// Moves the boss read rotation past the last boss flag a scan read, so
-    /// the next scan reads the following ones. A scan that read none (run
-    /// not live, nothing readable) leaves it where it is.
-    fn advance_boss_reads(&mut self, reads: &[(u32, bool)]) {
-        let last = reads
-            .iter()
-            .rev()
-            .find_map(|&(flag_id, _)| self.boss_flags.binary_search(&flag_id).ok());
+    /// Moves the boss read rotation past the window `boss_flags_to_read`
+    /// names, so the next scan reads the following flags. Called on a frame
+    /// whose flags were read, before anything changes that window: past it
+    /// whether its flags were readable or not, so an unreadable flag waits
+    /// for its next turn instead of holding the rotation. An empty window
+    /// (run not live, every flag reported) leaves it where it is.
+    fn advance_boss_reads(&mut self) {
+        let last = self
+            .boss_flags_to_read()
+            .last()
+            .and_then(|flag_id| self.boss_flags.binary_search(&flag_id).ok());
         if let Some(index) = last {
             self.boss_read_cursor = (index + 1) % self.boss_flags.len();
         }
@@ -1492,6 +1497,13 @@ impl RaceMachine {
     /// follow every path a frame takes.
     fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
+        // The shell read this frame's window of boss flags just before the
+        // tick: move the rotation past it now, while `boss_flags_to_read`
+        // still names the same window (a kill or a save-reload flush below
+        // would change it).
+        if input.flag_reads.is_some() {
+            self.advance_boss_reads();
+        }
         self.frame_snapshot = input.snapshot;
 
         // Blackscreen IGT freeze (ported from SoulSplitter's UpdateTimer):
@@ -1900,11 +1912,6 @@ impl RaceMachine {
                     }
                 }
             }
-        }
-        // This frame's reads (the scans above, the reconnect rescan below)
-        // consumed a window of boss flags: the next scan reads the next one.
-        if let Some(ref reads) = input.flag_reads {
-            self.advance_boss_reads(reads);
         }
 
         // Deathless: a strict local death-count increase while racing fires
@@ -5950,6 +5957,49 @@ mod tests {
         assert_eq!(seen, bosses.iter().copied().collect::<HashSet<_>>());
         assert_eq!(kills.len(), 1, "{kills:?}");
         assert_eq!(kills[0].0, bosses[19]);
+    }
+
+    #[test]
+    fn unreadable_boss_flags_do_not_stall_the_rotation() {
+        let now = Instant::now();
+        let bosses: Vec<u32> = (0..20).map(|i| 5_000_800 + 10 * i).collect();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("running", &bosses), now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        // The shell asks for the first window, and none of it is readable.
+        let first: Vec<u32> = m.boss_flags_to_read().collect();
+        assert_eq!(first, bosses[..8].to_vec());
+        m.tick(
+            tick_in(
+                snap(Some(60_000), true),
+                true,
+                Some(vec![(100, false), (200, false), (900, false)]),
+            ),
+            now + ms(150),
+        );
+
+        // The next scan moves on, and catches a kill in the next window.
+        let (read, fx) = boss_scan(&mut m, &[bosses[10]], 60_100, now + ms(300));
+        assert_eq!(read, bosses[8..16].to_vec());
+        assert_eq!(sent_flag_igts(&fx), vec![(bosses[10], 60_100)]);
+    }
+
+    #[test]
+    fn a_kill_does_not_shift_the_next_boss_window() {
+        // The kill reported during the scan must not move the rotation past
+        // a flag the scan never read.
+        let now = Instant::now();
+        let bosses: Vec<u32> = (0..20).map(|i| 5_000_800 + 10 * i).collect();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("running", &bosses), now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        let (read, fx) = boss_scan(&mut m, &[bosses[0]], 60_000, now + ms(150));
+        assert_eq!(read, bosses[..8].to_vec());
+        assert_eq!(sent_flags(&fx), vec![bosses[0]]);
+        let (read, _) = boss_scan(&mut m, &[bosses[0]], 60_100, now + ms(300));
+        assert_eq!(read, bosses[8..16].to_vec());
     }
 
     #[test]
