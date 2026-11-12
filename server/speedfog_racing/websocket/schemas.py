@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 
     from speedfog_racing.models import ChatChannel
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializerFunctionWrapHandler, model_serializer
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import RunMode, compute_late_join_deadlines
@@ -22,12 +22,23 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.11"
+PROTOCOL_VERSION = "1.12"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
+
+# Oldest protocol a race with items accepts at auth: from 1.12 the mod reads
+# the item catalog, spawns granted goods and applies item effects.
+RACE_ITEMS_MIN_PROTOCOL = "1.12"
+
+# auth_error for a mod too old for a race with items. The race's pack carries
+# the current mod, so downloading it again is the fix.
+RACE_ITEMS_OLD_MOD_MESSAGE = (
+    "This race has items and needs a newer mod. "
+    "Download the race's pack again: it carries the current mod."
+)
 
 # --- Client -> Server Messages (Mod) ---
 
@@ -269,6 +280,14 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
     )
 
 
+class RaceItemWire(BaseModel):
+    """What the mod needs of one catalog item: its goods and its flags."""
+
+    goods_id: int
+    use_flag: int | None = None
+    remove_flag: int
+
+
 class SeedInfo(BaseModel):
     """Seed info for WebSocket."""
 
@@ -289,6 +308,8 @@ class SeedInfo(BaseModel):
     category: str | None = None
     # Defeat flag of every boss node but the final boss (mods only).
     boss_flags: list[int] = Field(default_factory=list)
+    # Race items: catalog by item key, empty unless the race has items on (mods only).
+    race_item_catalog: dict[str, RaceItemWire] = Field(default_factory=dict)
 
 
 async def resolve_phantom_skin_for_auth_ok(
@@ -535,6 +556,89 @@ class EventFlagAckMessage(BaseModel):
 
     type: Literal["event_flag_ack"] = "event_flag_ack"
     message_id: int
+
+
+class ItemBanner(BaseModel):
+    """Banner the mod draws for an item event; ``icon`` is the catalog icon key."""
+
+    icon: str
+    title: str
+    line: str
+    detail: str
+
+
+class ItemReminder(BaseModel):
+    """Line under the race panel, counting down from the moment the effect applies."""
+
+    text: str
+    duration_ms: int
+
+
+class ItemEffectPayload(BaseModel):
+    """What an item does to its target; the fields used depend on ``kind``."""
+
+    kind: Literal["speffect", "damage", "ink"]
+    speffect_id: int | None = None
+    base_pct: int | None = None
+    floor_pct: int | None = None
+    tail_pct: int | None = None
+    duration_ms: int | None = None
+
+    @model_serializer(mode="wrap")
+    def _drop_none(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """The wire shape of each kind carries only its own fields."""
+        data: dict[str, Any] = handler(self)
+        return {k: v for k, v in data.items() if v is not None}
+
+
+class ItemGrantMessage(BaseModel):
+    """Spawn the item's goods; re-sent at every auth until item_received."""
+
+    type: Literal["item_grant"] = "item_grant"
+    grant_id: int
+    item: str
+    banner: ItemBanner
+
+
+class ItemEffectMessage(BaseModel):
+    """An item hits this runner."""
+
+    type: Literal["item_effect"] = "item_effect"
+    item: str
+    effect: ItemEffectPayload
+    banner: ItemBanner
+    reminder: ItemReminder | None = None
+
+
+class ItemResultMessage(BaseModel):
+    """Outcome of an item use, to its sender."""
+
+    type: Literal["item_result"] = "item_result"
+    item: str
+    banner: ItemBanner
+    reminder: ItemReminder | None = None
+
+
+class ItemRemoveMessage(BaseModel):
+    """Raise the item's remove flag so the game drops its goods."""
+
+    type: Literal["item_remove"] = "item_remove"
+    item: str
+    banner: ItemBanner | None = None
+
+
+class ItemReceivedMessage(BaseModel):
+    """Mod to server: the granted goods are in the inventory."""
+
+    type: Literal["item_received"] = "item_received"
+    grant_id: int
+
+
+class ItemInventoryMessage(BaseModel):
+    """Mod to server: the race goods currently in the inventory, by item key."""
+
+    type: Literal["item_inventory"] = "item_inventory"
+    items: list[str] = Field(default_factory=list)
 
 
 class ZoneQueryAckMessage(BaseModel):

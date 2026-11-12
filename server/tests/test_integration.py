@@ -47,14 +47,18 @@ class ModTestClient:
         self.ws = websocket
         self.mod_token = mod_token
 
-    def auth(self, *, drain: bool = True) -> dict[str, Any]:
+    def auth(self, *, drain: bool = True, protocol_version: str | None = None) -> dict[str, Any]:
         """Send auth and return response.
 
         When *drain* is True (default), also consumes the connect broadcast
         (leaderboard_update) and any zone_update sent on reconnect. Set
-        drain=False when a test needs to inspect those messages.
+        drain=False when a test needs to inspect those messages. The auth
+        message carries no protocol_version (read as 1.0) unless given.
         """
-        self.ws.send_json({"type": "auth", "mod_token": self.mod_token})
+        payload: dict[str, Any] = {"type": "auth", "mod_token": self.mod_token}
+        if protocol_version is not None:
+            payload["protocol_version"] = protocol_version
+        self.ws.send_json(payload)
         response = self.receive()
         if response.get("type") == "auth_ok" and drain:
             # Server sends zone_update (if running) + leaderboard_update (connect broadcast)

@@ -45,8 +45,10 @@ from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_start_node,
 )
+from speedfog_racing.services.race_items import extract_race_item_catalog
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.speedrun_service import seed_category
+from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
     SEND_TIMEOUT,
     BaseModHandler,
@@ -66,11 +68,14 @@ from speedfog_racing.websocket.race.spectator import (
 )
 from speedfog_racing.websocket.schemas import (
     CONDITION_MESSAGES,
+    RACE_ITEMS_MIN_PROTOCOL,
+    RACE_ITEMS_OLD_MOD_MESSAGE,
     AuthOkMessage,
     DeathCountsMessage,
     ErrorCode,
     ErrorMessage,
     ParticipantInfo,
+    RaceItemWire,
     RaceStartMessage,
     SeedInfo,
     build_race_info,
@@ -287,6 +292,20 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 await self._send_auth_error(BAN_MESSAGE)
                 return False
 
+            # A race with items needs a mod that reads the catalog and applies
+            # item effects; other races take any mod the protocol check passed.
+            if race.race_items and not protocol_at_least(
+                self.mod_protocol_version, RACE_ITEMS_MIN_PROTOCOL
+            ):
+                logger.info(
+                    "Mod rejected (items race needs protocol %s): race=%s, protocol=%s",
+                    RACE_ITEMS_MIN_PROTOCOL,
+                    self.entity_id,
+                    self.mod_protocol_version or "absent",
+                )
+                await self._send_auth_error(RACE_ITEMS_OLD_MOD_MESSAGE)
+                return False
+
             self._participant_id = participant.id
             self._user_id = participant.user_id
 
@@ -340,6 +359,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         )
         phantom_skins = extract_phantom_skins(seed.graph_json) if seed and seed.graph_json else {}
 
+        race_item_catalog = (
+            {
+                key: RaceItemWire(
+                    goods_id=entry.goods_id,
+                    use_flag=entry.use_flag,
+                    remove_flag=entry.remove_flag,
+                )
+                for key, entry in extract_race_item_catalog(seed.graph_json).items()
+            }
+            if race.race_items and seed and seed.graph_json
+            else {}
+        )
+
         room = manager.get_room(race.id)
         connected_ids = set(room.mods.keys()) if room else set()
         graph = seed.graph_json if seed else None
@@ -382,6 +414,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 boss_flags=sorted(extract_boss_flags(seed.graph_json))
                 if seed and seed.graph_json
                 else [],
+                race_item_catalog=race_item_catalog,
                 seed_number=seed.seed_number if seed else None,
                 category=(
                     seed_category(seed.pool, seed.total_layers)[0] if seed and seed.pool else None
