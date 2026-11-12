@@ -45,7 +45,7 @@ from speedfog_racing.services.layer_service import (
     get_layer_for_node,
     get_start_node,
 )
-from speedfog_racing.services.race_items import extract_race_item_catalog
+from speedfog_racing.services.race_items import extract_race_item_catalog, seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
@@ -56,6 +56,11 @@ from speedfog_racing.websocket.handler import (
     extract_boss_flags,
     extract_event_ids,
     extract_flag_layers,
+)
+from speedfog_racing.websocket.race.items import (
+    confirm_grant,
+    grant_item,
+    pending_grant_message,
 )
 from speedfog_racing.websocket.race.manager import (
     manager,
@@ -237,6 +242,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._race_id = race_id  # Typed alias for self.entity_id
         self._message_handlers["ready"] = self._handle_ready
         self._message_handlers["finished"] = self._handle_finished_message
+        self._message_handlers["item_received"] = self._handle_item_received
         self._participant_id: uuid.UUID | None = None
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
@@ -317,6 +323,15 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
             # Send auth_ok
             await self._send_auth_ok(db, participant)
+
+            # An unconfirmed grant is re-sent until the mod answers item_received.
+            if race.race_items:
+                room = manager.get_or_create_room(self._race_id)
+                async with room.items_lock:
+                    await db.refresh(participant, ["held_item"])
+                    pending = pending_grant_message(participant, self._cached_graph_json)
+                if pending:
+                    await self.websocket.send_text(pending.model_dump_json())
 
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
@@ -452,6 +467,30 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 )
         except Exception:
             logger.warning("Failed to broadcast connect: %s", self.log_ref)
+
+    async def _on_boss_killed(self, entity: Participant, node_id: str, igt_ms: int) -> None:
+        """Hand out a race item for a new boss kill (races with items on)."""
+        graph = self._cached_graph_json
+        if not entity.race.race_items or not graph or not seed_has_race_items(graph):
+            return
+        try:
+            room = manager.get_or_create_room(self._race_id)
+            async with room.items_lock:
+                message = await grant_item(self.session_maker, self._race_id, entity.id, graph)
+                if message is not None:
+                    await room.send_to_mod(entity.id, message.model_dump_json())
+        except Exception:
+            # The kill is already committed: a failed draw must not drop the socket.
+            logger.exception("Race item grant failed: %s", self.log_ref)
+
+    async def _handle_item_received(self, msg: dict[str, Any]) -> None:
+        """The mod has the granted goods: confirm the held item."""
+        grant_id = msg.get("grant_id")
+        if self._participant_id is None or not isinstance(grant_id, int):
+            return
+        room = manager.get_or_create_room(self._race_id)
+        async with room.items_lock:
+            await confirm_grant(self.session_maker, self._participant_id, grant_id)
 
     async def _on_disconnect(self) -> None:
         assert self._participant_id is not None
