@@ -43,6 +43,8 @@ def reset_participant_progress(participant: Participant) -> None:
     participant.last_igt_change_at = None
     # Empty dict, not None: layer_entry_igts is NOT NULL with a {} server_default.
     participant.layer_entry_igts = {}
+    # The held item goes; item_grant_count stays so grant ids never repeat.
+    participant.held_item = None
 
 
 def cancel_disqualification(

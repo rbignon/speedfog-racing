@@ -559,6 +559,11 @@ class Participant(Base):
     debug_flags: Mapped[dict[str, dict[str, Any]] | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )
+    # Item the runner holds: {"grant_id", "item", "confirmed"}. Always copied
+    # and reassigned, never mutated in place. A reset clears it.
+    held_item: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Grants handed out so far; grant ids never repeat, so a reset keeps it.
+    item_grant_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     # Disqualification by the race staff (see services/sanctions_service.py).
     # The run data stays untouched; status_before_disqualification is what a
     # cancellation restores.
@@ -792,6 +797,35 @@ class ChatMessage(Base):
 
     race: Mapped["Race"] = relationship()
     user: Mapped["User | None"] = relationship()
+
+
+class RaceItemEvent(Base):
+    """One entry of a race's item log: a grant, a use, a loss or a take back."""
+
+    __tablename__ = "race_item_events"
+    __table_args__ = (Index("ix_race_item_events_race_created", "race_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("races.id", ondelete="CASCADE"), nullable=False
+    )
+    # The actor.
+    participant_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
+    )
+    # "grant", "use", "lost" or "take_back".
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    item: Mapped[str] = mapped_column(String(50), nullable=False)
+    igt_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Entries {"participant_id": str, "outcome": "hit" | "blocked" | "offline"}.
+    targets: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        server_default=func.now(),
+    )
 
 
 class ChatMessageReaction(Base):
