@@ -81,6 +81,7 @@ async def _field(
             seed_number=f"items_{tag}",
             pool_name="standard",
             graph_json=GRAPH,
+            race_items=True,
             total_layers=5,
             folder_path=f"/test/items_{tag}",
             status=SeedStatus.CONSUMED,

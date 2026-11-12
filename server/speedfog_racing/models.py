@@ -241,6 +241,8 @@ class Seed(Base):
     __table_args__ = (
         # Seed selection (pool + availability) in seed_service.
         Index("ix_seeds_pool_status", "pool_name", "status"),
+        # Items race draws and their pool counts (race_items_seed_clause).
+        Index("ix_seeds_race_items", "race_items"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -249,6 +251,11 @@ class Seed(Base):
     graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     total_layers: Mapped[int] = mapped_column(Integer, nullable=False)
     difficulty_score: Mapped[float] = mapped_column(default=0.0, server_default="0.0")
+    # The seed carries the race items plugin (``seed_has_race_items`` of its
+    # graph), derived at scan time so SQL filters never parse ``graph_json``.
+    race_items: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

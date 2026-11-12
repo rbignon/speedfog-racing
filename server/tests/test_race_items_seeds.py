@@ -120,10 +120,34 @@ def _seed(
         seed_number=f"rs_{suffix}",
         pool_name=pool,
         graph_json=graph,
+        race_items=seed_has_race_items(graph),
         total_layers=5,
         folder_path=f"/test/rs_{suffix}",
         status=status,
     )
+
+
+@pytest.mark.asyncio
+async def test_scan_marks_the_seeds_that_carry_the_plugin(rs_session, tmp_path, monkeypatch):
+    from speedfog_racing.services import seed_service
+
+    from .test_seed_service import _create_seed_zip
+
+    pool_dir = tmp_path / "standard"
+    pool_dir.mkdir()
+    _create_seed_zip(pool_dir, "seed_items", _items_graph())
+    _create_seed_zip(pool_dir, "seed_empty", {**_items_graph(), "race_items": {}})
+    _create_seed_zip(pool_dir, "seed_plain", _plain_graph())
+    monkeypatch.setattr(seed_service.settings, "seeds_pool_dir", str(tmp_path))
+
+    async with rs_session() as db:
+        assert await seed_service.scan_pool(db, "standard") == 3
+        seeds = (await db.execute(select(Seed))).scalars().all()
+    assert {s.seed_number: s.race_items for s in seeds} == {
+        "items": True,
+        "empty": False,
+        "plain": False,
+    }
 
 
 @pytest.mark.asyncio

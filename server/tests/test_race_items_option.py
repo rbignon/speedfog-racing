@@ -94,6 +94,7 @@ async def _make_seed(db, *, suffix: str, status: SeedStatus = SeedStatus.AVAILAB
             "plugins": {"race_items": {"enabled": True}},
             "race_items": {"shield": {"name": "Shield", "icon": "shield", "goods_id": 1}},
         },
+        race_items=True,
         total_layers=5,
         folder_path=f"/test/ri_{suffix}",
         status=status,

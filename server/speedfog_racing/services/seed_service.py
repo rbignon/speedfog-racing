@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import Pool, Race, RaceStatus, RunMode, Seed, SeedStatus
-from speedfog_racing.services.race_items import race_items_seed_clause
+from speedfog_racing.services.race_items import race_items_seed_clause, seed_has_race_items
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 from speedfog_racing.services.speedrun_service import (
     _is_training,
@@ -308,6 +308,7 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
             graph_json=graph_json,
             total_layers=total_layers,
             difficulty_score=difficulty_score,
+            race_items=seed_has_race_items(graph_json),
             folder_path=str(entry),
             status=SeedStatus.AVAILABLE,
         )

@@ -92,15 +92,12 @@ def use_flag_map(catalog: Mapping[str, CatalogEntry]) -> dict[int, str]:
 
 
 def race_items_seed_clause() -> ColumnElement[bool]:
-    """SQL twin of the plugin check on ``Seed.graph_json``.
+    """SQL twin of ``seed_has_race_items``: the seeds that support items.
 
-    The catalog's non-emptiness is not checked here: the generator never emits
-    the plugin without one. A tuple path, since chained indexing nests
-    ``JSON_QUOTE`` on SQLite.
+    It reads ``Seed.race_items``, which the pool scan sets from
+    ``seed_has_race_items`` when it adds the seed, so no query parses a graph.
     """
-    clause: ColumnElement[bool] = (
-        Seed.graph_json[("plugins", RACE_ITEMS_PLUGIN, "enabled")].as_boolean().is_(True)
-    )
+    clause: ColumnElement[bool] = Seed.race_items.is_(True)
     return clause
 
 
