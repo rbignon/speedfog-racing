@@ -26,6 +26,7 @@ from speedfog_racing.websocket.race.items import (
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import manager
+from speedfog_racing.websocket.schemas import ItemGrantMessage
 
 pytestmark = pytest.mark.asyncio
 
@@ -274,11 +275,15 @@ async def test_reconcile_clears_a_lost_confirmed_item(items_db):
     assert (event.participant_id, event.item) == (ids["Alice"], "shield")
 
 
-async def test_reconcile_keeps_an_unconfirmed_grant(items_db):
+async def test_reconcile_keeps_and_resends_an_unconfirmed_grant(items_db):
     race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
     held = {"grant_id": 3, "item": "hammer", "confirmed": False}
     await _set_held(items_db, ids["Alice"], held)
-    assert await reconcile_inventory(items_db, ids["Alice"], [], GRAPH) == []
+    messages = await reconcile_inventory(items_db, ids["Alice"], ["shield"], GRAPH)
+    # Its goods may not be spawned yet: the grant goes again, after the take-backs.
+    assert [m.type for m in messages] == ["item_remove", "item_grant"]
+    assert isinstance(messages[1], ItemGrantMessage)
+    assert (messages[1].grant_id, messages[1].item) == (3, "hammer")
     assert await _held(items_db, ids["Alice"]) == held
     assert await _events(items_db, race_id, "lost") == []
 

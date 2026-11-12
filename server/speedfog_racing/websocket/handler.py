@@ -961,10 +961,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
             item_key = self._race_item_use_flags(seed_graph).get(flag_id)
 
             if item_key is not None:
-                # Race item use flag: always acked, never a zone_history
-                # entry. The use is resolved by the hook after the session,
-                # which ignores it unless the runner holds that item, so a
-                # replay or a stray copy changes nothing.
+                # Race item use flag: never a zone_history entry. The hook
+                # resolves the use after the session and the ACK follows it,
+                # so a use the server never committed is replayed. The hook
+                # ignores an item the runner does not hold: the replay of a
+                # resolved use (ACK lost) or a stray copy is harmless.
                 logger.info(
                     "event_flag: flag_id=%d item_use=%s igt_ms=%d message_id=%s %s",
                     flag_id,
@@ -973,8 +974,6 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     message_id,
                     self.log_ref,
                 )
-                if message_id is not None:
-                    await self._send_event_flag_ack(message_id)
                 used_item = item_key
             elif boss_node is not None:
                 # Boss defeat flag: stamp the kill on the node's latest visit.
@@ -1122,6 +1121,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
         if used_item is not None:
             await self._on_item_used(entity, used_item, igt)
+            if message_id is not None:
+                await self._send_event_flag_ack(message_id)
             return
 
         await self._broadcast_after_event_flag(
@@ -1456,9 +1457,10 @@ class BaseModHandler(BaseHandler, Generic[T]):
         or casters): load anything else in a session of your own."""
 
     async def _on_item_used(self, entity: T, item_key: str, igt_ms: int) -> None:
-        """Called for each race item use flag, after the ACK, outside the DB
-        session; a replay calls it again, so an override acts only on an item
-        the runner holds. ``entity`` is the same light load as for
+        """Called for each race item use flag, outside the DB session and
+        before the ACK, which is sent once it returns: commit the use before
+        returning. A replay calls it again, so an override acts only on an
+        item the runner holds. ``entity`` is the same light load as for
         ``_on_boss_killed``. Override to resolve the use (race)."""
 
     def _wall_reference(self, entity: T) -> datetime | None:

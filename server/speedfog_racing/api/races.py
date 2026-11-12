@@ -861,6 +861,13 @@ async def update_race(
     )
     if post_snapshot != pre_snapshot:
         await broadcast_race_info_update(race)
+    if race.race_items != pre_snapshot[10]:
+        # The item catalog and the mod protocol gate only apply at auth: close
+        # the mods as a reset does (non-permanent), so each re-authenticates
+        # under the new setting. Spectators stay connected.
+        room = manager.get_room(race_id)
+        for participant_id in list(room.mods) if room else []:
+            await manager.close_mod(race_id, participant_id, code=1000, reason="Race items changed")
 
     race = await _get_race_or_404(db, race_id, load_participants=True)
     return race_response(race, user)

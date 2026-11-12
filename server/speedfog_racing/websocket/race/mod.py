@@ -327,7 +327,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # Send auth_ok
             await self._send_auth_ok(db, participant)
 
-            # An unconfirmed grant is re-sent until the mod answers item_received.
+            # An unconfirmed grant is re-sent until the mod answers item_received
+            # (here and after an inventory report that lacks it).
             if race.race_items:
                 room = manager.get_or_create_room(self._race_id)
                 async with room.items_lock:
@@ -503,7 +504,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     item_key,
                     igt_ms,
                     graph,
-                    is_connected=lambda pid: manager.is_mod_connected(self._race_id, pid),
+                    is_connected=lambda pid: pid in room.mods,
                 )
                 for target_id, removal in resolution.removals:
                     await room.send_to_mod(target_id, removal.model_dump_json())
@@ -512,7 +513,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 if resolution.result is not None:
                     await room.send_to_mod(entity.id, resolution.result.model_dump_json())
         except Exception:
-            # The flag is already acked: a failed resolution must not drop the socket.
+            # A failed resolution must not drop the socket; the flag is acked
+            # once this returns, so the use is lost (logged).
             logger.exception("Race item use failed: %s", self.log_ref)
 
     async def _handle_item_received(self, msg: dict[str, Any]) -> None:
@@ -534,11 +536,11 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             return
         room = manager.get_or_create_room(self._race_id)
         async with room.items_lock:
-            removals = await reconcile_inventory(
+            messages = await reconcile_inventory(
                 self.session_maker, self._participant_id, items, graph
             )
-            for removal in removals:
-                await room.send_to_mod(self._participant_id, removal.model_dump_json())
+            for message in messages:
+                await room.send_to_mod(self._participant_id, message.model_dump_json())
 
     async def _on_disconnect(self) -> None:
         assert self._participant_id is not None

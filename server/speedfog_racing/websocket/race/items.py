@@ -131,7 +131,7 @@ async def confirm_grant(
 def pending_grant_message(
     participant: Participant, graph_json: Mapping[str, Any] | None
 ) -> ItemGrantMessage | None:
-    """The grant message for a held, unconfirmed item (re-sent at auth)."""
+    """The grant message for a held, unconfirmed item (re-sent until confirmed)."""
     held = participant.held_item
     if not held or held.get("confirmed") or graph_json is None:
         return None
@@ -267,16 +267,17 @@ async def reconcile_inventory(
     participant_id: uuid.UUID,
     items: Sequence[str],
     graph_json: Mapping[str, Any],
-) -> list[ItemRemoveMessage]:
+) -> list[ItemRemoveMessage | ItemGrantMessage]:
     """Align the held item with the race items the mod reports in the inventory.
 
     The report is the truth about the goods in the game. A held item in the
     report is confirmed; a confirmed one that is absent was lost (save reload,
     drop) and is cleared, logging ``lost``, so the runner can draw again; an
-    unconfirmed one that is absent is kept, its goods may not be spawned yet.
-    Every other reported item is not held: it is returned as a removal
-    without banner and logged ``take_back``. Keys outside the catalog are
-    ignored.
+    unconfirmed one that is absent is kept, its goods may not be spawned yet,
+    and its grant is returned last to be sent again (the mod ignores a grant
+    id it already has). Every other reported item is not held: it is returned
+    as a removal without banner and logged ``take_back``. Keys outside the
+    catalog are ignored.
     """
     catalog = extract_race_item_catalog(graph_json)
     reported = [key for key in dict.fromkeys(items) if key in catalog]
@@ -301,11 +302,11 @@ async def reconcile_inventory(
                     igt_ms=participant.igt_ms,
                 )
             )
-        removals: list[ItemRemoveMessage] = []
+        messages: list[ItemRemoveMessage | ItemGrantMessage] = []
         for key in reported:
             if key == held_key:
                 continue
-            removals.append(ItemRemoveMessage(item=key))
+            messages.append(ItemRemoveMessage(item=key))
             db.add(
                 RaceItemEvent(
                     race_id=participant.race_id,
@@ -315,5 +316,8 @@ async def reconcile_inventory(
                     igt_ms=participant.igt_ms,
                 )
             )
+        pending = pending_grant_message(participant, graph_json)
+        if pending is not None:
+            messages.append(pending)
         await db.commit()
-        return removals
+        return messages
