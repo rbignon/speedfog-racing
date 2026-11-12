@@ -1731,12 +1731,12 @@
                 {/if}
               </div>
             {/if}
-            {#if liveRaceItems || (canEditRace && raceStatus === "setup" && initialRace.mode === "normal")}
+            {#if liveRaceItems || (canEditRace && raceStatus === "setup" && initialRace.mode === "normal" && initialRace.event_id === null)}
               <div class="info-item">
                 <span class="label">Race items</span>
                 <span class="value">
                   {liveRaceItems ? "Enabled" : "Disabled"}
-                  {#if canEditRace && raceStatus === "setup" && initialRace.mode === "normal"}
+                  {#if canEditRace && raceStatus === "setup" && initialRace.mode === "normal" && initialRace.event_id === null}
                     <button
                       class="btn-edit"
                       onclick={() => saveRaceItems(!liveRaceItems)}
