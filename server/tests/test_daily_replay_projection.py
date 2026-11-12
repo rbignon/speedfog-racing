@@ -395,3 +395,30 @@ def test_projected_splits_keep_the_first_arrival_on_a_backtrack() -> None:
 
     assert projected is not None
     assert projected.layer_entry_igts == {"0": 0, "1": 100_000, "2": 200_000}
+
+
+def test_future_boss_kill_is_stripped_without_mutating_the_snapshot() -> None:
+    entry = {"node_id": "b", "igt_ms": 10_000, "boss_kill_igt_ms": 50_000}
+    p = _participant(
+        status=ParticipantStatus.PLAYING,
+        igt_ms=60_000,
+        zone_history=[{"node_id": "s", "igt_ms": 0}, entry],
+    )
+    projected = project_participant_at(p, 30_000, _graph({"s": 0, "b": 1}))
+    assert projected is not None and projected.zone_history is not None
+    assert "boss_kill_igt_ms" not in projected.zone_history[1]
+    assert projected.zone_history[1]["node_id"] == "b"
+    assert entry["boss_kill_igt_ms"] == 50_000  # shared snapshot untouched
+
+
+def test_boss_kill_at_or_before_viewer_igt_is_kept_without_copy() -> None:
+    entry = {"node_id": "b", "igt_ms": 10_000, "boss_kill_igt_ms": 50_000}
+    p = _participant(
+        status=ParticipantStatus.PLAYING,
+        igt_ms=60_000,
+        zone_history=[{"node_id": "s", "igt_ms": 0}, entry],
+    )
+    projected = project_participant_at(p, 50_000, _graph({"s": 0, "b": 1}))
+    assert projected is not None and projected.zone_history is not None
+    assert projected.zone_history[1]["boss_kill_igt_ms"] == 50_000
+    assert projected.zone_history[1] is entry

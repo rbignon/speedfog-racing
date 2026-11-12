@@ -86,7 +86,13 @@ def project_participant_at(
         igt = int(e.get("igt_ms", 0))
         if igt > viewer_igt_ms:
             break
-        past.append(e)
+        kill = e.get("boss_kill_igt_ms")
+        if isinstance(kill, int) and kill > viewer_igt_ms:
+            # The kill is the ghost's future: drop it from a copy, the entry
+            # may belong to a snapshot shared by every viewer.
+            past.append({k: v for k, v in e.items() if k != "boss_kill_igt_ms"})
+        else:
+            past.append(e)
         proj_deaths += int(e.get("deaths", 0))
         if graph_json:
             node_id = e.get("node_id")
