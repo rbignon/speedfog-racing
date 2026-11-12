@@ -16,13 +16,27 @@
     layer: number;
     pinned: boolean;
     columns: DetailColumn[];
+    /** Show the Boss kill / Depth time switch. */
+    killSwitch: boolean;
+    killMode: boolean;
+    onkillmode: (on: boolean) => void;
     runners: Map<string, RunnerLook>;
     /** The map's nodes, for their display names. */
     nodes: Map<string, { displayName: string; randomizedBosses?: string[] }>;
     onnodeclick?: (nodeId: string) => void;
   }
 
-  let { layer, pinned, columns, runners, nodes, onnodeclick }: Props = $props();
+  let {
+    layer,
+    pinned,
+    columns,
+    killSwitch,
+    killMode,
+    onkillmode,
+    runners,
+    nodes,
+    onnodeclick,
+  }: Props = $props();
 
   /** A fourth node (only on old seeds) wraps to a second row. */
   const MAX_NODE_COLS = 3;
@@ -59,6 +73,24 @@
   <header class="detail-head">
     <span class="detail-layer">Depth {layer + 1}</span>
     {#if pinned}<span class="pinned-tag">pinned</span>{/if}
+    {#if killSwitch}
+      <div class="kill-toggle">
+        <button
+          type="button"
+          class="toggle-btn"
+          class:active={killMode}
+          aria-pressed={killMode}
+          onclick={() => onkillmode(true)}>Boss kill</button
+        >
+        <button
+          type="button"
+          class="toggle-btn"
+          class:active={!killMode}
+          aria-pressed={!killMode}
+          onclick={() => onkillmode(false)}>Depth time</button
+        >
+      </div>
+    {/if}
   </header>
   {#if columns.length === 0}
     <p class="hint">None of the selected runners reached this depth yet.</p>
@@ -90,9 +122,10 @@
           {/if}
           <div class="field">
             {#if column.field}
-              field best {formatTime(column.field.bestMs)}, median {formatTime(
-                column.field.medianMs,
-              )}, {column.field.count}
+              {column.metric === "kill" ? "kill" : "field"} best {formatTime(
+                column.field.bestMs,
+              )}, median {formatTime(column.field.medianMs)}, {column.field
+                .count}
               {column.field.count === 1 ? "runner" : "runners"}
             {:else}
               no complete run through this node yet
@@ -100,7 +133,9 @@
           </div>
           <div class="row heads" aria-hidden="true">
             <span class="c-entry">entry</span>
-            <span class="c-time">time</span>
+            <span class="c-time"
+              >{column.metric === "kill" ? "kill" : "time"}</span
+            >
             <span class="c-vs">vs best</span>
             <span class="c-field">field</span>
           </div>
@@ -165,9 +200,46 @@
 
   .detail-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.5rem;
+    gap: 0.25rem 0.5rem;
     margin-bottom: 0.35rem;
+  }
+
+  .kill-toggle {
+    display: flex;
+    gap: 0.15rem;
+    margin-left: auto;
+    align-self: center;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 0.15rem;
+  }
+
+  .toggle-btn {
+    all: unset;
+    font-family: var(--font-family);
+    font-size: var(--font-size-xs);
+    color: var(--color-text-disabled);
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .toggle-btn:hover {
+    color: var(--color-text-secondary);
+  }
+
+  .toggle-btn:focus-visible {
+    outline: 2px solid var(--color-purple);
+  }
+
+  .toggle-btn.active {
+    background: var(--color-border);
+    color: var(--color-text);
+    font-weight: 600;
   }
 
   .detail-layer {

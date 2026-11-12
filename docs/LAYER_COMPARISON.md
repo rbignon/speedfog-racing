@@ -131,6 +131,27 @@ node popup: shown whenever `randomized_bosses` is set; one line, cut with an
 ellipsis, the full list in its tooltip and in the popup the name opens),
 then the field reference.
 
+### Boss kill / Depth time switch
+
+When at least one column of the shown depth is a `boss_arena` or `major_boss`
+node that has a recorded kill in the field, the header carries a "Boss kill"
+/ "Depth time" switch (right-aligned; the header wraps at phone width).
+"Boss kill" is the default, and the choice holds across depths until the
+comparison closes, which resets it. It never appears on the final boss depth:
+`final_boss` nodes are not kill nodes, their kill being the run's end.
+
+In kill mode the decision is per column, and column order never changes. A
+boss column with at least one kill in the field becomes a kill column: its
+time is the first kill's IGT minus the first entry on the node, its head
+reads "kill", and its reference line "kill best X, median Y, N runners" comes
+from the field's kills (not its depth times). "vs best" is against the
+fastest kill among the selected runners of that column, and the field rank
+is the kill's rank in the field's kills. A boss column with no kill yet, and every
+non-boss column, stays a depth column. Rows are sorted by kill time; a runner
+without a recorded kill shows `-`, a live runner its time so far in italics,
+and DNF / DQ, deaths, entry gaps and back-out notes are unchanged. "Depth
+time" restores the plain panel.
+
 ## Performance
 
 `raceStore` delivers a `player_update` about every second per playing

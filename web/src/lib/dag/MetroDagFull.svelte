@@ -40,6 +40,7 @@
     buildLayerDetail,
     buildTimelines,
     computeFieldStats,
+    computeKillStats,
     gapSeries,
     pickTimelines,
     selectionGaps,
@@ -241,6 +242,9 @@
   // pointer leaves the chart), or the pinned one.
   let shownLayer = $state<number | null>(null);
   let pinnedLayer = $state<number | null>(null);
+  // Boss columns show the time to the kill instead of the time on the depth.
+  // The final boss is left out: its kill is the run's end.
+  let bossKillMode = $state(true);
   // A layer kept across a seed change (a daily reroll) may point past the
   // new graph's last one: it shows nothing rather than an empty column.
   let activeLayer = $derived(
@@ -251,6 +255,7 @@
     if (!compareActive) {
       shownLayer = null;
       pinnedLayer = null;
+      bossKillMode = true;
     }
   });
 
@@ -258,6 +263,15 @@
     buildTimelines(pathParticipants, nodeLayers, graph.totalLayers),
   );
   let fieldStats = $derived(computeFieldStats(timelines.values()));
+  let killNodes = $derived(
+    new Set(
+      graph.nodes
+        .filter((n) => n.type === "boss_arena" || n.type === "major_boss")
+        .map((n) => n.id),
+    ),
+  );
+  // From the timelines only, never the ticking participants.
+  let killStats = $derived(computeKillStats(timelines.values(), killNodes));
   let selectedTimelines = $derived(
     pickTimelines(timelines, highlightIds ?? []),
   );
@@ -317,8 +331,10 @@
       })),
       selectionGapRows,
       fieldStats,
+      bossKillMode ? killStats : null,
     );
   });
+  let killSwitch = $derived(detailColumns.some((c) => killStats.has(c.nodeId)));
 
   // Per-participant visited set (node_ids seen in zone_history + current_zone).
   let visitedByParticipant: Map<string, Set<string>> = $derived.by(() => {
@@ -1007,6 +1023,9 @@
             layer={activeLayer}
             pinned={activeLayer === pinnedLayer}
             columns={detailColumns}
+            {killSwitch}
+            killMode={bossKillMode}
+            onkillmode={(on) => (bossKillMode = on)}
             runners={runnerLooks}
             nodes={nodeMap}
             onnodeclick={anonymous ? undefined : openPopupForNode}
