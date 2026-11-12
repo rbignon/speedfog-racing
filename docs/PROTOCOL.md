@@ -1219,7 +1219,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `race_items`        | `bool`    | The race has items on (needs protocol 1.12 at auth); default false; the mod reads it to gate items and show the ITEMS tag |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                                     |
 
-**Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
+**Note:** The mod reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), `race_items` (use flag reads, inventory reports, the SpEffect prewarm and the ITEMS tag; see `RACE_ITEMS.md`), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). `started_at` and `seeds_released_at` are present on the wire but unused by the mod; the race fields it reads outside this table (`quit_out_penalty_ms`, `attempt_id`) are described in the [`auth_ok`](#auth_ok) note.
 
 ### SeedInfo
 
