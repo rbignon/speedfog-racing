@@ -1,6 +1,6 @@
 # Item Spawner
 
-How the racing mod injects gem (Ash of War) items into the player's inventory at runtime, and how it avoids re-spawning the same items on reconnect, save reload, or game restart.
+How the racing mod injects gem (Ash of War) items into the player's inventory at runtime, and how it avoids re-spawning the same items on reconnect, save reload, or game restart. The same injection gives race item goods, with their own guard (see [Race Item Goods](#race-item-goods)).
 
 ## Why a Runtime Spawner
 
@@ -51,14 +51,14 @@ The function takes a `MapItemMan*` and a `SpawnRequest` with the layout the game
 #[repr(C)]
 struct SpawnRequest {
     one: u32,        // 1
-    item_id: u32,    // GEM_TYPE_FLAG | id
+    item_id: u32,    // type flag | id (GEM_TYPE_FLAG, or 0x40000000 for goods)
     qty: u32,        // 1
     dur: i32,        // -1
     gem: i32,        // -1
 }
 ```
 
-The signature is `extern "system" fn(*const c_void, *mut SpawnRequest, *mut u32, u32)`. We loop `qty` times and call once per unit (the function may not respect `request.qty` reliably, single-unit calls match how the practice tool drives it).
+The signature is `extern "system" fn(*const c_void, *mut SpawnRequest, *mut u32, u32)`. `item_spawner::inject_one(encoded_id)` is the only call into it: it reads `MapItemMan` and injects a single unit, or returns false without calling when the function address is 0 or `MapItemMan` is null (player not in the game world). The gem path calls it `qty` times, once per unit (the function may not respect `request.qty` reliably, single-unit calls match how the practice tool drives it).
 
 ## Three-Layer Re-Spawn Prevention
 
@@ -101,6 +101,31 @@ Covers: full game restart on the same save (kill the process, reopen, reconnect)
 - Layer 2 alone is too coarse: it only distinguishes fresh saves from stale ones, not "already given" from "not yet given".
 
 Together they cover reconnects, wrong-save selections, and process restarts without ever double-giving an item.
+
+## Race Item Goods
+
+In a race with items (see `RACE_ITEMS.md`), `item_grant` names a catalog item, and the mod gives its goods through the same `inject_one` with the goods type flag (`race_items::spawn_goods`, `0x40000000 | goods_id`, one unit). None of the gem layers apply:
+
+- **No fresh-save gate and no wait.** Grants arrive mid-race. The race machine holds a grant until the player is loaded on the race save (position readable, no wrong save, seed pack up to date), then the tracker spawns it on the main loop, not on a spawner thread.
+- **The inventory is the guard.** Before spawning, the tracker reads how many of the goods the player holds (`race_items::goods_quantity`). Goods already held skip the spawn: that is a game restart, where the server sends again a grant it never saw acknowledged. Within one process, the machine also remembers the grants it handled and only acknowledges one sent again.
+- **`item_received` follows a spawn or goods already held.** A spawn that injected nothing (`MapItemMan` null) or an unreadable inventory sends nothing and is logged. The server sends the grant again at the next auth; a new game process spawns it then, while this one, having marked the grant handled, only acknowledges it, and a later inventory report, which lacks the goods, clears the item on the server.
+
+### Reading the inventory
+
+`goods_quantity` follows `GameDataMan -> +0x8 (PlayerGameData)`, then reads the head of the held inventory's `InventoryItemsData`, inline at PlayerGameData + 0x410:
+
+| Offset | Field                       |
+| ------ | --------------------------- |
+| +0x04  | normal items capacity (u32) |
+| +0x08  | normal items list (pointer) |
+| +0x10  | normal items in use (u32)   |
+| +0x14  | key items capacity (u32)    |
+| +0x18  | key items list (pointer)    |
+| +0x20  | key items in use (u32)      |
+
+Each list is an array of 0x18-byte entries: item id (type flag | param id) at +0x4, quantity at +0x8. The tracker copies a list's whole capacity out in one read (a removed item leaves a gap, so items need not sit below the in-use count) and sums the quantity of the matching entries (`core::item_inventory`), over both lists. A null pointer, or a header that no longer looks like this layout (more in use than allocated, or more than 0x2000 entries), makes the read `None` rather than a guess. The storage chest is not read: goods put in the chest count as not held. The offsets come from fromsoftware-rs `cs/player_game_data.rs` and agree with the TGA Cheat Engine table v1.17.0 inventory script; this mod has not verified them in game yet.
+
+The same read serves the `item_inventory` report sent once per game load and once per reconnection: the catalog keys whose goods are held. One unreadable quantity skips the whole report (logged), since a partial one would read as items lost.
 
 ## Failure Modes
 

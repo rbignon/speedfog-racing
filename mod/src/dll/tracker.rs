@@ -14,10 +14,12 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
+use crate::core::item_damage::damaged_hp;
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
+use crate::eldenring::race_items;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
 
@@ -582,6 +584,22 @@ impl RaceTracker {
                         .map(|set| (flag_id, set))
                 }));
             }
+            {
+                // Every race item use flag, while the run is live in a race
+                // with items. They share one category, other than the
+                // event_ids' one: its page is resolved once for all of them.
+                profile_span!("item_use_flag_reads");
+                let mut use_flags = self.machine.item_use_flags_to_read().peekable();
+                if let Some(&first) = use_flags.peek() {
+                    let use_page = self.event_flag_reader.resolve_category(first);
+                    let use_page_ref = use_page.as_ref();
+                    reads.extend(use_flags.filter_map(|flag_id| {
+                        self.event_flag_reader
+                            .is_flag_set_cached(flag_id, use_page_ref)
+                            .map(|set| (flag_id, set))
+                    }));
+                }
+            }
             flag_reads = Some(reads);
         }
 
@@ -790,31 +808,89 @@ impl RaceTracker {
                 Effect::SendItemReceived { grant_id } => {
                     self.ws_client.send_item_received(grant_id);
                 }
-                // Race item game access (spawn, inventory read, SpEffect, HP):
-                // not wired yet, logged only.
                 Effect::SpawnRaceItem { grant_id, goods_id } => {
-                    warn!(grant_id, goods_id, "[ITEMS] Race item spawn not wired yet");
+                    self.spawn_race_item(grant_id, goods_id);
                 }
-                Effect::ReportItemInventory { goods } => {
-                    warn!(
-                        count = goods.len(),
-                        "[ITEMS] Inventory report not wired yet"
-                    );
-                }
+                Effect::ReportItemInventory { goods } => self.report_item_inventory(goods),
                 Effect::ApplySpEffect { speffect_id } => {
-                    warn!(speffect_id, "[ITEMS] SpEffect application not wired yet");
+                    if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
+                        info!(speffect_id, "[ITEMS] SpEffect applied");
+                    } else {
+                        warn!(speffect_id, "[ITEMS] SpEffect not applied");
+                    }
                 }
                 Effect::ApplyItemDamage {
                     base_pct,
                     floor_pct,
                     tail_pct,
-                } => {
-                    warn!(
-                        base_pct,
-                        floor_pct, tail_pct, "[ITEMS] Item damage not wired yet"
-                    );
+                } => Self::apply_item_damage(base_pct, floor_pct, tail_pct),
+            }
+        }
+    }
+
+    /// Give a granted race item's goods unless the inventory already holds
+    /// them (a game restart re-sends the grant), then answer `item_received`.
+    /// A spawn that injected nothing, or an unreadable inventory, sends
+    /// nothing: the server sends the grant again at the next auth.
+    fn spawn_race_item(&self, grant_id: u64, goods_id: u32) {
+        match race_items::goods_quantity(goods_id) {
+            Some(0) => {
+                if race_items::spawn_goods(goods_id) {
+                    info!(grant_id, goods_id, "[ITEMS] Goods spawned");
+                    self.ws_client.send_item_received(grant_id);
+                } else {
+                    warn!(grant_id, goods_id, "[ITEMS] Goods spawn failed");
                 }
             }
+            Some(quantity) => {
+                info!(
+                    grant_id,
+                    goods_id, quantity, "[ITEMS] Goods already held, spawn skipped"
+                );
+                self.ws_client.send_item_received(grant_id);
+            }
+            None => {
+                warn!(
+                    grant_id,
+                    goods_id, "[ITEMS] Inventory unreadable, spawn skipped"
+                );
+            }
+        }
+    }
+
+    /// Send `item_inventory` with the catalog keys whose goods the player
+    /// holds. One unreadable quantity skips the whole report: a partial one
+    /// would read as items lost.
+    fn report_item_inventory(&self, goods: Vec<(String, u32)>) {
+        let mut held = Vec::new();
+        for (key, goods_id) in goods {
+            match race_items::goods_quantity(goods_id) {
+                Some(0) => {}
+                Some(_) => held.push(key),
+                None => {
+                    warn!(item = %key, goods_id, "[ITEMS] Inventory unreadable, report skipped");
+                    return;
+                }
+            }
+        }
+        info!(items = ?held, "[ITEMS] Inventory read");
+        self.ws_client.send_item_inventory(held);
+    }
+
+    /// Damage the player along the race item curve (`core::item_damage`),
+    /// from the HP and effective max HP read now.
+    fn apply_item_damage(base_pct: u8, floor_pct: u8, tail_pct: u8) {
+        let Some((hp, max_hp)) = race_items::read_hp() else {
+            warn!("[ITEMS] HP unreadable, damage skipped");
+            return;
+        };
+        let new_hp = damaged_hp(hp, max_hp, base_pct, floor_pct, tail_pct);
+        if new_hp == hp {
+            info!(hp, max_hp, "[ITEMS] Damage leaves HP unchanged");
+        } else if race_items::write_hp(new_hp) {
+            info!(hp, new_hp, max_hp, "[ITEMS] Damage applied");
+        } else {
+            warn!(hp, new_hp, max_hp, "[ITEMS] HP unwritable, damage skipped");
         }
     }
 

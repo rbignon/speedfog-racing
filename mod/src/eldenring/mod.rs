@@ -12,6 +12,7 @@ pub mod igt_hook;
 pub mod item_spawner;
 #[cfg(debug_assertions)]
 pub mod quitout;
+pub mod race_items;
 mod scan;
 pub mod sp_effect_apply;
 pub mod sp_effect_runner;

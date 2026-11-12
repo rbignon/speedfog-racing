@@ -10,6 +10,7 @@ pub mod format;
 pub mod igt_fix;
 pub mod item_damage;
 pub mod item_feed;
+pub mod item_inventory;
 pub mod livesplit;
 pub mod map_utils;
 pub mod profile;

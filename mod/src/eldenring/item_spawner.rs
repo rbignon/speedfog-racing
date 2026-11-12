@@ -3,6 +3,8 @@
 //! Spawns gem (Ash of War) items received via WebSocket auth_ok. EMEVD's
 //! DirectlyGivePlayerItem doesn't support the Gem item type, so we use
 //! func_item_inject (same function as the ER practice tool) at runtime.
+//! `inject_one` is the single call into it, shared with the race item goods
+//! (`race_items::spawn_goods`), which take none of the gem guards below.
 //!
 //! Re-spawn prevention has three layers:
 //! 1. In-process `items_spawned` AtomicBool in RaceTracker (primary; covers
@@ -44,6 +46,45 @@ struct SpawnRequest {
 
 /// func_item_inject signature: (MapItemMan*, SpawnRequest*, output*, flags)
 type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *mut u32, u32);
+
+/// Give one unit of an item through func_item_inject. `encoded_id` carries
+/// the item type in its high nibble (`GEM_TYPE_FLAG`, goods `0x4000_0000`).
+///
+/// False, with nothing injected, when func_item_inject is unknown for this
+/// game version or MapItemMan is null (player not in the game world).
+pub fn inject_one(encoded_id: u32) -> bool {
+    let base = Pointers::new().base_addresses;
+    let func_addr = base.func_item_inject;
+    if func_addr == 0 {
+        return false;
+    }
+    let p_map_item_man = unsafe { (base.map_item_man as *const *const c_void).read() };
+    if p_map_item_man.is_null() {
+        return false;
+    }
+
+    // SAFETY: func_addr is libeldenring's func_item_inject for this game
+    // version, called with the practice tool's arguments: the live
+    // MapItemMan, a single-unit request, a scratch output and flags 0.
+    let spawn_fn: SpawnItemFn = unsafe { std::mem::transmute(func_addr) };
+    let mut request = SpawnRequest {
+        one: 1,
+        item_id: encoded_id,
+        qty: 1,
+        dur: -1,
+        gem: -1,
+    };
+    let mut output = 0u32;
+    unsafe {
+        spawn_fn(
+            p_map_item_man,
+            &mut request as *mut _,
+            &mut output as *mut _,
+            0,
+        );
+    }
+    true
+}
 
 /// Spawn items received from auth_ok. **Blocks** until the game is fully loaded.
 ///
@@ -160,27 +201,15 @@ pub fn spawn_items_blocking(
         return;
     }
 
-    let spawn_fn: SpawnItemFn = unsafe { std::mem::transmute(func_addr) };
-
     for item in &items {
         let encoded_id = GEM_TYPE_FLAG | item.id;
 
         for _ in 0..item.qty {
-            let mut request = SpawnRequest {
-                one: 1,
-                item_id: encoded_id,
-                qty: 1,
-                dur: -1,
-                gem: -1,
-            };
-            let mut output = 0u32;
-
-            unsafe {
-                spawn_fn(
-                    p_map_item_man,
-                    &mut request as *mut _,
-                    &mut output as *mut _,
-                    0,
+            if !inject_one(encoded_id) {
+                warn!(
+                    id = item.id,
+                    encoded = format_args!("0x{:08X}", encoded_id),
+                    "Item unit not injected (MapItemMan null)"
                 );
             }
         }
