@@ -219,7 +219,7 @@ pub struct TickInput {
     /// Player position (loading-exit frames only), for zone queries.
     pub position: Option<PlayerPosition>,
     /// `(flag_id, is_set)` for every readable flag in `event_ids`, then for
-    /// every boss defeat flag not reported yet (`boss_flags_to_read`). `Some`
+    /// the boss defeat flags `boss_flags_to_read` names this scan. `Some`
     /// when the shell performed reads this frame (`wants_flag_reads`),
     /// `None` otherwise. Unreadable flags are omitted from the vec.
     pub flag_reads: Option<Vec<(u32, bool)>>,
@@ -319,10 +319,14 @@ pub struct RaceMachine {
     pub next_event_message_id: u64,
     /// finish_event from server, sent immediately (no loading screen on boss kill)
     pub finish_event: Option<u32>,
-    /// Boss defeat flags from the seed, replaced on every auth_ok. One-shot
-    /// like `finish_event` (`triggered_flags`), never cleared in game memory
-    /// (see `capture_boss_kill`).
-    pub boss_flags: HashSet<u32>,
+    /// Boss defeat flags from the seed, sorted and deduplicated (membership
+    /// by binary search, a stable read rotation), replaced on every auth_ok.
+    /// One-shot like `finish_event` (`triggered_flags`), never cleared in
+    /// game memory (see `capture_boss_kill`).
+    pub boss_flags: Vec<u32>,
+    /// Index in `boss_flags` where the next scan's boss reads start (see
+    /// `boss_flags_to_read`).
+    boss_read_cursor: usize,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -463,7 +467,8 @@ impl RaceMachine {
             in_flight_zone_queries: HashMap::new(),
             next_event_message_id: seed_message_id,
             finish_event: None,
-            boss_flags: HashSet::new(),
+            boss_flags: Vec::new(),
+            boss_read_cursor: 0,
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -647,7 +652,9 @@ impl RaceMachine {
             }
             // The finish and boss defeat flags stay set in the save: without
             // this, the next scan would report them again at the current IGT.
-            if self.finish_event == Some(flag.flag_id) || self.boss_flags.contains(&flag.flag_id) {
+            if self.finish_event == Some(flag.flag_id)
+                || self.boss_flags.binary_search(&flag.flag_id).is_ok()
+            {
                 self.triggered_flags.insert(flag.flag_id);
             }
             match flag.message_id {
@@ -1014,7 +1021,10 @@ impl RaceMachine {
                     .position(|p| Some(&p.id) == self.my_participant_id.as_ref());
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
-                self.boss_flags = seed.boss_flags.iter().copied().collect();
+                self.boss_flags = seed.boss_flags.clone();
+                self.boss_flags.sort_unstable();
+                self.boss_flags.dedup();
+                self.boss_read_cursor = 0;
                 // Don't clear triggered_flags on reconnect: finish_event and
                 // boss kills are one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
@@ -1385,6 +1395,13 @@ const ZONE_REVEAL_STALL_WARN: Duration = Duration::from_secs(30);
 /// drops by itself shortly after resolution.
 const SERVER_CONDITION_TTL: Duration = Duration::from_secs(3);
 
+/// Boss defeat flags read per flag scan, at most. They sit outside the
+/// category page the scan caches for `event_ids`, so each read is a full
+/// category lookup (a tree walk of several cross-process memory reads): the
+/// scans rotate through the unreported flags instead of reading them all,
+/// and each of n is read every ceil(n / this) scans.
+const BOSS_FLAG_READS_PER_POLL: usize = 8;
+
 impl RaceMachine {
     /// What the shell should read from the game this frame.
     pub fn pre_tick(&self, now: Instant, show_ui: bool, connected: bool) -> FrameNeeds {
@@ -1420,14 +1437,35 @@ impl RaceMachine {
             || (connected && !self.ready_sent)
     }
 
-    /// The boss defeat flags the shell reads after `event_ids`: those not
-    /// reported yet. A reported kill is read again only once a save reload
-    /// clears `triggered_flags`.
+    /// The boss defeat flags the shell reads after `event_ids`: while the run
+    /// is live (race running, runner not finished, the only time
+    /// `capture_boss_kill` acts), at most `BOSS_FLAG_READS_PER_POLL` of those
+    /// not reported yet, from `boss_read_cursor` on and wrapping around, so
+    /// successive scans rotate through them. A reported kill takes no slot,
+    /// and is read again only once a save reload clears `triggered_flags`.
     pub fn boss_flags_to_read(&self) -> impl Iterator<Item = u32> + '_ {
-        self.boss_flags
+        let live = self.is_race_running() && !self.am_i_finished();
+        let flags: &[u32] = if live { &self.boss_flags } else { &[] };
+        let (before, from_cursor) = flags.split_at(self.boss_read_cursor.min(flags.len()));
+        from_cursor
             .iter()
+            .chain(before)
             .copied()
             .filter(|flag_id| !self.triggered_flags.contains(flag_id))
+            .take(BOSS_FLAG_READS_PER_POLL)
+    }
+
+    /// Moves the boss read rotation past the last boss flag a scan read, so
+    /// the next scan reads the following ones. A scan that read none (run
+    /// not live, nothing readable) leaves it where it is.
+    fn advance_boss_reads(&mut self, reads: &[(u32, bool)]) {
+        let last = reads
+            .iter()
+            .rev()
+            .find_map(|&(flag_id, _)| self.boss_flags.binary_search(&flag_id).ok());
+        if let Some(index) = last {
+            self.boss_read_cursor = (index + 1) % self.boss_flags.len();
+        }
     }
 
     /// Whether a status_update may fire this frame (gates the weapon read).
@@ -1695,7 +1733,7 @@ impl RaceMachine {
                         if !is_set {
                             continue;
                         }
-                        if self.boss_flags.contains(&flag_id) {
+                        if self.boss_flags.binary_search(&flag_id).is_ok() {
                             self.capture_boss_kill(
                                 flag_id,
                                 igt_ms,
@@ -1825,7 +1863,7 @@ impl RaceMachine {
                     if !is_set || cleared.contains(&flag_id) {
                         continue;
                     }
-                    if self.boss_flags.contains(&flag_id) {
+                    if self.boss_flags.binary_search(&flag_id).is_ok() {
                         self.capture_boss_kill(flag_id, igt_ms, input.connected, now, &mut effects);
                         continue;
                     }
@@ -1862,6 +1900,11 @@ impl RaceMachine {
                     }
                 }
             }
+        }
+        // This frame's reads (the scans above, the reconnect rescan below)
+        // consumed a window of boss flags: the next scan reads the next one.
+        if let Some(ref reads) = input.flag_reads {
+            self.advance_boss_reads(reads);
         }
 
         // Deathless: a strict local death-count increase while racing fires
@@ -1949,7 +1992,7 @@ impl RaceMachine {
                         if !is_set || cleared.contains(&flag_id) {
                             continue;
                         }
-                        if self.boss_flags.contains(&flag_id) {
+                        if self.boss_flags.binary_search(&flag_id).is_ok() {
                             self.capture_boss_kill(
                                 flag_id,
                                 igt_ms,
@@ -5625,6 +5668,22 @@ mod tests {
             .collect()
     }
 
+    /// One scan as the shell performs it: `event_ids`, then the boss flags
+    /// `boss_flags_to_read` names, those in `dead` reading set. Returns the
+    /// boss flags read and the tick's effects.
+    fn boss_scan(
+        m: &mut RaceMachine,
+        dead: &[u32],
+        igt: u32,
+        at: Instant,
+    ) -> (Vec<u32>, Vec<Effect>) {
+        let read: Vec<u32> = m.boss_flags_to_read().collect();
+        let mut reads = vec![(100, false), (200, false), (900, false)];
+        reads.extend(read.iter().map(|&flag| (flag, dead.contains(&flag))));
+        let fx = m.tick(tick_in(snap(Some(igt), true), true, Some(reads)), at);
+        (read, fx)
+    }
+
     #[test]
     fn boss_flag_is_sent_at_once_and_never_cleared() {
         let now = Instant::now();
@@ -5711,7 +5770,9 @@ mod tests {
         m.handle_message(auth_ok_with_bosses("setup", &[5_000_800]), now);
         let reads = vec![(100, false), (200, false), (900, false), (5_000_800, true)];
 
-        // Before the start: no send, no buffer, not marked.
+        // Before the start: not read, and a set flag read anyway is not
+        // sent, buffered or marked.
+        assert_eq!(m.boss_flags_to_read().count(), 0);
         let fx = m.tick(
             tick_in(snap(Some(60_000), true), true, Some(reads.clone())),
             now + ms(150),
@@ -5720,8 +5781,10 @@ mod tests {
         assert!(!m.flag_buffer.has_pending());
         assert!(!m.triggered_flags.contains(&5_000_800));
 
-        // The race starts: the next poll reports the kill, once.
+        // The race starts: the flag is read, and the next poll reports the
+        // kill, once.
         m.handle_message(MachineMessage::RaceStart(0), now + secs(1));
+        assert_eq!(m.boss_flags_to_read().collect::<Vec<_>>(), vec![5_000_800]);
         let fx = m.tick(
             tick_in(snap(Some(61_000), true), true, Some(reads.clone())),
             now + secs(1) + ms(150),
@@ -5824,5 +5887,91 @@ mod tests {
         assert_eq!(sent_flags(&fx), vec![5_000_800]);
         assert!(run_views(&fx).is_empty(), "{fx:?}");
         assert_eq!(m.run_arrivals, vec![None, Some(5_000), None, None]);
+    }
+
+    #[test]
+    fn boss_flags_are_not_read_after_the_runner_finishes() {
+        let now = Instant::now();
+        let mut m = running_boss_machine(now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+        let mut me = m.race_state.participants[0].clone();
+        me.status = ParticipantStatus::Finished;
+        m.handle_message(MachineMessage::PlayerUpdate(me), now + ms(50));
+        assert_eq!(m.boss_flags_to_read().count(), 0);
+
+        // A set flag read anyway is neither sent, buffered nor marked.
+        let fx = m.tick(
+            tick_in(
+                snap(Some(60_000), true),
+                true,
+                Some(vec![
+                    (100, false),
+                    (200, false),
+                    (900, false),
+                    (5_000_800, true),
+                ]),
+            ),
+            now + ms(150),
+        );
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+        assert!(!m.flag_buffer.has_pending());
+        assert!(!m.triggered_flags.contains(&5_000_800));
+    }
+
+    #[test]
+    fn boss_flags_are_read_a_few_per_poll_in_rotation() {
+        let now = Instant::now();
+        let bosses: Vec<u32> = (0..20).map(|i| 5_000_800 + 10 * i).collect();
+        assert!(bosses.len() > BOSS_FLAG_READS_PER_POLL);
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("running", &bosses), now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        // The last boss is dead: outside the first window, it is caught
+        // once its turn comes, and every flag is read within the bound.
+        let dead = [bosses[19]];
+        let polls = bosses.len().div_ceil(BOSS_FLAG_READS_PER_POLL) as u32;
+        let mut seen = HashSet::new();
+        let mut kills = Vec::new();
+        for poll in 1..=polls {
+            let (read, fx) = boss_scan(
+                &mut m,
+                &dead,
+                60_000 + 100 * poll,
+                now + ms(150 * poll as u64),
+            );
+            assert!(read.len() <= BOSS_FLAG_READS_PER_POLL, "{read:?}");
+            if poll == 1 {
+                assert!(!read.contains(&bosses[19]));
+            }
+            seen.extend(read);
+            kills.extend(sent_flag_igts(&fx));
+        }
+        assert_eq!(seen, bosses.iter().copied().collect::<HashSet<_>>());
+        assert_eq!(kills.len(), 1, "{kills:?}");
+        assert_eq!(kills[0].0, bosses[19]);
+    }
+
+    #[test]
+    fn reported_boss_flags_take_no_read_slot() {
+        let now = Instant::now();
+        let bosses: Vec<u32> = (0..10).map(|i| 5_000_800 + 10 * i).collect();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_bosses("running", &bosses), now);
+        m.tick(tick_in(snap(Some(500), true), true, None), now + ms(10));
+
+        // Two kills in the first window.
+        let (read, fx) = boss_scan(&mut m, &bosses[..2], 60_000, now + ms(150));
+        assert!(read.contains(&bosses[0]) && read.contains(&bosses[1]));
+        assert_eq!(sent_flags(&fx), bosses[..2].to_vec());
+
+        // The next windows hold only the 8 flags still unreported.
+        let unreported: HashSet<u32> = bosses[2..].iter().copied().collect();
+        for poll in 2..=3u64 {
+            let (read, fx) = boss_scan(&mut m, &bosses[..2], 60_000, now + ms(150 * poll));
+            assert_eq!(read.iter().copied().collect::<HashSet<_>>(), unreported);
+            assert_eq!(read.len(), unreported.len());
+            assert!(sent_flags(&fx).is_empty());
+        }
     }
 }

@@ -572,8 +572,9 @@ impl RaceTracker {
                 })
                 .collect();
             {
-                // Boss defeat flags not reported yet. They sit in other
-                // categories: each read falls back to a full lookup.
+                // A few unreported boss defeat flags per scan, in rotation,
+                // while the run is live. They sit in other categories: each
+                // read falls back to a full category lookup.
                 profile_span!("boss_flag_reads");
                 reads.extend(self.machine.boss_flags_to_read().filter_map(|flag_id| {
                     self.event_flag_reader
