@@ -26,10 +26,12 @@ pub const MAX_LIST_ENTRIES: u32 = 0x2000;
 /// A removed item leaves a gap, so the items need not sit below `len` (the
 /// TGA script also walks the whole capacity), and an empty entry never
 /// matches an item id. `None` when the header is implausible, a sign the
-/// offsets no longer match the game: more in use than allocated, or more
-/// allocated than any held list.
+/// offsets no longer match the game: nothing allocated (the held lists
+/// always are, so a zeroed header is misread memory, which must not pass
+/// for an empty inventory and report every item lost), more in use than
+/// allocated, or more allocated than any held list.
 pub fn list_entry_count(capacity: u32, len: u32) -> Option<usize> {
-    (len <= capacity && capacity <= MAX_LIST_ENTRIES).then_some(capacity as usize)
+    (capacity > 0 && len <= capacity && capacity <= MAX_LIST_ENTRIES).then_some(capacity as usize)
 }
 
 /// Total quantity of `item_id` over the whole entries in `entries`
@@ -109,7 +111,9 @@ mod tests {
     #[test]
     fn implausible_list_headers_are_rejected() {
         assert_eq!(list_entry_count(0xA80, 12), Some(0xA80));
-        assert_eq!(list_entry_count(0, 0), Some(0));
+        assert_eq!(list_entry_count(0xA80, 0), Some(0xA80));
+        // Zeroed memory: no allocated list, not an empty inventory.
+        assert_eq!(list_entry_count(0, 0), None);
         assert_eq!(list_entry_count(4, 5), None);
         assert_eq!(list_entry_count(MAX_LIST_ENTRIES + 1, 0), None);
     }

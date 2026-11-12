@@ -209,7 +209,7 @@ pub fn spawn_items_blocking(
                 warn!(
                     id = item.id,
                     encoded = format_args!("0x{:08X}", encoded_id),
-                    "Item unit not injected (MapItemMan null)"
+                    "Item unit not injected"
                 );
             }
         }

@@ -321,8 +321,14 @@ pub enum Effect {
     /// launch can send them if this process dies first. Emitted only when the
     /// set changes; an empty list means nothing is left to save.
     PersistUnackedFlags(UnackedFlags),
+    /// Ready the game access race item effects need (the SpEffect apply
+    /// function's pattern scan) on a background thread, so the first effect
+    /// does not stall a frame. Emitted at every auth_ok of a race with
+    /// items; the shell runs it once per process.
+    PrewarmRaceItems,
     /// Give a granted race item: the shell spawns its goods unless the
-    /// inventory already holds them, then answers `item_received`.
+    /// inventory already holds them, then answers `item_received`, and hands
+    /// the outcome back through `RaceMachine::grant_spawn_result`.
     SpawnRaceItem {
         grant_id: u64,
         goods_id: u32,
@@ -350,7 +356,7 @@ pub enum Effect {
     },
 }
 
-/// A granted race item waiting for a loaded frame.
+/// A granted race item on its way to the inventory (see `pending_grants`).
 #[derive(Debug)]
 struct PendingGrant {
     grant_id: u64,
@@ -417,12 +423,18 @@ pub struct RaceMachine {
     /// Every catalog key with its goods id, sorted by key, replaced on every
     /// auth_ok: what an inventory report covers.
     item_inventory_goods: Vec<(String, u32)>,
-    /// Grants spawned by this process: one the server sends again is only
-    /// acknowledged.
+    /// Grants whose goods this process gave (or found already held): one
+    /// the server sends again is only acknowledged.
     handled_grants: HashSet<u64>,
     /// Grants and item effects received, waiting for a loaded frame (see
     /// `flush_race_items`).
     pending_grants: Vec<PendingGrant>,
+    /// Grants handed to the shell this frame, until it reports the spawn
+    /// outcome (`grant_spawn_result`).
+    spawning_grants: Vec<PendingGrant>,
+    /// Grants whose spawn failed, retried at the next game load or
+    /// reconnection rather than on every frame.
+    retry_grants: Vec<PendingGrant>,
     pending_item_effects: Vec<PendingItemEffect>,
     /// Race item banners, reminder rows and ink timer, for the overlay.
     item_feed: ItemFeed,
@@ -572,6 +584,8 @@ impl RaceMachine {
             item_inventory_goods: Vec::new(),
             handled_grants: HashSet::new(),
             pending_grants: Vec::new(),
+            spawning_grants: Vec::new(),
+            retry_grants: Vec::new(),
             pending_item_effects: Vec::new(),
             item_feed: ItemFeed::new(),
             last_status_update: now,
@@ -1144,6 +1158,11 @@ impl RaceMachine {
                         }
                     }
                 }
+                // Race item effects call into the game: ready that off the
+                // render thread now, not at the first effect.
+                if race.race_items {
+                    effects.push(Effect::PrewarmRaceItems);
+                }
                 self.last_received_debug = Some(format!(
                     "auth_ok(race={}, {} players)",
                     race.name,
@@ -1154,6 +1173,8 @@ impl RaceMachine {
                 if self.my_participant_id.as_deref() != Some(participant_id.as_str()) {
                     self.item_feed.clear();
                     self.pending_grants.clear();
+                    self.spawning_grants.clear();
+                    self.retry_grants.clear();
                     self.pending_item_effects.clear();
                     self.handled_grants.clear();
                 }
@@ -1532,7 +1553,13 @@ impl RaceMachine {
                         info!(grant_id, item = %item, "[ITEMS] Grant already spawned, acknowledged");
                         effects.push(Effect::SendItemReceived { grant_id });
                     }
-                } else if self.pending_grants.iter().any(|g| g.grant_id == grant_id) {
+                } else if self
+                    .pending_grants
+                    .iter()
+                    .chain(&self.spawning_grants)
+                    .chain(&self.retry_grants)
+                    .any(|g| g.grant_id == grant_id)
+                {
                     info!(grant_id, item = %item, "[ITEMS] Grant already waiting for the load");
                 } else {
                     match self.catalog_entry(&item).map(|entry| entry.goods_id) {
@@ -1742,6 +1769,38 @@ impl RaceMachine {
             && !self.am_i_abandoned();
         let flags: &[u32] = if live { &self.item_use_flags } else { &[] };
         flags.iter().copied()
+    }
+
+    /// The shell's outcome for a `SpawnRaceItem`: `spawned` when the goods
+    /// are in the inventory, freshly given or already there (the shell then
+    /// answers `item_received`). Only then is the grant handled, so one the
+    /// server sends again is only acknowledged, and its banner shows. A
+    /// failed spawn (nothing injected, inventory unreadable) waits for the
+    /// next game load or reconnection to be tried again.
+    pub fn grant_spawn_result(&mut self, grant_id: u64, spawned: bool, now: Instant) {
+        let Some(index) = self
+            .spawning_grants
+            .iter()
+            .position(|g| g.grant_id == grant_id)
+        else {
+            warn!(
+                grant_id,
+                "[ITEMS] Spawn outcome of a grant not being spawned"
+            );
+            return;
+        };
+        let grant = self.spawning_grants.remove(index);
+        if spawned {
+            info!(grant_id, "[ITEMS] Grant spawned");
+            self.handled_grants.insert(grant_id);
+            self.item_feed.push_banner(grant.banner, now);
+        } else {
+            info!(
+                grant_id,
+                "[ITEMS] Grant spawn failed, retried at the next load or reconnection"
+            );
+            self.retry_grants.push(grant);
+        }
     }
 
     /// Moves the boss read rotation past the window `boss_flags_to_read`
@@ -2277,7 +2336,7 @@ impl RaceMachine {
         // Everything below needs a live connection (ready, replays, status updates).
         if !input.connected {
             // No report without a connection: the reconnect frame sends it.
-            self.flush_race_items(false, now, &mut effects);
+            self.flush_race_items(false, loading_exit, now, &mut effects);
             return effects;
         }
 
@@ -2369,7 +2428,8 @@ impl RaceMachine {
         // After every flag of the frame (replays, buffered, scans): a use
         // made just before a quit-out reaches the server before the
         // inventory that no longer holds it.
-        self.flush_race_items(loading_exit || reconnect_frame, now, &mut effects);
+        let load_or_reconnect = loading_exit || reconnect_frame;
+        self.flush_race_items(load_or_reconnect, load_or_reconnect, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -2489,12 +2549,15 @@ impl RaceMachine {
     /// Race item work held for a loaded frame on the race save, run after
     /// the frame's flag scans, in this order: the inventory report
     /// (`report_inventory`: a game load or a reconnection, while connected),
-    /// the pending grant spawns, then the pending effects, whose banner,
-    /// reminder and duration start now. An outdated seed pack holds it all:
-    /// its regulation may lack the race goods and their effects.
+    /// the grant spawns (the failed ones again only when `retry_grants`: a
+    /// game load or a reconnection), then the pending effects, whose banner,
+    /// reminder and duration start now. A grant's banner waits for its
+    /// spawn's outcome (`grant_spawn_result`). An outdated seed pack holds
+    /// it all: its regulation may lack the race goods and their effects.
     fn flush_race_items(
         &mut self,
         report_inventory: bool,
+        retry_grants: bool,
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
@@ -2515,14 +2578,21 @@ impl RaceMachine {
                 goods: self.item_inventory_goods.clone(),
             });
         }
-        for grant in std::mem::take(&mut self.pending_grants) {
-            info!(grant_id = grant.grant_id, "[ITEMS] Grant spawned");
-            self.handled_grants.insert(grant.grant_id);
-            self.item_feed.push_banner(grant.banner, now);
+        let retries = if retry_grants {
+            std::mem::take(&mut self.retry_grants)
+        } else {
+            Vec::new()
+        };
+        for grant in retries
+            .into_iter()
+            .chain(std::mem::take(&mut self.pending_grants))
+        {
+            info!(grant_id = grant.grant_id, "[ITEMS] Grant spawn requested");
             effects.push(Effect::SpawnRaceItem {
                 grant_id: grant.grant_id,
                 goods_id: grant.goods_id,
             });
+            self.spawning_grants.push(grant);
         }
         for effect in std::mem::take(&mut self.pending_item_effects) {
             info!(action = ?effect.action, "[ITEMS] Effect applied");
@@ -6803,6 +6873,9 @@ mod tests {
                 goods_id: 1_450_807,
             }]
         );
+        // The banner waits for the goods to be in the inventory.
+        assert_eq!(banner_title(&m), None);
+        m.grant_spawn_result(1, true, now + secs(1));
         assert_eq!(
             banner_title(&m),
             Some(("RED SHELL".to_string(), FeedTone::Gain))
@@ -6816,6 +6889,7 @@ mod tests {
         m.handle_message(grant(1, "red_shell"), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
         assert_eq!(item_steps(&fx), ["spawn"]);
+        m.grant_spawn_result(1, true, now + ms(120));
         m.tick(tick_in(snap(Some(67_000), true), true, None), now + secs(6));
         assert_eq!(banner_title(&m), None);
 
@@ -6830,6 +6904,82 @@ mod tests {
         );
         assert!(item_steps(&fx).is_empty(), "{fx:?}");
         assert_eq!(banner_title(&m), None);
+    }
+
+    #[test]
+    fn failed_spawn_is_retried_at_the_next_load_only() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["spawn"]);
+        m.grant_spawn_result(1, false, now + ms(120));
+        assert_eq!(banner_title(&m), None);
+
+        // Not on every frame of the same load.
+        let fx = m.tick(tick_in(snap(Some(61_100), true), true, None), now + ms(200));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        // The server sends it again: neither acknowledged (no goods yet)
+        // nor queued a second time.
+        let fx = m.handle_message(grant(1, "red_shell"), now + ms(300));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        let fx = m.tick(tick_in(snap(Some(61_200), true), true, None), now + ms(400));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+
+        // The next game load tries once more, after its report.
+        m.tick(
+            tick_in(snap(Some(61_300), false), true, None),
+            now + ms(500),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(61_400), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["report", "spawn"], "{fx:?}");
+        m.grant_spawn_result(1, true, now + secs(1));
+        assert_eq!(
+            banner_title(&m),
+            Some(("RED SHELL".to_string(), FeedTone::Gain))
+        );
+
+        // Handled now: sent again, it is only acknowledged.
+        let fx = m.handle_message(grant(1, "red_shell"), now + secs(2));
+        assert_eq!(item_steps(&fx), ["received"]);
+    }
+
+    #[test]
+    fn failed_spawn_is_retried_on_the_reconnect_frame() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, false, now + ms(120));
+
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            now + secs(1),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(1) + ms(10),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(62_000), true), true, items_scan(&m, &[])),
+            now + secs(1) + ms(20),
+        );
+        assert_eq!(item_steps(&fx), ["ready", "report", "spawn"], "{fx:?}");
+    }
+
+    #[test]
+    fn auth_ok_of_a_race_with_items_prewarms_their_game_access() {
+        let now = Instant::now();
+        let mut on = RaceMachine::new(1, String::new(), false, now);
+        let fx = on.handle_message(auth_ok_with_items("running", true), now);
+        assert!(fx.contains(&Effect::PrewarmRaceItems), "{fx:?}");
+
+        let mut off = RaceMachine::new(1, String::new(), false, now);
+        let fx = off.handle_message(auth_ok_with_items("running", false), now);
+        assert!(!fx.contains(&Effect::PrewarmRaceItems), "{fx:?}");
     }
 
     #[test]
@@ -7192,6 +7342,7 @@ mod tests {
         m.handle_message(grant(1, "red_shell"), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(60_100), true), true, None), now + ms(150));
         assert_eq!(item_steps(&fx), ["spawn"]);
+        m.grant_spawn_result(1, true, now + ms(150));
 
         // A reroll: the loaded pack is outdated, its regulation may lack the
         // race goods.

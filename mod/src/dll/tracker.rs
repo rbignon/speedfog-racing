@@ -287,6 +287,10 @@ pub struct RaceTracker {
     // every reconnect's auth_ok.
     phantom_skin_name: Option<String>,
 
+    // Race item game access readied off the render thread (once per
+    // process, at the first auth_ok of a race with items).
+    race_items_prewarmed: bool,
+
     // Saves the unacknowledged event flags next to the DLL (None when the
     // DLL folder is unknown: nothing survives a restart then).
     unacked_store: Option<UnackedStore>,
@@ -428,6 +432,7 @@ impl RaceTracker {
             phantom_skin_thread: None,
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
             phantom_skin_name: None,
+            race_items_prewarmed: false,
             unacked_store,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
@@ -808,8 +813,11 @@ impl RaceTracker {
                 Effect::SendItemReceived { grant_id } => {
                     self.ws_client.send_item_received(grant_id);
                 }
+                Effect::PrewarmRaceItems => self.prewarm_race_items(),
                 Effect::SpawnRaceItem { grant_id, goods_id } => {
-                    self.spawn_race_item(grant_id, goods_id);
+                    let spawned = self.spawn_race_item(grant_id, goods_id);
+                    self.machine
+                        .grant_spawn_result(grant_id, spawned, Instant::now());
                 }
                 Effect::ReportItemInventory { goods } => self.report_item_inventory(goods),
                 Effect::ApplySpEffect { speffect_id } => {
@@ -828,18 +836,35 @@ impl RaceTracker {
         }
     }
 
+    /// Resolve, on a background thread, the game function race item
+    /// effects call whose lookup scans the game image (the SpEffect apply
+    /// function), so the first effect does not stall a frame. Once per
+    /// process; a reconnection's auth_ok asks again.
+    fn prewarm_race_items(&mut self) {
+        if self.race_items_prewarmed {
+            return;
+        }
+        self.race_items_prewarmed = true;
+        info!("[ITEMS] Prewarming the SpEffect apply function");
+        std::thread::spawn(crate::eldenring::sp_effect_apply::prewarm);
+    }
+
     /// Give a granted race item's goods unless the inventory already holds
     /// them (a game restart re-sends the grant), then answer `item_received`.
-    /// A spawn that injected nothing, or an unreadable inventory, sends
-    /// nothing: the server sends the grant again at the next auth.
-    fn spawn_race_item(&self, grant_id: u64, goods_id: u32) {
+    /// Returns whether the goods are in the inventory, the outcome the
+    /// machine needs (`grant_spawn_result`). A spawn that injected nothing,
+    /// or an unreadable inventory, sends nothing: the machine tries again at
+    /// the next game load or reconnection.
+    fn spawn_race_item(&self, grant_id: u64, goods_id: u32) -> bool {
         match race_items::goods_quantity(goods_id) {
             Some(0) => {
                 if race_items::spawn_goods(goods_id) {
                     info!(grant_id, goods_id, "[ITEMS] Goods spawned");
                     self.ws_client.send_item_received(grant_id);
+                    true
                 } else {
                     warn!(grant_id, goods_id, "[ITEMS] Goods spawn failed");
+                    false
                 }
             }
             Some(quantity) => {
@@ -848,31 +873,31 @@ impl RaceTracker {
                     goods_id, quantity, "[ITEMS] Goods already held, spawn skipped"
                 );
                 self.ws_client.send_item_received(grant_id);
+                true
             }
             None => {
                 warn!(
                     grant_id,
                     goods_id, "[ITEMS] Inventory unreadable, spawn skipped"
                 );
+                false
             }
         }
     }
 
     /// Send `item_inventory` with the catalog keys whose goods the player
-    /// holds. One unreadable quantity skips the whole report: a partial one
-    /// would read as items lost.
+    /// holds, from one read of the inventory. An unreadable inventory skips
+    /// the report: a partial or empty one would read as items lost.
     fn report_item_inventory(&self, goods: Vec<(String, u32)>) {
-        let mut held = Vec::new();
-        for (key, goods_id) in goods {
-            match race_items::goods_quantity(goods_id) {
-                Some(0) => {}
-                Some(_) => held.push(key),
-                None => {
-                    warn!(item = %key, goods_id, "[ITEMS] Inventory unreadable, report skipped");
-                    return;
-                }
-            }
-        }
+        let Some(inventory) = race_items::HeldInventory::read() else {
+            warn!("[ITEMS] Inventory unreadable, report skipped");
+            return;
+        };
+        let held: Vec<String> = goods
+            .into_iter()
+            .filter(|&(_, goods_id)| inventory.goods_quantity(goods_id) > 0)
+            .map(|(key, _)| key)
+            .collect();
         info!(items = ?held, "[ITEMS] Inventory read");
         self.ws_client.send_item_inventory(held);
     }

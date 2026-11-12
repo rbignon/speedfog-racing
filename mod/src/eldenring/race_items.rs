@@ -57,27 +57,43 @@ pub fn spawn_goods(goods_id: u32) -> bool {
     inject_one(GOODS_TYPE_FLAG | goods_id)
 }
 
-/// How many of a goods item the player holds, over the normal and key item
-/// lists: `Some(0)` when absent, `None` when the inventory is unreadable
-/// (a null or unreadable pointer on the way, or a list header that no
-/// longer looks like the layout above).
+/// The held inventory's normal and key item lists, copied out of game
+/// memory once, for as many goods lookups as needed.
+pub struct HeldInventory {
+    normal: Vec<u8>,
+    key: Vec<u8>,
+}
+
+impl HeldInventory {
+    /// `None` when the inventory is unreadable: a null or unreadable
+    /// pointer on the way, or a list header that no longer looks like the
+    /// layout above (zeroed memory included).
+    pub fn read() -> Option<Self> {
+        profile_span!("race_items.read_inventory");
+        let game_data_man = read_ptr(Pointers::new().base_addresses.game_data_man)?;
+        let player_game_data = read_ptr(game_data_man + GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET)?;
+        let lists = PointerChain::<InventoryLists>::new(&[
+            player_game_data + PLAYER_GAME_DATA_INVENTORY_ITEMS_OFFSET
+        ])
+        .read()?;
+        Some(Self {
+            normal: read_list(lists.normal_head, lists.normal_capacity, lists.normal_len)?,
+            key: read_list(lists.key_head, lists.key_capacity, lists.key_len)?,
+        })
+    }
+
+    /// How many of a goods item the lists hold (0 when absent).
+    pub fn goods_quantity(&self, goods_id: u32) -> u32 {
+        let item_id = GOODS_TYPE_FLAG | goods_id;
+        quantity_in_entries(&self.normal, item_id)
+            .saturating_add(quantity_in_entries(&self.key, item_id))
+    }
+}
+
+/// How many of a goods item the player holds: `Some(0)` when absent,
+/// `None` when the inventory is unreadable (see `HeldInventory::read`).
 pub fn goods_quantity(goods_id: u32) -> Option<u32> {
-    profile_span!("race_items.goods_quantity");
-    let item_id = GOODS_TYPE_FLAG | goods_id;
-    let game_data_man = read_ptr(Pointers::new().base_addresses.game_data_man)?;
-    let player_game_data = read_ptr(game_data_man + GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET)?;
-    let lists = PointerChain::<InventoryLists>::new(&[
-        player_game_data + PLAYER_GAME_DATA_INVENTORY_ITEMS_OFFSET
-    ])
-    .read()?;
-    let normal = list_quantity(
-        lists.normal_head,
-        lists.normal_capacity,
-        lists.normal_len,
-        item_id,
-    )?;
-    let key = list_quantity(lists.key_head, lists.key_capacity, lists.key_len, item_id)?;
-    Some(normal.saturating_add(key))
+    Some(HeldInventory::read()?.goods_quantity(goods_id))
 }
 
 /// The player's current HP and effective max HP (`max_hp_ro[0]`, which a
@@ -108,17 +124,13 @@ fn read_ptr(addr: usize) -> Option<usize> {
         .filter(|&ptr| ptr != 0)
 }
 
-/// Quantity of `item_id` in one inventory list, copied out in one read.
-fn list_quantity(head: usize, capacity: u32, len: u32, item_id: u32) -> Option<u32> {
+/// One inventory list's entries, copied out in one read.
+fn read_list(head: usize, capacity: u32, len: u32) -> Option<Vec<u8>> {
     let count = list_entry_count(capacity, len)?;
-    if count == 0 {
-        return Some(0);
-    }
     if head == 0 {
         return None;
     }
-    let entries = read_bytes(head, count * ENTRY_SIZE)?;
-    Some(quantity_in_entries(&entries, item_id))
+    read_bytes(head, count * ENTRY_SIZE)
 }
 
 /// Copy `len` bytes of game memory. `PointerChain` reads a fixed-size type;

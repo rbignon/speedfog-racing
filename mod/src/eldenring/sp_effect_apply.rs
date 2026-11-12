@@ -42,6 +42,8 @@ use libeldenring::prelude::base_addresses::Version;
 use libeldenring::version::get_version;
 use tracing::{debug, error, info, warn};
 
+use crate::profile_span;
+
 const PLAYER_INS_OFFSET_NEW: usize = 0x1E508; // V1_07_0+
 const PLAYER_INS_OFFSET_OLD: usize = 0x18468; // V1_02 .. V1_06
 const SP_EFFECT_CTRL_OFFSET: usize = 0x178;
@@ -127,6 +129,15 @@ fn resolve_apply_fn() -> Option<usize> {
             }
         }
     })
+}
+
+/// Resolve the apply function now: its pattern scan walks the whole game
+/// image, a cost the first `apply_speffect` would otherwise pay on the
+/// thread that calls it (a frame stall on the render thread). Idempotent;
+/// call it from a background thread.
+pub fn prewarm() {
+    profile_span!("sp_effect_apply.prewarm");
+    let _ = resolve_apply_fn();
 }
 
 /// Read PlayerIns from WorldChrMan. Returns null until the player is loaded

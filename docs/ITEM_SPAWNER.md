@@ -107,8 +107,9 @@ Together they cover reconnects, wrong-save selections, and process restarts with
 In a race with items (see `RACE_ITEMS.md`), `item_grant` names a catalog item, and the mod gives its goods through the same `inject_one` with the goods type flag (`race_items::spawn_goods`, `0x40000000 | goods_id`, one unit). None of the gem layers apply:
 
 - **No fresh-save gate and no wait.** Grants arrive mid-race. The race machine holds a grant until the player is loaded on the race save (position readable, no wrong save, seed pack up to date), then the tracker spawns it on the main loop, not on a spawner thread.
-- **The inventory is the guard.** Before spawning, the tracker reads how many of the goods the player holds (`race_items::goods_quantity`). Goods already held skip the spawn: that is a game restart, where the server sends again a grant it never saw acknowledged. Within one process, the machine also remembers the grants it handled and only acknowledges one sent again.
-- **`item_received` follows a spawn or goods already held.** A spawn that injected nothing (`MapItemMan` null) or an unreadable inventory sends nothing and is logged. The server sends the grant again at the next auth; a new game process spawns it then, while this one, having marked the grant handled, only acknowledges it, and a later inventory report, which lacks the goods, clears the item on the server.
+- **The inventory is the guard.** Before spawning, the tracker reads how many of the goods the player holds (`race_items::goods_quantity`). Goods already held skip the spawn: that is a game restart, where the server sends again a grant it never saw acknowledged. Within one process, the machine also remembers the grants whose goods reached the inventory and only acknowledges one sent again.
+- **`item_received` and the banner follow a spawn or goods already held.** The tracker hands the outcome back to the machine (`grant_spawn_result`); only then is the grant handled and its gold banner shown. A spawn that injected nothing (`MapItemMan` null) or an unreadable inventory sends nothing and is logged: the grant waits for the next game load or reconnection and is tried again then, not on every frame. Meanwhile the server's copy of the grant, sent again at the next auth, finds it waiting and is neither acknowledged nor queued twice.
+- **Prewarm.** At the `auth_ok` of a race with items, the tracker resolves the SpEffect apply function (`sp_effect_apply::prewarm`, a pattern scan of the whole game image) on a background thread, once per process, so the first item effect does not pay that scan on the render thread.
 
 ### Reading the inventory
 
@@ -123,19 +124,24 @@ In a race with items (see `RACE_ITEMS.md`), `item_grant` names a catalog item, a
 | +0x18  | key items list (pointer)    |
 | +0x20  | key items in use (u32)      |
 
-Each list is an array of 0x18-byte entries: item id (type flag | param id) at +0x4, quantity at +0x8. The tracker copies a list's whole capacity out in one read (a removed item leaves a gap, so items need not sit below the in-use count) and sums the quantity of the matching entries (`core::item_inventory`), over both lists. A null pointer, or a header that no longer looks like this layout (more in use than allocated, or more than 0x2000 entries), makes the read `None` rather than a guess. The storage chest is not read: goods put in the chest count as not held. The offsets come from fromsoftware-rs `cs/player_game_data.rs` and agree with the TGA Cheat Engine table v1.17.0 inventory script; this mod has not verified them in game yet.
+Each list is an array of 0x18-byte entries: item id (type flag | param id) at +0x4, quantity at +0x8. The tracker copies a list's whole capacity out in one read (a removed item leaves a gap, so items need not sit below the in-use count) and sums the quantity of the matching entries (`core::item_inventory`), over both lists. A null pointer, or a header that no longer looks like this layout (nothing allocated, more in use than allocated, or more than 0x2000 entries), makes the read `None` rather than a guess: zeroed memory must not pass for an empty inventory, which a report would turn into every item lost. The storage chest is not read: goods put in the chest count as not held. The offsets come from fromsoftware-rs `cs/player_game_data.rs` and agree with the TGA Cheat Engine table v1.17.0 inventory script; this mod has not verified them in game yet.
 
-The same read serves the `item_inventory` report sent once per game load and once per reconnection: the catalog keys whose goods are held. One unreadable quantity skips the whole report (logged), since a partial one would read as items lost.
+The `item_inventory` report, sent once per game load and once per reconnection, reads the inventory once (`race_items::HeldInventory`) and lists the catalog keys whose goods are held. An unreadable inventory skips the report (logged), since a partial or empty one would read as items lost.
 
 ## Failure Modes
 
-| Symptom                                                | Cause                                                        | Recovery                                          |
-| ------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------- |
-| `func_item_inject not available for this game version` | `base_addresses.func_item_inject == 0` for current ER build. | Update `libeldenring` base addresses.             |
-| `Stale save detected (IGT too high), waiting...`       | Player loaded an existing save instead of New Game.          | Self-heals on quit-to-title + New Game.           |
-| `Items already spawned (flag set), skipping`           | Re-running on the same save where items were already given.  | Expected; not an error.                           |
-| `MapItemMan became null after delay`                   | Player quit during the 2 s init wait.                        | Race condition; next `auth_ok` retries the spawn. |
-| `Cannot read items-spawned flag, proceeding anyway`    | Flag memory unreadable mid-loading-screen.                   | Layers 1 + 2 still protect against duplicate.     |
+| Symptom                                                | Cause                                                                    | Recovery                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `func_item_inject not available for this game version` | `base_addresses.func_item_inject == 0` for current ER build.             | Update `libeldenring` base addresses.                                                    |
+| `Stale save detected (IGT too high), waiting...`       | Player loaded an existing save instead of New Game.                      | Self-heals on quit-to-title + New Game.                                                  |
+| `Items already spawned (flag set), skipping`           | Re-running on the same save where items were already given.              | Expected; not an error.                                                                  |
+| `MapItemMan became null after delay`                   | Player quit during the 2 s init wait.                                    | Race condition; next `auth_ok` retries the spawn.                                        |
+| `Cannot read items-spawned flag, proceeding anyway`    | Flag memory unreadable mid-loading-screen.                               | Layers 1 + 2 still protect against duplicate.                                            |
+| `Item unit not injected`                               | Gems: `MapItemMan` became null between units (player quit).              | Logged; the gem guards still mark the items given, so the missing units are not retried. |
+| `[ITEMS] Goods spawn failed`                           | Race goods: `func_item_inject` unknown or `MapItemMan` null.             | Grant tried again at the next load or reconnection.                                      |
+| `[ITEMS] Inventory unreadable, spawn skipped`          | Race goods: inventory pointer null or list header implausible.           | Grant tried again at the next load or reconnection; check the inventory offsets.         |
+| `[ITEMS] Inventory unreadable, report skipped`         | Same, at a game load or reconnection.                                    | No report this time; the next load or reconnection sends one.                            |
+| `[ITEMS] Goods already held, spawn skipped`            | A game restart: the server sent again a grant it never saw acknowledged. | Expected; `item_received` sent.                                                          |
 
 ## Logging
 
