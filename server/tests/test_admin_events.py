@@ -466,6 +466,26 @@ async def test_attach_rejects_daily_seed(test_client, users, async_session):
 
 
 @pytest.mark.asyncio
+async def test_attach_rejects_a_race_with_items(test_client, users, async_session):
+    _, orga = users
+    async with async_session() as db:
+        race = await _race(db, orga, "standard", "i1", race_items=True, max_participants=2)
+        await db.commit()
+    async with test_client as client:
+        event_id = (
+            await client.post("/api/admin/events", json=_upsert(DOC), headers=ADMIN)
+        ).json()["id"]
+        response = await client.post(
+            f"/api/admin/races/{race.id}/event",
+            json={"event_id": event_id, "slot": "semi_a:1"},
+            headers=ADMIN,
+        )
+    assert response.status_code == 422 and "race items" in response.text
+    async with async_session() as db:
+        assert (await db.get(Race, race.id)).event_id is None
+
+
+@pytest.mark.asyncio
 async def test_attach_qualifier_rejects_mismatched_window(test_client, users, async_session):
     _, orga = users
     async with async_session() as db:

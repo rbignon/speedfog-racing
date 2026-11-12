@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     race_items_red_shell_pct: int = 20
     # Shared by the damage items: the HP percent a hit lands at when the base
     # would go below it, and the flat damage once HP is under floor + tail.
+    # The four percentages are clamped to 0..100 when sent to the mod.
     race_items_damage_floor_pct: int = 20
     race_items_damage_tail_pct: int = 5
     # Reject mods whose release version is older than this (emergency gate for

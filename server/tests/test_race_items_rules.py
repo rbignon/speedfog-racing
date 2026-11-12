@@ -185,6 +185,17 @@ def test_damage_payload_uses_settings(monkeypatch):
     assert banana and banana.base_pct == 10
 
 
+def test_damage_settings_are_clamped_to_a_percent(monkeypatch):
+    monkeypatch.setattr(settings, "race_items_red_shell_pct", 150)
+    monkeypatch.setattr(settings, "race_items_damage_floor_pct", -10)
+    monkeypatch.setattr(settings, "race_items_damage_tail_pct", 300)
+    red = effect_payload("red_shell", _entry("Red Shell"))
+    assert red and (red.base_pct, red.floor_pct, red.tail_pct) == (100, 0, 100)
+    # The banners quote the damage actually applied.
+    assert target_banner("red_shell", _entry("Red Shell"), "Bob").line == "Hit for 100% HP"
+    assert result_banner("red_shell", _entry("Red Shell"), ["A"], [], 0).detail == "100% HP"
+
+
 def test_other_effect_payloads():
     assert effect_payload("lightning", _entry(speffect=99)).model_dump() == {
         "kind": "speffect",

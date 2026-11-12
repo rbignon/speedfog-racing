@@ -251,10 +251,15 @@ def resolve_targets(
     return [playing[neighbor]] if 0 <= neighbor < len(playing) else []
 
 
+def _percent(value: int) -> int:
+    """A damage setting clamped to 0..100: the mod reads each as a byte."""
+    return max(0, min(100, value))
+
+
 def _damage_pct(key: str) -> int:
     if key == "banana":
-        return settings.race_items_banana_pct
-    return settings.race_items_red_shell_pct
+        return _percent(settings.race_items_banana_pct)
+    return _percent(settings.race_items_red_shell_pct)
 
 
 def _seconds(entry: CatalogEntry) -> int:
@@ -277,8 +282,8 @@ def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | N
         return ItemEffectPayload(
             kind="damage",
             base_pct=_damage_pct(key),
-            floor_pct=settings.race_items_damage_floor_pct,
-            tail_pct=settings.race_items_damage_tail_pct,
+            floor_pct=_percent(settings.race_items_damage_floor_pct),
+            tail_pct=_percent(settings.race_items_damage_tail_pct),
         )
     if kind == "ink":
         return ItemEffectPayload(kind="ink", duration_ms=entry.duration_ms)
