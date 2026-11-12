@@ -61,6 +61,7 @@ from speedfog_racing.websocket.race.items import (
     confirm_grant,
     grant_item,
     pending_grant_message,
+    reconcile_inventory,
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import (
@@ -244,6 +245,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._message_handlers["ready"] = self._handle_ready
         self._message_handlers["finished"] = self._handle_finished_message
         self._message_handlers["item_received"] = self._handle_item_received
+        self._message_handlers["item_inventory"] = self._handle_item_inventory
         self._participant_id: uuid.UUID | None = None
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
@@ -521,6 +523,22 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         room = manager.get_or_create_room(self._race_id)
         async with room.items_lock:
             await confirm_grant(self.session_maker, self._participant_id, grant_id)
+
+    async def _handle_item_inventory(self, msg: dict[str, Any]) -> None:
+        """The mod reports the race items in the game: reconcile the held item."""
+        items = msg.get("items")
+        graph = self._cached_graph_json
+        if self._participant_id is None or not graph or not isinstance(items, list):
+            return
+        if not all(isinstance(key, str) for key in items):
+            return
+        room = manager.get_or_create_room(self._race_id)
+        async with room.items_lock:
+            removals = await reconcile_inventory(
+                self.session_maker, self._participant_id, items, graph
+            )
+            for removal in removals:
+                await room.send_to_mod(self._participant_id, removal.model_dump_json())
 
     async def _on_disconnect(self) -> None:
         assert self._participant_id is not None

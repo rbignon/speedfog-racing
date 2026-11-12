@@ -609,3 +609,22 @@ def test_use_flag_on_a_race_with_items_off_is_acked_and_ignored(
     assert player.held_item == _held("red_shell")
     assert player.zone_history == history
     assert _use_events(integration_db, race_id) == []
+
+
+def test_item_inventory_message_round_trip(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)
+    token = _start_items_race(integration_client, race_with_participants)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth(protocol_version="1.12")["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        _update_player(integration_db, race_with_participants, 0, held_item=_held("shield"))
+        ws0.send_json({"type": "item_inventory", "items": ["red_shell", "shield"]})
+        seen = _barrier(mod0, 400)
+
+    removals = _of_type(seen, "item_remove")
+    assert removals == [{"type": "item_remove", "item": "red_shell", "banner": None}]
+    assert _held_item(integration_db, race_with_participants) == _held("shield")

@@ -20,7 +20,11 @@ from speedfog_racing.models import (
     User,
 )
 from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN
-from speedfog_racing.websocket.race.items import ItemResolution, resolve_item_use
+from speedfog_racing.websocket.race.items import (
+    ItemResolution,
+    reconcile_inventory,
+    resolve_item_use,
+)
 from speedfog_racing.websocket.race.manager import manager
 
 pytestmark = pytest.mark.asyncio
@@ -240,3 +244,69 @@ async def test_concurrent_uses_consume_one_shield(items_db):
     outcomes = sorted(t["outcome"] for e in await _use_events(items_db, race_id) for t in e.targets)
     assert outcomes == ["blocked", "hit"]
     assert await _held(items_db, ids["Lea"]) is None
+
+
+async def _events(session_maker, race_id: uuid.UUID, kind: str) -> list[RaceItemEvent]:
+    async with session_maker() as db:
+        result = await db.execute(
+            select(RaceItemEvent).where(
+                RaceItemEvent.race_id == race_id, RaceItemEvent.kind == kind
+            )
+        )
+        return list(result.scalars().all())
+
+
+async def _set_held(session_maker, participant_id: uuid.UUID, held: dict | None) -> None:
+    async with session_maker() as db:
+        participant = await db.get(Participant, participant_id)
+        assert participant is not None
+        participant.held_item = held
+        await db.commit()
+
+
+async def test_reconcile_clears_a_lost_confirmed_item(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, "shield"))
+    removals = await reconcile_inventory(items_db, ids["Alice"], [], GRAPH)
+    assert removals == []
+    assert await _held(items_db, ids["Alice"]) is None
+    [event] = await _events(items_db, race_id, "lost")
+    assert (event.participant_id, event.item) == (ids["Alice"], "shield")
+
+
+async def test_reconcile_keeps_an_unconfirmed_grant(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
+    held = {"grant_id": 3, "item": "hammer", "confirmed": False}
+    await _set_held(items_db, ids["Alice"], held)
+    assert await reconcile_inventory(items_db, ids["Alice"], [], GRAPH) == []
+    assert await _held(items_db, ids["Alice"]) == held
+    assert await _events(items_db, race_id, "lost") == []
+
+
+async def test_reconcile_confirms_a_reported_grant(items_db):
+    _, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
+    await _set_held(items_db, ids["Alice"], {"grant_id": 3, "item": "hammer", "confirmed": False})
+    assert await reconcile_inventory(items_db, ids["Alice"], ["hammer"], GRAPH) == []
+    assert await _held(items_db, ids["Alice"]) == {
+        "grant_id": 3,
+        "item": "hammer",
+        "confirmed": True,
+    }
+
+
+async def test_reconcile_takes_back_goods_not_held(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, "shield"))
+    removals = await reconcile_inventory(
+        items_db, ids["Alice"], ["hammer", "shield", "not_in_catalog"], GRAPH
+    )
+    assert [(r.item, r.banner) for r in removals] == [("hammer", None)]
+    assert await _held(items_db, ids["Alice"]) == {
+        "grant_id": 1,
+        "item": "shield",
+        "confirmed": True,
+    }
+    [event] = await _events(items_db, race_id, "take_back")
+    assert event.item == "hammer"
+    # Holding nothing, every reported item goes.
+    _, ids = await _field(items_db, ("Bob", PLAYING, 2, None))
+    removals = await reconcile_inventory(items_db, ids["Bob"], ["hammer", "hammer"], GRAPH)
+    assert [r.item for r in removals] == ["hammer"]

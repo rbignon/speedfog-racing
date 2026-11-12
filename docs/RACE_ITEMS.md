@@ -69,6 +69,17 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 
 Grants, confirmations and uses run under `RaceRoom.items_lock`, so concurrent connections cannot grant, confirm or spend over each other: two items aimed at one Shield holder spend the Shield once. A grant after a kill and a use also send their messages under the lock, so a later item message to a runner cannot overtake them.
 
+### Inventory reconciliation
+
+The mod sends `item_inventory {items}` (the race items present in the game) once per game load, after that load's first flag poll and before any pending spawn, and once per reconnect. The server treats it as the truth about the goods, under the same lock; keys absent from the seed's catalog are ignored:
+
+| Held item                  | Report  | Outcome                                                              |
+| -------------------------- | ------- | -------------------------------------------------------------------- |
+| unconfirmed                | present | confirmed                                                            |
+| confirmed                  | absent  | cleared and logged `lost`, so the runner can draw again              |
+| unconfirmed                | absent  | kept: its `item_grant` is re-sent at auth and may not be spawned yet |
+| any reported item not held | present | `item_remove` without banner sent, logged `take_back`                |
+
 ### Result and block banners
 
 The banner title is the catalog `name`. The sender's result line:

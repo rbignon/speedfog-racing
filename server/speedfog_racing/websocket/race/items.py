@@ -7,7 +7,7 @@ calls them under the race's ``items_lock`` and sends what they return.
 import logging
 import random
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -260,3 +260,60 @@ async def resolve_item_use(
         )
         await db.commit()
         return resolution
+
+
+async def reconcile_inventory(
+    session_maker: async_sessionmaker[AsyncSession],
+    participant_id: uuid.UUID,
+    items: Sequence[str],
+    graph_json: Mapping[str, Any],
+) -> list[ItemRemoveMessage]:
+    """Align the held item with the race items the mod reports in the inventory.
+
+    The report is the truth about the goods in the game. A held item in the
+    report is confirmed; a confirmed one that is absent was lost (save reload,
+    drop) and is cleared, logging ``lost``, so the runner can draw again; an
+    unconfirmed one that is absent is kept, its goods may not be spawned yet.
+    Every other reported item is not held: it is returned as a removal
+    without banner and logged ``take_back``. Keys outside the catalog are
+    ignored.
+    """
+    catalog = extract_race_item_catalog(graph_json)
+    reported = [key for key in dict.fromkeys(items) if key in catalog]
+    async with session_maker() as db:
+        participant = await db.get(Participant, participant_id)
+        if participant is None:
+            return []
+        held = participant.held_item
+        held_key = held.get("item") if held else None
+        if held and held_key in reported:
+            if not held.get("confirmed"):
+                # Reassign: a JSON column does not see in-place changes.
+                participant.held_item = {**held, "confirmed": True}
+        elif held and held.get("confirmed"):
+            participant.held_item = None
+            db.add(
+                RaceItemEvent(
+                    race_id=participant.race_id,
+                    participant_id=participant_id,
+                    kind="lost",
+                    item=held_key,
+                    igt_ms=participant.igt_ms,
+                )
+            )
+        removals: list[ItemRemoveMessage] = []
+        for key in reported:
+            if key == held_key:
+                continue
+            removals.append(ItemRemoveMessage(item=key))
+            db.add(
+                RaceItemEvent(
+                    race_id=participant.race_id,
+                    participant_id=participant_id,
+                    kind="take_back",
+                    item=key,
+                    igt_ms=participant.igt_ms,
+                )
+            )
+        await db.commit()
+        return removals
