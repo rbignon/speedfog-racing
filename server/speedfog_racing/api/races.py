@@ -211,6 +211,7 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
+        race_items=race.race_items,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         mode=race.mode,
@@ -389,6 +390,7 @@ async def create_race(
         race_duration_minutes=request.race_duration_minutes,
         private_dag=request.private_dag,
         deathless=request.deathless,
+        race_items=request.race_items,
         custom_rules=(request.custom_rules or "").strip() or None,
         mode=request.mode,
     )
@@ -669,6 +671,7 @@ async def update_race(
         race.private_dag,
         race.custom_rules,
         race.deathless,
+        race.race_items,
     )
 
     # is_public can be changed at any status
@@ -772,6 +775,20 @@ async def update_race(
             )
         race.deathless = bool(request.deathless)
 
+    # race_items: SETUP only, community races only
+    if "race_items" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="race_items can only be edited in SETUP status",
+            )
+        if race.mode != RunMode.NORMAL or race.daily_date is not None or race.event_id is not None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="race_items is only available on community races",
+            )
+        race.race_items = bool(request.race_items)
+
     # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
     if "custom_rules" in request.model_fields_set:
         if race.status == RaceStatus.FINISHED:
@@ -824,6 +841,7 @@ async def update_race(
         race.private_dag,
         race.custom_rules,
         race.deathless,
+        race.race_items,
     )
     if post_snapshot != pre_snapshot:
         await broadcast_race_info_update(race)

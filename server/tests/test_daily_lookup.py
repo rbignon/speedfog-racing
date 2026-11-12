@@ -45,6 +45,7 @@ def _daily_race(*, organizer: User, **overrides) -> Race:
         open_registration=True,
         private_dag=False,
         deathless=False,
+        race_items=False,
         daily_date=date(2026, 4, 27),
         mode=RunMode.NORMAL,
         seed_was_seen=False,

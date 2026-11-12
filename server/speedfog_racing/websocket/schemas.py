@@ -207,6 +207,7 @@ class RaceInfo(BaseModel):
     igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
+    race_items: bool = False
     # Speedrun or Set Seed run. A solo session reads debug flags only when ranked
     # (races always do).
     ranked: bool = False
@@ -256,6 +257,7 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
+        race_items=race.race_items,
         ranked=race.mode != RunMode.NORMAL,
         countdown_seconds=countdown_seconds,
         seed_id=str(race.seed_id) if race.seed_id else None,

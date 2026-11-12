@@ -95,6 +95,7 @@ class CreateRaceRequest(BaseModel):
     race_duration_minutes: int | None = None
     private_dag: bool = False
     deathless: bool = False
+    race_items: bool = False
     custom_rules: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
@@ -128,11 +129,18 @@ class CreateRaceRequest(BaseModel):
             raise ValueError("seed is required for a set_seed race and refused otherwise")
         return self
 
+    @model_validator(mode="after")
+    def validate_race_items_mode(self) -> "CreateRaceRequest":
+        if self.race_items and self.mode != RunMode.NORMAL:
+            raise ValueError("race_items is only available on normal races")
+        return self
+
 
 class UpdateRaceRequest(BaseModel):
     """Request to update race properties. Organizer only.
 
-    scheduled_at / open_registration / max_participants / private_dag / deathless: SETUP only.
+    scheduled_at / open_registration / max_participants / private_dag / deathless /
+    race_items: SETUP only.
     is_public: editable at any status.
     late_join_window_minutes: SETUP only.
     race_duration_minutes: SETUP, or RUNNING to extend (never shorten).
@@ -147,6 +155,7 @@ class UpdateRaceRequest(BaseModel):
     race_duration_minutes: int | None = None
     private_dag: bool | None = None
     deathless: bool | None = None
+    race_items: bool | None = None
     custom_rules: str | None = Field(default=None, max_length=1000)
 
 
@@ -448,6 +457,7 @@ class RaceResponse(BaseModel):
     igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
+    race_items: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
     mode: RunMode
@@ -546,6 +556,7 @@ class RaceDetailResponse(BaseModel):
     igt_cutoff_ms: int | None = None
     private_dag: bool = False
     deathless: bool = False
+    race_items: bool = False
     custom_rules: str | None = None
     daily_date: date | None = None
     mode: RunMode

@@ -202,6 +202,7 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         igt_cutoff_ms=race.igt_cutoff_ms,
         private_dag=race.private_dag,
         deathless=race.deathless,
+        race_items=race.race_items,
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         mode=race.mode,

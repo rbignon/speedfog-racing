@@ -422,6 +422,10 @@ class Race(Base):
     deathless: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # Mario Kart style items handed out during the race (community races only).
+    race_items: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # The current seed was played: set by a reset (the only way back to SETUP
     # after a start), cleared by a reroll. A SETUP race's seed then stays
     # CONSUMED on a reroll or a deletion instead of becoming SEEN.

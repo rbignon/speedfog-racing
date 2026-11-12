@@ -111,6 +111,17 @@ and "dead" in the in-game leaderboard. Independently of deathless, the
 in-game overlay freezes an abandoned player's own IGT display at the
 server-recorded value and shows it in red.
 
+### Race items
+
+`race_items` (bool, default false, editable in SETUP only): the race hands out
+Mario Kart style items to its runners. It is a community race option: creating
+a race with `race_items` on a `mode` other than `normal` is a 422, and editing
+it on a race that is not a community race (`mode` other than `normal`, a
+`daily_date` or an `event_id`) is a 400, as is editing it once the race has left
+SETUP. It is not checked against `deathless`: combining both is the organizer's
+call. A change broadcasts a `race_info_update` like the other options, and
+`RaceInfo.race_items` carries it to the mod and the web.
+
 ### IGT cutoff
 
 `igt_cutoff_ms` (int, ms, nullable, set by the server only): the in-game
