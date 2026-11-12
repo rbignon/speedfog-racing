@@ -21,12 +21,15 @@ use std::ffi::c_void;
 
 use libeldenring::memedit::PointerChain;
 use libeldenring::pointers::Pointers;
+use tracing::info;
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::System::Threading::GetCurrentProcess;
 
 use super::item_spawner::inject_one;
 use crate::core::constants::GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET;
-use crate::core::item_inventory::{list_entry_count, quantity_in_entries, ENTRY_SIZE};
+use crate::core::item_inventory::{
+    list_entry_count, lists_hold_items, quantity_in_entries, ENTRY_SIZE,
+};
 use crate::profile_span;
 
 /// Goods type flag in item ID encoding (high nibble 0x4 = EquipParamGoods).
@@ -66,8 +69,9 @@ pub struct HeldInventory {
 
 impl HeldInventory {
     /// `None` when the inventory is unreadable: a null or unreadable
-    /// pointer on the way, or a list header that no longer looks like the
-    /// layout above (zeroed memory included).
+    /// pointer on the way, a list header that no longer looks like the
+    /// layout above (zeroed memory included), or both lists empty
+    /// (allocated, not filled yet). Logs the list headers it read.
     pub fn read() -> Option<Self> {
         profile_span!("race_items.read_inventory");
         let game_data_man = read_ptr(Pointers::new().base_addresses.game_data_man)?;
@@ -76,6 +80,18 @@ impl HeldInventory {
             player_game_data + PLAYER_GAME_DATA_INVENTORY_ITEMS_OFFSET
         ])
         .read()?;
+        // Info, the default filter's level: a rare read (a game load, a
+        // spawn) whose headers confirm the layout from the mod log.
+        info!(
+            normal_capacity = lists.normal_capacity,
+            normal_len = lists.normal_len,
+            key_capacity = lists.key_capacity,
+            key_len = lists.key_len,
+            "[ITEMS] Inventory list headers"
+        );
+        if !lists_hold_items(lists.normal_len, lists.key_len) {
+            return None;
+        }
         Some(Self {
             normal: read_list(lists.normal_head, lists.normal_capacity, lists.normal_len)?,
             key: read_list(lists.key_head, lists.key_capacity, lists.key_len)?,

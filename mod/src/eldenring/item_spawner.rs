@@ -50,12 +50,14 @@ type SpawnItemFn = unsafe extern "system" fn(*const c_void, *mut SpawnRequest, *
 /// Give one unit of an item through func_item_inject. `encoded_id` carries
 /// the item type in its high nibble (`GEM_TYPE_FLAG`, goods `0x4000_0000`).
 ///
-/// False, with nothing injected, when func_item_inject is unknown for this
-/// game version or MapItemMan is null (player not in the game world).
+/// False, with nothing injected, when func_item_inject or MapItemMan's
+/// address is unknown for this game version, or MapItemMan is null (player
+/// not in the game world). True once the game function was called: its
+/// output word is logged, not read as a success.
 pub fn inject_one(encoded_id: u32) -> bool {
     let base = Pointers::new().base_addresses;
     let func_addr = base.func_item_inject;
-    if func_addr == 0 {
+    if func_addr == 0 || base.map_item_man == 0 {
         return false;
     }
     let p_map_item_man = unsafe { (base.map_item_man as *const *const c_void).read() };
@@ -83,6 +85,13 @@ pub fn inject_one(encoded_id: u32) -> bool {
             0,
         );
     }
+    // What the game writes there is undocumented: logged so the in-game
+    // check can tell a given item's value from a refused one's.
+    info!(
+        encoded = format_args!("0x{:08X}", encoded_id),
+        output = format_args!("0x{:08X}", output),
+        "func_item_inject called"
+    );
     true
 }
 

@@ -34,6 +34,14 @@ pub fn list_entry_count(capacity: u32, len: u32) -> Option<usize> {
     (capacity > 0 && len <= capacity && capacity <= MAX_LIST_ENTRIES).then_some(capacity as usize)
 }
 
+/// Whether the in-use counts of the normal and key lists can be a loaded
+/// character's. A loaded character always holds items (its flasks), so two
+/// empty lists are lists allocated but not filled yet, which must not pass
+/// for an empty inventory either.
+pub fn lists_hold_items(normal_len: u32, key_len: u32) -> bool {
+    normal_len > 0 || key_len > 0
+}
+
 /// Total quantity of `item_id` over the whole entries in `entries`
 /// (a trailing partial entry is ignored).
 pub fn quantity_in_entries(entries: &[u8], item_id: u32) -> u32 {
@@ -106,6 +114,14 @@ mod tests {
         let partial = entries(&[(GOODS, 5)]);
         list.extend_from_slice(&partial[..ENTRY_SIZE - 1]);
         assert_eq!(quantity_in_entries(&list, GOODS), 1);
+    }
+
+    #[test]
+    fn two_empty_lists_are_no_loaded_inventory() {
+        // Allocated but not filled yet: a loaded character holds its flasks.
+        assert!(!lists_hold_items(0, 0));
+        assert!(lists_hold_items(12, 0));
+        assert!(lists_hold_items(0, 3));
     }
 
     #[test]
