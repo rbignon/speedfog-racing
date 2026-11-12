@@ -94,6 +94,7 @@ Called via the `speedfog-scan-seeds` CLI (or `POST /api/admin/seeds/scan`). For 
 
 - Returns a random AVAILABLE seed (`ORDER BY random()`), or `None`. Optional `exclude_id` for reroll (exclude the current seed, from the floor count too); `rerolled_seed_ids` (a reroll's `Race.rerolled_seed_ids`) leaves the seeds the race already gave up out of every candidate set.
 - With `allow_seen` (community races in normal mode only, which a SEEN seed keeps off the boards: `race_draws_fresh_seeds` leaves them out), SEEN seeds are a fallback stock: while the pool has more AVAILABLE seeds than its speedrun floor (`speedrun_floor`: `Pool.speedrun_floor`, else `SPEEDRUN_DEFAULT_FLOOR`), an AVAILABLE seed, else a SEEN one; at or under the floor, a SEEN seed, else an AVAILABLE seed from the reserve. The default is AVAILABLE only, so a caller that forgets the flag never hands a SEEN seed to a draw that counts on the boards. See "Draws" in `RACE_LIFECYCLE.md`.
+- An items race (`Race.race_items`) draws only seeds that carry the race items plugin (`graph_json["plugins"]["race_items"]["enabled"]` true and a non-empty `graph_json["race_items"]` catalog; the SQL filter is `race_items_seed_clause`, the parsing lives in `services/race_items.py`). `GET /api/pools` reports `race_items_available`: the AVAILABLE plus SEEN seeds of the pool that match. Creating an items race, or switching the option on in SETUP over a seed without the plugin (which redraws without counting as a player reroll), is a 400 when the pool has none.
 
 ### Seed Reroll
 

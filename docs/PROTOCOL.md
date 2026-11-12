@@ -66,10 +66,10 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 
 ### Pools
 
-| Method | Endpoint              | Auth | Description                                                                                                                         |
-| ------ | --------------------- | ---- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/pools`          | -    | Pool stats with TOML metadata (`{ [name]: { available, seen, speedrun_floor, consumed, discarded, played_by_user, pool_config } }`) |
-| GET    | `/api/pools?type=...` | -    | Filter pools by type (e.g. `?type=training`)                                                                                        |
+| Method | Endpoint              | Auth | Description                                                                                                                                               |
+| ------ | --------------------- | ---- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/pools`          | -    | Pool stats with TOML metadata (`{ [name]: { available, seen, race_items_available, speedrun_floor, consumed, discarded, played_by_user, pool_config } }`) |
+| GET    | `/api/pools?type=...` | -    | Filter pools by type (e.g. `?type=training`)                                                                                                              |
 
 ### Users
 

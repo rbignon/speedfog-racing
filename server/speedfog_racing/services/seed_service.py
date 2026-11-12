@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.config import settings
 from speedfog_racing.models import Pool, Race, RaceStatus, RunMode, Seed, SeedStatus
+from speedfog_racing.services.race_items import race_items_seed_clause
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 from speedfog_racing.services.speedrun_service import (
     _is_training,
@@ -324,8 +325,13 @@ async def _random_seed(
     pool_name: str,
     statuses: Collection[SeedStatus],
     excluded: Collection[uuid.UUID],
+    *,
+    require_race_items: bool = False,
 ) -> Seed | None:
-    """One seed picked uniformly among the pool's seeds in ``statuses``."""
+    """One seed picked uniformly among the pool's seeds in ``statuses``.
+
+    With ``require_race_items`` only seeds that carry the race items plugin qualify.
+    """
     query = (
         select(Seed)
         .where(Seed.pool_name == pool_name, Seed.status.in_(statuses))
@@ -336,6 +342,8 @@ async def _random_seed(
     )
     if excluded:
         query = query.where(Seed.id.not_in(excluded))
+    if require_race_items:
+        query = query.where(race_items_seed_clause())
     return (await db.execute(query)).scalar_one_or_none()
 
 
@@ -346,6 +354,7 @@ async def get_available_seed(
     *,
     allow_seen: bool = False,
     rerolled_seed_ids: Collection[uuid.UUID] = (),
+    require_race_items: bool = False,
 ) -> Seed | None:
     """Get a random seed to draw from the pool.
 
@@ -364,13 +373,17 @@ async def get_available_seed(
         allow_seen: Whether SEEN seeds may be drawn (see above)
         rerolled_seed_ids: Seeds the race's rerolls already gave up
             (``Race.rerolled_seed_ids``), left out of every candidate set
+        require_race_items: Draw only seeds that carry the race items plugin
+            (the floor count still covers every AVAILABLE seed)
 
     Returns:
         A random Seed, or None if the pool has none to draw
     """
     excluded = {*rerolled_seed_ids, *([exclude_id] if exclude_id is not None else [])}
     if not allow_seen:
-        return await _random_seed(db, pool_name, (SeedStatus.AVAILABLE,), excluded)
+        return await _random_seed(
+            db, pool_name, (SeedStatus.AVAILABLE,), excluded, require_race_items=require_race_items
+        )
     above_floor = await _available_count(db, pool_name, exclude_id) > await speedrun_floor(
         db, pool_name
     )
@@ -380,7 +393,9 @@ async def get_available_seed(
         else (SeedStatus.SEEN, SeedStatus.AVAILABLE)
     )
     for status in order:
-        seed = await _random_seed(db, pool_name, (status,), excluded)
+        seed = await _random_seed(
+            db, pool_name, (status,), excluded, require_race_items=require_race_items
+        )
         if seed is not None:
             return seed
     return None
@@ -488,9 +503,13 @@ async def assign_seed_to_race(
     Raises:
         ValueError: If no seeds are available in the pool
     """
-    seed = await get_available_seed(db, pool_name, allow_seen=allow_seen)
+    seed = await get_available_seed(
+        db, pool_name, allow_seen=allow_seen, require_race_items=race.race_items
+    )
 
     if seed is None:
+        if race.race_items:
+            raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     race.seed_was_seen = seed.status == SeedStatus.SEEN
@@ -507,6 +526,7 @@ async def reroll_seed_for_race(
     race: Race,
     reporter_id: uuid.UUID | None = None,
     report_reason: str | None = None,
+    count_as_reroll: bool = True,
 ) -> Seed:
     """Re-roll the seed for a race.
 
@@ -528,6 +548,11 @@ async def reroll_seed_for_race(
     (``race.seed_played``, cleared here since the new seed was never
     played). When ``reporter_id`` is provided, it is marked REPORTED instead
     and the report fields are populated. A DISCARDED seed stays DISCARDED.
+
+    An items race (``Race.race_items``) draws only seeds that carry the race
+    items plugin. ``count_as_reroll=False`` is for a redraw the option itself
+    forces (switching items on over a plain seed): it leaves
+    ``rerolled_without_report`` alone, since the organizer asked for no seed.
 
     Without ``reporter_id``, giving up a seed that was not SEEN when drawn
     sets ``Race.rerolled_without_report``, which keeps a community race off
@@ -567,11 +592,14 @@ async def reroll_seed_for_race(
             exclude_id=old_seed.id,
             allow_seen=not race_draws_fresh_seeds(race),
             rerolled_seed_ids=[uuid.UUID(seed_id) for seed_id in rerolled],
+            require_race_items=race.race_items,
         )
     if new_seed is None:
         if rerolled:
             # The pool may still hold the seeds this race rejected.
             raise ValueError(f"No other seed left in pool '{pool_name}' for this race")
+        if race.race_items:
+            raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     # Release old seed (keep DISCARDED if pool was discarded)
@@ -594,7 +622,7 @@ async def reroll_seed_for_race(
     # A SEEN seed could not count, so the reroll off it only gives the race
     # its first countable seed. A played one could not either, but start,
     # reset and reroll would fish as well as any reroll.
-    if reporter_id is None and not race.seed_was_seen:
+    if count_as_reroll and reporter_id is None and not race.seed_was_seen:
         race.rerolled_without_report = True
 
     # Assign new seed
@@ -608,6 +636,22 @@ async def reroll_seed_for_race(
         f"Re-rolled seed for race {race.id}: {old_seed.seed_number} -> {new_seed.seed_number}"
     )
     return new_seed
+
+
+async def get_race_items_counts(db: AsyncSession) -> dict[str, int]:
+    """Per pool, the AVAILABLE and SEEN seeds carrying the race items plugin.
+
+    These are the seeds a normal items race can draw. Pools without one are absent.
+    """
+    result = await db.execute(
+        select(Seed.pool_name, func.count(Seed.id))
+        .where(
+            Seed.status.in_((SeedStatus.AVAILABLE, SeedStatus.SEEN)),
+            race_items_seed_clause(),
+        )
+        .group_by(Seed.pool_name)
+    )
+    return {pool_name: count for pool_name, count in result}
 
 
 async def get_pool_stats(db: AsyncSession) -> dict[str, dict[str, int]]:

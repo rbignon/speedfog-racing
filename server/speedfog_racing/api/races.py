@@ -91,6 +91,7 @@ from speedfog_racing.services.calendar_sync import (
 from speedfog_racing.services.daily_seed_loop import daily_date_for
 from speedfog_racing.services.event_service import leaderboard_points, update_playoff_cutoff
 from speedfog_racing.services.pool_service import format_pool_display_name
+from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.sanctions_service import (
     cancel_disqualification,
@@ -788,6 +789,18 @@ async def update_race(
                 detail="race_items is only available on community races",
             )
         race.race_items = bool(request.race_items)
+        if (
+            race.race_items
+            and race.seed is not None
+            and not seed_has_race_items(race.seed.graph_json)
+        ):
+            # The seed cannot carry items: redraw one that can. The option did
+            # the redraw, not a player, so it is no reroll for the boards.
+            try:
+                race = await apply_seed_reroll(db, race, count_as_reroll=False)
+            except HTTPException:
+                await db.rollback()  # the option stays off
+                raise
 
     # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
     if "custom_rules" in request.model_fields_set:
@@ -1855,6 +1868,7 @@ async def apply_seed_reroll(
     *,
     reporter_id: UUID | None = None,
     report_reason: str | None = None,
+    count_as_reroll: bool = True,
 ) -> Race:
     """Draw a new seed for a race whose reroll the caller allowed, and tell everyone.
 
@@ -1877,7 +1891,13 @@ async def apply_seed_reroll(
     race_id = race.id
     is_daily = race.daily_date is not None
     try:
-        await reroll_seed_for_race(db, race, reporter_id=reporter_id, report_reason=report_reason)
+        await reroll_seed_for_race(
+            db,
+            race,
+            reporter_id=reporter_id,
+            report_reason=report_reason,
+            count_as_reroll=count_as_reroll,
+        )
     except SpeedrunFloorError as e:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     except ValueError as e:
