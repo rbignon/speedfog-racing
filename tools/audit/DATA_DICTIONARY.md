@@ -202,7 +202,7 @@ was made. Changes that affect the data, as of the export:
 | 2026-08-12 | framerate-independent IGT, and IGT frozen during black loading fades                                                           |
 | 2026-08-29 | poison, blood and occult weapons tracked (earlier, they were silently missing from `weapons`)                                  |
 | 2026-09-18 | bosses no longer drop weapons in part of the pools (see below)                                                                 |
-| 2026-11-12 | `boss_kill_igt_ms` appears on `zone_history` entries: absent from runs played with an older mod, or before the server change   |
+| 2026-11-12 | `boss_kill_igt_ms` on `zone_history` entries, only in runs played with a mod built from this date on and an updated server     |
 
 Since 2026-09-18 (fully from about 11:30 UTC that day; seeds generated
 earlier that morning could still get a few), seeds generated in `standard`,

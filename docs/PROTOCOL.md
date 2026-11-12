@@ -234,7 +234,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). The server resolves it to a DAG node via the seed's `event_map`. If the flag matches `finish_event`, the player is auto-finished. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
+Sent when the mod detects an event flag transition (0 → 1). The server resolves a fog flag to a DAG node via the seed's `event_map`. A boss defeat flag (one of the seed's `boss_flags`) resolves instead to the node carrying it as `defeat_flag` in `graph.json`: the kill's IGT is stamped as `boss_kill_igt_ms` on that node's most recent `zone_history` visit, never as a new entry, and only the first kill is kept; a kill with no visit of its node, or at IGT 0, is acked and ignored. If the flag matches `finish_event`, the player is auto-finished. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
 
 `message_id` is optional for backward compatibility. Newer mods attach a monotonically increasing client-local ID so the server can acknowledge persistence and deduplicate replayed `event_flag` messages after reconnect.
 
@@ -831,7 +831,7 @@ Broadcast to all spectators when spectator count changes (connect/disconnect).
 
 #### `zone_history`
 
-Full `zone_history` snapshot for a single participant. Broadcast to spectators only (mods don't consume `zone_history`). Emitted whenever the server's view of a participant's `zone_history` changes: new entry appended (spawn, fog gate, zone_query backtrack) or existing entry's `deaths` count updated via death attribution.
+Full `zone_history` snapshot for a single participant. Broadcast to spectators only (mods don't consume `zone_history`). Emitted whenever the server's view of a participant's `zone_history` changes: new entry appended (spawn, fog gate, zone_query backtrack), existing entry's `deaths` count updated via death attribution, or a boss kill stamped as `boss_kill_igt_ms` on an existing entry.
 
 ```json
 {
@@ -1212,16 +1212,17 @@ Both the in-game mod and the web frontend render participants in this server-pro
 
 - **Bootstrap**: `race_state` (spectator) carries the full `zone_history` for every participant. Sent on initial connection, on race status transitions, on seed release, and on participant add/remove. Clients copy this into a local `zoneHistoryByParticipant` store.
 - **Broadcasts**: `leaderboard_update` and `player_update` always carry `zone_history: null`. When a client receives one, it must preserve the locally-held `zone_history` rather than overwriting it with `null`.
-- **Snapshots**: each server-side change to a participant's `zone_history` (append or death-attribution update) emits a `zone_history` message carrying the full current list. The client replaces its local copy. Because the payload is the full list each time, a client that missed an earlier message self-heals on the next emission.
+- **Snapshots**: each server-side change to a participant's `zone_history` (append, death-attribution update or boss kill) emits a `zone_history` message carrying the full current list. The client replaces its local copy. Because the payload is the full list each time, a client that missed an earlier message self-heals on the next emission.
 
 Emission sites (server-side):
 
-| Trigger                                              | Change                                                      |
-| ---------------------------------------------------- | ----------------------------------------------------------- |
-| First `status_update` (READY → PLAYING, spawn node)  | Appends `{type: "spawn", igt_ms: 0, …}`                     |
-| `status_update` with `delta > 0` (death attribution) | Bumps `deaths` on the most recent entry at `current_zone`   |
-| `event_flag` (fog gate traversal)                    | Appends `{type: "fog", …}` (first visit and revisit alike)  |
-| `zone_query` (backtrack via death/teleport/quit-out) | Appends `{type: "backtrack", …}` when resolved node differs |
+| Trigger                                              | Change                                                              |
+| ---------------------------------------------------- | ------------------------------------------------------------------- |
+| First `status_update` (READY → PLAYING, spawn node)  | Appends `{type: "spawn", igt_ms: 0, …}`                             |
+| `status_update` with `delta > 0` (death attribution) | Bumps `deaths` on the most recent entry at `current_zone`           |
+| `event_flag` (fog gate traversal)                    | Appends `{type: "fog", …}` (first visit and revisit alike)          |
+| `zone_query` (backtrack via death/teleport/quit-out) | Appends `{type: "backtrack", …}` when resolved node differs         |
+| `event_flag` (boss defeat flag, new kill)            | Sets `boss_kill_igt_ms` on the most recent entry of the boss's node |
 
 Mods never receive `zone_history` snapshots (they don't consume `zone_history`). The training spectator endpoint (`/ws/training/{id}/spectate`) uses the same pattern with the training session UUID as `participant_id`.
 
@@ -1345,6 +1346,7 @@ Care package items of type 4 (Gem/Ash of War) cannot be given via EMEVD's `Direc
 | `status_update` (death delta)  | `player_update` + `death_counts`                                         | `player_update` + `zone_history` (deaths update)                                                                                                                                                              |
 | `event_flag` (new node)        | `leaderboard_update`                                                     | `leaderboard_update` + `zone_history` (fog)                                                                                                                                                                   |
 | `event_flag` (revisit)         | `zone_update` (unicast) + `player_update`                                | `player_update` + `zone_history` (fog)                                                                                                                                                                        |
+| `event_flag` (boss kill)       | `event_flag_ack` only                                                    | `zone_history` (kill), on a new kill only                                                                                                                                                                     |
 | `event_flag` (finish)          | `leaderboard_update`                                                     | `leaderboard_update` + `chat_message` (system); `race_state` + status change when it ends the race, `race_state` alone on an open event qualifier; `race_info_update` to both when it sets or lowers a cutoff |
 | `zone_query` (same zone)       | `zone_update` (unicast) + `player_update`                                | `player_update`                                                                                                                                                                                               |
 | `zone_query` (backtrack/new)   | `zone_update` (unicast) + `leaderboard_update` or `player_update`        | `leaderboard_update` or `player_update` + `zone_history` (backtrack)                                                                                                                                          |

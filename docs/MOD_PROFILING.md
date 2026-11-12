@@ -11,8 +11,8 @@ UI over TCP port `8086`. You can see:
 
 - Per-frame CPU cost of ImGui rendering (`frame` and `imgui_window` spans).
 - Per-frame cost of `RaceTracker::update` and its sub-blocks (`tracker_update`,
-  `ws_poll`, `frame_snapshot`, `event_flag_poll`, `loading_exit_scan`,
-  `livesplit_publish`).
+  `ws_poll`, `frame_snapshot`, `event_flag_poll` and the `boss_flag_reads`
+  inside it, `loading_exit_scan`, `livesplit_publish`).
 - Leaderboard rebuild cost (`render_leaderboard`, `refresh_leaderboard_cache`,
   `leaderboard_rows`).
 - Game memory reads (`read_igt`, `read_deaths`, `read_position`,
@@ -65,8 +65,11 @@ opens a TCP listener.
 - **`frame` duration.** At 60 FPS the budget is 16.6 ms. Anything the mod adds
   to this is directly visible.
 - **`find_category_page` under `event_flag_poll`.** This walks the game's
-  red-black tree every 100 ms. If you see it spiking above a few microseconds
-  per call, the cache is being invalidated too often.
+  red-black tree every 100 ms: up to 9 walks per poll, 1 for the fog flags'
+  cached page and up to 8 for the boss defeat flags read under
+  `boss_flag_reads` (they sit in other categories, so each read walks the tree
+  on its own). If you see it spiking above a few microseconds per call, the
+  cache is being invalidated too often.
 - **`refresh_leaderboard_cache` frequency.** It is throttled to 250 ms via the
   IGT bucket. Seeing it fire on every frame means the throttle is broken.
 - **`imgui_window` vs `tracker_update` ratio.** If rendering dominates, investigate
