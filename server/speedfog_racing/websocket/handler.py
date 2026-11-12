@@ -904,6 +904,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
         is_first_visit = False
         prev_zone_history_len: int | None = None
         entity: T | None = None
+        killed_node: str | None = None
+        is_boss_flag = False
 
         async with self.session_maker() as db:
             entity = await self._load_entity(db)
@@ -946,9 +948,32 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
             event_map = seed_graph.get("event_map", {})
             finish_event = seed_graph.get("finish_event")
+            boss_node = extract_boss_flags(seed_graph).get(flag_id)
 
+            if boss_node is not None:
+                # Boss defeat flag: stamp the kill on the node's latest visit.
+                # Always acked, a re-report or a kill with no visit changes nothing.
+                kill_history = record_boss_kill(entity.zone_history, boss_node, igt)
+                if kill_history is not None:
+                    self._on_igt_change(entity, igt)
+                    entity.zone_history = kill_history
+                    await db.commit()
+                logger.info(
+                    "event_flag: flag_id=%d boss_kill node_id=%s igt_ms=%d "
+                    "recorded=%s message_id=%s %s",
+                    flag_id,
+                    boss_node,
+                    igt,
+                    kill_history is not None,
+                    message_id,
+                    self.log_ref,
+                )
+                if message_id is not None:
+                    await self._send_event_flag_ack(message_id)
+                is_boss_flag = True
+                killed_node = boss_node if kill_history is not None else None
             # Check finish event first
-            if flag_id == finish_event:
+            elif flag_id == finish_event:
                 logger.info(
                     "event_flag: flag_id=%d finished=true igt_ms=%d message_id=%s %s",
                     flag_id,
@@ -958,6 +983,13 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 )
 
                 self._on_igt_change(entity, igt)
+                final_node = final_boss_node(seed_graph)
+                if final_node is not None:
+                    final_history = record_boss_kill(
+                        entity.zone_history or [], final_node, entity.igt_ms
+                    )
+                    if final_history is not None:
+                        entity.zone_history = final_history
                 await db.commit()
                 if message_id is not None:
                     await self._send_event_flag_ack(message_id)
@@ -1050,6 +1082,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
 
         if is_finish:
             await self._handle_finish_event(entity, igt, message_id)
+            return
+
+        if is_boss_flag:
+            if killed_node is not None:
+                await self._broadcast_after_boss_kill(entity)
+                await self._on_boss_killed(entity, killed_node, igt)
             return
 
         await self._broadcast_after_event_flag(
@@ -1316,6 +1354,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
     ) -> None: ...
 
     @abstractmethod
+    async def _broadcast_after_boss_kill(self, entity: T) -> None: ...
+
+    @abstractmethod
     async def _broadcast_after_zone_query(
         self,
         entity: T,
@@ -1351,6 +1392,11 @@ class BaseModHandler(BaseHandler, Generic[T]):
     async def _on_debug_flags_recorded(self, entity: T, added: list[str]) -> None:
         """Called after the commit when ``_record_debug_flags`` stored new
         flags. Override to alert (race)."""
+
+    async def _on_boss_killed(self, entity: T, node_id: str, igt_ms: int) -> None:
+        """Called once per new boss kill, after the commit and the broadcast,
+        outside the DB session. Override for features that react to a kill; a
+        re-report or a replay never calls it."""
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the

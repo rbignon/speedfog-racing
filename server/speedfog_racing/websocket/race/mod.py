@@ -714,6 +714,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             race = await _load_race_with_participants(db, race_id)
             return list(race.participants) if race is not None else None
 
+    async def _broadcast_after_boss_kill(self, entity: Participant) -> None:
+        await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
+
     async def _broadcast_after_event_flag(
         self,
         entity: Participant,

@@ -564,6 +564,9 @@ class TrainingModHandler(BaseModHandler["TrainingSession"]):  # type: ignore[typ
             )
             await self.websocket.send_text(DeathCountsMessage(counts=counts).model_dump_json())
 
+    async def _broadcast_after_boss_kill(self, entity: TrainingSession) -> None:
+        await _broadcast_zone_history(self._session_id, entity.zone_history or [])
+
     async def _broadcast_after_event_flag(
         self,
         entity: TrainingSession,

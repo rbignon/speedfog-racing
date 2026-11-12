@@ -4485,3 +4485,248 @@ def test_auth_ok_carries_the_local_runners_arrivals_only(
     others = [p for p in auth["participants"] if p["id"] != auth["participant_id"]]
     assert len(others) == 2
     assert all(p["layer_entry_igts"] is None for p in others)
+
+
+# =============================================================================
+# Boss kills recorded from event_flag
+# =============================================================================
+
+BOSS_FLAG = 10000800
+FINAL_BOSS_FLAG = 19000800
+
+
+def _patch_boss_graph(integration_db, race_id: str, *, final_boss: bool = False) -> None:
+    """Make node_b a boss arena (and optionally add a final boss node_end)."""
+    import asyncio
+
+    async def patch():
+        async with integration_db() as db:
+            from sqlalchemy.orm import selectinload as _sinload
+
+            race_result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(_sinload(Race.seed))
+            )
+            race = race_result.scalar_one()
+            graph = json.loads(json.dumps(race.seed.graph_json))
+            graph["nodes"]["node_b"]["type"] = "boss_arena"
+            graph["nodes"]["node_b"]["defeat_flag"] = BOSS_FLAG
+            if final_boss:
+                graph["nodes"]["node_end"] = {
+                    "type": "final_boss",
+                    "zones": ["zone_end"],
+                    "layer": 4,
+                    "tier": 4,
+                    "defeat_flag": FINAL_BOSS_FLAG,
+                }
+                graph["event_map"]["9000004"] = "node_end"
+                graph["finish_boss_defeat_flag"] = FINAL_BOSS_FLAG
+            race.seed.graph_json = graph
+            await db.commit()
+
+    asyncio.run(patch())
+
+
+def _start_race_and_connect(integration_client, race_with_participants):
+    """Ready player 0, start the race. Returns the player-0 mod token."""
+    race_id = race_with_participants["race_id"]
+    organizer = race_with_participants["organizer"]
+    players = race_with_participants["players"]
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_ready()
+        mod0.receive()  # leaderboard_update
+    response = integration_client.post(
+        f"/api/races/{race_id}/start",
+        headers={"Authorization": f"Bearer {organizer.api_token}"},
+    )
+    assert response.status_code == 200
+    return players[0]["mod_token"]
+
+
+def _player0_history_and_igt(integration_db, race_with_participants) -> tuple[list[dict], int]:
+    import asyncio
+
+    async def check():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Participant).where(
+                    Participant.race_id == uuid.UUID(race_with_participants["race_id"]),
+                    Participant.user_id == race_with_participants["players"][0]["user"].id,
+                )
+            )
+            p = result.scalar_one()
+            return p.zone_history, p.igt_ms
+
+    return asyncio.run(check())
+
+
+def _walk_to_node_b_twice(mod0) -> None:
+    """node_b at 20_000, node_a at 30_000, node_b again at 40_000."""
+    mod0.send_status_update(igt_ms=10_000, death_count=0)
+    mod0.receive_until_type("leaderboard_update")
+    # First visits broadcast a leaderboard_update, a revisit a player_update.
+    for flag, igt, reply in (
+        (9000001, 20_000, "leaderboard_update"),
+        (9000000, 30_000, "leaderboard_update"),
+        (9000001, 40_000, "player_update"),
+    ):
+        mod0.send_event_flag(flag, igt_ms=igt)
+        mod0.receive_until_type(reply)
+
+
+def test_boss_kill_lands_on_the_most_recent_visit(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=55_000, message_id=7)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 7
+
+    history, igt_ms = _player0_history_and_igt(integration_db, race_with_participants)
+    assert [e["node_id"] for e in history] == ["start_node", "node_b", "node_a", "node_b"]
+    assert history[-1]["igt_ms"] == 40_000
+    assert history[-1]["boss_kill_igt_ms"] == 55_000
+    assert "boss_kill_igt_ms" not in history[1]
+    assert igt_ms == 55_000
+
+
+def test_boss_kill_rereported_later_keeps_the_first(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        for igt, message_id in ((55_000, 7), (90_000, 8), (55_000, 7)):
+            mod0.send_event_flag(BOSS_FLAG, igt_ms=igt, message_id=message_id)
+            assert mod0.receive_until_type("event_flag_ack")["message_id"] == message_id
+
+    history, _ = _player0_history_and_igt(integration_db, race_with_participants)
+    assert history[-1]["boss_kill_igt_ms"] == 55_000
+
+
+def test_boss_kill_without_a_visit_is_acked_and_ignored(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=15_000, message_id=5)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 5
+
+    history, _ = _player0_history_and_igt(integration_db, race_with_participants)
+    assert len(history) == 1
+    assert "boss_kill_igt_ms" not in history[0]
+
+
+def test_boss_kill_on_implausible_igt_is_acked_and_ignored(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        mod0.send_event_flag(BOSS_FLAG, igt_ms=7_210_000, message_id=9)
+        assert mod0.receive_until_type("event_flag_ack")["message_id"] == 9
+
+    history, igt_ms = _player0_history_and_igt(integration_db, race_with_participants)
+    assert all("boss_kill_igt_ms" not in e for e in history)
+    assert igt_ms == 40_000
+
+
+def test_boss_kill_calls_the_hook_once(
+    integration_client, race_with_participants, integration_db, monkeypatch
+):
+    from speedfog_racing.websocket.race.mod import RaceModHandler
+
+    calls: list[tuple[str, str, int]] = []
+
+    async def recorder(self, entity, node_id, igt_ms):
+        calls.append((type(entity).__name__, node_id, igt_ms))
+
+    monkeypatch.setattr(RaceModHandler, "_on_boss_killed", recorder)
+
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        _walk_to_node_b_twice(mod0)
+        for igt, message_id in ((55_000, 7), (90_000, 8), (55_000, 7)):
+            mod0.send_event_flag(BOSS_FLAG, igt_ms=igt, message_id=message_id)
+            mod0.receive_until_type("event_flag_ack")
+
+    assert calls == [("Participant", "node_b", 55_000)]
+
+
+def test_finish_writes_the_final_boss_kill(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id, final_boss=True)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(9000004, igt_ms=50_000)
+        mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(9000003, igt_ms=95_000, message_id=3)
+        mod0.receive_until_type("event_flag_ack")
+        time.sleep(0.3)
+
+    history, _ = _player0_history_and_igt(integration_db, race_with_participants)
+    end_entry = next(e for e in history if e["node_id"] == "node_end")
+    assert end_entry["boss_kill_igt_ms"] == 95_000
+
+
+def test_finish_after_a_backup_restore_writes_the_clamped_finish(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id, final_boss=True)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        mod0.receive_until_type("leaderboard_update")
+        mod0.send_event_flag(9000004, igt_ms=50_000)
+        mod0.receive_until_type("leaderboard_update")
+        # Messages on one connection are handled in order: no need to wait
+        # for the replies to these two reports.
+        mod0.send_status_update(igt_ms=95_000, death_count=0)
+        mod0.send_status_update(igt_ms=140_000, death_count=0)
+        mod0.send_event_flag(9000003, igt_ms=130_000, message_id=3)
+        mod0.receive_until_type("event_flag_ack")
+        time.sleep(0.3)
+
+    history, igt_ms = _player0_history_and_igt(integration_db, race_with_participants)
+    end_entry = next(e for e in history if e["node_id"] == "node_end")
+    assert end_entry["boss_kill_igt_ms"] == 140_000 == igt_ms

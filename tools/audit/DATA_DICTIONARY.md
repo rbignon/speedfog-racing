@@ -202,6 +202,7 @@ was made. Changes that affect the data, as of the export:
 | 2026-08-12 | framerate-independent IGT, and IGT frozen during black loading fades                                                           |
 | 2026-08-29 | poison, blood and occult weapons tracked (earlier, they were silently missing from `weapons`)                                  |
 | 2026-09-18 | bosses no longer drop weapons in part of the pools (see below)                                                                 |
+| 2026-11-12 | `boss_kill_igt_ms` appears on `zone_history` entries: absent from runs played with an older mod, or before the server change   |
 
 Since 2026-09-18 (fully from about 11:30 UTC that day; seeds generated
 earlier that morning could still get a few), seeds generated in `standard`,
@@ -298,6 +299,13 @@ finished run is its arrival in the final node. Fields:
     player now is.
 - `igt_ms`: the IGT reported with that event.
 - `message_id`: see Clocks. Absent on `spawn` entries.
+- `boss_kill_igt_ms`: the IGT of the kill of the node's boss, set on the most
+  recent entry for that node when the mod reports the boss's defeat flag. The
+  first kill is kept; a re-report never moves it. The final boss's is the
+  finish IGT. A kill adds no entry, and one reported with no visit of the node
+  is dropped. Deaths and runbacks fall between the node's first entry and the
+  kill. Absent when the boss was not killed or not recorded (see Changes over
+  time).
 - `deaths`: deaths while at this node, added to the most recent entry for that
   node.
 - `weapons`: a list of `{ids, ticks}`. While this entry is current, the mod

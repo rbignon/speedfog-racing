@@ -140,8 +140,17 @@ receive event_flag { flag_id, igt_ms, message_id? }
     │       → ack(message_id) if present (finish replay after lost ACK)
     │       → return
     │
+    ├── flag_id in the seed's boss defeat flags? (not event_map)
+    │       → same guards as below (initialized history, graph, plausible IGT)
+    │       → stamp boss_kill_igt_ms on the node's most recent visit
+    │         (first kill kept; no visit of the node → ignored)
+    │       → ack(message_id) always
+    │       → new kill: broadcast a zone_history snapshot to spectators
+    │       → return (no zone_update, no leaderboard_update)
+    │
     ├── flag_id == finish_event?
-    │       ├── yes → update igt_ms + current_layer=total_layers, commit
+    │       ├── yes → update igt_ms + current_layer=total_layers,
+    │       │         write the final boss's boss_kill_igt_ms (the finish IGT), commit
     │       │         ack(message_id) if present
     │       │         exit session, call handle_finished() in new session
     │       │
@@ -168,6 +177,8 @@ receive event_flag { flag_id, igt_ms, message_id? }
     │                          → broadcast leaderboard_update to all
     │                          → unicast zone_update to mod
 ```
+
+Boss defeat flags come from the seed graph (`defeat_flag` on each node, see `extract_boss_flags`), not from `event_map`. The final boss is left out: its kill is the finish, and the shared finish branch writes its `boss_kill_igt_ms` with the finish IGT (the clamped one `handle_finished` records). A flag carried by two nodes is dropped. A kill never appends a `zone_history` entry. After the commit, a new kill triggers the `_on_boss_killed` hook once; a re-report or a replay is acked and calls nothing.
 
 `message_id` is optional for backward compatibility with older mods. When absent, the server behaves as before: no ACK and no idempotent replay protection for that message.
 

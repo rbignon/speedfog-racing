@@ -3135,3 +3135,73 @@ def test_discord_notification_skipped_on_reconnect(async_session, training_user,
 
         mock_notify.assert_not_called()
     training_manager.rooms.clear()
+
+
+def test_training_boss_kill_lands_on_the_nodes_latest_visit(
+    training_ws_client, training_session_data, async_session
+):
+    """A boss defeat flag stamps the kill on the node's latest visit and the
+    spectator gets the zone_history snapshot carrying it."""
+    import copy
+    import uuid as _uuid
+
+    sid = training_session_data["session_id"]
+    token = training_session_data["mod_token"]
+    boss_flag = 10000800
+
+    async def _patch_graph() -> tuple[int, str]:
+        async with async_session() as db:
+            seed = (await db.execute(select(Seed))).scalars().one()
+            graph = copy.deepcopy(seed.graph_json)
+            fog_flag, node_id = next(
+                (int(f), n)
+                for f, n in graph["event_map"].items()
+                if int(f) != graph["finish_event"]
+            )
+            graph["nodes"][node_id]["type"] = "boss_arena"
+            graph["nodes"][node_id]["defeat_flag"] = boss_flag
+            seed.graph_json = graph
+            await db.commit()
+            return fog_flag, node_id
+
+    fog_flag, node_id = asyncio.run(_patch_graph())
+
+    with training_ws_client.websocket_connect(f"/ws/training/{sid}/spectate") as ws_spec:
+        ws_spec.send_json({"type": "auth"})
+        ws_spec.receive_json()  # race_state
+        with training_ws_client.websocket_connect(f"/ws/training/{sid}") as ws_mod:
+            ws_mod.send_json({"type": "auth", "mod_token": token})
+            ws_mod.receive_json()  # auth_ok
+            ws_mod.receive_json()  # race_start
+            ws_spec.receive_json()  # leaderboard_update (mod_connected)
+
+            ws_mod.send_json({"type": "status_update", "igt_ms": 1000, "death_count": 0})
+            ws_mod.send_json({"type": "event_flag", "flag_id": fog_flag, "igt_ms": 5000})
+            ws_mod.send_json(
+                {"type": "event_flag", "flag_id": boss_flag, "igt_ms": 9000, "message_id": 4}
+            )
+            ack = ws_mod.receive_json()
+            while ack["type"] != "event_flag_ack":
+                ack = ws_mod.receive_json()
+            assert ack["message_id"] == 4
+
+            snapshot = ws_spec.receive_json()
+            while not (
+                snapshot["type"] == "zone_history"
+                and any("boss_kill_igt_ms" in e for e in snapshot["history"])
+            ):
+                snapshot = ws_spec.receive_json()
+            assert snapshot["history"][-1]["node_id"] == node_id
+            assert snapshot["history"][-1]["boss_kill_igt_ms"] == 9000
+            assert len(snapshot["history"]) == 2
+
+    async def _check():
+        async with async_session() as db:
+            s = (
+                await db.execute(
+                    select(TrainingSession).where(TrainingSession.id == _uuid.UUID(sid))
+                )
+            ).scalar_one()
+            assert s.igt_ms == 9000
+
+    asyncio.run(_check())
