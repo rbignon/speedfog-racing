@@ -62,6 +62,15 @@ class Settings(BaseSettings):
     countdown_seconds: int = 10
     # IGT penalty (ms) a connected mod applies per detected quit-out; 0 disables.
     quit_out_penalty_ms: int = 2000
+    # Race items: draw weight per base item key (missing = 1, 0 removes the item
+    # from the draw; JSON in .env), and the damage curve of the two damage items.
+    race_items_weights: dict[str, int] = {}
+    race_items_banana_pct: int = 10
+    race_items_red_shell_pct: int = 20
+    # Shared by the damage items: the HP percent a hit lands at when the base
+    # would go below it, and the flat damage once HP is under floor + tail.
+    race_items_damage_floor_pct: int = 20
+    race_items_damage_tail_pct: int = 5
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
