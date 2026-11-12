@@ -134,6 +134,12 @@ impl ItemFeed {
         self.ink_until.is_some_and(|end| now < end)
     }
 
+    /// Drop the reminder rows and the ink; banners play on.
+    pub fn clear_timers(&mut self) {
+        self.reminders.clear();
+        self.ink_until = None;
+    }
+
     /// Forget everything (race change, disconnect).
     pub fn clear(&mut self) {
         *self = Self::default();

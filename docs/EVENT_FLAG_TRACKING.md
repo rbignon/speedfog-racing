@@ -114,7 +114,7 @@ At the `position_readable` rising edge:
    - Send `zone_query { grace_entity_id, map_id, position, play_region_id }`.
    - Clear captured grace entity ID.
 
-4. **Race items** (race with items): after every flag of the frame, while connected, `item_inventory` reports the race goods held, so a use made just before a quit-out reaches the server first; the reconnect frame sends one too, once the player is loaded. Then, connected or not, the grant spawns and item effects that waited for the load go; a grant whose spawn failed waits for the next game load or reconnection. Nothing of this happens on a wrong save or with an outdated seed pack. See `RACE_ITEMS.md`.
+4. **Race items** (race with items): after every flag of the frame, while connected, `item_inventory` reports the race goods held, so a use made just before a quit-out reaches the server first; the reconnect frame sends one too, once the player is loaded. Then, connected or not, the grant spawns and item effects that waited for the load go; a grant whose spawn failed waits for the next game load or reconnection. Nothing of this happens on a wrong save or with an outdated seed pack, and once the run is over what still waits is dropped. See `RACE_ITEMS.md`.
 
 ### LiveSplit Depth Tracking
 

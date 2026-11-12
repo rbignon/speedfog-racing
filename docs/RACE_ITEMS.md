@@ -121,11 +121,11 @@ The mod acts only while the race has `race_items` on (`RaceInfo.race_items`), th
 Each catalog entry has a goods id and two event flags in category 1050290 (one page resolve for all of them):
 
 - **Use flag.** Read on the same scans as the boss flags (10 Hz poll, loading exit, reconnect rescan), all of them each scan. A set use flag is cleared in game at once and sent through `event_flag` with its `message_id`, ACK and replay, like a boss flag. It never joins `triggered_flags` (it fires again on the next use) and is no LiveSplit capture.
-- **Remove flag.** Only ever raised by the mod (`item_remove`); the game's own event clears it and the mod never does. A removal raised during a load can fail silently: the next load's take-back (the inventory report, see Inventory reconciliation) heals it.
+- **Remove flag.** Only ever raised by the mod (`item_remove`); the game's own event clears it and the mod never does. A removal raised during a load can fail silently: the inventory report at the exit of that same load, seconds later, still lists the item and gets it taken back again (see Inventory reconciliation).
 
 ### Load gating
 
-Grants and effects wait until the player is loaded. Once per game load (loading exit) and once per reconnect frame, in this order: the frame's flag scan (use flags sent), the `item_inventory` report, the pending grant spawns (answered with `item_received`), then the pending effects. A spawn that fails is retried at the next load or reconnect. The 15 s of an effect, its banner and its reminder start when it is applied.
+Grants and effects wait until the player is loaded. Once per game load (loading exit) and once per reconnect frame, in this order: the frame's flag scan (use flags sent), the `item_inventory` report, the pending grant spawns (answered with `item_received`), then the pending effects. A spawn that fails is retried at the next load or reconnect. The 15 s of an effect, its banner and its reminder start when it is applied. Once the run is over (race no longer running, runner finished or out), the grants, failed spawns and effects still waiting are dropped, not kept for a later load; a new start (a race reset run again) drops them too, with the reminder rows and the ink of the voided run.
 
 ### Effects
 

@@ -1284,6 +1284,11 @@ impl RaceMachine {
                 // run already running, is no start.
                 if !self.is_race_running() {
                     self.start_attempt();
+                    // A reset keeps the participant, so its auth_ok kept the
+                    // race items of the voided run; the server's reset
+                    // cleared its side of them.
+                    self.drop_waiting_race_items("new start");
+                    self.item_feed.clear_timers();
                 }
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
@@ -2553,7 +2558,8 @@ impl RaceMachine {
     /// game load or a reconnection), then the pending effects, whose banner,
     /// reminder and duration start now. A grant's banner waits for its
     /// spawn's outcome (`grant_spawn_result`). An outdated seed pack holds
-    /// it all: its regulation may lack the race goods and their effects.
+    /// it all: its regulation may lack the race goods and their effects. A
+    /// run that is over drops it all.
     fn flush_race_items(
         &mut self,
         report_inventory: bool,
@@ -2561,18 +2567,18 @@ impl RaceMachine {
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
+        // Once the run is over (race not running, runner finished or out),
+        // what still waits is dropped rather than held for a load.
+        if !self.is_race_running() || self.am_i_finished() || self.am_i_abandoned() {
+            self.drop_waiting_race_items("run not live");
+            return;
+        }
         if !self.frame_snapshot.position_readable || self.wrong_save || self.seed_mismatch {
             return;
         }
         // Without a catalog, the race goods are unknown: an empty report
         // would read as every item lost.
-        if report_inventory
-            && !self.item_inventory_goods.is_empty()
-            && self.race_items_on()
-            && self.is_race_running()
-            && !self.am_i_finished()
-            && !self.am_i_abandoned()
-        {
+        if report_inventory && !self.item_inventory_goods.is_empty() && self.race_items_on() {
             info!("[ITEMS] Inventory report");
             effects.push(Effect::ReportItemInventory {
                 goods: self.item_inventory_goods.clone(),
@@ -2611,6 +2617,22 @@ impl RaceMachine {
             }
             self.item_feed.push_banner(effect.banner, now);
         }
+    }
+
+    /// Drop the race item work waiting for a load: grants, failed spawns
+    /// and effects. Logged when any was waiting.
+    fn drop_waiting_race_items(&mut self, reason: &'static str) {
+        let grants = self.pending_grants.len() + self.retry_grants.len();
+        let item_effects = self.pending_item_effects.len();
+        if grants + item_effects > 0 {
+            info!(
+                grants,
+                item_effects, reason, "[ITEMS] Waiting race items dropped"
+            );
+        }
+        self.pending_grants.clear();
+        self.retry_grants.clear();
+        self.pending_item_effects.clear();
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -7298,6 +7320,138 @@ mod tests {
             "{fx:?}"
         );
         assert!(!m.ink_active(now + secs(1)));
+    }
+
+    #[test]
+    fn a_race_reset_drops_the_race_items_of_the_voided_run() {
+        // A reset closes the room: the mod authenticates again as the same
+        // runner, the race in setup, and the new start comes before any
+        // frame. Nothing queued for the voided run reaches the new attempt.
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // A spawn that failed, waiting for the next load.
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, false, now + ms(120));
+        // An ink running and the sender's own reminder.
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Ink {
+                    duration_ms: 15_000,
+                },
+                Some(("Ink", 15_000)),
+            ),
+            now + ms(200),
+        );
+        m.tick(tick_in(snap(Some(61_100), true), true, None), now + ms(220));
+        m.handle_message(
+            MachineMessage::ItemResult {
+                item: "mushroom".to_string(),
+                banner: wire_banner("mushroom", "Mushroom"),
+                reminder: Some(ItemReminder {
+                    text: "Infinite stamina".to_string(),
+                    duration_ms: 15_000,
+                }),
+            },
+            now + ms(300),
+        );
+        assert!(m.ink_active(now + ms(300)));
+        assert_eq!(m.item_reminders(now + ms(300)).count(), 2);
+        // A load: a grant and an effect wait for its end.
+        m.tick(
+            tick_in(snap(Some(62_000), false), true, None),
+            now + ms(400),
+        );
+        m.handle_message(grant(2, "red_shell"), now + ms(500));
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Speffect {
+                    speffect_id: 1_450_827,
+                },
+                Some(("Fat-roll", 15_000)),
+            ),
+            now + ms(600),
+        );
+
+        let reset = now + secs(1);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            reset,
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            reset + ms(10),
+        );
+        m.handle_message(auth_ok_with_items("setup", true), reset + ms(20));
+        m.handle_message(MachineMessage::RaceStart(0), reset + ms(30));
+        assert!(!m.ink_active(reset + ms(30)));
+        assert_eq!(m.item_reminders(reset + ms(30)).count(), 0);
+
+        // The new attempt's first loaded frame: its report, nothing else.
+        let fx = m.tick(
+            tick_in(snap(Some(300), true), true, items_scan(&m, &[])),
+            reset + secs(5),
+        );
+        assert_eq!(item_steps(&fx), ["ready", "report"], "{fx:?}");
+        let fx = m.tick(
+            tick_in(snap(Some(1_000), false), true, None),
+            reset + secs(6),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        let fx = m.tick(
+            tick_in(snap(Some(1_100), true), true, items_scan(&m, &[])),
+            reset + secs(7),
+        );
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
+    }
+
+    #[test]
+    fn race_items_waiting_when_the_run_ends_are_dropped() {
+        // The runner finishes or is put out while a grant and an effect
+        // wait for the load: neither reaches the game, then or later.
+        for status in ["finished", "disqualified"] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            m.tick(
+                tick_in(snap(Some(60_000), false), true, None),
+                now + ms(100),
+            );
+            m.handle_message(grant(1, "red_shell"), now + ms(200));
+            m.handle_message(
+                item_hit(
+                    ItemEffectPayload::Damage {
+                        base_pct: 20,
+                        floor_pct: 20,
+                        tail_pct: 5,
+                    },
+                    Some(("Hit", 15_000)),
+                ),
+                now + ms(300),
+            );
+            m.handle_message(
+                MachineMessage::LeaderboardUpdate {
+                    participants: vec![test_participant("p1", status, 3)],
+                    leader_splits: None,
+                },
+                now + ms(400),
+            );
+            let mut fx = m.tick(
+                tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+                now + secs(1),
+            );
+            assert_eq!(banner_title(&m), None, "{status}");
+            assert_eq!(m.item_reminders(now + secs(1)).count(), 0, "{status}");
+            // Not kept for a later load either.
+            fx.extend(m.tick(
+                tick_in(snap(Some(60_200), false), true, None),
+                now + secs(2),
+            ));
+            fx.extend(m.tick(
+                tick_in(snap(Some(60_300), true), true, items_scan(&m, &[])),
+                now + secs(3),
+            ));
+            assert!(item_steps(&fx).is_empty(), "{status}: {fx:?}");
+        }
     }
 
     #[test]
