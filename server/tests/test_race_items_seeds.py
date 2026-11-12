@@ -247,7 +247,7 @@ async def test_reroll_of_items_race_keeps_the_plugin(rs_session, rs_organizer):
         assert race.rerolled_without_report is True
 
         # Only the current seed carries the plugin now: nothing to draw.
-        with pytest.raises(ValueError, match="No other seed left"):
+        with pytest.raises(ValueError, match="No seed with race items"):
             await reroll_seed_for_race(db, race)
 
 
@@ -268,3 +268,50 @@ async def test_pool_stats_count_race_items_seeds(rs_client, rs_session):
         resp = await client.get("/api/pools?type=race")
     assert resp.status_code == 200, resp.text
     assert resp.json()["standard"]["race_items_available"] == 2
+
+
+@pytest.mark.asyncio
+async def test_failed_validation_after_enabling_items_changes_nothing(
+    rs_client, rs_session, rs_organizer, monkeypatch
+):
+    from speedfog_racing.api import races as races_api
+
+    info = AsyncMock()
+    state = AsyncMock()
+    monkeypatch.setattr(races_api, "broadcast_race_info_update", info)
+    monkeypatch.setattr(races_api, "broadcast_race_state_update", state)
+    async with rs_session() as db:
+        plain = _seed("plain", _plain_graph(), SeedStatus.CONSUMED)
+        items = _seed("items", _items_graph())
+        db.add_all([plain, items])
+        await db.flush()
+        race = Race(
+            name="R",
+            organizer_id=rs_organizer.id,
+            seed_id=plain.id,
+            late_join_window_minutes=30,
+            race_duration_minutes=60,
+            is_public=True,
+        )
+        db.add(race)
+        await db.commit()
+        race_id, plain_id = race.id, plain.id
+
+    async with rs_client as client:
+        resp = await client.patch(
+            f"/api/races/{race_id}",
+            json={"race_items": True, "is_public": False, "race_duration_minutes": 10},
+            headers=_auth(rs_organizer),
+        )
+    assert resp.status_code == 400, resp.text
+    async with rs_session() as db:
+        race = await db.get(Race, race_id)
+        assert race.seed_id == plain_id
+        assert race.race_items is False
+        assert race.is_public is True
+        assert race.race_duration_minutes == 60
+        assert race.rerolled_seed_ids in (None, [])
+        seed = (await db.execute(select(Seed).where(Seed.seed_number == "rs_items"))).scalar_one()
+        assert seed.status == SeedStatus.AVAILABLE
+    info.assert_not_awaited()
+    state.assert_not_awaited()

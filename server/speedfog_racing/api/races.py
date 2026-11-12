@@ -789,18 +789,6 @@ async def update_race(
                 detail="race_items is only available on community races",
             )
         race.race_items = bool(request.race_items)
-        if (
-            race.race_items
-            and race.seed is not None
-            and not seed_has_race_items(race.seed.graph_json)
-        ):
-            # The seed cannot carry items: redraw one that can. The option did
-            # the redraw, not a player, so it is no reroll for the boards.
-            try:
-                race = await apply_seed_reroll(db, race, count_as_reroll=False)
-            except HTTPException:
-                await db.rollback()  # the option stays off
-                raise
 
     # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
     if "custom_rules" in request.model_fields_set:
@@ -825,6 +813,21 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(e),
             ) from e
+
+    # Last, after every validation: the redraw commits and broadcasts, so a
+    # failed edit above must not leave it half applied. The option did the
+    # redraw, not a player, so it is no reroll for the boards.
+    if (
+        "race_items" in request.model_fields_set
+        and race.race_items
+        and race.seed is not None
+        and not seed_has_race_items(race.seed.graph_json)
+    ):
+        try:
+            race = await apply_seed_reroll(db, race, count_as_reroll=False)
+        except HTTPException:
+            await db.rollback()  # the option stays off
+            raise
 
     await db.commit()
 

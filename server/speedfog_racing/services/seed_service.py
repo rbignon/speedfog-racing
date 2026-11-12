@@ -526,6 +526,7 @@ async def reroll_seed_for_race(
     race: Race,
     reporter_id: uuid.UUID | None = None,
     report_reason: str | None = None,
+    *,
     count_as_reroll: bool = True,
 ) -> Seed:
     """Re-roll the seed for a race.
@@ -595,11 +596,11 @@ async def reroll_seed_for_race(
             require_race_items=race.race_items,
         )
     if new_seed is None:
+        if race.race_items:
+            raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         if rerolled:
             # The pool may still hold the seeds this race rejected.
             raise ValueError(f"No other seed left in pool '{pool_name}' for this race")
-        if race.race_items:
-            raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         raise ValueError(f"No available seeds in mode '{pool_name}'")
 
     # Release old seed (keep DISCARDED if pool was discarded)
