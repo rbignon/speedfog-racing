@@ -9,6 +9,7 @@ pub mod flag_buffer;
 pub mod format;
 pub mod igt_fix;
 pub mod item_damage;
+pub mod item_feed;
 pub mod livesplit;
 pub mod map_utils;
 pub mod profile;
