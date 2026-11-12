@@ -15,12 +15,15 @@ use crate::core::countdown::{
     DIGIT_INK_CENTER,
 };
 use crate::core::format::{LeaderboardMode, LeaderboardView};
+use crate::core::item_banner::{banner_layout, write_seconds_left, GRADIENT_ALPHA};
+use crate::core::item_feed::FeedTone;
 use crate::core::protocol::{ParticipantStatus, RaceStatus};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
 
 use super::config::OverlayAnchor;
 use super::death_icon::DeathIcon;
+use super::race_item_icons::RaceItemIcons;
 #[cfg(debug_assertions)]
 use super::tracker::FlagReadResult;
 use super::tracker::{
@@ -29,6 +32,10 @@ use super::tracker::{
     LEADERBOARD_REFRESH_INTERVAL_MS, MAX_CONSECUTIVE_UPDATE_PANICS,
 };
 use super::websocket::ConnectionStatus;
+
+/// Atlas pixel sizes of the banner faces (about the 1080p banner sizes).
+const BANNER_TITLE_ATLAS_PX: f32 = 64.0;
+const BANNER_BODY_ATLAS_PX: f32 = 32.0;
 
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
@@ -121,11 +128,37 @@ impl ImguiRenderLoop for RaceTracker {
             }),
         }]);
 
+        // Race item banner faces: the display and body faces again, rasterized
+        // once at a size close to the 1080p banner and scaled at draw time,
+        // since the banner follows the display resolution. The title is
+        // uppercase by construction; the body lines are mixed case.
+        const BANNER_RANGES: &[u32] = &[
+            0x0020, 0x007E, // Basic Latin
+            0x00A0, 0x00FF, // Latin Supplement
+            0,
+        ];
+        let mut add_banner_face = |data: &[u8], size_pixels: f32| {
+            fonts.add_font(&[FontSource::TtfData {
+                data,
+                size_pixels,
+                config: Some(FontConfig {
+                    glyph_ranges: FontGlyphRanges::from_slice(BANNER_RANGES),
+                    oversample_h: 1,
+                    oversample_v: 1,
+                    ..FontConfig::default()
+                }),
+            }])
+        };
+        let banner_title = add_banner_face(EMBEDDED_FONT_DISPLAY, BANNER_TITLE_ATLAS_PX);
+        let banner_body = add_banner_face(body_data, BANNER_BODY_ATLAS_PX);
+
         self.overlay_fonts = Some(OverlayFonts {
             body_small,
             display,
             mono,
             countdown,
+            banner_title,
+            banner_body,
         });
 
         info!(
@@ -150,6 +183,25 @@ impl ImguiRenderLoop for RaceTracker {
                 error!(
                     panic = crate::panic_message(payload.as_ref()),
                     "Death icon texture load panicked (DX12 not ready?)"
+                );
+            }
+        }
+
+        // Race item icons, same guard as the death icon.
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            RaceItemIcons::load(render_context)
+        })) {
+            Ok(Ok(icons)) => {
+                info!("Loaded race item icon textures");
+                self.race_item_icons = Some(icons);
+            }
+            Ok(Err(e)) => {
+                error!(error = %e, "Failed to load race item icons");
+            }
+            Err(payload) => {
+                error!(
+                    panic = crate::panic_message(payload.as_ref()),
+                    "Race item icon load panicked (DX12 not ready?)"
                 );
             }
         }
@@ -263,6 +315,8 @@ impl RaceTracker {
             self.render_countdown_overlay(ui, &mut bufs);
         }
 
+        self.render_item_banner(ui);
+
         {
             profile_span!("imgui_window");
             ui.window("SpeedFog Race")
@@ -285,6 +339,7 @@ impl RaceTracker {
                         ui.separator();
                         self.render_leaderboard(ui, max_width, mode, &mut bufs);
                     }
+                    self.render_item_reminders(ui, max_width, &mut bufs);
                     self.render_status_message(ui);
                     #[cfg(debug_assertions)]
                     {
@@ -440,6 +495,171 @@ impl RaceTracker {
                 }
                 ui.set_window_font_scale(1.0);
             });
+    }
+
+    /// Race item banner, top-centre under the game's compass: the icon, the
+    /// uppercase title, a line and a detail, over a gradient from the top
+    /// edge. Sizes come from the display every frame; the faces are scaled
+    /// from their atlas size. Text goes through a full-screen click-through
+    /// window, like the countdown glyphs.
+    fn render_item_banner(&self, ui: &hudhook::imgui::Ui) {
+        let Some(banner) = self.machine.item_banner() else {
+            return;
+        };
+        let Some(fonts) = self.overlay_fonts.as_ref() else {
+            return;
+        };
+
+        profile_span!("item_banner");
+
+        let c = &self.cached_colors;
+        let [dw, dh] = ui.io().display_size;
+        let layout = banner_layout([dw, dh]);
+
+        let edge = [c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA];
+        let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
+        ui.get_background_draw_list().add_rect_filled_multicolor(
+            [0.0, 0.0],
+            [dw, layout.gradient_height],
+            edge,
+            edge,
+            clear,
+            clear,
+        );
+
+        let title_color = match banner.tone {
+            FeedTone::Malus => c.danger,
+            FeedTone::Gain => c.gold,
+        };
+        let shadow_color = [0.0, 0.0, 0.0, 0.9];
+        let icon = self
+            .race_item_icons
+            .as_ref()
+            .map(|icons| icons.texture(&banner.icon));
+
+        let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
+        let flags = WindowFlags::NO_DECORATION
+            | WindowFlags::NO_INPUTS
+            | WindowFlags::NO_BACKGROUND
+            | WindowFlags::NO_SAVED_SETTINGS
+            | WindowFlags::NO_FOCUS_ON_APPEARING
+            | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS;
+
+        ui.window("##speedfog-item-banner")
+            .position([0.0, 0.0], Condition::Always)
+            .size([dw, dh], Condition::Always)
+            .flags(flags)
+            .build(|| {
+                if let Some(texture) = icon {
+                    let size = layout.icon_size;
+                    let x = layout.center_x - size * 0.5;
+                    let d = ui.get_window_draw_list();
+                    // Dark halo: the icon again, offset, tinted black.
+                    for [ox, oy] in [[-1.0, 0.0], [1.0, 0.0], [0.0, 1.0]] {
+                        d.add_image(
+                            texture,
+                            [x + ox * layout.shadow, layout.icon_y + oy * layout.shadow],
+                            [
+                                x + size + ox * layout.shadow,
+                                layout.icon_y + size + oy * layout.shadow,
+                            ],
+                        )
+                        .col([0.0, 0.0, 0.0, 0.6])
+                        .build();
+                    }
+                    d.add_image(
+                        texture,
+                        [x, layout.icon_y],
+                        [x + size, layout.icon_y + size],
+                    )
+                    .build();
+                }
+
+                {
+                    let _font = ui.push_font(fonts.banner_title);
+                    ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
+                    draw_tracked_centered(
+                        ui,
+                        &banner.title,
+                        layout.center_x,
+                        layout.title_y,
+                        layout.title_tracking,
+                        layout.shadow,
+                        title_color,
+                        shadow_color,
+                    );
+                }
+                let _font = ui.push_font(fonts.banner_body);
+                ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                draw_centered(
+                    ui,
+                    &banner.line,
+                    layout.center_x,
+                    layout.line_y,
+                    layout.shadow,
+                    c.text,
+                    shadow_color,
+                );
+                if !banner.detail.is_empty() {
+                    ui.set_window_font_scale(layout.detail_px / BANNER_BODY_ATLAS_PX);
+                    draw_centered(
+                        ui,
+                        &banner.detail,
+                        layout.center_x,
+                        layout.detail_y,
+                        layout.shadow,
+                        c.text_disabled,
+                        shadow_color,
+                    );
+                }
+                ui.set_window_font_scale(1.0);
+            });
+    }
+
+    /// Timed race item rows of the panel: icon, text (danger for an effect
+    /// received, gold for the sender's own) and the seconds left, right
+    /// aligned. Texts were built on receipt; only the seconds are written
+    /// here, into a reused buffer.
+    fn render_item_reminders(
+        &self,
+        ui: &hudhook::imgui::Ui,
+        max_width: f32,
+        bufs: &mut RenderBuffers,
+    ) {
+        let now = std::time::Instant::now();
+        let mut reminders = self.machine.item_reminders(now).peekable();
+        if reminders.peek().is_none() {
+            return;
+        }
+
+        profile_span!("item_reminders");
+
+        let _small = self
+            .overlay_fonts
+            .as_ref()
+            .map(|f| ui.push_font(f.body_small));
+        let c = &self.cached_colors;
+        let icon_size = ui.text_line_height();
+        ui.separator();
+        for (reminder, left) in reminders {
+            let mut used = 0.0;
+            if let Some(icons) = self.race_item_icons.as_ref() {
+                Image::new(icons.texture(&reminder.icon), [icon_size, icon_size]).build(ui);
+                ui.same_line_with_spacing(0.0, 4.0);
+                used = icon_size + 4.0;
+            }
+            bufs.reminder_secs.clear();
+            write_seconds_left(&mut bufs.reminder_secs, left);
+            let secs_width = ui.calc_text_size(&bufs.reminder_secs)[0];
+            let color = match reminder.tone {
+                FeedTone::Malus => c.danger,
+                FeedTone::Gain => c.gold,
+            };
+            let text = truncate_to_width(ui, &reminder.text, max_width - used - secs_width - 8.0);
+            ui.text_colored(color, &text);
+            ui.same_line_with_pos(max_width - secs_width);
+            ui.text_colored(c.text, &bufs.reminder_secs);
+        }
     }
 
     /// Write the IGT display string into a buffer.
@@ -856,12 +1076,17 @@ impl RaceTracker {
             }
             _ => None,
         };
+        // Items tag, left of the deathless one when both apply.
+        let items_tag = self.machine.race_items_on().then_some("ITEMS");
         let (tag_width, count_width) = {
             let _mono = fonts.map(|f| ui.push_font(f.mono));
             (
                 deathless_tag
                     .map(|(t, _)| ui.calc_text_size(t)[0] + gap)
-                    .unwrap_or(0.0),
+                    .unwrap_or(0.0)
+                    + items_tag
+                        .map(|t| ui.calc_text_size(t)[0] + gap)
+                        .unwrap_or(0.0),
                 ui.calc_text_size(&buf_right)[0],
             )
         };
@@ -911,6 +1136,10 @@ impl RaceTracker {
 
         ui.same_line_with_pos(max_width - right_total);
         let _mono = fonts.map(|f| ui.push_font(f.mono));
+        if let Some(text) = items_tag {
+            ui.text_colored(gold, text);
+            ui.same_line_with_spacing(0.0, gap);
+        }
         if let Some((text, color)) = deathless_tag {
             ui.text_colored(color, text);
             ui.same_line_with_spacing(0.0, gap);
@@ -950,27 +1179,35 @@ impl RaceTracker {
 
         // Rebuild the pre-rendered lines only when the zone (or width) changed;
         // rendering below is then allocation-free.
+        let ink = self.machine.ink_active(std::time::Instant::now());
         if self.exits_cache.version != self.machine.zone_version
             || self.exits_cache.max_width != max_width
+            || self.exits_cache.ink != ink
         {
             let indent = "  ";
             let rows: Vec<ExitRow> = zone
                 .exits
                 .iter()
                 .map(|exit| ExitRow {
-                    dest: if exit.discovered {
+                    // Ink hides every destination and its location line.
+                    dest: if exit.discovered && !ink {
                         truncate_to_width(ui, &format!("\u{2192} {}", exit.to_name), max_width)
                             .into_owned()
                     } else {
                         "\u{2192} ???".to_string()
                     },
-                    discovered: exit.discovered,
-                    lines: wrap_text(ui, indent, &exit.text, max_width),
+                    discovered: exit.discovered && !ink,
+                    lines: if ink {
+                        Vec::new()
+                    } else {
+                        wrap_text(ui, indent, &exit.text, max_width)
+                    },
                 })
                 .collect();
             self.exits_cache = ExitsRenderCache {
                 version: self.machine.zone_version,
                 max_width,
+                ink,
                 rows,
             };
         }
@@ -1530,6 +1767,55 @@ fn draw_countdown_glyph(
 
     ui.set_cursor_screen_pos(origin);
     ui.text_colored(color, label);
+}
+
+/// Draw `text` with its middle at `center_x`, a dark copy offset by `shadow`
+/// under it. The caller pushed the face and set the window font scale.
+fn draw_centered(
+    ui: &hudhook::imgui::Ui,
+    text: &str,
+    center_x: f32,
+    y: f32,
+    shadow: f32,
+    color: [f32; 4],
+    shadow_color: [f32; 4],
+) {
+    let x = center_x - ui.calc_text_size(text)[0] * 0.5;
+    ui.set_cursor_screen_pos([x + shadow, y + shadow]);
+    ui.text_colored(shadow_color, text);
+    ui.set_cursor_screen_pos([x, y]);
+    ui.text_colored(color, text);
+}
+
+/// Like `draw_centered` with `tracking` pixels added after every glyph
+/// (ImGui has no letter spacing, so each glyph is placed on its own). Only
+/// for the banner title, a handful of glyphs shown for a few seconds.
+#[allow(clippy::too_many_arguments)]
+fn draw_tracked_centered(
+    ui: &hudhook::imgui::Ui,
+    text: &str,
+    center_x: f32,
+    y: f32,
+    tracking: f32,
+    shadow: f32,
+    color: [f32; 4],
+    shadow_color: [f32; 4],
+) {
+    let mut utf8 = [0u8; 4];
+    let mut total = 0.0;
+    for ch in text.chars() {
+        total += ui.calc_text_size(ch.encode_utf8(&mut utf8))[0] + tracking;
+    }
+    // The last glyph carries no trailing space.
+    let mut x = center_x - (total - tracking) * 0.5;
+    for ch in text.chars() {
+        let glyph = ch.encode_utf8(&mut utf8);
+        ui.set_cursor_screen_pos([x + shadow, y + shadow]);
+        ui.text_colored(shadow_color, &*glyph);
+        ui.set_cursor_screen_pos([x, y]);
+        ui.text_colored(color, &*glyph);
+        x += ui.calc_text_size(&*glyph)[0] + tracking;
+    }
 }
 
 /// Write a time value (unsigned ms) as HH:MM:SS into a buffer.

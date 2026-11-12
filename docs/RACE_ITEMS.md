@@ -2,7 +2,7 @@
 
 A community race option (`Race.race_items`) that gives a runner a Mario Kart style item for each boss kill. The item hurts other runners, and the rank decides which items a runner can draw: mild or defensive ones for the leader, punitive ones for the runners at the back.
 
-This document is the operational reference for the server side: rules, lifecycle, inventory reconciliation and persistence. The wire messages are in `PROTOCOL.md`; how the mod reports use flags and its inventory is in `EVENT_FLAG_TRACKING.md`.
+This document is the operational reference for the server side (rules, lifecycle, inventory reconciliation and persistence) and the mod side (flags, load gating, effects, overlay). The wire messages are in `PROTOCOL.md`; how the mod reports use flags and its inventory is in `EVENT_FLAG_TRACKING.md`.
 
 ---
 
@@ -111,3 +111,38 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 ## Exclusions
 
 Items races are kept out of the speedrun boards (an unranked reason in `race_unranked_code` and `counts_on_boards_clause`), the community stats and traits (`counts_for_community_stats`) and the generator calibration queries of `tools/extract_zone_times.py`. Race rewards and highlights still apply.
+
+## Mod
+
+The mod acts only while the race has `race_items` on (`RaceInfo.race_items`), the seed carries a `race_item_catalog` and the run is live (race running, runner not finished or abandoned).
+
+### Flags
+
+Each catalog entry has a goods id and two event flags in category 1050290 (one page resolve for all of them):
+
+- **Use flag.** Read on the same scans as the boss flags (10 Hz poll, loading exit, reconnect rescan), all of them each scan. A set use flag is cleared in game at once and sent through `event_flag` with its `message_id`, ACK and replay, like a boss flag. It never joins `triggered_flags` (it fires again on the next use) and is no LiveSplit capture.
+- **Remove flag.** Only ever raised by the mod (`item_remove`); the game's own event clears it and the mod never does. A removal raised during a load can fail silently: the next load's take-back (the inventory report, see Inventory reconciliation) heals it.
+
+### Load gating
+
+Grants and effects wait until the player is loaded. Once per game load (loading exit) and once per reconnect frame, in this order: the frame's flag scan (use flags sent), the `item_inventory` report, the pending grant spawns (answered with `item_received`), then the pending effects. A spawn that fails is retried at the next load or reconnect. The 15 s of an effect, its banner and its reminder start when it is applied.
+
+### Effects
+
+- `speffect`: the SpEffect is applied to the player.
+- `damage`: computed when applied, with `h = 100 * hp / max_hp`: `h >= floor + base` deals `base`% of max HP; `h >= floor + tail` deals down to exactly `floor`%; otherwise `tail`%; at least 1 HP always remains. Max is the effective max HP (halved under a Blue Shell).
+- `ink`: overlay only, see below.
+- an unknown kind is ignored with a warning.
+
+### Overlay
+
+All sizes derive from the display size each frame (`core/item_banner.rs`); text is built on receipt, textures are loaded once at init, and the seconds left go through a reused buffer.
+
+- **Banner**, 5 s, queued: top centre, block top at 13% of the screen height, over a gradient from the top edge (alpha 0.78) fading out at 48% of the height. Icon 7.5% of the width, title in uppercase Barlow Condensed 600 at 3.4% (letter spacing 0.08 em; danger colour for an effect received, gold otherwise), line in Public Sans at 1.6%, detail at 1.2% in the disabled text colour, each with a dark shadow.
+- **Reminder rows**, in the race panel after the leaderboard and before the status message: icon, text (danger for an effect received, gold for the sender's own) and the seconds left, right aligned.
+- **ITEMS tag**: gold, mono, in the third line of the status block, left of the DEATHLESS / DEAD tag when both apply.
+- **Ink**: while active, every exit row reads `-> ???` with no location line. The exits cache is rebuilt when the zone, the width or the ink state changes, not every frame.
+
+### Icons
+
+`mod/assets/race_items/<icon>.png` (160x160 PNG) are embedded in the DLL and uploaded once at init; an icon name the mod does not know draws `unknown.png`. The art comes from the generator repo: drop the final `race_items_icon_<icon>.png` files in `speedfog/data/plugins/`, run `uv run python tools/sync_race_item_icons.py` (it reads the names from the catalog's `[icons]`, checks every file is a 160x160 PNG and copies nothing when any is bad), then release the mod. `unknown.png` is outside the catalog and edited by hand.

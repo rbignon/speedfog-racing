@@ -8,6 +8,7 @@ pub mod debug_flags;
 pub mod flag_buffer;
 pub mod format;
 pub mod igt_fix;
+pub mod item_banner;
 pub mod item_damage;
 pub mod item_feed;
 pub mod item_inventory;

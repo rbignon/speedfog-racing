@@ -26,6 +26,7 @@ use crate::profile_span;
 use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
 use super::livesplit::LiveSplitClient;
+use super::race_item_icons::RaceItemIcons;
 use super::unacked_store::UnackedStore;
 use super::websocket::RaceWebSocketClient;
 
@@ -49,6 +50,8 @@ pub(crate) struct RenderBuffers {
     pub banner_text: String,
     /// Digit (or `GO!`) drawn by the fullscreen countdown.
     pub countdown_label: String,
+    /// Seconds left of the reminder row being drawn.
+    pub reminder_secs: String,
 }
 
 impl Default for RenderBuffers {
@@ -64,6 +67,7 @@ impl Default for RenderBuffers {
             banner_secs: None,
             banner_text: String::new(),
             countdown_label: String::new(),
+            reminder_secs: String::new(),
         }
     }
 }
@@ -161,6 +165,8 @@ pub(crate) struct LeaderboardCache {
 pub(crate) struct ExitsRenderCache {
     pub version: u64,
     pub max_width: f32,
+    /// Built while an ink effect hid every destination.
+    pub ink: bool,
     pub rows: Vec<ExitRow>,
 }
 
@@ -209,6 +215,10 @@ pub(crate) struct OverlayFonts {
     pub display: FontId,
     pub mono: FontId,
     pub countdown: FontId,
+    /// Barlow Condensed at a size the banner title scales from (race items).
+    pub banner_title: FontId,
+    /// Public Sans at a size the banner lines scale from (race items).
+    pub banner_body: FontId,
 }
 
 // SAFETY: FontId wraps a raw pointer into the ImGui font atlas, which makes
@@ -248,6 +258,9 @@ pub struct RaceTracker {
 
     // Death icon texture (loaded during ImGui initialization)
     pub(crate) death_icon: Option<DeathIcon>,
+
+    // Race item icon textures (loaded during ImGui initialization)
+    pub(crate) race_item_icons: Option<RaceItemIcons>,
 
     // Pure race state machine (all decisions, no IO)
     pub(crate) machine: RaceMachine,
@@ -418,6 +431,7 @@ impl RaceTracker {
             font_data,
             overlay_fonts: None,
             death_icon: None,
+            race_item_icons: None,
             machine,
             show_ui: true,
             #[cfg(debug_assertions)]

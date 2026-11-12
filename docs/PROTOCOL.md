@@ -1205,19 +1205,19 @@ The mod parses the hex strings to RGBA on receipt and caches the resolved colors
 
 Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full payload is rebroadcast on change rather than diffed, so receivers replace their cached copy wholesale.
 
-| Field               | Type      | Description                                                                                                     |
-| ------------------- | --------- | --------------------------------------------------------------------------------------------------------------- |
-| `id`                | `string`  | Race UUID                                                                                                       |
-| `name`              | `string`  | Race name                                                                                                       |
-| `status`            | `string`  | Race status (see above)                                                                                         |
-| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch)     |
-| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                     |
-| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                         |
-| `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none          |
-| `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                       |
-| `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false |
-| `race_items`        | `bool`    | The race has items on (needs protocol 1.12 at auth); default false                                              |
-| `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                           |
+| Field               | Type      | Description                                                                                                               |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `id`                | `string`  | Race UUID                                                                                                                 |
+| `name`              | `string`  | Race name                                                                                                                 |
+| `status`            | `string`  | Race status (see above)                                                                                                   |
+| `started_at`        | `string?` | ISO 8601 timestamp of effective gameplay start (server sets it to `now + countdown_seconds` at race launch)               |
+| `seeds_released_at` | `string?` | ISO 8601 timestamp when seeds were released                                                                               |
+| `race_ends_at`      | `string?` | ISO 8601 timestamp when the race ends (late-join and time limit cutoff)                                                   |
+| `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none                    |
+| `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                                 |
+| `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false           |
+| `race_items`        | `bool`    | The race has items on (needs protocol 1.12 at auth); default false; the mod reads it to gate items and show the ITEMS tag |
+| `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                                     |
 
 **Note:** The mod's overlay reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). Other fields are present on the wire but currently unused by the mod.
 
