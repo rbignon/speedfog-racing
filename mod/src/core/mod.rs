@@ -8,6 +8,7 @@ pub mod debug_flags;
 pub mod flag_buffer;
 pub mod format;
 pub mod igt_fix;
+pub mod item_damage;
 pub mod livesplit;
 pub mod map_utils;
 pub mod profile;
