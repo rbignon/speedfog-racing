@@ -41,6 +41,9 @@ Client connects
   send auth_ok
        │
        ▼
+  send item_grant (race with items, held grant not confirmed yet)
+       │
+       ▼
   send zone_update (if race RUNNING, reconnect)
        │
        ▼
@@ -254,6 +257,8 @@ RaceRoom:
 1. Removes the room from `self.rooms`.
 2. Closes all mod and spectator WebSocket connections with the given code.
 3. Mod clients detect the close and reconnect automatically.
+
+A change of a race's `race_items` option (`PATCH /api/races/{id}`, SETUP only) closes only its mods, each with `manager.close_mod(race_id, participant_id, code=1000)`: the item catalog and the protocol gate only apply at auth, so each mod reconnects and authenticates again under the new setting. Spectators stay connected and get the `race_info_update`.
 
 A Set Seed solo reset (`POST /api/training/{id}/reset`, see `SPEEDRUN.md`) closes the session's mod connection the same way, with `training_manager.close_mod(session_id, code=1000, wait=True)`, and waits for its handler to tear down (at most `TEARDOWN_TIMEOUT`, 5 s) before clearing the attempt: a message the handler was writing would otherwise land on the cleared run. The handler signals its end (`TrainingModConnection.torn_down`) after its disconnect broadcast, so the closed connection's broadcast never reaches spectators after the reset's. Spectators stay connected and get the cleared state (`broadcast_session_reset`).
 

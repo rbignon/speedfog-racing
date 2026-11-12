@@ -613,7 +613,8 @@ race; `{event_id: null}` detaches it, clearing both `event_id` and
   field size: the number of `seeds` for a seeded stage, the sum of its
   sources' `advance` for a stage fed by others. A showcase slot takes any
   `max_participants`, having no field.
-- A Daily Seed race is refused.
+- A Daily Seed race is refused, and so is a race with race items (422): items
+  stay out of event races (see `RACE_ITEMS.md`).
 - An event whose stored config no longer parses is refused (422, naming the
   validation errors): the slot cannot be checked without it. Detaching still
   works, since it never reads the config.

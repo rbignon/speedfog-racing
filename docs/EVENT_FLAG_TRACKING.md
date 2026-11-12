@@ -161,9 +161,10 @@ receive event_flag { flag_id, igt_ms, message_id? }
     │
     ├── flag_id a race item use flag? (the seed's race_items catalog)
     │       → same guards as below (initialized history, graph, plausible IGT)
-    │       → ack(message_id) always, never a zone_history entry
+    │       → never a zone_history entry
     │       → after the session: the _on_item_used hook (race with items on:
     │         resolve the use if the runner holds that item, else ignore)
+    │       → then ack(message_id) always
     │       → return (no zone_update, no leaderboard_update)
     │
     ├── flag_id in the seed's boss defeat flags? (not event_map)
@@ -206,7 +207,7 @@ receive event_flag { flag_id, igt_ms, message_id? }
 
 Boss defeat flags come from the seed graph (`defeat_flag` on each node, see `extract_boss_flags`), not from `event_map`. The final boss is left out: its kill is the finish, and the shared finish branch writes its `boss_kill_igt_ms` with the finish IGT (the clamped one `handle_finished` records). A flag carried by two nodes is dropped. A kill never appends a `zone_history` entry. After the commit, a new kill triggers the `_on_boss_killed` hook once; a re-report or a replay is acked and calls nothing. The handler caches the boss flag map per graph, and a race loads only the participant and its race for a boss flag (`_load_entity_for_event_flag`), not the field, seed and casters a fog flag's broadcasts need: after a game restart or a backup restore the mod re-reports every kill so far, up to 8 per poll.
 
-Race item use flags come from the seed's race item catalog (the `use_flag` of each entry, `use_flag_map`), cached per graph like the boss flags, and a race takes the same light load for them. The `_on_item_used` hook runs on every report, replays included: it acts only when the runner holds that item, which the first report clears, so a replay changes nothing. See `RACE_ITEMS.md` for the resolution.
+Race item use flags come from the seed's race item catalog (the `use_flag` of each entry, `use_flag_map`), cached per graph like the boss flags, and a race takes the same light load for them. The `_on_item_used` hook runs on every report, replays included, and the ACK follows it, so a use is only acked once its resolution committed. The hook acts only when the runner holds that item, which the first resolution clears: a replay after a lost ACK is ignored, unless the runner was granted the same item again in between, which the replay would then spend. See `RACE_ITEMS.md` for the resolution.
 
 `message_id` is optional for backward compatibility with older mods. When absent, the server behaves as before: no ACK and no idempotent replay protection for that message.
 

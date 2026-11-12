@@ -165,7 +165,9 @@ download the pack again (it carries the current mod), and each compared by
   from which the mod reports debug flags in a solo session.
 - A race with items (`race_items` on) requires protocol 1.12 or newer
   (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod reads the item
-  catalog and applies item effects.
+  catalog and applies item effects. Switching the option in SETUP closes the
+  race's mods with code 1000, so each one authenticates again and meets the
+  gate (and gets the matching catalog).
 
 Other races, Daily Seeds, events and practice sessions keep accepting any mod
 of the current major.
@@ -248,7 +250,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). The server resolves a fog flag to a DAG node via the seed's `event_map`. A boss defeat flag (one of the seed's `boss_flags`) resolves instead to the node carrying it as `defeat_flag` in `graph.json`: the kill's IGT is stamped as `boss_kill_igt_ms` on that node's most recent `zone_history` visit, never as a new entry, and only the first kill is kept; a kill with no visit of its node, or at IGT 0, is acked and ignored. If the flag matches `finish_event`, the player is auto-finished. A race item use flag (the `use_flag` of a `race_item_catalog` entry) is acked and never adds a `zone_history` entry: the server resolves the use only when the runner holds that item, sending `item_effect` to the targets, `item_remove` to a Shield holder that blocked it and `item_result` to the sender (see [Item messages](#item-messages-races-with-items)), and ignores it otherwise, so a replay changes nothing. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
+Sent when the mod detects an event flag transition (0 → 1). The server resolves a fog flag to a DAG node via the seed's `event_map`. A boss defeat flag (one of the seed's `boss_flags`) resolves instead to the node carrying it as `defeat_flag` in `graph.json`: the kill's IGT is stamped as `boss_kill_igt_ms` on that node's most recent `zone_history` visit, never as a new entry, and only the first kill is kept; a kill with no visit of its node, or at IGT 0, is acked and ignored. If the flag matches `finish_event`, the player is auto-finished. A race item use flag (the `use_flag` of a `race_item_catalog` entry) never adds a `zone_history` entry: the server resolves the use only when the runner holds that item, sending `item_effect` to the targets, `item_remove` to a Shield holder that blocked it and `item_result` to the sender (see [Item messages](#item-messages-races-with-items)), and ignores it otherwise; it is acked after the resolution. The resolution clears the held item, so the replay of a resolved use is ignored unless the runner was granted the same item again in between. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
 
 `message_id` is optional for backward compatibility. Newer mods attach a monotonically increasing client-local ID so the server can acknowledge persistence and deduplicate replayed `event_flag` messages after reconnect.
 
@@ -256,7 +258,7 @@ Sent when the mod detects an event flag transition (0 → 1). The server resolve
 
 **Timing:** Regular event flags (fog gate traversals) are detected immediately by polling but deferred until loading screen exit. This ensures spectators see progress updates in sync with the player's arrival, and prevents zone name spoilers during loading screens. The `finish_event` (final boss kill) and the seed's `boss_flags` (the other boss kills) are the exception: they are sent immediately since boss kills don't trigger a loading screen, once each, and never cleared in game memory. Race item use flags are also sent immediately, and cleared after capture like fog flags.
 
-**Acknowledgement:** On new protocol versions, the server sends `event_flag_ack` after the `event_flag` has been committed. The mod keeps the flag in an in-flight set until this ACK arrives. If the connection drops first, the mod replays the unacknowledged `event_flag` on reconnect; if the game closes first, the next launch replays it, with the previous process's `message_id` (see "Surviving a Game Restart" in `EVENT_FLAG_TRACKING.md`). The server stores `message_id` in `zone_history` entries of type `"fog"` and treats replays with the same `message_id` as idempotent (ACK again, no second append). The server also ACKs messages that it deduplicates or rejects on its own (shared-entrance counterpart, unknown flag, history cap reached, or wrong save): without that ACK the mod would keep the message in-flight and replay it after a reconnect, and the dedup check against `history[-1]` would no longer match once the player has progressed, causing a stale duplicate with the original (older) `igt_ms` to be appended.
+**Acknowledgement:** On new protocol versions, the server sends `event_flag_ack` after the `event_flag` has been committed; a race item use flag is acked once its resolution has committed and its item messages have been sent. The mod keeps the flag in an in-flight set until this ACK arrives. If the connection drops first, the mod replays the unacknowledged `event_flag` on reconnect; if the game closes first, the next launch replays it, with the previous process's `message_id` (see "Surviving a Game Restart" in `EVENT_FLAG_TRACKING.md`). The server stores `message_id` in `zone_history` entries of type `"fog"` and treats replays with the same `message_id` as idempotent (ACK again, no second append). The server also ACKs messages that it deduplicates or rejects on its own (shared-entrance counterpart, unknown flag, history cap reached, or wrong save): without that ACK the mod would keep the message in-flight and replay it after a reconnect, and the dedup check against `history[-1]` would no longer match once the player has progressed, causing a stale duplicate with the original (older) `igt_ms` to be appended.
 
 ```json
 {
@@ -604,7 +606,7 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 
 | Message       | Fields                                  | Description                                                                                                                                                      |
 | ------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `item_grant`  | `grant_id`, `item`, `banner`            | Spawn the item's goods and show the banner. Re-sent at every auth until the mod answers `item_received`                                                          |
+| `item_grant`  | `grant_id`, `item`, `banner`            | Spawn the item's goods and show the banner. Re-sent at every auth, and after an `item_inventory` that lacks it, until the mod answers `item_received`            |
 | `item_effect` | `item`, `effect`, `banner`, `reminder?` | An item hits this runner. `effect.kind` is `speffect {speffect_id}`, `damage {base_pct, floor_pct, tail_pct}` or `ink {duration_ms}`, dumped without null fields |
 | `item_result` | `item`, `banner`, `reminder?`           | Outcome of the runner's own item use (hit, blocked, missed)                                                                                                      |
 | `item_remove` | `item`, `banner?`                       | Raise the item's `remove_flag` so the game drops its goods; with a banner to a shield holder whose shield blocked                                                |
@@ -1240,7 +1242,7 @@ Included in `auth_ok` (mod) and `race_state` (spectator):
 | `seed_number`        | `string?` | yes | no        | The seed's number (LiveSplit `SpeedFog seed`)                                                                     |
 | `category`           | `string?` | yes | no        | The seed's speedrun category key, e.g. `standard` or `standard@12` (LiveSplit `SpeedFog category`)                |
 | `boss_flags`         | `int[]`   | yes | no        | Sorted defeat flag of every boss node except the final boss; empty for spectators                                 |
-| `race_item_catalog`  | `object`  | yes | no        | `{item_key: {goods_id, use_flag, remove_flag}}`; empty unless the race has items on (no `use_flag` on the Shield) |
+| `race_item_catalog`  | `object`  | yes | no        | `{item_key: {goods_id, use_flag, remove_flag}}`; empty unless the race has items on (Shield's `use_flag` is null) |
 
 ### Leaderboard Sorting
 
@@ -1345,7 +1347,7 @@ Anonymous (unauthenticated) spectators: visible during `running` and `finished`,
 
 **Close code notes:**
 
-- `1000` (race reset, Set Seed solo reset): non-permanent; mods reconnect silently and resume where they left off (after a Set Seed solo reset, on the fresh attempt, where a save past 60 s of IGT gets `fresh_save_required` until a New Game).
+- `1000` (race reset, Set Seed solo reset): non-permanent; mods reconnect silently and resume where they left off (after a Set Seed solo reset, on the fresh attempt, where a save past 60 s of IGT gets `fresh_save_required` until a New Game). A change of a race's `race_items` option closes its mods (not its spectators) the same way, so they authenticate again under the new setting.
 - `1013` (eviction): non-permanent; the client reconnects and receives a fresh state. Sent when a broadcast to the connection failed or exceeded the 5s send timeout, or when the server could not build a `race_state` to broadcast (spectators are then closed so their reconnect resyncs).
 - `4001` (race deleted): permanent; organizer deleted the race mid-session. No reconnect.
 - `4008` (rate limit): mod or spectator sending messages too frequently; treated as permanent (code >= 4000), no reconnect.

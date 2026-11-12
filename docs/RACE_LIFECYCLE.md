@@ -119,8 +119,16 @@ a race with `race_items` on a `mode` other than `normal` is a 422, and editing
 it on a race that is not a community race (`mode` other than `normal`, a
 `daily_date` or an `event_id`) is a 400, as is editing it once the race has left
 SETUP. It is not checked against `deathless`: combining both is the organizer's
-call. A change broadcasts a `race_info_update` like the other options, and
-`RaceInfo.race_items` carries it to the mod and the web.
+call. An items race draws only seeds that carry the race items plugin:
+switching the option on over a seed without it redraws the seed, a redraw
+the option made and not a player, so it is no reroll for the boards (a 400,
+the option staying off, when the pool has no such seed). A change broadcasts a
+`race_info_update` like the other options, and `RaceInfo.race_items` carries
+it to the mod and the web. The mod only gets the item catalog, and meets the
+protocol 1.12 gate, at auth: a change also closes every connected mod of the
+race with code 1000, as a reset does, so each one reconnects under the new
+setting (an older mod is then refused). Spectators stay connected. See
+`RACE_ITEMS.md`.
 
 ### IGT cutoff
 
