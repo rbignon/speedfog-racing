@@ -28,6 +28,7 @@ from speedfog_racing.models import (
 )
 from speedfog_racing.schemas import UserResponse
 from speedfog_racing.services.speedrun_service import (
+    RACE_ITEMS_UNRANKED_REASON,
     RUN_TYPES,
     CountedRun,
     RunPlace,
@@ -41,6 +42,8 @@ from speedfog_racing.services.speedrun_service import (
     main_weapon,
     place_of,
     race_counts_on_boards,
+    race_unranked_code,
+    race_unranked_reason,
     rank_board,
     record_history,
     record_seed,
@@ -136,6 +139,7 @@ async def _add_run(
     seed_was_seen: bool = False,
     seed_played: bool = False,
     rerolled_without_report: bool = False,
+    race_items: bool = False,
 ) -> Participant:
     """One race with a single participant, on ``seed`` or on its own seed."""
     tag = uuid.uuid4().hex[:10]
@@ -162,6 +166,7 @@ async def _add_run(
         seed_was_seen=seed_was_seen,
         seed_played=seed_played,
         rerolled_without_report=rerolled_without_report,
+        race_items=race_items,
         # daily_date is unique: one Daily Seed per day.
         daily_date=date(2026, 10, 1) + timedelta(days=minute) if kind == "daily" else None,
         event_id=(await _event(db)).id if kind == "event" else None,
@@ -385,6 +390,48 @@ async def test_races_count_unless_on_a_seen_seed_or_a_reset_or_rerolled_communit
     assert {run_id for run_id, race in races.items() if race_counts_on_boards(race)} == counted
     assert {r.blind for r in runs if r.run_id in (set_seed.id, reset_set_seed.id)} == {False}
     assert {r.blind for r in runs if r.run_id not in (set_seed.id, reset_set_seed.id)} == {True}
+
+
+async def test_items_race_is_unranked_with_its_reason(async_session, pools):
+    """A race with items leaves every board whatever its mode or kind, even a
+    Daily Seed or an event race, and shows its own reason before the others;
+    the SQL clause and the seed page's unranked list agree."""
+    async with async_session() as db:
+        a = await _user(db, "a")
+        plain = await _add_run(db, user=a, igt_ms=1000, minute=1, mode=RunMode.NORMAL)
+        items = {}
+        for minute, (name, kwargs) in enumerate(
+            {
+                "normal": {"mode": RunMode.NORMAL},
+                "speedrun": {"mode": RunMode.SPEEDRUN},
+                "daily": {"mode": RunMode.NORMAL, "kind": "daily"},
+                "event": {"mode": RunMode.NORMAL, "kind": "event"},
+                "seen": {"mode": RunMode.NORMAL, "seed_was_seen": True},
+            }.items(),
+            start=2,
+        ):
+            items[name] = await _add_run(
+                db, user=a, igt_ms=1000 + minute, minute=minute, race_items=True, **kwargs
+            )
+        await db.commit()
+        races = {}
+        for p in [plain, *items.values()]:
+            race = await db.get(Race, p.race_id)
+            assert race is not None
+            races[p.id] = race
+        counted = {r.run_id for r in await load_counted_runs(db)}
+        unranked = {
+            run.run_id
+            for race in races.values()
+            for run in await load_unranked_runs(db, race.seed_id)
+        }
+
+    assert counted == {plain.id}
+    assert unranked == {p.id for p in items.values()}
+    for p in items.values():
+        assert race_unranked_code(races[p.id]) == "race_items"
+        assert race_unranked_reason(races[p.id]) == RACE_ITEMS_UNRANKED_REASON
+    assert race_unranked_code(races[plain.id]) is None
 
 
 async def test_finished_at_falls_back_to_race_start(async_session, pools):

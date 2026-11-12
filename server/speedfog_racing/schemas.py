@@ -528,7 +528,7 @@ class PendingInviteResponse(BaseModel):
 
 
 # Why a race's finishers count on no Speedrun board (``race_unranked_code``).
-UnrankedCode = Literal["seen_seed", "reset", "rerolled"]
+UnrankedCode = Literal["race_items", "seen_seed", "reset", "rerolled"]
 
 
 class RaceDetailResponse(BaseModel):

@@ -313,7 +313,8 @@ async def load_rows() -> dict[str, list[dict[str, Any]]]:
                 SELECT s.id, s.pool_name, s.graph_json::text AS graph_json
                 FROM seeds s
                 WHERE EXISTS (SELECT 1 FROM races r JOIN participants p ON p.race_id = r.id
-                              WHERE r.seed_id = s.id AND p.zone_history IS NOT NULL)
+                              WHERE r.seed_id = s.id AND p.zone_history IS NOT NULL
+                                AND NOT r.race_items)
             """)
         }
         participants = await conn.fetch("""
@@ -321,6 +322,7 @@ async def load_rows() -> dict[str, list[dict[str, Any]]]:
                    p.zone_history::text AS zh, r.seed_id::text AS sid
             FROM participants p JOIN races r ON p.race_id = r.id
             WHERE p.zone_history IS NOT NULL AND p.zone_history::text NOT IN ('null', '[]')
+              AND NOT r.race_items
         """)
     finally:
         await conn.close()

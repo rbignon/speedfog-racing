@@ -82,7 +82,7 @@ async def _user(db, name: str) -> User:
     return user
 
 
-async def _race(db, organizer, player, name, mode, igt, daily=False) -> Race:
+async def _race(db, organizer, player, name, mode, igt, daily=False, race_items=False) -> Race:
     seed = Seed(
         seed_number=f"seed-{name}-{player.twitch_username}",
         pool_name="standard",
@@ -102,6 +102,7 @@ async def _race(db, organizer, player, name, mode, igt, daily=False) -> Race:
         started_at=datetime.now(UTC),
         mode=mode,
         daily_date=date.today() if daily else None,
+        race_items=race_items,
     )
     db.add(race)
     await db.flush()
@@ -138,6 +139,26 @@ async def test_zone_stats_loader_keeps_only_counted_races(async_session, world):
         participants, _ = await _load_zone_stats_inputs(None, 3650, db)
     counted = {world[name] for name, *_rest, counts in _RACES if counts}
     assert {row.race_id for row in participants} == counted
+
+
+async def test_community_stats_skip_items_races(async_session, test_client, world):
+    """A race with items changes clear times and deaths: it feeds no stat that
+    describes blind play, whatever its mode."""
+    async with async_session() as db:
+        organizer = await _user(db, "org2")
+        player = await _user(db, "bob")
+        items = await _race(
+            db, organizer, player, "items", RunMode.NORMAL, 200_000, race_items=True
+        )
+        await db.commit()
+        items_id = items.id
+    async with async_session() as db:
+        participants, _ = await _load_zone_stats_inputs(None, 3650, db)
+    assert items_id not in {row.race_id for row in participants}
+    async with test_client as client:
+        response = await client.get("/api/stats/weapons")
+    (combo,) = response.json()["combos"]
+    assert combo["total_ticks"] == 2
 
 
 async def test_weapon_stats_count_only_counted_races(test_client, world):

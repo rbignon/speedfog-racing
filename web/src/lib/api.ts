@@ -184,7 +184,7 @@ export interface PendingInvite {
 }
 
 /** Why a race counts on no Speedrun board (the server's race_unranked_code). */
-export type UnrankedCode = "seen_seed" | "reset" | "rerolled";
+export type UnrankedCode = "race_items" | "seen_seed" | "reset" | "rerolled";
 
 export interface RaceDetail extends Race {
   /** The category key (`<pool>` or `<pool>@<layers>`), null before a seed. */

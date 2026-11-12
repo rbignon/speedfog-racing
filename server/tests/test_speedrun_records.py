@@ -181,6 +181,7 @@ def test_only_races_that_can_count_schedule_the_check():
             seed_was_seen=False,
             seed_played=False,
             rerolled_without_report=False,
+            race_items=False,
             is_public=False,
             discord_event_id=None,
         )
@@ -192,6 +193,9 @@ def test_only_races_that_can_count_schedule_the_check():
         (race(mode=RunMode.SET_SEED), True),
         (race(daily_date=object()), True),
         (race(event_id=uuid.uuid4()), True),
+        # A race with items counts nowhere, whatever its kind.
+        (race(race_items=True), False),
+        (race(event_id=uuid.uuid4(), race_items=True), False),
         # A race on a SEEN seed counts nowhere, an event race included.
         (race(seed_was_seen=True), False),
         (race(event_id=uuid.uuid4(), seed_was_seen=True), False),

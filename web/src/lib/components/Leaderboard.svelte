@@ -238,7 +238,7 @@
                   class:replay={runKind === "replay"}
                   class:unranked={runKind === "unranked"}
                   title={runKind === "unranked"
-                    ? "Seen seed, reset or re-rolled race: counts on no board"
+                    ? "Items, seen seed, reset or re-rolled race: counts on no board"
                     : RUN_KIND_TITLES[runKind]}
                   >{runKind === "blind"
                     ? "Blind"

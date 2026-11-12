@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     Uuid,
+    and_,
     func,
     text,
 )
@@ -821,10 +822,11 @@ def counts_for_community_stats() -> ColumnElement[bool]:
     """Race filter for the statistics that describe blind play.
 
     Normal races count, Daily Seeds and event races included; Speedrun and
-    Set Seed races (a replay, or a possibly fished draw) stay out. Lives here
-    so the services can use it without importing the API layer.
+    Set Seed races (a replay, or a possibly fished draw) stay out, and so do
+    races with items (they change clear times and deaths). Lives here so the
+    services can use it without importing the API layer.
     """
-    return Race.mode == RunMode.NORMAL
+    return and_(Race.mode == RunMode.NORMAL, Race.race_items.is_(False))
 
 
 def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:
