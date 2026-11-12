@@ -771,7 +771,7 @@ describe("buildTimelines", () => {
 
 describe("boss kill times", () => {
   // The boss node is on layer 3; kill times are measured from the first
-  // entry on it within the layer's window.
+  // entry on it in the whole history.
   const killRun = (kill: number | null, extra: ZoneHistoryEntry[] = []) =>
     [
       at("start", 0),
@@ -792,6 +792,30 @@ describe("boss kill times", () => {
   it("calls a kill below its first entry unknown", () => {
     const t = timeline(killRun(4_000));
     expect(t.layers[3]?.kills).toEqual([{ nodeId: "boss", killMs: null }]);
+  });
+
+  // a1 (layer 1) left unbeaten for a2 (layer 2), then killed after coming
+  // back: the server stamps the kill on the re-entry, inside layer 2's window.
+  const leaveAndReturn = [
+    at("start", 0),
+    at("a1", 10_000),
+    at("a2", 30_000),
+    at("a1", 40_000, { boss_kill_igt_ms: 55_000 }),
+    at("a2", 60_000),
+  ];
+
+  it("times a kill after a return from a deeper layer from the first entry", () => {
+    const t = timeline(leaveAndReturn, "playing");
+    expect(t.layers[1]?.kills).toEqual([{ nodeId: "a1", killMs: 45_000 }]);
+  });
+
+  it("never puts a shallower node's kill in a deeper layer's visit", () => {
+    const t = timeline(leaveAndReturn, "playing");
+    expect(t.layers[2]?.kills).toEqual([]);
+    // The re-entry's 15 s is no record in the field's kill times.
+    expect(computeKillStats([t], new Set(["a1"])).get("a1")?.samples).toEqual([
+      45_000,
+    ]);
   });
 
   it("skips disqualified runs and null kills in the kill stats", () => {

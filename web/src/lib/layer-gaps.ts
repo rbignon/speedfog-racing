@@ -14,11 +14,11 @@ import type { ZoneHistoryEntry } from "$lib/zone-history";
 import { isOutOfRace } from "$lib/format";
 import { BASE_GAP, NODE_AREA } from "$lib/dag/constants";
 
-/** A boss kill on a node of a layer's window. */
+/** A boss kill on a node of a layer. */
 export interface NodeKill {
   nodeId: string;
-  /** The first kill's IGT minus the first entry on the node within the
-   * window; null when negative (a clock set back: unknown). */
+  /** The first kill's IGT minus the first entry on the node in the whole
+   * history; null when negative (a clock set back: unknown). */
   killMs: number | null;
 }
 
@@ -41,7 +41,8 @@ export interface LayerVisit {
   timeThroughNodeMs: number | null;
   /** Deaths of the entries recorded in the layer's time window. */
   deaths: number;
-  /** One per node of the window with a recorded boss kill. */
+  /** One per node of this layer with a recorded boss kill, wherever in the
+   * history the kill landed. */
   kills: readonly NodeKill[];
 }
 
@@ -76,6 +77,24 @@ export function buildRunnerTimeline(
   entries.forEach(({ layer }, i) => {
     if (!firstIdx.has(layer)) firstIdx.set(layer, i);
   });
+
+  // A node's kill time runs from its first entry in the whole history, and
+  // goes on its own layer's visit: a runner who left a boss unbeaten and
+  // came back from a deeper layer to kill it has the detour counted, as in
+  // the server's boss stats, not a time from the re-entry.
+  const firstEntryIgt = new Map<string, number>();
+  const killsByLayer = new Map<number, NodeKill[]>();
+  for (const { layer, entry } of entries) {
+    const { node_id, boss_kill_igt_ms } = entry;
+    if (!firstEntryIgt.has(node_id)) firstEntryIgt.set(node_id, entry.igt_ms);
+    if (boss_kill_igt_ms === undefined) continue;
+    const layerKills = killsByLayer.get(layer);
+    if (layerKills?.some((k) => k.nodeId === node_id)) continue;
+    const killMs = boss_kill_igt_ms - firstEntryIgt.get(node_id)!;
+    const kill = { nodeId: node_id, killMs: killMs < 0 ? null : killMs };
+    if (layerKills) layerKills.push(kill);
+    else killsByLayer.set(layer, [kill]);
+  }
 
   // A layer the history can place: reached, and not first recorded after
   // the next layer.
@@ -119,25 +138,6 @@ export function buildRunnerTimeline(
         break;
       }
     }
-    let kills: NodeKill[] | null = null;
-    for (let i = start; i < end; i++) {
-      const { node_id, boss_kill_igt_ms } = entries[i].entry;
-      if (boss_kill_igt_ms === undefined) continue;
-      if (kills?.some((k) => k.nodeId === node_id)) continue;
-      let first = i;
-      for (let j = start; j < i; j++) {
-        if (entries[j].entry.node_id === node_id) {
-          first = j;
-          break;
-        }
-      }
-      const killMs = boss_kill_igt_ms - entries[first].entry.igt_ms;
-      (kills ??= []).push({
-        nodeId: node_id,
-        killMs: killMs < 0 ? null : killMs,
-      });
-    }
-
     let leftIgt: number | null = null;
     if (layer + 1 === totalLayers) {
       leftIgt = finishIgt;
@@ -159,7 +159,7 @@ export function buildRunnerTimeline(
           ? null
           : leftIgt - exitEntryIgt,
       deaths,
-      kills: kills ?? NO_KILLS,
+      kills: killsByLayer.get(layer) ?? NO_KILLS,
     };
   }
 
