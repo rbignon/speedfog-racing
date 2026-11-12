@@ -706,12 +706,10 @@ impl RaceTracker {
     /// Execute machine effects: WS sends, game-memory writes, thread spawns.
     fn execute_effects(&mut self, effects: Vec<Effect>) {
         // The category page is resolved from the first SetGameFlag and reused
-        // for every SetGameFlag in the batch: a single effects batch must only
-        // carry flags from one category, or later writes hit the wrong page.
-        // Today that invariant holds because a batch comes from either tick()
-        // (event-id clears, one category by the event_ids invariant) or a
-        // single DeathCounts message (death markers, which the seed generator
-        // allocates within one category).
+        // for every SetGameFlag in the batch. A flag of another category
+        // (a race item use or removal flag next to fog flag clears) falls
+        // back to a full category lookup in `set_flag_fast`, so a mixed
+        // batch stays correct, one extra lookup per foreign flag.
         let mut flag_page = None;
         for effect in effects {
             match effect {
@@ -788,6 +786,33 @@ impl RaceTracker {
                     if let Some(ref store) = self.unacked_store {
                         store.save(flags);
                     }
+                }
+                Effect::SendItemReceived { grant_id } => {
+                    self.ws_client.send_item_received(grant_id);
+                }
+                // Race item game access (spawn, inventory read, SpEffect, HP):
+                // not wired yet, logged only.
+                Effect::SpawnRaceItem { grant_id, goods_id } => {
+                    warn!(grant_id, goods_id, "[ITEMS] Race item spawn not wired yet");
+                }
+                Effect::ReportItemInventory { goods } => {
+                    warn!(
+                        count = goods.len(),
+                        "[ITEMS] Inventory report not wired yet"
+                    );
+                }
+                Effect::ApplySpEffect { speffect_id } => {
+                    warn!(speffect_id, "[ITEMS] SpEffect application not wired yet");
+                }
+                Effect::ApplyItemDamage {
+                    base_pct,
+                    floor_pct,
+                    tail_pct,
+                } => {
+                    warn!(
+                        base_pct,
+                        floor_pct, tail_pct, "[ITEMS] Item damage not wired yet"
+                    );
                 }
             }
         }

@@ -14,9 +14,11 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use crate::core::item_feed::{FeedBanner, FeedReminder, FeedTone, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::protocol::{
-    ConditionKind, ExitInfo, ParticipantInfo, ParticipantStatus, RaceInfo, RaceStatus, SeedInfo,
+    ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder, ParticipantInfo,
+    ParticipantStatus, RaceInfo, RaceItemEntry, RaceStatus, SeedInfo,
 };
 use crate::core::types::PlayerPosition;
 
@@ -111,6 +113,32 @@ pub enum MachineMessage {
     },
     /// Server rejected permanently (4xxx close code or auth failure). Stop reconnecting.
     PermanentError(String),
+    /// A race item granted to the local runner: spawn its goods once the
+    /// player is loaded, announce it, answer `item_received`.
+    ItemGrant {
+        grant_id: u64,
+        item: String,
+        banner: ItemBanner,
+    },
+    /// A race item effect aimed at the local runner, applied once the player
+    /// is loaded.
+    ItemEffect {
+        item: String,
+        effect: ItemEffectPayload,
+        banner: ItemBanner,
+        reminder: Option<ItemReminder>,
+    },
+    /// The outcome of the local runner's item use.
+    ItemResult {
+        item: String,
+        banner: ItemBanner,
+        reminder: Option<ItemReminder>,
+    },
+    /// Take a race item back: raise its removal flag.
+    ItemRemove {
+        item: String,
+        banner: Option<ItemBanner>,
+    },
 }
 
 // =============================================================================
@@ -221,7 +249,8 @@ pub struct TickInput {
     /// `(flag_id, is_set)` for every readable flag in `event_ids`, then for
     /// the boss defeat flags `boss_flags_to_read` names this scan (called
     /// after the frame's last `handle_message`: the tick moves the rotation
-    /// past that window). `Some` when the shell performed reads this frame
+    /// past that window), then for the race item use flags
+    /// `item_use_flags_to_read` names. `Some` when the shell performed reads this frame
     /// (`wants_flag_reads`), `None` otherwise. Unreadable flags are omitted
     /// from the vec.
     pub flag_reads: Option<Vec<(u32, bool)>>,
@@ -292,6 +321,58 @@ pub enum Effect {
     /// launch can send them if this process dies first. Emitted only when the
     /// set changes; an empty list means nothing is left to save.
     PersistUnackedFlags(UnackedFlags),
+    /// Give a granted race item: the shell spawns its goods unless the
+    /// inventory already holds them, then answers `item_received`.
+    SpawnRaceItem {
+        grant_id: u64,
+        goods_id: u32,
+    },
+    /// Answer `item_received` for a grant this process already handled.
+    SendItemReceived {
+        grant_id: u64,
+    },
+    /// Report the race items held: the shell reads each goods' quantity and
+    /// sends `item_inventory` with the catalog keys of those above 0.
+    /// `goods` pairs every catalog key with its goods id.
+    ReportItemInventory {
+        goods: Vec<(String, u32)>,
+    },
+    /// Apply a SpEffect to the player.
+    ApplySpEffect {
+        speffect_id: u32,
+    },
+    /// Damage the player along the race item damage curve
+    /// (`core::item_damage`), computed from the HP at application.
+    ApplyItemDamage {
+        base_pct: u8,
+        floor_pct: u8,
+        tail_pct: u8,
+    },
+}
+
+/// A granted race item waiting for a loaded frame.
+#[derive(Debug)]
+struct PendingGrant {
+    grant_id: u64,
+    goods_id: u32,
+    banner: FeedBanner,
+}
+
+/// What a race item effect does once applied.
+#[derive(Debug)]
+enum ItemAction {
+    /// Executed by the shell (`ApplySpEffect`, `ApplyItemDamage`).
+    Shell(Effect),
+    /// Overlay only: exit destinations stay hidden this long.
+    Ink(Duration),
+}
+
+/// A race item effect waiting for a loaded frame.
+#[derive(Debug)]
+struct PendingItemEffect {
+    action: ItemAction,
+    banner: FeedBanner,
+    reminder: Option<ItemReminder>,
 }
 
 // =============================================================================
@@ -329,6 +410,22 @@ pub struct RaceMachine {
     /// Index in `boss_flags` where the next scan's boss reads start (see
     /// `boss_flags_to_read`).
     boss_read_cursor: usize,
+    /// Race item use flags from the seed catalog, sorted and deduplicated
+    /// (membership by binary search), replaced on every auth_ok. The game
+    /// raises one on every use: see `capture_item_use`.
+    pub item_use_flags: Vec<u32>,
+    /// Every catalog key with its goods id, sorted by key, replaced on every
+    /// auth_ok: what an inventory report covers.
+    item_inventory_goods: Vec<(String, u32)>,
+    /// Grants spawned by this process: one the server sends again is only
+    /// acknowledged.
+    handled_grants: HashSet<u64>,
+    /// Grants and item effects received, waiting for a loaded frame (see
+    /// `flush_race_items`).
+    pending_grants: Vec<PendingGrant>,
+    pending_item_effects: Vec<PendingItemEffect>,
+    /// Race item banners, reminder rows and ink timer, for the overlay.
+    item_feed: ItemFeed,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -471,6 +568,12 @@ impl RaceMachine {
             finish_event: None,
             boss_flags: Vec::new(),
             boss_read_cursor: 0,
+            item_use_flags: Vec::new(),
+            item_inventory_goods: Vec::new(),
+            handled_grants: HashSet::new(),
+            pending_grants: Vec::new(),
+            pending_item_effects: Vec::new(),
+            item_feed: ItemFeed::new(),
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -856,6 +959,35 @@ impl RaceMachine {
         })
     }
 
+    /// The race has items on (overlay tag, use flag reads, inventory reports).
+    pub fn race_items_on(&self) -> bool {
+        self.race_state
+            .race
+            .as_ref()
+            .map(|r| r.race_items)
+            .unwrap_or(false)
+    }
+
+    /// The seed catalog's entry for a race item key.
+    fn catalog_entry(&self, item: &str) -> Option<&RaceItemEntry> {
+        self.race_state.seed.as_ref()?.race_item_catalog.get(item)
+    }
+
+    /// Race item banner on screen, if any (as of the last tick).
+    pub fn item_banner(&self) -> Option<&FeedBanner> {
+        self.item_feed.banner()
+    }
+
+    /// Race item reminder rows still running, with their time left.
+    pub fn item_reminders(&self, now: Instant) -> impl Iterator<Item = (&FeedReminder, Duration)> {
+        self.item_feed.reminders(now)
+    }
+
+    /// An ink effect hides the exit destinations right now.
+    pub fn ink_active(&self, now: Instant) -> bool {
+        self.item_feed.ink_active(now)
+    }
+
     /// Coded blocking condition (red top banner) while fresh.
     pub fn get_blocking_condition(&self, now: Instant) -> Option<&ServerCondition> {
         self.server_condition
@@ -1017,6 +1149,14 @@ impl RaceMachine {
                     race.name,
                     participants.len()
                 ));
+                // Race items queued or shown for another participant are not
+                // this one's; a reconnection as the same one keeps them.
+                if self.my_participant_id.as_deref() != Some(participant_id.as_str()) {
+                    self.item_feed.clear();
+                    self.pending_grants.clear();
+                    self.pending_item_effects.clear();
+                    self.handled_grants.clear();
+                }
                 self.my_participant_id = Some(participant_id);
                 self.my_participant_index = participants
                     .iter()
@@ -1027,6 +1167,19 @@ impl RaceMachine {
                 self.boss_flags.sort_unstable();
                 self.boss_flags.dedup();
                 self.boss_read_cursor = 0;
+                self.item_use_flags = seed
+                    .race_item_catalog
+                    .values()
+                    .filter_map(|entry| entry.use_flag)
+                    .collect();
+                self.item_use_flags.sort_unstable();
+                self.item_use_flags.dedup();
+                self.item_inventory_goods = seed
+                    .race_item_catalog
+                    .iter()
+                    .map(|(key, entry)| (key.clone(), entry.goods_id))
+                    .collect();
+                self.item_inventory_goods.sort_unstable();
                 // Don't clear triggered_flags on reconnect: finish_event and
                 // boss kills are one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
@@ -1362,6 +1515,128 @@ impl RaceMachine {
                 error!(message = %msg, "[WS] Permanent error, stopping reconnection");
                 self.permanent_error = Some(msg);
             }
+            MachineMessage::ItemGrant {
+                grant_id,
+                item,
+                banner,
+            } => {
+                self.last_received_debug = Some(format!("item_grant({grant_id}, {item})"));
+                // The server sends a grant again at every auth until it
+                // hears `item_received`.
+                if self.handled_grants.contains(&grant_id) {
+                    if self.seed_mismatch {
+                        // An outdated pack confirms nothing; the server
+                        // sends the grant again at the next auth.
+                        info!(grant_id, item = %item, "[ITEMS] Grant already spawned, not acknowledged (seed pack outdated)");
+                    } else {
+                        info!(grant_id, item = %item, "[ITEMS] Grant already spawned, acknowledged");
+                        effects.push(Effect::SendItemReceived { grant_id });
+                    }
+                } else if self.pending_grants.iter().any(|g| g.grant_id == grant_id) {
+                    info!(grant_id, item = %item, "[ITEMS] Grant already waiting for the load");
+                } else {
+                    match self.catalog_entry(&item).map(|entry| entry.goods_id) {
+                        Some(goods_id) => {
+                            info!(grant_id, item = %item, "[ITEMS] Grant received");
+                            self.pending_grants.push(PendingGrant {
+                                grant_id,
+                                goods_id,
+                                banner: FeedBanner::from_wire(&banner, FeedTone::Gain),
+                            });
+                        }
+                        None => {
+                            warn!(grant_id, item = %item, "[ITEMS] Grant of an item outside the seed catalog, dropped");
+                        }
+                    }
+                }
+            }
+            MachineMessage::ItemEffect {
+                item,
+                effect,
+                banner,
+                reminder,
+            } => {
+                self.last_received_debug = Some(format!("item_effect({item})"));
+                let action = match effect {
+                    ItemEffectPayload::Speffect { speffect_id } => {
+                        Some(ItemAction::Shell(Effect::ApplySpEffect { speffect_id }))
+                    }
+                    ItemEffectPayload::Damage {
+                        base_pct,
+                        floor_pct,
+                        tail_pct,
+                    } => Some(ItemAction::Shell(Effect::ApplyItemDamage {
+                        base_pct,
+                        floor_pct,
+                        tail_pct,
+                    })),
+                    ItemEffectPayload::Ink { duration_ms } => Some(ItemAction::Ink(
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
+                    ItemEffectPayload::Unknown => None,
+                };
+                match action {
+                    Some(action) => {
+                        info!(item = %item, ?action, "[ITEMS] Effect received");
+                        self.pending_item_effects.push(PendingItemEffect {
+                            action,
+                            banner: FeedBanner::from_wire(&banner, FeedTone::Malus),
+                            reminder,
+                        });
+                    }
+                    None => {
+                        warn!(item = %item, "[ITEMS] Effect of an unknown kind, dropped");
+                    }
+                }
+            }
+            MachineMessage::ItemResult {
+                item,
+                banner,
+                reminder,
+            } => {
+                self.last_received_debug = Some(format!("item_result({item})"));
+                info!(item = %item, "[ITEMS] Result received");
+                // The sender's own outcome: shown at once, no game access.
+                let banner = FeedBanner::from_wire(&banner, FeedTone::Gain);
+                if let Some(reminder) = reminder {
+                    self.item_feed.add_reminder(
+                        banner.icon.clone(),
+                        reminder.text,
+                        FeedTone::Gain,
+                        Duration::from_millis(u64::from(reminder.duration_ms)),
+                        now,
+                    );
+                }
+                self.item_feed.push_banner(banner, now);
+            }
+            MachineMessage::ItemRemove { item, banner } => {
+                self.last_received_debug = Some(format!("item_remove({item})"));
+                match self.catalog_entry(&item).map(|entry| entry.remove_flag) {
+                    Some(remove_flag) => {
+                        if self.wrong_save {
+                            // No flag writes into a foreign save: the race
+                            // save's next inventory report gets the removal
+                            // sent again.
+                            info!(item = %item, remove_flag, "[ITEMS] Removal skipped (wrong save)");
+                        } else {
+                            // Only raised: the game's event removes the
+                            // goods and clears it.
+                            info!(item = %item, remove_flag, "[ITEMS] Removal flag raised");
+                            effects.push(Effect::SetGameFlag {
+                                flag_id: remove_flag,
+                                value: true,
+                            });
+                        }
+                        if let Some(banner) = banner {
+                            self.item_feed
+                                .push_banner(FeedBanner::from_wire(&banner, FeedTone::Gain), now);
+                        }
+                    }
+                    None => {
+                        warn!(item = %item, "[ITEMS] Removal of an item outside the seed catalog, dropped");
+                    }
+                }
+            }
         }
         effects
     }
@@ -1457,6 +1732,18 @@ impl RaceMachine {
             .take(BOSS_FLAG_READS_PER_POLL)
     }
 
+    /// The race item use flags the shell reads after the boss window: every
+    /// one of them on every scan, while the run is live (as for the boss
+    /// flags) in a race with items.
+    pub fn item_use_flags_to_read(&self) -> impl Iterator<Item = u32> + '_ {
+        let live = self.race_items_on()
+            && self.is_race_running()
+            && !self.am_i_finished()
+            && !self.am_i_abandoned();
+        let flags: &[u32] = if live { &self.item_use_flags } else { &[] };
+        flags.iter().copied()
+    }
+
     /// Moves the boss read rotation past the window `boss_flags_to_read`
     /// names, so the next scan reads the following flags. Called on a frame
     /// whose flags were read, before anything changes that window: past it
@@ -1497,6 +1784,7 @@ impl RaceMachine {
     /// follow every path a frame takes.
     fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
+        self.item_feed.advance(now);
         // The shell read this frame's window of boss flags just before the
         // tick: move the rotation past it now, while `boss_flags_to_read`
         // still names the same window (a kill or a save-reload flush below
@@ -1704,7 +1992,8 @@ impl RaceMachine {
         let mut quit_out_status_pulled_forward = false;
 
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
-        if position_readable && !self.was_position_readable {
+        let loading_exit = position_readable && !self.was_position_readable;
+        if loading_exit {
             let quit_out = std::mem::take(&mut self.pending_quit_out);
             if quit_out
                 && self.is_race_running()
@@ -1751,6 +2040,17 @@ impl RaceMachine {
                                 igt_ms,
                                 input.connected,
                                 now,
+                                &mut effects,
+                            );
+                            continue;
+                        }
+                        if self.item_use_flags.binary_search(&flag_id).is_ok() {
+                            self.capture_item_use(
+                                flag_id,
+                                igt_ms,
+                                input.connected,
+                                now,
+                                &mut cleared,
                                 &mut effects,
                             );
                             continue;
@@ -1879,6 +2179,17 @@ impl RaceMachine {
                         self.capture_boss_kill(flag_id, igt_ms, input.connected, now, &mut effects);
                         continue;
                     }
+                    if self.item_use_flags.binary_search(&flag_id).is_ok() {
+                        self.capture_item_use(
+                            flag_id,
+                            igt_ms,
+                            input.connected,
+                            now,
+                            &mut cleared,
+                            &mut effects,
+                        );
+                        continue;
+                    }
                     if self.finish_event == Some(flag_id) {
                         // finish_event: one-shot, use triggered_flags guard
                         if !self.triggered_flags.contains(&flag_id) {
@@ -1965,6 +2276,8 @@ impl RaceMachine {
 
         // Everything below needs a live connection (ready, replays, status updates).
         if !input.connected {
+            // No report without a connection: the reconnect frame sends it.
+            self.flush_race_items(false, now, &mut effects);
             return effects;
         }
 
@@ -1972,6 +2285,7 @@ impl RaceMachine {
         let deaths = self.frame_snapshot.death_count.unwrap_or(0);
 
         // Send ready on (re)connection (skip in training mode since server auto-starts)
+        let reconnect_frame = !self.ready_sent;
         if !self.ready_sent {
             if !self.training {
                 effects.push(Effect::SendReady);
@@ -2013,6 +2327,19 @@ impl RaceMachine {
                             );
                             continue;
                         }
+                        if self.item_use_flags.binary_search(&flag_id).is_ok() {
+                            // The held IGT too, for the same reason.
+                            let use_igt_ms = self.effective_igt_ms();
+                            self.capture_item_use(
+                                flag_id,
+                                use_igt_ms,
+                                input.connected,
+                                now,
+                                &mut cleared,
+                                &mut effects,
+                            );
+                            continue;
+                        }
                         if self.finish_event == Some(flag_id) {
                             if !self.triggered_flags.contains(&flag_id) {
                                 self.triggered_flags.insert(flag_id);
@@ -2038,6 +2365,11 @@ impl RaceMachine {
                 }
             }
         }
+
+        // After every flag of the frame (replays, buffered, scans): a use
+        // made just before a quit-out reaches the server before the
+        // inventory that no longer holds it.
+        self.flush_race_items(loading_exit || reconnect_frame, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -2113,6 +2445,101 @@ impl RaceMachine {
         } else {
             self.flag_buffer.add_pending(flag_id, igt_ms);
             info!(flag_id, igt_ms, "[RACE] Boss kill buffered");
+        }
+    }
+
+    /// A race item use flag found set by a scan, the single place one is
+    /// handled. The game raises it on every use: it is cleared in game at
+    /// once (and added to `cleared`, so the frame's later scans skip it) for
+    /// the next use to raise it again, never joins `triggered_flags`, and is
+    /// no depth arrival. Sent like a boss kill: at once while connected,
+    /// `ready` out and past the countdown, buffered in the pending flags
+    /// otherwise. Left set while the run is not live, so a scan of the live
+    /// run reports it.
+    fn capture_item_use(
+        &mut self,
+        flag_id: u32,
+        igt_ms: u32,
+        connected: bool,
+        now: Instant,
+        cleared: &mut HashSet<u32>,
+        effects: &mut Vec<Effect>,
+    ) {
+        if !self.is_race_running() || self.am_i_finished() || self.am_i_abandoned() {
+            return;
+        }
+        effects.push(Effect::SetGameFlag {
+            flag_id,
+            value: false,
+        });
+        cleared.insert(flag_id);
+        if connected && self.ready_sent && !self.is_countdown_active(now) {
+            effects.push(self.queue_event_flag(flag_id, igt_ms));
+            self.last_sent_debug = Some(format!(
+                "event_flag({}, igt={}ms) [item use]",
+                flag_id, igt_ms
+            ));
+            info!(flag_id, igt_ms, "[ITEMS] Item use sent");
+        } else {
+            self.flag_buffer.add_pending(flag_id, igt_ms);
+            info!(flag_id, igt_ms, "[ITEMS] Item use buffered");
+        }
+    }
+
+    /// Race item work held for a loaded frame on the race save, run after
+    /// the frame's flag scans, in this order: the inventory report
+    /// (`report_inventory`: a game load or a reconnection, while connected),
+    /// the pending grant spawns, then the pending effects, whose banner,
+    /// reminder and duration start now. An outdated seed pack holds it all:
+    /// its regulation may lack the race goods and their effects.
+    fn flush_race_items(
+        &mut self,
+        report_inventory: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
+        if !self.frame_snapshot.position_readable || self.wrong_save || self.seed_mismatch {
+            return;
+        }
+        // Without a catalog, the race goods are unknown: an empty report
+        // would read as every item lost.
+        if report_inventory
+            && !self.item_inventory_goods.is_empty()
+            && self.race_items_on()
+            && self.is_race_running()
+            && !self.am_i_finished()
+            && !self.am_i_abandoned()
+        {
+            info!("[ITEMS] Inventory report");
+            effects.push(Effect::ReportItemInventory {
+                goods: self.item_inventory_goods.clone(),
+            });
+        }
+        for grant in std::mem::take(&mut self.pending_grants) {
+            info!(grant_id = grant.grant_id, "[ITEMS] Grant spawned");
+            self.handled_grants.insert(grant.grant_id);
+            self.item_feed.push_banner(grant.banner, now);
+            effects.push(Effect::SpawnRaceItem {
+                grant_id: grant.grant_id,
+                goods_id: grant.goods_id,
+            });
+        }
+        for effect in std::mem::take(&mut self.pending_item_effects) {
+            info!(action = ?effect.action, "[ITEMS] Effect applied");
+            match effect.action {
+                ItemAction::Shell(apply) => effects.push(apply),
+                ItemAction::Ink(duration) => self.item_feed.set_ink(duration, now),
+            }
+            if let Some(reminder) = effect.reminder {
+                self.item_feed.add_reminder(
+                    effect.banner.icon.clone(),
+                    reminder.text,
+                    FeedTone::Malus,
+                    Duration::from_millis(u64::from(reminder.duration_ms)),
+                    now,
+                );
+            }
+            self.item_feed.push_banner(effect.banner, now);
         }
     }
 
@@ -6161,5 +6588,722 @@ mod tests {
             assert_eq!(read.len(), unreported.len());
             assert!(sent_flags(&fx).is_empty());
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Race items
+    // ------------------------------------------------------------------
+
+    const USE_FLAG: u32 = 1_050_290_107;
+    const REMOVE_FLAG: u32 = 1_050_290_207;
+    const SHIELD_REMOVE_FLAG: u32 = 1_050_290_200;
+
+    /// auth_ok of `auth_ok` (flags [100, 200, 900], finish 900) for a race
+    /// with `race_items` on or off, whose seed catalog holds the Red Shell
+    /// (goods 1450807, use flag `USE_FLAG`) and the Shield (no use flag).
+    fn auth_ok_with_items(status: &str, race_items: bool) -> MachineMessage {
+        let race: RaceInfo = serde_json::from_str(&format!(
+            r#"{{"id":"r1","name":"x","status":"{status}","race_items":{race_items}}}"#
+        ))
+        .unwrap();
+        let seed: SeedInfo = serde_json::from_str(
+            r#"{"total_layers": 3, "event_ids": [100, 200, 900], "finish_event": 900,
+                "death_flags": {}, "race_item_catalog": {
+                  "red_shell": {"goods_id": 1450807, "use_flag": 1050290107,
+                                "remove_flag": 1050290207},
+                  "shield": {"goods_id": 1450800, "remove_flag": 1050290200}}}"#,
+        )
+        .unwrap();
+        MachineMessage::AuthOk {
+            participant_id: "p1".to_string(),
+            race,
+            seed,
+            participants: vec![test_participant("p1", "playing", 1)],
+            phantom_skin: None,
+            latest_mod_version: None,
+        }
+    }
+
+    /// Machine authed into a running race with items, past its first
+    /// connected frame (`ready` sent), the player loaded.
+    fn running_items_machine(now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(auth_ok_with_items("running", true), now);
+        m.tick(tick_in(snap(Some(60_000), true), true, None), now + ms(10));
+        m
+    }
+
+    /// One scan as the shell performs it: `event_ids` (unset), then the use
+    /// flags `item_use_flags_to_read` names, those in `used` reading set.
+    fn items_scan(m: &RaceMachine, used: &[u32]) -> Option<Vec<(u32, bool)>> {
+        let mut reads = vec![(100, false), (200, false), (900, false)];
+        reads.extend(
+            m.item_use_flags_to_read()
+                .map(|flag| (flag, used.contains(&flag))),
+        );
+        Some(reads)
+    }
+
+    fn wire_banner(icon: &str, title: &str) -> ItemBanner {
+        ItemBanner {
+            icon: icon.to_string(),
+            title: title.to_string(),
+            line: "line".to_string(),
+            detail: "detail".to_string(),
+        }
+    }
+
+    fn grant(grant_id: u64, item: &str) -> MachineMessage {
+        MachineMessage::ItemGrant {
+            grant_id,
+            item: item.to_string(),
+            banner: wire_banner(item, "Red Shell"),
+        }
+    }
+
+    fn item_hit(effect: ItemEffectPayload, reminder: Option<(&str, u32)>) -> MachineMessage {
+        MachineMessage::ItemEffect {
+            item: "hammer".to_string(),
+            effect,
+            banner: wire_banner("hammer", "Hammer"),
+            reminder: reminder.map(|(text, duration_ms)| ItemReminder {
+                text: text.to_string(),
+                duration_ms,
+            }),
+        }
+    }
+
+    /// The race item effects of a batch, in order, event_flag sends included.
+    fn item_steps(effects: &[Effect]) -> Vec<&'static str> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SendReady => Some("ready"),
+                Effect::SendEventFlag { .. } => Some("flag"),
+                Effect::ReportItemInventory { .. } => Some("report"),
+                Effect::SpawnRaceItem { .. } => Some("spawn"),
+                Effect::SendItemReceived { .. } => Some("received"),
+                Effect::ApplySpEffect { .. } | Effect::ApplyItemDamage { .. } => Some("apply"),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn banner_title(m: &RaceMachine) -> Option<(String, FeedTone)> {
+        m.item_banner().map(|b| (b.title.clone(), b.tone))
+    }
+
+    #[test]
+    fn use_flag_is_cleared_sent_at_once_and_can_fire_again() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+
+        // Sent in the same poll, not deferred to a loading exit, and cleared
+        // in game so the next use raises it again.
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, items_scan(&m, &[USE_FLAG])),
+            now + ms(150),
+        );
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: USE_FLAG,
+            value: false,
+        }));
+        let first = sent_flag_details(&fx);
+        assert_eq!(first.len(), 1, "{fx:?}");
+        assert_eq!((first[0].0, first[0].1), (USE_FLAG, 60_000));
+        assert!(!m.triggered_flags.contains(&USE_FLAG));
+        assert!(!m.flag_buffer.has_deferred());
+
+        // Cleared: the next poll reads it unset.
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            now + ms(300),
+        );
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+
+        // The next use is a new event.
+        let fx = m.tick(
+            tick_in(snap(Some(90_000), true), true, items_scan(&m, &[USE_FLAG])),
+            now + ms(450),
+        );
+        let again = sent_flag_details(&fx);
+        assert_eq!(again.len(), 1, "{fx:?}");
+        assert_eq!((again[0].0, again[0].1), (USE_FLAG, 90_000));
+        assert_ne!(again[0].2, first[0].2);
+    }
+
+    #[test]
+    fn use_flags_are_not_read_with_items_off() {
+        let now = Instant::now();
+        let mut off = RaceMachine::new(1, String::new(), false, now);
+        off.handle_message(auth_ok_with_items("running", false), now);
+        assert_eq!(off.item_use_flags_to_read().count(), 0);
+
+        // The same catalog with items on: read while the race runs only.
+        let mut setup = RaceMachine::new(1, String::new(), false, now);
+        setup.handle_message(auth_ok_with_items("setup", true), now);
+        assert_eq!(setup.item_use_flags_to_read().count(), 0);
+        let on = running_items_machine(now);
+        assert_eq!(on.item_use_flags_to_read().collect::<Vec<_>>(), [USE_FLAG]);
+    }
+
+    #[test]
+    fn use_flag_found_at_load_is_reported_before_the_inventory() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        m.handle_message(grant(1, "red_shell"), now + ms(200));
+
+        // Used just before a quit-out: the use reaches the server before the
+        // inventory that no longer holds it, and the pending spawn comes last.
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[USE_FLAG])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["flag", "report", "spawn"], "{fx:?}");
+        assert_eq!(sent_flags(&fx), [USE_FLAG]);
+    }
+
+    #[test]
+    fn grant_waits_for_the_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+
+        let fx = m.handle_message(grant(1, "red_shell"), now + ms(200));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        // Sent again by a reconnection during the same load.
+        let fx = m.handle_message(grant(1, "red_shell"), now + ms(300));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(400),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert_eq!(banner_title(&m), None);
+
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        let spawns: Vec<_> = fx
+            .iter()
+            .filter(|e| matches!(e, Effect::SpawnRaceItem { .. }))
+            .collect();
+        assert_eq!(
+            spawns,
+            [&Effect::SpawnRaceItem {
+                grant_id: 1,
+                goods_id: 1_450_807,
+            }]
+        );
+        assert_eq!(
+            banner_title(&m),
+            Some(("RED SHELL".to_string(), FeedTone::Gain))
+        );
+    }
+
+    #[test]
+    fn resent_grant_already_spawned_is_only_acknowledged() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["spawn"]);
+        m.tick(tick_in(snap(Some(67_000), true), true, None), now + secs(6));
+        assert_eq!(banner_title(&m), None);
+
+        // The server sends it again (item_received lost with a dropped
+        // connection): acknowledged, neither spawned nor announced again.
+        let fx = m.handle_message(grant(1, "red_shell"), now + secs(7));
+        assert!(fx.contains(&Effect::SendItemReceived { grant_id: 1 }));
+        assert_eq!(item_steps(&fx), ["received"]);
+        let fx = m.tick(
+            tick_in(snap(Some(68_000), true), true, None),
+            now + secs(7) + ms(10),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert_eq!(banner_title(&m), None);
+    }
+
+    #[test]
+    fn item_effect_waits_for_the_load_and_starts_its_timer_then() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        let hit = item_hit(
+            ItemEffectPayload::Speffect {
+                speffect_id: 1_450_827,
+            },
+            Some(("Fat-roll", 15_000)),
+        );
+        let fx = m.handle_message(hit, now + ms(200));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + secs(3),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert_eq!(banner_title(&m), None);
+        assert_eq!(m.item_reminders(now + secs(3)).count(), 0);
+
+        let t1 = now + secs(5);
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            t1,
+        );
+        assert!(fx.contains(&Effect::ApplySpEffect {
+            speffect_id: 1_450_827,
+        }));
+        let rows: Vec<_> = m.item_reminders(t1).collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0.text, "Fat-roll");
+        assert_eq!(rows[0].0.tone, FeedTone::Malus);
+        assert_eq!(rows[0].0.ends_at, t1 + secs(15));
+        assert_eq!(
+            banner_title(&m),
+            Some(("HAMMER".to_string(), FeedTone::Malus))
+        );
+
+        // The banner's 5 s run from the application too.
+        m.tick(
+            tick_in(snap(Some(64_900), true), true, None),
+            t1 + ms(4_900),
+        );
+        assert!(banner_title(&m).is_some());
+        m.tick(tick_in(snap(Some(65_000), true), true, None), t1 + secs(5));
+        assert_eq!(banner_title(&m), None);
+    }
+
+    #[test]
+    fn damage_effect_emits_apply_item_damage() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let hit = item_hit(
+            ItemEffectPayload::Damage {
+                base_pct: 20,
+                floor_pct: 20,
+                tail_pct: 5,
+            },
+            None,
+        );
+        m.handle_message(hit, now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["apply"]);
+        assert!(fx.contains(&Effect::ApplyItemDamage {
+            base_pct: 20,
+            floor_pct: 20,
+            tail_pct: 5,
+        }));
+        assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
+    }
+
+    #[test]
+    fn ink_effect_sets_the_ink_timer() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let hit = item_hit(
+            ItemEffectPayload::Ink {
+                duration_ms: 15_000,
+            },
+            Some(("Ink", 15_000)),
+        );
+        m.handle_message(hit, now + ms(100));
+        assert!(!m.ink_active(now + ms(110)));
+
+        let t1 = now + ms(120);
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert!(m.ink_active(t1));
+        assert!(m.ink_active(t1 + ms(14_999)));
+        assert!(!m.ink_active(t1 + secs(15)));
+    }
+
+    #[test]
+    fn item_remove_raises_the_removal_flag_and_never_clears_it() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+
+        // A shield that blocked a hit: raised at once, banner shown.
+        let fx = m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "shield".to_string(),
+                banner: Some(wire_banner("shield", "Shield")),
+            },
+            now + ms(100),
+        );
+        let writes: Vec<_> = fx
+            .iter()
+            .filter(|e| matches!(e, Effect::SetGameFlag { .. }))
+            .collect();
+        assert_eq!(
+            writes,
+            [&Effect::SetGameFlag {
+                flag_id: SHIELD_REMOVE_FLAG,
+                value: true,
+            }]
+        );
+        assert_eq!(
+            banner_title(&m),
+            Some(("SHIELD".to_string(), FeedTone::Gain))
+        );
+
+        // The game's event clears it: the mod never reads it, so never
+        // clears it either.
+        assert!(!m
+            .item_use_flags_to_read()
+            .any(|flag| flag == SHIELD_REMOVE_FLAG || flag == REMOVE_FLAG));
+        let fx = m.tick(
+            tick_in(snap(Some(61_000), true), true, items_scan(&m, &[])),
+            now + ms(150),
+        );
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::SetGameFlag { value: false, .. })),
+            "{fx:?}"
+        );
+
+        // A take-back without a banner raises the flag alone.
+        let fx = m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "red_shell".to_string(),
+                banner: None,
+            },
+            now + ms(200),
+        );
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: REMOVE_FLAG,
+            value: true,
+        }));
+    }
+
+    #[test]
+    fn inventory_report_waits_for_a_connection() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // A use the server has not acknowledged when the connection drops.
+        let fx = m.tick(
+            tick_in(snap(Some(60_000), true), true, items_scan(&m, &[USE_FLAG])),
+            now + ms(150),
+        );
+        let in_flight = sent_message_ids(&fx);
+        assert_eq!(in_flight.len(), 1, "{fx:?}");
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            now + ms(160),
+        );
+        m.tick(
+            tick_in(snap(Some(60_000), false), false, None),
+            now + ms(200),
+        );
+
+        // The load ends while disconnected, the item used before the
+        // quit-out: the use is cleared and buffered, nothing reported.
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), false, items_scan(&m, &[USE_FLAG])),
+            now + secs(1),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: USE_FLAG,
+            value: false,
+        }));
+        let fx = m.tick(
+            tick_in(snap(Some(61_000), true), false, None),
+            now + secs(2),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+
+        // The reconnect frame: ready, the replayed use, the buffered one,
+        // then the report.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(3),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(63_000), true), true, items_scan(&m, &[])),
+            now + secs(3) + ms(10),
+        );
+        assert_eq!(
+            item_steps(&fx),
+            ["ready", "flag", "flag", "report"],
+            "{fx:?}"
+        );
+        let sent = sent_flag_details(&fx);
+        assert_eq!(
+            (sent[0].0, sent[0].1, sent[0].2),
+            (USE_FLAG, 60_000, in_flight[0])
+        );
+        assert_eq!((sent[1].0, sent[1].1), (USE_FLAG, 60_100));
+        let report = fx.iter().find_map(|e| match e {
+            Effect::ReportItemInventory { goods } => Some(goods.clone()),
+            _ => None,
+        });
+        assert_eq!(
+            report,
+            Some(vec![
+                ("red_shell".to_string(), 1_450_807),
+                ("shield".to_string(), 1_450_800),
+            ])
+        );
+
+        // Once per connection: the next frames report nothing.
+        let fx = m.tick(
+            tick_in(snap(Some(63_200), true), true, items_scan(&m, &[])),
+            now + secs(3) + ms(200),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn item_result_shows_its_banner_and_reminder_at_once() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // Even during a load: the sender's outcome needs no game access.
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        let fx = m.handle_message(
+            MachineMessage::ItemResult {
+                item: "mushroom".to_string(),
+                banner: wire_banner("mushroom", "Mushroom"),
+                reminder: Some(ItemReminder {
+                    text: "Infinite stamina".to_string(),
+                    duration_ms: 15_000,
+                }),
+            },
+            now + ms(200),
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert_eq!(
+            banner_title(&m),
+            Some(("MUSHROOM".to_string(), FeedTone::Gain))
+        );
+        let rows: Vec<_> = m.item_reminders(now + ms(200)).collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0.tone, FeedTone::Gain);
+        assert_eq!(rows[0].0.ends_at, now + ms(200) + secs(15));
+    }
+
+    #[test]
+    fn auth_as_another_participant_drops_the_pending_items() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        m.handle_message(grant(1, "red_shell"), now + ms(200));
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Ink {
+                    duration_ms: 15_000,
+                },
+                None,
+            ),
+            now + ms(300),
+        );
+        m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "shield".to_string(),
+                banner: Some(wire_banner("shield", "Shield")),
+            },
+            now + ms(400),
+        );
+
+        // A reconnection as the same runner keeps them.
+        m.handle_message(auth_ok_with_items("running", true), now + ms(500));
+        assert!(banner_title(&m).is_some());
+
+        let mut other = auth_ok_with_items("running", true);
+        if let MachineMessage::AuthOk {
+            participant_id,
+            participants,
+            ..
+        } = &mut other
+        {
+            *participant_id = "p2".to_string();
+            participants[0] = test_participant("p2", "playing", 1);
+        }
+        m.handle_message(other, now + ms(600));
+        assert_eq!(banner_title(&m), None);
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert!(
+            !item_steps(&fx)
+                .iter()
+                .any(|s| *s == "spawn" || *s == "apply"),
+            "{fx:?}"
+        );
+        assert!(!m.ink_active(now + secs(1)));
+    }
+
+    #[test]
+    fn unknown_item_or_effect_kind_is_dropped() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let mut fx = m.handle_message(grant(1, "boo"), now + ms(100));
+        fx.extend(m.handle_message(item_hit(ItemEffectPayload::Unknown, None), now + ms(110)));
+        fx.extend(m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "boo".to_string(),
+                banner: Some(wire_banner("boo", "Boo")),
+            },
+            now + ms(120),
+        ));
+        fx.extend(m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(150)));
+        // No `item_received` either: the server sends the grant again at the
+        // next auth.
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::SendItemReceived { .. })),
+            "{fx:?}"
+        );
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })),
+            "{fx:?}"
+        );
+        assert_eq!(banner_title(&m), None);
+    }
+
+    #[test]
+    fn outdated_pack_spawns_applies_and_reports_nothing() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, "seed-a".to_string(), false, now);
+        let mut auth = auth_ok_with_items("running", true);
+        if let MachineMessage::AuthOk { seed, .. } = &mut auth {
+            seed.seed_id = Some("seed-a".to_string());
+        }
+        m.handle_message(auth, now);
+        m.tick(tick_in(snap(Some(60_000), true), true, None), now + ms(10));
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(60_100), true), true, None), now + ms(150));
+        assert_eq!(item_steps(&fx), ["spawn"]);
+
+        // A reroll: the loaded pack is outdated, its regulation may lack the
+        // race goods.
+        let race = |seed_id: &str| -> RaceInfo {
+            serde_json::from_str(&format!(
+                r#"{{"id":"r1","name":"x","status":"running","race_items":true,
+                     "seed_id":"{seed_id}"}}"#
+            ))
+            .unwrap()
+        };
+        m.handle_message(
+            MachineMessage::RaceInfoUpdate(race("seed-b")),
+            now + ms(200),
+        );
+        assert!(m.seed_mismatch);
+
+        // The spawned grant sent again, a new one, an effect, then a game
+        // load and a reconnection: nothing reaches the game or the server.
+        let mut fx = m.handle_message(grant(1, "red_shell"), now + ms(300));
+        fx.extend(m.handle_message(grant(2, "red_shell"), now + ms(310)));
+        fx.extend(m.handle_message(
+            item_hit(
+                ItemEffectPayload::Speffect {
+                    speffect_id: 1_450_827,
+                },
+                Some(("Fat-roll", 15_000)),
+            ),
+            now + ms(320),
+        ));
+        fx.extend(m.tick(
+            tick_in(snap(Some(60_200), false), true, None),
+            now + ms(400),
+        ));
+        fx.extend(m.tick(
+            tick_in(snap(Some(60_300), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        ));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            now + secs(2),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            now + secs(2) + ms(10),
+        );
+        fx.extend(m.tick(
+            tick_in(snap(Some(61_300), true), true, items_scan(&m, &[])),
+            now + secs(2) + ms(20),
+        ));
+        assert_eq!(item_steps(&fx), ["ready"], "{fx:?}");
+        assert_eq!(m.item_reminders(now + secs(2) + ms(20)).count(), 0);
+
+        // Held, not dropped: a current pack handles them.
+        m.handle_message(
+            MachineMessage::RaceInfoUpdate(race("seed-a")),
+            now + secs(3),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(62_300), true), true, None),
+            now + secs(3) + ms(10),
+        );
+        assert_eq!(item_steps(&fx), ["spawn", "apply"], "{fx:?}");
+    }
+
+    #[test]
+    fn a_wrong_save_gets_no_race_item_write() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // Another, further-along save is loaded.
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        let mut fx = m.tick(
+            tick_in(snap(Some(500_000), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert!(m.wrong_save);
+
+        fx.extend(m.handle_message(grant(1, "red_shell"), now + secs(2)));
+        fx.extend(m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "shield".to_string(),
+                banner: Some(wire_banner("shield", "Shield")),
+            },
+            now + secs(2),
+        ));
+        fx.extend(m.tick(
+            tick_in(snap(Some(500_100), true), true, None),
+            now + secs(3),
+        ));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })),
+            "{fx:?}"
+        );
+        // The banner still tells the runner what happened.
+        assert_eq!(
+            banner_title(&m),
+            Some(("SHIELD".to_string(), FeedTone::Gain))
+        );
+
+        // The race save is back: its load reports, then spawns.
+        m.tick(
+            tick_in(snap(Some(60_500), false), true, None),
+            now + secs(4),
+        );
+        assert!(!m.wrong_save);
+        let fx = m.tick(
+            tick_in(snap(Some(60_600), true), true, items_scan(&m, &[])),
+            now + secs(5),
+        );
+        assert_eq!(item_steps(&fx), ["report", "spawn"], "{fx:?}");
     }
 }

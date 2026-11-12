@@ -49,6 +49,12 @@ pub enum OutgoingMessage {
         message_id: u64,
         quit_out: bool,
     },
+    ItemReceived {
+        grant_id: u64,
+    },
+    ItemInventory {
+        items: Vec<String>,
+    },
     Shutdown,
 }
 
@@ -175,6 +181,22 @@ impl RaceWebSocketClient {
                 igt_ms,
                 message_id,
             }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_item_received(&self, grant_id: u64) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::ItemReceived { grant_id }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_item_inventory(&self, items: Vec<String>) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::ItemInventory { items }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -333,6 +355,10 @@ fn websocket_thread(
                                 quit_out,
                             });
                         }
+                        // Dropped: ready and status updates are stale; an
+                        // item_received is answered again when the server
+                        // re-sends its grant at auth, and the reconnect
+                        // frame reports the inventory again.
                         _ => {}
                     }
                     drained += 1;
@@ -578,6 +604,22 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
+            Ok(OutgoingMessage::ItemReceived { grant_id }) => {
+                info!(grant_id, "[WS] Sending: item_received");
+                let msg = ClientMessage::ItemReceived { grant_id };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::ItemInventory { items }) => {
+                info!(?items, "[WS] Sending: item_inventory");
+                let msg = ClientMessage::ItemInventory { items };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
             Ok(OutgoingMessage::Shutdown) => return Ok(()),
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return Err("Channel disconnected".to_string()),
@@ -684,6 +726,64 @@ fn message_loop(
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: error dropped");
+                            }
+                        }
+                        ServerMessage::ItemGrant {
+                            grant_id,
+                            item,
+                            banner,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::ItemGrant {
+                                    grant_id,
+                                    item,
+                                    banner,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: item_grant dropped");
+                            }
+                        }
+                        ServerMessage::ItemEffect {
+                            item,
+                            effect,
+                            banner,
+                            reminder,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::ItemEffect {
+                                    item,
+                                    effect,
+                                    banner,
+                                    reminder,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: item_effect dropped");
+                            }
+                        }
+                        ServerMessage::ItemResult {
+                            item,
+                            banner,
+                            reminder,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::ItemResult {
+                                    item,
+                                    banner,
+                                    reminder,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: item_result dropped");
+                            }
+                        }
+                        ServerMessage::ItemRemove { item, banner } => {
+                            if incoming_tx
+                                .send(MachineMessage::ItemRemove { item, banner })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: item_remove dropped");
                             }
                         }
                         _ => {}

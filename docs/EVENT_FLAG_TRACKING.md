@@ -9,6 +9,7 @@ The mod reads event flags from Elden Ring's memory at 10Hz. When a flag is detec
 - **Fog gate flags** are deferred until the loading screen exits.
 - **Final boss kill (finish_event)** is sent immediately (no loading screen on boss kill).
 - **Other boss kills (boss defeat flags)** are sent immediately too, once each, and never cleared.
+- **Race item uses (use flags)** are sent immediately and cleared, so every use is reported.
 
 The server maps `flag_id` → `node_id` via the seed's `event_map`, updates progression, and broadcasts leaderboard/zone updates. Newer protocol versions also attach a client-local `message_id` to each `event_flag`, allowing ACK-based replay after reconnect without duplicating committed history.
 
@@ -46,13 +47,18 @@ The `EVENT_FLAG_BASE` in `../speedfog/speedfog/output.py` is `1050294000`, givin
 
 ### Polling Loop
 
-Every 100ms (`POLL_INTERVAL = 100ms`), the tracker iterates all `event_ids` received from `auth_ok`, then, while the run is live, the next few boss defeat flags not reported yet:
+Every 100ms (`POLL_INTERVAL = 100ms`), the tracker iterates all `event_ids` received from `auth_ok`, then, while the run is live, the next few boss defeat flags not reported yet, then, in a race with items, every race item use flag:
 
 ```
-for each flag_id in event_ids, then up to 8 boss_flags not in triggered_flags (in rotation, live run only):
+for each flag_id in event_ids, then up to 8 boss_flags not in triggered_flags (in rotation, live run only),
+        then every item_use_flag (race with items, live run only):
     if flag_id in boss_flags:
         if is_flag_set(flag_id) == Some(true) and race running and runner neither finished nor out:
             triggered_flags.insert(flag_id)
+            → send immediately (or buffer if disconnected, before ready, or in the countdown)
+    elif flag_id in item_use_flags:
+        if is_flag_set(flag_id) == Some(true) and race running and runner neither finished nor out:
+            set_flag(flag_id, false)   // the next use raises it again
             → send immediately (or buffer if disconnected, before ready, or in the countdown)
     elif flag_id == finish_event:
         if flag_id in triggered_flags: skip
@@ -69,6 +75,8 @@ for each flag_id in event_ids, then up to 8 boss_flags not in triggered_flags (i
 
 **Boss defeat flags are one-shot too**: `auth_ok.seed.boss_flags` lists the vanilla defeat flag of every boss node but the final boss, whose kill is the finish. The shell reads them after `event_ids` in the same scans (10Hz poll, loading-exit rescan, reconnect rescan), only while the run is live (race running, runner neither finished nor out: abandoned or disqualified), and only those not in `triggered_flags`, so a reported kill costs no further read. They sit in many categories other than 1050294, so a read cannot use the cached category page: `is_flag_set_cached` falls back to a full tree lookup, several cross-process memory reads per flag. A scan therefore reads at most `BOSS_FLAG_READS_PER_POLL = 8` of them, rotating through the seed's sorted list from where the previous scan's window ended (a reported flag takes no slot, and a flag that could not be read waits for its next turn rather than holding the rotation): with n flags unreported, each is read every ceil(n/8) scans, about 0.6 s at the median 47 boss flags of a seed and 1.3 s at the maximum 101, and a kill is reported at worst that much later, with the IGT of the scan that saw it. A flag found set is reported once through `event_flag` (with its `message_id`, ACK and replay, like the other flags) and is **never cleared** in game memory: clearing a defeat flag would bring the boss back. It is sent at once while connected, `ready` sent and past the countdown, and buffered in `pending_event_flags` otherwise: on the frame the connection comes back, the kill goes out after `ready` and the replay of the flags still in flight, so an unacknowledged fog into the boss's node reaches the server before it. Every scan stamps the kill with the held IGT (the last good reading through a reload's transient 0). Outside the live run nothing is read, and a set flag the machine is handed anyway is left unmarked, so the live run's scans report a boss killed before the start. The reported set follows `finish_event`'s: a save reload flushes it, and a new game process starts without it, so every boss already dead in the loaded save is reported again at the current IGT (except a kill still unacknowledged, restored with its own IGT, see below); the server keeps the first kill, so this changes nothing once a kill is recorded. A kill the server dropped for want of a visit of its node (its fog lost), re-reported after the node was visited again, is recorded at the re-report's IGT. A boss kill is no LiveSplit arrival.
 
+**Race item use flags are repeatable and immediate**: in a race with items (`RaceInfo.race_items`), `auth_ok.seed.race_item_catalog` gives each usable item a use flag, which the game's event raises on every use. The shell reads all of them after the boss window, in the same scans (10Hz poll, loading-exit rescan, reconnect rescan), while the run is live. A set one is cleared in game memory at once, so the next use raises it again, and sent like a boss kill: at once through `event_flag` (with its `message_id`, ACK and replay) while connected, `ready` sent and past the countdown, buffered in `pending_event_flags` otherwise, stamped with the held IGT. It never joins `triggered_flags` (each use is a new report) and is no LiveSplit arrival. An item's removal flag is never read: the mod only raises it on `item_remove`, and the game's event clears it.
+
 **Regular fog gate flags are repeatable**: After capture, the flag is cleared in game memory (`set_flag(false)`) so the EMEVD script can re-set it on the next fog gate traversal. This enables backtrack detection: re-traversing an already-visited fog gate produces a new `event_flag` message.
 
 **Polling runs always**: Even when disconnected or race not running. Flags are cleared after capture (for re-traversal detection), so polling must be continuous.
@@ -80,6 +88,7 @@ for each flag_id in event_ids, then up to 8 boss_flags not in triggered_flags (i
 | Fog gate flags    | Loading screen exit      | Loading screen = zone transition |
 | `finish_event`    | Immediately on detection | No loading screen on boss kills  |
 | Boss defeat flags | Immediately on detection | No loading screen on boss kills  |
+| Item use flags    | Immediately on detection | No loading screen on item uses   |
 
 Fog gate traversal triggers a loading screen. The flag is detected during polling but stored in `deferred_event_flags`. At loading screen exit, all deferred flags are sent.
 
@@ -104,6 +113,8 @@ At the `position_readable` rising edge:
    - Capture grace entity ID from warp hook (fast travel only).
    - Send `zone_query { grace_entity_id, map_id, position, play_region_id }`.
    - Clear captured grace entity ID.
+
+4. **Race items** (race with items): after every flag of the frame, while connected, `item_inventory` reports the race goods held, so a use made just before a quit-out reaches the server first; the reconnect frame sends one too, once the player is loaded. Then, connected or not, the grant spawns and item effects that waited for the load go. Nothing of this happens on a wrong save or with an outdated seed pack. See `RACE_ITEMS.md`.
 
 ### LiveSplit Depth Tracking
 
