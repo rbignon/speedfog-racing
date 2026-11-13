@@ -147,3 +147,60 @@ All sizes derive from the display size each frame (`core/item_banner.rs`); text 
 ### Icons
 
 `mod/assets/race_items/<icon>.png` (160x160 PNG) are embedded in the DLL and uploaded once at init; an icon name the mod does not know draws `unknown.png`. The art comes from the generator repo: drop the final `race_items_icon_<icon>.png` files (1024x1024, the generator derives the in-game textures from them) in `speedfog/data/plugins/`, run `uv run tools/sync_race_item_icons.py` (it reads the names from the catalog's `[icons]`, checks every file is a square PNG of at least 160x160, copies nothing when any is bad, and writes each icon downscaled to 160x160: the banner draws it at 7.5% of the screen width, 144 px at 1080p, and the full-size art would weigh megabytes in the DLL), then release the mod. `unknown.png` is outside the catalog and edited by hand.
+
+## In-game test protocol
+
+With the compiled mod and one game, on the local server. `tools/race_items_bot.py` plays the other runners: each bot is a local user whose mod is the script, so every item reaches you through the server's real rules. Where to look: the overlay, the mod log (`speedfog_racing.log` next to the DLL, `[ITEMS]` lines), the bot console, and `status` in that console (rank, tier, layer, held item of every runner).
+
+### Setup
+
+1. **Mod.** On Windows, `cd mod && cargo build --lib --release`, then copy `target/release/speedfog_racing.dll` over `tools/assets/speedfog_racing.dll` on the server machine: every seed zip the local server hands out carries that DLL (`MOD_DLL_PATH`).
+2. **Server and web.** The dev server (`:8000`) and web (`:5173`) run; `WEBSOCKET_URL` in `server/.env` is the address the game PC reaches (the LAN address, not localhost).
+3. **Seeds.** A pool folder `$SEEDS_POOL_DIR/race_items_test/` with a pool `config.toml` and race items seeds named `seed_<anything>.zip` (generated with `[plugin.race_items] enabled = true`), scanned with `cd server && uv run speedfog-scan-seeds --pool race_items_test`. Every race consumes a seed: add one copy per race under a new name and scan again.
+4. **Race.** On the web, create a community race in that pool with Race items on, and join it.
+5. **Bots.** `cd server && uv run python ../tools/race_items_bot.py <race_id> --bots <user1>,<user2>`, two local usernames; they join while the race is in setup and report ready. Keep the console open (`help` lists the commands).
+6. **Start.** Download your seed zip from the race page, launch it, wait until your mod is ready, then start the race from the web.
+
+Positions decide the targets, so the checks run in this order. Wait a few seconds after the start before driving the bots: until its first report of the running race, a bot is not playing and the server drops its flags (the console says so). Then go through the first fog gate: you lead (checks B). Afterwards, `ahead <user1>` walks that bot forward to the deepest layer while `<user2>` stays at the start: the field reads user1, you, user2 for checks C to F, so you draw middle items, you are the runner just behind user1 and just ahead of user2, and group items from either bot hit you. `give WHO ITEM` hands any item to a bot or to you (yours spawns at your next load: a fog gate or a quit-out).
+
+### Checks
+
+#### A. Grants and inventory (any position)
+
+1. Kill a boss in game: one copy lands in a quick slot with the gold banner (`[ITEMS] Goods spawned`, then `item_received`); `status` shows it confirmed.
+2. Quit out and reload, then restart the game: still one copy (`Goods already held, spawn skipped`; `[ITEMS] Inventory read` lists it).
+3. Use it: the slot empties, the next `[ITEMS] Inventory read` no longer lists it, `status` shows nothing held. A targeted item shows on the console as `hit by ...` on a bot.
+4. `give <you> mushroom`, load, use it: rolls and sprints cost no stamina for about 15 s, with its buff icon and the "Infinite stamina" reminder counting down.
+5. `give <you> rune_pouch_2`, load, use it: 20000 runes and the "Runes added" banner.
+6. `give <you> banana` while you hold another item, then load: the old item leaves the inventory (take back), the banana arrives.
+
+#### B. While you lead (before `ahead`)
+
+1. Blue Shell from user2 (`give <user2> blue_shell`, `use <user2>`): max HP halved for 15 s, current HP capped, never killed.
+
+#### C. Items on you (after `ahead <user1>`; `give <bot> ITEM`, then `use <bot>`)
+
+1. Red Shell from user2: HP drops by 20% of max and stays down. Repeat at low HP: the hit lands at 20%, then deals 5%, and never kills (`[ITEMS] Damage applied`).
+2. Banana from user1: 10% of max HP.
+3. Hammer from either bot: fat roll for 15 s, "Fat-roll" reminder. The log line `[ITEMS] Equip load rate set` gives `current` and `max`: `current` must match the equipment screen's load, once with a bow and arrows equipped and once without (arrows and bolts are left out of the sum), and the screen's max becomes `current / 0.97`. A second Hammer within the 15 s keeps you heavy instead of cancelling the first.
+4. Lightning: forced slow walk for 15 s, then normal speed.
+5. Flask Stopper: no flask for 15 s.
+6. Toxic Blossom: poisoned; Neutralizing Boluses cure it.
+7. Ink: every exit reads `-> ???` without location for 15 s, then comes back.
+8. Two items in a row (one per bot): the banners queue, 5 s each, and the reminder rows stack.
+
+#### D. Shield
+
+1. `give <you> shield`, load, then a Red Shell from user2: your Shield leaves the inventory (removal event), your banner reads "Blocked Red Shell" from user2, and the bot's result reads "Blocked by <you>'s shield" with no damage detail.
+
+#### E. Robustness
+
+1. Network pull: cut the game PC's network and wait until the race page shows your mod disconnected (the server only notices a dead socket after a while), then a bot uses a Red Shell on you: the bot's result reads `Missed` and nothing replays once you are back. Use your own item while cut off: once back, its use resolves once (the use flag is replayed).
+2. Alt-F4 right after using an item: after the restart, the use resolves once, neither lost nor doubled.
+3. Reset: a bot uses an item on you during a loading screen, the organizer resets the race before it ends: once the race starts again, the old effect is not applied. The reset closes every mod socket: the bots connect again, report ready and walk from the start node once the race runs again.
+
+#### F. Overlay and cost
+
+1. The ITEMS tag shows; in a deathless race, both tags fit.
+2. The inventory detail panel shows each race item's large icon.
+3. Tracy (`docs/MOD_PROFILING.md`): the banner and reminder paths cost nothing visible.
