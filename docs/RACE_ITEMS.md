@@ -96,7 +96,7 @@ The banner title is the catalog `name`. The sender's result line:
 | targets, all offline | `Missed`                                                                                        |
 | self item            | `Infinite stamina for {s} s` (Mushroom, with its reminder), `Runes added` (Rune Pouch)          |
 
-The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`.
+The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty; it stays empty when nothing landed (every target blocked, missed or offline), so it never reads as dealt. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`.
 
 ## Persistence
 

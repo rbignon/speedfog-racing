@@ -336,9 +336,11 @@ def result_banner(
     key = base_key(item_key)
     rule = ITEM_RULES[key]
     detail = ""
-    if rule.effect == "damage":
+    # The strength only when something landed, or it reads as dealt.
+    landed = bool(hits) or rule.target == "self"
+    if landed and rule.effect == "damage":
         detail = f"{_damage_pct(key)}% HP"
-    elif entry.duration_ms is not None and rule.reminder is not None:
+    elif landed and entry.duration_ms is not None and rule.reminder is not None:
         detail = f"{_seconds(entry)} s"
 
     if rule.target == "self":

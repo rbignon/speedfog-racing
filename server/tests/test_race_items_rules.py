@@ -146,6 +146,13 @@ def test_result_banner_details_and_self_results(monkeypatch):
     assert result_banner("rune_pouch_2", _entry("Pouch"), [], [], 0).line == "Runes added"
 
 
+def test_result_banner_without_a_hit_quotes_no_strength():
+    # Nothing landed: the item's strength would read as if it had.
+    assert result_banner("red_shell", _entry("Red Shell"), [], ["C"], 0).detail == ""
+    assert result_banner("hammer", _entry("Hammer", 15000), [], [], 2).detail == ""
+    assert result_banner("hammer", _entry("Hammer", 15000), ["A"], ["C"], 0).detail == "15 s"
+
+
 def test_grant_and_target_banners_format_values(monkeypatch):
     monkeypatch.setattr(settings, "race_items_banana_pct", 12)
     e = _entry("Hammer", 45000)
