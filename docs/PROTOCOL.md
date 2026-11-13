@@ -604,12 +604,12 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 }
 ```
 
-| Message       | Fields                                  | Description                                                                                                                                                      |
-| ------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `item_grant`  | `grant_id`, `item`, `banner`            | Spawn the item's goods and show the banner. Re-sent at every auth, and after an `item_inventory` that lacks it, until the mod answers `item_received`            |
-| `item_effect` | `item`, `effect`, `banner`, `reminder?` | An item hits this runner. `effect.kind` is `speffect {speffect_id}`, `damage {base_pct, floor_pct, tail_pct}` or `ink {duration_ms}`, dumped without null fields |
-| `item_result` | `item`, `banner`, `reminder?`           | Outcome of the runner's own item use (hit, blocked, missed)                                                                                                      |
-| `item_remove` | `item`, `banner?`                       | Raise the item's `remove_flag` so the game drops its goods; with a banner to a shield holder whose shield blocked                                                |
+| Message       | Fields                                  | Description                                                                                                                                                                                            |
+| ------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `item_grant`  | `grant_id`, `item`, `banner`            | Spawn the item's goods and show the banner. Re-sent at every auth, and after an `item_inventory` that lacks it, until the mod answers `item_received`                                                  |
+| `item_effect` | `item`, `effect`, `banner`, `reminder?` | An item hits this runner. `effect.kind` is `speffect {speffect_id}`, `damage {base_pct, floor_pct, tail_pct}`, `ink {duration_ms}` or `equip_load {speffect_id, load_pct}`, dumped without null fields |
+| `item_result` | `item`, `banner`, `reminder?`           | Outcome of the runner's own item use (hit, blocked, missed)                                                                                                                                            |
+| `item_remove` | `item`, `banner?`                       | Raise the item's `remove_flag` so the game drops its goods; with a banner to a shield holder whose shield blocked                                                                                      |
 
 #### `death_counts`
 
@@ -1219,7 +1219,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `race_items`        | `bool`    | The race has items on (needs protocol 1.12 at auth); default false; the mod reads it to gate items and show the ITEMS tag |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                                     |
 
-**Note:** The mod reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), `race_items` (use flag reads, inventory reports, the SpEffect prewarm and the ITEMS tag; see `RACE_ITEMS.md`), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). `started_at` and `seeds_released_at` are present on the wire but unused by the mod; the race fields it reads outside this table (`quit_out_penalty_ms`, `attempt_id`) are described in the [`auth_ok`](#auth_ok) note.
+**Note:** The mod reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), `race_items` (use flag reads, inventory reports, the SpEffect and params prewarm and the ITEMS tag; see `RACE_ITEMS.md`), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). `started_at` and `seeds_released_at` are present on the wire but unused by the mod; the race fields it reads outside this table (`quit_out_penalty_ms`, `attempt_id`) are described in the [`auth_ok`](#auth_ok) note.
 
 ### SeedInfo
 

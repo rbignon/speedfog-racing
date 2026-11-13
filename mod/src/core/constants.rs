@@ -52,6 +52,16 @@ pub const CHRASM_SECONDARY_RIGHT_WEP_OFFSET: usize = 0x3A4;
 pub const CHRASM_TERTIARY_LEFT_WEP_OFFSET: usize = 0x3A8;
 pub const CHRASM_TERTIARY_RIGHT_WEP_OFFSET: usize = 0x3AC;
 
+/// PlayerGameData + 0x398: ChrAsm `equipment_param_ids`, the param id of
+/// every equipment slot (`core::equip_load::EQUIP_SLOTS` i32s, starting with
+/// the left primary weapon above; slot order from fromsoftware-rs
+/// `ChrAsmSlot`).
+pub const CHRASM_EQUIPMENT_PARAM_IDS_OFFSET: usize = 0x398;
+
+/// PlayerGameData + 0x98C: max equip load (f32), the equipment screen's
+/// value (fromsoftware-rs `max_equip_load`, checked in game).
+pub const PLAYER_GAME_DATA_MAX_EQUIP_LOAD_OFFSET: usize = 0x98C;
+
 /// EquipParamWeapon row 110000 = "Unarmed" (fists). Mapped to None server-side.
 pub const UNARMED_WEAPON_ID: i32 = 110000;
 

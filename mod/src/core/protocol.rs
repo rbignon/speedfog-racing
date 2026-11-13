@@ -445,6 +445,9 @@ pub enum ItemEffectPayload {
     },
     /// Hide exit destinations for a duration.
     Ink { duration_ms: u32 },
+    /// Apply a SpEffect whose max equip load rate is first set so the
+    /// player's current load sits at `load_pct` percent of the max.
+    EquipLoad { speffect_id: u32, load_pct: u8 },
     /// A kind this build does not know: ignored with a warning.
     #[serde(other)]
     Unknown,
@@ -1849,6 +1852,16 @@ mod tests {
         let ink: ItemEffectPayload =
             serde_json::from_str(r#"{"kind":"ink","duration_ms":15000}"#).unwrap();
         assert_eq!(ink, ItemEffectPayload::Ink { duration_ms: 15000 });
+        let load: ItemEffectPayload =
+            serde_json::from_str(r#"{"kind":"equip_load","speffect_id":1450827,"load_pct":97}"#)
+                .unwrap();
+        assert_eq!(
+            load,
+            ItemEffectPayload::EquipLoad {
+                speffect_id: 1450827,
+                load_pct: 97
+            }
+        );
     }
 
     #[test]

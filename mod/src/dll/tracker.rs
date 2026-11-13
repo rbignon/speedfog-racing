@@ -13,6 +13,7 @@ use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
+use crate::core::equip_load::{base_max, load_rate};
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
@@ -304,6 +305,10 @@ pub struct RaceTracker {
     // process, at the first auth_ok of a race with items).
     race_items_prewarmed: bool,
 
+    // The last equip load rate written and the max load it was computed
+    // from: a max read equal to their product means the effect still runs.
+    equip_load_last: Option<(f32, f32)>,
+
     // Saves the unacknowledged event flags next to the DLL (None when the
     // DLL folder is unknown: nothing survives a restart then).
     unacked_store: Option<UnackedStore>,
@@ -447,6 +452,7 @@ impl RaceTracker {
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
             phantom_skin_name: None,
             race_items_prewarmed: false,
+            equip_load_last: None,
             unacked_store,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
@@ -846,21 +852,26 @@ impl RaceTracker {
                     floor_pct,
                     tail_pct,
                 } => Self::apply_item_damage(base_pct, floor_pct, tail_pct),
+                Effect::ApplyEquipLoad {
+                    speffect_id,
+                    load_pct,
+                } => self.apply_equip_load(speffect_id, load_pct),
             }
         }
     }
 
-    /// Resolve, on a background thread, the game function race item
-    /// effects call whose lookup scans the game image (the SpEffect apply
-    /// function), so the first effect does not stall a frame. Once per
-    /// process; a reconnection's auth_ok asks again.
+    /// Resolve, on a background thread, what race item effects need and
+    /// whose lookup scans or waits on the game (the SpEffect apply function,
+    /// the param table index), so the first effect does not stall a frame.
+    /// Once per process; a reconnection's auth_ok asks again.
     fn prewarm_race_items(&mut self) {
         if self.race_items_prewarmed {
             return;
         }
         self.race_items_prewarmed = true;
-        info!("[ITEMS] Prewarming the SpEffect apply function");
+        info!("[ITEMS] Prewarming the SpEffect apply function and the params");
         std::thread::spawn(crate::eldenring::sp_effect_apply::prewarm);
+        std::thread::spawn(race_items::prewarm_params);
     }
 
     /// Give a granted race item's goods unless the inventory already holds
@@ -930,6 +941,39 @@ impl RaceTracker {
             info!(hp, new_hp, max_hp, "[ITEMS] Damage applied");
         } else {
             warn!(hp, new_hp, max_hp, "[ITEMS] HP unwritable, damage skipped");
+        }
+    }
+
+    /// Set the equip load effect's rate so the player's current load sits at
+    /// `load_pct` percent of the max, then apply it. While a previous one
+    /// still runs, the rate is computed from the max without it
+    /// (`core::equip_load::base_max`), so a second hit follows the current
+    /// equipment instead of cancelling the first. An unreadable load keeps
+    /// the row's rate (the seed's, or the last one written).
+    fn apply_equip_load(&mut self, speffect_id: u32, load_pct: u8) {
+        match race_items::read_equip_load() {
+            Some((current, max)) => {
+                let base = base_max(max, self.equip_load_last);
+                let rate = load_rate(current, base, load_pct);
+                if race_items::set_equip_load_rate(speffect_id, rate) {
+                    info!(
+                        current,
+                        max, base, rate, load_pct, "[ITEMS] Equip load rate set"
+                    );
+                    self.equip_load_last = Some((base, rate));
+                } else {
+                    warn!(
+                        speffect_id,
+                        "[ITEMS] Equip load row unwritable, row rate kept"
+                    );
+                }
+            }
+            None => warn!(speffect_id, "[ITEMS] Equip load unreadable, row rate kept"),
+        }
+        if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
+            info!(speffect_id, "[ITEMS] SpEffect applied");
+        } else {
+            warn!(speffect_id, "[ITEMS] SpEffect not applied");
         }
     }
 

@@ -196,6 +196,19 @@ def test_damage_settings_are_clamped_to_a_percent(monkeypatch):
     assert result_banner("red_shell", _entry("Red Shell"), ["A"], [], 0).detail == "100% HP"
 
 
+def test_hammer_payload_targets_a_share_of_the_max_load(monkeypatch):
+    monkeypatch.setattr(settings, "race_items_hammer_load_pct", 97)
+    assert effect_payload("hammer", _entry(speffect=99)).model_dump() == {
+        "kind": "equip_load",
+        "speffect_id": 99,
+        "load_pct": 97,
+    }
+    # A full 100 could round past the max and overload the target.
+    monkeypatch.setattr(settings, "race_items_hammer_load_pct", 150)
+    payload = effect_payload("hammer", _entry(speffect=99))
+    assert payload and payload.load_pct == 99
+
+
 def test_other_effect_payloads():
     assert effect_payload("lightning", _entry(speffect=99)).model_dump() == {
         "kind": "speffect",

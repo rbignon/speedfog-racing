@@ -39,7 +39,7 @@ Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goo
 | `banana`                        | front  | the playing runner just behind       | damage, base `race_items_banana_pct`     |
 | `red_shell`                     | middle | the playing runner just ahead        | damage, base `race_items_red_shell_pct`  |
 | `mushroom`                      | middle | self                                 | infinite stamina                         |
-| `hammer`                        | middle | every other playing runner           | forced fat-roll                          |
+| `hammer`                        | middle | every other playing runner           | fat roll (load at 97% of max)            |
 | `ink`                           | middle | every other playing runner           | exits hidden (overlay only)              |
 | `blue_shell`                    | back   | the best-ranked other playing runner | max HP halved                            |
 | `lightning`                     | back   | every other playing runner           | slowed                                   |
@@ -106,7 +106,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 ## Server settings
 
-`race_items_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct` in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The four percentages are clamped to 0..100 when they are sent (the mod reads each as a byte), and the banners quote the clamped value.
+`race_items_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
 
 ## Exclusions
 
@@ -130,6 +130,7 @@ Grants and effects wait until the player is loaded. Once per game load (loading 
 ### Effects
 
 - `speffect`: the SpEffect is applied to the player.
+- `equip_load` (the Hammer): the mod first sets the SpEffect row's max equip load rate so the player's current load sits at `load_pct`% of the max (97 by default, a fat roll), then applies it. The current load is the sum of the weights of the equipped weapons, armor and talismans (`ChrAsm.equipment_param_ids` at PlayerGameData + 0x398, read from EquipParamWeapon, EquipParamProtector and EquipParamAccessory through libeldenring's in-memory params, a weapon's row dropping its upgrade level); arrows and bolts are left out, their param weight is not a load weight (10 for plain Arrows); the max is PlayerGameData + 0x98C, the equipment screen's value. The rate is capped at 1, so a runner already that heavy is left alone, and a runner with nothing equipped (load 0) cannot be made heavier: both still see the banner and reminder. A running Hammer points at the same row, so the max read while it runs already includes the rate written last: when the max equals the last base times the last rate, the mod computes from that base (`core::equip_load::base_max`), so a second Hammer follows the current equipment instead of writing 1 and cancelling the first. An unreadable load, or params not indexed yet (`prewarm_params`), keeps the row's rate (the seed's 0.35, or the last one written). The log line `[ITEMS] Equip load rate set` gives `current` and `max`, to compare with the equipment screen.
 - `damage`: computed when applied, with `h = 100 * hp / max_hp`: `h >= floor + base` deals `base`% of max HP; `h >= floor + tail` deals down to exactly `floor`%; otherwise `tail`%; at least 1 HP always remains. Max is the effective max HP (halved under a Blue Shell).
 - `ink`: overlay only, see below.
 - an unknown kind is ignored with a warning.

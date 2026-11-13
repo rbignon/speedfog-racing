@@ -1,6 +1,6 @@
 //! Race item game access for the shell: goods spawn, inventory quantity,
-//! and the player's HP. Called on rare events (a grant, a game load, an
-//! effect), never per frame.
+//! the player's HP and equip load, and the equip load effect's rate. Called
+//! on rare events (a grant, a game load, an effect), never per frame.
 //!
 //! ### Inventory layout source
 //!
@@ -20,13 +20,21 @@
 use std::ffi::c_void;
 
 use libeldenring::memedit::PointerChain;
+use libeldenring::params::{
+    EquipParamAccessory, EquipParamProtector, EquipParamWeapon, Params, SpEffect, PARAMS,
+};
 use libeldenring::pointers::Pointers;
-use tracing::info;
+use once_cell::sync::Lazy;
+use tracing::{info, warn};
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
 use windows::Win32::System::Threading::GetCurrentProcess;
 
 use super::item_spawner::inject_one;
-use crate::core::constants::GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET;
+use crate::core::constants::{
+    CHRASM_EQUIPMENT_PARAM_IDS_OFFSET, GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET,
+    PLAYER_GAME_DATA_MAX_EQUIP_LOAD_OFFSET,
+};
+use crate::core::equip_load::{weight_row, EquipParam, EQUIP_SLOTS};
 use crate::core::item_inventory::{
     list_entry_count, lists_hold_items, quantity_in_entries, ENTRY_SIZE,
 };
@@ -131,6 +139,86 @@ pub fn write_hp(hp: i32) -> bool {
         .cast::<i32>()
         .write(hp)
         .is_some()
+}
+
+/// The player's current and max equip load: the summed weights of the
+/// equipped items, read from their equipment params, and the max the
+/// equipment screen shows. A slot whose row is missing counts as 0 and is
+/// logged. `None` while the player is unreadable or the params are not
+/// indexed yet (`prewarm_params`).
+pub fn read_equip_load() -> Option<(f32, f32)> {
+    profile_span!("race_items.read_equip_load");
+    let game_data_man = read_ptr(Pointers::new().base_addresses.game_data_man)?;
+    let player_game_data = read_ptr(game_data_man + GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET)?;
+    let ids = read_bytes(
+        player_game_data + CHRASM_EQUIPMENT_PARAM_IDS_OFFSET,
+        EQUIP_SLOTS * 4,
+    )?;
+    let max = read_bytes(player_game_data + PLAYER_GAME_DATA_MAX_EQUIP_LOAD_OFFSET, 4)?;
+    let max = f32::from_le_bytes(max.try_into().ok()?);
+    let params = Lazy::get(&PARAMS)?.read();
+    let mut current = 0.0;
+    for (slot, bytes) in ids.chunks_exact(4).enumerate() {
+        let id = i32::from_le_bytes(bytes.try_into().ok()?);
+        let Some((param, row)) = weight_row(slot, id) else {
+            continue;
+        };
+        let weight = match param {
+            EquipParam::Weapon => {
+                param_row::<EquipParamWeapon>(&params, "EquipParamWeapon", row).map(|r| r.weight)
+            }
+            EquipParam::Protector => {
+                param_row::<EquipParamProtector>(&params, "EquipParamProtector", row)
+                    .map(|r| r.weight)
+            }
+            EquipParam::Accessory => {
+                param_row::<EquipParamAccessory>(&params, "EquipParamAccessory", row)
+                    .map(|r| r.weight)
+            }
+        };
+        match weight {
+            Some(weight) => current += weight,
+            None => warn!(slot, id, row, "[ITEMS] No weight row for an equipped item"),
+        }
+    }
+    Some((current, max))
+}
+
+/// Write `rate` as the max equip load rate of SpEffect row `speffect_id`.
+/// False when the row is missing or the params are not indexed yet.
+pub fn set_equip_load_rate(speffect_id: u32, rate: f32) -> bool {
+    profile_span!("race_items.set_equip_load_rate");
+    let Some(params) = Lazy::get(&PARAMS).map(|lock| lock.read()) else {
+        return false;
+    };
+    // The in-memory param table goes by the regulation's name, SpEffectParam;
+    // "SpEffect" is only the name of the paramdef and the generated struct.
+    let Some(row) = param_row::<SpEffect>(&params, "SpEffectParam", speffect_id) else {
+        return false;
+    };
+    // SAFETY: the field is an aligned f32 of a live param row; the game reads
+    // it from its own thread, so the store is volatile and never read back.
+    unsafe { std::ptr::write_volatile(&mut row.equip_weight_change_rate, rate) };
+    true
+}
+
+/// Index the game's param table (libeldenring waits until the params are in
+/// memory). Run off the render thread: the readers above only use an index
+/// already built, and keep the row's rate until then.
+pub fn prewarm_params() {
+    let count = PARAMS.read().keys().count();
+    info!(count, "[ITEMS] Params indexed");
+}
+
+/// Row `id` of the param `name`, as its generated struct.
+fn param_row<T: 'static>(params: &Params, name: &str, id: u32) -> Option<&'static mut T> {
+    // SAFETY: the params live for the whole game session and libeldenring
+    // casts each row to its generated struct. The game uses the rows from
+    // its own threads: callers only read fields or store one with a
+    // volatile write, and keep no reference past their call.
+    unsafe { params.iter_param::<T>(name) }?
+        .find(|row| row.id == u64::from(id))?
+        .param
 }
 
 /// Pointer stored at `addr`, `None` when unreadable or null.

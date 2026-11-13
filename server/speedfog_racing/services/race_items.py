@@ -107,7 +107,7 @@ def race_items_seed_clause() -> ColumnElement[bool]:
 
 Tier = Literal["front", "middle", "back"]
 TargetRule = Literal["self", "passive", "behind", "ahead", "leader", "others"]
-EffectKind = Literal["none", "speffect", "damage", "ink"]
+EffectKind = Literal["none", "speffect", "damage", "ink", "equip_load"]
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,7 @@ ITEM_RULES: dict[str, ItemRule] = {
     "hammer": ItemRule(
         "middle",
         "others",
-        "speffect",
+        "equip_load",
         "Everyone else fat-rolls for {s} s",
         "Fat-roll for {s} s",
         "Fat-roll",
@@ -252,7 +252,7 @@ def resolve_targets(
 
 
 def _percent(value: int) -> int:
-    """A damage setting clamped to 0..100: the mod reads each as a byte."""
+    """A percent setting clamped to 0..100: the mod reads each as a byte."""
     return max(0, min(100, value))
 
 
@@ -287,6 +287,13 @@ def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | N
         )
     if kind == "ink":
         return ItemEffectPayload(kind="ink", duration_ms=entry.duration_ms)
+    if kind == "equip_load":
+        return ItemEffectPayload(
+            kind="equip_load",
+            speffect_id=entry.effect_speffect,
+            # 100 could round past the max and overload the target.
+            load_pct=min(_percent(settings.race_items_hammer_load_pct), 99),
+        )
     return None
 
 

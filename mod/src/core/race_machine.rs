@@ -354,6 +354,13 @@ pub enum Effect {
         floor_pct: u8,
         tail_pct: u8,
     },
+    /// Set the SpEffect's max equip load rate so the player's current load
+    /// sits at `load_pct` percent of the max (`core::equip_load`), then
+    /// apply it.
+    ApplyEquipLoad {
+        speffect_id: u32,
+        load_pct: u8,
+    },
 }
 
 /// A granted race item on its way to the inventory (see `pending_grants`).
@@ -367,7 +374,8 @@ struct PendingGrant {
 /// What a race item effect does once applied.
 #[derive(Debug)]
 enum ItemAction {
-    /// Executed by the shell (`ApplySpEffect`, `ApplyItemDamage`).
+    /// Executed by the shell (`ApplySpEffect`, `ApplyItemDamage`,
+    /// `ApplyEquipLoad`).
     Shell(Effect),
     /// Overlay only: exit destinations stay hidden this long.
     Ink(Duration),
@@ -1605,6 +1613,13 @@ impl RaceMachine {
                     ItemEffectPayload::Ink { duration_ms } => Some(ItemAction::Ink(
                         Duration::from_millis(u64::from(duration_ms)),
                     )),
+                    ItemEffectPayload::EquipLoad {
+                        speffect_id,
+                        load_pct,
+                    } => Some(ItemAction::Shell(Effect::ApplyEquipLoad {
+                        speffect_id,
+                        load_pct,
+                    })),
                     ItemEffectPayload::Unknown => None,
                 };
                 match action {
@@ -6775,7 +6790,9 @@ mod tests {
                 Effect::ReportItemInventory { .. } => Some("report"),
                 Effect::SpawnRaceItem { .. } => Some("spawn"),
                 Effect::SendItemReceived { .. } => Some("received"),
-                Effect::ApplySpEffect { .. } | Effect::ApplyItemDamage { .. } => Some("apply"),
+                Effect::ApplySpEffect { .. }
+                | Effect::ApplyItemDamage { .. }
+                | Effect::ApplyEquipLoad { .. } => Some("apply"),
                 _ => None,
             })
             .collect()
@@ -7077,6 +7094,27 @@ mod tests {
             tail_pct: 5,
         }));
         assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
+    }
+
+    #[test]
+    fn equip_load_effect_emits_apply_equip_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let hit = item_hit(
+            ItemEffectPayload::EquipLoad {
+                speffect_id: 1_450_827,
+                load_pct: 97,
+            },
+            Some(("Fat-roll", 15_000)),
+        );
+        m.handle_message(hit, now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["apply"]);
+        assert!(fx.contains(&Effect::ApplyEquipLoad {
+            speffect_id: 1_450_827,
+            load_pct: 97,
+        }));
+        assert_eq!(m.item_reminders(now + ms(120)).count(), 1);
     }
 
     #[test]

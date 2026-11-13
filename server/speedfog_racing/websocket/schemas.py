@@ -577,12 +577,13 @@ class ItemReminder(BaseModel):
 class ItemEffectPayload(BaseModel):
     """What an item does to its target; the fields used depend on ``kind``."""
 
-    kind: Literal["speffect", "damage", "ink"]
+    kind: Literal["speffect", "damage", "ink", "equip_load"]
     speffect_id: int | None = None
     base_pct: int | None = None
     floor_pct: int | None = None
     tail_pct: int | None = None
     duration_ms: int | None = None
+    load_pct: int | None = None
 
     @model_serializer(mode="wrap")
     def _drop_none(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

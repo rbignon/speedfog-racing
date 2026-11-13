@@ -69,9 +69,12 @@ class Settings(BaseSettings):
     race_items_red_shell_pct: int = 20
     # Shared by the damage items: the HP percent a hit lands at when the base
     # would go below it, and the flat damage once HP is under floor + tail.
-    # The four percentages are clamped to 0..100 when sent to the mod.
     race_items_damage_floor_pct: int = 20
     race_items_damage_tail_pct: int = 5
+    # The Hammer brings each target's equip load to this percent of its max
+    # load (70 to 99 is a fat roll; clamped to 0..99). The other race item
+    # percentages are clamped to 0..100 when sent to the mod.
+    race_items_hammer_load_pct: int = 97
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
