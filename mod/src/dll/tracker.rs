@@ -913,7 +913,7 @@ impl RaceTracker {
     /// Send `item_inventory` with the catalog keys whose goods the player
     /// holds, from one read of the inventory. An unreadable inventory skips
     /// the report: a partial or empty one would read as items lost.
-    fn report_item_inventory(&self, goods: Vec<(String, u32)>) {
+    fn report_item_inventory(&mut self, goods: Vec<(String, u32)>) {
         let Some(inventory) = race_items::HeldInventory::read() else {
             warn!("[ITEMS] Inventory unreadable, report skipped");
             return;
@@ -924,6 +924,7 @@ impl RaceTracker {
             .map(|(key, _)| key)
             .collect();
         info!(items = ?held, "[ITEMS] Inventory read");
+        self.machine.inventory_read(&held);
         self.ws_client.send_item_inventory(held);
     }
 

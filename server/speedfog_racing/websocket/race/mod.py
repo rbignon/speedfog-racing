@@ -384,6 +384,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     goods_id=entry.goods_id,
                     use_flag=entry.use_flag,
                     remove_flag=entry.remove_flag,
+                    name=entry.name,
+                    icon=entry.icon,
                 )
                 for key, entry in extract_race_item_catalog(seed.graph_json).items()
             }

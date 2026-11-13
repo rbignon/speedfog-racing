@@ -65,12 +65,12 @@ class Settings(BaseSettings):
     # Race items: draw weight per base item key (missing = 1, 0 removes the item
     # from the draw; JSON in .env), and the damage curve of the two damage items.
     race_items_weights: dict[str, int] = {}
-    race_items_banana_pct: int = 10
-    race_items_red_shell_pct: int = 20
+    race_items_banana_pct: int = 15
+    race_items_red_shell_pct: int = 30
     # Shared by the damage items: the HP percent a hit lands at when the base
     # would go below it, and the flat damage once HP is under floor + tail.
     race_items_damage_floor_pct: int = 20
-    race_items_damage_tail_pct: int = 5
+    race_items_damage_tail_pct: int = 10
     # The Hammer brings each target's equip load to this percent of its max
     # load (70 to 99 is a fat roll; clamped to 0..99). The other race item
     # percentages are clamped to 0..100 when sent to the mod.

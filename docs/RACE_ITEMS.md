@@ -50,7 +50,7 @@ The draw is weighted inside the tier's pool (`race_items_weights`, base key to w
 
 ### Damage curve
 
-For banana and red shell, with `h` the target's current HP as a percentage of max HP and `B` the base damage: `h >= floor + B` deals `B`; `tail + floor <= h < floor + B` deals `h - floor` (lands at the floor); below that it deals `tail`; at least 1 HP always remains. `floor` is `race_items_damage_floor_pct` (20) and `tail` is `race_items_damage_tail_pct` (5). The mod computes the damage when it applies the effect, since only it knows the current HP; the parameters travel with the effect.
+For banana and red shell, with `h` the target's current HP as a percentage of max HP and `B` the base damage: `h >= floor + B` deals `B`; `tail + floor <= h < floor + B` deals `h - floor` (lands at the floor); below that it deals `tail`; at least 1 HP always remains. `floor` is `race_items_damage_floor_pct` (20) and `tail` is `race_items_damage_tail_pct` (10); the bases are `race_items_red_shell_pct` (30) and `race_items_banana_pct` (15). The mod computes the damage when it applies the effect, since only it knows the current HP; the parameters travel with the effect.
 
 ## Lifecycle
 
@@ -139,9 +139,10 @@ Grants and effects wait until the player is loaded. Once per game load (loading 
 
 All sizes derive from the display size each frame (`core/item_banner.rs`); text is built on receipt, textures are loaded once at init, and the seconds left go through a reused buffer.
 
-- **Banner**, 5 s, queued: top centre, block top at 13% of the screen height, over a gradient from the top edge (alpha 0.78) fading out at 48% of the height. Icon 7.5% of the width, title in uppercase Barlow Condensed 600 at 3.4% (letter spacing 0.08 em; danger colour for an effect received, gold otherwise), line in Public Sans at 1.6%, detail at 1.2% in the disabled text colour, each with a dark shadow.
+- **Banner**, 4 s, queued, fading in over 0.25 s and out over the last 0.5 s (`ItemFeed::banner_alpha`, applied to every colour it draws): top centre, block top at 13% of the screen height, over a gradient from the top edge (alpha 0.78) fading out at 48% of the height. Icon 7.5% of the width, title in uppercase Barlow Condensed 600 at 3.4% (letter spacing 0.08 em; danger colour for an effect received, gold otherwise), line in Public Sans at 1.6%, detail at 1.2% in the disabled text colour, each with a dark shadow.
+- **Held row**: while the player holds an item without a use action (the Shield), a first row in the same place shows its icon and gold name, with no countdown. It appears when the grant's goods are spawned (any other item spawned replaces it), follows every inventory read (so it comes back after a game restart), leaves on the item's `item_remove` or a new start, and stops showing once the run is over (finished or out). The name and icon come from the catalog (`race_item_catalog`).
 - **Reminder rows**, in the race panel after the leaderboard and before the status message: icon, text (danger for an effect received, gold for the sender's own) and the seconds left, right aligned.
-- **ITEMS tag**: gold, mono, in the third line of the status block, left of the DEATHLESS / DEAD tag when both apply.
+- No overlay tag marks a race with items: the race panel has no room to spare.
 - **Ink**: while active, every exit row reads `-> ???` with no location line. The exits cache is rebuilt when the zone, the width or the ink state changes, not every frame.
 
 ### Icons
@@ -168,7 +169,7 @@ Positions decide the targets, so the checks run in this order. Wait a few second
 #### A. Grants and inventory (any position)
 
 1. Kill a boss in game: one copy lands in a quick slot with the gold banner (`[ITEMS] Goods spawned`, then `item_received`); `status` shows it confirmed.
-2. Quit out and reload, then restart the game: still one copy (`Goods already held, spawn skipped`; `[ITEMS] Inventory read` lists it).
+2. Quit out and reload, then restart the game: still one copy; `[ITEMS] Inventory read` lists it and no new spawn is requested (the grant was confirmed). `Goods already held, spawn skipped` only shows when the server sends a grant again, after a crash between the spawn and its `item_received`.
 3. Use it: the slot empties, the next `[ITEMS] Inventory read` no longer lists it, `status` shows nothing held. A targeted item shows on the console as `hit by ...` on a bot.
 4. `give <you> mushroom`, load, use it: rolls and sprints cost no stamina for about 15 s, with its buff icon and the "Infinite stamina" reminder counting down.
 5. `give <you> rune_pouch_2`, load, use it: 20000 runes and the "Runes added" banner.
@@ -180,18 +181,18 @@ Positions decide the targets, so the checks run in this order. Wait a few second
 
 #### C. Items on you (after `ahead <user1>`; `give <bot> ITEM`, then `use <bot>`)
 
-1. Red Shell from user2: HP drops by 20% of max and stays down. Repeat at low HP: the hit lands at 20%, then deals 5%, and never kills (`[ITEMS] Damage applied`).
-2. Banana from user1: 10% of max HP.
+1. Red Shell from user2: HP drops by 30% of max and stays down. Repeat at low HP: the hit lands at 20%, then deals 10%, and never kills (`[ITEMS] Damage applied`).
+2. Banana from user1: 15% of max HP.
 3. Hammer from either bot: fat roll for 15 s, "Fat-roll" reminder. The log line `[ITEMS] Equip load rate set` gives `current` and `max`: `current` must match the equipment screen's load, once with a bow and arrows equipped and once without (arrows and bolts are left out of the sum), and the screen's max becomes `current / 0.97`. A second Hammer within the 15 s keeps you heavy instead of cancelling the first.
 4. Lightning: forced slow walk for 15 s, then normal speed.
 5. Flask Stopper: no flask for 15 s.
 6. Toxic Blossom: poisoned; Neutralizing Boluses cure it.
 7. Ink: every exit reads `-> ???` without location for 15 s, then comes back.
-8. Two items in a row (one per bot): the banners queue, 5 s each, and the reminder rows stack.
+8. Two items in a row (one per bot): the banners queue, 4 s each, each fading in and out, and the reminder rows stack.
 
 #### D. Shield
 
-1. `give <you> shield`, load, then a Red Shell from user2: your Shield leaves the inventory (removal event), your banner reads "Blocked Red Shell" from user2, and the bot's result reads "Blocked by <you>'s shield" with no damage detail.
+1. `give <you> shield`, load: a gold Shield row shows in the race panel, also after a game restart. Then a Red Shell from user2: the row goes, your Shield leaves the inventory (removal event), your banner reads "Blocked Red Shell" from user2, and the bot's result reads "Blocked by <you>'s shield" with no damage detail.
 
 #### E. Robustness
 
@@ -201,6 +202,5 @@ Positions decide the targets, so the checks run in this order. Wait a few second
 
 #### F. Overlay and cost
 
-1. The ITEMS tag shows; in a deathless race, both tags fit.
-2. The inventory detail panel shows each race item's large icon.
-3. Tracy (`docs/MOD_PROFILING.md`): the banner and reminder paths cost nothing visible.
+1. The inventory detail panel shows each race item's large icon.
+2. Tracy (`docs/MOD_PROFILING.md`): the banner and reminder paths cost nothing visible.

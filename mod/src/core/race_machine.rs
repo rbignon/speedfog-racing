@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::core::item_feed::{FeedBanner, FeedReminder, FeedTone, ItemFeed};
+use crate::core::item_feed::{FeedBanner, FeedHeld, FeedReminder, FeedTone, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::protocol::{
     ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder, ParticipantInfo,
@@ -995,9 +995,48 @@ impl RaceMachine {
         self.race_state.seed.as_ref()?.race_item_catalog.get(item)
     }
 
+    /// The held row of a catalog item without a use action (the Shield),
+    /// `None` for any other item.
+    fn held_row(&self, item: &str) -> Option<FeedHeld> {
+        let entry = self.catalog_entry(item)?;
+        if entry.use_flag.is_some() {
+            return None;
+        }
+        let or_key = |s: &str| {
+            if s.is_empty() {
+                item.to_string()
+            } else {
+                s.to_string()
+            }
+        };
+        Some(FeedHeld {
+            key: item.to_string(),
+            icon: or_key(&entry.icon),
+            text: or_key(&entry.name),
+        })
+    }
+
+    /// The race items an inventory read found: the held row follows them.
+    pub fn inventory_read(&mut self, held: &[String]) {
+        let row = held.iter().find_map(|item| self.held_row(item));
+        self.item_feed.set_held(row);
+    }
+
+    /// Row of the race item held without a use, if any, while the run is
+    /// live: a Shield left unspent at the finish or when out stops showing.
+    pub fn item_held(&self) -> Option<&FeedHeld> {
+        let live = self.is_race_running() && !self.am_i_finished() && !self.am_i_abandoned();
+        self.item_feed.held().filter(|_| live)
+    }
+
     /// Race item banner on screen, if any (as of the last tick).
     pub fn item_banner(&self) -> Option<&FeedBanner> {
         self.item_feed.banner()
+    }
+
+    /// Opacity of that banner at `now` (its fade in and out).
+    pub fn item_banner_alpha(&self, now: Instant) -> f32 {
+        self.item_feed.banner_alpha(now)
     }
 
     /// Race item reminder rows still running, with their time left.
@@ -1674,6 +1713,7 @@ impl RaceMachine {
                                 value: true,
                             });
                         }
+                        self.item_feed.drop_held(&item);
                         if let Some(banner) = banner {
                             self.item_feed
                                 .push_banner(FeedBanner::from_wire(&banner, FeedTone::Gain), now);
@@ -1813,6 +1853,16 @@ impl RaceMachine {
         if spawned {
             info!(grant_id, "[ITEMS] Grant spawned");
             self.handled_grants.insert(grant_id);
+            let row = self.race_state.seed.as_ref().and_then(|seed| {
+                seed.race_item_catalog
+                    .iter()
+                    .find(|(_, entry)| entry.goods_id == grant.goods_id)
+                    .map(|(item, _)| item.clone())
+            });
+            // A runner holds one item at a time: the new one is the row,
+            // or no row for an item with a use.
+            let held = row.and_then(|item| self.held_row(&item));
+            self.item_feed.set_held(held);
             self.item_feed.push_banner(grant.banner, now);
         } else {
             info!(
@@ -6922,6 +6972,66 @@ mod tests {
     }
 
     #[test]
+    fn a_shield_shows_a_held_row_until_it_leaves() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(m.item_held(), None, "not before the goods are in");
+        m.grant_spawn_result(1, true, now + ms(120));
+        let held = m.item_held().expect("held row");
+        assert_eq!(
+            (held.key.as_str(), held.icon.as_str()),
+            ("shield", "shield")
+        );
+        // The test catalog has no name: the key stands in.
+        assert_eq!(held.text, "shield");
+
+        // Spent on a block: the server removes it.
+        m.handle_message(
+            MachineMessage::ItemRemove {
+                item: "shield".to_string(),
+                banner: Some(wire_banner("shield", "Shield")),
+            },
+            now + secs(2),
+        );
+        assert_eq!(m.item_held(), None);
+    }
+
+    #[test]
+    fn the_held_row_ends_with_the_run() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.inventory_read(&["shield".to_string()]);
+        assert!(m.item_held().is_some());
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![test_participant("p1", "finished", 3)],
+                leader_splits: None,
+            },
+            now + secs(1),
+        );
+        assert_eq!(
+            m.item_held(),
+            None,
+            "an unspent Shield stops showing at the finish"
+        );
+    }
+
+    #[test]
+    fn the_held_row_follows_the_inventory_reads() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // After a game restart, only the inventory tells.
+        m.inventory_read(&["shield".to_string()]);
+        assert_eq!(m.item_held().map(|h| h.key.as_str()), Some("shield"));
+        m.inventory_read(&["red_shell".to_string()]);
+        assert_eq!(m.item_held(), None, "an item with a use gets no held row");
+        m.inventory_read(&[]);
+        assert_eq!(m.item_held(), None);
+    }
+
+    #[test]
     fn resent_grant_already_spawned_is_only_acknowledged() {
         let now = Instant::now();
         let mut m = running_items_machine(now);
@@ -7063,13 +7173,14 @@ mod tests {
             Some(("HAMMER".to_string(), FeedTone::Malus))
         );
 
-        // The banner's 5 s run from the application too.
+        // The banner's time runs from the application too.
+        let shown = ItemFeed::BANNER_DURATION;
         m.tick(
             tick_in(snap(Some(64_900), true), true, None),
-            t1 + ms(4_900),
+            t1 + shown - ms(100),
         );
         assert!(banner_title(&m).is_some());
-        m.tick(tick_in(snap(Some(65_000), true), true, None), t1 + secs(5));
+        m.tick(tick_in(snap(Some(65_000), true), true, None), t1 + shown);
         assert_eq!(banner_title(&m), None);
     }
 

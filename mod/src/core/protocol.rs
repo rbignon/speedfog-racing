@@ -405,14 +405,18 @@ pub struct SeedInfo {
 }
 
 /// One race item of the catalog: its goods id, the flag the game raises when
-/// the player uses it (None for an item without a use action), and the flag
-/// the mod raises to make the game remove it.
+/// the player uses it (None for an item without a use action), the flag the
+/// mod raises to make the game remove it, and its display name and icon.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RaceItemEntry {
     pub goods_id: u32,
     #[serde(default)]
     pub use_flag: Option<u32>,
     pub remove_flag: u32,
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub icon: String,
 }
 
 /// Banner text of a race item event.
@@ -1920,13 +1924,18 @@ mod tests {
     fn seed_catalog_shield_has_no_use_flag() {
         let seed: SeedInfo = serde_json::from_str(
             r#"{"total_layers":3,"race_item_catalog":{
-            "shield":{"goods_id":1450800,"use_flag":null,"remove_flag":1050290200},
+            "shield":{"goods_id":1450800,"use_flag":null,"remove_flag":1050290200,
+                      "name":"Shield","icon":"shield"},
             "hammer":{"goods_id":1450801,"use_flag":1050290001,"remove_flag":1050290201}}}"#,
         )
         .unwrap();
         let shield = &seed.race_item_catalog["shield"];
         assert_eq!(shield.use_flag, None);
         assert_eq!(shield.remove_flag, 1050290200);
+        assert_eq!(
+            (shield.name.as_str(), shield.icon.as_str()),
+            ("Shield", "shield")
+        );
         assert_eq!(seed.race_item_catalog["hammer"].use_flag, Some(1050290001));
         let old: SeedInfo = serde_json::from_str(r#"{"total_layers":3}"#).unwrap();
         assert!(old.race_item_catalog.is_empty());

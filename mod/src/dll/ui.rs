@@ -510,13 +510,20 @@ impl RaceTracker {
             return;
         };
 
+        // Every colour carries the banner's fade.
+        let alpha = self.machine.item_banner_alpha(std::time::Instant::now());
+        if alpha <= 0.0 {
+            return;
+        }
+
         profile_span!("item_banner");
+        let fade = |[r, g, b, a]: [f32; 4]| [r, g, b, a * alpha];
 
         let c = &self.cached_colors;
         let [dw, dh] = ui.io().display_size;
         let layout = banner_layout([dw, dh]);
 
-        let edge = [c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA];
+        let edge = fade([c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA]);
         let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
         ui.get_background_draw_list().add_rect_filled_multicolor(
             [0.0, 0.0],
@@ -527,11 +534,11 @@ impl RaceTracker {
             clear,
         );
 
-        let title_color = match banner.tone {
+        let title_color = fade(match banner.tone {
             FeedTone::Malus => c.danger,
             FeedTone::Gain => c.gold,
-        };
-        let shadow_color = [0.0, 0.0, 0.0, 0.9];
+        });
+        let shadow_color = fade([0.0, 0.0, 0.0, 0.9]);
         let icon = self
             .race_item_icons
             .as_ref()
@@ -564,7 +571,7 @@ impl RaceTracker {
                                 layout.icon_y + size + oy * layout.shadow,
                             ],
                         )
-                        .col([0.0, 0.0, 0.0, 0.6])
+                        .col(fade([0.0, 0.0, 0.0, 0.6]))
                         .build();
                     }
                     d.add_image(
@@ -572,6 +579,7 @@ impl RaceTracker {
                         [x, layout.icon_y],
                         [x + size, layout.icon_y + size],
                     )
+                    .col(fade([1.0, 1.0, 1.0, 1.0]))
                     .build();
                 }
 
@@ -597,7 +605,7 @@ impl RaceTracker {
                     layout.center_x,
                     layout.line_y,
                     layout.shadow,
-                    c.text,
+                    fade(c.text),
                     shadow_color,
                 );
                 if !banner.detail.is_empty() {
@@ -608,7 +616,7 @@ impl RaceTracker {
                         layout.center_x,
                         layout.detail_y,
                         layout.shadow,
-                        c.text_disabled,
+                        fade(c.text_disabled),
                         shadow_color,
                     );
                 }
@@ -616,10 +624,11 @@ impl RaceTracker {
             });
     }
 
-    /// Timed race item rows of the panel: icon, text (danger for an effect
-    /// received, gold for the sender's own) and the seconds left, right
-    /// aligned. Texts were built on receipt; only the seconds are written
-    /// here, into a reused buffer.
+    /// Race item rows of the panel: the item held without a use (the
+    /// Shield: icon and gold name, no countdown), then the timed rows: icon,
+    /// text (danger for an effect received, gold for the sender's own) and
+    /// the seconds left, right aligned. Texts were built on receipt; only the
+    /// seconds are written here, into a reused buffer.
     fn render_item_reminders(
         &self,
         ui: &hudhook::imgui::Ui,
@@ -627,8 +636,9 @@ impl RaceTracker {
         bufs: &mut RenderBuffers,
     ) {
         let now = std::time::Instant::now();
+        let held = self.machine.item_held();
         let mut reminders = self.machine.item_reminders(now).peekable();
-        if reminders.peek().is_none() {
+        if held.is_none() && reminders.peek().is_none() {
             return;
         }
 
@@ -641,6 +651,16 @@ impl RaceTracker {
         let c = &self.cached_colors;
         let icon_size = ui.text_line_height();
         ui.separator();
+        if let Some(held) = held {
+            let mut used = 0.0;
+            if let Some(icons) = self.race_item_icons.as_ref() {
+                Image::new(icons.texture(&held.icon), [icon_size, icon_size]).build(ui);
+                ui.same_line_with_spacing(0.0, 4.0);
+                used = icon_size + 4.0;
+            }
+            let text = truncate_to_width(ui, &held.text, max_width - used);
+            ui.text_colored(c.gold, &text);
+        }
         for (reminder, left) in reminders {
             let mut used = 0.0;
             if let Some(icons) = self.race_item_icons.as_ref() {
@@ -1076,17 +1096,12 @@ impl RaceTracker {
             }
             _ => None,
         };
-        // Items tag, left of the deathless one when both apply.
-        let items_tag = self.machine.race_items_on().then_some("ITEMS");
         let (tag_width, count_width) = {
             let _mono = fonts.map(|f| ui.push_font(f.mono));
             (
                 deathless_tag
                     .map(|(t, _)| ui.calc_text_size(t)[0] + gap)
-                    .unwrap_or(0.0)
-                    + items_tag
-                        .map(|t| ui.calc_text_size(t)[0] + gap)
-                        .unwrap_or(0.0),
+                    .unwrap_or(0.0),
                 ui.calc_text_size(&buf_right)[0],
             )
         };
@@ -1136,10 +1151,6 @@ impl RaceTracker {
 
         ui.same_line_with_pos(max_width - right_total);
         let _mono = fonts.map(|f| ui.push_font(f.mono));
-        if let Some(text) = items_tag {
-            ui.text_colored(gold, text);
-            ui.same_line_with_spacing(0.0, gap);
-        }
         if let Some((text, color)) = deathless_tag {
             ui.text_colored(color, text);
             ui.same_line_with_spacing(0.0, gap);

@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from speedfog_racing.config import settings
 from speedfog_racing.models import Participant, Race, RaceItemEvent
 from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN
 from speedfog_racing.websocket.schemas import (
@@ -80,6 +81,8 @@ def test_items_race_accepts_1_12(integration_client, race_with_participants, int
         "goods_id": 1450807,
         "use_flag": 1050290107,
         "remove_flag": 1050290207,
+        "name": "Hammer",
+        "icon": "hammer",
     }
     assert response["race"]["race_items"] is True
 
@@ -560,8 +563,12 @@ def _held(item: str) -> dict:
 
 
 def test_red_shell_hits_the_runner_ahead(
-    integration_client, race_with_participants, integration_db
+    integration_client, race_with_participants, integration_db, monkeypatch
 ):
+    # The damage curve the expected payload and banners quote.
+    monkeypatch.setattr(settings, "race_items_red_shell_pct", 20)
+    monkeypatch.setattr(settings, "race_items_damage_floor_pct", 20)
+    monkeypatch.setattr(settings, "race_items_damage_tail_pct", 5)
     race_id = race_with_participants["race_id"]
     players = race_with_participants["players"]
     _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)

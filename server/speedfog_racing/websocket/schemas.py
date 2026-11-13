@@ -281,11 +281,14 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
 
 
 class RaceItemWire(BaseModel):
-    """What the mod needs of one catalog item: its goods and its flags."""
+    """What the mod needs of one catalog item: its goods, its flags, and its
+    name and icon (the row of an item held without a use)."""
 
     goods_id: int
     use_flag: int | None = None
     remove_flag: int
+    name: str
+    icon: str
 
 
 class SeedInfo(BaseModel):
