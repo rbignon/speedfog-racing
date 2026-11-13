@@ -1,15 +1,22 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["pillow"]
+# ///
 """Copy the race item icons from the speedfog repo into the mod's assets.
 
 The icon names come from the `[icons]` table of speedfog's
 data/plugins/race_items.toml; each one must exist as
-data/plugins/race_items_icon_<icon>.png, be a PNG and be 160x160. Every file is
-checked first: any problem lists all the bad files and nothing is copied. The
-final art lands by replacing the PNGs in speedfog, running this tool and
-releasing the mod. `unknown.png` (the fallback icon) is not in the catalog and
-is never touched.
+data/plugins/race_items_icon_<icon>.png, be a PNG and be a square of at least
+160x160 (the art is delivered at 1024x1024). Every file is checked first: any
+problem lists all the bad files and nothing is copied. Each icon is written at
+160x160, downscaled when larger: the banner draws it at 7.5% of the screen
+width (144 px at 1080p), and the full-size art would weigh megabytes in the
+DLL. The final art lands by replacing the PNGs in speedfog, running this tool
+and releasing the mod. `unknown.png` (the fallback icon) is not in the catalog
+and is never touched.
 
-Usage: uv run python sync_race_item_icons.py [--speedfog-dir DIR] [--dest DIR]
+Usage: uv run tools/sync_race_item_icons.py [--speedfog-dir DIR] [--dest DIR]
 """
 
 from __future__ import annotations
@@ -21,8 +28,10 @@ import sys
 import tomllib
 from pathlib import Path
 
+from PIL import Image
+
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-EXPECTED_SIZE = (160, 160)
+MOD_SIZE = 160
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SPEEDFOG = REPO_ROOT.parent / "speedfog"
 DEFAULT_DEST = REPO_ROOT / "mod" / "assets" / "race_items"
@@ -43,9 +52,24 @@ def check_icon(path: Path) -> str | None:
     size = png_size(path.read_bytes())
     if size is None:
         return "not a PNG"
-    if size != EXPECTED_SIZE:
-        return f"is {size[0]}x{size[1]}, expected {EXPECTED_SIZE[0]}x{EXPECTED_SIZE[1]}"
+    width, height = size
+    if width != height or width < MOD_SIZE:
+        return (
+            f"is {width}x{height}, expected a square of at least {MOD_SIZE}x{MOD_SIZE}"
+        )
     return None
+
+
+def write_icon(source: Path, dest: Path) -> None:
+    """Copy one icon, downscaled to MOD_SIZE x MOD_SIZE when larger."""
+    with Image.open(source) as image:
+        if image.size == (MOD_SIZE, MOD_SIZE):
+            shutil.copyfile(source, dest)
+            return
+        resized = image.convert("RGBA").resize(
+            (MOD_SIZE, MOD_SIZE), Image.Resampling.BICUBIC
+        )
+    resized.save(dest, optimize=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -80,8 +104,8 @@ def main(argv: list[str] | None = None) -> int:
 
     args.dest.mkdir(parents=True, exist_ok=True)
     for name, path in sources.items():
-        shutil.copyfile(path, args.dest / f"{name}.png")
-    print(f"copied {len(sources)} icons to {args.dest}")
+        write_icon(path, args.dest / f"{name}.png")
+    print(f"copied {len(sources)} icons to {args.dest} at {MOD_SIZE}x{MOD_SIZE}")
     return 0
 
 

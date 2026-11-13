@@ -1,11 +1,17 @@
-"""Tests for sync_race_item_icons.py: validation is all-or-nothing."""
+"""Tests for sync_race_item_icons.py: validation is all-or-nothing, large
+icons are downscaled to the mod's size.
+
+Run: cd tools && uv run --project ../server --with pillow pytest test_sync_race_item_icons.py
+"""
 
 from __future__ import annotations
 
 import struct
 import zlib
 
+import pytest
 import sync_race_item_icons
+from PIL import Image
 
 
 def _png(width: int, height: int) -> bytes:
@@ -45,10 +51,27 @@ def test_copies_every_icon_listed_in_the_catalog(tmp_path):
         ).read_bytes()
 
 
-def test_refuses_a_wrong_size_and_copies_nothing(tmp_path, capsys):
+def test_downscales_a_large_icon_to_the_mod_size(tmp_path):
+    sf, plugins = _speedfog(tmp_path, icons=("shield",))
+    # Left half red, right half blue: the halves must survive the downscale.
+    art = Image.new("RGBA", (1024, 1024), (0, 0, 255, 255))
+    art.paste((255, 0, 0, 255), (0, 0, 512, 1024))
+    art.save(plugins / "race_items_icon_shield.png")
+    dest = tmp_path / "out"
+    assert (
+        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) == 0
+    )
+    with Image.open(dest / "shield.png") as icon:
+        assert icon.size == (160, 160)
+        assert icon.convert("RGBA").getpixel((20, 80)) == (255, 0, 0, 255)
+        assert icon.convert("RGBA").getpixel((140, 80)) == (0, 0, 255, 255)
+
+
+@pytest.mark.parametrize("size", [(128, 128), (1024, 512)])
+def test_refuses_a_wrong_size_and_copies_nothing(tmp_path, capsys, size):
     sf, plugins = _speedfog(tmp_path)
     (plugins / "race_items_icon_shield.png").write_bytes(_png(160, 160))
-    (plugins / "race_items_icon_banana.png").write_bytes(_png(128, 128))
+    (plugins / "race_items_icon_banana.png").write_bytes(_png(*size))
     dest = tmp_path / "out"
     assert (
         sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) != 0
