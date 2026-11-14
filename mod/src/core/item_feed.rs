@@ -1,5 +1,5 @@
-//! Race item feed: queued banners, timed reminder rows, the row of an item
-//! held without a use, and the ink timer.
+//! Race item feed: queued banners, timed reminder rows, the row of the item
+//! held, and the ink timer.
 //!
 //! Pure timing: every method takes `now`, nothing reads the clock.
 
@@ -47,8 +47,8 @@ pub struct FeedReminder {
     pub ends_at: Instant,
 }
 
-/// A race item held without a use (the Shield): a row with no countdown,
-/// shown while the item is in the inventory.
+/// The race item held: a row with no countdown, shown while its goods is in
+/// the inventory.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeedHeld {
     pub key: String,
@@ -154,13 +154,6 @@ impl ItemFeed {
         self.held = held;
     }
 
-    /// Stop showing the held item row when it is `key`'s.
-    pub fn drop_held(&mut self, key: &str) {
-        if self.held.as_ref().is_some_and(|h| h.key == key) {
-            self.held = None;
-        }
-    }
-
     pub fn held(&self) -> Option<&FeedHeld> {
         self.held.as_ref()
     }
@@ -234,13 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn held_row_drops_only_for_its_own_item() {
+    fn clear_timers_drops_the_held_row() {
         let mut feed = ItemFeed::new();
-        feed.set_held(Some(shield()));
-        feed.drop_held("red_shell");
-        assert_eq!(feed.held(), Some(&shield()));
-        feed.drop_held("shield");
-        assert_eq!(feed.held(), None);
         feed.set_held(Some(shield()));
         feed.clear_timers();
         assert_eq!(feed.held(), None);

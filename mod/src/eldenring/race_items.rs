@@ -1,6 +1,7 @@
 //! Race item game access for the shell: goods spawn, inventory quantity,
-//! the player's HP and equip load, and the equip load effect's rate. Called
-//! on rare events (a grant, a game load, an effect), never per frame.
+//! the goods' icon, the player's HP and equip load, and the equip load
+//! effect's rate. Called on rare events (a grant, a game load, an effect),
+//! never per frame.
 //!
 //! ### Inventory layout source
 //!
@@ -21,7 +22,8 @@ use std::ffi::c_void;
 
 use libeldenring::memedit::PointerChain;
 use libeldenring::params::{
-    EquipParamAccessory, EquipParamProtector, EquipParamWeapon, Params, SpEffect, PARAMS,
+    EquipParamAccessory, EquipParamGoods, EquipParamProtector, EquipParamWeapon, Params, SpEffect,
+    PARAMS,
 };
 use libeldenring::pointers::Pointers;
 use once_cell::sync::Lazy;
@@ -202,9 +204,26 @@ pub fn set_equip_load_rate(speffect_id: u32, rate: f32) -> bool {
     true
 }
 
+/// Write `icon_id` as the icon of EquipParamGoods row `goods_id`, the icon
+/// the inventory and the quick slot draw for that goods. False when the row
+/// is missing or the params are not indexed yet.
+pub fn set_goods_icon(goods_id: u32, icon_id: u16) -> bool {
+    profile_span!("race_items.set_goods_icon");
+    let Some(params) = Lazy::get(&PARAMS).map(|lock| lock.read()) else {
+        return false;
+    };
+    let Some(row) = param_row::<EquipParamGoods>(&params, "EquipParamGoods", goods_id) else {
+        return false;
+    };
+    // SAFETY: the field is an aligned u16 of a live param row; the game reads
+    // it from its own thread, so the store is volatile and never read back.
+    unsafe { std::ptr::write_volatile(&mut row.icon_id, icon_id) };
+    true
+}
+
 /// Index the game's param table (libeldenring waits until the params are in
-/// memory). Run off the render thread: the readers above only use an index
-/// already built, and keep the row's rate until then.
+/// memory). Run off the render thread: the readers and writers above only
+/// use an index already built, and leave the rows as they are until then.
 pub fn prewarm_params() {
     let count = PARAMS.read().keys().count();
     info!(count, "[ITEMS] Params indexed");

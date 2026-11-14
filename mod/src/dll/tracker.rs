@@ -834,6 +834,17 @@ impl RaceTracker {
                     self.ws_client.send_item_received(grant_id);
                 }
                 Effect::PrewarmRaceItems => self.prewarm_race_items(),
+                Effect::SetGoodsIcon { goods_id, icon_id } => {
+                    if race_items::set_goods_icon(goods_id, icon_id) {
+                        info!(goods_id, icon_id, "[ITEMS] Goods icon set");
+                    } else {
+                        warn!(
+                            goods_id,
+                            icon_id,
+                            "[ITEMS] Goods icon not set (params not indexed yet or row missing), the next loading exit writes it again"
+                        );
+                    }
+                }
                 Effect::SpawnRaceItem { grant_id, goods_id } => {
                     let spawned = self.spawn_race_item(grant_id, goods_id);
                     self.machine
@@ -910,22 +921,23 @@ impl RaceTracker {
         }
     }
 
-    /// Send `item_inventory` with the catalog keys whose goods the player
-    /// holds, from one read of the inventory. An unreadable inventory skips
-    /// the report: a partial or empty one would read as items lost.
+    /// Send `item_inventory` with the catalog goods keys the player holds,
+    /// from one read of the inventory, and hand them to the machine (the
+    /// held row). An unreadable inventory skips the report: a partial or
+    /// empty one would read as items lost.
     fn report_item_inventory(&mut self, goods: Vec<(String, u32)>) {
         let Some(inventory) = race_items::HeldInventory::read() else {
             warn!("[ITEMS] Inventory unreadable, report skipped");
             return;
         };
-        let held: Vec<String> = goods
+        let present: Vec<String> = goods
             .into_iter()
             .filter(|&(_, goods_id)| inventory.goods_quantity(goods_id) > 0)
             .map(|(key, _)| key)
             .collect();
-        info!(items = ?held, "[ITEMS] Inventory read");
-        self.machine.inventory_read(&held);
-        self.ws_client.send_item_inventory(held);
+        info!(goods = ?present, "[ITEMS] Inventory read");
+        self.machine.inventory_read(&present);
+        self.ws_client.send_item_inventory(present);
     }
 
     /// Damage the player along the race item curve (`core::item_damage`),

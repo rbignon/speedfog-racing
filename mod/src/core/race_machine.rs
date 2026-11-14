@@ -18,7 +18,7 @@ use crate::core::item_feed::{FeedBanner, FeedHeld, FeedReminder, FeedTone, ItemF
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::protocol::{
     ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder, ParticipantInfo,
-    ParticipantStatus, RaceInfo, RaceItemEntry, RaceStatus, SeedInfo,
+    ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus, SeedInfo,
 };
 use crate::core::types::PlayerPosition;
 
@@ -56,6 +56,8 @@ pub enum MachineMessage {
         phantom_skin: Option<String>,
         /// Server release version when a newer compatible mod build exists.
         latest_mod_version: Option<String>,
+        /// Race item key the server says the runner holds, confirmed or not.
+        held_item: Option<String>,
     },
     AuthError(String),
     RaceStart(u32),
@@ -121,11 +123,12 @@ pub enum MachineMessage {
         banner: ItemBanner,
     },
     /// A race item effect aimed at the local runner, applied once the player
-    /// is loaded.
+    /// is loaded. Without a banner for the runner's own self item, whose
+    /// `ItemResult` carries it.
     ItemEffect {
         item: String,
         effect: ItemEffectPayload,
-        banner: ItemBanner,
+        banner: Option<ItemBanner>,
         reminder: Option<ItemReminder>,
     },
     /// The outcome of the local runner's item use.
@@ -134,9 +137,9 @@ pub enum MachineMessage {
         banner: ItemBanner,
         reminder: Option<ItemReminder>,
     },
-    /// Take a race item back: raise its removal flag.
+    /// Take a race goods back: raise its removal flag.
     ItemRemove {
-        item: String,
+        goods: String,
         banner: Option<ItemBanner>,
     },
 }
@@ -326,6 +329,15 @@ pub enum Effect {
     /// does not stall a frame. Emitted at every auth_ok of a race with
     /// items; the shell runs it once per process.
     PrewarmRaceItems,
+    /// Write `icon_id` into the `EquipParamGoods` row of `goods_id`, so the
+    /// goods shows the held item's icon in game. Emitted before a grant's
+    /// spawn and, for the held item, before each inventory report (a game
+    /// restart reloads the params); the shell logs a write it cannot make
+    /// yet (params not indexed) and the next one makes it.
+    SetGoodsIcon {
+        goods_id: u32,
+        icon_id: u16,
+    },
     /// Give a granted race item: the shell spawns its goods unless the
     /// inventory already holds them, then answers `item_received`, and hands
     /// the outcome back through `RaceMachine::grant_spawn_result`.
@@ -337,9 +349,10 @@ pub enum Effect {
     SendItemReceived {
         grant_id: u64,
     },
-    /// Report the race items held: the shell reads each goods' quantity and
-    /// sends `item_inventory` with the catalog keys of those above 0.
-    /// `goods` pairs every catalog key with its goods id.
+    /// Report the race goods held: the shell reads each goods' quantity,
+    /// sends `item_inventory` with the goods keys of those above 0 and hands
+    /// them back through `RaceMachine::inventory_read`. `goods` pairs every
+    /// catalog goods key with its goods id.
     ReportItemInventory {
         goods: Vec<(String, u32)>,
     },
@@ -363,11 +376,15 @@ pub enum Effect {
     },
 }
 
-/// A granted race item on its way to the inventory (see `pending_grants`).
+/// A granted race item on its way to the inventory (see `pending_grants`):
+/// the item, the goods it is held as and the icon id written into that
+/// goods' row.
 #[derive(Debug)]
 struct PendingGrant {
     grant_id: u64,
+    item: String,
     goods_id: u32,
+    icon_id: u16,
     banner: FeedBanner,
 }
 
@@ -381,11 +398,13 @@ enum ItemAction {
     Ink(Duration),
 }
 
-/// A race item effect waiting for a loaded frame.
+/// A race item effect waiting for a loaded frame: its banner (none for the
+/// runner's own self item) and its reminder, drawn with `icon`.
 #[derive(Debug)]
 struct PendingItemEffect {
     action: ItemAction,
-    banner: FeedBanner,
+    banner: Option<FeedBanner>,
+    icon: String,
     reminder: Option<ItemReminder>,
 }
 
@@ -424,13 +443,19 @@ pub struct RaceMachine {
     /// Index in `boss_flags` where the next scan's boss reads start (see
     /// `boss_flags_to_read`).
     boss_read_cursor: usize,
-    /// Race item use flags from the seed catalog, sorted and deduplicated
+    /// Use flags of the seed catalog's goods, sorted and deduplicated
     /// (membership by binary search), replaced on every auth_ok. The game
     /// raises one on every use: see `capture_item_use`.
     pub item_use_flags: Vec<u32>,
-    /// Every catalog key with its goods id, sorted by key, replaced on every
-    /// auth_ok: what an inventory report covers.
+    /// Every catalog goods key with its goods id, sorted by key, replaced on
+    /// every auth_ok: what an inventory report covers.
     item_inventory_goods: Vec<(String, u32)>,
+    /// Race item key the runner holds as far as this process knows: named by
+    /// auth_ok (a restarted process learns it there) and by each grant,
+    /// forgotten when its goods is used or removed and at a new start. Its
+    /// goods' icon is written again before each inventory report, and the
+    /// held row follows it (`inventory_read`).
+    held_item: Option<String>,
     /// Grants whose goods this process gave (or found already held): one
     /// the server sends again is only acknowledged.
     handled_grants: HashSet<u64>,
@@ -590,6 +615,7 @@ impl RaceMachine {
             boss_read_cursor: 0,
             item_use_flags: Vec::new(),
             item_inventory_goods: Vec::new(),
+            held_item: None,
             handled_grants: HashSet::new(),
             pending_grants: Vec::new(),
             spawning_grants: Vec::new(),
@@ -991,39 +1017,70 @@ impl RaceMachine {
     }
 
     /// The seed catalog's entry for a race item key.
-    fn catalog_entry(&self, item: &str) -> Option<&RaceItemEntry> {
-        self.race_state.seed.as_ref()?.race_item_catalog.get(item)
+    fn catalog_item(&self, item: &str) -> Option<&RaceItemEntry> {
+        self.race_state
+            .seed
+            .as_ref()?
+            .race_item_catalog
+            .items
+            .get(item)
     }
 
-    /// The held row of a catalog item without a use action (the Shield),
-    /// `None` for any other item.
+    /// The seed catalog's entry for a race goods key.
+    fn catalog_goods(&self, goods: &str) -> Option<&RaceItemGoods> {
+        self.race_state
+            .seed
+            .as_ref()?
+            .race_item_catalog
+            .goods
+            .get(goods)
+    }
+
+    /// A catalog item with the goods it is held as.
+    fn item_and_goods(&self, item: &str) -> Option<(&RaceItemEntry, &RaceItemGoods)> {
+        let entry = self.catalog_item(item)?;
+        Some((entry, self.catalog_goods(&entry.goods)?))
+    }
+
+    /// Whether the catalog item `item` is held as the goods `goods`.
+    fn item_held_as(&self, item: &str, goods: &str) -> bool {
+        self.catalog_item(item)
+            .is_some_and(|entry| entry.goods == goods)
+    }
+
+    /// Whether the catalog item `item` is held as a goods whose use raises
+    /// `flag_id`.
+    fn item_used_by(&self, item: &str, flag_id: u32) -> bool {
+        self.item_and_goods(item)
+            .is_some_and(|(_, goods)| goods.use_flag == Some(flag_id))
+    }
+
+    /// The held row of a catalog item: its key, icon and name.
     fn held_row(&self, item: &str) -> Option<FeedHeld> {
-        let entry = self.catalog_entry(item)?;
-        if entry.use_flag.is_some() {
-            return None;
-        }
-        let or_key = |s: &str| {
-            if s.is_empty() {
-                item.to_string()
-            } else {
-                s.to_string()
-            }
-        };
+        let entry = self.catalog_item(item)?;
         Some(FeedHeld {
             key: item.to_string(),
-            icon: or_key(&entry.icon),
-            text: or_key(&entry.name),
+            icon: entry.icon.clone(),
+            text: entry.name.clone(),
         })
     }
 
-    /// The race items an inventory read found: the held row follows them.
-    pub fn inventory_read(&mut self, held: &[String]) {
-        let row = held.iter().find_map(|item| self.held_row(item));
+    /// The race goods keys an inventory read found: the held item's row
+    /// shows while its goods is among them, none otherwise.
+    pub fn inventory_read(&mut self, present_goods: &[String]) {
+        let row = self
+            .held_item
+            .as_deref()
+            .filter(|item| {
+                self.catalog_item(item)
+                    .is_some_and(|entry| present_goods.contains(&entry.goods))
+            })
+            .and_then(|item| self.held_row(item));
         self.item_feed.set_held(row);
     }
 
-    /// Row of the race item held without a use, if any, while the run is
-    /// live: a Shield left unspent at the finish or when out stops showing.
+    /// Row of the race item held, if any, while the run is live: an item
+    /// left unspent at the finish or when out stops showing.
     pub fn item_held(&self) -> Option<&FeedHeld> {
         let live = self.is_race_running() && !self.am_i_finished() && !self.am_i_abandoned();
         self.item_feed.held().filter(|_| live)
@@ -1173,6 +1230,7 @@ impl RaceMachine {
                 participants,
                 phantom_skin,
                 latest_mod_version,
+                held_item,
             } => {
                 info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
                 if let Some(ref name) = phantom_skin {
@@ -1237,17 +1295,25 @@ impl RaceMachine {
                 self.boss_read_cursor = 0;
                 self.item_use_flags = seed
                     .race_item_catalog
+                    .goods
                     .values()
-                    .filter_map(|entry| entry.use_flag)
+                    .filter_map(|goods| goods.use_flag)
                     .collect();
                 self.item_use_flags.sort_unstable();
                 self.item_use_flags.dedup();
                 self.item_inventory_goods = seed
                     .race_item_catalog
+                    .goods
                     .iter()
-                    .map(|(key, entry)| (key.clone(), entry.goods_id))
+                    .map(|(key, goods)| (key.clone(), goods.goods_id))
                     .collect();
                 self.item_inventory_goods.sort_unstable();
+                // The server's word on the item held, whichever participant:
+                // a restarted process restores its icon and row from it.
+                if let Some(ref item) = held_item {
+                    info!(item = %item, "[ITEMS] Held item named at auth");
+                }
+                self.held_item = held_item;
                 // Don't clear triggered_flags on reconnect: finish_event and
                 // boss kills are one-shot.
                 // Regular fog gate flags are no longer tracked in triggered_flags;
@@ -1336,6 +1402,7 @@ impl RaceMachine {
                     // cleared its side of them.
                     self.drop_waiting_race_items("new start");
                     self.item_feed.clear_timers();
+                    self.held_item = None;
                 }
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
@@ -1594,6 +1661,8 @@ impl RaceMachine {
                 banner,
             } => {
                 self.last_received_debug = Some(format!("item_grant({grant_id}, {item})"));
+                // A grant names the item held, a resent one included.
+                self.held_item = Some(item.clone());
                 // The server sends a grant again at every auth until it
                 // hears `item_received`.
                 if self.handled_grants.contains(&grant_id) {
@@ -1614,12 +1683,17 @@ impl RaceMachine {
                 {
                     info!(grant_id, item = %item, "[ITEMS] Grant already waiting for the load");
                 } else {
-                    match self.catalog_entry(&item).map(|entry| entry.goods_id) {
-                        Some(goods_id) => {
-                            info!(grant_id, item = %item, "[ITEMS] Grant received");
+                    match self
+                        .item_and_goods(&item)
+                        .map(|(entry, goods)| (goods.goods_id, entry.icon_id))
+                    {
+                        Some((goods_id, icon_id)) => {
+                            info!(grant_id, item = %item, goods_id, icon_id, "[ITEMS] Grant received");
                             self.pending_grants.push(PendingGrant {
                                 grant_id,
+                                item,
                                 goods_id,
+                                icon_id,
                                 banner: FeedBanner::from_wire(&banner, FeedTone::Gain),
                             });
                         }
@@ -1664,9 +1738,18 @@ impl RaceMachine {
                 match action {
                     Some(action) => {
                         info!(item = %item, ?action, "[ITEMS] Effect received");
+                        let banner =
+                            banner.map(|banner| FeedBanner::from_wire(&banner, FeedTone::Malus));
+                        // The reminder's icon: the banner's, else the item's.
+                        let icon = match (&banner, self.catalog_item(&item)) {
+                            (Some(banner), _) => banner.icon.clone(),
+                            (None, Some(entry)) => entry.icon.clone(),
+                            (None, None) => item.clone(),
+                        };
                         self.pending_item_effects.push(PendingItemEffect {
                             action,
-                            banner: FeedBanner::from_wire(&banner, FeedTone::Malus),
+                            banner,
+                            icon,
                             reminder,
                         });
                     }
@@ -1695,32 +1778,47 @@ impl RaceMachine {
                 }
                 self.item_feed.push_banner(banner, now);
             }
-            MachineMessage::ItemRemove { item, banner } => {
-                self.last_received_debug = Some(format!("item_remove({item})"));
-                match self.catalog_entry(&item).map(|entry| entry.remove_flag) {
+            MachineMessage::ItemRemove { goods, banner } => {
+                self.last_received_debug = Some(format!("item_remove({goods})"));
+                match self.catalog_goods(&goods).map(|entry| entry.remove_flag) {
                     Some(remove_flag) => {
                         if self.wrong_save {
                             // No flag writes into a foreign save: the race
                             // save's next inventory report gets the removal
                             // sent again.
-                            info!(item = %item, remove_flag, "[ITEMS] Removal skipped (wrong save)");
+                            info!(goods = %goods, remove_flag, "[ITEMS] Removal skipped (wrong save)");
                         } else {
                             // Only raised: the game's event removes the
                             // goods and clears it.
-                            info!(item = %item, remove_flag, "[ITEMS] Removal flag raised");
+                            info!(goods = %goods, remove_flag, "[ITEMS] Removal flag raised");
                             effects.push(Effect::SetGameFlag {
                                 flag_id: remove_flag,
                                 value: true,
                             });
                         }
-                        self.item_feed.drop_held(&item);
+                        // The item held as that goods goes with it; one held
+                        // as another goods stays.
+                        if self
+                            .held_item
+                            .as_deref()
+                            .is_some_and(|item| self.item_held_as(item, &goods))
+                        {
+                            self.held_item = None;
+                        }
+                        if self
+                            .item_feed
+                            .held()
+                            .is_some_and(|row| self.item_held_as(&row.key, &goods))
+                        {
+                            self.item_feed.set_held(None);
+                        }
                         if let Some(banner) = banner {
                             self.item_feed
                                 .push_banner(FeedBanner::from_wire(&banner, FeedTone::Gain), now);
                         }
                     }
                     None => {
-                        warn!(item = %item, "[ITEMS] Removal of an item outside the seed catalog, dropped");
+                        warn!(goods = %goods, "[ITEMS] Removal of a goods outside the seed catalog, dropped");
                     }
                 }
             }
@@ -1853,15 +1951,8 @@ impl RaceMachine {
         if spawned {
             info!(grant_id, "[ITEMS] Grant spawned");
             self.handled_grants.insert(grant_id);
-            let row = self.race_state.seed.as_ref().and_then(|seed| {
-                seed.race_item_catalog
-                    .iter()
-                    .find(|(_, entry)| entry.goods_id == grant.goods_id)
-                    .map(|(item, _)| item.clone())
-            });
-            // A runner holds one item at a time: the new one is the row,
-            // or no row for an item with a use.
-            let held = row.and_then(|item| self.held_row(&item));
+            // A runner holds one item at a time: the new one is the row.
+            let held = self.held_row(&grant.item);
             self.item_feed.set_held(held);
             self.item_feed.push_banner(grant.banner, now);
         } else {
@@ -2585,7 +2676,8 @@ impl RaceMachine {
     /// no depth arrival. Sent like a boss kill: at once while connected,
     /// `ready` out and past the countdown, buffered in the pending flags
     /// otherwise. Left set while the run is not live, so a scan of the live
-    /// run reports it.
+    /// run reports it. The game consumed the goods: the item held as it, and
+    /// its row, go.
     fn capture_item_use(
         &mut self,
         flag_id: u32,
@@ -2603,6 +2695,20 @@ impl RaceMachine {
             value: false,
         });
         cleared.insert(flag_id);
+        if self
+            .held_item
+            .as_deref()
+            .is_some_and(|item| self.item_used_by(item, flag_id))
+        {
+            self.held_item = None;
+        }
+        if self
+            .item_feed
+            .held()
+            .is_some_and(|row| self.item_used_by(&row.key, flag_id))
+        {
+            self.item_feed.set_held(None);
+        }
         if connected && self.ready_sent && !self.is_countdown_active(now) {
             effects.push(self.queue_event_flag(flag_id, igt_ms));
             self.last_sent_debug = Some(format!(
@@ -2619,12 +2725,14 @@ impl RaceMachine {
     /// Race item work held for a loaded frame on the race save, run after
     /// the frame's flag scans, in this order: the inventory report
     /// (`report_inventory`: a game load or a reconnection, while connected),
-    /// the grant spawns (the failed ones again only when `retry_grants`: a
-    /// game load or a reconnection), then the pending effects, whose banner,
-    /// reminder and duration start now. A grant's banner waits for its
-    /// spawn's outcome (`grant_spawn_result`). An outdated seed pack holds
-    /// it all: its regulation may lack the race goods and their effects. A
-    /// run that is over drops it all.
+    /// preceded by the held item's icon write (a game restart reloads the
+    /// params), the grant spawns, each preceded by its item's icon write
+    /// (the failed ones again only when `retry_grants`: a game load or a
+    /// reconnection), then the pending effects, whose banner, reminder and
+    /// duration start now. A grant's banner waits for its spawn's outcome
+    /// (`grant_spawn_result`). An outdated seed pack holds it all: its
+    /// regulation may lack the race goods and their effects. A run that is
+    /// over drops it all.
     fn flush_race_items(
         &mut self,
         report_inventory: bool,
@@ -2644,6 +2752,14 @@ impl RaceMachine {
         // Without a catalog, the race goods are unknown: an empty report
         // would read as every item lost.
         if report_inventory && !self.item_inventory_goods.is_empty() && self.race_items_on() {
+            let icon = self.held_item.as_deref().and_then(|item| {
+                self.item_and_goods(item)
+                    .map(|(entry, goods)| (goods.goods_id, entry.icon_id))
+            });
+            if let Some((goods_id, icon_id)) = icon {
+                info!(goods_id, icon_id, "[ITEMS] Held item's icon requested");
+                effects.push(Effect::SetGoodsIcon { goods_id, icon_id });
+            }
             info!("[ITEMS] Inventory report");
             effects.push(Effect::ReportItemInventory {
                 goods: self.item_inventory_goods.clone(),
@@ -2659,6 +2775,10 @@ impl RaceMachine {
             .chain(std::mem::take(&mut self.pending_grants))
         {
             info!(grant_id = grant.grant_id, "[ITEMS] Grant spawn requested");
+            effects.push(Effect::SetGoodsIcon {
+                goods_id: grant.goods_id,
+                icon_id: grant.icon_id,
+            });
             effects.push(Effect::SpawnRaceItem {
                 grant_id: grant.grant_id,
                 goods_id: grant.goods_id,
@@ -2673,14 +2793,16 @@ impl RaceMachine {
             }
             if let Some(reminder) = effect.reminder {
                 self.item_feed.add_reminder(
-                    effect.banner.icon.clone(),
+                    effect.icon,
                     reminder.text,
                     FeedTone::Malus,
                     Duration::from_millis(u64::from(reminder.duration_ms)),
                     now,
                 );
             }
-            self.item_feed.push_banner(effect.banner, now);
+            if let Some(banner) = effect.banner {
+                self.item_feed.push_banner(banner, now);
+            }
         }
     }
 
@@ -2941,6 +3063,7 @@ mod tests {
             participants: vec![test_participant("p1", "playing", 1)],
             phantom_skin: None,
             latest_mod_version: None,
+            held_item: None,
         }
     }
 
@@ -2974,6 +3097,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -2996,6 +3120,7 @@ mod tests {
                 participants: vec![test_participant("p1", my_status, 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4220,6 +4345,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4320,6 +4446,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4342,6 +4469,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4366,6 +4494,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4395,6 +4524,7 @@ mod tests {
                 participants: vec![test_participant("p1", "finished", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -4966,6 +5096,7 @@ mod tests {
                 participants: vec![test_participant("p1", "finished", 3)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -5236,6 +5367,7 @@ mod tests {
                 participants: vec![test_participant("p1", "playing", 1)],
                 phantom_skin: None,
                 latest_mod_version: None,
+                held_item: None,
             },
             now,
         );
@@ -5451,6 +5583,7 @@ mod tests {
             participants: vec![me],
             phantom_skin: None,
             latest_mod_version: None,
+            held_item: None,
         }
     }
 
@@ -6250,6 +6383,7 @@ mod tests {
             participants: vec![test_participant("p1", "playing", 1)],
             phantom_skin: None,
             latest_mod_version: None,
+            held_item: None,
         }
     }
 
@@ -6751,13 +6885,19 @@ mod tests {
     // Race items
     // ------------------------------------------------------------------
 
-    const USE_FLAG: u32 = 1_050_290_107;
-    const REMOVE_FLAG: u32 = 1_050_290_207;
+    /// The Race Item goods, its use and removal flags, and the Shield's
+    /// goods and removal flag (no use flag).
+    const RACE_ITEM_GOODS: u32 = 1_450_801;
+    const USE_FLAG: u32 = 1_050_290_101;
+    const REMOVE_FLAG: u32 = 1_050_290_201;
+    const SHIELD_GOODS: u32 = 1_450_800;
     const SHIELD_REMOVE_FLAG: u32 = 1_050_290_200;
+    const HAMMER_ICON: u16 = 60_390;
 
     /// auth_ok of `auth_ok` (flags [100, 200, 900], finish 900) for a race
-    /// with `race_items` on or off, whose seed catalog holds the Red Shell
-    /// (goods 1450807, use flag `USE_FLAG`) and the Shield (no use flag).
+    /// with `race_items` on or off, whose seed catalog holds the Race Item
+    /// goods (use flag `USE_FLAG`), on which the Red Shell and the Hammer are
+    /// held, and the Shield's own goods (no use flag).
     fn auth_ok_with_items(status: &str, race_items: bool) -> MachineMessage {
         let race: RaceInfo = serde_json::from_str(&format!(
             r#"{{"id":"r1","name":"x","status":"{status}","race_items":{race_items}}}"#
@@ -6766,9 +6906,18 @@ mod tests {
         let seed: SeedInfo = serde_json::from_str(
             r#"{"total_layers": 3, "event_ids": [100, 200, 900], "finish_event": 900,
                 "death_flags": {}, "race_item_catalog": {
-                  "red_shell": {"goods_id": 1450807, "use_flag": 1050290107,
-                                "remove_flag": 1050290207},
-                  "shield": {"goods_id": 1450800, "remove_flag": 1050290200}}}"#,
+                  "goods": {
+                    "race_item": {"goods_id": 1450801, "use_flag": 1050290101,
+                                  "remove_flag": 1050290201, "icon_id": 60396},
+                    "shield": {"goods_id": 1450800, "use_flag": null,
+                               "remove_flag": 1050290200, "icon_id": 60385}},
+                  "items": {
+                    "red_shell": {"name": "Red Shell", "icon": "red_shell",
+                                  "icon_id": 60388, "goods": "race_item"},
+                    "hammer": {"name": "Hammer", "icon": "hammer",
+                               "icon_id": 60390, "goods": "race_item"},
+                    "shield": {"name": "Shield", "icon": "shield",
+                               "icon_id": 60385, "goods": "shield"}}}}"#,
         )
         .unwrap();
         MachineMessage::AuthOk {
@@ -6778,7 +6927,16 @@ mod tests {
             participants: vec![test_participant("p1", "playing", 1)],
             phantom_skin: None,
             latest_mod_version: None,
+            held_item: None,
         }
+    }
+
+    /// The same auth_ok naming the item the server says the runner holds.
+    fn holding(mut auth: MachineMessage, item: &str) -> MachineMessage {
+        if let MachineMessage::AuthOk { held_item, .. } = &mut auth {
+            *held_item = Some(item.to_string());
+        }
+        auth
     }
 
     /// Machine authed into a running race with items, past its first
@@ -6822,7 +6980,7 @@ mod tests {
         MachineMessage::ItemEffect {
             item: "hammer".to_string(),
             effect,
-            banner: wire_banner("hammer", "Hammer"),
+            banner: Some(wire_banner("hammer", "Hammer")),
             reminder: reminder.map(|(text, duration_ms)| ItemReminder {
                 text: text.to_string(),
                 duration_ms,
@@ -6838,6 +6996,7 @@ mod tests {
                 Effect::SendReady => Some("ready"),
                 Effect::SendEventFlag { .. } => Some("flag"),
                 Effect::ReportItemInventory { .. } => Some("report"),
+                Effect::SetGoodsIcon { .. } => Some("icon"),
                 Effect::SpawnRaceItem { .. } => Some("spawn"),
                 Effect::SendItemReceived { .. } => Some("received"),
                 Effect::ApplySpEffect { .. }
@@ -6917,12 +7076,18 @@ mod tests {
         m.handle_message(grant(1, "red_shell"), now + ms(200));
 
         // Used just before a quit-out: the use reaches the server before the
-        // inventory that no longer holds it, and the pending spawn comes last.
+        // inventory that no longer holds it, and the pending spawn, its icon
+        // first, comes last. The use spent the held item: no icon before
+        // the report.
         let fx = m.tick(
             tick_in(snap(Some(60_100), true), true, items_scan(&m, &[USE_FLAG])),
             now + secs(1),
         );
-        assert_eq!(item_steps(&fx), ["flag", "report", "spawn"], "{fx:?}");
+        assert_eq!(
+            item_steps(&fx),
+            ["flag", "report", "icon", "spawn"],
+            "{fx:?}"
+        );
         assert_eq!(sent_flags(&fx), [USE_FLAG]);
     }
 
@@ -6959,7 +7124,7 @@ mod tests {
             spawns,
             [&Effect::SpawnRaceItem {
                 grant_id: 1,
-                goods_id: 1_450_807,
+                goods_id: RACE_ITEM_GOODS,
             }]
         );
         // The banner waits for the goods to be in the inventory.
@@ -6981,16 +7146,14 @@ mod tests {
         m.grant_spawn_result(1, true, now + ms(120));
         let held = m.item_held().expect("held row");
         assert_eq!(
-            (held.key.as_str(), held.icon.as_str()),
-            ("shield", "shield")
+            (held.key.as_str(), held.icon.as_str(), held.text.as_str()),
+            ("shield", "shield", "Shield")
         );
-        // The test catalog has no name: the key stands in.
-        assert_eq!(held.text, "shield");
 
         // Spent on a block: the server removes it.
         m.handle_message(
             MachineMessage::ItemRemove {
-                item: "shield".to_string(),
+                goods: "shield".to_string(),
                 banner: Some(wire_banner("shield", "Shield")),
             },
             now + secs(2),
@@ -7002,6 +7165,7 @@ mod tests {
     fn the_held_row_ends_with_the_run() {
         let now = Instant::now();
         let mut m = running_items_machine(now);
+        m.handle_message(holding(auth_ok_with_items("running", true), "shield"), now);
         m.inventory_read(&["shield".to_string()]);
         assert!(m.item_held().is_some());
         m.handle_message(
@@ -7022,12 +7186,22 @@ mod tests {
     fn the_held_row_follows_the_inventory_reads() {
         let now = Instant::now();
         let mut m = running_items_machine(now);
-        // After a game restart, only the inventory tells.
+        m.handle_message(holding(auth_ok_with_items("running", true), "shield"), now);
+        // Shown while the held item's goods is in the inventory.
         m.inventory_read(&["shield".to_string()]);
         assert_eq!(m.item_held().map(|h| h.key.as_str()), Some("shield"));
-        m.inventory_read(&["red_shell".to_string()]);
-        assert_eq!(m.item_held(), None, "an item with a use gets no held row");
+        m.inventory_read(&["race_item".to_string()]);
+        assert_eq!(
+            m.item_held(),
+            None,
+            "another goods is no row of the held item"
+        );
+        m.inventory_read(&["shield".to_string()]);
         m.inventory_read(&[]);
+        assert_eq!(m.item_held(), None);
+        // Nothing held: no row, whatever the inventory holds.
+        m.handle_message(auth_ok_with_items("running", true), now + ms(10));
+        m.inventory_read(&["race_item".to_string(), "shield".to_string()]);
         assert_eq!(m.item_held(), None);
     }
 
@@ -7037,7 +7211,7 @@ mod tests {
         let mut m = running_items_machine(now);
         m.handle_message(grant(1, "red_shell"), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
-        assert_eq!(item_steps(&fx), ["spawn"]);
+        assert_eq!(item_steps(&fx), ["icon", "spawn"]);
         m.grant_spawn_result(1, true, now + ms(120));
         m.tick(tick_in(snap(Some(67_000), true), true, None), now + secs(6));
         assert_eq!(banner_title(&m), None);
@@ -7061,7 +7235,7 @@ mod tests {
         let mut m = running_items_machine(now);
         m.handle_message(grant(1, "red_shell"), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
-        assert_eq!(item_steps(&fx), ["spawn"]);
+        assert_eq!(item_steps(&fx), ["icon", "spawn"]);
         m.grant_spawn_result(1, false, now + ms(120));
         assert_eq!(banner_title(&m), None);
 
@@ -7075,7 +7249,8 @@ mod tests {
         let fx = m.tick(tick_in(snap(Some(61_200), true), true, None), now + ms(400));
         assert!(item_steps(&fx).is_empty(), "{fx:?}");
 
-        // The next game load tries once more, after its report.
+        // The next game load tries once more, after its report (the held
+        // item's icon written before each).
         m.tick(
             tick_in(snap(Some(61_300), false), true, None),
             now + ms(500),
@@ -7084,7 +7259,11 @@ mod tests {
             tick_in(snap(Some(61_400), true), true, items_scan(&m, &[])),
             now + secs(1),
         );
-        assert_eq!(item_steps(&fx), ["report", "spawn"], "{fx:?}");
+        assert_eq!(
+            item_steps(&fx),
+            ["icon", "report", "icon", "spawn"],
+            "{fx:?}"
+        );
         m.grant_spawn_result(1, true, now + secs(1));
         assert_eq!(
             banner_title(&m),
@@ -7116,7 +7295,11 @@ mod tests {
             tick_in(snap(Some(62_000), true), true, items_scan(&m, &[])),
             now + secs(1) + ms(20),
         );
-        assert_eq!(item_steps(&fx), ["ready", "report", "spawn"], "{fx:?}");
+        assert_eq!(
+            item_steps(&fx),
+            ["ready", "icon", "report", "icon", "spawn"],
+            "{fx:?}"
+        );
     }
 
     #[test]
@@ -7257,7 +7440,7 @@ mod tests {
         // A shield that blocked a hit: raised at once, banner shown.
         let fx = m.handle_message(
             MachineMessage::ItemRemove {
-                item: "shield".to_string(),
+                goods: "shield".to_string(),
                 banner: Some(wire_banner("shield", "Shield")),
             },
             now + ms(100),
@@ -7296,7 +7479,7 @@ mod tests {
         // A take-back without a banner raises the flag alone.
         let fx = m.handle_message(
             MachineMessage::ItemRemove {
-                item: "red_shell".to_string(),
+                goods: "race_item".to_string(),
                 banner: None,
             },
             now + ms(200),
@@ -7372,8 +7555,8 @@ mod tests {
         assert_eq!(
             report,
             Some(vec![
-                ("red_shell".to_string(), 1_450_807),
-                ("shield".to_string(), 1_450_800),
+                ("race_item".to_string(), RACE_ITEM_GOODS),
+                ("shield".to_string(), SHIELD_GOODS),
             ])
         );
 
@@ -7436,7 +7619,7 @@ mod tests {
         );
         m.handle_message(
             MachineMessage::ItemRemove {
-                item: "shield".to_string(),
+                goods: "shield".to_string(),
                 banner: Some(wire_banner("shield", "Shield")),
             },
             now + ms(400),
@@ -7458,16 +7641,13 @@ mod tests {
         }
         m.handle_message(other, now + ms(600));
         assert_eq!(banner_title(&m), None);
+        // Its load: the report, without the first runner's grant, effect
+        // or held item's icon.
         let fx = m.tick(
             tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
             now + secs(1),
         );
-        assert!(
-            !item_steps(&fx)
-                .iter()
-                .any(|s| *s == "spawn" || *s == "apply"),
-            "{fx:?}"
-        );
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
         assert!(!m.ink_active(now + secs(1)));
     }
 
@@ -7531,7 +7711,12 @@ mod tests {
             MachineMessage::StatusChanged(ConnectionStatus::Connected),
             reset + ms(10),
         );
-        m.handle_message(auth_ok_with_items("setup", true), reset + ms(20));
+        // Even an auth_ok still naming the voided run's item: the new start
+        // forgets it (no icon written for it).
+        m.handle_message(
+            holding(auth_ok_with_items("setup", true), "red_shell"),
+            reset + ms(20),
+        );
         m.handle_message(MachineMessage::RaceStart(0), reset + ms(30));
         assert!(!m.ink_active(reset + ms(30)));
         assert_eq!(m.item_reminders(reset + ms(30)).count(), 0);
@@ -7611,7 +7796,7 @@ mod tests {
         fx.extend(m.handle_message(item_hit(ItemEffectPayload::Unknown, None), now + ms(110)));
         fx.extend(m.handle_message(
             MachineMessage::ItemRemove {
-                item: "boo".to_string(),
+                goods: "boo".to_string(),
                 banner: Some(wire_banner("boo", "Boo")),
             },
             now + ms(120),
@@ -7644,7 +7829,7 @@ mod tests {
         m.tick(tick_in(snap(Some(60_000), true), true, None), now + ms(10));
         m.handle_message(grant(1, "red_shell"), now + ms(100));
         let fx = m.tick(tick_in(snap(Some(60_100), true), true, None), now + ms(150));
-        assert_eq!(item_steps(&fx), ["spawn"]);
+        assert_eq!(item_steps(&fx), ["icon", "spawn"]);
         m.grant_spawn_result(1, true, now + ms(150));
 
         // A reroll: the loaded pack is outdated, its regulation may lack the
@@ -7707,7 +7892,7 @@ mod tests {
             tick_in(snap(Some(62_300), true), true, None),
             now + secs(3) + ms(10),
         );
-        assert_eq!(item_steps(&fx), ["spawn", "apply"], "{fx:?}");
+        assert_eq!(item_steps(&fx), ["icon", "spawn", "apply"], "{fx:?}");
     }
 
     #[test]
@@ -7728,7 +7913,7 @@ mod tests {
         fx.extend(m.handle_message(grant(1, "red_shell"), now + secs(2)));
         fx.extend(m.handle_message(
             MachineMessage::ItemRemove {
-                item: "shield".to_string(),
+                goods: "shield".to_string(),
                 banner: Some(wire_banner("shield", "Shield")),
             },
             now + secs(2),
@@ -7748,7 +7933,8 @@ mod tests {
             Some(("SHIELD".to_string(), FeedTone::Gain))
         );
 
-        // The race save is back: its load reports, then spawns.
+        // The race save is back: its load writes the held item's icon,
+        // reports, then spawns.
         m.tick(
             tick_in(snap(Some(60_500), false), true, None),
             now + secs(4),
@@ -7758,6 +7944,217 @@ mod tests {
             tick_in(snap(Some(60_600), true), true, items_scan(&m, &[])),
             now + secs(5),
         );
-        assert_eq!(item_steps(&fx), ["report", "spawn"], "{fx:?}");
+        assert_eq!(
+            item_steps(&fx),
+            ["icon", "report", "icon", "spawn"],
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn a_grant_writes_its_icon_before_the_spawn() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "hammer"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        let at = fx
+            .iter()
+            .position(|e| matches!(e, Effect::SetGoodsIcon { .. }))
+            .expect("icon written");
+        assert_eq!(
+            fx[at..at + 2],
+            [
+                Effect::SetGoodsIcon {
+                    goods_id: RACE_ITEM_GOODS,
+                    icon_id: HAMMER_ICON,
+                },
+                Effect::SpawnRaceItem {
+                    grant_id: 1,
+                    goods_id: RACE_ITEM_GOODS,
+                },
+            ],
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn every_held_item_shows_a_held_row() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "hammer"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(m.item_held(), None, "not before the goods are in");
+        m.grant_spawn_result(1, true, now + ms(120));
+        let held = m.item_held().expect("held row");
+        assert_eq!(
+            (held.key.as_str(), held.icon.as_str(), held.text.as_str()),
+            ("hammer", "hammer", "Hammer")
+        );
+    }
+
+    #[test]
+    fn the_held_row_and_icon_come_back_after_a_restart() {
+        // A fresh process (game restart) connects on the title screen; the
+        // server names the item held.
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(holding(auth_ok_with_items("running", true), "hammer"), now);
+        m.tick(tick_in(snap(Some(60_000), false), true, None), now + ms(10));
+        assert_eq!(m.item_held(), None);
+
+        // The save loads: the goods' icon is written again (the params came
+        // back with the game), before the report.
+        let fx = m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["icon", "report"], "{fx:?}");
+        assert!(fx.contains(&Effect::SetGoodsIcon {
+            goods_id: RACE_ITEM_GOODS,
+            icon_id: HAMMER_ICON,
+        }));
+        // The shell's read finds the goods: the row is the held item's.
+        m.inventory_read(&["race_item".to_string()]);
+        assert_eq!(m.item_held().map(|h| h.key.as_str()), Some("hammer"));
+    }
+
+    #[test]
+    fn using_the_race_item_drops_the_held_row() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "hammer"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, true, now + ms(120));
+        assert!(m.item_held().is_some());
+
+        m.tick(
+            tick_in(snap(Some(61_100), true), true, items_scan(&m, &[USE_FLAG])),
+            now + ms(250),
+        );
+        assert_eq!(m.item_held(), None);
+        // Nothing held any more: the next load writes no icon.
+        m.tick(
+            tick_in(snap(Some(61_200), false), true, None),
+            now + ms(400),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(61_300), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
+    }
+
+    #[test]
+    fn using_the_race_item_keeps_a_shield_row() {
+        // A stray Race Item used while the Shield is held: the Shield's goods
+        // has no use flag, its row stays.
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, true, now + ms(120));
+        m.tick(
+            tick_in(snap(Some(61_100), true), true, items_scan(&m, &[USE_FLAG])),
+            now + ms(250),
+        );
+        assert_eq!(m.item_held().map(|h| h.key.as_str()), Some("shield"));
+    }
+
+    #[test]
+    fn a_self_effect_applies_without_a_banner() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            MachineMessage::ItemEffect {
+                item: "mushroom".to_string(),
+                effect: ItemEffectPayload::Speffect {
+                    speffect_id: 1_450_826,
+                },
+                banner: None,
+                reminder: None,
+            },
+            now + ms(100),
+        );
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(item_steps(&fx), ["apply"], "{fx:?}");
+        assert!(fx.contains(&Effect::ApplySpEffect {
+            speffect_id: 1_450_826,
+        }));
+        assert_eq!(m.item_banner(), None);
+        assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
+    }
+
+    #[test]
+    fn item_remove_raises_the_goods_remove_flag() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "hammer"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, true, now + ms(120));
+
+        // A stray Shield taken back: its flag, the Hammer's row stays.
+        let fx = m.handle_message(
+            MachineMessage::ItemRemove {
+                goods: "shield".to_string(),
+                banner: None,
+            },
+            now + ms(200),
+        );
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: SHIELD_REMOVE_FLAG,
+            value: true,
+        }));
+        assert_eq!(m.item_held().map(|h| h.key.as_str()), Some("hammer"));
+
+        // The Race Item taken back: the Hammer held on it goes.
+        let fx = m.handle_message(
+            MachineMessage::ItemRemove {
+                goods: "race_item".to_string(),
+                banner: None,
+            },
+            now + ms(300),
+        );
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: REMOVE_FLAG,
+            value: true,
+        }));
+        assert_eq!(m.item_held(), None);
+        // Nor its icon at the next load.
+        m.tick(
+            tick_in(snap(Some(61_200), false), true, None),
+            now + ms(400),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(61_300), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
+    }
+
+    #[test]
+    fn the_inventory_report_lists_the_goods() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.tick(
+            tick_in(snap(Some(61_000), false), true, None),
+            now + ms(100),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(61_100), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        let reports: Vec<_> = fx
+            .iter()
+            .filter(|e| matches!(e, Effect::ReportItemInventory { .. }))
+            .collect();
+        assert_eq!(
+            reports,
+            [&Effect::ReportItemInventory {
+                goods: vec![
+                    ("race_item".to_string(), RACE_ITEM_GOODS),
+                    ("shield".to_string(), SHIELD_GOODS),
+                ],
+            }]
+        );
     }
 }

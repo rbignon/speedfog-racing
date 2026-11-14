@@ -624,11 +624,11 @@ impl RaceTracker {
             });
     }
 
-    /// Race item rows of the panel: the item held without a use (the
-    /// Shield: icon and gold name, no countdown), then the timed rows: icon,
-    /// text (danger for an effect received, gold for the sender's own) and
-    /// the seconds left, right aligned. Texts were built on receipt; only the
-    /// seconds are written here, into a reused buffer.
+    /// Race item rows of the panel: the item held (icon and gold name, no
+    /// countdown), then the timed rows: icon, text (danger for an effect
+    /// received, gold for the sender's own) and the seconds left, right
+    /// aligned. Texts were built on receipt; only the seconds are written
+    /// here, into a reused buffer.
     fn render_item_reminders(
         &self,
         ui: &hudhook::imgui::Ui,

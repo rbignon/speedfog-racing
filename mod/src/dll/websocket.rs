@@ -53,7 +53,7 @@ pub enum OutgoingMessage {
         grant_id: u64,
     },
     ItemInventory {
-        items: Vec<String>,
+        goods: Vec<String>,
     },
     Shutdown,
 }
@@ -194,9 +194,9 @@ impl RaceWebSocketClient {
         }
     }
 
-    pub fn send_item_inventory(&self, items: Vec<String>) {
+    pub fn send_item_inventory(&self, goods: Vec<String>) {
         if let Some(tx) = &self.tx {
-            if let Err(e) = tx.try_send(OutgoingMessage::ItemInventory { items }) {
+            if let Err(e) = tx.try_send(OutgoingMessage::ItemInventory { goods }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -463,6 +463,7 @@ fn connect_and_auth(
                     participants,
                     phantom_skin,
                     latest_mod_version,
+                    held_item,
                 } => {
                     let _ = incoming_tx.send(MachineMessage::AuthOk {
                         participant_id,
@@ -471,6 +472,7 @@ fn connect_and_auth(
                         participants,
                         phantom_skin,
                         latest_mod_version,
+                        held_item,
                     });
                     Ok(socket)
                 }
@@ -612,9 +614,9 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
-            Ok(OutgoingMessage::ItemInventory { items }) => {
-                info!(?items, "[WS] Sending: item_inventory");
-                let msg = ClientMessage::ItemInventory { items };
+            Ok(OutgoingMessage::ItemInventory { goods }) => {
+                info!(?goods, "[WS] Sending: item_inventory");
+                let msg = ClientMessage::ItemInventory { goods };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))
@@ -778,9 +780,9 @@ fn message_loop(
                                 warn!("[WS] Incoming channel full/closed: item_result dropped");
                             }
                         }
-                        ServerMessage::ItemRemove { item, banner } => {
+                        ServerMessage::ItemRemove { goods, banner } => {
                             if incoming_tx
-                                .send(MachineMessage::ItemRemove { item, banner })
+                                .send(MachineMessage::ItemRemove { goods, banner })
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: item_remove dropped");

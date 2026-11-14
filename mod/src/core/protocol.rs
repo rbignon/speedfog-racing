@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.12";
+pub const PROTOCOL_VERSION: &str = "1.13";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -73,8 +73,8 @@ pub enum ClientMessage {
     /// A race item grant was received (spawn handled); lets the server stop
     /// replaying it.
     ItemReceived { grant_id: u64 },
-    /// Catalog keys of the race items currently held (quantity above 0).
-    ItemInventory { items: Vec<String> },
+    /// Catalog goods keys of the race goods currently held (quantity above 0).
+    ItemInventory { goods: Vec<String> },
     /// Heartbeat response
     Pong,
 }
@@ -398,25 +398,43 @@ pub struct SeedInfo {
     /// cleared in game memory. Empty from an old server.
     #[serde(default)]
     pub boss_flags: Vec<u32>,
-    /// Race item catalog keyed by item name. Empty from an old server or a
-    /// race without items.
+    /// Race item catalog: the race goods and the items they hold. Empty
+    /// from an old server or a race without items.
     #[serde(default)]
-    pub race_item_catalog: HashMap<String, RaceItemEntry>,
+    pub race_item_catalog: RaceItemCatalog,
 }
 
-/// One race item of the catalog: its goods id, the flag the game raises when
-/// the player uses it (None for an item without a use action), the flag the
-/// mod raises to make the game remove it, and its display name and icon.
+/// A seed's race item catalog: goods and items, each by key. Every usable
+/// item is held as one shared goods; an item without a use has its own.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RaceItemCatalog {
+    #[serde(default)]
+    pub goods: HashMap<String, RaceItemGoods>,
+    #[serde(default)]
+    pub items: HashMap<String, RaceItemEntry>,
+}
+
+/// One race goods: its goods id, the flag the game raises when the player
+/// uses it (None for a goods without a use action), the flag the mod raises
+/// to make the game remove it, and the icon id its param row starts with.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RaceItemEntry {
+pub struct RaceItemGoods {
     pub goods_id: u32,
     #[serde(default)]
     pub use_flag: Option<u32>,
     pub remove_flag: u32,
-    #[serde(default)]
+    pub icon_id: u16,
+}
+
+/// One race item: its display name and overlay icon (the held row), the
+/// in-game icon id written into its goods' param row while it is held, and
+/// the key of the goods it is held as.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RaceItemEntry {
     pub name: String,
-    #[serde(default)]
     pub icon: String,
+    pub icon_id: u16,
+    pub goods: String,
 }
 
 /// Banner text of a race item event.
@@ -483,6 +501,10 @@ pub enum ServerMessage {
         /// build exists (protocol minor ahead). Absent from old servers.
         #[serde(default)]
         latest_mod_version: Option<String>,
+        /// Race item key the runner holds, confirmed or not (None when
+        /// nothing is held, without items, or from an old server).
+        #[serde(default)]
+        held_item: Option<String>,
     },
     /// Authentication failed
     AuthError { message: String },
@@ -549,11 +571,13 @@ pub enum ServerMessage {
         item: String,
         banner: ItemBanner,
     },
-    /// A race item effect hits the local player.
+    /// A race item effect hits the local player. Without a banner for the
+    /// player's own self item, whose `item_result` carries it.
     ItemEffect {
         item: String,
         effect: ItemEffectPayload,
-        banner: ItemBanner,
+        #[serde(default)]
+        banner: Option<ItemBanner>,
         #[serde(default)]
         reminder: Option<ItemReminder>,
     },
@@ -564,9 +588,10 @@ pub enum ServerMessage {
         #[serde(default)]
         reminder: Option<ItemReminder>,
     },
-    /// Remove a held race item (after a block or a use), with an optional banner.
+    /// Remove a held race goods (a spent Shield, a take-back), with an
+    /// optional banner.
     ItemRemove {
-        item: String,
+        goods: String,
         #[serde(default)]
         banner: Option<ItemBanner>,
     },
@@ -1823,6 +1848,7 @@ mod tests {
                         tail_pct: 5
                     }
                 );
+                let banner = banner.expect("a hit carries its banner");
                 assert_eq!(banner.title, "Red Shell");
                 assert_eq!(banner.detail, "from Gideohana");
                 assert_eq!(reminder, None);
@@ -1876,7 +1902,7 @@ mod tests {
     }
 
     #[test]
-    fn item_grant_result_remove_deserialize() {
+    fn item_grant_and_result_deserialize() {
         let banner = r#""banner":{"icon":"i","title":"t","line":"l","detail":"d"}"#;
         let grant: ServerMessage = serde_json::from_str(&format!(
             r#"{{"type":"item_grant","grant_id":7,"item":"hammer",{banner}}}"#
@@ -1894,51 +1920,135 @@ mod tests {
             result,
             ServerMessage::ItemResult { reminder: None, .. }
         ));
-        let bannerless: ServerMessage =
-            serde_json::from_str(r#"{"type":"item_remove","item":"shield","banner":null}"#)
-                .unwrap();
-        assert!(matches!(
-            bannerless,
-            ServerMessage::ItemRemove { banner: None, .. }
-        ));
-        let absent: ServerMessage =
-            serde_json::from_str(r#"{"type":"item_remove","item":"shield"}"#).unwrap();
-        assert!(matches!(
-            absent,
-            ServerMessage::ItemRemove { banner: None, .. }
-        ));
-        let with: ServerMessage = serde_json::from_str(&format!(
-            r#"{{"type":"item_remove","item":"shield",{banner}}}"#
-        ))
-        .unwrap();
-        assert!(matches!(
-            with,
-            ServerMessage::ItemRemove {
-                banner: Some(_),
-                ..
-            }
-        ));
     }
 
     #[test]
-    fn seed_catalog_shield_has_no_use_flag() {
+    fn item_effect_without_banner_parses() {
+        // A self item's effect (1.13): its banner rides on the item_result,
+        // sent null or left out.
+        for json in [
+            r#"{"type":"item_effect","item":"mushroom","effect":{"kind":"speffect","speffect_id":1450826},"banner":null}"#,
+            r#"{"type":"item_effect","item":"mushroom","effect":{"kind":"speffect","speffect_id":1450826}}"#,
+        ] {
+            let msg: ServerMessage = serde_json::from_str(json).unwrap();
+            let ServerMessage::ItemEffect {
+                effect,
+                banner,
+                reminder,
+                ..
+            } = msg
+            else {
+                panic!("not an item_effect: {json}");
+            };
+            assert_eq!(
+                effect,
+                ItemEffectPayload::Speffect {
+                    speffect_id: 1450826
+                }
+            );
+            assert_eq!(banner, None, "{json}");
+            assert_eq!(reminder, None, "{json}");
+        }
+    }
+
+    #[test]
+    fn item_remove_names_a_goods() {
+        let banner = r#""banner":{"icon":"i","title":"t","line":"l","detail":"d"}"#;
+        for (json, has_banner) in [
+            (
+                r#"{"type":"item_remove","goods":"shield","banner":null}"#.to_string(),
+                false,
+            ),
+            (
+                r#"{"type":"item_remove","goods":"race_item"}"#.to_string(),
+                false,
+            ),
+            (
+                format!(r#"{{"type":"item_remove","goods":"shield",{banner}}}"#),
+                true,
+            ),
+        ] {
+            let msg: ServerMessage = serde_json::from_str(&json).unwrap();
+            let ServerMessage::ItemRemove { goods, banner } = msg else {
+                panic!("not an item_remove: {json}");
+            };
+            assert!(goods == "shield" || goods == "race_item", "{json}");
+            assert_eq!(banner.is_some(), has_banner, "{json}");
+        }
+    }
+
+    #[test]
+    fn auth_ok_held_item_defaults_to_none() {
+        let auth = |extra: &str| {
+            format!(
+                r#"{{"type":"auth_ok","participant_id":"p",
+                "race":{{"id":"r","name":"R","status":"running","race_items":true}},
+                "seed":{{"total_layers":3}},"participants":[]{extra}}}"#
+            )
+        };
+        let held = |json: &str| match serde_json::from_str::<ServerMessage>(json).unwrap() {
+            ServerMessage::AuthOk { held_item, .. } => held_item,
+            other => panic!("unexpected {other:?}"),
+        };
+        // A pre-1.13 server, and a runner holding nothing.
+        assert_eq!(held(&auth("")), None);
+        assert_eq!(held(&auth(r#","held_item":null"#)), None);
+        assert_eq!(
+            held(&auth(r#","held_item":"hammer""#)).as_deref(),
+            Some("hammer")
+        );
+    }
+
+    #[test]
+    fn seed_catalog_v2_parses_goods_and_items() {
+        // The 1.13 wire shape, graph.json's extra keys (goods icon, item
+        // effect) included: unknown fields are ignored.
         let seed: SeedInfo = serde_json::from_str(
             r#"{"total_layers":3,"race_item_catalog":{
-            "shield":{"goods_id":1450800,"use_flag":null,"remove_flag":1050290200,
-                      "name":"Shield","icon":"shield"},
-            "hammer":{"goods_id":1450801,"use_flag":1050290001,"remove_flag":1050290201}}}"#,
+            "goods":{
+              "race_item":{"goods_id":1450801,"use_flag":1050290101,"remove_flag":1050290201,
+                           "icon":"item_box","icon_id":60396},
+              "shield":{"goods_id":1450800,"use_flag":null,"remove_flag":1050290200,
+                        "icon_id":60385}},
+            "items":{
+              "hammer":{"name":"Hammer","icon":"hammer","icon_id":60390,"goods":"race_item",
+                        "effect_speffect":1450827,"duration_ms":15000},
+              "shield":{"name":"Shield","icon":"shield","icon_id":60385,"goods":"shield"}}}}"#,
         )
         .unwrap();
-        let shield = &seed.race_item_catalog["shield"];
-        assert_eq!(shield.use_flag, None);
-        assert_eq!(shield.remove_flag, 1050290200);
+        let catalog = &seed.race_item_catalog;
         assert_eq!(
-            (shield.name.as_str(), shield.icon.as_str()),
-            ("Shield", "shield")
+            catalog.goods["race_item"],
+            RaceItemGoods {
+                goods_id: 1450801,
+                use_flag: Some(1050290101),
+                remove_flag: 1050290201,
+                icon_id: 60396,
+            }
         );
-        assert_eq!(seed.race_item_catalog["hammer"].use_flag, Some(1050290001));
+        assert_eq!(catalog.goods["shield"].use_flag, None);
+        assert_eq!(
+            catalog.items["hammer"],
+            RaceItemEntry {
+                name: "Hammer".into(),
+                icon: "hammer".into(),
+                icon_id: 60390,
+                goods: "race_item".into(),
+            }
+        );
+        assert_eq!(catalog.items["shield"].goods, "shield");
+
+        // An old server: no catalog, or the 1.12 per-item shape, whose keys
+        // are no catalog field: no race item at all, the auth still parses.
         let old: SeedInfo = serde_json::from_str(r#"{"total_layers":3}"#).unwrap();
-        assert!(old.race_item_catalog.is_empty());
+        assert!(old.race_item_catalog.goods.is_empty() && old.race_item_catalog.items.is_empty());
+        let v1: SeedInfo = serde_json::from_str(
+            r#"{"total_layers":3,"race_item_catalog":{
+            "shield":{"goods_id":1450800,"use_flag":null,"remove_flag":1050290200,
+                      "name":"Shield","icon":"shield"}}}"#,
+        )
+        .unwrap();
+        assert!(v1.race_item_catalog.goods.is_empty() && v1.race_item_catalog.items.is_empty());
     }
 
     #[test]
@@ -1954,14 +2064,18 @@ mod tests {
     }
 
     #[test]
-    fn item_client_messages_serialize() {
+    fn item_inventory_serializes_goods() {
         assert_eq!(
             serde_json::to_string(&ClientMessage::ItemInventory {
-                items: vec!["hammer".into()]
+                goods: vec!["race_item".into(), "shield".into()]
             })
             .unwrap(),
-            r#"{"type":"item_inventory","items":["hammer"]}"#
+            r#"{"type":"item_inventory","goods":["race_item","shield"]}"#
         );
+    }
+
+    #[test]
+    fn item_client_messages_serialize() {
         assert_eq!(
             serde_json::to_string(&ClientMessage::ItemReceived { grant_id: 7 }).unwrap(),
             r#"{"type":"item_received","grant_id":7}"#
