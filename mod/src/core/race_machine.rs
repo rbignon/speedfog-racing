@@ -452,9 +452,9 @@ pub struct RaceMachine {
     item_inventory_goods: Vec<(String, u32)>,
     /// Race item key the runner holds as far as this process knows: named by
     /// auth_ok (a restarted process learns it there) and by each grant,
-    /// forgotten when its goods is used or removed and at a new start. Its
-    /// goods' icon is written again before each inventory report, and the
-    /// held row follows it (`inventory_read`).
+    /// forgotten when its goods is used or removed, at an item result and at
+    /// a new start. Its goods' icon is written again before each inventory
+    /// report, and the held row follows it (`inventory_read`).
     held_item: Option<String>,
     /// Grants whose goods this process gave (or found already held): one
     /// the server sends again is only acknowledged.
@@ -1765,6 +1765,10 @@ impl RaceMachine {
             } => {
                 self.last_received_debug = Some(format!("item_result({item})"));
                 info!(item = %item, "[ITEMS] Result received");
+                // The server resolves a use only after spending the item
+                // held: a value left by an auth_ok or a resent grant that
+                // raced the use capture goes too. A later grant sets it again.
+                self.held_item = None;
                 // The sender's own outcome: shown at once, no game access.
                 let banner = FeedBanner::from_wire(&banner, FeedTone::Gain);
                 if let Some(reminder) = reminder {
@@ -8156,5 +8160,56 @@ mod tests {
                 ],
             }]
         );
+    }
+
+    #[test]
+    fn an_item_result_clears_the_held_item() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "hammer"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, true, now + ms(120));
+
+        // The server spent the Hammer (its use capture missed here, as when
+        // a resent grant raced it): the result forgets it, so the next load
+        // writes no icon for it.
+        m.handle_message(
+            MachineMessage::ItemResult {
+                item: "hammer".to_string(),
+                banner: wire_banner("hammer", "Hammer"),
+                reminder: None,
+            },
+            now + ms(200),
+        );
+        m.tick(
+            tick_in(snap(Some(61_100), false), true, None),
+            now + ms(300),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(61_200), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        );
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
+
+        // A grant after the result names the new item held.
+        m.handle_message(grant(2, "red_shell"), now + secs(2));
+        m.tick(
+            tick_in(snap(Some(62_000), true), true, None),
+            now + secs(2) + ms(10),
+        );
+        m.grant_spawn_result(2, true, now + secs(2) + ms(10));
+        m.tick(
+            tick_in(snap(Some(62_100), false), true, None),
+            now + secs(3),
+        );
+        let fx = m.tick(
+            tick_in(snap(Some(62_200), true), true, items_scan(&m, &[])),
+            now + secs(4),
+        );
+        assert_eq!(item_steps(&fx), ["icon", "report"], "{fx:?}");
+        assert!(fx.contains(&Effect::SetGoodsIcon {
+            goods_id: RACE_ITEM_GOODS,
+            icon_id: 60_388,
+        }));
     }
 }

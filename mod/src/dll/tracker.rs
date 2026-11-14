@@ -841,7 +841,7 @@ impl RaceTracker {
                         warn!(
                             goods_id,
                             icon_id,
-                            "[ITEMS] Goods icon not set (params not indexed yet or row missing), the next loading exit writes it again"
+                            "[ITEMS] Goods icon not set (params not indexed yet or row missing), the next loading exit or reconnection writes it again"
                         );
                     }
                 }
