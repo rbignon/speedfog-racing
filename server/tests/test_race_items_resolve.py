@@ -160,11 +160,12 @@ async def _use(
     sender: uuid.UUID,
     goods: str = "race_item",
     *,
+    igt_ms: int = 50_000,
     online: Callable[[uuid.UUID], bool] = lambda _: True,
 ) -> ItemResolution:
     """The sender's mod reports the use flag of ``goods`` (the Race Item by default)."""
     return await resolve_item_use(
-        session_maker, race_id, sender, goods, 50_000, GRAPH, is_connected=online
+        session_maker, race_id, sender, goods, igt_ms, GRAPH, is_connected=online
     )
 
 
@@ -294,6 +295,23 @@ async def test_a_replayed_use_after_resolution_is_ignored(items_db):
     replay = await _use(items_db, race_id, ids["Alice"])
     assert (replay.result, replay.effects, replay.removals) == (None, [], [])
     assert len(await _use_events(items_db, race_id)) == 1
+
+
+async def test_a_use_older_than_the_grant_is_ignored(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, None), ("Bob", PLAYING, 3, None))
+    held = {"grant_id": 2, "item": "hammer", "confirmed": True, "igt_ms": 60_000}
+    await _set_held(items_db, ids["Alice"], held)
+    # Made before the kill that granted the hammer: the replay of an earlier
+    # use (its ACK lost), which must not spend the new item.
+    replay = await _use(items_db, race_id, ids["Alice"], igt_ms=50_000)
+    assert (replay.result, replay.effects, replay.removals) == (None, [], [])
+    assert await _held(items_db, ids["Alice"]) == held
+    assert await _use_events(items_db, race_id) == []
+
+    use = await _use(items_db, race_id, ids["Alice"], igt_ms=70_000)
+    assert use.result is not None
+    assert [(pid, e.item) for pid, e in use.effects] == [(ids["Bob"], "hammer")]
+    assert await _held(items_db, ids["Alice"]) is None
 
 
 async def test_a_goods_without_a_use_flag_is_never_used(items_db):

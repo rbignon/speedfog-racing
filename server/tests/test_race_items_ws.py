@@ -418,10 +418,12 @@ def test_new_boss_kill_grants_an_item(
         "line": "Everyone else fat-rolls for 20 s",
         "detail": "",
     }
+    # The grant keeps the kill's IGT: a use older than it is a replay.
     assert _held_item(integration_db, race_with_participants) == {
         "grant_id": 1,
         "item": "hammer",
         "confirmed": False,
+        "igt_ms": 55_000,
     }
 
 
@@ -444,6 +446,7 @@ def test_item_received_confirms_the_grant(
         "grant_id": 1,
         "item": "hammer",
         "confirmed": True,
+        "igt_ms": 55_000,
     }
 
 
@@ -528,6 +531,7 @@ def test_unconfirmed_grant_is_resent_after_an_inventory_without_it(
         "grant_id": 1,
         "item": "hammer",
         "confirmed": True,
+        "igt_ms": 55_000,
     }
 
 
@@ -799,7 +803,7 @@ def test_the_draw_tier_follows_the_item_order(race_with_participants, integratio
             graph = result.scalar_one().seed.graph_json
         participant_id = uuid.UUID(race_with_participants["players"][index]["participant_id"])
         return await items_module.grant_item(
-            integration_db, uuid.UUID(race_id), participant_id, graph
+            integration_db, uuid.UUID(race_id), participant_id, graph, igt_ms=60_000
         )
 
     # Two runners: the first in item order draws front items, the other back
@@ -828,7 +832,7 @@ def test_an_empty_tier_grants_nothing(race_with_participants, integration_db, mo
             graph = result.scalar_one().seed.graph_json
         with caplog.at_level("INFO"):
             granted = await items_module.grant_item(
-                integration_db, uuid.UUID(race_id), participant_id, graph
+                integration_db, uuid.UUID(race_id), participant_id, graph, igt_ms=60_000
             )
         async with integration_db() as db:
             participant = await db.get(Participant, participant_id)

@@ -74,13 +74,15 @@ async def grant_item(
     participant_id: uuid.UUID,
     graph_json: Mapping[str, Any],
     *,
+    igt_ms: int,
     rng: random.Random | None = None,
 ) -> ItemGrantMessage | None:
     """Draw an item for a runner who just killed a boss and record it as held.
 
-    Returns the message to send, or None when the race has items off, the
-    runner is not playing, already holds an item, or the drawn key is missing
-    from the seed's catalog.
+    ``igt_ms`` is the kill's IGT, kept with the held item: a use older than
+    its grant is a replay (see ``resolve_item_use``). Returns the message to
+    send, or None when the race has items off, the runner is not playing,
+    already holds an item, or the drawn key is missing from the seed's catalog.
     """
     async with session_maker() as db:
         race = await _load_race(db, race_id)
@@ -115,14 +117,14 @@ async def grant_item(
 
         me.item_grant_count += 1
         grant_id = me.item_grant_count
-        me.held_item = {"grant_id": grant_id, "item": key, "confirmed": False}
+        me.held_item = {"grant_id": grant_id, "item": key, "confirmed": False, "igt_ms": igt_ms}
         db.add(
             RaceItemEvent(
                 race_id=race_id,
                 participant_id=participant_id,
                 kind="grant",
                 item=key,
-                igt_ms=me.igt_ms,
+                igt_ms=igt_ms,
             )
         )
         await db.commit()
@@ -187,7 +189,10 @@ async def resolve_item_use(
     ``goods_key`` is the goods whose use flag the mod reported (the Race
     Item, whatever item it holds). Empty unless the runner holds an item of
     that goods, and a goods without a use flag (the Shield) is never used: a
-    replayed or stray use changes nothing. Targets come from the playing
+    replayed or stray use changes nothing. A use older in IGT than the held
+    item's grant (``held_item["igt_ms"]``, 0 when absent) was made before the
+    kill that granted it: the replay of an earlier use, ignored too, so it
+    never spends an item granted since. Targets come from the playing
     runners in item order. A held shield blocks the item and is spent,
     connected or not; a target without a connected mod is a miss. A self item
     sends its effect, without a banner, to the sender's own mod. Logs one
@@ -219,6 +224,18 @@ async def resolve_item_use(
                 participant_id,
                 goods_key,
                 item_key,
+            )
+            return ItemResolution()
+        granted_at = int(held.get("igt_ms") or 0) if held else 0
+        if igt_ms < granted_at:
+            logger.info(
+                "Race item use ignored (older than its grant, a replay): race=%s "
+                "participant=%s item=%s igt_ms=%d grant_igt_ms=%d",
+                race_id,
+                participant_id,
+                item_key,
+                igt_ms,
+                granted_at,
             )
             return ItemResolution()
         rule = ITEM_RULES.get(base_key(item_key))

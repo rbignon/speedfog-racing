@@ -555,10 +555,13 @@ class Console:
                 log(f"no runner {who!r} in this race")
                 return
             p.item_grant_count += 1
+            # The runner's IGT stands for the kill's: a use older than it
+            # reads as a replay and is ignored.
             p.held_item = {
                 "grant_id": p.item_grant_count,
                 "item": item,
                 "confirmed": False,
+                "igt_ms": p.igt_ms,
             }
             await db.commit()
         bot = self.bots.get(who)

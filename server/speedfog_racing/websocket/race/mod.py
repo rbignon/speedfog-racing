@@ -326,18 +326,21 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             self._cached_graph_json = _get_graph_json(participant)
             self._reveal_exits = race.mode == RunMode.SET_SEED
 
-            # Send auth_ok
-            await self._send_auth_ok(db, participant)
-
-            # An unconfirmed grant is re-sent until the mod answers item_received
-            # (here and after an inventory report that lacks it).
+            # auth_ok's held_item and the pending grant come from one read
+            # of the held item, under the items lock. An unconfirmed grant is
+            # re-sent right after auth_ok at every (re)auth, and after every
+            # inventory report until it is confirmed, the report that
+            # confirms it included (reconcile_inventory).
+            pending = None
             if race.race_items:
                 room = manager.get_or_create_room(self._race_id)
                 async with room.items_lock:
                     await db.refresh(participant, ["held_item"])
                     pending = pending_grant_message(participant, self._cached_graph_json)
-                if pending:
-                    await self.websocket.send_text(pending.model_dump_json())
+
+            await self._send_auth_ok(db, participant)
+            if pending:
+                await self.websocket.send_text(pending.model_dump_json())
 
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
@@ -494,7 +497,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         try:
             room = manager.get_or_create_room(self._race_id)
             async with room.items_lock:
-                message = await grant_item(self.session_maker, self._race_id, entity.id, graph)
+                message = await grant_item(
+                    self.session_maker, self._race_id, entity.id, graph, igt_ms=igt_ms
+                )
                 if message is not None:
                     await room.send_to_mod(entity.id, message.model_dump_json())
         except Exception:
