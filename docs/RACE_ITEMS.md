@@ -147,7 +147,7 @@ All sizes derive from the display size each frame (`core/item_banner.rs`); text 
 
 ### Icons
 
-`mod/assets/race_items/<icon>.png` (160x160 PNG) are embedded in the DLL and uploaded once at init; an icon name the mod does not know draws `unknown.png`. The art comes from the generator repo: drop the final `race_items_icon_<icon>.png` files (1024x1024, the generator derives the in-game textures from them) in `speedfog/data/plugins/`, run `uv run tools/sync_race_item_icons.py` (it reads the names from the catalog's `[icons]`, checks every file is a square PNG of at least 160x160, copies nothing when any is bad, and writes each icon downscaled to 160x160: the banner draws it at 7.5% of the screen width, 144 px at 1080p, and the full-size art would weigh megabytes in the DLL), then release the mod. `unknown.png` is outside the catalog and edited by hand.
+`mod/assets/race_items/<icon>.png` (160x160 PNG) are embedded in the DLL and uploaded once at init; an icon name the mod does not know draws `unknown.png`. The art is not in the repository: `uv run tools/fetch_race_item_icons.py` downloads each icon from its URL in `ICON_SOURCES`, checks the file against its pinned SHA-256, centers it on a transparent square and writes it at 160x160 (the banner draws it at 7.5% of the screen width, 144 px at 1080p, and the source art would weigh megabytes in the DLL). The written files are gitignored and carry their source's hash in a PNG text chunk, so a rerun only downloads what is missing or comes from another source; a failed download or an unexpected hash (the source changed) fails the run and leaves that icon's file as it was. The sources are the wiki's original files, never its thumbnails, which the wiki regenerates with new bytes. Both CI mod builds run it before `cargo test`, and a local Windows build needs it once: without the files, `include_bytes!` fails the build. Changing an icon means a new URL and hash in `ICON_SOURCES`, here and in the generator repo's own `tools/fetch_race_item_icons.py` (the inventory icons), then a mod release and a bootstrap on the generation host. `unknown.png` is tracked and edited by hand.
 
 ## In-game test protocol
 
@@ -155,7 +155,7 @@ With the compiled mod and one game, on the local server. `tools/race_items_bot.p
 
 ### Setup
 
-1. **Mod.** On Windows, `cd mod && cargo build --lib --release`, then copy `target/release/speedfog_racing.dll` over `tools/assets/speedfog_racing.dll` on the server machine: every seed zip the local server hands out carries that DLL (`MOD_DLL_PATH`).
+1. **Mod.** On Windows, `uv run tools/fetch_race_item_icons.py` (once: the icons, see above), `cd mod && cargo build --lib --release`, then copy `target/release/speedfog_racing.dll` over `tools/assets/speedfog_racing.dll` on the server machine: every seed zip the local server hands out carries that DLL (`MOD_DLL_PATH`).
 2. **Server and web.** The dev server (`:8000`) and web (`:5173`) run; `WEBSOCKET_URL` in `server/.env` is the address the game PC reaches (the LAN address, not localhost).
 3. **Seeds.** A pool folder `$SEEDS_POOL_DIR/race_items_test/` with a pool `config.toml` and race items seeds named `seed_<anything>.zip` (generated with `[plugin.race_items] enabled = true`), scanned with `cd server && uv run speedfog-scan-seeds --pool race_items_test`. Every race consumes a seed: add one copy per race under a new name and scan again.
 4. **Race.** On the web, create a community race in that pool with Race items on, and join it.

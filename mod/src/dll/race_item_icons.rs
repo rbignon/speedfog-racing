@@ -7,7 +7,8 @@ use hudhook::RenderContext;
 use tracing::{debug, info, warn};
 
 /// Icon name (the key of the server catalog's `icon`) and its embedded PNG.
-/// The art is synced from the generator repo with `tools/sync_race_item_icons.py`.
+/// The art is not in the repository: `uv run tools/fetch_race_item_icons.py`
+/// downloads it (gitignored files) and must run before any build of the DLL.
 const ICON_PNGS: &[(&str, &[u8])] = &[
     (
         "shield",

@@ -37,6 +37,7 @@ UI over TCP port `8086`. You can see:
 From the repository root, on Windows:
 
 ```bat
+uv run tools/fetch_race_item_icons.py
 cd mod
 cargo build --lib --release --features profile-tracy
 ```

@@ -94,6 +94,9 @@ The frontend will be available at `http://localhost:5173`.
 The mod requires Windows with MSVC toolchain to build the DLL:
 
 ```bash
+# Download the race item icons the DLL embeds (not in the repository)
+uv run tools/fetch_race_item_icons.py
+
 cd mod
 
 # Build release DLL

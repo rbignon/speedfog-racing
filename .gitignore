@@ -23,6 +23,11 @@ target/
 *.so
 *.dylib
 
+# Race item icons, downloaded by tools/fetch_race_item_icons.py
+mod/assets/race_items/*.png
+mod/assets/race_items/*.png.part
+!mod/assets/race_items/unknown.png
+
 # IDE
 .idea/
 .vscode/

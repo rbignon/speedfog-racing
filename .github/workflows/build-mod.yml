@@ -5,11 +5,13 @@ on:
     branches: [master]
     paths:
       - "mod/**"
+      - "tools/fetch_race_item_icons.py"
       - ".github/workflows/build-mod.yml"
   pull_request:
     branches: [master]
     paths:
       - "mod/**"
+      - "tools/fetch_race_item_icons.py"
       - ".github/workflows/build-mod.yml"
   workflow_dispatch:
 
@@ -41,6 +43,14 @@ jobs:
           key: ${{ runner.os }}-cargo-mod-${{ steps.toolchain.outputs.cachekey }}-${{ hashFiles('mod/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-mod-${{ steps.toolchain.outputs.cachekey }}-
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      # The art is not in the repository; the DLL embeds it (include_bytes!).
+      - name: Download the race item icons
+        working-directory: .
+        run: uv run tools/fetch_race_item_icons.py
 
       - name: Run tests
         run: cargo test --lib

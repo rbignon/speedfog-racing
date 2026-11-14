@@ -47,7 +47,7 @@ npm run build                     # Production build (static adapter)
 cd mod
 cargo check --lib                 # Syntax check (works on Linux)
 cargo test                        # Run tests
-cargo build --lib --release       # Build DLL (Windows MSVC only)
+cargo build --lib --release       # Build DLL (Windows MSVC only; run `uv run tools/fetch_race_item_icons.py` from the root once first, the DLL embeds the downloaded race item icons)
 ```
 
 ### Deploy
