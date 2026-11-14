@@ -234,7 +234,11 @@ class Runner:
 def resolve_targets(
     target: TargetRule, sender_id: uuid.UUID, playing: Sequence[Runner]
 ) -> list[Runner]:
-    """Runners an item hits; ``playing`` is in leaderboard order, leader first."""
+    """Runners an item hits; ``playing`` is in leaderboard order, leader first.
+
+    The leader rule counts the sender too: as in Mario Kart, a Blue Shell
+    drawn at the back and used once leading comes back for its sender.
+    """
     index = next((i for i, r in enumerate(playing) if r.participant_id == sender_id), None)
     others = [r for r in playing if r.participant_id != sender_id]
     if target == "self":
@@ -244,7 +248,7 @@ def resolve_targets(
     if target == "others":
         return others
     if target == "leader":
-        return others[:1]
+        return list(playing[:1])
     if index is None:
         return []
     neighbor = index - 1 if target == "ahead" else index + 1

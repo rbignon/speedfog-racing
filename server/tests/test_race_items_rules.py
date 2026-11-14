@@ -100,11 +100,15 @@ def test_banana_targets_the_runner_just_behind():
     assert resolve_targets("behind", p[3].participant_id, p) == []
 
 
-def test_blue_shell_skips_the_sender_when_leading():
+def test_blue_shell_hits_the_leader_even_its_sender():
     p = _runners(3)
-    assert resolve_targets("leader", p[0].participant_id, p) == [p[1]]
     assert resolve_targets("leader", p[2].participant_id, p) == [p[0]]
-    assert resolve_targets("leader", p[0].participant_id, p[:1]) == []
+    # Drawn at the back, used once leading: it comes back for the sender.
+    assert resolve_targets("leader", p[0].participant_id, p) == [p[0]]
+    assert resolve_targets("leader", p[0].participant_id, p[:1]) == [p[0]]
+    # A sender no longer playing (finished) still hits the leader.
+    assert resolve_targets("leader", p[0].participant_id, p[1:]) == [p[1]]
+    assert resolve_targets("leader", p[0].participant_id, []) == []
 
 
 def test_group_items_hit_everyone_else():

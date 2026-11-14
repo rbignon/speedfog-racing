@@ -613,6 +613,55 @@ def test_red_shell_hits_the_runner_ahead(
     assert event.targets == [{"participant_id": players[0]["participant_id"], "outcome": "hit"}]
 
 
+BLUE_SHELL = {
+    "name": "Blue Shell",
+    "icon": "blue_shell",
+    "goods_id": 1450808,
+    "use_flag": 1050290108,
+    "remove_flag": 1050290208,
+    "effect_speffect": 1450828,
+    "duration_ms": 15000,
+}
+
+
+def test_blue_shell_used_while_leading_hits_its_sender(
+    integration_client, race_with_participants, integration_db
+):
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+    _patch_items_graph(integration_db, race_id, catalog={"blue_shell": BLUE_SHELL})
+    _start_items_race(integration_client, race_with_participants)
+    with (
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0,
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
+    ):
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth(protocol_version="1.12")["type"] == "auth_ok"
+        mod1 = ModTestClient(ws1, players[1]["mod_token"])
+        assert mod1.auth(protocol_version="1.12")["type"] == "auth_ok"
+        # Player 0 leads (one layer ahead) and holds the Blue Shell.
+        _put_two_runners_in_play(mod0, mod1)
+        _update_player(integration_db, race_with_participants, 0, held_item=_held("blue_shell"))
+
+        mod0.send_event_flag(BLUE_SHELL["use_flag"], igt_ms=30_000, message_id=300)
+        sender_seen = _receive_until(mod0, "event_flag_ack")
+        other_seen = _barrier(mod1, 301)
+
+    [effect] = _of_type(sender_seen, "item_effect")
+    assert effect["effect"] == {"kind": "speffect", "speffect_id": 1450828}
+    assert effect["banner"] == {
+        "icon": "blue_shell",
+        "title": "Blue Shell",
+        "line": "Max HP halved for 15 s",
+        "detail": "from yourself",
+    }
+    [result] = _of_type(sender_seen, "item_result")
+    assert (result["banner"]["line"], result["banner"]["detail"]) == ("Hit yourself", "15 s")
+    assert _of_type(other_seen, "item_effect") == []
+    [event] = _use_events(integration_db, race_id)
+    assert event.targets == [{"participant_id": players[0]["participant_id"], "outcome": "hit"}]
+
+
 MUSHROOM = {
     "name": "Mushroom",
     "icon": "mushroom",

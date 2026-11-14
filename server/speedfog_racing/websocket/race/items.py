@@ -210,6 +210,8 @@ async def resolve_item_use(
             payload = effect_payload(item_key, entry)
             for runner in resolve_targets(rule.target, participant_id, playing):
                 target = by_id[runner.participant_id]
+                # A Blue Shell used while leading hits its own sender.
+                own = runner.participant_id == participant_id
                 target_held = target.held_item
                 if target_held and target_held.get("item") == "shield":
                     target.held_item = None
@@ -230,12 +232,14 @@ async def resolve_item_use(
                             ItemEffectMessage(
                                 item=item_key,
                                 effect=payload,
-                                banner=target_banner(item_key, entry, sender_name),
+                                banner=target_banner(
+                                    item_key, entry, "yourself" if own else sender_name
+                                ),
                                 reminder=reminder_for(item_key, entry),
                             ),
                         )
                     )
-                    hits.append(runner.name)
+                    hits.append("yourself" if own else runner.name)
                     outcome = "hit"
                 else:
                     offline += 1

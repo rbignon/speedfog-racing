@@ -32,19 +32,19 @@ Among the playing runners, in `sort_leaderboard` order (index `i` of `n`):
 
 Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (tier, target, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`.
 
-| Item                            | Tier   | Target                               | Effect                                   |
-| ------------------------------- | ------ | ------------------------------------ | ---------------------------------------- |
-| `shield`                        | front  | passive                              | blocks the next item aimed at the holder |
-| `rune_pouch` (`_1`, `_2`, `_3`) | front  | self                                 | grants runes                             |
-| `banana`                        | front  | the playing runner just behind       | damage, base `race_items_banana_pct`     |
-| `red_shell`                     | middle | the playing runner just ahead        | damage, base `race_items_red_shell_pct`  |
-| `mushroom`                      | middle | self                                 | infinite stamina                         |
-| `hammer`                        | middle | every other playing runner           | fat roll (load at 97% of max)            |
-| `ink`                           | middle | every other playing runner           | exits hidden (overlay only)              |
-| `blue_shell`                    | back   | the best-ranked other playing runner | max HP halved                            |
-| `lightning`                     | back   | every other playing runner           | slowed                                   |
-| `flask_stopper`                 | back   | every other playing runner           | flasks blocked                           |
-| `toxic_blossom`                 | back   | every other playing runner           | poisoned                                 |
+| Item                            | Tier   | Target                         | Effect                                   |
+| ------------------------------- | ------ | ------------------------------ | ---------------------------------------- |
+| `shield`                        | front  | passive                        | blocks the next item aimed at the holder |
+| `rune_pouch` (`_1`, `_2`, `_3`) | front  | self                           | grants runes                             |
+| `banana`                        | front  | the playing runner just behind | damage, base `race_items_banana_pct`     |
+| `red_shell`                     | middle | the playing runner just ahead  | damage, base `race_items_red_shell_pct`  |
+| `mushroom`                      | middle | self                           | infinite stamina                         |
+| `hammer`                        | middle | every other playing runner     | fat roll (load at 97% of max)            |
+| `ink`                           | middle | every other playing runner     | exits hidden (overlay only)              |
+| `blue_shell`                    | back   | the best-ranked playing runner | max HP halved                            |
+| `lightning`                     | back   | every other playing runner     | slowed                                   |
+| `flask_stopper`                 | back   | every other playing runner     | flasks blocked                           |
+| `toxic_blossom`                 | back   | every other playing runner     | poisoned                                 |
 
 The draw is weighted inside the tier's pool (`race_items_weights`, base key to weight, missing is 1, 0 excludes the item; a tier whose weights are all 0 draws uniformly). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
 
@@ -66,6 +66,8 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
    - otherwise the target is offline and the effect is dropped, a miss for the sender.
 
    A target counts as hit when its mod is connected at resolution, before the send: if that send then fails (the socket died meanwhile), the effect is lost but the sender's result still reads `Hit {name}` and the log says `hit`.
+
+   The Blue Shell's target is the leader at the time of use, the sender included: drawn at the back and used once leading, it hits its own sender (as in Mario Kart), who then gets both the `item_effect` (banner `from yourself`) and a result reading `Hit yourself`.
 
    A self item (Mushroom, Rune Pouch) applies through the game's own use: no target, no `item_effect`. An item with no valid target is still consumed. One `use` event is logged with every target's outcome (`hit`, `blocked` or `offline`).
 
