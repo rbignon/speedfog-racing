@@ -20,10 +20,7 @@ A console drives the bots while you play:
                           already holds one)
     give WHO ITEM         hand ITEM to a bot or to a runner (by username), as an
                           unconfirmed grant the server sends again; a real
-                          runner gets it at its next load (fog gate, quit-out).
-                          A runner whose game already holds the Race Item keeps
-                          that copy as ITEM: its mod shows ITEM from its next
-                          connection (auth_ok), so use the old item first
+                          runner gets it at its next load (fog gate, quit-out)
     use BOT               BOT uses its item (the Race Item's use flag)
     inventory BOT         BOT reports its inventory (the goods of what it holds)
     quit
@@ -570,10 +567,6 @@ class Console:
                 f"{who} holds {item}: it spawns at their next load (fog gate, quit-out)"
             )
             return
-        # The bot's game is this script: it drops its old item, so its report
-        # lacks the goods and the server sends the new grant (a reported Race
-        # Item would confirm the new item under the old item's name).
-        bot.held = None
         await self.inventory(bot)
 
     def held_goods(self, bot: Bot) -> str | None:

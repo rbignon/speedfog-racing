@@ -398,15 +398,21 @@ async def test_reconcile_keeps_and_resends_an_unconfirmed_grant(items_db):
     assert await _events(items_db, race_id, "lost") == []
 
 
-async def test_reported_goods_confirm_the_held_item(items_db):
-    _, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
+async def test_present_goods_confirm_and_resend_an_unconfirmed_grant(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
     await _set_held(items_db, ids["Alice"], {"grant_id": 3, "item": "hammer", "confirmed": False})
-    assert await reconcile_inventory(items_db, ids["Alice"], ["race_item"], GRAPH) == []
+    # The Race Item may be another item's copy: the grant tells the mod it now
+    # holds the hammer (the mod skips the spawn, the goods being there).
+    messages = await reconcile_inventory(items_db, ids["Alice"], ["race_item"], GRAPH)
+    assert [(type(m), m.grant_id, m.item) for m in messages] == [(ItemGrantMessage, 3, "hammer")]
     assert await _held(items_db, ids["Alice"]) == {
         "grant_id": 3,
         "item": "hammer",
         "confirmed": True,
     }
+    # Confirmed: the next report holding it sends nothing.
+    assert await reconcile_inventory(items_db, ids["Alice"], ["race_item"], GRAPH) == []
+    assert await _events(items_db, race_id, "take_back") == []
 
 
 async def test_reconcile_takes_back_goods_not_held(items_db):

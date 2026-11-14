@@ -323,11 +323,13 @@ async def reconcile_inventory(
     is reported is confirmed; a confirmed one whose goods is absent was lost
     (save reload, drop) and is cleared, logging ``lost``, so the runner can
     draw again; an unconfirmed one whose goods is absent is kept, its goods
-    may not be spawned yet, and its grant is returned last to be sent again
-    (the mod ignores a grant id it already has). Every other reported goods is
-    not held: it is returned as a removal without banner and logged
-    ``take_back`` (the goods key as the item). Keys outside the catalog's
-    goods are ignored.
+    may not be spawned yet. An unconfirmed item gets its grant returned last
+    to be sent again, present or not: items share a goods, so the copy
+    reported may stand for another item, and the grant tells the mod which
+    one it holds (the mod skips the spawn of a goods it has, and ignores a
+    grant id it already has). Every other reported goods is not held: it is
+    returned as a removal without banner and logged ``take_back`` (the goods
+    key as the item). Keys outside the catalog's goods are ignored.
     """
     catalog = extract_race_item_catalog(graph_json)
     reported = [key for key in dict.fromkeys(goods) if key in catalog.goods]
@@ -339,6 +341,8 @@ async def reconcile_inventory(
         held_key = held.get("item") if held else None
         held_entry = catalog.items.get(held_key) if isinstance(held_key, str) else None
         held_goods = held_entry.goods if held_entry else None
+        # Built before the confirmation below: a confirmed item has no pending grant.
+        pending = pending_grant_message(participant, graph_json)
         if held and held_goods in reported:
             if not held.get("confirmed"):
                 # Reassign: a JSON column does not see in-place changes.
@@ -368,7 +372,6 @@ async def reconcile_inventory(
                     igt_ms=participant.igt_ms,
                 )
             )
-        pending = pending_grant_message(participant, graph_json)
         if pending is not None:
             messages.append(pending)
         await db.commit()

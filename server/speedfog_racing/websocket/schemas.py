@@ -615,8 +615,9 @@ class ItemEffectPayload(BaseModel):
 
 
 class ItemGrantMessage(BaseModel):
-    """Spawn the item's goods; re-sent at every auth, and after an
-    item_inventory that lacks it, until item_received."""
+    """Spawn the item's goods; re-sent at every auth until item_received,
+    and after each item_inventory while unconfirmed (the one that confirms
+    it included: its goods may hold another item's copy)."""
 
     type: Literal["item_grant"] = "item_grant"
     grant_id: int

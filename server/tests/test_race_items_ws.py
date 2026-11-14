@@ -514,11 +514,15 @@ def test_unconfirmed_grant_is_resent_after_an_inventory_without_it(
 
         ws0.send_json({"type": "item_inventory", "goods": []})
         resent = _of_type(_barrier(mod0, 400), "item_grant")
-        # Once the report holds its goods, the grant is confirmed and never sent again.
+        # The report holding its goods confirms it, with the grant once more
+        # (the copy may stand for another item); then it is never sent again.
         ws0.send_json({"type": "item_inventory", "goods": ["race_item"]})
-        after_report = _barrier(mod0, 401)
+        confirming = _of_type(_barrier(mod0, 401), "item_grant")
+        ws0.send_json({"type": "item_inventory", "goods": ["race_item"]})
+        after_report = _barrier(mod0, 402)
 
     assert [(g["grant_id"], g["item"]) for g in resent] == [(1, "hammer")]
+    assert [(g["grant_id"], g["item"]) for g in confirming] == [(1, "hammer")]
     assert not _of_type(after_report, "item_grant")
     assert _held_item(integration_db, race_with_participants) == {
         "grant_id": 1,
