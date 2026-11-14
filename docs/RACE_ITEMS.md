@@ -53,7 +53,7 @@ Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_rac
 | `flask_stopper`                 | back            | every other playing runner     | flasks blocked                           |
 | `toxic_blossom`                 | back            | every other playing runner     | poisoned                                 |
 
-The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. When the pool is empty nothing is granted (logged as `race item draw: nothing to draw`, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
+The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. When the pool is empty nothing is granted (a `race item draw: nothing to draw` warning, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
 
 ### Damage curve
 
@@ -117,7 +117,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 ## Server settings
 
-`race_items_tier_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
+`race_items_tier_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. `RACE_ITEMS_TIER_WEIGHTS` (JSON) is laid over the default table: a partial table only overrides the tiers it names (a tier named replaces that tier's weights whole), the others keep their default. A tier other than `front`, `middle` and `back`, or a negative weight, stops the server from starting with a settings error; an item key no rule knows (`ITEM_RULES`) is never drawn and logged as a warning at startup. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
 
 ## Exclusions
 

@@ -2,7 +2,22 @@
 
 from datetime import UTC, datetime
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Race items: each tier (front, middle, back) maps its base item keys to a draw
+# weight (an item can sit in several tiers; 0 or absent = not drawn).
+DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
+    "front": {"rune_pouch": 1, "banana": 1, "mushroom": 1},
+    "middle": {"shield": 1, "mushroom": 1, "red_shell": 1, "hammer": 1, "ink": 1},
+    "back": {
+        "red_shell": 1,
+        "blue_shell": 1,
+        "lightning": 1,
+        "flask_stopper": 1,
+        "toxic_blossom": 1,
+    },
+}
 
 
 class Settings(BaseSettings):
@@ -62,20 +77,10 @@ class Settings(BaseSettings):
     countdown_seconds: int = 10
     # IGT penalty (ms) a connected mod applies per detected quit-out; 0 disables.
     quit_out_penalty_ms: int = 2000
-    # Race items: each tier (front, middle, back) maps its base item keys to a
-    # draw weight (an item can sit in several tiers; 0 or absent = not drawn;
-    # JSON in .env), and the damage curve of the two damage items.
-    race_items_tier_weights: dict[str, dict[str, int]] = {
-        "front": {"rune_pouch": 1, "banana": 1, "mushroom": 1},
-        "middle": {"shield": 1, "mushroom": 1, "red_shell": 1, "hammer": 1, "ink": 1},
-        "back": {
-            "red_shell": 1,
-            "blue_shell": 1,
-            "lightning": 1,
-            "flask_stopper": 1,
-            "toxic_blossom": 1,
-        },
-    }
+    # Race items: the tier weights (JSON in .env; a tier it leaves out keeps its
+    # default, see _merge_tier_weights), and the damage curve of the two damage
+    # items.
+    race_items_tier_weights: dict[str, dict[str, int]] = DEFAULT_RACE_ITEMS_TIER_WEIGHTS
     race_items_banana_pct: int = 15
     race_items_red_shell_pct: int = 40
     # Shared by the damage items: the HP percent a hit lands at when the base
@@ -144,6 +149,33 @@ class Settings(BaseSettings):
     # Sentry
     sentry_dsn: str = ""
     sentry_environment: str = "production"
+
+    @field_validator("race_items_tier_weights")
+    @classmethod
+    def _merge_tier_weights(cls, value: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
+        """Lay the configured tiers over the default table, so a tier the
+        table leaves out keeps its default weights. An unknown tier or a
+        negative weight refuses the settings (the server does not start):
+        either would leave a tier granting less than meant without a word.
+        Unknown item keys are only warned about, at startup (``main.py``):
+        the item rules import these settings."""
+        unknown = sorted(set(value) - set(DEFAULT_RACE_ITEMS_TIER_WEIGHTS))
+        if unknown:
+            raise ValueError(
+                f"unknown tier(s) {', '.join(unknown)}: the tiers are "
+                f"{', '.join(DEFAULT_RACE_ITEMS_TIER_WEIGHTS)}"
+            )
+        negative = sorted(
+            f"{tier}.{key}"
+            for tier, weights in value.items()
+            for key, weight in weights.items()
+            if weight < 0
+        )
+        if negative:
+            raise ValueError(f"negative weight(s) for {', '.join(negative)}: use 0 to never draw")
+        merged = {tier: dict(weights) for tier, weights in DEFAULT_RACE_ITEMS_TIER_WEIGHTS.items()}
+        merged.update(value)
+        return merged
 
 
 settings = Settings()  # type: ignore[call-arg]  # populated from env vars / .env file

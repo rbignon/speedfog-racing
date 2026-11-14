@@ -106,7 +106,7 @@ async def grant_item(
             rng if rng is not None else random.Random(),
         )
         if key is None:
-            logger.info("race item draw: nothing to draw: race=%s tier=%s", race_id, tier)
+            logger.warning("race item draw: nothing to draw: race=%s tier=%s", race_id, tier)
             return None
         if key == "rune_pouch":
             key = rune_pouch_variant(me.current_layer, int(graph_json.get("total_layers") or 0))

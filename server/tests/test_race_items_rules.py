@@ -1,11 +1,14 @@
 """Race items rules: tiers, draw, targets, effect payloads and banner copy."""
 
+import json
+import logging
 import random
 import uuid
 
 import pytest
+from pydantic import ValidationError
 
-from speedfog_racing.config import Settings, settings
+from speedfog_racing.config import DEFAULT_RACE_ITEMS_TIER_WEIGHTS, Settings, settings
 from speedfog_racing.services.race_items import (
     ITEM_RULES,
     CatalogEntry,
@@ -82,6 +85,50 @@ def test_default_tier_table_names_known_items():
     for tier, weights in Settings().race_items_tier_weights.items():
         assert tier in ("front", "middle", "back")
         assert set(weights) <= set(ITEM_RULES)
+
+
+def _settings_with_tier_weights(
+    monkeypatch: pytest.MonkeyPatch, table: dict[str, dict[str, int]]
+) -> Settings:
+    monkeypatch.setenv("RACE_ITEMS_TIER_WEIGHTS", json.dumps(table))
+    return Settings()
+
+
+def test_a_partial_tier_table_keeps_the_default_of_the_other_tiers(monkeypatch):
+    weights = _settings_with_tier_weights(
+        monkeypatch, {"back": {"red_shell": 3}, "front": {}}
+    ).race_items_tier_weights
+    # A tier named replaces its default whole (an empty one draws nothing)...
+    assert weights["back"] == {"red_shell": 3}
+    assert weights["front"] == {}
+    # ...and a tier left out keeps its default.
+    assert weights["middle"] == DEFAULT_RACE_ITEMS_TIER_WEIGHTS["middle"]
+
+
+def test_an_unknown_tier_refuses_the_settings(monkeypatch):
+    with pytest.raises(ValidationError, match="unknown tier.*Front"):
+        _settings_with_tier_weights(monkeypatch, {"Front": {"banana": 1}})
+
+
+def test_a_negative_weight_refuses_the_settings(monkeypatch):
+    with pytest.raises(ValidationError, match="negative weight.*middle.hammer"):
+        _settings_with_tier_weights(monkeypatch, {"middle": {"hammer": -1, "ink": 1}})
+
+
+def test_startup_warns_about_unknown_tier_items(monkeypatch, caplog):
+    from fastapi.testclient import TestClient
+
+    from speedfog_racing.main import app
+
+    # The settings cannot check item keys (the rules import them): the server
+    # start does, and a typo is never drawn.
+    monkeypatch.setattr(
+        settings, "race_items_tier_weights", {"front": {"banana": 1, "bananna": 1}, "back": {}}
+    )
+    with caplog.at_level(logging.WARNING, logger="speedfog_racing.main"), TestClient(app):
+        pass
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert "RACE_ITEMS_TIER_WEIGHTS names unknown race items, never drawn: bananna" in warnings
 
 
 def test_available_base_keys_folds_the_pouches():

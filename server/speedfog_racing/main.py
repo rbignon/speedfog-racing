@@ -27,6 +27,7 @@ from speedfog_racing.services.hard_close_loop import hard_close_loop
 from speedfog_racing.services.i18n import load_translations
 from speedfog_racing.services.inactivity_monitor import inactivity_monitor_loop
 from speedfog_racing.services.loop_monitor import EventLoopMonitor, tuned_gc
+from speedfog_racing.services.race_items import unknown_tier_items
 from speedfog_racing.services.twitch_live import twitch_live_poll_loop
 from speedfog_racing.websocket import (
     handle_mod_websocket,
@@ -68,6 +69,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Loaded %d translation locale(s)", len(translations))
     except Exception as e:
         logger.warning(f"i18n loading failed: {e}")
+
+    # Checked here, not in the settings: the item rules import the settings.
+    unknown_items = unknown_tier_items(settings.race_items_tier_weights)
+    if unknown_items:
+        logger.warning(
+            "RACE_ITEMS_TIER_WEIGHTS names unknown race items, never drawn: %s",
+            ", ".join(unknown_items),
+        )
 
     # Start the event-loop monitor (logs GC pauses and loop lag)
     loop_monitor_task = asyncio.create_task(EventLoopMonitor().run())

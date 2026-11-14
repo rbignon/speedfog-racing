@@ -299,6 +299,11 @@ def tier_pool(
     }
 
 
+def unknown_tier_items(tier_weights: Mapping[str, Mapping[str, int]]) -> list[str]:
+    """The item keys of a tier table that no rule knows (a typo): never drawn."""
+    return sorted({key for weights in tier_weights.values() for key in weights} - set(ITEM_RULES))
+
+
 def draw_base_key(
     tier: Tier,
     tier_weights: Mapping[str, Mapping[str, int]],
