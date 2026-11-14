@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # load (70 to 99 is a fat roll; clamped to 0..99). The other race item
     # percentages are clamped to 0..100 when sent to the mod.
     race_items_hammer_load_pct: int = 97
+    # Runners rank for race items (draw tier, targets) in leaderboard order, a
+    # runner moving above one it leads by this many seconds of IGT at the same
+    # point (gap_ms): time lost outside IGT (slow loads) can leave a runner
+    # ahead in IGT on a shallower layer. 0 or less ranks by IGT alone (ties in
+    # leaderboard order); a very large value keeps the leaderboard order.
+    race_items_igt_lead_s: int = 60
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None

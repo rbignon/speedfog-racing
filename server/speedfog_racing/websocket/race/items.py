@@ -25,6 +25,7 @@ from speedfog_racing.services.race_items import (
     effect_payload,
     extract_race_item_catalog,
     grant_banner,
+    item_order,
     reminder_for,
     resolve_targets,
     result_banner,
@@ -33,7 +34,7 @@ from speedfog_racing.services.race_items import (
     target_banner,
     tier_of,
 )
-from speedfog_racing.websocket.race.manager import sort_leaderboard
+from speedfog_racing.websocket.race.manager import leaderboard_gaps, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     ItemEffectMessage,
     ItemGrantMessage,
@@ -52,6 +53,18 @@ async def _load_race(db: AsyncSession, race_id: uuid.UUID) -> Race | None:
         .options(selectinload(Race.participants).selectinload(Participant.user))
     )
     return result.scalar_one_or_none()
+
+
+def item_standings(
+    participants: Sequence[Participant], graph_json: Mapping[str, Any]
+) -> list[Participant]:
+    """The playing runners in race item order (``item_order``), the leader first."""
+    graph = dict(graph_json)
+    ordered, entry_igts = sort_leaderboard(participants, graph_json=graph)
+    gaps = leaderboard_gaps(ordered, entry_igts, graph)
+    by_id = {p.id: p for p in participants}
+    playing = [p.id for p in ordered if p.status == ParticipantStatus.PLAYING]
+    return [by_id[pid] for pid in item_order(playing, gaps, settings.race_items_igt_lead_s * 1000)]
 
 
 async def grant_item(
@@ -76,8 +89,7 @@ async def grant_item(
         if me is None or me.status != ParticipantStatus.PLAYING or me.held_item:
             return None
 
-        ordered, _ = sort_leaderboard(race.participants, graph_json=dict(graph_json))
-        playing = [p for p in ordered if p.status == ParticipantStatus.PLAYING]
+        playing = item_standings(race.participants, graph_json)
         index = next((i for i, p in enumerate(playing) if p.id == participant_id), None)
         if index is None:
             return None
@@ -201,12 +213,10 @@ async def resolve_item_use(
         offline = 0
         outcomes: list[dict[str, str]] = []
         if rule.target != "self":
-            ordered, _ = sort_leaderboard(race.participants, graph_json=dict(graph_json))
-            playing: list[Runner] = []
-            for p in ordered:
-                if p.status == ParticipantStatus.PLAYING:
-                    user = by_id[p.id].user
-                    playing.append(Runner(p.id, user.twitch_display_name or user.twitch_username))
+            playing = [
+                Runner(p.id, p.user.twitch_display_name or p.user.twitch_username)
+                for p in item_standings(race.participants, graph_json)
+            ]
             payload = effect_payload(item_key, entry)
             for runner in resolve_targets(rule.target, participant_id, playing):
                 target = by_id[runner.participant_id]

@@ -1005,6 +1005,63 @@ def _build_leader_context(
     return leader_splits, leader_igt_ms, has_leader
 
 
+def leaderboard_gaps(
+    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    entry_igts: dict[uuid.UUID, int | None],
+    graph_json: dict[str, Any] | None,
+) -> dict[uuid.UUID, int | None]:
+    """Each participant's gap_ms, as the leaderboard payload computes it.
+
+    Takes ``sort_leaderboard``'s output. The leader's gap is 0; a gap the
+    leaderboard leaves out (no graph, no leader, a layer the leader never
+    entered, a runner not started) is None.
+    """
+    leader_splits, leader_igt_ms, has_leader = _build_leader_context(
+        sorted_participants, graph_json
+    )
+    return {
+        p.id: 0
+        if i == 0 and has_leader
+        else _participant_gap(
+            i,
+            sorted_participants,
+            entry_igts,
+            graph_json=graph_json,
+            leader_splits=leader_splits,
+            leader_igt_ms=leader_igt_ms,
+            has_leader=has_leader,
+        )
+        for i, p in enumerate(sorted_participants)
+    }
+
+
+def _participant_gap(
+    index: int,
+    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    entry_igts: dict[uuid.UUID, int | None],
+    *,
+    graph_json: dict[str, Any] | None,
+    leader_splits: dict[int, int],
+    leader_igt_ms: int,
+    has_leader: bool,
+) -> int | None:
+    """gap_ms of ``sorted_participants[index]``: None for the leader, and for
+    everyone when there is no leader or no graph."""
+    if not (has_leader and graph_json):
+        return None
+    p = sorted_participants[index]
+    return compute_gap_ms(
+        p.status.value,
+        igt_ms=p.igt_ms,
+        current_layer=p.current_layer,
+        player_layer_entry_igt=entry_igts.get(p.id),
+        leader_splits=leader_splits,
+        leader_igt_ms=leader_igt_ms,
+        is_leader=index == 0,
+        leader_finished=sorted_participants[0].status == ParticipantStatus.FINISHED,
+    )
+
+
 def _build_leaderboard_payload(
     sorted_participants: Sequence[Participant | ProjectedParticipant],
     entry_igts: dict[uuid.UUID, int | None],
@@ -1021,20 +1078,15 @@ def _build_leaderboard_payload(
             p,
             connected_ids=connected_ids,
             graph_json=graph_json,
-            gap_ms=compute_gap_ms(
-                p.status.value,
-                igt_ms=p.igt_ms,
-                current_layer=p.current_layer,
-                player_layer_entry_igt=entry_igts.get(p.id),
+            gap_ms=_participant_gap(
+                i,
+                sorted_participants,
+                entry_igts,
+                graph_json=graph_json,
                 leader_splits=leader_splits,
                 leader_igt_ms=leader_igt_ms,
-                is_leader=(has_leader and i == 0),
-                leader_finished=(
-                    has_leader and sorted_participants[0].status == ParticipantStatus.FINISHED
-                ),
-            )
-            if has_leader and graph_json
-            else None,
+                has_leader=has_leader,
+            ),
             layer_entry_igt=entry_igts.get(p.id) if graph_json else None,
             layer_entry_igts=p.layer_entry_igts if graph_json else None,
         )

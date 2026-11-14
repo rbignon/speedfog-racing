@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from speedfog_racing.config import settings
-from speedfog_racing.models import Participant, Race, RaceItemEvent
+from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceItemEvent
 from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN
 from speedfog_racing.websocket.schemas import (
     RACE_ITEMS_OLD_MOD_MESSAGE,
@@ -660,6 +660,102 @@ def test_blue_shell_used_while_leading_hits_its_sender(
     assert _of_type(other_seen, "item_effect") == []
     [event] = _use_events(integration_db, race_id)
     assert event.targets == [{"participant_id": players[0]["participant_id"], "outcome": "hit"}]
+
+
+def _leads_in_igt_on_a_shallower_layer(integration_db, race_with_participants, **holder) -> None:
+    """Player 0 a layer deeper (the leaderboard leader), player 1 ahead in IGT.
+
+    Player 1 entered layer 1 at 20 s of IGT, 80 s before player 0 did: time
+    lost outside IGT left it behind on the board, not in the race. ``holder``
+    goes to player 0's row (a held item).
+    """
+    _update_player(
+        integration_db,
+        race_with_participants,
+        0,
+        status=ParticipantStatus.PLAYING,
+        current_layer=2,
+        igt_ms=160_000,
+        layer_entry_igts={"0": 0, "1": 100_000, "2": 150_000},
+        zone_history=[
+            {"node_id": "start_node", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "node_a", "igt_ms": 100_000, "type": "fog"},
+            {"node_id": "node_b", "igt_ms": 150_000, "type": "fog"},
+        ],
+        **holder,
+    )
+    _update_player(
+        integration_db,
+        race_with_participants,
+        1,
+        status=ParticipantStatus.PLAYING,
+        current_layer=1,
+        igt_ms=60_000,
+        layer_entry_igts={"0": 0, "1": 20_000},
+        zone_history=[
+            {"node_id": "start_node", "igt_ms": 0, "type": "spawn"},
+            {"node_id": "node_a", "igt_ms": 20_000, "type": "fog"},
+        ],
+    )
+
+
+@pytest.mark.parametrize("lead_s,line", [(60, "Hit Player 1"), (90, "Missed: nobody ahead")])
+def test_items_rank_a_runner_ahead_in_igt_above_a_deeper_one(
+    integration_client, race_with_participants, integration_db, monkeypatch, lead_s, line
+):
+    monkeypatch.setattr(settings, "race_items_igt_lead_s", lead_s)
+    race_id = race_with_participants["race_id"]
+    players = race_with_participants["players"]
+    _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)
+    _start_items_race(integration_client, race_with_participants)
+    with (
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0,
+        integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
+    ):
+        mod0 = ModTestClient(ws0, players[0]["mod_token"])
+        assert mod0.auth(protocol_version="1.12")["type"] == "auth_ok"
+        mod1 = ModTestClient(ws1, players[1]["mod_token"])
+        assert mod1.auth(protocol_version="1.12")["type"] == "auth_ok"
+        _put_two_runners_in_play(mod0, mod1)
+        _leads_in_igt_on_a_shallower_layer(
+            integration_db, race_with_participants, held_item=_held("red_shell")
+        )
+
+        mod0.send_event_flag(RED_SHELL["use_flag"], igt_ms=160_000, message_id=300)
+        [result] = _of_type(_receive_until(mod0, "event_flag_ack"), "item_result")
+
+    assert result["banner"]["line"] == line
+
+
+def test_the_draw_tier_follows_the_item_order(race_with_participants, integration_db, monkeypatch):
+    import speedfog_racing.websocket.race.items as items_module
+
+    tiers: list[str] = []
+    monkeypatch.setattr(
+        items_module,
+        "draw_base_key",
+        lambda tier, weights, rng: tiers.append(tier) or "red_shell",
+    )
+    race_id = race_with_participants["race_id"]
+    _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)
+    _leads_in_igt_on_a_shallower_layer(integration_db, race_with_participants)
+
+    async def grant(index: int):
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(selectinload(Race.seed))
+            )
+            graph = result.scalar_one().seed.graph_json
+        participant_id = uuid.UUID(race_with_participants["players"][index]["participant_id"])
+        return await items_module.grant_item(
+            integration_db, uuid.UUID(race_id), participant_id, graph
+        )
+
+    # Two runners: the first in item order draws front items, the other back
+    # ones. Player 1 ranks first, although a layer behind on the board.
+    assert asyncio.run(grant(1)) is not None
+    assert asyncio.run(grant(0)) is not None
+    assert tiers == ["front", "back"]
 
 
 MUSHROOM = {

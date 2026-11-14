@@ -19,9 +19,15 @@ This document is the operational reference for the server side (rules, lifecycle
 - Items races stay out of the speedrun boards, the community stats and the generator calibration, since items distort clear times and deaths.
 - Items and deathless can be combined; nothing validates the choice.
 
+## Item order
+
+Draws and targets rank the playing runners in item order (`item_standings` in `server/speedfog_racing/websocket/race/items.py`, `item_order` in `services/race_items.py`). It starts from the leaderboard order (`sort_leaderboard`: deepest layer, then layer entry IGT), then each runner moves up past every runner directly above it that it leads by `race_items_igt_lead_s` (60 s) or more in IGT at the same point, and stops at the first it does not. The lead is the difference of their `gap_ms` (`leaderboard_gaps` in `websocket/race/manager.py`, the gaps the leaderboard shows: IGT behind the leaderboard leader on the same layer, LiveSplit style). A runner without a gap neither moves nor is passed.
+
+Why: the mod freezes IGT during loading fades, so time lost outside IGT (slow loads, a crash and relaunch) leaves a runner on a shallower layer while it may be ahead in IGT, which ranks the race. A study of 501 finished simultaneous races (2026-11-14, finishers only, the time each lost outside IGT spread over its loads, sampled every minute) found the two orders differ at 29% of the instants, mostly by small leads (25 s at the median), with 1.6% of runner pairs inverted by 60 s or more and 17% of races holding an inversion of 2 min or more at some point. Where they disagree, the IGT order matched the final ranking 64% of the time, and 86% for leads of 60 s or more. The threshold keeps the order the runners see on the board unless the IGT lead is a real one, so a Red Shell rarely hits someone other than the runner listed just above.
+
 ## Tiers
 
-Among the playing runners, in `sort_leaderboard` order (index `i` of `n`):
+Among the playing runners, in item order (index `i` of `n`):
 
 | Tier   | Runners                                |
 | ------ | -------------------------------------- |
@@ -31,7 +37,7 @@ Among the playing runners, in `sort_leaderboard` order (index `i` of `n`):
 
 ## Items
 
-Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (tier, target, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`.
+Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (tier, target, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`. Positions (just ahead, just behind, best-ranked) are in item order.
 
 | Item                            | Tier   | Target                         | Effect                                   |
 | ------------------------------- | ------ | ------------------------------ | ---------------------------------------- |
@@ -56,12 +62,12 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 ## Lifecycle
 
 1. **Boss kill.** The boss kill hook (`BaseModHandler._on_boss_killed`) fires once per new kill, after the commit and the broadcast, outside any DB session. It never fires for the final boss, a replay, a re-report, a kill at IGT 0 or less, or a kill whose node has no visit.
-2. **Draw.** `grant_item` (`server/speedfog_racing/websocket/race/items.py`) opens its own session and loads the field. It grants nothing when items are off, the runner is not playing, or the runner holds an item. Otherwise it picks the tier from the runner's rank, draws the key, bumps `Participant.item_grant_count`, stores the held item as unconfirmed, logs a `grant` event and commits.
+2. **Draw.** `grant_item` (`server/speedfog_racing/websocket/race/items.py`) opens its own session and loads the field. It grants nothing when items are off, the runner is not playing, or the runner holds an item. Otherwise it picks the tier from the runner's rank in item order, draws the key, bumps `Participant.item_grant_count`, stores the held item as unconfirmed, logs a `grant` event and commits.
 3. **Grant.** The server sends `item_grant {grant_id, item, banner}` to the runner's own mod. The grant id counts up per participant and never repeats.
 4. **Confirm.** The mod spawns the goods and answers `item_received {grant_id}`; the server sets `confirmed` when the id matches the held grant, and ignores anything else.
 5. **Reconnect.** An unconfirmed grant is re-sent right after `auth_ok` at every (re)auth, and after an inventory report that lacks it (see below), until the mod confirms it. The mod ignores a grant id it already has.
 6. **Use.** Using the goods makes the plugin's EMEVD set the item's use flag, which the mod reports at once through `event_flag`. The handler matches use flags (the `use_flag` of each catalog entry, `use_flag_map`, cached per graph) after the usual gates (race running, no countdown, runner playing, initialized history, plausible IGT) and before the `event_map` lookup, and never adds a `zone_history` entry. After the session, the `_on_item_used` hook resolves the use; it does nothing when the race has items off, and outside races (training) it is a no-op. The flag is acked once the hook returns, so a use lost before its resolution committed (a server restart) is replayed by the mod.
-7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds exactly the used item, otherwise it logs the use and ignores it. That covers a stray copy, and the replay of a resolved use whose ACK was lost, since the resolution cleared the held item; only a new grant of the same item between a use and its replay would let the replay spend it. It clears the held item and resolves the targets among the playing runners in `sort_leaderboard` order. For each target:
+7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds exactly the used item, otherwise it logs the use and ignores it. That covers a stray copy, and the replay of a resolved use whose ACK was lost, since the resolution cleared the held item; only a new grant of the same item between a use and its replay would let the replay spend it. It clears the held item and resolves the targets among the playing runners in item order. For each target:
    - a held Shield blocks the item: the Shield is spent (even when its holder is offline) and its holder gets `item_remove` for `shield` with a banner;
    - otherwise a target whose mod is connected gets `item_effect` (effect, banner, reminder);
    - otherwise the target is offline and the effect is dropped, a miss for the sender.
@@ -109,7 +115,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 ## Server settings
 
-`race_items_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
+`race_items_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
 
 ## Exclusions
 
@@ -165,7 +171,7 @@ With the compiled mod and one game, on the local server. `tools/race_items_bot.p
 5. **Bots.** `cd server && uv run python ../tools/race_items_bot.py <race_id> --bots <user1>,<user2>`, two local usernames; they join while the race is in setup and report ready. Keep the console open (`help` lists the commands).
 6. **Start.** Download your seed zip from the race page, launch it, wait until your mod is ready, then start the race from the web.
 
-Positions decide the targets, so the checks run in this order. Wait a few seconds after the start before driving the bots: until its first report of the running race, a bot is not playing and the server drops its flags (the console says so). Then go through the first fog gate: you lead (checks B). Afterwards, `ahead <user1>` walks that bot forward to the deepest layer while `<user2>` stays at the start: the field reads user1, you, user2 for checks C to F, so you draw middle items, you are the runner just behind user1 and just ahead of user2, and group items from either bot hit you. `give WHO ITEM` hands any item to a bot or to you (yours spawns at your next load: a fog gate or a quit-out).
+Positions decide the targets, so the checks run in this order. The bots report your IGT, so the item order (above) follows the layers here: a bot is never ahead of you in IGT, nor you of a bot. Wait a few seconds after the start before driving the bots: until its first report of the running race, a bot is not playing and the server drops its flags (the console says so). Then go through the first fog gate: you lead (checks B). Afterwards, `ahead <user1>` walks that bot forward to the deepest layer while `<user2>` stays at the start: the field reads user1, you, user2 for checks C to F, so you draw middle items, you are the runner just behind user1 and just ahead of user2, and group items from either bot hit you. `give WHO ITEM` hands any item to a bot or to you (yours spawns at your next load: a fog gate or a quit-out).
 
 ### Checks
 

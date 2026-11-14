@@ -190,6 +190,34 @@ def base_key(item_key: str) -> str:
     return "rune_pouch" if item_key.startswith("rune_pouch_") else item_key
 
 
+def item_order(
+    ids: Sequence[uuid.UUID], gaps: Mapping[uuid.UUID, int | None], lead_ms: int
+) -> list[uuid.UUID]:
+    """Playing runners in race item order, the leader first.
+
+    ``ids`` is the leaderboard order (deepest layer, then layer entry IGT) and
+    ``gaps`` each runner's gap_ms (IGT behind the leaderboard leader at the same
+    point, ``leaderboard_gaps``). A runner whose time lost outside IGT (slow
+    loads, a crash) left it on a shallower layer can be ahead in IGT, which
+    ranks the race: each runner moves up past every runner directly above it
+    that it leads by ``lead_ms`` or more, and stops at the first it does not.
+    Smaller leads keep the leaderboard order, so items mostly follow the order
+    the runners see. A runner without a gap neither moves nor is passed.
+    """
+    lead = max(lead_ms, 1)
+    result: list[uuid.UUID] = []
+    for pid in ids:
+        own = gaps.get(pid)
+        pos = len(result)
+        while own is not None and pos > 0:
+            above = gaps.get(result[pos - 1])
+            if above is None or above - own < lead:
+                break
+            pos -= 1
+        result.insert(pos, pid)
+    return result
+
+
 def tier_of(index: int, count: int) -> Tier:
     """Tier of the runner at ``index`` among ``count`` playing runners (leader first)."""
     if count <= 2:

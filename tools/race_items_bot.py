@@ -4,10 +4,11 @@
 Most race items aim at another runner, so a lone tester needs company. Each
 bot is a local user joined to a race with items, whose "mod" is this script:
 it connects over /ws/mod/<race> with the participant's own token, reports
-ready and, once the race runs, an in-game time that follows the wall clock.
-Its items arrive and leave through the real messages (item_grant answered by
-item_received, item_inventory, the use flag), so everything a bot does to the
-real runner goes through the server's own rules.
+ready and, once the race runs, the real runner's in-game time (so race items
+rank the bots by layers alone, see Console.igt). Its items arrive and leave
+through the real messages (item_grant answered by item_received,
+item_inventory, the use flag), so everything a bot does to the real runner
+goes through the server's own rules.
 
 A console drives the bots while you play:
 
@@ -139,6 +140,9 @@ class Console:
         self.catalog: dict[str, Any] = {}
         self.boss_nodes: dict[str, int] = {}
         self.started_at: datetime | None = None
+        # The highest IGT a real (non-bot) runner of the race reported, read
+        # with the race start; None when the race has no real runner.
+        self.runner_igt: int | None = None
         self.tasks: list[asyncio.Task[None]] = []
 
     # --- setup ---
@@ -365,23 +369,46 @@ class Console:
     # --- in-game time ---
 
     def igt(self) -> int:
+        """The bots' in-game time: the real runners' IGT (refreshed every 5 s).
+
+        Race items rank by IGT leads (see "Item order" in docs/RACE_ITEMS.md):
+        a bot clock on the wall time would leave the bots behind in IGT by the
+        time the tester spends outside it (getting in game, a restart, loads),
+        and reorder the field the test protocol expects. Without a real runner
+        in the race, the time since the start at the game's rate (0.96 of real
+        time, docs/IGT_TIMING.md).
+        """
         if self.started_at is None:
             return 0
+        if self.runner_igt is not None:
+            return max(1, self.runner_igt)
         started = self.started_at
         if started.tzinfo is None:
             started = started.replace(tzinfo=UTC)
-        return max(1, int((datetime.now(UTC) - started).total_seconds() * 1000))
+        return max(1, int((datetime.now(UTC) - started).total_seconds() * 960))
 
     async def refresh_start(self) -> None:
         """Follow the race's start: a reset clears it and a new start moves it,
         so the bots then walk again from the start node."""
+        from sqlalchemy import func, select
+
         from speedfog_racing.database import async_session_maker
-        from speedfog_racing.models import Race
+        from speedfog_racing.models import Participant, Race, User
         from speedfog_racing.services.layer_service import get_start_node
 
         async with async_session_maker() as db:
             race = await db.get(Race, uuid.UUID(self.race_id))
             started = race.started_at if race is not None else None
+            self.runner_igt = (
+                await db.execute(
+                    select(func.max(Participant.igt_ms))
+                    .join(User, User.id == Participant.user_id)
+                    .where(
+                        Participant.race_id == uuid.UUID(self.race_id),
+                        User.twitch_username.not_in(list(self.bots)),
+                    )
+                )
+            ).scalar()
         if started != self.started_at:
             if self.started_at is not None:
                 start = get_start_node(self.graph)
@@ -467,6 +494,7 @@ class Console:
         from speedfog_racing.database import async_session_maker
         from speedfog_racing.models import Participant, ParticipantStatus, Race
         from speedfog_racing.services.race_items import tier_of
+        from speedfog_racing.websocket.race.items import item_standings
         from speedfog_racing.websocket.race.manager import sort_leaderboard
 
         async with async_session_maker() as db:
@@ -479,10 +507,13 @@ class Console:
                     )
                 )
             ).scalar_one()
+            # Playing runners in item order (the server's draws and targets),
+            # then the others in leaderboard order.
             ordered, _ = sort_leaderboard(race.participants, graph_json=self.graph)
-            playing = [p for p in ordered if p.status == ParticipantStatus.PLAYING]
+            playing = item_standings(race.participants, self.graph)
+            rest = [p for p in ordered if p.status != ParticipantStatus.PLAYING]
             log(f"race {race.status.value}, igt {self.igt() // 1000} s")
-            for p in ordered:
+            for p in playing + rest:
                 tier = (
                     tier_of(playing.index(p), len(playing))
                     if p in playing

@@ -14,6 +14,7 @@ from speedfog_racing.services.race_items import (
     draw_base_key,
     effect_payload,
     grant_banner,
+    item_order,
     reminder_for,
     resolve_targets,
     result_banner,
@@ -86,6 +87,38 @@ def test_draw_weight_biases_and_all_zero_falls_back():
 )
 def test_rune_pouch_variant_thresholds(layer, total, expected):
     assert rune_pouch_variant(layer, total) == expected
+
+
+def test_item_order_keeps_the_leaderboard_order_under_the_lead():
+    a, b, c = (uuid.uuid4() for _ in range(3))
+    # c is 59 s ahead of b in IGT, b 30 s ahead of a: not enough to move.
+    assert item_order([a, b, c], {a: 0, b: -30_000, c: -89_000}, 60_000) == [a, b, c]
+
+
+def test_item_order_moves_a_runner_up_past_each_runner_it_leads_by_the_lead():
+    a, b, c, d = (uuid.uuid4() for _ in range(4))
+    # d (listed last on a shallower layer) leads c and b by 60 s or more, but
+    # a by less: it stops under a.
+    gaps = {a: 0, b: 20_000, c: 45_000, d: -40_000}
+    assert item_order([a, b, c, d], gaps, 60_000) == [a, d, b, c]
+    # Leading the leader by the lead too: d takes the lead.
+    gaps[d] = -60_000
+    assert item_order([a, b, c, d], gaps, 60_000) == [d, a, b, c]
+
+
+def test_item_order_stops_at_the_first_runner_it_does_not_lead_enough():
+    a, b, c = (uuid.uuid4() for _ in range(3))
+    # c leads a by 70 s, but b (30 s ahead of a, so still under it) only by
+    # 40 s: c stays where the leaderboard has it.
+    assert item_order([a, b, c], {a: 0, b: -30_000, c: -70_000}, 60_000) == [a, b, c]
+
+
+def test_item_order_without_a_gap_neither_moves_nor_is_passed():
+    a, b, c = (uuid.uuid4() for _ in range(3))
+    assert item_order([a, b, c], {a: 0, b: None, c: -500_000}, 60_000) == [a, b, c]
+    assert item_order([a, b, c], {a: 0, b: 10_000, c: None}, 60_000) == [a, b, c]
+    # A lead of 0 still keeps equal gaps in leaderboard order.
+    assert item_order([a, b], {a: 0, b: 0}, 0) == [a, b]
 
 
 def test_red_shell_targets_the_runner_just_ahead():
