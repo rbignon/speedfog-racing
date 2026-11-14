@@ -20,6 +20,7 @@ from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceIte
 from speedfog_racing.services.race_items import (
     ITEM_RULES,
     Runner,
+    available_base_keys,
     base_key,
     draw_base_key,
     effect_payload,
@@ -94,14 +95,20 @@ async def grant_item(
         if index is None:
             return None
 
+        catalog = extract_race_item_catalog(graph_json)
+        tier = tier_of(index, len(playing))
         key = draw_base_key(
-            tier_of(index, len(playing)),
-            settings.race_items_weights,
+            tier,
+            settings.race_items_tier_weights,
+            available_base_keys(catalog),
             rng if rng is not None else random.Random(),
         )
+        if key is None:
+            logger.info("race item draw: nothing to draw: race=%s tier=%s", race_id, tier)
+            return None
         if key == "rune_pouch":
             key = rune_pouch_variant(me.current_layer, int(graph_json.get("total_layers") or 0))
-        entry = extract_race_item_catalog(graph_json).get(key)
+        entry = catalog.get(key)
         if entry is None:
             logger.warning("Race item %s drawn but absent from the catalog: race=%s", key, race_id)
             return None

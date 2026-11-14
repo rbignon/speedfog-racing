@@ -5,11 +5,12 @@ import uuid
 
 import pytest
 
-from speedfog_racing.config import settings
+from speedfog_racing.config import Settings, settings
 from speedfog_racing.services.race_items import (
     ITEM_RULES,
     CatalogEntry,
     Runner,
+    available_base_keys,
     base_key,
     draw_base_key,
     effect_payload,
@@ -22,6 +23,7 @@ from speedfog_racing.services.race_items import (
     shield_banner,
     target_banner,
     tier_of,
+    tier_pool,
 )
 
 
@@ -49,28 +51,55 @@ def test_tier_of(count, expected):
     assert [tier_of(i, count) for i in range(count)] == expected
 
 
-def test_rules_cover_every_base_key_with_a_tier_pool():
-    for tier in ("front", "middle", "back"):
-        assert [k for k, r in ITEM_RULES.items() if r.tier == tier]
+def test_rules_have_a_base_key_mapping():
     assert base_key("rune_pouch_2") == "rune_pouch"
     assert base_key("banana") == "banana"
 
 
-def test_draw_respects_zero_weight():
-    rng = random.Random(1)
-    draws = {draw_base_key("front", {"shield": 0}, rng) for _ in range(200)}
-    assert "shield" not in draws
-    assert draws == {"rune_pouch", "banana"}
-
-
-def test_draw_weight_biases_and_all_zero_falls_back():
-    rng = random.Random(2)
-    draws = [draw_base_key("back", {"lightning": 50}, rng) for _ in range(300)]
-    assert draws.count("lightning") > 200
-    zero = {k: 0 for k in ITEM_RULES}
-    assert draw_base_key("middle", zero, rng) in {
-        k for k, r in ITEM_RULES.items() if r.tier == "middle"
+def test_tier_pool_keeps_weighted_available_rules_only():
+    weights = {"middle": {"red_shell": 2, "hammer": 0, "ghost": 5, "ink": 1}}
+    assert tier_pool("middle", weights, {"red_shell", "hammer", "ink"}) == {
+        "red_shell": 2,
+        "ink": 1,
     }
+
+
+def test_tier_pool_ignores_unknown_and_missing_items():
+    assert tier_pool("front", {"middle": {"red_shell": 1}}, {"red_shell"}) == {}
+    assert (
+        draw_base_key("front", {"middle": {"red_shell": 1}}, {"red_shell"}, random.Random(1))
+        is None
+    )
+
+
+def test_an_item_can_sit_in_two_tiers():
+    w = {"front": {"mushroom": 1}, "middle": {"mushroom": 1}}
+    assert draw_base_key("front", w, {"mushroom"}, random.Random(0)) == "mushroom"
+    assert draw_base_key("middle", w, {"mushroom"}, random.Random(0)) == "mushroom"
+
+
+def test_default_tier_table_names_known_items():
+    for tier, weights in Settings().race_items_tier_weights.items():
+        assert tier in ("front", "middle", "back")
+        assert set(weights) <= set(ITEM_RULES)
+
+
+def test_available_base_keys_folds_the_pouches():
+    assert available_base_keys(["rune_pouch_2", "banana"]) == {"rune_pouch", "banana"}
+
+
+def test_draw_respects_zero_weight():
+    w = {"front": {"shield": 0, "rune_pouch": 1, "banana": 1}}
+    avail = {"shield", "rune_pouch", "banana"}
+    rng = random.Random(1)
+    assert {draw_base_key("front", w, avail, rng) for _ in range(200)} == {"rune_pouch", "banana"}
+
+
+def test_draw_weight_biases():
+    w = {"back": {"lightning": 50, "blue_shell": 1}}
+    rng = random.Random(2)
+    draws = [draw_base_key("back", w, {"lightning", "blue_shell"}, rng) for _ in range(300)]
+    assert draws.count("lightning") > 200
 
 
 @pytest.mark.parametrize(

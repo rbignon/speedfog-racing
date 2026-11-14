@@ -62,11 +62,22 @@ class Settings(BaseSettings):
     countdown_seconds: int = 10
     # IGT penalty (ms) a connected mod applies per detected quit-out; 0 disables.
     quit_out_penalty_ms: int = 2000
-    # Race items: draw weight per base item key (missing = 1, 0 removes the item
-    # from the draw; JSON in .env), and the damage curve of the two damage items.
-    race_items_weights: dict[str, int] = {}
+    # Race items: each tier (front, middle, back) maps its base item keys to a
+    # draw weight (an item can sit in several tiers; 0 or absent = not drawn;
+    # JSON in .env), and the damage curve of the two damage items.
+    race_items_tier_weights: dict[str, dict[str, int]] = {
+        "front": {"rune_pouch": 1, "banana": 1, "mushroom": 1},
+        "middle": {"shield": 1, "mushroom": 1, "red_shell": 1, "hammer": 1, "ink": 1},
+        "back": {
+            "red_shell": 1,
+            "blue_shell": 1,
+            "lightning": 1,
+            "flask_stopper": 1,
+            "toxic_blossom": 1,
+        },
+    }
     race_items_banana_pct: int = 15
-    race_items_red_shell_pct: int = 30
+    race_items_red_shell_pct: int = 40
     # Shared by the damage items: the HP percent a hit lands at when the base
     # would go below it, and the flat damage once HP is under floor + tail.
     race_items_damage_floor_pct: int = 20

@@ -6,7 +6,7 @@ the services package, which imports this module.
 
 import random
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -118,7 +118,6 @@ class ItemRule:
     (damage percent); ``reminder`` is the label of the countdown line, if any.
     """
 
-    tier: Tier
     target: TargetRule
     effect: EffectKind
     grant_line: str
@@ -127,17 +126,12 @@ class ItemRule:
 
 
 ITEM_RULES: dict[str, ItemRule] = {
-    "shield": ItemRule("front", "passive", "none", "Blocks the next item aimed at you"),
-    "rune_pouch": ItemRule("front", "self", "none", "Use it for runes"),
-    "banana": ItemRule("front", "behind", "damage", "Hits the runner behind", "Hit for {pct}% HP"),
-    "red_shell": ItemRule(
-        "middle", "ahead", "damage", "Hits the runner ahead", "Hit for {pct}% HP"
-    ),
-    "mushroom": ItemRule(
-        "middle", "self", "none", "Infinite stamina for {s} s", "", "Infinite stamina"
-    ),
+    "shield": ItemRule("passive", "none", "Blocks the next item aimed at you"),
+    "rune_pouch": ItemRule("self", "none", "Use it for runes"),
+    "banana": ItemRule("behind", "damage", "Hits the runner behind", "Hit for {pct}% HP"),
+    "red_shell": ItemRule("ahead", "damage", "Hits the runner ahead", "Hit for {pct}% HP"),
+    "mushroom": ItemRule("self", "none", "Infinite stamina for {s} s", "", "Infinite stamina"),
     "hammer": ItemRule(
-        "middle",
         "others",
         "equip_load",
         "Everyone else fat-rolls for {s} s",
@@ -145,7 +139,6 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Fat-roll",
     ),
     "ink": ItemRule(
-        "middle",
         "others",
         "ink",
         "Hides everyone else's exits for {s} s",
@@ -153,7 +146,6 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Ink",
     ),
     "blue_shell": ItemRule(
-        "back",
         "leader",
         "speffect",
         "Halves the leader's max HP for {s} s",
@@ -161,7 +153,6 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Max HP halved",
     ),
     "lightning": ItemRule(
-        "back",
         "others",
         "speffect",
         "Slows everyone else for {s} s",
@@ -169,14 +160,13 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Slowed",
     ),
     "flask_stopper": ItemRule(
-        "back",
         "others",
         "speffect",
         "Blocks everyone else's flasks for {s} s",
         "Flasks blocked for {s} s",
         "Flasks blocked",
     ),
-    "toxic_blossom": ItemRule("back", "others", "speffect", "Poisons everyone else", "Poisoned"),
+    "toxic_blossom": ItemRule("others", "speffect", "Poisons everyone else", "Poisoned"),
 }
 
 _MISSED_LINE = {
@@ -229,17 +219,34 @@ def tier_of(index: int, count: int) -> Tier:
     return "back"
 
 
-def draw_base_key(tier: Tier, weights: Mapping[str, int], rng: random.Random) -> str:
-    """Weighted draw in a tier's pool; a missing weight is 1, 0 excludes the item.
+def available_base_keys(catalog_keys: Iterable[str]) -> set[str]:
+    """The rules keys a seed's catalog can serve (the Rune Pouch variants fold into one)."""
+    return {base_key(key) for key in catalog_keys}
 
-    When every weight of the pool is 0 the draw falls back to uniform, so a
-    runner is never left without an item.
-    """
-    pool = [key for key, rule in ITEM_RULES.items() if rule.tier == tier]
-    pool_weights = [max(0, weights.get(key, 1)) for key in pool]
-    if not any(pool_weights):
-        return rng.choice(pool)
-    return rng.choices(pool, weights=pool_weights)[0]
+
+def tier_pool(
+    tier: Tier, tier_weights: Mapping[str, Mapping[str, int]], available: Collection[str]
+) -> dict[str, int]:
+    """The tier's drawable items: known rules the seed has, with a weight above 0."""
+    weights = tier_weights.get(tier, {})
+    return {
+        key: weight
+        for key, weight in weights.items()
+        if key in ITEM_RULES and key in available and weight > 0
+    }
+
+
+def draw_base_key(
+    tier: Tier,
+    tier_weights: Mapping[str, Mapping[str, int]],
+    available: Collection[str],
+    rng: random.Random,
+) -> str | None:
+    """Weighted draw in a tier's pool, None when nothing is left to draw."""
+    pool = tier_pool(tier, tier_weights, available)
+    if not pool:
+        return None
+    return rng.choices(list(pool), weights=list(pool.values()))[0]
 
 
 def rune_pouch_variant(current_layer: int, total_layers: int) -> str:

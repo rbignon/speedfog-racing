@@ -37,27 +37,27 @@ Among the playing runners, in item order (index `i` of `n`):
 
 ## Items
 
-Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (tier, target, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`. Positions (just ahead, just behind, best-ranked) are in item order.
+Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (target, effect, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`. Positions (just ahead, just behind, best-ranked) are in item order.
 
-| Item                            | Tier   | Target                         | Effect                                   |
-| ------------------------------- | ------ | ------------------------------ | ---------------------------------------- |
-| `shield`                        | front  | passive                        | blocks the next item aimed at the holder |
-| `rune_pouch` (`_1`, `_2`, `_3`) | front  | self                           | grants runes                             |
-| `banana`                        | front  | the playing runner just behind | damage, base `race_items_banana_pct`     |
-| `red_shell`                     | middle | the playing runner just ahead  | damage, base `race_items_red_shell_pct`  |
-| `mushroom`                      | middle | self                           | infinite stamina                         |
-| `hammer`                        | middle | every other playing runner     | fat roll (load at 97% of max)            |
-| `ink`                           | middle | every other playing runner     | exits hidden (overlay only)              |
-| `blue_shell`                    | back   | the best-ranked playing runner | max HP halved                            |
-| `lightning`                     | back   | every other playing runner     | slowed                                   |
-| `flask_stopper`                 | back   | every other playing runner     | flasks blocked                           |
-| `toxic_blossom`                 | back   | every other playing runner     | poisoned                                 |
+| Item                            | Tiers (default) | Target                         | Effect                                   |
+| ------------------------------- | --------------- | ------------------------------ | ---------------------------------------- |
+| `shield`                        | middle          | passive                        | blocks the next item aimed at the holder |
+| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes                             |
+| `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`     |
+| `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`  |
+| `mushroom`                      | front, middle   | self                           | infinite stamina                         |
+| `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)            |
+| `ink`                           | middle          | every other playing runner     | exits hidden (overlay only)              |
+| `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                            |
+| `lightning`                     | back            | every other playing runner     | slowed                                   |
+| `flask_stopper`                 | back            | every other playing runner     | flasks blocked                           |
+| `toxic_blossom`                 | back            | every other playing runner     | poisoned                                 |
 
-The draw is weighted inside the tier's pool (`race_items_weights`, base key to weight, missing is 1, 0 excludes the item; a tier whose weights are all 0 draws uniformly). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
+The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. When the pool is empty nothing is granted (logged as `race item draw: nothing to draw`, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
 
 ### Damage curve
 
-For banana and red shell, with `h` the target's current HP as a percentage of max HP and `B` the base damage: `h >= floor + B` deals `B`; `tail + floor <= h < floor + B` deals `h - floor` (lands at the floor); below that it deals `tail`; at least 1 HP always remains. `floor` is `race_items_damage_floor_pct` (20) and `tail` is `race_items_damage_tail_pct` (10); the bases are `race_items_red_shell_pct` (30) and `race_items_banana_pct` (15). The mod computes the damage when it applies the effect, since only it knows the current HP; the parameters travel with the effect.
+For banana and red shell, with `h` the target's current HP as a percentage of max HP and `B` the base damage: `h >= floor + B` deals `B`; `tail + floor <= h < floor + B` deals `h - floor` (lands at the floor); below that it deals `tail`; at least 1 HP always remains. `floor` is `race_items_damage_floor_pct` (20) and `tail` is `race_items_damage_tail_pct` (10); the bases are `race_items_red_shell_pct` (40) and `race_items_banana_pct` (15). The mod computes the damage when it applies the effect, since only it knows the current HP; the parameters travel with the effect.
 
 ## Lifecycle
 
@@ -115,7 +115,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 ## Server settings
 
-`race_items_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
+`race_items_tier_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
 
 ## Exclusions
 
@@ -190,7 +190,7 @@ Positions decide the targets, so the checks run in this order. The bots report y
 
 #### C. Items on you (after `ahead <user1>`; `give <bot> ITEM`, then `use <bot>`)
 
-1. Red Shell from user2: HP drops by 30% of max and stays down. Repeat at low HP: the hit lands at 20%, then deals 10%, and never kills (`[ITEMS] Damage applied`).
+1. Red Shell from user2: HP drops by 40% of max and stays down. Repeat at low HP: the hit lands at 20%, then deals 10%, and never kills (`[ITEMS] Damage applied`).
 2. Banana from user1: 15% of max HP.
 3. Hammer from either bot: fat roll for 15 s, "Fat-roll" reminder. The log line `[ITEMS] Equip load rate set` gives `current` and `max`: `current` must match the equipment screen's load, once with a bow and arrows equipped and once without (arrows and bolts are left out of the sum), and the screen's max becomes `current / 0.97`. A second Hammer within the 15 s keeps you heavy instead of cancelling the first.
 4. Lightning: forced slow walk for 15 s, then normal speed.

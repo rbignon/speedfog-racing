@@ -322,7 +322,9 @@ def force_key(monkeypatch):
     import speedfog_racing.websocket.race.items as items_module
 
     chosen = {"key": "hammer"}
-    monkeypatch.setattr(items_module, "draw_base_key", lambda tier, weights, rng: chosen["key"])
+    monkeypatch.setattr(
+        items_module, "draw_base_key", lambda tier, weights, available, rng: chosen["key"]
+    )
     return chosen
 
 
@@ -734,7 +736,7 @@ def test_the_draw_tier_follows_the_item_order(race_with_participants, integratio
     monkeypatch.setattr(
         items_module,
         "draw_base_key",
-        lambda tier, weights, rng: tiers.append(tier) or "red_shell",
+        lambda tier, weights, available, rng: tiers.append(tier) or "red_shell",
     )
     race_id = race_with_participants["race_id"]
     _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)
@@ -756,6 +758,40 @@ def test_the_draw_tier_follows_the_item_order(race_with_participants, integratio
     assert asyncio.run(grant(1)) is not None
     assert asyncio.run(grant(0)) is not None
     assert tiers == ["front", "back"]
+
+
+def test_an_empty_tier_grants_nothing(race_with_participants, integration_db, monkeypatch, caplog):
+    import speedfog_racing.websocket.race.items as items_module
+    from speedfog_racing.config import settings
+    from speedfog_racing.models import Participant, RaceItemEvent
+
+    monkeypatch.setattr(settings, "race_items_tier_weights", {"front": {}, "back": {}})
+    race_id = race_with_participants["race_id"]
+    _patch_items_graph(integration_db, race_id, catalog=USE_CATALOG)
+    _leads_in_igt_on_a_shallower_layer(integration_db, race_with_participants)
+    participant_id = uuid.UUID(race_with_participants["players"][1]["participant_id"])
+
+    async def run():
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(selectinload(Race.seed))
+            )
+            graph = result.scalar_one().seed.graph_json
+        with caplog.at_level("INFO"):
+            granted = await items_module.grant_item(
+                integration_db, uuid.UUID(race_id), participant_id, graph
+            )
+        async with integration_db() as db:
+            participant = await db.get(Participant, participant_id)
+            events = (await db.execute(select(RaceItemEvent))).scalars().all()
+            return granted, participant.item_grant_count, participant.held_item, list(events)
+
+    granted, count, held, events = asyncio.run(run())
+    assert granted is None
+    assert count == 0
+    assert not held
+    assert events == []
+    assert "nothing to draw" in caplog.text
 
 
 MUSHROOM = {
