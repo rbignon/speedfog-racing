@@ -22,16 +22,17 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.12"
+PROTOCOL_VERSION = "1.13"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
 
-# Oldest protocol a race with items accepts at auth: from 1.12 the mod reads
-# the item catalog, spawns granted goods and applies item effects.
-RACE_ITEMS_MIN_PROTOCOL = "1.12"
+# Oldest protocol a race with items accepts at auth: from 1.13 the mod reads
+# the {goods, items} catalog, holds every usable item as the one Race Item
+# goods and applies item effects, a self item's included.
+RACE_ITEMS_MIN_PROTOCOL = "1.13"
 
 # auth_error for a mod too old for a race with items. The race's pack carries
 # the current mod, so downloading it again is the fix.
@@ -280,15 +281,30 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
     )
 
 
-class RaceItemWire(BaseModel):
-    """What the mod needs of one catalog item: its goods, its flags, and its
-    name and icon (the row of an item held without a use)."""
+class RaceItemGoodsWire(BaseModel):
+    """What the mod needs of one catalog goods: its id, its flags and its default icon id."""
 
     goods_id: int
     use_flag: int | None = None
     remove_flag: int
+    icon_id: int
+
+
+class RaceItemWire(BaseModel):
+    """What the mod needs of one catalog item: its name and icon (the held
+    row), the icon id written into its goods' row, and that goods' key."""
+
     name: str
     icon: str
+    icon_id: int
+    goods: str
+
+
+class RaceItemCatalogWire(BaseModel):
+    """A seed's race item catalog as the mod reads it: goods and items by key."""
+
+    goods: dict[str, RaceItemGoodsWire] = Field(default_factory=dict)
+    items: dict[str, RaceItemWire] = Field(default_factory=dict)
 
 
 class SeedInfo(BaseModel):
@@ -311,8 +327,8 @@ class SeedInfo(BaseModel):
     category: str | None = None
     # Defeat flag of every boss node but the final boss (mods only).
     boss_flags: list[int] = Field(default_factory=list)
-    # Race items: catalog by item key, empty unless the race has items on (mods only).
-    race_item_catalog: dict[str, RaceItemWire] = Field(default_factory=dict)
+    # Race items: goods and items by key, empty unless the race has items on (mods only).
+    race_item_catalog: RaceItemCatalogWire = Field(default_factory=RaceItemCatalogWire)
 
 
 async def resolve_phantom_skin_for_auth_ok(
@@ -352,6 +368,9 @@ class AuthOkMessage(BaseModel):
     seed: SeedInfo
     participants: list[ParticipantInfo]
     phantom_skin: str | None = None
+    # Race items: the item the runner holds, confirmed or not, so a restarted
+    # mod restores its goods' icon and the held row (null without items).
+    held_item: str | None = None
 
 
 class AuthErrorMessage(BaseModel):
@@ -606,12 +625,13 @@ class ItemGrantMessage(BaseModel):
 
 
 class ItemEffectMessage(BaseModel):
-    """An item hits this runner."""
+    """An item hits this runner; without a banner for a self item, whose
+    ``item_result`` carries it."""
 
     type: Literal["item_effect"] = "item_effect"
     item: str
     effect: ItemEffectPayload
-    banner: ItemBanner
+    banner: ItemBanner | None = None
     reminder: ItemReminder | None = None
 
 
@@ -625,10 +645,10 @@ class ItemResultMessage(BaseModel):
 
 
 class ItemRemoveMessage(BaseModel):
-    """Raise the item's remove flag so the game drops its goods."""
+    """Raise the goods' remove flag so the game drops it."""
 
     type: Literal["item_remove"] = "item_remove"
-    item: str
+    goods: str
     banner: ItemBanner | None = None
 
 
@@ -640,10 +660,10 @@ class ItemReceivedMessage(BaseModel):
 
 
 class ItemInventoryMessage(BaseModel):
-    """Mod to server: the race goods currently in the inventory, by item key."""
+    """Mod to server: the race goods currently in the inventory, by goods key."""
 
     type: Literal["item_inventory"] = "item_inventory"
-    items: list[str] = Field(default_factory=list)
+    goods: list[str] = Field(default_factory=list)
 
 
 class ZoneQueryAckMessage(BaseModel):

@@ -7,8 +7,8 @@ it connects over /ws/mod/<race> with the participant's own token, reports
 ready and, once the race runs, the real runner's in-game time (so race items
 rank the bots by layers alone, see Console.igt). Its items arrive and leave
 through the real messages (item_grant answered by item_received,
-item_inventory, the use flag), so everything a bot does to the real runner
-goes through the server's own rules.
+item_inventory by goods, the Race Item's use flag), so everything a bot does
+to the real runner goes through the server's own rules.
 
 A console drives the bots while you play:
 
@@ -20,9 +20,12 @@ A console drives the bots while you play:
                           already holds one)
     give WHO ITEM         hand ITEM to a bot or to a runner (by username), as an
                           unconfirmed grant the server sends again; a real
-                          runner gets it at its next load (fog gate, quit-out)
-    use BOT               BOT uses its item (its use flag)
-    inventory BOT         BOT reports its inventory (what it holds)
+                          runner gets it at its next load (fog gate, quit-out).
+                          A runner whose game already holds the Race Item keeps
+                          that copy as ITEM: its mod shows ITEM from its next
+                          connection (auth_ok), so use the old item first
+    use BOT               BOT uses its item (the Race Item's use flag)
+    inventory BOT         BOT reports its inventory (the goods of what it holds)
     quit
 
 Typical layout: one bot walks ahead, one stays at the start, so every target
@@ -137,7 +140,8 @@ class Console:
         self.ws_url = ws_url
         self.bots: dict[str, Bot] = {}
         self.graph: dict[str, Any] = {}
-        self.catalog: dict[str, Any] = {}
+        # A RaceItemCatalog (services/race_items.py), read by load().
+        self.catalog: Any = None
         self.boss_nodes: dict[str, int] = {}
         self.started_at: datetime | None = None
         # The highest IGT a real (non-bot) runner of the race reported, read
@@ -178,8 +182,10 @@ class Console:
                 raise SystemExit("this race has no seed yet")
             self.graph = race.seed.graph_json
             self.catalog = extract_race_item_catalog(self.graph)
-            if not self.catalog:
-                raise SystemExit("the race's seed has no race item catalog")
+            if not self.catalog.items:
+                raise SystemExit(
+                    "the race's seed has no race item catalog (graph.json 4.12 or later)"
+                )
             self.boss_nodes = {
                 node: flag for flag, node in extract_boss_flags(self.graph).items()
             }
@@ -348,16 +354,18 @@ class Console:
                     )
                     log(f"[{bot.name}] got {msg['item']} (grant {msg['grant_id']})")
                 elif kind == "item_effect":
-                    log(f"[{bot.name}] hit by {msg['item']}: {msg['effect']}")
+                    # Without a banner: the effect of the bot's own self item.
+                    how = "applies its" if msg.get("banner") is None else "hit by"
+                    log(f"[{bot.name}] {how} {msg['item']}: {msg['effect']}")
                 elif kind == "item_result":
                     banner = msg.get("banner", {})
                     line, detail = banner.get("line"), banner.get("detail")
                     log(f"[{bot.name}] {msg['item']} result: {line} {detail}")
                 elif kind == "item_remove":
-                    if bot.held == msg.get("item"):
+                    if bot.held and self.held_goods(bot) == msg.get("goods"):
                         bot.held = None
                     log(
-                        f"[{bot.name}] {msg.get('item')} removed (shield used or taken back)"
+                        f"[{bot.name}] {msg.get('goods')} goods removed (shield used or taken back)"
                     )
                 elif kind in ("error", "auth_error"):
                     self.note(
@@ -532,8 +540,8 @@ class Console:
         from speedfog_racing.database import async_session_maker
         from speedfog_racing.models import Participant, User
 
-        if item not in self.catalog:
-            log(f"no item {item!r}: {', '.join(sorted(self.catalog))}")
+        if item not in self.catalog.items:
+            log(f"no item {item!r}: {', '.join(sorted(self.catalog.items))}")
             return
         async with async_session_maker() as db:
             p = (
@@ -562,23 +570,34 @@ class Console:
                 f"{who} holds {item}: it spawns at their next load (fog gate, quit-out)"
             )
             return
+        # The bot's game is this script: it drops its old item, so its report
+        # lacks the goods and the server sends the new grant (a reported Race
+        # Item would confirm the new item under the old item's name).
+        bot.held = None
         await self.inventory(bot)
+
+    def held_goods(self, bot: Bot) -> str | None:
+        """The goods key the bot's item is held as (the Race Item or the Shield)."""
+        entry = self.catalog.items.get(bot.held) if bot.held else None
+        return entry.goods if entry is not None else None
 
     async def use(self, bot: Bot) -> None:
         if bot.held is None:
             log(f"[{bot.name}] holds nothing")
             return
-        use_flag = self.catalog[bot.held].use_flag
-        if use_flag is None:
+        goods = self.catalog.goods.get(self.held_goods(bot))
+        if goods is None or goods.use_flag is None:
             log(f"[{bot.name}] {bot.held} cannot be used")
             return
         log(f"[{bot.name}] uses {bot.held}")
-        if await self.flag(bot, use_flag):
+        if await self.flag(bot, goods.use_flag):
             bot.held = None
 
     async def inventory(self, bot: Bot) -> None:
-        items = [bot.held] if bot.held else []
-        await self.send(bot, {"type": "item_inventory", "items": items})
+        goods = self.held_goods(bot)
+        await self.send(
+            bot, {"type": "item_inventory", "goods": [goods] if goods else []}
+        )
 
     async def run(self) -> None:
         self.tasks.append(asyncio.create_task(self.heartbeat()))

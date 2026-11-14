@@ -100,7 +100,7 @@ async def grant_item(
         key = draw_base_key(
             tier,
             settings.race_items_tier_weights,
-            available_base_keys(catalog),
+            available_base_keys(catalog.items),
             rng if rng is not None else random.Random(),
         )
         if key is None:
@@ -108,7 +108,7 @@ async def grant_item(
             return None
         if key == "rune_pouch":
             key = rune_pouch_variant(me.current_layer, int(graph_json.get("total_layers") or 0))
-        entry = catalog.get(key)
+        entry = catalog.items.get(key)
         if entry is None:
             logger.warning("Race item %s drawn but absent from the catalog: race=%s", key, race_id)
             return None
@@ -154,7 +154,7 @@ def pending_grant_message(
     held = participant.held_item
     if not held or held.get("confirmed") or graph_json is None:
         return None
-    entry = extract_race_item_catalog(graph_json).get(held["item"])
+    entry = extract_race_item_catalog(graph_json).items.get(held["item"])
     if entry is None:
         return None
     return ItemGrantMessage(
@@ -176,7 +176,7 @@ async def resolve_item_use(
     session_maker: async_sessionmaker[AsyncSession],
     race_id: uuid.UUID,
     participant_id: uuid.UUID,
-    item_key: str,
+    goods_key: str,
     igt_ms: int,
     graph_json: Mapping[str, Any],
     *,
@@ -184,30 +184,45 @@ async def resolve_item_use(
 ) -> ItemResolution:
     """Consume the runner's held item and resolve it on its targets.
 
-    Empty unless the runner holds exactly ``item_key``: a replayed or stray
-    use changes nothing. Targets come from the playing runners in leaderboard
-    order. A held shield blocks the item and is spent, connected or not; a
-    target without a connected mod is a miss. A self item answers the sender
-    only. Logs one ``use`` event with every target's outcome.
+    ``goods_key`` is the goods whose use flag the mod reported (the Race
+    Item, whatever item it holds). Empty unless the runner holds an item of
+    that goods, and a goods without a use flag (the Shield) is never used: a
+    replayed or stray use changes nothing. Targets come from the playing
+    runners in item order. A held shield blocks the item and is spent,
+    connected or not; a target without a connected mod is a miss. A self item
+    sends its effect, without a banner, to the sender's own mod. Logs one
+    ``use`` event with every target's outcome.
     """
+    catalog = extract_race_item_catalog(graph_json)
+    goods = catalog.goods.get(goods_key)
+    shield = catalog.items.get("shield")
     async with session_maker() as db:
         race = await _load_race(db, race_id)
         sender = (
             next((p for p in race.participants if p.id == participant_id), None) if race else None
         )
         held = sender.held_item if sender else None
-        if race is None or sender is None or not held or held.get("item") != item_key:
+        item_key = held.get("item") if held else None
+        entry = catalog.items.get(item_key) if isinstance(item_key, str) else None
+        if (
+            race is None
+            or sender is None
+            or not isinstance(item_key, str)
+            or entry is None
+            or entry.goods != goods_key
+            or goods is None
+            or goods.use_flag is None
+        ):
             logger.info(
-                "Race item use ignored (not held): race=%s participant=%s item=%s held=%s",
+                "Race item use ignored (not held): race=%s participant=%s goods=%s held=%s",
                 race_id,
                 participant_id,
+                goods_key,
                 item_key,
-                held.get("item") if held else None,
             )
             return ItemResolution()
-        entry = extract_race_item_catalog(graph_json).get(item_key)
         rule = ITEM_RULES.get(base_key(item_key))
-        if entry is None or rule is None:
+        if rule is None:
             logger.warning("Race item %s used but unknown: race=%s", item_key, race_id)
             return ItemResolution()
 
@@ -219,7 +234,19 @@ async def resolve_item_use(
         blocked: list[str] = []
         offline = 0
         outcomes: list[dict[str, str]] = []
-        if rule.target != "self":
+        if rule.target == "self":
+            payload = effect_payload(item_key, entry)
+            if payload is not None:
+                # Applied without a banner: the result carries it.
+                resolution.effects.append(
+                    (
+                        participant_id,
+                        ItemEffectMessage(
+                            item=item_key, effect=payload, banner=None, reminder=None
+                        ),
+                    )
+                )
+        else:
             playing = [
                 Runner(p.id, p.user.twitch_display_name or p.user.twitch_username)
                 for p in item_standings(race.participants, graph_json)
@@ -230,13 +257,13 @@ async def resolve_item_use(
                 # A Blue Shell used while leading hits its own sender.
                 own = runner.participant_id == participant_id
                 target_held = target.held_item
-                if target_held and target_held.get("item") == "shield":
+                if shield is not None and target_held and target_held.get("item") == "shield":
                     target.held_item = None
                     resolution.removals.append(
                         (
                             target.id,
                             ItemRemoveMessage(
-                                item="shield", banner=shield_banner(entry.name, sender_name)
+                                goods=shield.goods, banner=shield_banner(entry.name, sender_name)
                             ),
                         )
                     )
@@ -286,29 +313,33 @@ async def resolve_item_use(
 async def reconcile_inventory(
     session_maker: async_sessionmaker[AsyncSession],
     participant_id: uuid.UUID,
-    items: Sequence[str],
+    goods: Sequence[str],
     graph_json: Mapping[str, Any],
 ) -> list[ItemRemoveMessage | ItemGrantMessage]:
-    """Align the held item with the race items the mod reports in the inventory.
+    """Align the held item with the race goods the mod reports in the inventory.
 
-    The report is the truth about the goods in the game. A held item in the
-    report is confirmed; a confirmed one that is absent was lost (save reload,
-    drop) and is cleared, logging ``lost``, so the runner can draw again; an
-    unconfirmed one that is absent is kept, its goods may not be spawned yet,
-    and its grant is returned last to be sent again (the mod ignores a grant
-    id it already has). Every other reported item is not held: it is returned
-    as a removal without banner and logged ``take_back``. Keys outside the
-    catalog are ignored.
+    The report is the truth about the goods in the game, and the held item
+    shows as its goods (the Race Item or the Shield). A held item whose goods
+    is reported is confirmed; a confirmed one whose goods is absent was lost
+    (save reload, drop) and is cleared, logging ``lost``, so the runner can
+    draw again; an unconfirmed one whose goods is absent is kept, its goods
+    may not be spawned yet, and its grant is returned last to be sent again
+    (the mod ignores a grant id it already has). Every other reported goods is
+    not held: it is returned as a removal without banner and logged
+    ``take_back`` (the goods key as the item). Keys outside the catalog's
+    goods are ignored.
     """
     catalog = extract_race_item_catalog(graph_json)
-    reported = [key for key in dict.fromkeys(items) if key in catalog]
+    reported = [key for key in dict.fromkeys(goods) if key in catalog.goods]
     async with session_maker() as db:
         participant = await db.get(Participant, participant_id)
         if participant is None:
             return []
         held = participant.held_item
         held_key = held.get("item") if held else None
-        if held and held_key in reported:
+        held_entry = catalog.items.get(held_key) if isinstance(held_key, str) else None
+        held_goods = held_entry.goods if held_entry else None
+        if held and held_goods in reported:
             if not held.get("confirmed"):
                 # Reassign: a JSON column does not see in-place changes.
                 participant.held_item = {**held, "confirmed": True}
@@ -325,9 +356,9 @@ async def reconcile_inventory(
             )
         messages: list[ItemRemoveMessage | ItemGrantMessage] = []
         for key in reported:
-            if key == held_key:
+            if key == held_goods:
                 continue
-            messages.append(ItemRemoveMessage(item=key))
+            messages.append(ItemRemoveMessage(goods=key))
             db.add(
                 RaceItemEvent(
                     race_id=participant.race_id,

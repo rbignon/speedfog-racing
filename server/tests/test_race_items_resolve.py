@@ -19,43 +19,74 @@ from speedfog_racing.models import (
     SeedStatus,
     User,
 )
-from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN
+from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN, shield_banner
 from speedfog_racing.websocket.race.items import (
     ItemResolution,
     reconcile_inventory,
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import manager
-from speedfog_racing.websocket.schemas import ItemGrantMessage
+from speedfog_racing.websocket.schemas import (
+    ItemEffectMessage,
+    ItemEffectPayload,
+    ItemGrantMessage,
+    ItemRemoveMessage,
+)
 
 pytestmark = pytest.mark.asyncio
 
 PLAYING = ParticipantStatus.PLAYING
 
 
-def _item(name: str, goods_id: int, *, use: bool = True, speffect=None, duration_ms=None) -> dict:
+def _item(
+    name: str, icon_id: int, *, goods: str = "race_item", speffect=None, duration_ms=None
+) -> dict:
     return {
         "name": name,
         "icon": name.lower().replace(" ", "_"),
-        "goods_id": goods_id,
-        "use_flag": 1050290000 + goods_id % 100 if use else None,
-        "remove_flag": 1050290500 + goods_id % 100,
+        "icon_id": icon_id,
+        "goods": goods,
         "effect_speffect": speffect,
         "duration_ms": duration_ms,
     }
+
+
+def _catalog(*items: tuple[str, dict], shield: bool = True) -> dict:
+    """A graph.json 4.12 catalog: the Race Item goods holding ``items``, plus
+    the Shield's own goods and item unless ``shield`` is False."""
+    goods: dict[str, dict] = {
+        "race_item": {
+            "goods_id": 1450801,
+            "use_flag": 1050290101,
+            "remove_flag": 1050290201,
+            "icon": "item_box",
+            "icon_id": 60396,
+        }
+    }
+    entries = dict(items)
+    if shield:
+        goods["shield"] = {
+            "goods_id": 1450800,
+            "use_flag": None,
+            "remove_flag": 1050290200,
+            "icon": "shield",
+            "icon_id": 60385,
+        }
+        entries["shield"] = _item("Shield", 60385, goods="shield")
+    return {"goods": goods, "items": entries}
 
 
 GRAPH = {
     "total_layers": 5,
     "nodes": {},
     "plugins": {RACE_ITEMS_PLUGIN: {"enabled": True}},
-    RACE_ITEMS_PLUGIN: {
-        "shield": _item("Shield", 1450800, use=False),
-        "red_shell": _item("Red Shell", 1450803),
-        "mushroom": _item("Mushroom", 1450804, speffect=4000004, duration_ms=15000),
-        "hammer": _item("Hammer", 1450805, speffect=4000005, duration_ms=15000),
-        "blue_shell": _item("Blue Shell", 1450808, speffect=4000008, duration_ms=15000),
-    },
+    RACE_ITEMS_PLUGIN: _catalog(
+        ("rune_pouch_2", _item("Rune Pouch", 60386, speffect=1450822)),
+        ("red_shell", _item("Red Shell", 60388)),
+        ("mushroom", _item("Mushroom", 60389, speffect=1450826, duration_ms=30000)),
+        ("hammer", _item("Hammer", 60390, speffect=1450827, duration_ms=15000)),
+        ("blue_shell", _item("Blue Shell", 60392, speffect=1450829, duration_ms=15000)),
+    ),
 }
 
 
@@ -127,12 +158,13 @@ async def _use(
     session_maker,
     race_id: uuid.UUID,
     sender: uuid.UUID,
-    item_key: str,
+    goods: str = "race_item",
     *,
     online: Callable[[uuid.UUID], bool] = lambda _: True,
 ) -> ItemResolution:
+    """The sender's mod reports the use flag of ``goods`` (the Race Item by default)."""
     return await resolve_item_use(
-        session_maker, race_id, sender, item_key, 50_000, GRAPH, is_connected=online
+        session_maker, race_id, sender, goods, 50_000, GRAPH, is_connected=online
     )
 
 
@@ -161,7 +193,7 @@ async def test_group_item_misses_when_nobody_can_be_hit(items_db):
         ("Bob", ParticipantStatus.FINISHED, 5, None),
         ("Cleo", ParticipantStatus.ABANDONED, 3, None),
     )
-    resolution = await _use(items_db, race_id, ids["Alice"], "hammer")
+    resolution = await _use(items_db, race_id, ids["Alice"])
     assert resolution.result is not None
     assert resolution.result.banner.line == "Missed: no other runner"
     assert resolution.effects == []
@@ -176,9 +208,7 @@ async def test_group_item_misses_when_nobody_can_be_hit(items_db):
         ("Bob", PLAYING, 3, None),
         ("Cleo", PLAYING, 1, None),
     )
-    resolution = await _use(
-        items_db, race_id, ids["Alice"], "hammer", online=lambda pid: pid == ids["Alice"]
-    )
+    resolution = await _use(items_db, race_id, ids["Alice"], online=lambda pid: pid == ids["Alice"])
     assert resolution.result is not None
     assert resolution.result.banner.line == "Missed"
     assert resolution.effects == []
@@ -190,30 +220,109 @@ async def test_group_item_misses_when_nobody_can_be_hit(items_db):
     ]
 
 
-async def test_mushroom_only_answers_the_sender(items_db):
+async def test_race_item_use_resolves_the_held_item(items_db):
+    race_id, ids = await _field(
+        items_db,
+        ("Alice", PLAYING, 2, "hammer"),
+        ("Bob", PLAYING, 3, None),
+        ("Cleo", PLAYING, 1, None),
+    )
+    # The use flag names the goods; the held item says what it does.
+    resolution = await _use(items_db, race_id, ids["Alice"], "race_item")
+    assert [(pid, e.item, e.effect.kind) for pid, e in resolution.effects] == [
+        (ids["Bob"], "hammer", "equip_load"),
+        (ids["Cleo"], "hammer", "equip_load"),
+    ]
+    assert resolution.result is not None
+    assert (resolution.result.item, resolution.result.banner.line) == ("hammer", "Hit 2 runners")
+    assert await _held(items_db, ids["Alice"]) is None
+    [event] = await _use_events(items_db, race_id)
+    assert event.item == "hammer"
+
+
+async def test_mushroom_answers_its_own_mod_with_its_effect(items_db):
     race_id, ids = await _field(
         items_db, ("Alice", PLAYING, 2, "mushroom"), ("Bob", PLAYING, 3, None)
     )
-    resolution = await _use(items_db, race_id, ids["Alice"], "mushroom")
-    assert resolution.effects == []
+    resolution = await _use(items_db, race_id, ids["Alice"])
+    # The effect row goes to the sender's own mod, without a banner: the
+    # result carries it, with the reminder.
+    assert resolution.effects == [
+        (
+            ids["Alice"],
+            ItemEffectMessage(
+                item="mushroom",
+                effect=ItemEffectPayload(kind="speffect", speffect_id=1450826),
+                banner=None,
+                reminder=None,
+            ),
+        )
+    ]
     assert resolution.removals == []
     assert resolution.result is not None
-    assert resolution.result.banner.line == "Infinite stamina for 15 s"
+    assert resolution.result.banner.line == "Infinite stamina for 30 s"
     assert resolution.result.reminder is not None
     assert resolution.result.reminder.model_dump() == {
         "text": "Infinite stamina",
-        "duration_ms": 15000,
+        "duration_ms": 30000,
     }
     assert await _held(items_db, ids["Alice"]) is None
+    [event] = await _use_events(items_db, race_id)
+    assert event.targets == []
+
+
+async def test_rune_pouch_answers_its_own_mod_with_its_effect(items_db):
+    race_id, ids = await _field(
+        items_db, ("Alice", PLAYING, 2, "rune_pouch_2"), ("Bob", PLAYING, 3, None)
+    )
+    resolution = await _use(items_db, race_id, ids["Alice"])
+    assert [(pid, e.effect.model_dump(), e.banner) for pid, e in resolution.effects] == [
+        (ids["Alice"], {"kind": "speffect", "speffect_id": 1450822}, None)
+    ]
+    assert resolution.result is not None
+    assert resolution.result.banner.line == "Runes added"
+    assert resolution.result.reminder is None
+
+
+async def test_a_replayed_use_after_resolution_is_ignored(items_db):
+    race_id, ids = await _field(
+        items_db, ("Alice", PLAYING, 2, "red_shell"), ("Bob", PLAYING, 3, None)
+    )
+    first = await _use(items_db, race_id, ids["Alice"])
+    assert first.result is not None
+    # The ACK was lost: the mod reports the same use again.
+    replay = await _use(items_db, race_id, ids["Alice"])
+    assert (replay.result, replay.effects, replay.removals) == (None, [], [])
+    assert len(await _use_events(items_db, race_id)) == 1
+
+
+async def test_a_goods_without_a_use_flag_is_never_used(items_db):
+    race_id, ids = await _field(items_db, ("Lea", PLAYING, 3, "shield"), ("Sam", PLAYING, 2, None))
+    # Neither the Shield's own goods (no use flag) nor the Race Item spends a held Shield.
+    for goods in ("shield", "race_item"):
+        resolution = await _use(items_db, race_id, ids["Lea"], goods)
+        assert (resolution.result, resolution.effects, resolution.removals) == (None, [], [])
+    assert await _held(items_db, ids["Lea"]) == {"grant_id": 1, "item": "shield", "confirmed": True}
+    assert await _use_events(items_db, race_id) == []
+
+
+async def test_shield_block_removes_the_shield_goods(items_db):
+    race_id, ids = await _field(
+        items_db, ("Lea", PLAYING, 3, "shield"), ("Sam", PLAYING, 2, "red_shell")
+    )
+    resolution = await _use(items_db, race_id, ids["Sam"])
+    assert resolution.removals == [
+        (ids["Lea"], ItemRemoveMessage(goods="shield", banner=shield_banner("Red Shell", "Sam")))
+    ]
+    assert resolution.effects == []
+    assert await _held(items_db, ids["Lea"]) is None
 
 
 async def test_an_offline_shield_holder_still_spends_the_shield(items_db):
     race_id, ids = await _field(
         items_db, ("Lea", PLAYING, 3, "shield"), ("Sam", PLAYING, 2, "red_shell")
     )
-    resolution = await _use(
-        items_db, race_id, ids["Sam"], "red_shell", online=lambda pid: pid == ids["Sam"]
-    )
+    resolution = await _use(items_db, race_id, ids["Sam"], online=lambda pid: pid == ids["Sam"])
     assert resolution.result is not None
     assert resolution.result.banner.line == "Blocked by Lea's shield"
     assert [pid for pid, _ in resolution.removals] == [ids["Lea"]]
@@ -234,7 +343,7 @@ async def test_concurrent_uses_consume_one_shield(items_db):
 
     async def use(sender: uuid.UUID) -> ItemResolution:
         async with lock:
-            return await _use(items_db, race_id, sender, "blue_shell")
+            return await _use(items_db, race_id, sender)
 
     try:
         resolutions = await asyncio.gather(use(ids["Sam"]), use(ids["Tom"]))
@@ -266,13 +375,14 @@ async def _set_held(session_maker, participant_id: uuid.UUID, held: dict | None)
         await db.commit()
 
 
-async def test_reconcile_clears_a_lost_confirmed_item(items_db):
-    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, "shield"))
-    removals = await reconcile_inventory(items_db, ids["Alice"], [], GRAPH)
-    assert removals == []
+async def test_missing_goods_clears_a_confirmed_item(items_db):
+    race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, "hammer"))
+    # The Shield's goods is no sign of the hammer, held as the Race Item.
+    removals = await reconcile_inventory(items_db, ids["Alice"], ["shield"], GRAPH)
+    assert [(r.goods, r.banner) for r in removals] == [("shield", None)]
     assert await _held(items_db, ids["Alice"]) is None
     [event] = await _events(items_db, race_id, "lost")
-    assert (event.participant_id, event.item) == (ids["Alice"], "shield")
+    assert (event.participant_id, event.item) == (ids["Alice"], "hammer")
 
 
 async def test_reconcile_keeps_and_resends_an_unconfirmed_grant(items_db):
@@ -288,10 +398,10 @@ async def test_reconcile_keeps_and_resends_an_unconfirmed_grant(items_db):
     assert await _events(items_db, race_id, "lost") == []
 
 
-async def test_reconcile_confirms_a_reported_grant(items_db):
+async def test_reported_goods_confirm_the_held_item(items_db):
     _, ids = await _field(items_db, ("Alice", PLAYING, 2, None))
     await _set_held(items_db, ids["Alice"], {"grant_id": 3, "item": "hammer", "confirmed": False})
-    assert await reconcile_inventory(items_db, ids["Alice"], ["hammer"], GRAPH) == []
+    assert await reconcile_inventory(items_db, ids["Alice"], ["race_item"], GRAPH) == []
     assert await _held(items_db, ids["Alice"]) == {
         "grant_id": 3,
         "item": "hammer",
@@ -302,17 +412,21 @@ async def test_reconcile_confirms_a_reported_grant(items_db):
 async def test_reconcile_takes_back_goods_not_held(items_db):
     race_id, ids = await _field(items_db, ("Alice", PLAYING, 2, "shield"))
     removals = await reconcile_inventory(
-        items_db, ids["Alice"], ["hammer", "shield", "not_in_catalog"], GRAPH
+        items_db, ids["Alice"], ["race_item", "shield", "not_in_catalog"], GRAPH
     )
-    assert [(r.item, r.banner) for r in removals] == [("hammer", None)]
+    assert [(r.goods, r.banner) for r in removals] == [("race_item", None)]
     assert await _held(items_db, ids["Alice"]) == {
         "grant_id": 1,
         "item": "shield",
         "confirmed": True,
     }
     [event] = await _events(items_db, race_id, "take_back")
-    assert event.item == "hammer"
-    # Holding nothing, every reported item goes.
-    _, ids = await _field(items_db, ("Bob", PLAYING, 2, None))
-    removals = await reconcile_inventory(items_db, ids["Bob"], ["hammer", "hammer"], GRAPH)
-    assert [r.item for r in removals] == ["hammer"]
+    assert event.item == "race_item"
+
+
+async def test_reported_goods_without_a_held_item_is_taken_back(items_db):
+    race_id, ids = await _field(items_db, ("Bob", PLAYING, 2, None))
+    removals = await reconcile_inventory(items_db, ids["Bob"], ["race_item", "race_item"], GRAPH)
+    assert removals == [ItemRemoveMessage(goods="race_item", banner=None)]
+    [event] = await _events(items_db, race_id, "take_back")
+    assert (event.participant_id, event.item) == (ids["Bob"], "race_item")

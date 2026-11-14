@@ -125,7 +125,7 @@ the option made and not a player, so it is no reroll for the boards (a 400,
 the option staying off, when the pool has no such seed). A change broadcasts a
 `race_info_update` like the other options, and `RaceInfo.race_items` carries
 it to the mod and the web. The mod only gets the item catalog, and meets the
-protocol 1.12 gate, at auth: a change also closes every connected mod of the
+protocol 1.13 gate, at auth: a change also closes every connected mod of the
 race with code 1000, as a reset does, so each one reconnects under the new
 setting (an older mod is then refused). Spectators stay connected. See
 `RACE_ITEMS.md`.

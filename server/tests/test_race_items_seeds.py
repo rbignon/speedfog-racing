@@ -13,21 +13,54 @@ from speedfog_racing.main import app
 from speedfog_racing.models import Race, RaceStatus, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.race_items import (
     CatalogEntry,
+    GoodsEntry,
     extract_race_item_catalog,
     seed_has_race_items,
     use_flag_map,
 )
 from speedfog_racing.services.seed_service import assign_seed_to_race, reroll_seed_for_race
 
-ENTRY = {
-    "name": "Banana",
-    "icon": "banana",
-    "goods_id": 100,
-    "use_flag": 5,
-    "remove_flag": 6,
+RACE_ITEM = {
+    "goods_id": 1450801,
+    "use_flag": 1050290101,
+    "remove_flag": 1050290201,
+    "icon": "item_box",
+    "icon_id": 60396,
+}
+SHIELD_GOODS = {
+    "goods_id": 1450800,
+    "use_flag": None,
+    "remove_flag": 1050290200,
+    "icon": "shield",
+    "icon_id": 60385,
+}
+SHIELD = {
+    "name": "Shield",
+    "icon": "shield",
+    "icon_id": 60385,
+    "goods": "shield",
     "effect_speffect": None,
     "duration_ms": None,
 }
+BANANA = {
+    "name": "Banana",
+    "icon": "banana",
+    "icon_id": 60387,
+    "goods": "race_item",
+    "effect_speffect": None,
+    "duration_ms": None,
+}
+
+
+def _catalog(*items: tuple[str, dict], shield: bool = True) -> dict:
+    """A graph.json 4.12 catalog: the Race Item goods holding ``items``, plus
+    the Shield's own goods and item unless ``shield`` is False."""
+    goods = {"race_item": RACE_ITEM}
+    entries = dict(items)
+    if shield:
+        goods["shield"] = SHIELD_GOODS
+        entries["shield"] = SHIELD
+    return {"goods": goods, "items": entries}
 
 
 def _items_graph() -> dict:
@@ -35,7 +68,7 @@ def _items_graph() -> dict:
         "total_layers": 5,
         "nodes": [],
         "plugins": {"race_items": {"enabled": True}},
-        "race_items": {"banana": ENTRY},
+        "race_items": _catalog(("banana", BANANA)),
     }
 
 
@@ -46,32 +79,79 @@ def _plain_graph() -> dict:
 def test_seed_has_race_items():
     assert seed_has_race_items(_items_graph())
     assert not seed_has_race_items({**_items_graph(), "race_items": {}})
+    # Goods without a single item is no catalog to draw from.
+    assert not seed_has_race_items(
+        {**_items_graph(), "race_items": {"goods": {"race_item": RACE_ITEM}, "items": {}}}
+    )
     assert not seed_has_race_items(
         {**_items_graph(), "plugins": {"race_items": {"enabled": False}}}
     )
-    assert not seed_has_race_items({"race_items": {"banana": ENTRY}})
+    assert not seed_has_race_items({"race_items": _catalog(("banana", BANANA))})
     assert not seed_has_race_items(_plain_graph())
+
+
+def test_extract_reads_goods_and_items():
+    catalog = extract_race_item_catalog(_items_graph())
+    assert catalog.goods == {
+        "race_item": GoodsEntry(1450801, 1050290101, 1050290201, "item_box", 60396),
+        "shield": GoodsEntry(1450800, None, 1050290200, "shield", 60385),
+    }
+    assert catalog.goods["race_item"].use_flag == 1050290101
+    assert catalog.items == {
+        "banana": CatalogEntry("Banana", "banana", 60387, "race_item", None, None),
+        "shield": CatalogEntry("Shield", "shield", 60385, "shield", None, None),
+    }
+    empty = extract_race_item_catalog(_plain_graph())
+    assert (empty.goods, empty.items) == ({}, {})
+
+
+def test_a_v1_flat_catalog_is_no_race_items_seed():
+    graph = {
+        "plugins": {"race_items": {"enabled": True}},
+        "race_items": {
+            "banana": {
+                "name": "Banana",
+                "icon": "banana",
+                "goods_id": 1450804,
+                "use_flag": 1050290104,
+                "remove_flag": 1050290204,
+            }
+        },
+    }
+    assert seed_has_race_items(graph) is False
+    assert extract_race_item_catalog(graph).items == {}
 
 
 def test_extract_catalog_skips_malformed_entries():
     graph = _items_graph()
-    graph["race_items"] = {
-        "banana": ENTRY,
-        "no_goods": {k: v for k, v in ENTRY.items() if k != "goods_id"},
-        "string_flag": {**ENTRY, "remove_flag": "6"},
-        "not_a_dict": 3,
-    }
+    graph["race_items"]["goods"].update(
+        no_remove={k: v for k, v in RACE_ITEM.items() if k != "remove_flag"},
+        string_use={**RACE_ITEM, "use_flag": "1050290101"},
+        not_a_dict=3,
+    )
+    graph["race_items"]["items"].update(
+        no_goods={k: v for k, v in BANANA.items() if k != "goods"},
+        string_icon_id={**BANANA, "icon_id": "60387"},
+        on_malformed_goods={**BANANA, "goods": "no_remove"},
+        not_a_dict=3,
+    )
     catalog = extract_race_item_catalog(graph)
-    assert list(catalog) == ["banana"]
-    assert catalog["banana"] == CatalogEntry("Banana", "banana", 100, 5, 6, None, None)
-    assert extract_race_item_catalog(_plain_graph()) == {}
+    assert list(catalog.goods) == ["race_item", "shield"]
+    assert list(catalog.items) == ["banana", "shield"]
+
+
+def test_an_item_on_an_unknown_goods_is_dropped():
+    graph = _items_graph()
+    graph["race_items"]["items"]["ghost"] = {**BANANA, "name": "Ghost", "goods": "ghost"}
+    assert "ghost" not in extract_race_item_catalog(graph).items
+    # A catalog whose every item sits on an unknown goods has nothing to draw.
+    only_ghost = {**_items_graph(), "race_items": {"goods": {}, "items": {"banana": BANANA}}}
+    assert extract_race_item_catalog(only_ghost).items == {}
+    assert not seed_has_race_items(only_ghost)
 
 
 def test_use_flag_map_skips_the_shield():
-    shield = {**ENTRY, "name": "Shield", "use_flag": None}
-    graph = _items_graph()
-    graph["race_items"] = {"shield": shield, "banana": ENTRY}
-    assert use_flag_map(extract_race_item_catalog(graph)) == {5: "banana"}
+    assert use_flag_map(extract_race_item_catalog(_items_graph())) == {1050290101: "race_item"}
 
 
 @pytest.fixture
@@ -137,15 +217,22 @@ async def test_scan_marks_the_seeds_that_carry_the_plugin(rs_session, tmp_path, 
     pool_dir.mkdir()
     _create_seed_zip(pool_dir, "seed_items", _items_graph())
     _create_seed_zip(pool_dir, "seed_empty", {**_items_graph(), "race_items": {}})
+    # A seed generated before graph.json 4.12 (flat catalog) no longer carries items.
+    _create_seed_zip(
+        pool_dir,
+        "seed_v1",
+        {**_items_graph(), "race_items": {"banana": {**BANANA, "goods_id": 1450804}}},
+    )
     _create_seed_zip(pool_dir, "seed_plain", _plain_graph())
     monkeypatch.setattr(seed_service.settings, "seeds_pool_dir", str(tmp_path))
 
     async with rs_session() as db:
-        assert await seed_service.scan_pool(db, "standard") == 3
+        assert await seed_service.scan_pool(db, "standard") == 4
         seeds = (await db.execute(select(Seed))).scalars().all()
     assert {s.seed_number: s.race_items for s in seeds} == {
         "items": True,
         "empty": False,
+        "v1": False,
         "plain": False,
     }
 

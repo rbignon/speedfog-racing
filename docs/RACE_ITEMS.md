@@ -10,12 +10,12 @@ This document is the operational reference for the server side (rules, lifecycle
 
 - On for community races only: never in Daily Seeds, speedrun runs (Set Seed, Random Seed), solo training sessions or event races (the admin attach of a race with items to an event slot is a 422).
 - On `/race/new`, the option is the "Race items" checkbox of the Advanced options (hidden for speedrun and Set Seed races), its label carrying a gold "New" badge styled like the speedrun page's "Beta" one.
-- A seed supports items when `graph_json["plugins"]["race_items"]["enabled"]` is true and `graph_json["race_items"]` (the catalog) is a non-empty dict; the pool scan stores the answer in `Seed.race_items`. An items race only draws seeds that support them.
+- A seed supports items when `graph_json["plugins"]["race_items"]["enabled"]` is true and `graph_json["race_items"]` (the catalog, `{goods, items}` since graph.json 4.12) holds at least one valid item; the pool scan stores the answer in `Seed.race_items`. A seed generated before 4.12 (a flat `{item_key: entry}` catalog, one goods per item) supports none: a race on one grants nothing. An items race only draws seeds that support them.
 - Switching the option on in SETUP over a seed without the plugin redraws the seed (`apply_seed_reroll` with `count_as_reroll=False`: the option did it, not a player, so it is no reroll for the boards); with no seed to draw it is a 400 and the option stays off.
 - Any change of the option (on or off, with or without a redraw) closes every connected mod of the race with code 1000, as a race reset does: the catalog and the protocol gate below only apply at auth, so each mod reconnects and authenticates again, gets the catalog that matches, and an older mod meets the gate. Spectators stay connected.
 - A runner holds at most one item. A boss kill made while holding one grants nothing, then or later.
 - Only playing runners are ever targets; finished, abandoned and disqualified runners are skipped.
-- An items race needs a mod speaking protocol 1.12 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
+- An items race needs a mod speaking protocol 1.13 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
 - Items races stay out of the speedrun boards, the community stats and the generator calibration, since items distort clear times and deaths.
 - Items and deathless can be combined; nothing validates the choice.
 
@@ -37,15 +37,15 @@ Among the playing runners, in item order (index `i` of `n`):
 
 ## Items
 
-Catalog keys come from the seed (`graph.json` `race_items`: `name`, `icon`, `goods_id`, `use_flag`, `remove_flag`, `effect_speffect`, `duration_ms`). The rules (target, effect, banner wording) live in `ITEM_RULES` in `server/speedfog_racing/services/race_items.py`. Positions (just ahead, just behind, best-ranked) are in item order.
+Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_race_item_catalog` in `server/speedfog_racing/services/race_items.py`): `goods` by goods key (`goods_id`, `use_flag`, `remove_flag`, `icon`, `icon_id`) and `items` by item key (`name`, `icon`, `icon_id`, `goods`, `effect_speffect`, `duration_ms`). Every usable item is held as the one Race Item goods (`race_item`, use flag `1050290101`); the Shield, never used, is held as its own goods (`shield`, no use flag). An item on a goods the catalog lacks is dropped. The rules (target, effect, banner wording) live in `ITEM_RULES` in the same module. Positions (just ahead, just behind, best-ranked) are in item order.
 
 | Item                            | Tiers (default) | Target                         | Effect                                   |
 | ------------------------------- | --------------- | ------------------------------ | ---------------------------------------- |
 | `shield`                        | middle          | passive                        | blocks the next item aimed at the holder |
-| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes                             |
+| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes (its effect row)            |
 | `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`     |
 | `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`  |
-| `mushroom`                      | front, middle   | self                           | infinite stamina                         |
+| `mushroom`                      | front, middle   | self                           | infinite stamina (its effect row)        |
 | `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)            |
 | `ink`                           | middle          | every other playing runner     | exits hidden (overlay only)              |
 | `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                            |
@@ -64,11 +64,11 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 1. **Boss kill.** The boss kill hook (`BaseModHandler._on_boss_killed`) fires once per new kill, after the commit and the broadcast, outside any DB session. It never fires for the final boss, a replay, a re-report, a kill at IGT 0 or less, or a kill whose node has no visit.
 2. **Draw.** `grant_item` (`server/speedfog_racing/websocket/race/items.py`) opens its own session and loads the field. It grants nothing when items are off, the runner is not playing, or the runner holds an item. Otherwise it picks the tier from the runner's rank in item order, draws the key, bumps `Participant.item_grant_count`, stores the held item as unconfirmed, logs a `grant` event and commits.
 3. **Grant.** The server sends `item_grant {grant_id, item, banner}` to the runner's own mod. The grant id counts up per participant and never repeats.
-4. **Confirm.** The mod spawns the goods and answers `item_received {grant_id}`; the server sets `confirmed` when the id matches the held grant, and ignores anything else.
-5. **Reconnect.** An unconfirmed grant is re-sent right after `auth_ok` at every (re)auth, and after an inventory report that lacks it (see below), until the mod confirms it. The mod ignores a grant id it already has.
-6. **Use.** Using the goods makes the plugin's EMEVD set the item's use flag, which the mod reports at once through `event_flag`. The handler matches use flags (the `use_flag` of each catalog entry, `use_flag_map`, cached per graph) after the usual gates (race running, no countdown, runner playing, initialized history, plausible IGT) and before the `event_map` lookup, and never adds a `zone_history` entry. After the session, the `_on_item_used` hook resolves the use; it does nothing when the race has items off, and outside races (training) it is a no-op. The flag is acked once the hook returns, so a use lost before its resolution committed (a server restart) is replayed by the mod.
-7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds exactly the used item, otherwise it logs the use and ignores it. That covers a stray copy, and the replay of a resolved use whose ACK was lost, since the resolution cleared the held item; only a new grant of the same item between a use and its replay would let the replay spend it. It clears the held item and resolves the targets among the playing runners in item order. For each target:
-   - a held Shield blocks the item: the Shield is spent (even when its holder is offline) and its holder gets `item_remove` for `shield` with a banner;
+4. **Confirm.** The mod spawns the item's goods (the Race Item, or the Shield's own goods), writes the item's icon into the goods' row, and answers `item_received {grant_id}`; the server sets `confirmed` when the id matches the held grant, and ignores anything else.
+5. **Reconnect.** `auth_ok` carries `held_item`, the item held (confirmed or not), so a restarted mod restores the Race Item's icon and the held row. An unconfirmed grant is re-sent right after `auth_ok` at every (re)auth, and after an inventory report that lacks its goods (see below), until the mod confirms it. The mod ignores a grant id it already has.
+6. **Use.** Using the Race Item makes the plugin's EMEVD set its use flag, the same for every item, which the mod reports at once through `event_flag`. The handler matches use flags (the `use_flag` of each catalog goods, `use_flag_map`: use flag to goods key, cached per graph) after the usual gates (race running, no countdown, runner playing, initialized history, plausible IGT) and before the `event_map` lookup, and never adds a `zone_history` entry. After the session, the `_on_item_used` hook resolves the use; it does nothing when the race has items off, and outside races (training) it is a no-op. The flag is acked once the hook returns, so a use lost before its resolution committed (a server restart) is replayed by the mod.
+7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds an item of the used goods, whatever item it is: the held item says what the use does. Otherwise it logs the use and ignores it, and a goods without a use flag (the Shield) is never used. That covers a stray copy, and the replay of a resolved use whose ACK was lost, since the resolution cleared the held item; only a new grant between a use and its replay (any item, since they share the goods) would let the replay spend it, a case accepted: on a reconnect the mod replays the use before any later kill. It clears the held item and resolves the targets among the playing runners in item order. For each target:
+   - a held Shield blocks the item: the Shield is spent (even when its holder is offline) and its holder gets `item_remove` for the `shield` goods with a banner;
    - otherwise a target whose mod is connected gets `item_effect` (effect, banner, reminder);
    - otherwise the target is offline and the effect is dropped, a miss for the sender.
 
@@ -76,22 +76,24 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 
    The Blue Shell's target is the leader at the time of use, the sender included: drawn at the back and used once leading, it hits its own sender (as in Mario Kart), who then gets both the `item_effect` (banner `from yourself`) and a result reading `Hit yourself`.
 
-   A self item (Mushroom, Rune Pouch) applies through the game's own use: no target, no `item_effect`. An item with no valid target is still consumed. One `use` event is logged with every target's outcome (`hit`, `blocked` or `offline`).
+   A self item (Mushroom, Rune Pouch) has no target: its effect row (`effect_speffect`: the Mushroom's stamina, the Rune Pouch's runes) goes to the sender's own mod as an `item_effect` without banner or reminder, which its result carries. An item with no valid target is still consumed. One `use` event is logged with every target's outcome (`hit`, `blocked` or `offline`; none for a self item).
 
-8. **Result.** The sender gets `item_result` (banner, plus the reminder for a self item). The handler sends the removals, the effects, then the result.
+8. **Result.** The sender gets `item_result` (banner, plus the reminder for a self item). The handler sends the removals, the effects (a self item's to its sender), then the result.
 
 Grants, confirmations and uses run under `RaceRoom.items_lock`, so concurrent connections cannot grant, confirm or spend over each other: two items aimed at one Shield holder spend the Shield once. A grant after a kill and a use also send their messages under the lock, so a later item message to a runner cannot overtake them.
 
 ### Inventory reconciliation
 
-The mod sends `item_inventory {items}` (the race items present in the game) once per game load, after that load's first flag poll and before any pending spawn, and once per reconnect. The server treats it as the truth about the goods, under the same lock; keys absent from the seed's catalog are ignored:
+The mod sends `item_inventory {goods}` (the race goods present in the game, by goods key) once per game load, after that load's first flag poll and before any pending spawn, and once per reconnect. The server treats it as the truth about the goods, under the same lock; the held item shows as its goods, and keys absent from the catalog's goods are ignored:
 
-| Held item                  | Report  | Outcome                                                             |
-| -------------------------- | ------- | ------------------------------------------------------------------- |
-| unconfirmed                | present | confirmed                                                           |
-| confirmed                  | absent  | cleared and logged `lost`, so the runner can draw again             |
-| unconfirmed                | absent  | kept, its goods may not be spawned yet: its `item_grant` is re-sent |
-| any reported item not held | present | `item_remove` without banner sent, logged `take_back`               |
+| Held item   | Report                | Outcome                                                                                 |
+| ----------- | --------------------- | --------------------------------------------------------------------------------------- |
+| unconfirmed | its goods present     | confirmed                                                                               |
+| confirmed   | its goods absent      | cleared and logged `lost`, so the runner can draw again                                 |
+| unconfirmed | its goods absent      | kept, its goods may not be spawned yet: its `item_grant` is re-sent                     |
+| any or none | another goods present | `item_remove {goods}` without banner sent, logged `take_back` (the goods key as `item`) |
+
+Since every usable item shares the Race Item, a Race Item reported while the server holds an unconfirmed usable item confirms it: the copy in the game now stands for it.
 
 ### Result and block banners
 
@@ -111,7 +113,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 - `Participant.held_item`: `{"grant_id": int, "item": str, "confirmed": bool}` or null. The column is JSON: reassign a new dict, never mutate in place.
 - `Participant.item_grant_count`: grants handed out so far; a reset keeps it, so ids never repeat.
-- `race_item_events`: the item log (`race_id`, `participant_id`, `kind`, `item`, `igt_ms`, `targets`, `created_at`); `kind` is `grant`, `use`, `lost` or `take_back`. Kept for audits and later web use.
+- `race_item_events`: the item log (`race_id`, `participant_id`, `kind`, `item`, `igt_ms`, `targets`, `created_at`); `kind` is `grant`, `use`, `lost` or `take_back`, and `item` is the item key (the goods key for a `take_back`). Kept for audits and later web use.
 
 ## Server settings
 
@@ -127,10 +129,10 @@ The mod acts only while the race has `race_items` on (`RaceInfo.race_items`), th
 
 ### Flags
 
-Each catalog entry has a goods id and two event flags in category 1050290 (one page resolve for all of them):
+Each catalog goods has a goods id and event flags in category 1050290 (one page resolve for all of them): the Race Item a use flag (`1050290101`) and a removal flag (`1050290201`), the Shield only a removal flag (`1050290200`).
 
-- **Use flag.** Read on the same scans as the boss flags (10 Hz poll, loading exit, reconnect rescan), all of them each scan. A set use flag is cleared in game at once and sent through `event_flag` with its `message_id`, ACK and replay, like a boss flag. It never joins `triggered_flags` (it fires again on the next use) and is no LiveSplit capture.
-- **Remove flag.** Only ever raised by the mod (`item_remove`); the game's own event clears it and the mod never does. A removal raised during a load can fail silently: the inventory report at the exit of that same load, seconds later, still lists the item and gets it taken back again (see Inventory reconciliation).
+- **Use flag.** The Race Item's, whatever item it holds. Read on the same scans as the boss flags (10 Hz poll, loading exit, reconnect rescan), each scan. A set use flag is cleared in game at once and sent through `event_flag` with its `message_id`, ACK and replay, like a boss flag. It never joins `triggered_flags` (it fires again on the next use) and is no LiveSplit capture.
+- **Remove flag.** Only ever raised by the mod (`item_remove {goods}`); the game's own event clears it and the mod never does. A removal raised during a load can fail silently: the inventory report at the exit of that same load, seconds later, still lists the goods and gets it taken back again (see Inventory reconciliation).
 
 ### Load gating
 
@@ -149,7 +151,7 @@ Grants and effects wait until the player is loaded. Once per game load (loading 
 All sizes derive from the display size each frame (`core/item_banner.rs`); text is built on receipt, textures are loaded once at init, and the seconds left go through a reused buffer.
 
 - **Banner**, 4 s, queued, fading in over 0.25 s and out over the last 0.5 s (`ItemFeed::banner_alpha`, applied to every colour it draws): top centre, block top at 13% of the screen height, over a gradient from the top edge (alpha 0.78) fading out at 48% of the height. Icon 7.5% of the width, title in uppercase Barlow Condensed 600 at 3.4% (letter spacing 0.08 em; danger colour for an effect received, gold otherwise), line in Public Sans at 1.6%, detail at 1.2% in the disabled text colour, each with a dark shadow.
-- **Held row**: while the player holds an item without a use action (the Shield), a first row in the same place shows its icon and gold name, with no countdown. It appears when the grant's goods are spawned (any other item spawned replaces it), follows every inventory read (so it comes back after a game restart), leaves on the item's `item_remove` or a new start, and stops showing once the run is over (finished or out). The name and icon come from the catalog (`race_item_catalog`).
+- **Held row**: while the player holds an item, any item, a first row in the same place shows its icon and gold name, with no countdown. It appears when the grant's goods are spawned (a new grant replaces it), follows every inventory read (shown while the held item's goods is in the inventory, so it comes back after a game restart, `auth_ok.held_item` naming the item), leaves on its goods' `item_remove`, a use of the Race Item or a new start, and stops showing once the run is over (finished or out). The name and icon come from the catalog (`race_item_catalog.items`).
 - **Reminder rows**, in the race panel after the leaderboard and before the status message: icon, text (danger for an effect received, gold for the sender's own) and the seconds left, right aligned.
 - No overlay tag marks a race with items: the race panel has no room to spare.
 - **Ink**: while active, every exit row reads `-> ???` with no location line. The exits cache is rebuilt when the zone, the width or the ink state changes, not every frame.
@@ -157,6 +159,8 @@ All sizes derive from the display size each frame (`core/item_banner.rs`); text 
 ### Icons
 
 `mod/assets/race_items/<icon>.png` (160x160 PNG) are embedded in the DLL and uploaded once at init; an icon name the mod does not know draws `unknown.png`. The art comes from the generator repo: drop the final `race_items_icon_<icon>.png` files (1024x1024, the generator derives the in-game textures from them) in `speedfog/data/plugins/`, run `uv run tools/sync_race_item_icons.py` (it reads the names from the catalog's `[icons]`, checks every file is a square PNG of at least 160x160, copies nothing when any is bad, and writes each icon downscaled to 160x160: the banner draws it at 7.5% of the screen width, 144 px at 1080p, and the full-size art would weigh megabytes in the DLL), then release the mod. `unknown.png` is outside the catalog and edited by hand.
+
+In game, the Race Item shows the held item's icon: the mod writes the item's `icon_id` into the goods' `EquipParamGoods` row in memory at each grant and again at every loading exit (the params reload with the game). Before a first grant it shows its own `item_box` icon (60396). The in-game textures come with the seed (icon ids 60385 to 60396).
 
 ## In-game test protocol
 
@@ -166,23 +170,23 @@ With the compiled mod and one game, on the local server. `tools/race_items_bot.p
 
 1. **Mod.** On Windows, `cd mod && cargo build --lib --release`, then copy `target/release/speedfog_racing.dll` over `tools/assets/speedfog_racing.dll` on the server machine: every seed zip the local server hands out carries that DLL (`MOD_DLL_PATH`).
 2. **Server and web.** The dev server (`:8000`) and web (`:5173`) run; `WEBSOCKET_URL` in `server/.env` is the address the game PC reaches (the LAN address, not localhost).
-3. **Seeds.** A pool folder `$SEEDS_POOL_DIR/race_items_test/` with a pool `config.toml` and race items seeds named `seed_<anything>.zip` (generated with `[plugin.race_items] enabled = true`), scanned with `cd server && uv run speedfog-scan-seeds --pool race_items_test`. Every race consumes a seed: add one copy per race under a new name and scan again.
+3. **Seeds.** A pool folder `$SEEDS_POOL_DIR/race_items_test/` with a pool `config.toml` and race items seeds named `seed_<anything>.zip` (generated with `[plugin.race_items] enabled = true`, graph.json 4.12 or later), scanned with `cd server && uv run speedfog-scan-seeds --pool race_items_test`. Every race consumes a seed: add one copy per race under a new name and scan again. The scan sets `Seed.race_items` when it adds a seed and never again: discard the older seeds a pool scanned before 4.12, or an items race may draw one and grant nothing.
 4. **Race.** On the web, create a community race in that pool with Race items on, and join it.
 5. **Bots.** `cd server && uv run python ../tools/race_items_bot.py <race_id> --bots <user1>,<user2>`, two local usernames; they join while the race is in setup and report ready. Keep the console open (`help` lists the commands).
 6. **Start.** Download your seed zip from the race page, launch it, wait until your mod is ready, then start the race from the web.
 
-Positions decide the targets, so the checks run in this order. The bots report your IGT, so the item order (above) follows the layers here: a bot is never ahead of you in IGT, nor you of a bot. Wait a few seconds after the start before driving the bots: until its first report of the running race, a bot is not playing and the server drops its flags (the console says so). Then go through the first fog gate: you lead (checks B). Afterwards, `ahead <user1>` walks that bot forward to the deepest layer while `<user2>` stays at the start: the field reads user1, you, user2 for checks C to F, so you draw middle items, you are the runner just behind user1 and just ahead of user2, and group items from either bot hit you. `give WHO ITEM` hands any item to a bot or to you (yours spawns at your next load: a fog gate or a quit-out).
+Positions decide the targets, so the checks run in this order. The bots report your IGT, so the item order (above) follows the layers here: a bot is never ahead of you in IGT, nor you of a bot. Wait a few seconds after the start before driving the bots: until its first report of the running race, a bot is not playing and the server drops its flags (the console says so). Then go through the first fog gate: you lead (checks B). Afterwards, `ahead <user1>` walks that bot forward to the deepest layer while `<user2>` stays at the start: the field reads user1, you, user2 for checks C to F, so you draw middle items, you are the runner just behind user1 and just ahead of user2, and group items from either bot hit you. `give WHO ITEM` hands any item to a bot or to you (yours spawns at your next load: a fog gate or a quit-out). Use the item you hold first: a Race Item already in your inventory takes the new item over at that load without a grant, so your mod shows it only from its next connection.
 
 ### Checks
 
 #### A. Grants and inventory (any position)
 
-1. Kill a boss in game: one copy lands in a quick slot with the gold banner (`[ITEMS] Goods spawned`, then `item_received`); `status` shows it confirmed.
-2. Quit out and reload, then restart the game: still one copy; `[ITEMS] Inventory read` lists it and no new spawn is requested (the grant was confirmed). `Goods already held, spawn skipped` only shows when the server sends a grant again, after a crash between the spawn and its `item_received`.
-3. Use it: the slot empties, the next `[ITEMS] Inventory read` no longer lists it, `status` shows nothing held. A targeted item shows on the console as `hit by ...` on a bot.
-4. `give <you> mushroom`, load, use it: rolls and sprints cost no stamina for about 15 s, with its buff icon and the "Infinite stamina" reminder counting down.
+1. Kill a boss in game: the item lands as the Race Item, in the same quick slot every time, with the item's icon, the gold banner and the held row (`[ITEMS] Goods spawned`, then `item_received`); `status` shows it confirmed.
+2. Quit out and reload, then restart the game: still one copy, with the item's icon and the held row back; `[ITEMS] Inventory read` lists the Race Item and no new spawn is requested (the grant was confirmed). `Goods already held, spawn skipped` only shows when the server sends a grant again, after a crash between the spawn and its `item_received`.
+3. Use it: the slot greys out at 0 and the next grant refills it; the next `[ITEMS] Inventory read` no longer lists it, the held row goes, `status` shows nothing held. A targeted item shows on the console as `hit by ...` on a bot.
+4. `give <you> mushroom`, load, use it: rolls and sprints cost no stamina for about 30 s, with its buff icon and the "Infinite stamina" reminder counting down.
 5. `give <you> rune_pouch_2`, load, use it: 20000 runes and the "Runes added" banner.
-6. `give <you> banana` while you hold another item, then load: the old item leaves the inventory (take back), the banana arrives.
+6. `give <you> shield` while you hold a Race Item, then load: the Race Item leaves the inventory (take back), the Shield arrives.
 
 #### B. While you lead (before `ahead`)
 
@@ -201,7 +205,7 @@ Positions decide the targets, so the checks run in this order. The bots report y
 
 #### D. Shield
 
-1. `give <you> shield`, load: a gold Shield row shows in the race panel, also after a game restart. Then a Red Shell from user2: the row goes, your Shield leaves the inventory (removal event), your banner reads "Blocked Red Shell" from user2, and the bot's result reads "Blocked by <you>'s shield" with no damage detail.
+1. `give <you> shield`, load: the Shield lands as its own goods, not in a quick slot, and a gold Shield row shows in the race panel, also after a game restart. Then a Red Shell from user2: the row goes, your Shield leaves the inventory (removal event), your banner reads "Blocked Red Shell" from user2, and the bot's result reads "Blocked by <you>'s shield" with no damage detail.
 
 #### E. Robustness
 

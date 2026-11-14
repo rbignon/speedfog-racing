@@ -82,6 +82,8 @@ from speedfog_racing.websocket.schemas import (
     ErrorCode,
     ErrorMessage,
     ParticipantInfo,
+    RaceItemCatalogWire,
+    RaceItemGoodsWire,
     RaceItemWire,
     RaceStartMessage,
     SeedInfo,
@@ -378,20 +380,29 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         )
         phantom_skins = extract_phantom_skins(seed.graph_json) if seed and seed.graph_json else {}
 
-        race_item_catalog = (
-            {
-                key: RaceItemWire(
-                    goods_id=entry.goods_id,
-                    use_flag=entry.use_flag,
-                    remove_flag=entry.remove_flag,
-                    name=entry.name,
-                    icon=entry.icon,
-                )
-                for key, entry in extract_race_item_catalog(seed.graph_json).items()
-            }
-            if race.race_items and seed and seed.graph_json
-            else {}
-        )
+        race_item_catalog = RaceItemCatalogWire()
+        held_item: str | None = None
+        if race.race_items and seed and seed.graph_json:
+            catalog = extract_race_item_catalog(seed.graph_json)
+            race_item_catalog = RaceItemCatalogWire(
+                goods={
+                    key: RaceItemGoodsWire(
+                        goods_id=goods.goods_id,
+                        use_flag=goods.use_flag,
+                        remove_flag=goods.remove_flag,
+                        icon_id=goods.icon_id,
+                    )
+                    for key, goods in catalog.goods.items()
+                },
+                items={
+                    key: RaceItemWire(
+                        name=entry.name, icon=entry.icon, icon_id=entry.icon_id, goods=entry.goods
+                    )
+                    for key, entry in catalog.items.items()
+                },
+            )
+        if race.race_items and participant.held_item:
+            held_item = participant.held_item.get("item")
 
         room = manager.get_room(race.id)
         connected_ids = set(room.mods.keys()) if room else set()
@@ -443,6 +454,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             ),
             participants=participant_infos,
             phantom_skin=phantom_skin,
+            held_item=held_item,
         )
         await self.websocket.send_text(message.model_dump_json())
 
@@ -489,8 +501,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # The kill is already committed: a failed draw must not drop the socket.
             logger.exception("Race item grant failed: %s", self.log_ref)
 
-    async def _on_item_used(self, entity: Participant, item_key: str, igt_ms: int) -> None:
-        """Resolve a race item use and send its messages (races with items on)."""
+    async def _on_item_used(self, entity: Participant, goods_key: str, igt_ms: int) -> None:
+        """Resolve a use of the held item and send its messages (races with items on)."""
         graph = self._cached_graph_json
         if not entity.race.race_items or not graph:
             return
@@ -503,7 +515,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     self.session_maker,
                     self._race_id,
                     entity.id,
-                    item_key,
+                    goods_key,
                     igt_ms,
                     graph,
                     is_connected=lambda pid: pid in room.mods,
@@ -529,17 +541,17 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await confirm_grant(self.session_maker, self._participant_id, grant_id)
 
     async def _handle_item_inventory(self, msg: dict[str, Any]) -> None:
-        """The mod reports the race items in the game: reconcile the held item."""
-        items = msg.get("items")
+        """The mod reports the race goods in the game: reconcile the held item."""
+        goods = msg.get("goods")
         graph = self._cached_graph_json
-        if self._participant_id is None or not graph or not isinstance(items, list):
+        if self._participant_id is None or not graph or not isinstance(goods, list):
             return
-        if not all(isinstance(key, str) for key in items):
+        if not all(isinstance(key, str) for key in goods):
             return
         room = manager.get_or_create_room(self._race_id)
         async with room.items_lock:
             messages = await reconcile_inventory(
-                self.session_maker, self._participant_id, items, graph
+                self.session_maker, self._participant_id, goods, graph
             )
             for message in messages:
                 await room.send_to_mod(self._participant_id, message.model_dump_json())

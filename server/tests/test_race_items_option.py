@@ -92,7 +92,25 @@ async def _make_seed(db, *, suffix: str, status: SeedStatus = SeedStatus.AVAILAB
             "total_layers": 5,
             "nodes": [],
             "plugins": {"race_items": {"enabled": True}},
-            "race_items": {"shield": {"name": "Shield", "icon": "shield", "goods_id": 1}},
+            "race_items": {
+                "goods": {
+                    "shield": {
+                        "goods_id": 1450800,
+                        "use_flag": None,
+                        "remove_flag": 1050290200,
+                        "icon": "shield",
+                        "icon_id": 60385,
+                    }
+                },
+                "items": {
+                    "shield": {
+                        "name": "Shield",
+                        "icon": "shield",
+                        "icon_id": 60385,
+                        "goods": "shield",
+                    }
+                },
+            },
         },
         race_items=True,
         total_layers=5,

@@ -7,8 +7,8 @@ the services package, which imports this module.
 import random
 import uuid
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 
 from sqlalchemy import ColumnElement
 
@@ -22,16 +22,37 @@ RACE_ITEMS_PLUGIN = "race_items"
 
 
 @dataclass(frozen=True)
-class CatalogEntry:
-    """One item of a seed's catalog (``graph.json`` ``race_items``)."""
+class GoodsEntry:
+    """One goods of a seed's catalog (``graph.json`` ``race_items.goods``): what
+    the game holds. The Race Item carries every usable item; the Shield, never
+    used, has its own and no use flag."""
 
-    name: str
-    icon: str
     goods_id: int
     use_flag: int | None
     remove_flag: int
+    icon: str
+    icon_id: int
+
+
+@dataclass(frozen=True)
+class CatalogEntry:
+    """One item of a seed's catalog (``graph.json`` ``race_items.items``),
+    held as the goods its ``goods`` key names."""
+
+    name: str
+    icon: str
+    icon_id: int
+    goods: str
     effect_speffect: int | None
     duration_ms: int | None
+
+
+@dataclass(frozen=True)
+class RaceItemCatalog:
+    """A seed's race item catalog; ``items`` only holds entries whose goods is in ``goods``."""
+
+    goods: dict[str, GoodsEntry] = field(default_factory=dict)
+    items: dict[str, CatalogEntry] = field(default_factory=dict)
 
 
 def _plugin_enabled(graph_json: Mapping[str, Any]) -> bool:
@@ -42,53 +63,95 @@ def _plugin_enabled(graph_json: Mapping[str, Any]) -> bool:
     return isinstance(plugin, Mapping) and plugin.get("enabled") is True
 
 
-def _is_int(value: object) -> bool:
+def _is_int(value: object) -> TypeGuard[int]:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _parse_entry(raw: object) -> CatalogEntry | None:
-    """A catalog entry, or None when a required field is missing or mistyped."""
+def _is_optional_int(value: object) -> TypeGuard[int | None]:
+    return value is None or _is_int(value)
+
+
+def _parse_goods(raw: object) -> GoodsEntry | None:
+    """A catalog goods, or None when a required field is missing or mistyped."""
     if not isinstance(raw, Mapping):
         return None
-    name, icon = raw.get("name"), raw.get("icon")
-    goods_id, remove_flag = raw.get("goods_id"), raw.get("remove_flag")
-    if not isinstance(name, str) or not isinstance(icon, str):
-        return None
-    if not _is_int(goods_id) or not _is_int(remove_flag):
-        return None
-    optional: list[int | None] = []
-    for key in ("use_flag", "effect_speffect", "duration_ms"):
-        value = raw.get(key)
-        if value is not None and not _is_int(value):
-            return None
-        optional.append(value)
-    return CatalogEntry(name, icon, goods_id, optional[0], remove_flag, optional[1], optional[2])  # type: ignore[arg-type]
+    goods_id, use_flag, remove_flag = (
+        raw.get("goods_id"),
+        raw.get("use_flag"),
+        raw.get("remove_flag"),
+    )
+    icon, icon_id = raw.get("icon"), raw.get("icon_id")
+    if (
+        _is_int(goods_id)
+        and _is_optional_int(use_flag)
+        and _is_int(remove_flag)
+        and isinstance(icon, str)
+        and _is_int(icon_id)
+    ):
+        return GoodsEntry(goods_id, use_flag, remove_flag, icon, icon_id)
+    return None
 
 
-def extract_race_item_catalog(graph_json: Mapping[str, Any]) -> dict[str, CatalogEntry]:
-    """The valid catalog entries of a seed; empty when it lacks the plugin."""
+def _parse_item(raw: object) -> CatalogEntry | None:
+    """A catalog item, or None when a required field is missing or mistyped."""
+    if not isinstance(raw, Mapping):
+        return None
+    name, icon, icon_id, goods = (
+        raw.get("name"),
+        raw.get("icon"),
+        raw.get("icon_id"),
+        raw.get("goods"),
+    )
+    speffect, duration_ms = raw.get("effect_speffect"), raw.get("duration_ms")
+    if (
+        isinstance(name, str)
+        and isinstance(icon, str)
+        and _is_int(icon_id)
+        and isinstance(goods, str)
+        and _is_optional_int(speffect)
+        and _is_optional_int(duration_ms)
+    ):
+        return CatalogEntry(name, icon, icon_id, goods, speffect, duration_ms)
+    return None
+
+
+def extract_race_item_catalog(graph_json: Mapping[str, Any]) -> RaceItemCatalog:
+    """The valid goods and items of a seed (graph.json 4.12 ``{goods, items}``).
+
+    Empty when the seed lacks the plugin or carries another shape, such as the
+    flat ``{item_key: entry}`` dict of the seeds generated before 4.12: their
+    per-item goods are gone from the protocol. An item on a goods the catalog
+    lacks (or holds malformed) is dropped.
+    """
     if not _plugin_enabled(graph_json):
-        return {}
+        return RaceItemCatalog()
     raw = graph_json.get(RACE_ITEMS_PLUGIN)
     if not isinstance(raw, Mapping):
-        return {}
-    catalog: dict[str, CatalogEntry] = {}
-    for key, value in raw.items():
-        entry = _parse_entry(value)
+        return RaceItemCatalog()
+    raw_goods, raw_items = raw.get("goods"), raw.get("items")
+    if not isinstance(raw_goods, Mapping) or not isinstance(raw_items, Mapping):
+        return RaceItemCatalog()
+    goods: dict[str, GoodsEntry] = {}
+    for key, value in raw_goods.items():
+        entry = _parse_goods(value)
         if isinstance(key, str) and entry is not None:
-            catalog[key] = entry
-    return catalog
+            goods[key] = entry
+    items: dict[str, CatalogEntry] = {}
+    for key, value in raw_items.items():
+        item = _parse_item(value)
+        if isinstance(key, str) and item is not None and item.goods in goods:
+            items[key] = item
+    return RaceItemCatalog(goods, items)
 
 
 def seed_has_race_items(graph_json: Mapping[str, Any]) -> bool:
-    """Whether a seed supports items: plugin enabled and a non-empty catalog."""
-    raw = graph_json.get(RACE_ITEMS_PLUGIN)
-    return _plugin_enabled(graph_json) and isinstance(raw, Mapping) and len(raw) > 0
+    """Whether a seed supports items: plugin enabled and at least one valid item."""
+    return bool(extract_race_item_catalog(graph_json).items)
 
 
-def use_flag_map(catalog: Mapping[str, CatalogEntry]) -> dict[int, str]:
-    """Use event flag to item key; items without a use flag (the Shield) are left out."""
-    return {e.use_flag: key for key, e in catalog.items() if e.use_flag is not None}
+def use_flag_map(catalog: RaceItemCatalog) -> dict[int, str]:
+    """Use event flag to goods key; goods without a use flag (the Shield) are left out."""
+    return {g.use_flag: key for key, g in catalog.goods.items() if g.use_flag is not None}
 
 
 def race_items_seed_clause() -> ColumnElement[bool]:
@@ -127,10 +190,10 @@ class ItemRule:
 
 ITEM_RULES: dict[str, ItemRule] = {
     "shield": ItemRule("passive", "none", "Blocks the next item aimed at you"),
-    "rune_pouch": ItemRule("self", "none", "Use it for runes"),
+    "rune_pouch": ItemRule("self", "speffect", "Use it for runes"),
     "banana": ItemRule("behind", "damage", "Hits the runner behind", "Hit for {pct}% HP"),
     "red_shell": ItemRule("ahead", "damage", "Hits the runner ahead", "Hit for {pct}% HP"),
-    "mushroom": ItemRule("self", "none", "Infinite stamina for {s} s", "", "Infinite stamina"),
+    "mushroom": ItemRule("self", "speffect", "Infinite stamina for {s} s", "", "Infinite stamina"),
     "hammer": ItemRule(
         "others",
         "equip_load",
@@ -310,7 +373,8 @@ def _format(template: str, key: str, entry: CatalogEntry) -> str:
 
 
 def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | None":
-    """The wire effect an item applies to a target; None for self and passive items."""
+    """The wire effect an item applies to a target (a self item's target is its
+    sender's own mod); None for the passive Shield."""
     from speedfog_racing.websocket.schemas import ItemEffectPayload
 
     key = base_key(item_key)

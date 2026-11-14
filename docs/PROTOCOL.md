@@ -119,7 +119,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.12**. It is defined in
+release numbers. Current: **1.13**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -131,6 +131,7 @@ Bump rules:
 
 Version history:
 
+- **1.13** - race items on one goods (graph.json 4.12): `race_item_catalog` becomes `{goods: {goods_key: {goods_id, use_flag, remove_flag, icon_id}}, items: {item_key: {name, icon, icon_id, goods}}}`. Every usable item is held as the one Race Item goods, whose use flag is the only one and resolves the item held; the Shield keeps a goods of its own, without a use flag. `held_item` on `auth_ok` (the item the runner holds, confirmed or not); `item_effect.banner` may be null (a self item's effect, sent to the sender's own mod, its banner on `item_result`); `item_remove` names a `goods` instead of an `item`; `item_inventory` reports `goods` instead of `items`. A race with items refuses a mod below 1.13 at auth; the 1.12 catalog's per-item goods are gone.
 - **1.12** - race items: `race_items` boolean on the `race` object (RaceInfo), default false; `race_item_catalog` on the seed (`{item_key: {goods_id, use_flag, remove_flag, name, icon}}`, empty unless the race has items on); server to mod `item_grant`, `item_effect`, `item_result` and `item_remove`; mod to server `item_received` and `item_inventory`. Use flags travel through the existing `event_flag`. A race with items refuses a mod below 1.12 at auth (see below); other races keep accepting older mods, which ignore the new fields.
 - **1.11** - boss kill times: `boss_flags` on the seed (the defeat flag of every boss node but the final boss), and an optional `boss_kill_igt_ms` on `zone_history` entries. Older mods ignore `boss_flags`, and a newer mod facing an older server finds it empty and watches no boss.
 - **1.10** - LiveSplit: `flag_layers`, `seed_number` and `category` on the seed; the local runner's `layer_entry_igts` on `auth_ok`. The mod drives LiveSplit from them (one segment per layer). Older mods ignore the fields, and a newer mod facing an older server finds them empty or absent and does not drive LiveSplit.
@@ -163,11 +164,12 @@ download the pack again (it carries the current mod), and each compared by
 - A ranked solo session (Speedrun or Set Seed mode) requires protocol 1.9 or
   newer (`RANKED_SOLO_MIN_PROTOCOL` in `websocket/schemas.py`), the version
   from which the mod reports debug flags in a solo session.
-- A race with items (`race_items` on) requires protocol 1.12 or newer
-  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod reads the item
-  catalog and applies item effects. Switching the option in SETUP closes the
-  race's mods with code 1000, so each one authenticates again and meets the
-  gate (and gets the matching catalog).
+- A race with items (`race_items` on) requires protocol 1.13 or newer
+  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod reads the
+  `{goods, items}` catalog, holds every usable item as the one Race Item goods
+  and applies item effects, a self item's included. Switching the option in
+  SETUP closes the race's mods with code 1000, so each one authenticates again
+  and meets the gate (and gets the matching catalog).
 
 Other races, Daily Seeds, events and practice sessions keep accepting any mod
 of the current major.
@@ -218,7 +220,7 @@ Races with items. The granted goods are in the inventory, freshly spawned or alr
 
 #### `item_inventory`
 
-Races with items. The race goods in the inventory, by item key: `{"type": "item_inventory", "items": ["hammer"]}`. Item use flags arrive through `event_flag`.
+Races with items. The race goods in the inventory, by goods key (`race_item_catalog.goods`): `{"type": "item_inventory", "goods": ["race_item"]}`. The Race Item's use flag arrives through `event_flag`.
 
 #### `ready`
 
@@ -250,7 +252,7 @@ Periodic update (every ~1 second). Also auto-transitions `ready` → `playing` i
 
 #### `event_flag`
 
-Sent when the mod detects an event flag transition (0 → 1). The server resolves a fog flag to a DAG node via the seed's `event_map`. A boss defeat flag (one of the seed's `boss_flags`) resolves instead to the node carrying it as `defeat_flag` in `graph.json`: the kill's IGT is stamped as `boss_kill_igt_ms` on that node's most recent `zone_history` visit, never as a new entry, and only the first kill is kept; a kill with no visit of its node, or at IGT 0, is acked and ignored. If the flag matches `finish_event`, the player is auto-finished. A race item use flag (the `use_flag` of a `race_item_catalog` entry) never adds a `zone_history` entry: the server resolves the use only when the runner holds that item, sending `item_effect` to the targets, `item_remove` to a Shield holder that blocked it and `item_result` to the sender (see [Item messages](#item-messages-races-with-items)), and ignores it otherwise; it is acked after the resolution. The resolution clears the held item, so the replay of a resolved use is ignored unless the runner was granted the same item again in between. Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
+Sent when the mod detects an event flag transition (0 → 1). The server resolves a fog flag to a DAG node via the seed's `event_map`. A boss defeat flag (one of the seed's `boss_flags`) resolves instead to the node carrying it as `defeat_flag` in `graph.json`: the kill's IGT is stamped as `boss_kill_igt_ms` on that node's most recent `zone_history` visit, never as a new entry, and only the first kill is kept; a kill with no visit of its node, or at IGT 0, is acked and ignored. If the flag matches `finish_event`, the player is auto-finished. A race item use flag (the `use_flag` of a `race_item_catalog` goods: the Race Item's, the only one) never adds a `zone_history` entry: the server resolves the item the runner holds, whatever it is, when it is held as that goods, sending `item_effect` to the targets, `item_remove` to a Shield holder that blocked it and `item_result` to the sender (see [Item messages](#item-messages-races-with-items)), and ignores it otherwise; it is acked after the resolution. The resolution clears the held item, so the replay of a resolved use is ignored unless the runner was granted an item again in between (any item: they share the goods). Rejected if race is not running (see [Race State Gating](#race-state-gating)) or if the reported IGT is implausible (outruns wall-clock time by more than 60 seconds, wrong save detected). Rejected events are ACKed (if `message_id` is present) so the mod stops replaying them, but nothing is recorded.
 
 `message_id` is optional for backward compatibility. Newer mods attach a monotonically increasing client-local ID so the server can acknowledge persistence and deduplicate replayed `event_flag` messages after reconnect.
 
@@ -381,6 +383,8 @@ Authentication successful. Contains initial race state.
 `event_ids`: sorted list of event flag IDs the mod should monitor. Opaque to the mod, no mapping to zones or nodes is provided. `graph_json` is always `null` for mods.
 
 `finish_event` _(int | null)_: Flag ID for the final boss kill. The mod sends this immediately (no loading screen on boss kill). Fog flags are deferred to loading screen exit.
+
+`held_item` _(string | null)_: on a race with items, the item key the runner holds, confirmed or not, so a restarted mod restores its goods' icon and the held row; null otherwise.
 
 `boss_flags`: sorted defeat flags of every boss node of the seed except the final boss. The mod reports each one once, at once, through `event_flag` and never clears it in game memory; the server records the kill on the node's `zone_history` (see [`event_flag`](#event_flag)). Empty from an older server, and then the mod watches no boss.
 
@@ -582,7 +586,7 @@ Unicast ACK sent to the originating mod after an `event_flag` has been durably c
 
 #### Item messages (races with items)
 
-Sent only on a race with `race_items` on. The server writes the banner text and the mod draws it; `banner.icon` is the catalog icon key (the three Rune Pouch variants share one). `reminder` is the optional line under the race panel, counting down from the moment the effect applies.
+Sent only on a race with `race_items` on. The server writes the banner text and the mod draws it; `banner.icon` is the catalog icon key (the three Rune Pouch variants share one). `reminder` is the optional line under the race panel, counting down from the moment the effect applies. A self item (Mushroom, Rune Pouch) sends its effect to the sender's own mod with a null `banner` and `reminder`, right before its `item_result`, which carries both.
 
 ```json
 {
@@ -604,12 +608,12 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 }
 ```
 
-| Message       | Fields                                  | Description                                                                                                                                                                                            |
-| ------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `item_grant`  | `grant_id`, `item`, `banner`            | Spawn the item's goods and show the banner. Re-sent at every auth, and after an `item_inventory` that lacks it, until the mod answers `item_received`                                                  |
-| `item_effect` | `item`, `effect`, `banner`, `reminder?` | An item hits this runner. `effect.kind` is `speffect {speffect_id}`, `damage {base_pct, floor_pct, tail_pct}`, `ink {duration_ms}` or `equip_load {speffect_id, load_pct}`, dumped without null fields |
-| `item_result` | `item`, `banner`, `reminder?`           | Outcome of the runner's own item use (hit, blocked, missed)                                                                                                                                            |
-| `item_remove` | `item`, `banner?`                       | Raise the item's `remove_flag` so the game drops its goods; with a banner to a shield holder whose shield blocked                                                                                      |
+| Message       | Fields                                   | Description                                                                                                                                                                                                                                                   |
+| ------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `item_grant`  | `grant_id`, `item`, `banner`             | Spawn the item's goods (with the item's icon) and show the banner. Re-sent at every auth, and after an `item_inventory` that lacks its goods, until the mod answers `item_received`                                                                           |
+| `item_effect` | `item`, `effect`, `banner?`, `reminder?` | An item hits this runner, or applies the runner's own self item (null `banner`). `effect.kind` is `speffect {speffect_id}`, `damage {base_pct, floor_pct, tail_pct}`, `ink {duration_ms}` or `equip_load {speffect_id, load_pct}`, dumped without null fields |
+| `item_result` | `item`, `banner`, `reminder?`            | Outcome of the runner's own item use (hit, blocked, missed, or the self item's line)                                                                                                                                                                          |
+| `item_remove` | `goods`, `banner?`                       | Raise the goods' `remove_flag` so the game drops it; with a banner to a shield holder whose shield blocked                                                                                                                                                    |
 
 #### `death_counts`
 
@@ -1216,7 +1220,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none          |
 | `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                       |
 | `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false |
-| `race_items`        | `bool`    | The race has items on (needs protocol 1.12 at auth); default false; the mod reads it to gate items              |
+| `race_items`        | `bool`    | The race has items on (needs protocol 1.13 at auth); default false; the mod reads it to gate items              |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                           |
 
 **Note:** The mod reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), `race_items` (use flag reads, inventory reports, the SpEffect and params prewarm; see `RACE_ITEMS.md`), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). `started_at` and `seeds_released_at` are present on the wire but unused by the mod; the race fields it reads outside this table (`quit_out_penalty_ms`, `attempt_id`) are described in the [`auth_ok`](#auth_ok) note.
@@ -1225,24 +1229,24 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 
 Included in `auth_ok` (mod) and `race_state` (spectator):
 
-| Field                | Type      | Mod | Spectator | Description                                                                                                                                                                                  |
-| -------------------- | --------- | --- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `seed_id`            | `string?` | yes | yes       | Seed UUID                                                                                                                                                                                    |
-| `total_layers`       | `int`     | yes | yes       | Number of layers in the DAG                                                                                                                                                                  |
-| `graph_json`         | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)                                                                                                                                          |
-| `total_nodes`        | `int?`    | no  | yes       | Total number of nodes in the DAG                                                                                                                                                             |
-| `total_paths`        | `int?`    | no  | yes       | Total number of paths in the DAG                                                                                                                                                             |
-| `event_ids`          | `int[]`   | yes | no        | Event flag IDs to monitor                                                                                                                                                                    |
-| `finish_event`       | `int?`    | yes | no        | Final boss kill flag ID                                                                                                                                                                      |
-| `spawn_items`        | `list`    | yes | no        | Items for runtime spawning                                                                                                                                                                   |
-| `items_spawned_flag` | `int?`    | yes | no        | Event flag ID for runtime item spawn prevention                                                                                                                                              |
-| `death_flags`        | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}`                                                                                                                                 |
-| `phantom_skins`      | `object`  | yes | no        | Per-seed skin catalog `{name: {speffects: int[]}}`, resolves `auth_ok.phantom_skin` to SpEffect ids                                                                                          |
-| `flag_layers`        | `object`  | yes | no        | Layer of every fog flag `{flag_id: layer}` (the finish flag excluded), for LiveSplit segments                                                                                                |
-| `seed_number`        | `string?` | yes | no        | The seed's number (LiveSplit `SpeedFog seed`)                                                                                                                                                |
-| `category`           | `string?` | yes | no        | The seed's speedrun category key, e.g. `standard` or `standard@12` (LiveSplit `SpeedFog category`)                                                                                           |
-| `boss_flags`         | `int[]`   | yes | no        | Sorted defeat flag of every boss node except the final boss; empty for spectators                                                                                                            |
-| `race_item_catalog`  | `object`  | yes | no        | `{item_key: {goods_id, use_flag, remove_flag, name, icon}}`; empty unless the race has items on (Shield's `use_flag` is null; `name` and `icon` label the held row of an item without a use) |
+| Field                | Type      | Mod | Spectator | Description                                                                                                                                                                                                                                                                                       |
+| -------------------- | --------- | --- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `seed_id`            | `string?` | yes | yes       | Seed UUID                                                                                                                                                                                                                                                                                         |
+| `total_layers`       | `int`     | yes | yes       | Number of layers in the DAG                                                                                                                                                                                                                                                                       |
+| `graph_json`         | `object?` | no  | yes\*     | Full graph for DAG visualization (\* see DAG rules)                                                                                                                                                                                                                                               |
+| `total_nodes`        | `int?`    | no  | yes       | Total number of nodes in the DAG                                                                                                                                                                                                                                                                  |
+| `total_paths`        | `int?`    | no  | yes       | Total number of paths in the DAG                                                                                                                                                                                                                                                                  |
+| `event_ids`          | `int[]`   | yes | no        | Event flag IDs to monitor                                                                                                                                                                                                                                                                         |
+| `finish_event`       | `int?`    | yes | no        | Final boss kill flag ID                                                                                                                                                                                                                                                                           |
+| `spawn_items`        | `list`    | yes | no        | Items for runtime spawning                                                                                                                                                                                                                                                                        |
+| `items_spawned_flag` | `int?`    | yes | no        | Event flag ID for runtime item spawn prevention                                                                                                                                                                                                                                                   |
+| `death_flags`        | `object`  | yes | no        | Death marker flags per cluster `{node_id: [low, med, high]}`                                                                                                                                                                                                                                      |
+| `phantom_skins`      | `object`  | yes | no        | Per-seed skin catalog `{name: {speffects: int[]}}`, resolves `auth_ok.phantom_skin` to SpEffect ids                                                                                                                                                                                               |
+| `flag_layers`        | `object`  | yes | no        | Layer of every fog flag `{flag_id: layer}` (the finish flag excluded), for LiveSplit segments                                                                                                                                                                                                     |
+| `seed_number`        | `string?` | yes | no        | The seed's number (LiveSplit `SpeedFog seed`)                                                                                                                                                                                                                                                     |
+| `category`           | `string?` | yes | no        | The seed's speedrun category key, e.g. `standard` or `standard@12` (LiveSplit `SpeedFog category`)                                                                                                                                                                                                |
+| `boss_flags`         | `int[]`   | yes | no        | Sorted defeat flag of every boss node except the final boss; empty for spectators                                                                                                                                                                                                                 |
+| `race_item_catalog`  | `object`  | yes | no        | `{goods: {goods_key: {goods_id, use_flag, remove_flag, icon_id}}, items: {item_key: {name, icon, icon_id, goods}}}`; both empty unless the race has items on (the Shield goods' `use_flag` is null; an item's `name` and `icon` label the held row, its `icon_id` is written into its goods' row) |
 
 ### Leaderboard Sorting
 

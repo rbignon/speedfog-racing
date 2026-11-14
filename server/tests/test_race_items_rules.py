@@ -30,7 +30,7 @@ from speedfog_racing.services.race_items import (
 def _entry(
     name: str = "Item", duration_ms: int | None = 15000, speffect: int | None = 7
 ) -> CatalogEntry:
-    return CatalogEntry(name, "icon", 1, 2, 3, speffect, duration_ms)
+    return CatalogEntry(name, "icon", 60390, "race_item", speffect, duration_ms)
 
 
 def _runners(n: int) -> list[Runner]:
@@ -292,4 +292,13 @@ def test_other_effect_payloads():
         "duration_ms": 20000,
     }
     assert effect_payload("shield", _entry()) is None
-    assert effect_payload("mushroom", _entry()) is None
+
+
+def test_self_items_send_their_effect_row():
+    # The sender's own mod applies a self item's effect row (stamina, runes).
+    assert effect_payload("mushroom", _entry(speffect=1450826)).model_dump() == {
+        "kind": "speffect",
+        "speffect_id": 1450826,
+    }
+    pouch = effect_payload("rune_pouch_3", _entry(speffect=1450823))
+    assert pouch and pouch.model_dump() == {"kind": "speffect", "speffect_id": 1450823}
