@@ -956,6 +956,8 @@ def test_training_mod_websocket_auth(training_ws_client, training_session_data):
         assert auth_ok["race"]["name"]  # pool display name, e.g. "Standard"
         assert "seed" in auth_ok
         assert auth_ok["seed"]["event_ids"] is not None
+        # No race items in a solo session: `{}`, which a 1.12 mod also parses.
+        assert auth_ok["seed"]["race_item_catalog"] == {}
 
         # Should immediately receive race_start
         start = ws.receive_json()

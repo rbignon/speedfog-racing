@@ -2052,6 +2052,15 @@ mod tests {
     }
 
     #[test]
+    fn seed_catalog_empty_object_is_no_catalog() {
+        // What the server sends for a race without items: `{}`, so that a
+        // 1.12 mod (which reads the field as a map of items) parses it too.
+        let seed: SeedInfo =
+            serde_json::from_str(r#"{"total_layers":3,"race_item_catalog":{}}"#).unwrap();
+        assert_eq!(seed.race_item_catalog, RaceItemCatalog::default());
+    }
+
+    #[test]
     fn race_info_without_race_items_defaults_false() {
         // Pre-1.12 server wire contract: payload without the field.
         let race: RaceInfo =

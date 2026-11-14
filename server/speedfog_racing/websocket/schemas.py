@@ -306,6 +306,15 @@ class RaceItemCatalogWire(BaseModel):
     goods: dict[str, RaceItemGoodsWire] = Field(default_factory=dict)
     items: dict[str, RaceItemWire] = Field(default_factory=dict)
 
+    @model_serializer(mode="wrap")
+    def _drop_empty(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        """An empty catalog dumps as ``{}``: a mod below 1.13 reads the field
+        as a map of items, which ``{}`` satisfies and ``{"goods": {}}`` breaks."""
+        data: dict[str, Any] = handler(self)
+        if not self.goods and not self.items:
+            return {}
+        return data
+
 
 class SeedInfo(BaseModel):
     """Seed info for WebSocket."""
@@ -327,7 +336,7 @@ class SeedInfo(BaseModel):
     category: str | None = None
     # Defeat flag of every boss node but the final boss (mods only).
     boss_flags: list[int] = Field(default_factory=list)
-    # Race items: goods and items by key, empty unless the race has items on (mods only).
+    # Race items: goods and items by key (mods only); ``{}`` unless the race has items on.
     race_item_catalog: RaceItemCatalogWire = Field(default_factory=RaceItemCatalogWire)
 
 

@@ -16,6 +16,9 @@ from speedfog_racing.websocket.schemas import (
     ItemBanner,
     ItemEffectMessage,
     ItemEffectPayload,
+    RaceItemCatalogWire,
+    RaceItemGoodsWire,
+    RaceItemWire,
 )
 
 from . import test_integration as _integration
@@ -97,7 +100,9 @@ def _patch_items_graph(
     asyncio.run(patch())
 
 
-EMPTY_CATALOG = {"goods": {}, "items": {}}
+# A race without items: a 1.12 mod reads the field as a map of items, which
+# `{"goods": {}, "items": {}}` would break (two items missing every field).
+EMPTY_CATALOG: dict[str, object] = {}
 
 
 def test_a_1_12_mod_is_refused_on_an_items_race(
@@ -266,6 +271,30 @@ def test_item_effect_payload_dumps_without_nulls():
         },
         "reminder": None,
     }
+
+
+def test_race_item_catalog_dumps_empty_as_an_empty_object():
+    assert json.loads(RaceItemCatalogWire().model_dump_json()) == {}
+    # A catalog with goods keeps both keys, an empty one included.
+    goods_only = RaceItemCatalogWire(
+        goods={"shield": RaceItemGoodsWire(goods_id=1450800, remove_flag=1050290200, icon_id=60385)}
+    )
+    assert json.loads(goods_only.model_dump_json()) == {
+        "goods": {
+            "shield": {
+                "goods_id": 1450800,
+                "use_flag": None,
+                "remove_flag": 1050290200,
+                "icon_id": 60385,
+            }
+        },
+        "items": {},
+    }
+    full = RaceItemCatalogWire(
+        goods=goods_only.goods,
+        items={"shield": RaceItemWire(name="Shield", icon="shield", icon_id=60385, goods="shield")},
+    )
+    assert set(json.loads(full.model_dump_json())) == {"goods", "items"}
 
 
 # ---------------------------------------------------------------------------
