@@ -7,12 +7,14 @@
 
 The art is not in the repository: each icon is downloaded from its URL below
 and checked against its SHA-256, so a build only ever embeds the exact files
-listed here. Each one is centered on a transparent square and written at
-160x160 (the banner draws it at 7.5% of the screen width, 144 px at 1080p;
-the source art would weigh megabytes in the DLL), with the source's hash in
-a PNG text chunk: an icon already written from the expected source is not
-downloaded again. The files are gitignored; `unknown.png`, the fallback icon,
-is tracked and never touched.
+listed here. Each one is cropped to its visible pixels, centered on a
+transparent square with a margin (the art fills its whole canvas; the
+former placeholders kept one, see CONTENT_FILL) and written at 160x160 (the
+banner draws it at 7.5% of the screen width, 144 px at 1080p; the source art
+would weigh megabytes in the DLL). A PNG text chunk records the source's hash
+and the recipe (size, fill): an icon already written from the expected
+source the same way is not downloaded again. The files are gitignored;
+`unknown.png`, the fallback icon, is tracked and never touched.
 
 Run it before building the mod: the CI mod builds do, and a local build
 without it fails on a missing `include_bytes!` file. A failed download or an
@@ -32,6 +34,7 @@ import argparse
 import hashlib
 import http.client
 import io
+import math
 import sys
 import urllib.request
 from pathlib import Path
@@ -39,7 +42,11 @@ from pathlib import Path
 from PIL import Image, PngImagePlugin
 
 MOD_SIZE = 160
-HASH_KEY = "Source-SHA256"
+# The longer side of the visible art spans this share of the square, as in the
+# generator's ItemIconPatcher (RACE_ICON_FILL): the former placeholders
+# spanned 71-90%, median 78%.
+CONTENT_FILL = 0.8
+RECIPE_KEY = "Speedfog-Icon"
 USER_AGENT = "race-item-icon-fetch/1.0"
 TIMEOUT_S = 60
 DEFAULT_DEST = Path(__file__).resolve().parent.parent / "mod" / "assets" / "race_items"
@@ -95,21 +102,29 @@ ICON_SOURCES: dict[str, tuple[str, str]] = {
 }
 
 
+def recipe(sha256: str) -> str:
+    """How an icon is written from the source with this hash."""
+    return f"sha256={sha256} size={MOD_SIZE} fill={CONTENT_FILL}"
+
+
 def written_from(path: Path) -> str | None:
-    """The source hash an icon file was written from, None if unknown."""
+    """The recipe an icon file was written with, None if unknown."""
     try:
         with Image.open(path) as image:
-            value = image.info.get(HASH_KEY)
+            value = image.info.get(RECIPE_KEY)
     except OSError:
         return None
     return value if isinstance(value, str) else None
 
 
 def mod_icon(data: bytes) -> Image.Image:
-    """The art centered on a transparent square, at MOD_SIZE x MOD_SIZE."""
+    """The visible art centered with its margin, at MOD_SIZE x MOD_SIZE."""
     with Image.open(io.BytesIO(data)) as source:
         art = source.convert("RGBA")
-    side = max(art.size)
+    visible = art.getchannel("A").getbbox()
+    if visible:
+        art = art.crop(visible)
+    side = math.ceil(max(art.size) / CONTENT_FILL)
     square = Image.new("RGBA", (side, side), (0, 0, 0, 0))
     square.paste(art, ((side - art.width) // 2, (side - art.height) // 2))
     return square.resize((MOD_SIZE, MOD_SIZE), Image.Resampling.LANCZOS)
@@ -129,7 +144,7 @@ def fetch_icons(
     problems: list[str] = []
     for icon, (url, sha256) in sources.items():
         dest = dest_dir / f"{icon}.png"
-        if written_from(dest) == sha256:
+        if written_from(dest) == recipe(sha256):
             continue
         request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         try:
@@ -151,7 +166,7 @@ def fetch_icons(
             problems.append(f"{icon}: {url} is not a readable image ({exc})")
             continue
         info = PngImagePlugin.PngInfo()
-        info.add_text(HASH_KEY, sha256)
+        info.add_text(RECIPE_KEY, recipe(sha256))
         dest.parent.mkdir(parents=True, exist_ok=True)
         partial = dest.with_name(dest.name + ".part")
         image.save(partial, format="PNG", pnginfo=info, optimize=True)

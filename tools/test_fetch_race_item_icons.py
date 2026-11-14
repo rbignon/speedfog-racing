@@ -10,7 +10,7 @@ import io
 from pathlib import Path
 
 import fetch_race_item_icons
-from fetch_race_item_icons import HASH_KEY, fetch_icons, written_from
+from fetch_race_item_icons import RECIPE_KEY, fetch_icons, recipe, written_from
 from PIL import Image
 
 
@@ -28,20 +28,29 @@ def _served(tmp_path: Path, name: str, data: bytes) -> tuple[str, str]:
     return served.as_uri(), hashlib.sha256(data).hexdigest()
 
 
-def test_writes_the_art_centered_on_a_transparent_160_square(tmp_path):
+def test_writes_the_visible_art_with_a_margin_on_a_160_square(tmp_path):
     dest = tmp_path / "out"
-    url, sha256 = _served(tmp_path, "tall.png", _png(100, 200))
+    # A 100x200 red figure on a 300x300 transparent canvas: only the figure
+    # counts. 250x250 once its 200 px span 80%: bars of 75 px left and right
+    # and 25 px top and bottom, 48 px and 16 px at 160.
+    art = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    art.paste((255, 0, 0, 255), (20, 60, 120, 260))
+    buffer = io.BytesIO()
+    art.save(buffer, format="PNG")
+    url, sha256 = _served(tmp_path, "tall.png", buffer.getvalue())
 
     assert fetch_icons(dest, {"banana": (url, sha256)}) == (1, [])
 
     with Image.open(dest / "banana.png") as icon:
         assert icon.size == (160, 160)
-        assert icon.info[HASH_KEY] == sha256
+        assert icon.info[RECIPE_KEY] == recipe(sha256)
         rgba = icon.convert("RGBA")
-        # 200x200 with 50 px bars left and right, 40 px once at 160.
-        assert rgba.getpixel((10, 80))[3] == 0
-        assert rgba.getpixel((150, 80))[3] == 0
-        assert rgba.getpixel((80, 5)) == (255, 0, 0, 255)
+        assert rgba.getpixel((44, 80))[3] == 0
+        assert rgba.getpixel((115, 80))[3] == 0
+        assert rgba.getpixel((80, 12))[3] == 0
+        assert rgba.getpixel((80, 147))[3] == 0
+        assert rgba.getpixel((52, 20)) == (255, 0, 0, 255)
+        assert rgba.getpixel((80, 80)) == (255, 0, 0, 255)
 
 
 def test_an_icon_written_from_its_source_is_not_downloaded_again(tmp_path):
@@ -61,7 +70,16 @@ def test_an_icon_from_another_source_is_replaced(tmp_path):
     url, sha256 = _served(tmp_path, "banana.png", _png(200, 200))
 
     assert fetch_icons(dest, {"banana": (url, sha256)}) == (1, [])
-    assert written_from(dest / "banana.png") == sha256
+    assert written_from(dest / "banana.png") == recipe(sha256)
+
+
+def test_an_icon_written_another_way_is_written_again(tmp_path, monkeypatch):
+    dest = tmp_path / "out"
+    sources = {"banana": _served(tmp_path, "banana.png", _png(200, 200))}
+    assert fetch_icons(dest, sources) == (1, [])
+
+    monkeypatch.setattr(fetch_race_item_icons, "CONTENT_FILL", 0.9)
+    assert fetch_icons(dest, sources) == (1, [])
 
 
 def test_a_failure_only_fails_its_icon_and_keeps_its_file(tmp_path):
@@ -85,7 +103,7 @@ def test_a_failure_only_fails_its_icon_and_keeps_its_file(tmp_path):
     assert (dest / "banana.png").read_bytes() == old
     assert not (dest / "hammer.png").exists()
     assert not (dest / "ink.png").exists()
-    assert written_from(dest / "shield.png") == sources["shield"][1]
+    assert written_from(dest / "shield.png") == recipe(sources["shield"][1])
     assert not list(dest.glob("*.part"))
 
 
