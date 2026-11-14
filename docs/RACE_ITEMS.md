@@ -9,6 +9,7 @@ This document is the operational reference for the server side (rules, lifecycle
 ## Rules
 
 - On for community races only: never in Daily Seeds, speedrun runs (Set Seed, Random Seed), solo training sessions or event races (the admin attach of a race with items to an event slot is a 422).
+- On `/race/new`, the option is the "Race items" checkbox of the Advanced options (hidden for speedrun and Set Seed races), its label carrying a gold "New" badge styled like the speedrun page's "Beta" one.
 - A seed supports items when `graph_json["plugins"]["race_items"]["enabled"]` is true and `graph_json["race_items"]` (the catalog) is a non-empty dict; the pool scan stores the answer in `Seed.race_items`. An items race only draws seeds that support them.
 - Switching the option on in SETUP over a seed without the plugin redraws the seed (`apply_seed_reroll` with `count_as_reroll=False`: the option did it, not a player, so it is no reroll for the boards); with no seed to draw it is a 400 and the option stays off.
 - Any change of the option (on or off, with or without a redraw) closes every connected mod of the race with code 1000, as a race reset does: the catalog and the protocol gate below only apply at auth, so each mod reconnects and authenticates again, gets the catalog that matches, and an older mod meets the gate. Spectators stay connected.

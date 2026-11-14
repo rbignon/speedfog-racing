@@ -619,7 +619,7 @@
 
             {#if setSeed === null && !speedrun}
               <div class="form-group">
-                <span>Race items</span>
+                <span>Race items <span class="new-badge">New</span></span>
                 <label class="radio-label">
                   <input
                     type="checkbox"
@@ -776,6 +776,18 @@
     letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
+  }
+
+  /* The speedrun page's Beta badge, sized for a form label. */
+  .new-badge {
+    padding: 0.1em 0.4em;
+    background: var(--color-gold);
+    border-radius: var(--radius-sm);
+    color: var(--color-ink-on-accent);
+    font-family: var(--font-display);
+    font-size: 0.95em;
+    font-weight: 600;
+    letter-spacing: 0.05em;
   }
 
   input[type="text"] {
