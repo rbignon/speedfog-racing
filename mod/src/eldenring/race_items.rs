@@ -1,7 +1,7 @@
 //! Race item game access for the shell: goods spawn, inventory quantity,
-//! the goods' icon, the player's HP and equip load, and the equip load
-//! effect's rate. Called on rare events (a grant, a game load, an effect),
-//! never per frame.
+//! the goods' icon, the player's HP and equip load, the equip load
+//! effect's rate and a SpEffect row's timing. Called on rare events (a
+//! grant, a game load, an effect), never per frame.
 //!
 //! ### Inventory layout source
 //!
@@ -40,6 +40,7 @@ use crate::core::equip_load::{weight_row, EquipParam, EQUIP_SLOTS};
 use crate::core::item_inventory::{
     list_entry_count, lists_hold_items, quantity_in_entries, ENTRY_SIZE,
 };
+use crate::core::timed_effects::SpEffectTiming;
 use crate::profile_span;
 
 /// Goods type flag in item ID encoding (high nibble 0x4 = EquipParamGoods).
@@ -202,6 +203,26 @@ pub fn set_equip_load_rate(speffect_id: u32, rate: f32) -> bool {
     // it from its own thread, so the store is volatile and never read back.
     unsafe { std::ptr::write_volatile(&mut row.equip_weight_change_rate, rate) };
     true
+}
+
+/// The timing of SpEffect row `speffect_id` (`core::timed_effects`): its
+/// `effectEndurance` and, when its `cycleOccurrenceSpEffectId` names a row,
+/// that row's id and endurance. `None` when the row is missing or the params
+/// are not indexed yet; a cycled id <= 0 or a missing cycled row is no tail.
+pub fn speffect_timing(speffect_id: u32) -> Option<SpEffectTiming> {
+    profile_span!("race_items.speffect_timing");
+    let params = Lazy::get(&PARAMS)?.read();
+    let row = param_row::<SpEffect>(&params, "SpEffectParam", speffect_id)?;
+    let tail = u32::try_from(row.cycle_occurrence_sp_effect_id)
+        .ok()
+        .filter(|&id| id > 0)
+        .and_then(|id| {
+            param_row::<SpEffect>(&params, "SpEffectParam", id).map(|t| (id, t.effect_endurance))
+        });
+    Some(SpEffectTiming {
+        endurance_s: row.effect_endurance,
+        tail,
+    })
 }
 
 /// Write `icon_id` as the icon of EquipParamGoods row `goods_id`, the icon

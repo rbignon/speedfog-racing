@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error, info, warn};
 use windows::Win32::Foundation::HINSTANCE;
 
@@ -20,7 +20,9 @@ use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
+use crate::core::timed_effects::timed_apply;
 use crate::eldenring::race_items;
+use crate::eldenring::sp_effect_apply;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
 
@@ -854,15 +856,7 @@ impl RaceTracker {
                 Effect::ApplySpEffect {
                     speffect_id,
                     left_ms,
-                } => {
-                    // The time left is not written yet: the entry runs its
-                    // full row duration.
-                    if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
-                        info!(speffect_id, ?left_ms, "[ITEMS] SpEffect applied");
-                    } else {
-                        warn!(speffect_id, ?left_ms, "[ITEMS] SpEffect not applied");
-                    }
-                }
+                } => Self::apply_item_speffect(speffect_id, left_ms),
                 Effect::ApplyItemDamage {
                     base_pct,
                     floor_pct,
@@ -887,7 +881,7 @@ impl RaceTracker {
         }
         self.race_items_prewarmed = true;
         info!("[ITEMS] Prewarming the SpEffect apply function and the params");
-        std::thread::spawn(crate::eldenring::sp_effect_apply::prewarm);
+        std::thread::spawn(sp_effect_apply::prewarm);
         std::thread::spawn(race_items::prewarm_params);
     }
 
@@ -968,8 +962,8 @@ impl RaceTracker {
     /// still runs, the rate is computed from the max without it
     /// (`core::equip_load::base_max`), so a second hit follows the current
     /// equipment instead of cancelling the first. An unreadable load keeps
-    /// the row's rate (the seed's, or the last one written). `left_ms` is
-    /// only logged: the entry runs its full row duration.
+    /// the row's rate (the seed's, or the last one written). The effect is
+    /// then applied as `apply_item_speffect` does.
     fn apply_equip_load(&mut self, speffect_id: u32, load_pct: u8, left_ms: Option<u32>) {
         match race_items::read_equip_load() {
             Some((current, max)) => {
@@ -990,10 +984,79 @@ impl RaceTracker {
             }
             None => warn!(speffect_id, "[ITEMS] Equip load unreadable, row rate kept"),
         }
-        if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
-            info!(speffect_id, ?left_ms, "[ITEMS] SpEffect applied");
+        Self::apply_item_speffect(speffect_id, left_ms);
+    }
+
+    /// Apply a race item's SpEffect. `left_ms: None` (an instant one)
+    /// applies the row as it is. A timed one gets its time left
+    /// (`core::timed_effects::timed_apply`): written into the entry when the
+    /// entry survived (a hit while the same effect runs, or a load the game
+    /// kept it through); otherwise the planned row (the cycled tail row when
+    /// the time left fits in it) is applied, then its entry's timer written,
+    /// unless the row's own endurance already is the time left.
+    fn apply_item_speffect(speffect_id: u32, left_ms: Option<u32>) {
+        let Some(left_ms) = left_ms else {
+            if sp_effect_apply::apply_speffect(speffect_id) {
+                info!(speffect_id, "[ITEMS] SpEffect applied");
+            } else {
+                warn!(speffect_id, "[ITEMS] SpEffect not applied");
+            }
+            return;
+        };
+        let timing = race_items::speffect_timing(speffect_id);
+        let left_s = Duration::from_millis(u64::from(left_ms)).as_secs_f32();
+        let plan = timed_apply(speffect_id, timing, left_s);
+        let row = plan.speffect_id;
+        let timer_s = plan.timer_s;
+        if sp_effect_apply::set_speffect_timer(row, timer_s) {
+            info!(
+                speffect_id,
+                row,
+                timer_s,
+                left_ms,
+                ?timing,
+                "[ITEMS] SpEffect timer set"
+            );
+            return;
+        }
+        if !sp_effect_apply::apply_speffect(row) {
+            warn!(
+                speffect_id,
+                row,
+                timer_s,
+                left_ms,
+                ?timing,
+                "[ITEMS] SpEffect not applied"
+            );
+            return;
+        }
+        if plan.full {
+            info!(
+                speffect_id,
+                row,
+                timer_s,
+                left_ms,
+                ?timing,
+                "[ITEMS] SpEffect applied"
+            );
+        } else if sp_effect_apply::set_speffect_timer(row, timer_s) {
+            info!(
+                speffect_id,
+                row,
+                timer_s,
+                left_ms,
+                ?timing,
+                "[ITEMS] SpEffect applied, timer set"
+            );
         } else {
-            warn!(speffect_id, ?left_ms, "[ITEMS] SpEffect not applied");
+            warn!(
+                speffect_id,
+                row,
+                timer_s,
+                left_ms,
+                ?timing,
+                "[ITEMS] SpEffect applied, timer not found (runs its full row duration)"
+            );
         }
     }
 

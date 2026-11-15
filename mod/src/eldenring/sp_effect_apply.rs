@@ -2,7 +2,8 @@
 //!
 //! Used by the phantom skins feature to apply a cosmetic aura (a SpEffect
 //! baked by speedfog into regulation.bin, e.g. id 1450700 for `gold-aura`)
-//! to the player at game-world load time.
+//! to the player at game-world load time, and by race items to apply their
+//! effects and set the time left of a timed one (`set_speffect_timer`).
 //!
 //! ### How it works
 //!
@@ -37,6 +38,7 @@ use std::ffi::c_void;
 use std::sync::OnceLock;
 
 use super::scan::{module_base_and_size, scan_pattern_unique};
+use libeldenring::memedit::PointerChain;
 use libeldenring::pointers::Pointers;
 use libeldenring::prelude::base_addresses::Version;
 use libeldenring::version::get_version;
@@ -47,6 +49,20 @@ use crate::profile_span;
 const PLAYER_INS_OFFSET_NEW: usize = 0x1E508; // V1_07_0+
 const PLAYER_INS_OFFSET_OLD: usize = 0x18468; // V1_02 .. V1_06
 const SP_EFFECT_CTRL_OFFSET: usize = 0x178;
+
+// The player's active SpEffect list (fromsoftware-rs `cs/sp_effect.rs`,
+// `SpecialEffect` and `SpecialEffectEntry`; the TGA v1.17.0 table's
+// "Active Effects" reads the same fields): the `SpecialEffect` at
+// `SP_EFFECT_CTRL_OFFSET` holds the head entry, each entry its param id, the
+// next entry and its removal timer.
+const SP_EFFECT_HEAD_OFFSET: usize = 0x8;
+const SP_EFFECT_ENTRY_PARAM_ID_OFFSET: usize = 0x8;
+const SP_EFFECT_ENTRY_NEXT_OFFSET: usize = 0x30;
+/// Seconds left before the game removes the entry (TGA "Duration"; the
+/// row's full duration, TGA "Total Duration", follows at +0x48).
+const SP_EFFECT_ENTRY_REMOVAL_TIMER_OFFSET: usize = 0x40;
+/// Entries walked at most: a bound against a corrupt or cyclic list.
+const SP_EFFECT_LIST_MAX_ENTRIES: usize = 256;
 
 /// AOB pattern for the ChrIns-level SpEffect apply wrapper.
 ///
@@ -197,6 +213,51 @@ pub fn apply_speffect(effect_id: u32) -> bool {
     }
     debug!(effect_id, "Applied SpEffect");
     true
+}
+
+/// Write `seconds` as the time left of the player's active SpEffect
+/// `effect_id` (its entry's removal timer). False when the player, its
+/// SpEffect list or an entry with that id is not found, or the write fails.
+/// Every read and the write go through `PointerChain` (ReadProcessMemory /
+/// WriteProcessMemory), so an entry freed under the walk fails instead of
+/// faulting.
+pub fn set_speffect_timer(effect_id: u32, seconds: f32) -> bool {
+    profile_span!("sp_effect_apply.set_speffect_timer");
+    let player_ins = read_player_ins(&Pointers::new());
+    if player_ins.is_null() {
+        return false;
+    }
+    let read_ptr = |addr: usize| {
+        PointerChain::<usize>::new(&[addr])
+            .read()
+            .filter(|&ptr| ptr != 0)
+    };
+    let Some(sp_effect) = read_ptr(player_ins as usize + SP_EFFECT_CTRL_OFFSET) else {
+        return false;
+    };
+    let mut entry = read_ptr(sp_effect + SP_EFFECT_HEAD_OFFSET);
+    for _ in 0..SP_EFFECT_LIST_MAX_ENTRIES {
+        let Some(addr) = entry else {
+            return false;
+        };
+        let Some(param_id) =
+            PointerChain::<i32>::new(&[addr + SP_EFFECT_ENTRY_PARAM_ID_OFFSET]).read()
+        else {
+            return false;
+        };
+        if u32::try_from(param_id) == Ok(effect_id) {
+            return PointerChain::<f32>::new(&[addr + SP_EFFECT_ENTRY_REMOVAL_TIMER_OFFSET])
+                .write(seconds)
+                .is_some();
+        }
+        entry = read_ptr(addr + SP_EFFECT_ENTRY_NEXT_OFFSET);
+    }
+    warn!(
+        effect_id,
+        max = SP_EFFECT_LIST_MAX_ENTRIES,
+        "SpEffect list longer than the walk bound, timer not set"
+    );
+    false
 }
 
 #[cfg(test)]
