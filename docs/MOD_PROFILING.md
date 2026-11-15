@@ -19,6 +19,11 @@ UI over TCP port `8086`. You can see:
   `is_position_readable`, `read_loading_byte`).
 - Event flag reader hot paths (`event_flag.find_category_page`,
   `event_flag.resolve_category`, `event_flag.is_flag_set_cached`, etc.).
+- Race item memory writes: `apply_memory_state` (every 250 ms while a memory
+  effect runs) with `race_items.set_player_rendered`,
+  `race_items.set_player_scale`, `race_items.set_anim_speed` and
+  `race_items.set_camera` inside it, and `race_items.walk_foes` (the walk
+  over the characters around, once a second while Unseen Foes runs).
 - A separate timeline for the WebSocket worker thread (`ws-worker`), and one
   for the LiveSplit pipe thread (`livesplit`: `livesplit_connect`,
   `livesplit_poll`).
@@ -72,6 +77,12 @@ opens a TCP listener.
   cache is being invalidated too often.
 - **`refresh_leaderboard_cache` frequency.** It is throttled to 250 ms via the
   IGT bucket. Seeing it fire on every frame means the throttle is broken.
+- **`race_items.walk_foes` while Unseen Foes runs.** It reads every chr set
+  of WorldChrMan and the render byte of each character on them, on the render
+  thread, so its duration lands on one frame a second. Capture it once in the
+  open world and once in a legacy dungeon (the `[ITEMS] Foes walked` log line
+  gives the sets, entry slots and characters it visited): a few hundred
+  microseconds is fine, a millisecond or more is worth reporting.
 - **`imgui_window` vs `tracker_update` ratio.** If rendering dominates, investigate
   `render_leaderboard`. If logic dominates, investigate the event flag loop.
 

@@ -40,6 +40,51 @@ pub struct MemoryState {
     pub camera: Option<CameraVariant>,
 }
 
+/// The LockCamParam fields the Camera writes, on one row (its values from
+/// the in-memory param, 0x80-byte rows: `camDistTarget` at +0x00,
+/// `chrOrgOffset_Y` at +0x0C, `camFovY` at +0x14).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CameraRow {
+    /// Camera distance target [m].
+    pub dist: f32,
+    /// Height of the camera pivot over the character [m].
+    pub height: f32,
+    /// Vertical field of view [deg].
+    pub fov_y: f32,
+}
+
+/// First person: the camera pivot at eye height, 0.1 m behind it (the
+/// player hidden, `MemoryState::player_hidden`, or the body fills the view).
+const FIRST_PERSON_DIST: f32 = 0.1;
+const FIRST_PERSON_HEIGHT: f32 = 1.5;
+/// Upside down: a vertical field of view past 180 deg flips the image.
+const INVERTED_FOV_Y: f32 = 300.0;
+const WIDE_FOV_Y: f32 = 120.0;
+
+impl CameraRow {
+    /// The row `self` (its vanilla values) under `variant`: the fields the
+    /// variant sets take its values, the others keep the row's own, so
+    /// one variant after another never stacks.
+    pub fn with_variant(self, variant: CameraVariant) -> Self {
+        match variant {
+            CameraVariant::FirstPerson => Self {
+                dist: FIRST_PERSON_DIST,
+                height: FIRST_PERSON_HEIGHT,
+                ..self
+            },
+            CameraVariant::Inverted => Self {
+                fov_y: INVERTED_FOV_Y,
+                ..self
+            },
+            CameraVariant::Wide => Self {
+                fov_y: WIDE_FOV_Y,
+                ..self
+            },
+            CameraVariant::Unknown => self,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct MemoryEffects {
     /// Effect and its end on the play clock, one entry per kind, in the
@@ -156,6 +201,37 @@ mod tests {
             }
         );
         assert_eq!(fx.state(secs(20)), MemoryState::default());
+    }
+
+    #[test]
+    fn a_camera_variant_sets_only_its_own_fields() {
+        // Rows 0 and 1011 of the vanilla 1.17.0 regulation.
+        for row in [
+            CameraRow {
+                dist: 3.8,
+                height: 1.45,
+                fov_y: 48.0,
+            },
+            CameraRow {
+                dist: 10.0,
+                height: 1.87,
+                fov_y: 54.5,
+            },
+        ] {
+            let first_person = row.with_variant(CameraVariant::FirstPerson);
+            assert_ne!(first_person, row);
+            assert_eq!(first_person.fov_y, row.fov_y);
+            for variant in [CameraVariant::Inverted, CameraVariant::Wide] {
+                let view = row.with_variant(variant);
+                assert_ne!(view, row, "{variant:?}");
+                assert_eq!((view.dist, view.height), (row.dist, row.height));
+            }
+            assert_ne!(
+                row.with_variant(CameraVariant::Inverted),
+                row.with_variant(CameraVariant::Wide)
+            );
+            assert_eq!(row.with_variant(CameraVariant::Unknown), row);
+        }
     }
 
     #[test]

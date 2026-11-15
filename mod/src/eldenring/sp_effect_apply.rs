@@ -158,7 +158,7 @@ pub fn prewarm() {
 
 /// Read PlayerIns from WorldChrMan. Returns null until the player is loaded
 /// into the game world.
-fn read_player_ins(pointers: &Pointers) -> *mut c_void {
+pub(super) fn read_player_ins(pointers: &Pointers) -> *mut c_void {
     let world_chr_man_loc = pointers.base_addresses.world_chr_man;
     if world_chr_man_loc == 0 {
         return std::ptr::null_mut();

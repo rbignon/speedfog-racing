@@ -7,6 +7,7 @@ pub mod countdown;
 pub mod debug_flags;
 pub mod equip_load;
 pub mod flag_buffer;
+pub mod foes;
 pub mod format;
 pub mod igt_fix;
 pub mod item_banner;

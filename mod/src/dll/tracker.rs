@@ -3,6 +3,7 @@
 //! Tracks player progress via EMEVD event flags and communicates with the racing server.
 
 use hudhook::imgui::FontId;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -14,13 +15,16 @@ use windows::Win32::Foundation::HINSTANCE;
 
 use crate::core::color::parse_hex_color;
 use crate::core::equip_load::{base_max, load_rate};
+use crate::core::foes::FoesRecord;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
+use crate::core::memory_effects::{CameraRow, MemoryState};
 use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
 use crate::core::timed_effects::timed_apply;
+use crate::eldenring::memory_effects;
 use crate::eldenring::race_items;
 use crate::eldenring::sp_effect_apply;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
@@ -311,6 +315,18 @@ pub struct RaceTracker {
     // from: a max read equal to their product means the effect still runs.
     equip_load_last: Option<(f32, f32)>,
 
+    // The memory race item effects as last written into the game, field by
+    // field (`apply_memory_state`): a field back at its default is written
+    // once, only when an effect was written there.
+    memory_written: MemoryState,
+
+    // The LockCamParam rows' own values, by row id, saved by the Camera's
+    // first write; emptied once written back.
+    camera_originals: HashMap<u64, CameraRow>,
+
+    // The characters the foes walk hid, within one loaded world.
+    foes_record: FoesRecord,
+
     // Saves the unacknowledged event flags next to the DLL (None when the
     // DLL folder is unknown: nothing survives a restart then).
     unacked_store: Option<UnackedStore>,
@@ -455,6 +471,9 @@ impl RaceTracker {
             phantom_skin_name: None,
             race_items_prewarmed: false,
             equip_load_last: None,
+            memory_written: MemoryState::default(),
+            camera_originals: HashMap::new(),
+            foes_record: FoesRecord::default(),
             unacked_store,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
@@ -867,14 +886,8 @@ impl RaceTracker {
                     load_pct,
                     left_ms,
                 } => self.apply_equip_load(speffect_id, load_pct, left_ms),
-                // Logged only: this build does not write the memory effects
-                // into the game yet. Debug level: the machine asks again
-                // every 250 ms while one is live, and logs each change.
                 Effect::ApplyMemoryState { state, walk_foes } => {
-                    debug!(
-                        ?state,
-                        walk_foes, "[ITEMS] Memory state not written (no game write in this build)"
-                    );
+                    self.apply_memory_state(state, walk_foes)
                 }
             }
         }
@@ -1079,6 +1092,69 @@ impl RaceTracker {
                 ?timing,
                 "[ITEMS] SpEffect applied, timer not found (runs its full row duration)"
             );
+        }
+    }
+
+    /// Write the memory race item effects into the game
+    /// (`eldenring::memory_effects`). The machine sends the whole state
+    /// every 250 ms while one is live: a field is written while it holds an
+    /// effect (the game may have reset it), and once when it is back at its
+    /// default after an effect was written there; a default is never written
+    /// over and over. The Camera's rows go back only when their own values
+    /// are saved, and the foes are walked only when `walk_foes`. A failed
+    /// write keeps the last value written, so the next state tries again (a
+    /// restore included). The foes record is forgotten when the PlayerIns
+    /// differs from the last write's: a load came in between.
+    fn apply_memory_state(&mut self, state: MemoryState, walk_foes: bool) {
+        profile_span!("apply_memory_state");
+        let forgotten = self.foes_record.see_player(memory_effects::player_ins());
+        if forgotten > 0 {
+            info!(forgotten, "[ITEMS] New world, the foes record is forgotten");
+        }
+        let written = &mut self.memory_written;
+        if state.player_hidden || written.player_hidden {
+            if memory_effects::set_player_rendered(!state.player_hidden) {
+                written.player_hidden = state.player_hidden;
+            } else {
+                warn!(
+                    hidden = state.player_hidden,
+                    "[ITEMS] Player render bit not written (unreadable)"
+                );
+            }
+        }
+        // 1 is the game's own scale and animation speed.
+        if state.scale.is_some() || written.scale.is_some() {
+            let scale = state.scale.unwrap_or(1.0);
+            if memory_effects::set_player_scale(scale) {
+                written.scale = state.scale;
+            } else {
+                warn!(scale, "[ITEMS] Player scale not written (unreadable)");
+            }
+        }
+        if state.anim_speed.is_some() || written.anim_speed.is_some() {
+            let speed = state.anim_speed.unwrap_or(1.0);
+            if memory_effects::set_anim_speed(speed) {
+                written.anim_speed = state.anim_speed;
+            } else {
+                warn!(
+                    speed,
+                    "[ITEMS] Player animation speed not written (unreadable)"
+                );
+            }
+        }
+        if state.camera.is_some() || !self.camera_originals.is_empty() {
+            if memory_effects::set_camera(state.camera, &mut self.camera_originals) {
+                written.camera = state.camera;
+            } else {
+                warn!(
+                    camera = ?state.camera,
+                    "[ITEMS] Camera rows not written (params not indexed yet, or no LockCamParam row)"
+                );
+            }
+        }
+        if walk_foes {
+            memory_effects::walk_foes(state.foes_hidden, &mut self.foes_record.hidden);
+            written.foes_hidden = state.foes_hidden;
         }
     }
 

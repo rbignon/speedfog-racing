@@ -264,7 +264,7 @@ fn param_row<T: 'static>(params: &Params, name: &str, id: u32) -> Option<&'stati
 }
 
 /// Pointer stored at `addr`, `None` when unreadable or null.
-fn read_ptr(addr: usize) -> Option<usize> {
+pub(super) fn read_ptr(addr: usize) -> Option<usize> {
     PointerChain::<usize>::new(&[addr])
         .read()
         .filter(|&ptr| ptr != 0)
@@ -283,7 +283,7 @@ fn read_list(head: usize, capacity: u32, len: u32) -> Option<Vec<u8>> {
 /// a list's length is only known at runtime, so this calls the same
 /// `ReadProcessMemory` on the current process, which fails instead of
 /// faulting on an unmapped address.
-fn read_bytes(addr: usize, len: usize) -> Option<Vec<u8>> {
+pub(super) fn read_bytes(addr: usize, len: usize) -> Option<Vec<u8>> {
     let mut buf = vec![0u8; len];
     // SAFETY: the destination is `buf`, exactly `len` writable bytes; the
     // source is only read by the kernel, which reports an unmapped range as

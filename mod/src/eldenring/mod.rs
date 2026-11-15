@@ -10,6 +10,7 @@ mod event_flags;
 mod game_state;
 pub mod igt_hook;
 pub mod item_spawner;
+pub mod memory_effects;
 #[cfg(debug_assertions)]
 pub mod quitout;
 pub mod race_items;
