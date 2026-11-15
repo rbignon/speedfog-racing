@@ -29,8 +29,6 @@ exclude_zones = [
 [structure]
 layers_count = 30
 final_tier = 16
-tier_curve = "power"
-tier_curve_exponent = 1.5
 first_layer_type = "legacy_dungeon"
 final_boss_candidates = ["all"]
 
