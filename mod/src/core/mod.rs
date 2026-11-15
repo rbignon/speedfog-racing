@@ -15,9 +15,11 @@ pub mod item_feed;
 pub mod item_inventory;
 pub mod livesplit;
 pub mod map_utils;
+pub mod play_clock;
 pub mod profile;
 pub mod protocol;
 pub mod race_machine;
+pub mod timed_effects;
 pub mod types;
 
 pub use color::parse_hex_color;

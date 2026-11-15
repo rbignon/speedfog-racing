@@ -851,11 +851,16 @@ impl RaceTracker {
                         .grant_spawn_result(grant_id, spawned, Instant::now());
                 }
                 Effect::ReportItemInventory { goods } => self.report_item_inventory(goods),
-                Effect::ApplySpEffect { speffect_id } => {
+                Effect::ApplySpEffect {
+                    speffect_id,
+                    left_ms,
+                } => {
+                    // The time left is not written yet: the entry runs its
+                    // full row duration.
                     if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
-                        info!(speffect_id, "[ITEMS] SpEffect applied");
+                        info!(speffect_id, ?left_ms, "[ITEMS] SpEffect applied");
                     } else {
-                        warn!(speffect_id, "[ITEMS] SpEffect not applied");
+                        warn!(speffect_id, ?left_ms, "[ITEMS] SpEffect not applied");
                     }
                 }
                 Effect::ApplyItemDamage {
@@ -866,7 +871,8 @@ impl RaceTracker {
                 Effect::ApplyEquipLoad {
                     speffect_id,
                     load_pct,
-                } => self.apply_equip_load(speffect_id, load_pct),
+                    left_ms,
+                } => self.apply_equip_load(speffect_id, load_pct, left_ms),
             }
         }
     }
@@ -962,8 +968,9 @@ impl RaceTracker {
     /// still runs, the rate is computed from the max without it
     /// (`core::equip_load::base_max`), so a second hit follows the current
     /// equipment instead of cancelling the first. An unreadable load keeps
-    /// the row's rate (the seed's, or the last one written).
-    fn apply_equip_load(&mut self, speffect_id: u32, load_pct: u8) {
+    /// the row's rate (the seed's, or the last one written). `left_ms` is
+    /// only logged: the entry runs its full row duration.
+    fn apply_equip_load(&mut self, speffect_id: u32, load_pct: u8, left_ms: Option<u32>) {
         match race_items::read_equip_load() {
             Some((current, max)) => {
                 let base = base_max(max, self.equip_load_last);
@@ -984,9 +991,9 @@ impl RaceTracker {
             None => warn!(speffect_id, "[ITEMS] Equip load unreadable, row rate kept"),
         }
         if crate::eldenring::sp_effect_apply::apply_speffect(speffect_id) {
-            info!(speffect_id, "[ITEMS] SpEffect applied");
+            info!(speffect_id, ?left_ms, "[ITEMS] SpEffect applied");
         } else {
-            warn!(speffect_id, "[ITEMS] SpEffect not applied");
+            warn!(speffect_id, ?left_ms, "[ITEMS] SpEffect not applied");
         }
     }
 

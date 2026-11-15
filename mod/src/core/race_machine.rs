@@ -16,10 +16,12 @@ use std::time::Instant;
 
 use crate::core::item_feed::{FeedBanner, FeedHeld, FeedReminder, FeedTone, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
+use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
     ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder, ParticipantInfo,
     ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus, SeedInfo,
 };
+use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
 // =============================================================================
@@ -356,9 +358,13 @@ pub enum Effect {
     ReportItemInventory {
         goods: Vec<(String, u32)>,
     },
-    /// Apply a SpEffect to the player.
+    /// Apply a SpEffect to the player. `left_ms`: a timed application
+    /// with that much time left (a fresh one gets its full duration, one
+    /// applied again at a loading exit what is left of it); `None`: an
+    /// instant one, applied as its row says.
     ApplySpEffect {
         speffect_id: u32,
+        left_ms: Option<u32>,
     },
     /// Damage the player along the race item damage curve
     /// (`core::item_damage`), computed from the HP at application.
@@ -369,10 +375,12 @@ pub enum Effect {
     },
     /// Set the SpEffect's max equip load rate so the player's current load
     /// sits at `load_pct` percent of the max (`core::equip_load`), then
-    /// apply it.
+    /// apply it, timed as `ApplySpEffect` is. Applied again at a loading
+    /// exit, it comes back as an `ApplySpEffect`: the rate stays in its row.
     ApplyEquipLoad {
         speffect_id: u32,
         load_pct: u8,
+        left_ms: Option<u32>,
     },
 }
 
@@ -471,6 +479,13 @@ pub struct RaceMachine {
     pending_item_effects: Vec<PendingItemEffect>,
     /// Race item banners, reminder rows and ink timer, for the overlay.
     item_feed: ItemFeed,
+    /// Wall time while the player's position is readable: what times the
+    /// reminder rows, the ink and the timed effects, so a load does not
+    /// eat their time.
+    play_clock: PlayClock,
+    /// Timed SpEffects the race items applied, applied again with their
+    /// time left at each loading exit (the game drops them at a load).
+    timed_effects: TimedEffects,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -622,6 +637,8 @@ impl RaceMachine {
             retry_grants: Vec::new(),
             pending_item_effects: Vec::new(),
             item_feed: ItemFeed::new(),
+            play_clock: PlayClock::default(),
+            timed_effects: TimedEffects::default(),
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -1096,14 +1113,15 @@ impl RaceMachine {
         self.item_feed.banner_alpha(now)
     }
 
-    /// Race item reminder rows still running, with their time left.
+    /// Race item reminder rows still running at `now`, with their time
+    /// left on the play clock.
     pub fn item_reminders(&self, now: Instant) -> impl Iterator<Item = (&FeedReminder, Duration)> {
-        self.item_feed.reminders(now)
+        self.item_feed.reminders(self.play_clock.at(now))
     }
 
-    /// An ink effect hides the exit destinations right now.
+    /// An ink effect hides the exit destinations at `now`.
     pub fn ink_active(&self, now: Instant) -> bool {
-        self.item_feed.ink_active(now)
+        self.item_feed.ink_active(self.play_clock.at(now))
     }
 
     /// Coded blocking condition (red top banner) while fresh.
@@ -1277,6 +1295,7 @@ impl RaceMachine {
                 // this one's; a reconnection as the same one keeps them.
                 if self.my_participant_id.as_deref() != Some(participant_id.as_str()) {
                     self.item_feed.clear();
+                    self.timed_effects.clear();
                     self.pending_grants.clear();
                     self.spawning_grants.clear();
                     self.retry_grants.clear();
@@ -1710,10 +1729,16 @@ impl RaceMachine {
                 reminder,
             } => {
                 self.last_received_debug = Some(format!("item_effect({item})"));
+                // A timed effect keeps its duration as the time left of its
+                // application (see `flush_race_items`).
                 let action = match effect {
-                    ItemEffectPayload::Speffect { speffect_id } => {
-                        Some(ItemAction::Shell(Effect::ApplySpEffect { speffect_id }))
-                    }
+                    ItemEffectPayload::Speffect {
+                        speffect_id,
+                        duration_ms,
+                    } => Some(ItemAction::Shell(Effect::ApplySpEffect {
+                        speffect_id,
+                        left_ms: duration_ms,
+                    })),
                     ItemEffectPayload::Damage {
                         base_pct,
                         floor_pct,
@@ -1729,9 +1754,11 @@ impl RaceMachine {
                     ItemEffectPayload::EquipLoad {
                         speffect_id,
                         load_pct,
+                        duration_ms,
                     } => Some(ItemAction::Shell(Effect::ApplyEquipLoad {
                         speffect_id,
                         load_pct,
+                        left_ms: duration_ms,
                     })),
                     ItemEffectPayload::Unknown => None,
                 };
@@ -1777,7 +1804,7 @@ impl RaceMachine {
                         reminder.text,
                         FeedTone::Gain,
                         Duration::from_millis(u64::from(reminder.duration_ms)),
-                        now,
+                        self.play_clock.at(now),
                     );
                 }
                 self.item_feed.push_banner(banner, now);
@@ -2008,7 +2035,6 @@ impl RaceMachine {
     /// follow every path a frame takes.
     fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
-        self.item_feed.advance(now);
         // The shell read this frame's window of boss flags just before the
         // tick: move the rotation past it now, while `boss_flags_to_read`
         // still names the same window (a kill or a save-reload flush below
@@ -2017,6 +2043,12 @@ impl RaceMachine {
             self.advance_boss_reads();
         }
         self.frame_snapshot = input.snapshot;
+        // The play clock runs while the player is in the world, the signal
+        // `loading_exit` keys on: loading screens and the main menu do not
+        // eat the race item timers.
+        self.play_clock
+            .set_running(self.frame_snapshot.position_readable, now);
+        self.item_feed.advance(now, self.play_clock.at(now));
 
         // Blackscreen IGT freeze (ported from SoulSplitter's UpdateTimer):
         // while a fade covers the screen mid-run, hold the timer at its
@@ -2501,7 +2533,8 @@ impl RaceMachine {
         // Everything below needs a live connection (ready, replays, status updates).
         if !input.connected {
             // No report without a connection: the reconnect frame sends it.
-            self.flush_race_items(false, loading_exit, now, &mut effects);
+            // The effects are local: a load gets them back all the same.
+            self.flush_race_items(false, loading_exit, loading_exit, now, &mut effects);
             return effects;
         }
 
@@ -2593,8 +2626,15 @@ impl RaceMachine {
         // After every flag of the frame (replays, buffered, scans): a use
         // made just before a quit-out reaches the server before the
         // inventory that no longer holds it.
+        // A reconnection is no load: the game kept the effects.
         let load_or_reconnect = loading_exit || reconnect_frame;
-        self.flush_race_items(load_or_reconnect, load_or_reconnect, now, &mut effects);
+        self.flush_race_items(
+            load_or_reconnect,
+            load_or_reconnect,
+            loading_exit,
+            now,
+            &mut effects,
+        );
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -2732,15 +2772,17 @@ impl RaceMachine {
     /// preceded by the held item's icon write (a game restart reloads the
     /// params), the grant spawns, each preceded by its item's icon write
     /// (the failed ones again only when `retry_grants`: a game load or a
-    /// reconnection), then the pending effects, whose banner, reminder and
-    /// duration start now. A grant's banner waits for its spawn's outcome
-    /// (`grant_spawn_result`). An outdated seed pack holds it all: its
-    /// regulation may lack the race goods and their effects. A run that is
-    /// over drops it all.
+    /// reconnection), the timed effects with time left applied again with
+    /// it (`reapply_effects`: a game load, which dropped them), then the
+    /// pending effects, whose banner, reminder and duration start now. A
+    /// grant's banner waits for its spawn's outcome (`grant_spawn_result`).
+    /// An outdated seed pack holds it all: its regulation may lack the race
+    /// goods and their effects. A run that is over drops it all.
     fn flush_race_items(
         &mut self,
         report_inventory: bool,
         retry_grants: bool,
+        reapply_effects: bool,
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
@@ -2789,11 +2831,43 @@ impl RaceMachine {
             });
             self.spawning_grants.push(grant);
         }
+        let play = self.play_clock.at(now);
+        if reapply_effects {
+            // An equip load effect comes back as its SpEffect alone: the
+            // rate written at its application stays in its row.
+            self.timed_effects.prune(play);
+            for (speffect_id, left) in self.timed_effects.live(play) {
+                let left_ms = u32::try_from(left.as_millis()).unwrap_or(u32::MAX);
+                info!(speffect_id, left_ms, "[ITEMS] Effect applied again");
+                effects.push(Effect::ApplySpEffect {
+                    speffect_id,
+                    left_ms: Some(left_ms),
+                });
+            }
+        }
         for effect in std::mem::take(&mut self.pending_item_effects) {
             info!(action = ?effect.action, "[ITEMS] Effect applied");
             match effect.action {
-                ItemAction::Shell(apply) => effects.push(apply),
-                ItemAction::Ink(duration) => self.item_feed.set_ink(duration, now),
+                ItemAction::Shell(apply) => {
+                    if let Effect::ApplySpEffect {
+                        speffect_id,
+                        left_ms: Some(duration_ms),
+                    }
+                    | Effect::ApplyEquipLoad {
+                        speffect_id,
+                        left_ms: Some(duration_ms),
+                        ..
+                    } = apply
+                    {
+                        self.timed_effects.start(
+                            speffect_id,
+                            Duration::from_millis(u64::from(duration_ms)),
+                            play,
+                        );
+                    }
+                    effects.push(apply);
+                }
+                ItemAction::Ink(duration) => self.item_feed.set_ink(duration, play),
             }
             if let Some(reminder) = effect.reminder {
                 self.item_feed.add_reminder(
@@ -2801,7 +2875,7 @@ impl RaceMachine {
                     reminder.text,
                     FeedTone::Malus,
                     Duration::from_millis(u64::from(reminder.duration_ms)),
-                    now,
+                    play,
                 );
             }
             if let Some(banner) = effect.banner {
@@ -2810,8 +2884,9 @@ impl RaceMachine {
         }
     }
 
-    /// Drop the race item work waiting for a load: grants, failed spawns
-    /// and effects. Logged when any was waiting.
+    /// Drop the race item work waiting for a load: grants, failed spawns,
+    /// effects (logged when any was waiting), and the timed effects a load
+    /// would apply again (the game runs out the ones it holds).
     fn drop_waiting_race_items(&mut self, reason: &'static str) {
         let grants = self.pending_grants.len() + self.retry_grants.len();
         let item_effects = self.pending_item_effects.len();
@@ -2824,6 +2899,7 @@ impl RaceMachine {
         self.pending_grants.clear();
         self.retry_grants.clear();
         self.pending_item_effects.clear();
+        self.timed_effects.clear();
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -7329,6 +7405,7 @@ mod tests {
         let hit = item_hit(
             ItemEffectPayload::Speffect {
                 speffect_id: 1_450_827,
+                duration_ms: None,
             },
             Some(("Fat-roll", 15_000)),
         );
@@ -7349,12 +7426,13 @@ mod tests {
         );
         assert!(fx.contains(&Effect::ApplySpEffect {
             speffect_id: 1_450_827,
+            left_ms: None,
         }));
         let rows: Vec<_> = m.item_reminders(t1).collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0.text, "Fat-roll");
         assert_eq!(rows[0].0.tone, FeedTone::Malus);
-        assert_eq!(rows[0].0.ends_at, t1 + secs(15));
+        assert_eq!(rows[0].1, secs(15));
         assert_eq!(
             banner_title(&m),
             Some(("HAMMER".to_string(), FeedTone::Malus))
@@ -7402,6 +7480,7 @@ mod tests {
             ItemEffectPayload::EquipLoad {
                 speffect_id: 1_450_827,
                 load_pct: 97,
+                duration_ms: Some(15_000),
             },
             Some(("Fat-roll", 15_000)),
         );
@@ -7411,6 +7490,7 @@ mod tests {
         assert!(fx.contains(&Effect::ApplyEquipLoad {
             speffect_id: 1_450_827,
             load_pct: 97,
+            left_ms: Some(15_000),
         }));
         assert_eq!(m.item_reminders(now + ms(120)).count(), 1);
     }
@@ -7600,7 +7680,7 @@ mod tests {
         let rows: Vec<_> = m.item_reminders(now + ms(200)).collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0.tone, FeedTone::Gain);
-        assert_eq!(rows[0].0.ends_at, now + ms(200) + secs(15));
+        assert_eq!(rows[0].1, secs(15));
     }
 
     #[test]
@@ -7700,6 +7780,7 @@ mod tests {
             item_hit(
                 ItemEffectPayload::Speffect {
                     speffect_id: 1_450_827,
+                    duration_ms: None,
                 },
                 Some(("Fat-roll", 15_000)),
             ),
@@ -7859,6 +7940,7 @@ mod tests {
             item_hit(
                 ItemEffectPayload::Speffect {
                     speffect_id: 1_450_827,
+                    duration_ms: None,
                 },
                 Some(("Fat-roll", 15_000)),
             ),
@@ -8073,6 +8155,7 @@ mod tests {
                 item: "mushroom".to_string(),
                 effect: ItemEffectPayload::Speffect {
                     speffect_id: 1_450_826,
+                    duration_ms: None,
                 },
                 banner: None,
                 reminder: None,
@@ -8083,6 +8166,7 @@ mod tests {
         assert_eq!(item_steps(&fx), ["apply"], "{fx:?}");
         assert!(fx.contains(&Effect::ApplySpEffect {
             speffect_id: 1_450_826,
+            left_ms: None,
         }));
         assert_eq!(m.item_banner(), None);
         assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
@@ -8211,5 +8295,312 @@ mod tests {
             goods_id: RACE_ITEM_GOODS,
             icon_id: 60_388,
         }));
+    }
+
+    // ------------------------------------------------------------------
+    // Race item effects on the play clock, across loads
+    // ------------------------------------------------------------------
+
+    const MUSHROOM_FX: u32 = 1_450_826;
+    const HAMMER_FX: u32 = 1_450_827;
+    const LIGHTNING_FX: u32 = 1_450_830;
+    const RUNE_POUCH_FX: u32 = 1_450_821;
+    /// One frame at 60 FPS, rounded up.
+    const FRAME_MS: u32 = 17;
+    const FRAME: Duration = Duration::from_millis(FRAME_MS as u64);
+
+    fn timed(speffect_id: u32, duration_ms: u32) -> ItemEffectPayload {
+        ItemEffectPayload::Speffect {
+            speffect_id,
+            duration_ms: Some(duration_ms),
+        }
+    }
+
+    /// The SpEffect applications of a batch, in order: id and time left.
+    fn speffects_applied(effects: &[Effect]) -> Vec<(u32, Option<u32>)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::ApplySpEffect {
+                    speffect_id,
+                    left_ms,
+                } => Some((*speffect_id, *left_ms)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A game load: the position unreadable from `start` for `length`, the
+    /// IGT held at `igt`, then the loading exit frame, whose effects it
+    /// returns.
+    fn load(
+        m: &mut RaceMachine,
+        start: Instant,
+        length: Duration,
+        igt: u32,
+        connected: bool,
+    ) -> Vec<Effect> {
+        m.tick(tick_in(snap(Some(igt), false), connected, None), start);
+        m.tick(
+            tick_in(snap(Some(igt), false), connected, None),
+            start + length / 2,
+        );
+        let reads = items_scan(m, &[]);
+        m.tick(
+            tick_in(snap(Some(igt), true), connected, reads),
+            start + length,
+        )
+    }
+
+    /// `left` is about `expected_ms`: the play clock stops on a load's first
+    /// unreadable frame, up to a frame after the last loaded one.
+    fn assert_left_about(left: Option<u32>, expected_ms: u32) {
+        let left = left.expect("a timed application");
+        assert!(
+            (expected_ms - FRAME_MS..=expected_ms).contains(&left),
+            "{left} ms left, expected about {expected_ms}"
+        );
+    }
+
+    #[test]
+    fn reminders_freeze_during_a_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(timed(LIGHTNING_FX, 15_000), Some(("Slowed", 15_000))),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        // 5 s loaded, 20 s with the position unreadable, then 1 s loaded.
+        m.tick(tick_in(snap(Some(66_000), true), true, None), t1 + secs(5));
+        load(&mut m, t1 + secs(5), secs(20), 66_000, true);
+        let t2 = t1 + secs(26);
+        m.tick(tick_in(snap(Some(67_000), true), true, None), t2);
+        let left: Vec<_> = m.item_reminders(t2).map(|(_, left)| left).collect();
+        assert_eq!(left, [secs(9)]);
+    }
+
+    #[test]
+    fn effects_are_applied_again_at_the_loading_exit() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(item_hit(timed(MUSHROOM_FX, 30_000), None), now + ms(100));
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::EquipLoad {
+                    speffect_id: HAMMER_FX,
+                    load_pct: 97,
+                    duration_ms: Some(15_000),
+                },
+                Some(("Fat-roll", 15_000)),
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert_eq!(speffects_applied(&fx), [(MUSHROOM_FX, Some(30_000))]);
+        assert!(fx.contains(&Effect::ApplyEquipLoad {
+            speffect_id: HAMMER_FX,
+            load_pct: 97,
+            left_ms: Some(15_000),
+        }));
+
+        // 10 s loaded, applying nothing more, then a 20 s load from the
+        // next frame.
+        let fx = m.tick(tick_in(snap(Some(71_000), true), true, None), t1 + secs(10));
+        assert!(item_steps(&fx).is_empty(), "{fx:?}");
+        let fx = load(&mut m, t1 + secs(10) + FRAME, secs(20), 71_000, true);
+        let again = speffects_applied(&fx);
+        assert_eq!(
+            again.iter().map(|&(id, _)| id).collect::<Vec<_>>(),
+            [MUSHROOM_FX, HAMMER_FX],
+            "{fx:?}"
+        );
+        assert_left_about(again[0].1, 20_000);
+        assert_left_about(again[1].1, 5_000);
+        // The Hammer's rate is still in its row: no new rate write.
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::ApplyEquipLoad { .. })),
+            "{fx:?}"
+        );
+
+        // Once per load, not on the frames after it.
+        let fx = m.tick(tick_in(snap(Some(72_000), true), true, None), t1 + secs(31));
+        assert!(speffects_applied(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn an_expired_or_instant_effect_is_not_applied_again() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Speffect {
+                    speffect_id: RUNE_POUCH_FX,
+                    duration_ms: None,
+                },
+                None,
+            ),
+            now + ms(100),
+        );
+        m.handle_message(item_hit(timed(LIGHTNING_FX, 15_000), None), now + ms(100));
+        let t1 = now + ms(120);
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert_eq!(
+            speffects_applied(&fx),
+            [(RUNE_POUCH_FX, None), (LIGHTNING_FX, Some(15_000))]
+        );
+
+        // A load 5 s in: the Lightning comes back, the runes never do.
+        let fx = load(&mut m, t1 + secs(5), secs(10), 62_000, true);
+        assert_eq!(speffects_applied(&fx), [(LIGHTNING_FX, Some(10_000))]);
+        // 11 s more of play: the Lightning is over before the next load.
+        m.tick(tick_in(snap(Some(63_000), true), true, None), t1 + secs(20));
+        let fx = load(&mut m, t1 + secs(26), secs(10), 64_000, true);
+        assert!(speffects_applied(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_hit_during_a_load_refreshes_the_running_effect() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(item_hit(timed(LIGHTNING_FX, 15_000), None), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+
+        // A load 5 s in, 10 s left: a second Lightning arrives during it.
+        let start = t1 + secs(5);
+        m.tick(tick_in(snap(Some(62_000), false), true, None), start);
+        m.handle_message(item_hit(timed(LIGHTNING_FX, 15_000), None), start + secs(2));
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(
+            tick_in(snap(Some(62_000), true), true, reads),
+            start + secs(4),
+        );
+        // The running one first, then the new one, whose full time wins.
+        assert_eq!(
+            speffects_applied(&fx),
+            [(LIGHTNING_FX, Some(10_000)), (LIGHTNING_FX, Some(15_000))]
+        );
+
+        // A later load, 2 s of play on: one entry, the later end.
+        let fx = load(&mut m, start + secs(6), secs(3), 63_000, true);
+        assert_eq!(speffects_applied(&fx), [(LIGHTNING_FX, Some(13_000))]);
+    }
+
+    #[test]
+    fn no_reapply_into_a_wrong_save() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(item_hit(timed(MUSHROOM_FX, 30_000), None), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(60_100), true), true, None), t1);
+
+        // Another, further-along save is loaded: its loading exit applies
+        // nothing.
+        m.tick(tick_in(snap(Some(60_100), false), true, None), t1 + secs(1));
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(
+            tick_in(snap(Some(500_000), true), true, reads),
+            t1 + secs(2),
+        );
+        assert!(m.wrong_save);
+        assert!(speffects_applied(&fx).is_empty(), "{fx:?}");
+
+        // The race save is back: its loading exit applies the Mushroom
+        // again, the play on the wrong save counted.
+        m.tick(tick_in(snap(Some(60_500), false), true, None), t1 + secs(4));
+        assert!(!m.wrong_save);
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(tick_in(snap(Some(60_600), true), true, reads), t1 + secs(5));
+        assert_eq!(speffects_applied(&fx), [(MUSHROOM_FX, Some(27_000))]);
+    }
+
+    #[test]
+    fn effects_come_back_after_a_load_while_disconnected() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(item_hit(timed(MUSHROOM_FX, 30_000), None), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t1 + secs(1),
+        );
+
+        // The effects are local: no connection needed.
+        let fx = load(&mut m, t1 + secs(2), secs(5), 62_000, false);
+        assert_eq!(speffects_applied(&fx), [(MUSHROOM_FX, Some(28_000))]);
+
+        // The reconnect frame is no load: the game kept the effect.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t1 + secs(8),
+        );
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(tick_in(snap(Some(63_000), true), true, reads), t1 + secs(9));
+        assert!(item_steps(&fx).contains(&"ready"), "{fx:?}");
+        assert!(speffects_applied(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn effects_go_with_the_run() {
+        for end in ["new start", "finished", "abandoned", "another participant"] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            m.handle_message(item_hit(timed(MUSHROOM_FX, 30_000), None), now + ms(100));
+            let t1 = now + ms(120);
+            let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+            assert_eq!(
+                speffects_applied(&fx),
+                [(MUSHROOM_FX, Some(30_000))],
+                "{end}"
+            );
+            let t2 = t1 + secs(1);
+            match end {
+                "new start" => {
+                    // A race reset: the same runner authenticates again, the
+                    // race in setup, and the start comes before any frame.
+                    m.handle_message(auth_ok_with_items("setup", true), t2);
+                    m.handle_message(MachineMessage::RaceStart(0), t2 + ms(10));
+                }
+                "another participant" => {
+                    let mut other = auth_ok_with_items("running", true);
+                    if let MachineMessage::AuthOk {
+                        participant_id,
+                        participants,
+                        ..
+                    } = &mut other
+                    {
+                        *participant_id = "p2".to_string();
+                        participants[0] = test_participant("p2", "playing", 1);
+                    }
+                    m.handle_message(other, t2);
+                }
+                status => {
+                    m.handle_message(
+                        MachineMessage::LeaderboardUpdate {
+                            participants: vec![test_participant("p1", status, 3)],
+                            leader_splits: None,
+                        },
+                        t2,
+                    );
+                    m.tick(tick_in(snap(Some(61_500), true), true, None), t2 + ms(10));
+                    // Even a run live again later (its status put back)
+                    // gets nothing back.
+                    m.handle_message(
+                        MachineMessage::LeaderboardUpdate {
+                            participants: vec![test_participant("p1", "playing", 3)],
+                            leader_splits: None,
+                        },
+                        t2 + ms(20),
+                    );
+                }
+            }
+            let fx = load(&mut m, t1 + secs(2), secs(5), 62_000, true);
+            assert!(speffects_applied(&fx).is_empty(), "{end}: {fx:?}");
+        }
     }
 }

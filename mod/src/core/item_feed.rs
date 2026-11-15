@@ -1,7 +1,9 @@
 //! Race item feed: queued banners, timed reminder rows, the row of the item
 //! held, and the ink timer.
 //!
-//! Pure timing: every method takes `now`, nothing reads the clock.
+//! Pure timing, nothing reads the clock: banners run on wall time (`now`),
+//! the reminder rows and the ink on the play clock (`play`, see
+//! `core::play_clock`), so a load does not eat their time.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -44,7 +46,8 @@ pub struct FeedReminder {
     pub icon: String,
     pub text: String,
     pub tone: FeedTone,
-    pub ends_at: Instant,
+    /// End on the play clock.
+    pub ends_at: Duration,
 }
 
 /// The race item held: a row with no countdown, shown while its goods is in
@@ -63,7 +66,8 @@ pub struct ItemFeed {
     queue: VecDeque<FeedBanner>,
     reminders: Vec<FeedReminder>,
     held: Option<FeedHeld>,
-    ink_until: Option<Instant>,
+    /// End of the ink on the play clock.
+    ink_until: Option<Duration>,
 }
 
 impl ItemFeed {
@@ -85,14 +89,15 @@ impl ItemFeed {
         }
     }
 
-    /// Drop the expired banner and start the next one at `now`; prune old reminders.
-    pub fn advance(&mut self, now: Instant) {
+    /// Drop the expired banner and start the next one at `now`; prune the
+    /// reminders ended at `play`.
+    pub fn advance(&mut self, now: Instant, play: Duration) {
         if let Some((_, started)) = &self.current {
             if now.saturating_duration_since(*started) >= Self::BANNER_DURATION {
                 self.current = self.queue.pop_front().map(|b| (b, now));
             }
         }
-        self.reminders.retain(|r| r.ends_at > now);
+        self.reminders.retain(|r| r.ends_at > play);
     }
 
     /// Banner on screen, if any (as of the last `advance`).
@@ -113,16 +118,17 @@ impl ItemFeed {
         rising.min(falling).clamp(0.0, 1.0)
     }
 
-    /// Add a reminder row; a second one with the same text keeps the latest end.
+    /// Add a reminder row running `duration` from `play`; a second one with
+    /// the same text keeps the latest end.
     pub fn add_reminder(
         &mut self,
         icon: String,
         text: String,
         tone: FeedTone,
         duration: Duration,
-        now: Instant,
+        play: Duration,
     ) {
-        let ends_at = now + duration;
+        let ends_at = play + duration;
         if let Some(existing) = self.reminders.iter_mut().find(|r| r.text == text) {
             if ends_at > existing.ends_at {
                 existing.ends_at = ends_at;
@@ -139,11 +145,12 @@ impl ItemFeed {
         }
     }
 
-    /// Live reminders with their time left; expired ones are skipped.
-    pub fn reminders(&self, now: Instant) -> impl Iterator<Item = (&FeedReminder, Duration)> {
+    /// Live reminders at `play` with their time left; expired ones are
+    /// skipped.
+    pub fn reminders(&self, play: Duration) -> impl Iterator<Item = (&FeedReminder, Duration)> {
         self.reminders.iter().filter_map(move |r| {
             r.ends_at
-                .checked_duration_since(now)
+                .checked_sub(play)
                 .filter(|left| !left.is_zero())
                 .map(|left| (r, left))
         })
@@ -158,16 +165,17 @@ impl ItemFeed {
         self.held.as_ref()
     }
 
-    /// Start or extend the ink; the latest end wins.
-    pub fn set_ink(&mut self, duration: Duration, now: Instant) {
-        let ends_at = now + duration;
+    /// Start or extend the ink for `duration` from `play`; the latest end
+    /// wins.
+    pub fn set_ink(&mut self, duration: Duration, play: Duration) {
+        let ends_at = play + duration;
         if self.ink_until.is_none_or(|current| ends_at > current) {
             self.ink_until = Some(ends_at);
         }
     }
 
-    pub fn ink_active(&self, now: Instant) -> bool {
-        self.ink_until.is_some_and(|end| now < end)
+    pub fn ink_active(&self, play: Duration) -> bool {
+        self.ink_until.is_some_and(|end| play < end)
     }
 
     /// Drop the reminder rows, the held row and the ink; banners play on.
@@ -250,10 +258,10 @@ mod tests {
             (d * 2 - just, "B"),
             (d * 2, "C"),
         ] {
-            feed.advance(t0 + at);
+            feed.advance(t0 + at, Duration::ZERO);
             assert_eq!(feed.banner().unwrap().title, expected, "at +{at:?}");
         }
-        feed.advance(t0 + d * 3);
+        feed.advance(t0 + d * 3, Duration::ZERO);
         assert!(feed.banner().is_none());
     }
 
@@ -263,27 +271,27 @@ mod tests {
         let mut feed = ItemFeed::new();
         let d = ItemFeed::BANNER_DURATION;
         feed.push_banner(banner("a"), t0);
-        feed.advance(t0 + d + secs(1));
+        feed.advance(t0 + d + secs(1), Duration::ZERO);
         assert!(feed.banner().is_none());
         let t1 = t0 + secs(20);
         feed.push_banner(banner("b"), t1);
-        feed.advance(t1 + d - Duration::from_millis(1));
+        feed.advance(t1 + d - Duration::from_millis(1), Duration::ZERO);
         assert_eq!(feed.banner().unwrap().title, "B");
-        feed.advance(t1 + d);
+        feed.advance(t1 + d, Duration::ZERO);
         assert!(feed.banner().is_none());
     }
 
     #[test]
     fn reminder_with_the_same_text_keeps_the_latest_end() {
-        let t0 = Instant::now();
         let mut feed = ItemFeed::new();
-        feed.add_reminder("i".into(), "Fat-roll".into(), FeedTone::Malus, secs(15), t0);
+        let at = Duration::ZERO;
+        feed.add_reminder("i".into(), "Fat-roll".into(), FeedTone::Malus, secs(15), at);
         feed.add_reminder(
             "i".into(),
             "Fat-roll".into(),
             FeedTone::Malus,
             secs(15),
-            t0 + secs(5),
+            at + secs(5),
         );
         // A shorter later copy must not shorten the row.
         feed.add_reminder(
@@ -291,11 +299,11 @@ mod tests {
             "Fat-roll".into(),
             FeedTone::Malus,
             secs(1),
-            t0 + secs(6),
+            at + secs(6),
         );
-        let rows: Vec<_> = feed.reminders(t0 + secs(10)).collect();
+        let rows: Vec<_> = feed.reminders(at + secs(10)).collect();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].0.ends_at, t0 + secs(20));
+        assert_eq!(rows[0].0.ends_at, at + secs(20));
         assert_eq!(rows[0].1, secs(10));
     }
 
@@ -303,31 +311,49 @@ mod tests {
     fn expired_reminders_disappear() {
         let t0 = Instant::now();
         let mut feed = ItemFeed::new();
-        feed.add_reminder("i".into(), "a".into(), FeedTone::Gain, secs(5), t0);
-        feed.add_reminder("i".into(), "b".into(), FeedTone::Gain, secs(15), t0);
-        let texts = |feed: &ItemFeed, at| {
-            feed.reminders(at)
+        let at = Duration::ZERO;
+        feed.add_reminder("i".into(), "a".into(), FeedTone::Gain, secs(5), at);
+        feed.add_reminder("i".into(), "b".into(), FeedTone::Gain, secs(15), at);
+        let texts = |feed: &ItemFeed, play| {
+            feed.reminders(play)
                 .map(|(r, _)| r.text.clone())
                 .collect::<Vec<_>>()
         };
-        assert_eq!(texts(&feed, t0 + secs(4)), ["a", "b"]);
-        assert_eq!(texts(&feed, t0 + secs(5)), ["b"]);
-        feed.advance(t0 + secs(20));
+        assert_eq!(texts(&feed, at + secs(4)), ["a", "b"]);
+        assert_eq!(texts(&feed, at + secs(5)), ["b"]);
+        feed.advance(t0, at + secs(20));
         assert!(feed.reminders.is_empty());
     }
 
     #[test]
-    fn ink_keeps_the_latest_end() {
+    fn reminders_count_play_time() {
         let t0 = Instant::now();
         let mut feed = ItemFeed::new();
-        assert!(!feed.ink_active(t0));
-        feed.set_ink(secs(15), t0);
-        feed.set_ink(secs(15), t0 + secs(10));
-        feed.set_ink(secs(1), t0 + secs(11));
-        assert!(feed.ink_active(t0 + secs(24)));
-        assert!(!feed.ink_active(t0 + secs(25)));
+        feed.add_reminder(
+            "i".into(),
+            "Slowed".into(),
+            FeedTone::Malus,
+            secs(15),
+            Duration::ZERO,
+        );
+        // A minute of wall time, five seconds of it played.
+        feed.advance(t0 + secs(60), secs(5));
+        let left: Vec<_> = feed.reminders(secs(5)).map(|(_, left)| left).collect();
+        assert_eq!(left, [secs(10)]);
+    }
+
+    #[test]
+    fn ink_keeps_the_latest_end() {
+        let mut feed = ItemFeed::new();
+        let at = Duration::ZERO;
+        assert!(!feed.ink_active(at));
+        feed.set_ink(secs(15), at);
+        feed.set_ink(secs(15), at + secs(10));
+        feed.set_ink(secs(1), at + secs(11));
+        assert!(feed.ink_active(at + secs(24)));
+        assert!(!feed.ink_active(at + secs(25)));
         feed.clear();
-        assert!(!feed.ink_active(t0 + secs(12)));
+        assert!(!feed.ink_active(at + secs(12)));
     }
 
     #[test]

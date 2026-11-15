@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.13";
+pub const PROTOCOL_VERSION: &str = "1.14";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -457,8 +457,13 @@ pub struct ItemReminder {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ItemEffectPayload {
-    /// Apply a game SpEffect.
-    Speffect { speffect_id: u32 },
+    /// Apply a game SpEffect. `duration_ms` is set for a timed effect
+    /// (1.14), absent for an instant one and from older servers.
+    Speffect {
+        speffect_id: u32,
+        #[serde(default)]
+        duration_ms: Option<u32>,
+    },
     /// Damage by percent of max HP, following the floor/tail curve.
     Damage {
         base_pct: u8,
@@ -468,8 +473,14 @@ pub enum ItemEffectPayload {
     /// Hide exit destinations for a duration.
     Ink { duration_ms: u32 },
     /// Apply a SpEffect whose max equip load rate is first set so the
-    /// player's current load sits at `load_pct` percent of the max.
-    EquipLoad { speffect_id: u32, load_pct: u8 },
+    /// player's current load sits at `load_pct` percent of the max, for
+    /// `duration_ms` (1.14; absent from older servers).
+    EquipLoad {
+        speffect_id: u32,
+        load_pct: u8,
+        #[serde(default)]
+        duration_ms: Option<u32>,
+    },
     /// A kind this build does not know: ignored with a warning.
     #[serde(other)]
     Unknown,
@@ -1871,7 +1882,13 @@ mod tests {
         else {
             panic!("not an item_effect");
         };
-        assert_eq!(effect, ItemEffectPayload::Speffect { speffect_id: 4242 });
+        assert_eq!(
+            effect,
+            ItemEffectPayload::Speffect {
+                speffect_id: 4242,
+                duration_ms: None
+            }
+        );
         assert_eq!(
             reminder,
             Some(ItemReminder {
@@ -1889,7 +1906,46 @@ mod tests {
             load,
             ItemEffectPayload::EquipLoad {
                 speffect_id: 1450827,
-                load_pct: 97
+                load_pct: 97,
+                duration_ms: None
+            }
+        );
+    }
+
+    #[test]
+    fn item_effect_duration_ms_is_optional() {
+        // 1.14: a timed effect carries its duration.
+        let timed: ItemEffectPayload = serde_json::from_str(
+            r#"{"kind":"speffect","speffect_id":1450826,"duration_ms":30000}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            timed,
+            ItemEffectPayload::Speffect {
+                speffect_id: 1450826,
+                duration_ms: Some(30000)
+            }
+        );
+        let load: ItemEffectPayload = serde_json::from_str(
+            r#"{"kind":"equip_load","speffect_id":1450827,"load_pct":97,"duration_ms":15000}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load,
+            ItemEffectPayload::EquipLoad {
+                speffect_id: 1450827,
+                load_pct: 97,
+                duration_ms: Some(15000)
+            }
+        );
+        // The 1.13 shape, and an instant effect (Rune Pouch) in 1.14: none.
+        let instant: ItemEffectPayload =
+            serde_json::from_str(r#"{"kind":"speffect","speffect_id":1450821}"#).unwrap();
+        assert_eq!(
+            instant,
+            ItemEffectPayload::Speffect {
+                speffect_id: 1450821,
+                duration_ms: None
             }
         );
     }
@@ -1943,7 +1999,8 @@ mod tests {
             assert_eq!(
                 effect,
                 ItemEffectPayload::Speffect {
-                    speffect_id: 1450826
+                    speffect_id: 1450826,
+                    duration_ms: None
                 }
             );
             assert_eq!(banner, None, "{json}");
