@@ -25,18 +25,26 @@
 //! - Animation speed: libeldenring's `animation_speed` (PlayerIns + 0x190
 //!   module container, + 0x28 behavior module, + 0x17C8 f32, 1 by default)
 //!   and `torrent_animation_speed` (the same chain on Torrent, resolved by
-//!   group, else from the summon buddy set's first entry).
+//!   group, else from the first entry of libeldenring's static slot, the
+//!   third chr set holder: the summon buddy set only while no legacy block
+//!   set is registered, see Foes below).
 //! - Camera: every LockCamParam row's `camDistTarget`, `chrOrgOffset_Y` and
 //!   `camFovY`, through libeldenring's in-memory params (Crowd Control
 //!   writes row 0 the same way, the TGA table's custom FOV every row).
 //! - Foes: WorldChrMan's chr sets (fromsoftware-rs `cs/world_chr_man.rs`,
-//!   offsets checked in the 1.17.0 executable): the set count at + 0x1CC58,
-//!   the set pointers at + 0x1DED8, the player chr set at + 0x10EE0, the
-//!   summon buddy set's holder at + 0x1CC90 (libeldenring's
-//!   `torrent_enemy_ins`); a ChrSet holds its capacity at + 0x10 and its
-//!   entries at + 0x18. Every offset is below PlayerIns (+ 0x1E508), the same
-//!   on 1.17.0 and 1.17.2; the fields after it moved between the two, and
-//!   none is used.
+//!   offsets checked in the 1.17.0 executable): the set count at + 0x1CC58
+//!   and as many holders from + 0x1CC60 (`core::foes::CHR_SET_HOLDER_SIZE`;
+//!   the game registers a set by inserting its holder in index order and
+//!   writing `chr_sets[index]` at + 0x1DED8, an array with holes, not walked),
+//!   the player, ghost and debug chr sets embedded at + 0x10EE0, + 0x10F38
+//!   and + 0x10FE8 (no foes: left out), the summon buddy set (Torrent its
+//!   first entry, spirit ashes after it) at + 0x10F90; a ChrSet holds its
+//!   capacity at + 0x10 and its entries at + 0x18. Every offset is below
+//!   PlayerIns (+ 0x1E508), the same on 1.17.0 and 1.17.2; the fields after
+//!   it moved between the two, and none is used. libeldenring's static
+//!   Torrent slot (+ 0x1CC90, the third holder) is the summon buddy set only
+//!   while no world block set is registered below it, so the walk reads the
+//!   embedded set instead.
 //!
 //! Unverified by this mod in game until the lot's checks.
 
@@ -54,7 +62,7 @@ use tracing::{debug, info, warn};
 use super::race_items::{read_bytes, read_ptr};
 use super::sp_effect_apply::{player_ins_offset, read_player_ins};
 use crate::core::foes::{
-    self, FoesRecord, RenderWrite, CHR_SET_ENTRY_SIZE, MAX_CHR_SETS, MAX_CHR_SET_CAPACITY,
+    self, FoesRecord, RenderWrite, CHR_SET_ENTRY_SIZE, HOLDER_BLOCK_SIZE, MAX_CHR_SET_CAPACITY,
     RENDER_BIT,
 };
 use crate::core::memory_effects::CameraRow;
@@ -66,9 +74,11 @@ const CHR_INS_CHR_CTRL_OFFSET: usize = 0x58;
 const CHR_CTRL_SCALE_OFFSET: usize = 0x2D4;
 
 const WCM_PLAYER_CHR_SET_OFFSET: usize = 0x10EE0;
+const WCM_GHOST_CHR_SET_OFFSET: usize = 0x10F38;
+const WCM_SUMMON_BUDDY_CHR_SET_OFFSET: usize = 0x10F90;
+const WCM_DEBUG_CHR_SET_OFFSET: usize = 0x10FE8;
+/// The set count, its holders right after it (`core::foes::HOLDER_BLOCK_SIZE`).
 const WCM_CHR_SET_COUNT_OFFSET: usize = 0x1CC58;
-const WCM_TORRENT_CHR_SET_OFFSET: usize = 0x1CC90;
-const WCM_CHR_SETS_OFFSET: usize = 0x1DED8;
 /// ChrSet + 0x10: its capacity, then its entries pointer at + 0x18.
 const CHR_SET_HEAD_OFFSET: usize = 0x10;
 const CHR_SET_ENTRIES_OFFSET: usize = 0x18;
@@ -239,8 +249,8 @@ pub fn set_camera(variant: Option<CameraVariant>, originals: &mut HashMap<u64, C
 }
 
 /// Hide (`hide`) or show the characters around: one bounded walk over
-/// WorldChrMan's chr sets (`core::foes`), the player chr set, the player and
-/// Torrent left out. `record` holds the characters the mod hid: a hide walk
+/// WorldChrMan's chr sets (`core::foes`), the player, ghost and debug chr
+/// sets, the player and Torrent left out. `record` holds the characters the mod hid: a hide walk
 /// rebuilds it from what it met (each hide recorded once its write worked),
 /// a show walk empties it. Returns how many render bits changed. Every read
 /// is fault-safe; each set's entries are read in one call. Only on 1.17.x,
@@ -258,25 +268,33 @@ pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
         return 0;
     }
     let sets_read = read_ptr(Pointers::new().base_addresses.world_chr_man).and_then(|wcm| {
-        let count = PointerChain::<u32>::new(&[wcm + WCM_CHR_SET_COUNT_OFFSET]).read()?;
-        let read = count.min(MAX_CHR_SETS) as usize;
-        let pointers = read_bytes(wcm + WCM_CHR_SETS_OFFSET, read * 8)?;
-        Some((wcm, count, pointers))
+        let block = read_bytes(wcm + WCM_CHR_SET_COUNT_OFFSET, HOLDER_BLOCK_SIZE)?;
+        Some((wcm, block))
     });
-    let Some((wcm, set_count, set_pointers)) = sets_read else {
+    let Some((wcm, block)) = sets_read else {
         warn!(hide, "[ITEMS] Foes walk skipped: chr sets unreadable");
         walk.missed_set();
         walk.finish();
         return 0;
     };
+    let (set_count, holders) = foes::holders_in(&block);
+    // A set registered or dropped meanwhile shifts the holders: the walk may
+    // have missed one.
+    if PointerChain::<u32>::new(&[wcm + WCM_CHR_SET_COUNT_OFFSET]).read() != Some(set_count) {
+        walk.missed_set();
+    }
     let player = read_ptr(wcm + player_ins_offset()).unwrap_or(0);
-    let torrent = read_ptr(wcm + WCM_TORRENT_CHR_SET_OFFSET)
-        .and_then(|set| read_ptr(set + CHR_SET_ENTRIES_OFFSET))
+    let torrent = read_ptr(wcm + WCM_SUMMON_BUDDY_CHR_SET_OFFSET + CHR_SET_ENTRIES_OFFSET)
         .and_then(read_ptr)
         .unwrap_or(0);
     let (mut sets, mut skipped, mut slots, mut visited, mut unreadable, mut changed, mut capped) =
         (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
-    for set in foes::chr_sets(&set_pointers, wcm + WCM_PLAYER_CHR_SET_OFFSET) {
+    let left_out = [
+        wcm + WCM_PLAYER_CHR_SET_OFFSET,
+        wcm + WCM_GHOST_CHR_SET_OFFSET,
+        wcm + WCM_DEBUG_CHR_SET_OFFSET,
+    ];
+    for set in foes::chr_sets(holders, &left_out) {
         let Some(head) = PointerChain::<ChrSetHead>::new(&[set + CHR_SET_HEAD_OFFSET]).read()
         else {
             skipped += 1;

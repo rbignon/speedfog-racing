@@ -30,8 +30,18 @@ const ENTRY_LOAD_STATUS_OFFSET: usize = 0x08;
 /// The load status of a character in the world (`Active`; the others are
 /// loading, network setup or unloading).
 pub const LOAD_STATUS_ACTIVE: u8 = 2;
-/// Chr sets WorldChrMan holds at most: a bound on its set count.
+/// One WorldChrMan chr set holder: the ChrSet pointer at +0, the set's
+/// index at +8. The game keeps its holders packed and sorted by index, as
+/// many as its set count; its `chr_sets` pointer array is indexed by the
+/// set's index instead, with holes (the static sets, the player's among
+/// them, sit at the top indices), so the holders are what a walk reads.
+pub const CHR_SET_HOLDER_SIZE: usize = 0x18;
+/// Chr set holders WorldChrMan holds at most: a bound on its set count.
 pub const MAX_CHR_SETS: u32 = 196;
+/// WorldChrMan's set count (u32, then 4 bytes of padding) and its holders
+/// right after it, read as one block of this size (`holders_in`), so the
+/// count and the holders come from the same read.
+pub const HOLDER_BLOCK_SIZE: usize = 8 + MAX_CHR_SETS as usize * CHR_SET_HOLDER_SIZE;
 /// Entries read at most from one chr set: a bound on its capacity, far
 /// above the open field set's (about 1500).
 pub const MAX_CHR_SET_CAPACITY: u32 = 4096;
@@ -56,14 +66,28 @@ pub struct SetPlan {
     pub writes: Vec<RenderWrite>,
 }
 
-/// The chr sets to walk from WorldChrMan's set pointer array, as read in
-/// one block (8 bytes per set): the non-null ones, the player chr set
-/// (`player_set`: the local player and the other players) left out.
-pub fn chr_sets(pointers: &[u8], player_set: usize) -> impl Iterator<Item = usize> + '_ {
-    pointers
-        .chunks_exact(8)
+/// The set count and the holders it counts (at most `MAX_CHR_SETS`, fewer
+/// when `block` is short) out of the block read at the set count
+/// (`HOLDER_BLOCK_SIZE` bytes).
+pub fn holders_in(block: &[u8]) -> (u32, &[u8]) {
+    let Some(count) = block.get(..4) else {
+        return (0, &[]);
+    };
+    let count = u32::from_le_bytes([count[0], count[1], count[2], count[3]]);
+    let holders = block.get(8..).unwrap_or(&[]);
+    let len = (count.min(MAX_CHR_SETS) as usize * CHR_SET_HOLDER_SIZE).min(holders.len());
+    (count, &holders[..len])
+}
+
+/// The chr sets to walk from WorldChrMan's chr set holders
+/// (`CHR_SET_HOLDER_SIZE` bytes each, a trailing partial holder ignored):
+/// the non-null ones, the sets `left_out` (the players', the phantoms', the
+/// debug spawns': no foes there) left out.
+pub fn chr_sets<'a>(holders: &'a [u8], left_out: &'a [usize]) -> impl Iterator<Item = usize> + 'a {
+    holders
+        .chunks_exact(CHR_SET_HOLDER_SIZE)
         .map(pointer_at)
-        .filter(move |&set| set != 0 && set != player_set)
+        .filter(move |set| *set != 0 && !left_out.contains(set))
 }
 
 /// The little-endian pointer at the start of `bytes` (8 bytes at least).
@@ -465,18 +489,55 @@ mod tests {
         assert_eq!(record.hidden, HashSet::from([0x100, 0x200, 0x400]));
     }
 
-    #[test]
-    fn the_set_array_skips_empty_slots_and_the_player_set() {
-        const PLAYER_SET: usize = 0x7FF0_0001_0EE0;
-        let mut pointers = Vec::new();
-        for set in [PLAYER_SET, 0, 0x5000, 0x6000, 0] {
-            pointers.extend_from_slice(&(set as u64).to_le_bytes());
+    /// Holders of `(set, index)`, each with a third field: neither the
+    /// index nor that field is a set pointer.
+    fn holders_of(sets: &[(usize, u64)]) -> Vec<u8> {
+        let mut holders = Vec::new();
+        for &(set, index) in sets {
+            holders.extend_from_slice(&(set as u64).to_le_bytes());
+            holders.extend_from_slice(&index.to_le_bytes());
+            holders.extend_from_slice(&0x9000u64.to_le_bytes());
         }
-        // A trailing partial pointer is no set.
-        pointers.extend_from_slice(&[0x11, 0x22, 0x33]);
+        holders
+    }
+
+    #[test]
+    fn the_holders_give_their_sets_but_the_ones_left_out_and_empty_ones() {
+        const PLAYER_SET: usize = 0x7FF0_0001_0EE0;
+        const GHOST_SET: usize = 0x7FF0_0001_0F38;
+        // A world block's set at a low index, then the static sets from the
+        // player's on.
+        let mut holders = holders_of(&[
+            (0x5000, 12),
+            (PLAYER_SET, 190),
+            (GHOST_SET, 191),
+            (0, 192),
+            (0x6000, 193),
+        ]);
+        // A trailing partial holder is no set.
+        holders.extend_from_slice(&[0x11, 0x22, 0x33]);
         assert_eq!(
-            chr_sets(&pointers, PLAYER_SET).collect::<Vec<_>>(),
+            chr_sets(&holders, &[PLAYER_SET, GHOST_SET]).collect::<Vec<_>>(),
             [0x5000, 0x6000]
         );
+    }
+
+    #[test]
+    fn the_holder_block_gives_the_holders_its_count_names() {
+        let mut block = 2u32.to_le_bytes().to_vec();
+        block.extend_from_slice(&[0xAA; 4]); // padding, no count
+        block.extend(holders_of(&[(0x5000, 1), (0x6000, 2), (0x7000, 3)]));
+        // The third holder is past the count: a slot the game emptied.
+        let (count, holders) = holders_in(&block);
+        assert_eq!(count, 2);
+        assert_eq!(chr_sets(holders, &[]).collect::<Vec<_>>(), [0x5000, 0x6000]);
+
+        // A count past the bound reads at most the bound, and never past
+        // the block.
+        block[..4].copy_from_slice(&1000u32.to_le_bytes());
+        let (count, holders) = holders_in(&block);
+        assert_eq!(count, 1000);
+        assert_eq!(holders.len(), 3 * CHR_SET_HOLDER_SIZE);
+        assert_eq!(holders_in(&block[..3]), (0, &[][..]));
     }
 }
