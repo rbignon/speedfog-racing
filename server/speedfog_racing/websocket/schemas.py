@@ -29,8 +29,8 @@ PROTOCOL_VERSION = "1.16"
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
 
-# Oldest protocol a race with items accepts at auth: from 1.16 the mod starts an
-# Ink held in a boss arena at the boss's kill (`defeat_flag`); from 1.15 it
+# Oldest protocol a race with items accepts at auth: from 1.16 the mod runs an
+# Ink held in a boss arena from the boss's kill (`defeat_flag`); from 1.15 it
 # applies the memory effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
 # Camera) and shows an `item_notice`; from 1.14 it times the timed effects with
 # the duration they carry and applies them again after a load, and holds an

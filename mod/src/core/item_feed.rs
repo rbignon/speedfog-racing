@@ -56,10 +56,30 @@ pub struct FeedReminder {
     pub ends_at: Duration,
 }
 
-/// The ink: waiting for a zone with unused exits, or running to its end.
+/// What the zone that decides makes of an ink not run yet
+/// (`RaceMachine::ink_start`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InkStart {
+    /// Run its time from now, the exits hidden.
+    Run,
+    /// Hide the exits with its time held: a boss arena whose boss lives,
+    /// the time running from the kill.
+    Hold,
+    /// Wait with the exits readable: a zone with no unused exit to hide.
+    Wait,
+}
+
+/// The ink: waiting for a zone with unused exits, held in a boss arena
+/// until the kill, or running to its end.
 #[derive(Debug, Clone, PartialEq)]
 enum Ink {
+    /// The exits readable, its time whole.
     Pending {
+        row: Option<FeedRow>,
+        duration: Duration,
+    },
+    /// The exits hidden, its time whole.
+    Held {
         row: Option<FeedRow>,
         duration: Duration,
     },
@@ -68,6 +88,25 @@ enum Ink {
         /// End on the play clock.
         ends_at: Duration,
     },
+}
+
+impl Ink {
+    /// An ink not run yet, as `start` makes it at `play`.
+    fn unstarted(
+        row: Option<FeedRow>,
+        duration: Duration,
+        start: InkStart,
+        play: Duration,
+    ) -> Self {
+        match start {
+            InkStart::Run => Ink::Running {
+                row,
+                ends_at: play + duration,
+            },
+            InkStart::Hold => Ink::Held { row, duration },
+            InkStart::Wait => Ink::Pending { row, duration },
+        }
+    }
 }
 
 /// The race item held: a row with no countdown, shown while its goods is in
@@ -171,8 +210,8 @@ impl ItemFeed {
     }
 
     /// Live rows at `play` with their time left: the timed reminders, then
-    /// the ink's row (`None` while it waits for a zone, its time left while
-    /// it runs). Expired ones are skipped.
+    /// the ink's row (`None` while it waits for a zone, its whole time while
+    /// held, its time left while it runs). Expired ones are skipped.
     pub fn reminders(&self, play: Duration) -> impl Iterator<Item = (&FeedRow, Option<Duration>)> {
         let timed = self.reminders.iter().filter_map(move |r| {
             r.ends_at
@@ -182,6 +221,7 @@ impl ItemFeed {
         });
         let ink = self.ink.as_ref().and_then(move |ink| match ink {
             Ink::Pending { row, .. } => row.as_ref().map(|row| (row, None)),
+            Ink::Held { row, duration } => row.as_ref().map(|row| (row, Some(*duration))),
             Ink::Running { row, ends_at } => row.as_ref().and_then(|row| {
                 ends_at
                     .checked_sub(play)
@@ -201,58 +241,69 @@ impl ItemFeed {
         self.held.as_ref()
     }
 
-    /// An ink hit. Running: the later end wins. Pending: nothing changes.
-    /// Otherwise it runs for `duration` from `play` when `start`, else it
-    /// waits (`start_pending_ink`) with its row and duration.
+    /// An ink hit. Running: the later end wins. Pending or held: nothing
+    /// changes. Otherwise it starts as `start` makes it at `play`; true
+    /// only then.
     pub fn hit_ink(
         &mut self,
         row: Option<FeedRow>,
         duration: Duration,
-        start: bool,
+        start: InkStart,
         play: Duration,
-    ) {
-        let ends_at = play + duration;
+    ) -> bool {
         match &mut self.ink {
-            Some(Ink::Pending { .. }) => {}
+            Some(Ink::Pending { .. } | Ink::Held { .. }) => false,
             Some(Ink::Running { ends_at: end, .. }) if play < *end => {
+                let ends_at = play + duration;
                 if ends_at > *end {
                     *end = ends_at;
                 }
+                false
             }
-            _ if start => self.ink = Some(Ink::Running { row, ends_at }),
-            _ => self.ink = Some(Ink::Pending { row, duration }),
+            _ => {
+                self.ink = Some(Ink::unstarted(row, duration, start, play));
+                true
+            }
         }
     }
 
-    /// Run the pending ink from `play`; true when there was one. A running
-    /// ink plays on untouched.
-    pub fn start_pending_ink(&mut self, play: Duration) -> bool {
-        match self.ink.take() {
-            Some(Ink::Pending { row, duration }) => {
-                self.ink = Some(Ink::Running {
-                    row,
-                    ends_at: play + duration,
-                });
-                true
-            }
+    /// Let the zone that decides settle an ink not run yet (pending or
+    /// held) as `start` makes it at `play`; true when that changed it. A
+    /// running ink plays on untouched.
+    pub fn decide_ink(&mut self, start: InkStart, play: Duration) -> bool {
+        let (row, duration, was) = match self.ink.take() {
+            Some(Ink::Pending { row, duration }) => (row, duration, InkStart::Wait),
+            Some(Ink::Held { row, duration }) => (row, duration, InkStart::Hold),
             other => {
                 self.ink = other;
-                false
+                return false;
             }
-        }
+        };
+        self.ink = Some(Ink::unstarted(row, duration, start, play));
+        start != was
     }
 
     pub fn ink_pending(&self) -> bool {
         matches!(self.ink, Some(Ink::Pending { .. }))
     }
 
-    pub fn ink_active(&self, play: Duration) -> bool {
-        matches!(&self.ink, Some(Ink::Running { ends_at, .. }) if play < *ends_at)
+    pub fn ink_held(&self) -> bool {
+        matches!(self.ink, Some(Ink::Held { .. }))
     }
 
-    /// Forget a pending ink (the run is over); a running one plays out.
-    pub fn drop_pending_ink(&mut self) {
-        if self.ink_pending() {
+    /// Whether the ink hides the exits at `play`: held, or running.
+    pub fn ink_active(&self, play: Duration) -> bool {
+        match &self.ink {
+            Some(Ink::Held { .. }) => true,
+            Some(Ink::Running { ends_at, .. }) => play < *ends_at,
+            _ => false,
+        }
+    }
+
+    /// Forget an ink not run yet, pending or held (the run is over); a
+    /// running one plays out.
+    pub fn drop_unstarted_ink(&mut self) {
+        if !matches!(self.ink, Some(Ink::Running { .. })) {
             self.ink = None;
         }
     }
@@ -436,9 +487,9 @@ mod tests {
         let mut feed = ItemFeed::new();
         let at = Duration::ZERO;
         assert!(!feed.ink_active(at));
-        feed.hit_ink(None, secs(15), true, at);
-        feed.hit_ink(None, secs(15), true, at + secs(10));
-        feed.hit_ink(None, secs(1), true, at + secs(11));
+        feed.hit_ink(None, secs(15), InkStart::Run, at);
+        feed.hit_ink(None, secs(15), InkStart::Run, at + secs(10));
+        feed.hit_ink(None, secs(1), InkStart::Run, at + secs(11));
         assert!(feed.ink_active(at + secs(24)));
         assert!(!feed.ink_active(at + secs(25)));
         feed.clear();
@@ -448,14 +499,14 @@ mod tests {
     #[test]
     fn a_second_ink_while_running_keeps_the_later_end() {
         let mut feed = ItemFeed::new();
-        feed.hit_ink(ink_row(), secs(30), true, secs(0));
+        feed.hit_ink(ink_row(), secs(30), InkStart::Run, secs(0));
         // A hit that waits for a zone is still a running ink's extension.
-        feed.hit_ink(ink_row(), secs(30), false, secs(10));
+        feed.hit_ink(ink_row(), secs(30), InkStart::Wait, secs(10));
         assert!(!feed.ink_pending());
         assert!(feed.ink_active(secs(39)));
         assert!(!feed.ink_active(secs(40)));
         // A shorter one never shortens it.
-        feed.hit_ink(ink_row(), secs(5), true, secs(12));
+        feed.hit_ink(ink_row(), secs(5), InkStart::Run, secs(12));
         assert!(feed.ink_active(secs(39)));
         assert_eq!(feed.reminders(secs(30)).count(), 1);
     }
@@ -463,16 +514,17 @@ mod tests {
     #[test]
     fn a_second_ink_while_pending_changes_nothing() {
         let mut feed = ItemFeed::new();
-        feed.hit_ink(ink_row(), secs(30), false, secs(0));
-        feed.hit_ink(None, secs(10), true, secs(5));
+        assert!(feed.hit_ink(ink_row(), secs(30), InkStart::Wait, secs(0)));
+        // Nothing changes: the hit reports it made no ink.
+        assert!(!feed.hit_ink(None, secs(10), InkStart::Run, secs(5)));
         assert!(feed.ink_pending());
         assert!(!feed.ink_active(secs(6)));
-        assert!(feed.start_pending_ink(secs(8)));
+        assert!(feed.decide_ink(InkStart::Run, secs(8)));
         assert!(feed.ink_active(secs(37)));
         assert!(!feed.ink_active(secs(38)));
         assert_eq!(feed.reminders(secs(8)).count(), 1);
         // A running ink is no pending one: it keeps its end.
-        assert!(!feed.start_pending_ink(secs(9)));
+        assert!(!feed.decide_ink(InkStart::Run, secs(9)));
         assert!(feed.ink_active(secs(37)));
         assert!(!feed.ink_active(secs(38)));
     }
@@ -487,7 +539,7 @@ mod tests {
             secs(15),
             secs(0),
         );
-        feed.hit_ink(ink_row(), secs(30), false, secs(0));
+        feed.hit_ink(ink_row(), secs(30), InkStart::Wait, secs(0));
         let rows: Vec<_> = feed
             .reminders(secs(3))
             .map(|(row, left)| (row.text.clone(), left))
@@ -496,9 +548,63 @@ mod tests {
             rows,
             [("Slowed".into(), Some(secs(12))), ("Ink".into(), None)]
         );
-        feed.start_pending_ink(secs(3));
+        feed.decide_ink(InkStart::Run, secs(3));
         let left: Vec<_> = feed.reminders(secs(4)).map(|(_, left)| left).collect();
         assert_eq!(left, [Some(secs(11)), Some(secs(29))]);
+    }
+
+    #[test]
+    fn a_held_ink_hides_with_its_time_whole_until_it_runs() {
+        let mut feed = ItemFeed::new();
+        feed.hit_ink(ink_row(), secs(30), InkStart::Hold, secs(0));
+        assert!(feed.ink_held());
+        // The exits hidden, the time not counting down.
+        for at in [secs(0), secs(50), secs(500)] {
+            assert!(feed.ink_active(at));
+            feed.advance(Instant::now(), at);
+            let left: Vec<_> = feed.reminders(at).map(|(_, left)| left).collect();
+            assert_eq!(left, [Some(secs(30))]);
+        }
+        // A second hit while held changes nothing; the same verdict again
+        // is no change.
+        assert!(!feed.hit_ink(None, secs(10), InkStart::Run, secs(500)));
+        assert!(!feed.decide_ink(InkStart::Hold, secs(510)));
+        assert!(feed.ink_held());
+        // The kill: its time runs from there.
+        assert!(feed.decide_ink(InkStart::Run, secs(520)));
+        assert!(feed.ink_active(secs(549)));
+        assert!(!feed.ink_active(secs(550)));
+    }
+
+    #[test]
+    fn a_held_ink_out_of_its_arena_into_a_zone_without_unused_exits_waits() {
+        let mut feed = ItemFeed::new();
+        feed.hit_ink(ink_row(), secs(30), InkStart::Hold, secs(0));
+        assert!(feed.decide_ink(InkStart::Wait, secs(5)));
+        assert!(feed.ink_pending());
+        assert!(!feed.ink_active(secs(5)));
+        // Into another live arena: held again, its time still whole.
+        assert!(feed.decide_ink(InkStart::Hold, secs(9)));
+        let left: Vec<_> = feed.reminders(secs(40)).map(|(_, left)| left).collect();
+        assert_eq!(left, [Some(secs(30))]);
+    }
+
+    #[test]
+    fn an_unstarted_ink_goes_with_the_run_a_running_one_plays_out() {
+        for start in [InkStart::Wait, InkStart::Hold, InkStart::Run] {
+            let mut feed = ItemFeed::new();
+            feed.hit_ink(ink_row(), secs(30), start, secs(0));
+            feed.drop_unstarted_ink();
+            assert_eq!(
+                feed.ink_active(secs(1)),
+                start == InkStart::Run,
+                "{start:?}"
+            );
+            assert_eq!(
+                feed.reminders(secs(1)).count(),
+                usize::from(start == InkStart::Run)
+            );
+        }
     }
 
     #[test]

@@ -131,7 +131,7 @@ Bump rules:
 
 Version history:
 
-- **1.16** - `zone_update.defeat_flag` (int or null): the zone's boss defeat flag, one of the seed's `boss_flags` (a boss arena, the final boss's aside), null elsewhere. In a boss arena the mod holds an Ink until that boss is dead and starts it at the kill. A race with items refuses a mod below 1.16 at auth: a 1.15 mod would hold the Ink there until a zone with unused exits, which a boss rush never reaches.
+- **1.16** - `zone_update.defeat_flag` (int or null): the zone's boss defeat flag, one of the seed's `boss_flags` (a boss arena, the final boss's aside), null elsewhere. In a boss arena with unused exits whose boss lives, the mod hides the exits at once and runs the Ink's time from the kill. A race with items refuses a mod below 1.16 at auth: a 1.15 mod would run that time through the fight.
 - **1.15** - race items lot 3: `item_effect.effect.kind` gains `vanish {duration_ms}`, `unseen_foes {duration_ms}`, `slow_mo {duration_ms, speed_pct}`, `scale {duration_ms, scale_pct}` (Mini and Giant) and `camera {duration_ms, variant}` (`first_person`, `inverted` or `wide`), memory effects with no SpEffect row; the Star is a `speffect` (`speffect_id` 1450833, its `duration_ms` from the catalog) sent to the sender's own mod; new server to mod `item_notice {banner}`, a banner with nothing applied (a Star holder's "blocked" banner). A race with items refuses a mod below 1.15 at auth.
 - **1.14** - race items lot 2 (graph.json 4.13): `zone_update.unused_exits` (int or null), the count of the zone's exits no edge takes, null on a seed that predates 4.13; `item_effect.effect.duration_ms` on the `speffect` kind (a timed effect: Mushroom, Blue Shell, Lightning, Flask Stopper; absent for an instant one such as the Rune Pouch) and on `equip_load` (the Hammer), so the mod can time the effect on its load-paused play clock and apply it again with its time left at a loading exit. A race with items refuses a mod below 1.14 at auth; a 4.12 seed stays drawable (`unused_exits` null, its Ink starts at once).
 - **1.13** - race items on one goods (graph.json 4.12): `race_item_catalog` becomes `{goods: {goods_key: {goods_id, use_flag, remove_flag, icon_id}}, items: {item_key: {name, icon, icon_id, goods}}}`. Every usable item is held as the one Race Item goods, whose use flag is the only one and resolves the item held; the Shield keeps a goods of its own, without a use flag. `held_item` on `auth_ok` (the item the runner holds, confirmed or not); `item_effect.banner` may be null (a self item's effect, sent to the sender's own mod, its banner on `item_result`); `item_remove` names a `goods` instead of an `item`; `item_inventory` reports `goods` instead of `items`. A race with items refuses a mod below 1.13 at auth; the 1.12 catalog's per-item goods are gone. A race without items sends `race_item_catalog` as `{}` (no `goods` or `items` key), which an older mod reads as no catalog, so it keeps authenticating on those races.
@@ -168,8 +168,8 @@ download the pack again (it carries the current mod), and each compared by
   newer (`RANKED_SOLO_MIN_PROTOCOL` in `websocket/schemas.py`), the version
   from which the mod reports debug flags in a solo session.
 - A race with items (`race_items` on) requires protocol 1.16 or newer
-  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod holds an Ink in
-  a boss arena until the boss's kill (`zone_update.defeat_flag`); from 1.15 it
+  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod runs an Ink
+  held in a boss arena from the boss's kill (`zone_update.defeat_flag`); from 1.15 it
   applies the memory effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
   Camera) and shows an `item_notice`; from 1.14 it times the timed effects
   with the duration they carry (`duration_ms`) and applies them again after a

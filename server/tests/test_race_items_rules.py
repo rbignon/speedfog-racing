@@ -19,6 +19,7 @@ from speedfog_racing.services.race_items import (
     draw_camera_variant,
     effect_payload,
     grant_banner,
+    ink_can_land,
     item_order,
     reminder_for,
     resolve_targets,
@@ -436,3 +437,42 @@ def test_a_star_blocked_result_names_the_blocker():
     assert result_banner("red_shell", entry, [], [], 0, ["Ann"]).line == "Blocked by Ann's Star"
     assert result_banner("hammer", entry, [], ["C"], 0, ["Ann"]).line == "Blocked by 2 runners"
     assert result_banner("hammer", entry, ["B"], [], 0, ["Ann"]).line == "Hit B, 1 blocked"
+
+
+def _hub_graph(**counts: object) -> dict:
+    """s -> a -> b -> end and s -> c -> end, each node's unused_exits as given
+    (a node left out has no count)."""
+    names = ("s", "a", "b", "c", "end")
+    nodes = {n: ({"unused_exits": counts[n]} if n in counts else {}) for n in names}
+    pairs = [("s", "a"), ("a", "b"), ("b", "end"), ("s", "c"), ("c", "end")]
+    return {"nodes": nodes, "edges": [{"from": f, "to": t} for f, t in pairs]}
+
+
+def test_ink_can_land_while_a_runner_can_reach_unused_exits():
+    graph = _hub_graph(s=0, a=0, b=2, c=0, end=0)
+    assert ink_can_land(graph, ["s"])
+    assert ink_can_land(graph, ["b"])
+    # Past the last zone with unused exits: nothing left to hide.
+    assert not ink_can_land(graph, ["c"])
+    assert not ink_can_land(graph, ["end"])
+    # One runner who can still meet one is enough.
+    assert ink_can_land(graph, ["c", "a"])
+    # Nobody to hit.
+    assert not ink_can_land(graph, [])
+    # A cycle (a malformed graph) ends the walk all the same.
+    graph["edges"].append({"from": "end", "to": "c"})
+    assert not ink_can_land(graph, ["c"])
+
+
+def test_ink_can_land_when_a_count_or_a_runner_is_unknown():
+    # A seed older than graph.json 4.13 carries no count.
+    assert ink_can_land(_hub_graph(), ["c"])
+    assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=0), ["c"])
+    for bad in (True, "2", None):
+        assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=bad, end=0), ["c"])
+    # A negative count is no 0, as the mod reads it; edges that are no list.
+    assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=-1, end=0), ["c"])
+    assert ink_can_land({"nodes": {"c": {"unused_exits": 0}}, "edges": None}, ["c"])
+    # A runner not placed yet, or on a node the graph lacks.
+    assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=0, end=0), [None])
+    assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=0, end=0), ["gone"])

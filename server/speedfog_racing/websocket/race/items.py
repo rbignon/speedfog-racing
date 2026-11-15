@@ -27,6 +27,7 @@ from speedfog_racing.services.race_items import (
     effect_payload,
     extract_race_item_catalog,
     grant_banner,
+    ink_can_land,
     item_order,
     reminder_for,
     resolve_targets,
@@ -36,6 +37,7 @@ from speedfog_racing.services.race_items import (
     star_banner,
     target_banner,
     tier_of,
+    tier_pool,
 )
 from speedfog_racing.websocket.race.manager import leaderboard_gaps, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
@@ -102,10 +104,24 @@ async def grant_item(
 
         catalog = extract_race_item_catalog(graph_json)
         tier = tier_of(index, len(playing))
+        available = available_base_keys(catalog.items)
+        # An Ink only runs in a zone with unused exits: drawn only while one of
+        # the other runners can still reach one.
+        others = [p.current_zone for p in playing if p.id != participant_id]
+        if "ink" in tier_pool(
+            tier, settings.race_items_tier_weights, available
+        ) and not ink_can_land(graph_json, others):
+            available.discard("ink")
+            logger.info(
+                "race item draw: ink left out, no unused exits ahead of the others: "
+                "race=%s tier=%s",
+                race_id,
+                tier,
+            )
         key = draw_base_key(
             tier,
             settings.race_items_tier_weights,
-            available_base_keys(catalog.items),
+            available,
             rng if rng is not None else random.Random(),
         )
         if key is None:

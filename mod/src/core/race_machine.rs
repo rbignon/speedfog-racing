@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::mem::{discriminant, Discriminant};
 use std::time::Instant;
 
-use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, ItemFeed};
+use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, InkStart, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::memory_effects::{MemoryEffect, MemoryEffects, MemoryState};
 use crate::core::play_clock::PlayClock;
@@ -1678,16 +1678,14 @@ impl RaceMachine {
                 if self.in_flight_zone_queries.remove(&message_id).is_some() {
                     info!(message_id, "[WS] Zone query acknowledged (no zone_update)");
                     // No zone_update comes for this query (unresolved, as
-                    // after some death reloads): an ink waiting for the next
-                    // reveal goes by the current zone, unless a reveal is
-                    // pending (it decides).
-                    let zone = self.race_state.current_zone.as_ref();
-                    if self.pending_zone_update.is_none()
-                        && self.ink_may_start(zone)
-                        && self.item_feed.start_pending_ink(self.play_clock.at(now))
-                    {
-                        let unused_exits = zone.and_then(|z| z.unused_exits);
-                        info!(?unused_exits, "[ITEMS] Ink started (zone query unresolved)");
+                    // after some death reloads): an ink not run yet goes by
+                    // the current zone, unless a reveal is pending (it
+                    // decides).
+                    if self.pending_zone_update.is_none() {
+                        let start = self.ink_start(self.race_state.current_zone.as_ref());
+                        if self.item_feed.decide_ink(start, self.play_clock.at(now)) {
+                            log_ink(start, "zone query unresolved");
+                        }
                     }
                 } else {
                     warn!(message_id, "[WS] Ack for unknown zone query");
@@ -2005,6 +2003,16 @@ const FOES_WALK_INTERVAL: Duration = Duration::from_secs(1);
 /// this; the server re-sends ~1/s while the condition holds, so display
 /// drops by itself shortly after resolution.
 const SERVER_CONDITION_TTL: Duration = Duration::from_secs(3);
+
+/// Log what the zone that decides made of an ink not run yet, and why
+/// (`by`: the hit, a reveal, a kill...).
+fn log_ink(start: InkStart, by: &'static str) {
+    match start {
+        InkStart::Run => info!(by, "[ITEMS] Ink started"),
+        InkStart::Hold => info!(by, "[ITEMS] Ink held, exits hidden until the boss dies"),
+        InkStart::Wait => info!(by, "[ITEMS] Ink waits for a zone with unused exits"),
+    }
+}
 
 /// Boss defeat flags read per flag scan, at most. They sit outside the
 /// category page the scan caches for `event_ids`, so each read is a full
@@ -2341,10 +2349,9 @@ impl RaceMachine {
                     warn!(name = %zone.display_name, ?unused_exits, ?defeat_flag, "[RACE] Zone revealed (timeout, reveal signal stuck)");
                 }
                 self.race_state.current_zone = Some(zone);
-                if self.ink_may_start(self.race_state.current_zone.as_ref())
-                    && self.item_feed.start_pending_ink(self.play_clock.at(now))
-                {
-                    info!(?unused_exits, ?defeat_flag, "[ITEMS] Ink started");
+                let start = self.ink_start(self.race_state.current_zone.as_ref());
+                if self.item_feed.decide_ink(start, self.play_clock.at(now)) {
+                    log_ink(start, "zone revealed");
                 }
                 self.zone_version = self.zone_version.wrapping_add(1);
                 self.pre_reveal_layer = None;
@@ -2815,8 +2822,8 @@ impl RaceMachine {
     /// drains the pending flags after them. While the race is not running
     /// or the runner has finished or is out, it is left unmarked, so a scan
     /// of the live run reports it. A kill is no depth arrival: it never
-    /// reaches `record_capture`. The kill of the newest zone's boss starts a
-    /// pending ink (`ink_may_start`): the arena's exits open now.
+    /// reaches `record_capture`. The kill of the newest zone's boss runs an
+    /// ink held in its arena (`ink_start`): the arena's exits open now.
     fn capture_boss_kill(
         &mut self,
         flag_id: u32,
@@ -2833,14 +2840,16 @@ impl RaceMachine {
             return;
         }
         self.triggered_flags.insert(flag_id);
-        let arena = self
+        let arena_start = self
             .pending_zone_update
             .as_ref()
-            .or(self.race_state.current_zone.as_ref());
-        if arena.is_some_and(|z| z.defeat_flag == Some(flag_id))
-            && self.item_feed.start_pending_ink(self.play_clock.at(now))
-        {
-            info!(flag_id, "[ITEMS] Ink started (boss killed)");
+            .or(self.race_state.current_zone.as_ref())
+            .filter(|z| z.defeat_flag == Some(flag_id))
+            .map(|z| self.ink_start(Some(z)));
+        if let Some(start) = arena_start {
+            if self.item_feed.decide_ink(start, self.play_clock.at(now)) {
+                log_ink(start, "boss killed");
+            }
         }
         if connected && self.ready_sent && !self.is_countdown_active(now) {
             effects.push(self.queue_event_flag(flag_id, igt_ms));
@@ -3013,13 +3022,14 @@ impl RaceMachine {
                 }
                 ItemAction::Ink(duration) => {
                     // The reminder is the ink's own row, not a timed one; the
-                    // ink waits while the zone has no unused exit to hide, or
-                    // is a boss arena whose boss lives (`ink_may_start`).
-                    // The newest zone decides: the one a pending reveal
-                    // brings, else the current one (no zone at all starts
-                    // it). On a loading exit the destination's zone_update
-                    // has not come yet (the fog flags deferred to this exit
-                    // go out on this frame): the next reveal decides.
+                    // ink waits while the zone has no unused exit to hide,
+                    // and is held in a boss arena whose boss lives
+                    // (`ink_start`). The newest zone decides: the one a
+                    // pending reveal brings, else the current one (no zone
+                    // at all runs it). On a loading exit the destination's
+                    // zone_update has not come yet (the fog flags deferred to
+                    // this exit go out on this frame): it waits, and the
+                    // next reveal decides.
                     let row = reminder.take().map(|r| FeedRow {
                         icon: effect.icon.clone(),
                         text: r.text,
@@ -3029,13 +3039,13 @@ impl RaceMachine {
                         .pending_zone_update
                         .as_ref()
                         .or(self.race_state.current_zone.as_ref());
-                    let start = !loading_exit && self.ink_may_start(zone);
-                    self.item_feed.hit_ink(row, duration, start, play);
-                    if self.item_feed.ink_pending() {
-                        info!(
-                            loading_exit,
-                            "[ITEMS] Ink waits for a zone with unused exits or a boss kill"
-                        );
+                    let start = if loading_exit {
+                        InkStart::Wait
+                    } else {
+                        self.ink_start(zone)
+                    };
+                    if self.item_feed.hit_ink(row, duration, start, play) {
+                        log_ink(start, if loading_exit { "loading exit" } else { "hit" });
                     }
                 }
                 // Written by `maintain_memory_effects`, on this same frame.
@@ -3090,21 +3100,31 @@ impl RaceMachine {
         self.timed_effects.clear();
         self.memory_effects.clear();
         self.memory_reminders.clear();
-        self.item_feed.drop_pending_ink();
+        self.item_feed.drop_unstarted_ink();
     }
 
-    /// Whether a pending ink may start in `zone`, the zone that decides (no
-    /// zone known starts it). A boss arena (`defeat_flag`) waits for its
-    /// boss's death, its exits closed until then: the kill starts the ink
-    /// (`capture_boss_kill`), and a boss already dead lets it start at
-    /// once. Another zone needs an exit no edge takes (`unused_exits` above
-    /// 0), so hiding the exits costs the runner something; a count the mod
-    /// does not know (a seed older than graph.json 4.13) starts it.
-    fn ink_may_start(&self, zone: Option<&ZoneUpdateData>) -> bool {
-        zone.is_none_or(|z| match z.defeat_flag {
-            Some(flag) => self.triggered_flags.contains(&flag),
-            None => z.unused_exits != Some(0),
-        })
+    /// What `zone`, the zone that decides, makes of an ink not run yet (no
+    /// zone known runs it). A zone with no exit no edge takes
+    /// (`unused_exits` 0: every fog leads on, hiding them costs the runner
+    /// nothing) lets it wait, the exits readable. Otherwise (unused exits,
+    /// or a count the mod does not know: a seed older than graph.json 4.13)
+    /// a boss arena whose boss lives (`defeat_flag` not killed yet) holds
+    /// it, the exits hidden through the fight and its time running from the
+    /// kill (`capture_boss_kill`), and any other zone runs it.
+    fn ink_start(&self, zone: Option<&ZoneUpdateData>) -> InkStart {
+        let Some(zone) = zone else {
+            return InkStart::Run;
+        };
+        if zone.unused_exits == Some(0) {
+            InkStart::Wait
+        } else if zone
+            .defeat_flag
+            .is_some_and(|flag| !self.triggered_flags.contains(&flag))
+        {
+            InkStart::Hold
+        } else {
+            InkStart::Run
+        }
     }
 
     /// Keep the memory race item effects in the game, right after
@@ -8048,50 +8068,85 @@ mod tests {
     }
 
     #[test]
-    fn ink_in_a_boss_arena_starts_at_the_kill() {
-        // Whatever its unused exits: they stay closed until the boss dies.
-        for unused_exits in [Some(0), Some(2), None] {
+    fn ink_in_a_live_boss_arena_hides_the_exits_and_runs_from_the_kill() {
+        // An arena with an unused exit (or a count unknown): the exits are
+        // hidden through the fight, the time held whole until the kill.
+        for unused_exits in [Some(2), None] {
             let now = Instant::now();
             let mut m = running_items_boss_machine(now);
             reveal_arena(&mut m, unused_exits, 61_000, now + ms(100));
             ink_hit(&mut m, now + ms(200));
             let t1 = now + ms(300);
             m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
-            assert_eq!(
-                ink_rows(&m, t1),
-                [("Ink".to_string(), None)],
-                "{unused_exits:?}"
-            );
+            assert!(m.ink_active(t1), "{unused_exits:?}");
 
-            // Another boss's flag read set (a kill scanned again after a
-            // save reload) leaves it waiting.
-            let t2 = t1 + secs(40);
-            boss_scan(&mut m, &[OTHER_BOSS], 101_200, t2);
+            // A long fight, and another boss's flag read set (a kill
+            // scanned again after a save reload): still held, its 30 s whole.
+            let t2 = t1 + secs(90);
+            boss_scan(&mut m, &[OTHER_BOSS], 151_200, t2);
             assert!(m.triggered_flags.contains(&OTHER_BOSS));
-            assert!(!m.ink_active(t2), "{unused_exits:?}");
-
-            let t3 = t2 + secs(5);
-            boss_scan(&mut m, &[ARENA_BOSS], 106_200, t3);
+            assert!(m.ink_active(t2), "{unused_exits:?}");
             assert_eq!(
-                ink_rows(&m, t3),
+                ink_rows(&m, t2),
                 [("Ink".to_string(), Some(secs(30)))],
                 "{unused_exits:?}"
             );
-            assert!(m.ink_active(t3 + ms(29_900)));
-            assert!(!m.ink_active(t3 + secs(30)));
+
+            let t3 = t2 + secs(5);
+            boss_scan(&mut m, &[ARENA_BOSS], 156_200, t3);
+            assert!(m.ink_active(t3 + ms(29_900)), "{unused_exits:?}");
+            assert!(!m.ink_active(t3 + secs(30)), "{unused_exits:?}");
         }
+    }
+
+    #[test]
+    fn ink_in_a_boss_arena_without_unused_exits_waits_through_the_kill() {
+        // Every fog leads on: hiding them costs nothing, the kill included.
+        let now = Instant::now();
+        let mut m = running_items_boss_machine(now);
+        reveal_arena(&mut m, Some(0), 61_000, now + ms(100));
+        ink_hit(&mut m, now + ms(200));
+        let t1 = now + ms(300);
+        m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
+        assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), None)]);
+        boss_scan(&mut m, &[ARENA_BOSS], 70_000, t1 + secs(10));
+        assert!(!m.ink_active(t1 + secs(10)));
+        assert_eq!(ink_rows(&m, t1 + secs(10)), [("Ink".to_string(), None)]);
     }
 
     #[test]
     fn ink_in_a_boss_arena_whose_boss_is_dead_starts_at_once() {
         let now = Instant::now();
         let mut m = running_items_boss_machine(now);
-        reveal_arena(&mut m, Some(0), 61_000, now + ms(100));
+        reveal_arena(&mut m, Some(2), 61_000, now + ms(100));
         boss_scan(&mut m, &[ARENA_BOSS], 61_100, now + ms(150));
         ink_hit(&mut m, now + ms(200));
         let t1 = now + ms(300);
         m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
-        assert!(m.ink_active(t1));
+        assert!(m.ink_active(t1 + ms(29_800)));
+        assert!(!m.ink_active(t1 + secs(30)));
+    }
+
+    #[test]
+    fn a_held_ink_follows_the_zone_its_runner_reaches_without_the_kill() {
+        // Out of the arena with the boss alive (a death, a respawn at a
+        // grace elsewhere): the zone revealed decides.
+        for (unused_exits, runs) in [(Some(3), true), (Some(0), false)] {
+            let now = Instant::now();
+            let mut m = running_items_boss_machine(now);
+            reveal_arena(&mut m, Some(2), 61_000, now + ms(100));
+            ink_hit(&mut m, now + ms(200));
+            m.tick(tick_in(snap(Some(61_200), true), true, None), now + ms(300));
+            reveal_zone(&mut m, unused_exits, 70_000, now + secs(10));
+            let t1 = now + secs(10) + ms(10);
+            if runs {
+                assert!(m.ink_active(t1 + ms(29_900)));
+                assert!(!m.ink_active(t1 + secs(30)));
+            } else {
+                // Its exits readable again, the time still whole.
+                assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), None)]);
+            }
+        }
     }
 
     #[test]
@@ -8103,17 +8158,18 @@ mod tests {
         let t1 = now + ms(300);
         m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
         assert!(m.ink_active(t1));
-        // A fog gate into a zone with unused exits, then into an arena whose
-        // boss dies: each may start a pending ink, none touches this one.
+        // A fog gate into a zone with unused exits, then into a live arena
+        // whose boss dies: each may settle an ink not run yet, none touches
+        // this one.
         reveal_zone(&mut m, Some(3), 62_000, t1 + secs(2));
-        reveal_arena(&mut m, Some(0), 63_000, t1 + secs(4));
+        reveal_arena(&mut m, Some(2), 63_000, t1 + secs(4));
         boss_scan(&mut m, &[ARENA_BOSS], 64_000, t1 + secs(10));
         assert!(m.ink_active(t1 + ms(29_900)));
         assert!(!m.ink_active(t1 + secs(30)));
     }
 
     #[test]
-    fn an_unresolved_zone_query_in_a_live_boss_arena_leaves_the_ink_pending() {
+    fn an_unresolved_zone_query_in_a_live_boss_arena_holds_the_ink() {
         let now = Instant::now();
         let mut m = running_items_boss_machine(now);
         reveal_arena(&mut m, Some(2), 61_000, now + ms(100));
@@ -8133,6 +8189,7 @@ mod tests {
         });
         let exit = start + secs(2);
         let fx = m.tick(input, exit);
+        assert_eq!(ink_rows(&m, exit), [("Ink".to_string(), None)]);
         let message_id = fx
             .iter()
             .find_map(|e| match e {
@@ -8141,18 +8198,22 @@ mod tests {
             })
             .expect("a zone query at the loading exit");
         m.handle_message(MachineMessage::ZoneQueryAck { message_id }, exit + ms(100));
-        assert_eq!(ink_rows(&m, exit + ms(100)), [("Ink".to_string(), None)]);
+        assert!(m.ink_active(exit + ms(100)));
+        assert_eq!(
+            ink_rows(&m, exit + secs(60)),
+            [("Ink".to_string(), Some(secs(30)))]
+        );
     }
 
     #[test]
-    fn a_kill_read_while_another_zone_is_coming_leaves_the_ink_pending() {
+    fn a_kill_read_while_another_zone_is_coming_keeps_the_ink_held() {
         let now = Instant::now();
         let mut m = running_items_boss_machine(now);
-        reveal_arena(&mut m, Some(0), 61_000, now + ms(100));
+        reveal_arena(&mut m, Some(2), 61_000, now + ms(100));
         ink_hit(&mut m, now + ms(200));
         m.tick(tick_in(snap(Some(61_200), true), true, None), now + ms(300));
         // Through a gate (the arena's boss flag read late): the next zone
-        // decides, and has no unused exit.
+        // decides, not the kill.
         m.handle_message(zone_update_with_exits(Some(0)), now + secs(5));
         let mut reads = vec![(100, false), (200, false), (900, false)];
         reads.extend(m.boss_flags_to_read().map(|f| (f, f == ARENA_BOSS)));
@@ -8162,24 +8223,29 @@ mod tests {
         );
         assert!(m.triggered_flags.contains(&ARENA_BOSS));
         assert!(m.pending_zone_update.is_some());
-        assert!(!m.ink_active(now + secs(6)));
+        assert_eq!(
+            ink_rows(&m, now + secs(40)),
+            [("Ink".to_string(), Some(secs(30)))]
+        );
     }
 
     #[test]
     fn a_pending_ink_starts_back_in_an_arena_whose_boss_is_dead() {
-        // Killed, left by a gate with no unused exit to hide, then back:
-        // the reveal of the cleared arena starts it.
+        // Killed, left by a gate into a zone with no unused exit, then back:
+        // the reveal of the cleared arena runs it.
         let now = Instant::now();
         let mut m = running_items_boss_machine(now);
-        reveal_arena(&mut m, Some(0), 61_000, now + ms(100));
+        reveal_arena(&mut m, Some(2), 61_000, now + ms(100));
         boss_scan(&mut m, &[ARENA_BOSS], 61_100, now + ms(150));
         reveal_zone(&mut m, Some(0), 62_000, now + secs(2));
         ink_hit(&mut m, now + secs(3));
         let t1 = now + secs(3) + ms(100);
         m.tick(tick_in(snap(Some(63_200), true), true, None), t1);
         assert!(!m.ink_active(t1));
-        reveal_arena(&mut m, Some(0), 70_000, now + secs(10));
-        assert!(m.ink_active(now + secs(10) + ms(20)));
+        reveal_arena(&mut m, Some(2), 70_000, now + secs(10));
+        let t2 = now + secs(10) + ms(10);
+        assert!(m.ink_active(t2 + ms(29_900)));
+        assert!(!m.ink_active(t2 + secs(30)));
     }
 
     #[test]
@@ -8201,6 +8267,32 @@ mod tests {
             assert_eq!(m.ink_active(t1), starts, "coming: {coming:?}");
             assert_eq!(ink_rows(&m, t1).len(), 1, "coming: {coming:?}");
         }
+    }
+
+    #[test]
+    fn an_ink_hit_while_a_live_arena_is_coming_holds_it() {
+        let now = Instant::now();
+        let mut m = running_items_boss_machine(now);
+        reveal_zone(&mut m, Some(0), 61_000, now + ms(100));
+        // The arena's update is in (unused exits, its boss alive), its
+        // reveal waits for the fade to clear: the arena decides.
+        let mut coming = zone_update_with_exits(Some(2));
+        if let MachineMessage::ZoneUpdate { defeat_flag, .. } = &mut coming {
+            *defeat_flag = Some(ARENA_BOSS);
+        }
+        m.handle_message(coming, now + ms(200));
+        ink_hit(&mut m, now + ms(300));
+        let t1 = now + ms(320);
+        m.tick(
+            tick_in(snap_load(Some(61_300), true, Some(true)), true, None),
+            t1,
+        );
+        assert!(m.pending_zone_update.is_some());
+        assert!(m.ink_active(t1));
+        assert_eq!(
+            ink_rows(&m, t1 + secs(60)),
+            [("Ink".to_string(), Some(secs(30)))]
+        );
     }
 
     #[test]

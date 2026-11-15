@@ -108,8 +108,7 @@ EMPTY_CATALOG: dict[str, object] = {}
 # 1.12 spoke the per-item goods (it would spawn nothing of the catalog); 1.13
 # reads the catalog but neither times the effects across loads nor holds an Ink
 # on `unused_exits`; 1.14 knows none of the memory effects nor `item_notice`;
-# 1.15 never starts an Ink in a boss arena (no `defeat_flag`), so in a boss
-# rush it would never be inked.
+# 1.15 runs an Ink's time through a boss fight (no `defeat_flag`).
 @pytest.mark.parametrize("protocol_version", ["1.12", "1.13", "1.14", "1.15"])
 def test_a_mod_before_1_16_is_refused_on_an_items_race(
     integration_client, race_with_participants, integration_db, protocol_version
@@ -849,6 +848,83 @@ def test_the_draw_tier_follows_the_item_order(race_with_participants, integratio
     assert asyncio.run(grant(1)) is not None
     assert asyncio.run(grant(0)) is not None
     assert tiers == ["front", "back"]
+
+
+INK = _item("Ink", 60391, duration_ms=30000)
+
+
+def test_the_draw_leaves_the_ink_out_once_no_other_runner_can_meet_unused_exits(
+    race_with_participants, integration_db, monkeypatch, caplog
+):
+    import speedfog_racing.websocket.race.items as items_module
+    from speedfog_racing.config import settings
+
+    offered: list[set[str]] = []
+    monkeypatch.setattr(
+        items_module,
+        "draw_base_key",
+        lambda tier, weights, available, rng: offered.append(set(available)) or "red_shell",
+    )
+    # Player 0 draws in the back tier, which has the Ink; player 1 in the
+    # front one, which has not.
+    monkeypatch.setattr(
+        settings,
+        "race_items_tier_weights",
+        {"front": {"red_shell": 1}, "back": {"red_shell": 1, "ink": 1}},
+    )
+    race_id = race_with_participants["race_id"]
+    _patch_items_graph(
+        integration_db, race_id, catalog=_catalog(("red_shell", RED_SHELL), ("ink", INK))
+    )
+
+    async def chain_with_one_hub():
+        # start_node -> node_a (2 unused exits) -> node_b -> node_c.
+        async with integration_db() as db:
+            result = await db.execute(
+                select(Race).where(Race.id == uuid.UUID(race_id)).options(selectinload(Race.seed))
+            )
+            seed = result.scalar_one().seed
+            graph = json.loads(json.dumps(seed.graph_json))
+            for node, count in (("start_node", 0), ("node_a", 2), ("node_b", 0), ("node_c", 0)):
+                graph["nodes"][node]["unused_exits"] = count
+            graph["edges"] = [
+                {"from": "start_node", "to": "node_a"},
+                {"from": "node_a", "to": "node_b"},
+                {"from": "node_b", "to": "node_c"},
+            ]
+            seed.graph_json = graph
+            await db.commit()
+            return graph
+
+    graph = asyncio.run(chain_with_one_hub())
+    _leads_in_igt_on_a_shallower_layer(integration_db, race_with_participants)
+
+    def grant(index: int) -> None:
+        _update_player(integration_db, race_with_participants, index, held_item=None)
+        participant_id = uuid.UUID(race_with_participants["players"][index]["participant_id"])
+        asyncio.run(
+            items_module.grant_item(
+                integration_db, uuid.UUID(race_id), participant_id, graph, igt_ms=60_000
+            )
+        )
+
+    # The other runner can still reach node_a: the Ink is in the draw.
+    _update_player(integration_db, race_with_participants, 1, current_zone="start_node")
+    grant(0)
+    # Past it: the draw goes on among the others.
+    _update_player(integration_db, race_with_participants, 1, current_zone="node_b")
+    with caplog.at_level("INFO"):
+        grant(0)
+    assert ["ink" in keys for keys in offered] == [True, False]
+    assert "red_shell" in offered[1]
+    assert "ink left out" in caplog.text
+
+    # A tier without the Ink has nothing to leave out.
+    caplog.clear()
+    _update_player(integration_db, race_with_participants, 0, current_zone="node_c")
+    with caplog.at_level("INFO"):
+        grant(1)
+    assert "ink left out" not in caplog.text
 
 
 def test_an_empty_tier_grants_nothing(race_with_participants, integration_db, monkeypatch, caplog):

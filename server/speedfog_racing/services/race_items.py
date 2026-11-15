@@ -367,6 +367,45 @@ def unknown_tier_items(tier_weights: Mapping[str, Mapping[str, int]]) -> list[st
     return sorted({key for weights in tier_weights.values() for key in weights} - set(ITEM_RULES))
 
 
+def ink_can_land(graph_json: Mapping[str, Any], zones: Iterable[str | None]) -> bool:
+    """Whether an Ink could hide exits from one of the runners at ``zones`` (their
+    current nodes): the runner's zone, or one the graph's edges lead to from it, has
+    unused exits (``unused_exits`` above 0), the only zones where the mod runs an Ink.
+
+    A count unknown (a seed older than graph.json 4.13, a node the graph lacks) or a
+    runner not placed yet counts as unused exits, so the Ink stays drawable there.
+    No runner at all: nothing to land on.
+    """
+    nodes = graph_json.get("nodes")
+    edges = graph_json.get("edges", [])
+    if not isinstance(nodes, Mapping) or not isinstance(edges, list):
+        return True
+    successors: dict[str, list[str]] = {}
+    for edge in edges:
+        if isinstance(edge, Mapping):
+            src, dst = edge.get("from"), edge.get("to")
+            if isinstance(src, str) and isinstance(dst, str):
+                successors.setdefault(src, []).append(dst)
+    stack: list[str] = []
+    for zone in zones:
+        if not isinstance(zone, str):
+            return True
+        stack.append(zone)
+    seen: set[str] = set()
+    while stack:
+        node_id = stack.pop()
+        if node_id in seen:
+            continue
+        seen.add(node_id)
+        node = nodes.get(node_id)
+        count = node.get("unused_exits") if isinstance(node, Mapping) else None
+        # As the mod reads it: only a count of 0 lets an ink wait.
+        if not _is_int(count) or count != 0:
+            return True
+        stack.extend(successors.get(node_id, ()))
+    return False
+
+
 def draw_base_key(
     tier: Tier,
     tier_weights: Mapping[str, Mapping[str, int]],
