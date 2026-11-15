@@ -15,7 +15,7 @@ This document is the operational reference for the server side (rules, lifecycle
 - Any change of the option (on or off, with or without a redraw) closes every connected mod of the race with code 1000, as a race reset does: the catalog and the protocol gate below only apply at auth, so each mod reconnects and authenticates again, gets the catalog that matches, and an older mod meets the gate. Spectators stay connected.
 - A runner holds at most one item. A boss kill made while holding one grants nothing, then or later.
 - Only playing runners are ever targets; finished, abandoned and disqualified runners are skipped.
-- An items race needs a mod speaking protocol 1.14 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
+- An items race needs a mod speaking protocol 1.15 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
 - Items races stay out of the speedrun boards, the community stats and the generator calibration, since items distort clear times and deaths.
 - Items and deathless can be combined; nothing validates the choice.
 
@@ -39,20 +39,28 @@ Among the playing runners, in item order (index `i` of `n`):
 
 Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_race_item_catalog` in `server/speedfog_racing/services/race_items.py`): `goods` by goods key (`goods_id`, `use_flag`, `remove_flag`, `icon`, `icon_id`) and `items` by item key (`name`, `icon`, `icon_id`, `goods`, `effect_speffect`, `duration_ms`). Every usable item is held as the one Race Item goods (`race_item`, use flag `1050290101`); the Shield, never used, is held as its own goods (`shield`, no use flag). An item on a goods the catalog lacks is dropped. The rules (target, effect, banner wording) live in `ITEM_RULES` in the same module. Positions (just ahead, just behind, best-ranked) are in item order.
 
-| Item                            | Tiers (default) | Target                         | Effect                                                        |
-| ------------------------------- | --------------- | ------------------------------ | ------------------------------------------------------------- |
-| `shield`                        | middle          | passive                        | blocks the next item aimed at the holder                      |
-| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes (its effect row)                                 |
-| `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`                          |
-| `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`                       |
-| `mushroom`                      | front, middle   | self                           | infinite stamina (its effect row)                             |
-| `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)                                 |
-| `ink`                           | middle          | every other playing runner     | exits hidden (overlay only), once in a zone with unused exits |
-| `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                                                 |
-| `lightning`                     | back            | every other playing runner     | slowed                                                        |
-| `flask_stopper`                 | back            | every other playing runner     | flasks blocked                                                |
-| `toxic_blossom`                 | back            | every other playing runner     | poisoned                                                      |
+| Item                            | Tiers (default) | Target                         | Effect                                                                        |
+| ------------------------------- | --------------- | ------------------------------ | ----------------------------------------------------------------------------- |
+| `shield`                        | middle          | passive                        | blocks the next item aimed at the holder                                      |
+| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes (its effect row)                                                 |
+| `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`                                          |
+| `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`                                       |
+| `mushroom`                      | front, middle   | self                           | infinite stamina (its effect row)                                             |
+| `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)                                                 |
+| `ink`                           | middle          | every other playing runner     | exits hidden (overlay only), once in a zone with unused exits                 |
+| `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                                                                 |
+| `lightning`                     | back            | every other playing runner     | slowed                                                                        |
+| `flask_stopper`                 | back            | every other playing runner     | flasks blocked                                                                |
+| `toxic_blossom`                 | back            | every other playing runner     | poisoned                                                                      |
+| `star`                          | back            | self                           | invincible for 5 s (its effect row), blocks items aimed at the user meanwhile |
+| `vanish`                        | middle, back    | every other playing runner     | the target turns invisible (memory effect, 15 s)                              |
+| `unseen_foes`                   | back            | every other playing runner     | the target's enemies are hidden (memory effect, 15 s)                         |
+| `slow_mo`                       | middle, back    | the playing runner just ahead  | slowed to `race_items_slow_mo_speed_pct` (memory effect, 15 s)                |
+| `mini`                          | middle          | every other playing runner     | scaled to `race_items_mini_scale_pct` (memory effect, 15 s)                   |
+| `giant`                         | middle          | every other playing runner     | scaled to `race_items_giant_scale_pct` (memory effect, 15 s)                  |
+| `camera`                        | middle, back    | the playing runner just ahead  | a camera variant drawn at each use (memory effect, 15 s)                      |
 
+The Star's effect is a SpEffect row; the six others have no row (`effect_speffect` null): the mod applies them by writing the game's memory, from the `item_effect` kinds listed in `docs/PROTOCOL.md`. The Camera's variant (`first_person`, `inverted` or `wide`, uniform) is drawn by the server at each use, so the target's banner, the target's reminder and the sender's result name the same one.
 The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. When the pool is empty nothing is granted (a `race item draw: nothing to draw` warning, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
 
 ### Damage curve
@@ -68,6 +76,7 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
 5. **Reconnect.** `auth_ok` carries `held_item`, the item held (confirmed or not), so a restarted mod restores the Race Item's icon and the held row. An unconfirmed grant is re-sent right after `auth_ok` at every (re)auth, and after every inventory report until it is confirmed, the report that confirms it included (see below). The mod ignores a grant id it already has.
 6. **Use.** Using the Race Item makes the plugin's EMEVD set its use flag, the same for every item, which the mod reports at once through `event_flag`. The handler matches use flags (the `use_flag` of each catalog goods, `use_flag_map`: use flag to goods key, cached per graph) after the usual gates (race running, no countdown, runner playing, initialized history, plausible IGT) and before the `event_map` lookup, and never adds a `zone_history` entry. After the session, the `_on_item_used` hook resolves the use; it does nothing when the race has items off, and outside races (training) it is a no-op. The flag is acked once the hook returns, so a use lost before its resolution committed (a server restart) is replayed by the mod.
 7. **Resolve.** `resolve_item_use` (same module) acts only when the runner holds an item of the used goods, whatever item it is: the held item says what the use does. Otherwise it logs the use and ignores it, and a goods without a use flag (the Shield) is never used. That covers a stray copy, and the replay of a resolved use whose ACK was lost, since the resolution cleared the held item. A use older in IGT than the held item's grant (`held_item.igt_ms`, the kill's IGT) is ignored too: made before the kill that granted the item, it can only be the replay of an earlier use, so a replay never spends an item granted since (any item: they share the goods). It clears the held item and resolves the targets among the playing runners in item order. For each target:
+   - a target inside its Star window (below) is blocked first: it gets `item_notice` with a banner, nothing is spent and a Shield it holds stays;
    - a held Shield blocks the item: the Shield is spent (even when its holder is offline) and its holder gets `item_remove` for the `shield` goods with a banner;
    - otherwise a target whose mod is connected gets `item_effect` (effect, banner, reminder);
    - otherwise the target is offline and the effect is dropped, a miss for the sender.
@@ -77,6 +86,8 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
    The Blue Shell's target is the leader at the time of use, the sender included: drawn at the back and used once leading, it hits its own sender (as in Mario Kart), who then gets both the `item_effect` (banner `from yourself`) and a result reading `Hit yourself`.
 
    A self item (Mushroom, Rune Pouch) has no target: its effect row (`effect_speffect`: the Mushroom's stamina, the Rune Pouch's runes) goes to the sender's own mod as an `item_effect` without banner or reminder, which its result carries. An item with no valid target is still consumed. One `use` event is logged with every target's outcome (`hit`, `blocked` or `offline`; none for a self item).
+
+   The Star is a self item that also opens a window: using it sets `star_until[sender] = now + duration_ms / 1000` (`now` is `time.monotonic()`; `RaceRoom.star_until`, in memory only, used under `items_lock`), and a target whose deadline is still ahead of `now` is blocked, connected or not. The window covers only the Star's user and ends with the effect. The block is logged `blocked` like a Shield's.
 
 8. **Result.** The sender gets `item_result` (banner, plus the reminder for a self item). The handler sends the removals, the effects (a self item's to its sender), then the result.
 
@@ -101,13 +112,15 @@ The banner title is the catalog `name`. The sender's result line:
 
 | Outcome              | Line                                                                                            |
 | -------------------- | ----------------------------------------------------------------------------------------------- |
-| hits                 | `Hit {name}`, or `Hit {n} runners`; with Shield blocks too, `, {k} blocked` is appended         |
-| Shield blocks only   | `Blocked by {name}'s shield`, or `Blocked by {k} shields`                                       |
+| hits                 | `Hit {name}`, or `Hit {n} runners`; with Shield or Star blocks too, `, {k} blocked` is appended |
+| Blocks only          | `Blocked by {name}'s shield`, `Blocked by {name}'s Star`, or `Blocked by {k} runners`           |
 | no target            | `Missed: nobody ahead` (Red Shell), `Missed: nobody behind` (Banana), `Missed: no other runner` |
 | targets, all offline | `Missed`                                                                                        |
-| self item            | `Infinite stamina for {s} s` (Mushroom, with its reminder), `Runes added` (Rune Pouch)          |
+| self item            | `Infinite stamina for {s} s` (Mushroom), `Invincible for {s} s` (Star), `Runes added` (Pouch)   |
 
-The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty; it stays empty when nothing landed (every target blocked, missed or offline), so it never reads as dealt. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`.
+The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty; it stays empty when nothing landed (every target blocked, missed or offline), so it never reads as dealt. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`; a Star holder's Star block sends an `item_notice` with title `Star` and the same line and detail. The Camera's detail reads `{reminder}, {s} s`.
+
+Target lines and reminders of the new items: Vanish `You are invisible for {s} s` / `Invisible`; Unseen Foes `Enemies unseen for {s} s` / `Unseen foes`; Slow-mo `Half speed for {s} s` / `Slow-mo`; Mini `Shrunk for {s} s` / `Mini`; Giant `Giant for {s} s` / `Giant`; Camera per variant `First-person camera for {s} s` / `First person`, `Upside-down camera for {s} s` / `Upside down`, `Wide camera for {s} s` / `Wide camera`; Star reminder `Invincible`.
 
 ## Persistence
 
@@ -117,7 +130,7 @@ The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, els
 
 ## Server settings
 
-`race_items_tier_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct` and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. `RACE_ITEMS_TIER_WEIGHTS` (JSON) is laid over the default table: a partial table only overrides the tiers it names (a tier named replaces that tier's weights whole), the others keep their default. A tier other than `front`, `middle` and `back`, or a negative weight, stops the server from starting with a settings error; an item key no rule knows (`ITEM_RULES`) is never drawn and logged as a warning at startup. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
+`race_items_tier_weights`, `race_items_banana_pct`, `race_items_red_shell_pct`, `race_items_damage_floor_pct`, `race_items_damage_tail_pct`, `race_items_hammer_load_pct`, `race_items_slow_mo_speed_pct` (50, clamped to 10..100), `race_items_mini_scale_pct` (50) and `race_items_giant_scale_pct` (150), both clamped to 25..300, and `race_items_igt_lead_s` (the item order's lead, see Item order) in `config.py`, overridable from `.env`. They travel with the effects, so tuning needs neither a mod release nor new seeds. `RACE_ITEMS_TIER_WEIGHTS` (JSON) is laid over the default table: a partial table only overrides the tiers it names (a tier named replaces that tier's weights whole), the others keep their default. A tier other than `front`, `middle` and `back`, or a negative weight, stops the server from starting with a settings error; an item key no rule knows (`ITEM_RULES`) is never drawn and logged as a warning at startup. The percentages are clamped to 0..100 when they are sent (the mod reads each as a byte; the Hammer's to 0..99, since 100 could round past the max), and the banners quote the clamped value.
 
 ## Exclusions
 

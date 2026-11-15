@@ -170,7 +170,32 @@ def race_items_seed_clause() -> ColumnElement[bool]:
 
 Tier = Literal["front", "middle", "back"]
 TargetRule = Literal["self", "passive", "behind", "ahead", "leader", "others"]
-EffectKind = Literal["none", "speffect", "damage", "ink", "equip_load"]
+EffectKind = Literal[
+    "none",
+    "speffect",
+    "damage",
+    "ink",
+    "equip_load",
+    "vanish",
+    "unseen_foes",
+    "slow_mo",
+    "scale",
+    "camera",
+]
+CameraVariant = Literal["first_person", "inverted", "wide"]
+CAMERA_VARIANTS: tuple[CameraVariant, ...] = ("first_person", "inverted", "wide")
+
+# The Camera's target line and reminder per variant, drawn at each use.
+_CAMERA_TARGET_LINES: dict[str, str] = {
+    "first_person": "First-person camera for {s} s",
+    "inverted": "Upside-down camera for {s} s",
+    "wide": "Wide camera for {s} s",
+}
+_CAMERA_REMINDERS: dict[str, str] = {
+    "first_person": "First person",
+    "inverted": "Upside down",
+    "wide": "Wide camera",
+}
 
 
 @dataclass(frozen=True)
@@ -230,6 +255,36 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Flasks blocked",
     ),
     "toxic_blossom": ItemRule("others", "speffect", "Poisons everyone else", "Poisoned"),
+    "star": ItemRule("self", "speffect", "Invincible for {s} s", "", "Invincible"),
+    "vanish": ItemRule(
+        "others",
+        "vanish",
+        "Everyone else turns invisible for {s} s",
+        "You are invisible for {s} s",
+        "Invisible",
+    ),
+    "unseen_foes": ItemRule(
+        "others",
+        "unseen_foes",
+        "Hides everyone else's enemies for {s} s",
+        "Enemies unseen for {s} s",
+        "Unseen foes",
+    ),
+    "slow_mo": ItemRule(
+        "ahead",
+        "slow_mo",
+        "Slows the runner ahead for {s} s",
+        "Half speed for {s} s",
+        "Slow-mo",
+    ),
+    "mini": ItemRule(
+        "others", "scale", "Shrinks everyone else for {s} s", "Shrunk for {s} s", "Mini"
+    ),
+    "giant": ItemRule(
+        "others", "scale", "Everyone else grows huge for {s} s", "Giant for {s} s", "Giant"
+    ),
+    # The target line and the reminder depend on the variant drawn at each use.
+    "camera": ItemRule("ahead", "camera", "Messes with the camera of the runner ahead for {s} s"),
 }
 
 _MISSED_LINE = {
@@ -369,6 +424,19 @@ def _damage_pct(key: str) -> int:
     return _percent(settings.race_items_red_shell_pct)
 
 
+def _scale_pct(key: str) -> int:
+    """Mini and Giant sizes, clamped to what the mod can apply."""
+    value = (
+        settings.race_items_mini_scale_pct if key == "mini" else settings.race_items_giant_scale_pct
+    )
+    return max(25, min(300, value))
+
+
+def draw_camera_variant(rng: random.Random | None = None) -> CameraVariant:
+    """The Camera's variant, uniform at each use."""
+    return (rng or random).choice(CAMERA_VARIANTS)
+
+
 def _seconds(entry: CatalogEntry) -> int:
     return (entry.duration_ms or 0) // 1000
 
@@ -377,9 +445,12 @@ def _format(template: str, key: str, entry: CatalogEntry) -> str:
     return template.format(s=_seconds(entry), pct=_damage_pct(key))
 
 
-def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | None":
+def effect_payload(
+    item_key: str, entry: CatalogEntry, variant: CameraVariant | None = None
+) -> "ItemEffectPayload | None":
     """The wire effect an item applies to a target (a self item's target is its
-    sender's own mod); None for the passive Shield."""
+    sender's own mod); None for the passive Shield. ``variant`` is the Camera's
+    (drawn when absent)."""
     from speedfog_racing.websocket.schemas import ItemEffectPayload
 
     key = base_key(item_key)
@@ -407,6 +478,24 @@ def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | N
             # 100 could round past the max and overload the target.
             load_pct=min(_percent(settings.race_items_hammer_load_pct), 99),
         )
+    if kind == "vanish":
+        return ItemEffectPayload(kind="vanish", duration_ms=entry.duration_ms)
+    if kind == "unseen_foes":
+        return ItemEffectPayload(kind="unseen_foes", duration_ms=entry.duration_ms)
+    if kind == "slow_mo":
+        return ItemEffectPayload(
+            kind="slow_mo",
+            duration_ms=entry.duration_ms,
+            speed_pct=max(10, min(100, settings.race_items_slow_mo_speed_pct)),
+        )
+    if kind == "scale":
+        return ItemEffectPayload(
+            kind="scale", duration_ms=entry.duration_ms, scale_pct=_scale_pct(key)
+        )
+    if kind == "camera":
+        return ItemEffectPayload(
+            kind="camera", duration_ms=entry.duration_ms, variant=variant or draw_camera_variant()
+        )
     return None
 
 
@@ -423,15 +512,20 @@ def grant_banner(item_key: str, entry: CatalogEntry) -> "ItemBanner":
     )
 
 
-def target_banner(item_key: str, entry: CatalogEntry, sender: str) -> "ItemBanner":
+def target_banner(
+    item_key: str, entry: CatalogEntry, sender: str, variant: CameraVariant | None = None
+) -> "ItemBanner":
     """Banner shown to a runner the item hits."""
     from speedfog_racing.websocket.schemas import ItemBanner
 
     key = base_key(item_key)
+    template = ITEM_RULES[key].target_line
+    if ITEM_RULES[key].effect == "camera":
+        template = _CAMERA_TARGET_LINES[variant or "first_person"]
     return ItemBanner(
         icon=entry.icon,
         title=entry.name,
-        line=_format(ITEM_RULES[key].target_line, key, entry),
+        line=_format(template, key, entry),
         detail=f"from {sender}",
     )
 
@@ -442,8 +536,11 @@ def result_banner(
     hits: Sequence[str],
     blocked: Sequence[str],
     offline: int,
+    stars: Sequence[str] = (),
+    variant: CameraVariant | None = None,
 ) -> "ItemBanner":
-    """Banner shown to the sender once the item resolved."""
+    """Banner shown to the sender once the item resolved. ``blocked`` names the
+    runners whose shield blocked it, ``stars`` those whose Star did."""
     from speedfog_racing.websocket.schemas import ItemBanner
 
     key = base_key(item_key)
@@ -453,6 +550,8 @@ def result_banner(
     landed = bool(hits) or rule.target == "self"
     if landed and rule.effect == "damage":
         detail = f"{_damage_pct(key)}% HP"
+    elif landed and rule.effect == "camera" and entry.duration_ms is not None:
+        detail = f"{_CAMERA_REMINDERS[variant or 'first_person']}, {_seconds(entry)} s"
     elif landed and entry.duration_ms is not None and rule.reminder is not None:
         detail = f"{_seconds(entry)} s"
 
@@ -460,14 +559,15 @@ def result_banner(
         line = "Runes added" if key == "rune_pouch" else _format(rule.grant_line, key, entry)
     elif hits:
         line = f"Hit {hits[0]}" if len(hits) == 1 else f"Hit {len(hits)} runners"
-        if blocked:
-            line += f", {len(blocked)} blocked"
-    elif blocked:
-        line = (
-            f"Blocked by {blocked[0]}'s shield"
-            if len(blocked) == 1
-            else f"Blocked by {len(blocked)} shields"
-        )
+        if blocked or stars:
+            line += f", {len(blocked) + len(stars)} blocked"
+    elif blocked or stars:
+        if len(blocked) + len(stars) > 1:
+            line = f"Blocked by {len(blocked) + len(stars)} runners"
+        elif blocked:
+            line = f"Blocked by {blocked[0]}'s shield"
+        else:
+            line = f"Blocked by {stars[0]}'s Star"
     elif offline:
         line = "Missed"
     else:
@@ -484,11 +584,25 @@ def shield_banner(item_name: str, sender: str) -> "ItemBanner":
     )
 
 
-def reminder_for(item_key: str, entry: CatalogEntry) -> "ItemReminder | None":
+def star_banner(item_name: str, sender: str) -> "ItemBanner":
+    """Banner shown to a Star holder whose Star blocked an item."""
+    from speedfog_racing.websocket.schemas import ItemBanner
+
+    return ItemBanner(
+        icon="star", title="Star", line=f"Blocked {item_name}", detail=f"from {sender}"
+    )
+
+
+def reminder_for(
+    item_key: str, entry: CatalogEntry, variant: CameraVariant | None = None
+) -> "ItemReminder | None":
     """Countdown line for a timed effect; None for items without one."""
     from speedfog_racing.websocket.schemas import ItemReminder
 
-    text = ITEM_RULES[base_key(item_key)].reminder
+    rule = ITEM_RULES[base_key(item_key)]
+    text = rule.reminder
+    if rule.effect == "camera":
+        text = _CAMERA_REMINDERS[variant or "first_person"]
     if text is None or entry.duration_ms is None:
         return None
     return ItemReminder(text=text, duration_ms=entry.duration_ms)

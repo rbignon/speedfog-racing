@@ -16,6 +16,7 @@ from speedfog_racing.services.race_items import (
     available_base_keys,
     base_key,
     draw_base_key,
+    draw_camera_variant,
     effect_payload,
     grant_banner,
     item_order,
@@ -239,7 +240,7 @@ def test_self_and_passive_targets():
         ("hammer", ["A", "B"], ["C"], 0, "Hit 2 runners, 1 blocked"),
         ("hammer", ["A"], ["C"], 0, "Hit A, 1 blocked"),
         ("hammer", [], ["C"], 0, "Blocked by C's shield"),
-        ("hammer", [], ["C", "D"], 0, "Blocked by 2 shields"),
+        ("hammer", [], ["C", "D"], 0, "Blocked by 2 runners"),
         ("red_shell", [], [], 0, "Missed: nobody ahead"),
         ("banana", [], [], 0, "Missed: nobody behind"),
         ("lightning", [], [], 0, "Missed: no other runner"),
@@ -366,3 +367,63 @@ def test_self_items_send_their_effect_row():
     }
     pouch = effect_payload("rune_pouch_3", _entry(speffect=1450823, duration_ms=None))
     assert pouch and pouch.model_dump() == {"kind": "speffect", "speffect_id": 1450823}
+
+
+def test_memory_effect_payloads(monkeypatch):
+    vanish = effect_payload("vanish", _entry("Vanish", 15000, None))
+    assert vanish and vanish.model_dump() == {"kind": "vanish", "duration_ms": 15000}
+    foes = effect_payload("unseen_foes", _entry("Unseen Foes", 15000, None))
+    assert foes and foes.model_dump() == {"kind": "unseen_foes", "duration_ms": 15000}
+    slow = effect_payload("slow_mo", _entry("Slow-mo", 15000, None))
+    assert slow and (slow.kind, slow.speed_pct) == ("slow_mo", 50)
+    mini = effect_payload("mini", _entry("Mini", 15000, None))
+    giant = effect_payload("giant", _entry("Giant", 15000, None))
+    assert mini and mini.model_dump() == {"kind": "scale", "duration_ms": 15000, "scale_pct": 50}
+    assert giant and giant.scale_pct == 150
+
+    monkeypatch.setattr(settings, "race_items_slow_mo_speed_pct", 5)
+    monkeypatch.setattr(settings, "race_items_mini_scale_pct", 10)
+    monkeypatch.setattr(settings, "race_items_giant_scale_pct", 400)
+    assert effect_payload("slow_mo", _entry("Slow-mo", 15000, None)).speed_pct == 10
+    assert effect_payload("mini", _entry("Mini", 15000, None)).scale_pct == 25
+    assert effect_payload("giant", _entry("Giant", 15000, None)).scale_pct == 300
+    monkeypatch.setattr(settings, "race_items_slow_mo_speed_pct", 500)
+    monkeypatch.setattr(settings, "race_items_mini_scale_pct", 5)
+    monkeypatch.setattr(settings, "race_items_giant_scale_pct", 400)
+    assert effect_payload("slow_mo", _entry("Slow-mo", 15000, None)).speed_pct == 100
+    assert effect_payload("mini", _entry("Mini", 15000, None)).scale_pct == 25
+
+
+def test_camera_draws_a_variant_and_names_it():
+    entry = _entry("Camera", 15000, None)
+    lines = {
+        "first_person": ("First-person camera for 15 s", "First person"),
+        "inverted": ("Upside-down camera for 15 s", "Upside down"),
+        "wide": ("Wide camera for 15 s", "Wide camera"),
+    }
+    rng = random.Random(7)
+    seen = set()
+    for _ in range(40):
+        variant = draw_camera_variant(rng)
+        payload = effect_payload("camera", entry, variant)
+        assert payload and payload.model_dump() == {
+            "kind": "camera",
+            "duration_ms": 15000,
+            "variant": variant,
+        }
+        line, reminder = lines[variant]
+        assert target_banner("camera", entry, "Bob", variant).line == line
+        rem = reminder_for("camera", entry, variant)
+        assert rem and (rem.text, rem.duration_ms) == (reminder, 15000)
+        assert result_banner("camera", entry, ["Ann"], [], 0, variant=variant).detail == (
+            f"{reminder}, 15 s"
+        )
+        seen.add(variant)
+    assert seen == set(lines)
+
+
+def test_a_star_blocked_result_names_the_blocker():
+    entry = _entry("Red Shell")
+    assert result_banner("red_shell", entry, [], [], 0, ["Ann"]).line == "Blocked by Ann's Star"
+    assert result_banner("hammer", entry, [], ["C"], 0, ["Ann"]).line == "Blocked by 2 runners"
+    assert result_banner("hammer", entry, ["B"], [], 0, ["Ann"]).line == "Hit B, 1 blocked"

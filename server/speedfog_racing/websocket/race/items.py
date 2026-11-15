@@ -6,8 +6,9 @@ calls them under the race's ``items_lock`` and sends what they return.
 
 import logging
 import random
+import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -23,6 +24,7 @@ from speedfog_racing.services.race_items import (
     available_base_keys,
     base_key,
     draw_base_key,
+    draw_camera_variant,
     effect_payload,
     extract_race_item_catalog,
     grant_banner,
@@ -32,6 +34,7 @@ from speedfog_racing.services.race_items import (
     result_banner,
     rune_pouch_variant,
     shield_banner,
+    star_banner,
     target_banner,
     tier_of,
 )
@@ -39,6 +42,7 @@ from speedfog_racing.websocket.race.manager import leaderboard_gaps, sort_leader
 from speedfog_racing.websocket.schemas import (
     ItemEffectMessage,
     ItemGrantMessage,
+    ItemNoticeMessage,
     ItemRemoveMessage,
     ItemResultMessage,
 )
@@ -167,11 +171,13 @@ def pending_grant_message(
 @dataclass
 class ItemResolution:
     """What a use sends: per target an effect or, for a shield holder, the
-    shield's removal, and the sender's result (None when the use is ignored)."""
+    shield's removal or, for a Star holder, a notice, and the sender's result
+    (None when the use is ignored)."""
 
     result: ItemResultMessage | None = None
     effects: list[tuple[uuid.UUID, ItemEffectMessage]] = field(default_factory=list)
     removals: list[tuple[uuid.UUID, ItemRemoveMessage]] = field(default_factory=list)
+    notices: list[tuple[uuid.UUID, ItemNoticeMessage]] = field(default_factory=list)
 
 
 async def resolve_item_use(
@@ -183,6 +189,9 @@ async def resolve_item_use(
     graph_json: Mapping[str, Any],
     *,
     is_connected: Callable[[uuid.UUID], bool],
+    star_until: MutableMapping[uuid.UUID, float] | None = None,
+    now: float | None = None,
+    rng: random.Random | None = None,
 ) -> ItemResolution:
     """Consume the runner's held item and resolve it on its targets.
 
@@ -193,11 +202,18 @@ async def resolve_item_use(
     item's grant (``held_item["igt_ms"]``, 0 when absent) was made before the
     kill that granted it: the replay of an earlier use, ignored too, so it
     never spends an item granted since. Targets come from the playing
-    runners in item order. A held shield blocks the item and is spent,
+    runners in item order. A runner whose ``star_until`` (``time.monotonic()``
+    deadline, set when they use a Star) is still ahead of ``now`` is blocked
+    first: nothing is spent and a Shield stays, the holder gets an
+    ``item_notice``. A held shield blocks the item and is spent,
     connected or not; a target without a connected mod is a miss. A self item
     sends its effect, without a banner, to the sender's own mod. Logs one
     ``use`` event with every target's outcome.
     """
+    if star_until is None:
+        star_until = {}
+    if now is None:
+        now = time.monotonic()
     catalog = extract_race_item_catalog(graph_json)
     goods = catalog.goods.get(goods_key)
     shield = catalog.items.get("shield")
@@ -249,10 +265,14 @@ async def resolve_item_use(
         resolution = ItemResolution()
         hits: list[str] = []
         blocked: list[str] = []
+        stars: list[str] = []
         offline = 0
+        variant = draw_camera_variant(rng) if rule.effect == "camera" else None
         outcomes: list[dict[str, str]] = []
         if rule.target == "self":
             payload = effect_payload(item_key, entry)
+            if base_key(item_key) == "star" and entry.duration_ms is not None:
+                star_until[participant_id] = now + entry.duration_ms / 1000
             if payload is not None:
                 # Applied without a banner: the result carries it.
                 resolution.effects.append(
@@ -268,13 +288,19 @@ async def resolve_item_use(
                 Runner(p.id, p.user.twitch_display_name or p.user.twitch_username)
                 for p in item_standings(race.participants, graph_json)
             ]
-            payload = effect_payload(item_key, entry)
+            payload = effect_payload(item_key, entry, variant)
             for runner in resolve_targets(rule.target, participant_id, playing):
                 target = by_id[runner.participant_id]
                 # A Blue Shell used while leading hits its own sender.
                 own = runner.participant_id == participant_id
                 target_held = target.held_item
-                if shield is not None and target_held and target_held.get("item") == "shield":
+                if star_until.get(target.id, 0.0) > now:
+                    resolution.notices.append(
+                        (target.id, ItemNoticeMessage(banner=star_banner(entry.name, sender_name)))
+                    )
+                    stars.append(runner.name)
+                    outcome = "blocked"
+                elif shield is not None and target_held and target_held.get("item") == "shield":
                     target.held_item = None
                     resolution.removals.append(
                         (
@@ -294,9 +320,9 @@ async def resolve_item_use(
                                 item=item_key,
                                 effect=payload,
                                 banner=target_banner(
-                                    item_key, entry, "yourself" if own else sender_name
+                                    item_key, entry, "yourself" if own else sender_name, variant
                                 ),
-                                reminder=reminder_for(item_key, entry),
+                                reminder=reminder_for(item_key, entry, variant),
                             ),
                         )
                     )
@@ -309,7 +335,7 @@ async def resolve_item_use(
 
         resolution.result = ItemResultMessage(
             item=item_key,
-            banner=result_banner(item_key, entry, hits, blocked, offline),
+            banner=result_banner(item_key, entry, hits, blocked, offline, stars, variant),
             # Only a self item affects its sender.
             reminder=reminder_for(item_key, entry) if rule.target == "self" else None,
         )

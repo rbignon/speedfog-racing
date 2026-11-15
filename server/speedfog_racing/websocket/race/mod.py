@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -524,9 +525,13 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     igt_ms,
                     graph,
                     is_connected=lambda pid: pid in room.mods,
+                    star_until=room.star_until,
+                    now=time.monotonic(),
                 )
                 for target_id, removal in resolution.removals:
                     await room.send_to_mod(target_id, removal.model_dump_json())
+                for target_id, notice in resolution.notices:
+                    await room.send_to_mod(target_id, notice.model_dump_json())
                 for target_id, effect in resolution.effects:
                     await room.send_to_mod(target_id, effect.model_dump_json())
                 if resolution.result is not None:

@@ -86,6 +86,7 @@ GRAPH = {
         ("mushroom", _item("Mushroom", 60389, speffect=1450826, duration_ms=30000)),
         ("hammer", _item("Hammer", 60390, speffect=1450827, duration_ms=15000)),
         ("blue_shell", _item("Blue Shell", 60392, speffect=1450829, duration_ms=15000)),
+        ("star", _item("Star", 60397, speffect=1450833, duration_ms=5000)),
     ),
 }
 
@@ -162,10 +163,20 @@ async def _use(
     *,
     igt_ms: int = 50_000,
     online: Callable[[uuid.UUID], bool] = lambda _: True,
+    star_until: dict[uuid.UUID, float] | None = None,
+    now: float = 1000.0,
 ) -> ItemResolution:
     """The sender's mod reports the use flag of ``goods`` (the Race Item by default)."""
     return await resolve_item_use(
-        session_maker, race_id, sender, goods, igt_ms, GRAPH, is_connected=online
+        session_maker,
+        race_id,
+        sender,
+        goods,
+        igt_ms,
+        GRAPH,
+        is_connected=online,
+        star_until={} if star_until is None else star_until,
+        now=now,
     )
 
 
@@ -454,3 +465,73 @@ async def test_reported_goods_without_a_held_item_is_taken_back(items_db):
     assert removals == [ItemRemoveMessage(goods="race_item", banner=None)]
     [event] = await _events(items_db, race_id, "take_back")
     assert (event.participant_id, event.item) == (ids["Bob"], "race_item")
+
+
+async def test_a_star_blocks_without_spending_the_shield(items_db):
+    race_id, ids = await _field(
+        items_db,
+        ("Ann", PLAYING, 4, "star"),
+        ("Bea", PLAYING, 3, "red_shell"),
+        ("Cy", PLAYING, 2, "hammer"),
+    )
+    star_until: dict[uuid.UUID, float] = {}
+    use = await _use(items_db, race_id, ids["Ann"], star_until=star_until, now=1000.0)
+    assert [(pid, e.effect.model_dump()) for pid, e in use.effects] == [
+        (ids["Ann"], {"kind": "speffect", "speffect_id": 1450833, "duration_ms": 5000})
+    ]
+    assert star_until == {ids["Ann"]: 1005.0}
+    # Ann holds a Shield too (the Star left her slot free).
+    await _set_held(items_db, ids["Ann"], {"grant_id": 2, "item": "shield", "confirmed": True})
+
+    red = await _use(items_db, race_id, ids["Bea"], star_until=star_until, now=1003.0)
+    hammer = await _use(items_db, race_id, ids["Cy"], star_until=star_until, now=1004.0)
+    for resolution in (red, hammer):
+        assert [(pid, n.banner.title, n.banner.detail) for pid, n in resolution.notices] == [
+            (ids["Ann"], "Star", "from " + ("Bea" if resolution is red else "Cy"))
+        ]
+        assert resolution.removals == []
+    assert red.effects == []
+    assert [n.banner.line for _, n in red.notices] == ["Blocked Red Shell"]
+    assert [n.banner.line for _, n in hammer.notices] == ["Blocked Hammer"]
+    # The hammer still hits Bea.
+    assert [pid for pid, _ in hammer.effects] == [ids["Bea"]]
+    assert red.result is not None and red.result.banner.line == "Blocked by Ann's Star"
+    assert hammer.result is not None and hammer.result.banner.line == "Hit Bea, 1 blocked"
+    assert await _held(items_db, ids["Ann"]) == {
+        "grant_id": 2,
+        "item": "shield",
+        "confirmed": True,
+    }
+    events = await _use_events(items_db, race_id)
+    assert [
+        t["outcome"]
+        for e in events[1:]
+        for t in e.targets
+        if t["participant_id"] == str(ids["Ann"])
+    ] == [
+        "blocked",
+        "blocked",
+    ]
+
+    # After the window the Shield is spent as usual.
+    await _set_held(items_db, ids["Bea"], {"grant_id": 3, "item": "red_shell", "confirmed": True})
+    later = await _use(items_db, race_id, ids["Bea"], star_until=star_until, now=1005.5)
+    assert later.notices == []
+    assert [pid for pid, _ in later.removals] == [ids["Ann"]]
+    assert await _held(items_db, ids["Ann"]) is None
+
+
+async def test_a_star_window_is_per_runner_and_expires(items_db):
+    race_id, ids = await _field(
+        items_db,
+        ("Ann", PLAYING, 4, "star"),
+        ("Bea", PLAYING, 3, "hammer"),
+        ("Cy", PLAYING, 2, None),
+    )
+    star_until: dict[uuid.UUID, float] = {}
+    await _use(items_db, race_id, ids["Ann"], star_until=star_until, now=200.0)
+    assert star_until == {ids["Ann"]: 205.0}
+    # Exactly at the deadline the window is over; Bea and Cy never had one.
+    hit = await _use(items_db, race_id, ids["Bea"], star_until=star_until, now=205.0)
+    assert hit.notices == []
+    assert sorted(pid for pid, _ in hit.effects) == sorted([ids["Ann"], ids["Cy"]])

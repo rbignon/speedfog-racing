@@ -119,7 +119,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.14**. It is defined in
+release numbers. Current: **1.15**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -131,6 +131,7 @@ Bump rules:
 
 Version history:
 
+- **1.15** - race items lot 3: `item_effect.effect.kind` gains `vanish {duration_ms}`, `unseen_foes {duration_ms}`, `slow_mo {duration_ms, speed_pct}`, `scale {duration_ms, scale_pct}` (Mini and Giant) and `camera {duration_ms, variant}` (`first_person`, `inverted` or `wide`), memory effects with no SpEffect row; the Star is a `speffect` (`speffect_id` 1450833, `duration_ms` 5000) sent to the sender's own mod; new server to mod `item_notice {banner}`, a banner with nothing applied (a Star holder's "blocked" banner). A race with items refuses a mod below 1.15 at auth.
 - **1.14** - race items lot 2 (graph.json 4.13): `zone_update.unused_exits` (int or null), the count of the zone's exits no edge takes, null on a seed that predates 4.13; `item_effect.effect.duration_ms` on the `speffect` kind (a timed effect: Mushroom, Blue Shell, Lightning, Flask Stopper; absent for an instant one such as the Rune Pouch) and on `equip_load` (the Hammer), so the mod can time the effect on its load-paused play clock and apply it again with its time left at a loading exit. A race with items refuses a mod below 1.14 at auth; a 4.12 seed stays drawable (`unused_exits` null, its Ink starts at once).
 - **1.13** - race items on one goods (graph.json 4.12): `race_item_catalog` becomes `{goods: {goods_key: {goods_id, use_flag, remove_flag, icon_id}}, items: {item_key: {name, icon, icon_id, goods}}}`. Every usable item is held as the one Race Item goods, whose use flag is the only one and resolves the item held; the Shield keeps a goods of its own, without a use flag. `held_item` on `auth_ok` (the item the runner holds, confirmed or not); `item_effect.banner` may be null (a self item's effect, sent to the sender's own mod, its banner on `item_result`); `item_remove` names a `goods` instead of an `item`; `item_inventory` reports `goods` instead of `items`. A race with items refuses a mod below 1.13 at auth; the 1.12 catalog's per-item goods are gone. A race without items sends `race_item_catalog` as `{}` (no `goods` or `items` key), which an older mod reads as no catalog, so it keeps authenticating on those races.
 - **1.12** - race items: `race_items` boolean on the `race` object (RaceInfo), default false; `race_item_catalog` on the seed (`{item_key: {goods_id, use_flag, remove_flag, name, icon}}`, empty unless the race has items on); server to mod `item_grant`, `item_effect`, `item_result` and `item_remove`; mod to server `item_received` and `item_inventory`. Use flags travel through the existing `event_flag`. A race with items refuses a mod below 1.12 at auth (see below); other races keep accepting older mods, which ignore the new fields.
@@ -165,8 +166,10 @@ download the pack again (it carries the current mod), and each compared by
 - A ranked solo session (Speedrun or Set Seed mode) requires protocol 1.9 or
   newer (`RANKED_SOLO_MIN_PROTOCOL` in `websocket/schemas.py`), the version
   from which the mod reports debug flags in a solo session.
-- A race with items (`race_items` on) requires protocol 1.14 or newer
-  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod times the timed
+- A race with items (`race_items` on) requires protocol 1.15 or newer
+  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod applies the memory
+  effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant, Camera) and shows an
+  `item_notice`; from 1.14 it times the timed
   effects with the duration they carry (`duration_ms`) and applies them again
   after a load, and holds an Ink until the zone has unused exits
   (`zone_update.unused_exits`). Switching the option in SETUP closes the
@@ -612,12 +615,13 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 }
 ```
 
-| Message       | Fields                                   | Description                                                                                                                                                                                                                                                                                     |
-| ------------- | ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `item_grant`  | `grant_id`, `item`, `banner`             | Spawn the item's goods (with the item's icon) and show the banner. Re-sent at every auth until the mod answers `item_received`, and after each `item_inventory` while unconfirmed, the one whose goods confirms it included (the copy may stand for another item: the mod then skips the spawn) |
-| `item_effect` | `item`, `effect`, `banner?`, `reminder?` | An item hits this runner, or applies the runner's own self item (null `banner`). `effect.kind` is `speffect {speffect_id, duration_ms?}`, `damage {base_pct, floor_pct, tail_pct}`, `ink {duration_ms}` or `equip_load {speffect_id, duration_ms, load_pct}`, dumped without null fields        |
-| `item_result` | `item`, `banner`, `reminder?`            | Outcome of the runner's own item use (hit, blocked, missed, or the self item's line)                                                                                                                                                                                                            |
-| `item_remove` | `goods`, `banner?`                       | Raise the goods' `remove_flag` so the game drops it; with a banner to a shield holder whose shield blocked                                                                                                                                                                                      |
+| Message       | Fields                                   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `item_grant`  | `grant_id`, `item`, `banner`             | Spawn the item's goods (with the item's icon) and show the banner. Re-sent at every auth until the mod answers `item_received`, and after each `item_inventory` while unconfirmed, the one whose goods confirms it included (the copy may stand for another item: the mod then skips the spawn)                                                                                                                                                      |
+| `item_effect` | `item`, `effect`, `banner?`, `reminder?` | An item hits this runner, or applies the runner's own self item (null `banner`). `effect.kind` is `speffect {speffect_id, duration_ms?}`, `damage {base_pct, floor_pct, tail_pct}`, `ink {duration_ms}`, `equip_load {speffect_id, duration_ms, load_pct}`, `vanish {duration_ms}`, `unseen_foes {duration_ms}`, `slow_mo {duration_ms, speed_pct}`, `scale {duration_ms, scale_pct}` or `camera {duration_ms, variant}`, dumped without null fields |
+| `item_notice` | `banner`                                 | A banner with nothing applied: a Star holder's "blocked" banner, shown like a Shield's block banner                                                                                                                                                                                                                                                                                                                                                  |
+| `item_result` | `item`, `banner`, `reminder?`            | Outcome of the runner's own item use (hit, blocked, missed, or the self item's line)                                                                                                                                                                                                                                                                                                                                                                 |
+| `item_remove` | `goods`, `banner?`                       | Raise the goods' `remove_flag` so the game drops it; with a banner to a shield holder whose shield blocked                                                                                                                                                                                                                                                                                                                                           |
 
 #### `death_counts`
 
@@ -1224,7 +1228,7 @@ Included in `auth_ok`, `race_state`, and `race_info_update` messages. The full p
 | `igt_cutoff_ms`     | `int?`    | In-game time (ms) a run must finish by; past it the server eliminates a playing runner. Null when none          |
 | `deathless`         | `bool`    | Deathless race: first in-race death abandons the participant (server-side); default false                       |
 | `ranked`            | `bool`    | Speedrun or Set Seed run (race or solo session); a solo session reads debug flags only when true. Default false |
-| `race_items`        | `bool`    | The race has items on (needs protocol 1.14 at auth); default false; the mod reads it to gate items              |
+| `race_items`        | `bool`    | The race has items on (needs protocol 1.15 at auth); default false; the mod reads it to gate items              |
 | `seed_id`           | `string?` | Current seed UUID; lets the mod detect a stale loaded seed pack (e.g. after a reroll)                           |
 
 **Note:** The mod reads `id`, `name`, `status`, `igt_cutoff_ms` and `race_ends_at` (countdown warning when less than 30 minutes remain: in-game time down to the cutoff while the local runner plays, otherwise wall-clock time down to `race_ends_at`), `deathless` (overlay tag and local death banner), `ranked` (a solo session reads debug flags only when true), `race_items` (use flag reads, inventory reports, the SpEffect and params prewarm; see `RACE_ITEMS.md`), and `seed_id` (compared against the configured pack to raise the "SEED OUTDATED" banner). `started_at` and `seeds_released_at` are present on the wire but unused by the mod; the race fields it reads outside this table (`quit_out_penalty_ms`, `attempt_id`) are described in the [`auth_ok`](#auth_ok) note.

@@ -354,6 +354,12 @@ class Console:
                     # Without a banner: the effect of the bot's own self item.
                     how = "applies its" if msg.get("banner") is None else "hit by"
                     log(f"[{bot.name}] {how} {msg['item']}: {msg['effect']}")
+                elif kind == "item_notice":
+                    banner = msg.get("banner", {})
+                    log(
+                        f"[{bot.name}] notice: {banner.get('title')} "
+                        f"{banner.get('line')} {banner.get('detail')}"
+                    )
                 elif kind == "item_result":
                     banner = msg.get("banner", {})
                     line, detail = banner.get("line"), banner.get("detail")

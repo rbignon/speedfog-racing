@@ -94,6 +94,9 @@ class RaceRoom:
 
     # Serializes the item flow (grants, uses, inventory sync) of this race.
     items_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
+    # Runner -> time.monotonic() until which a Star blocks the items aimed at
+    # them (in memory only: the window is five seconds). Used under items_lock.
+    star_until: dict[uuid.UUID, float] = field(default_factory=dict, repr=False, compare=False)
 
     async def ghost_participants(
         self, load: Callable[[], Awaitable[Sequence[Participant] | None]]

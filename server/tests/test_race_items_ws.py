@@ -107,9 +107,9 @@ EMPTY_CATALOG: dict[str, object] = {}
 
 # 1.12 spoke the per-item goods (it would spawn nothing of the catalog); 1.13
 # reads the catalog but neither times the effects across loads nor holds an Ink
-# on `unused_exits`.
-@pytest.mark.parametrize("protocol_version", ["1.12", "1.13"])
-def test_a_mod_before_1_14_is_refused_on_an_items_race(
+# on `unused_exits`; 1.14 knows none of the memory effects nor `item_notice`.
+@pytest.mark.parametrize("protocol_version", ["1.12", "1.13", "1.14"])
+def test_a_mod_before_1_15_is_refused_on_an_items_race(
     integration_client, race_with_participants, integration_db, protocol_version
 ):
     race_id = race_with_participants["race_id"]
@@ -121,12 +121,12 @@ def test_a_mod_before_1_14_is_refused_on_an_items_race(
     assert response["message"] == RACE_ITEMS_OLD_MOD_MESSAGE
 
 
-def test_items_race_accepts_1_14(integration_client, race_with_participants, integration_db):
+def test_items_race_accepts_1_15(integration_client, race_with_participants, integration_db):
     race_id = race_with_participants["race_id"]
     _patch_items_graph(integration_db, race_id, catalog=_catalog(("hammer", HAMMER)))
     token = race_with_participants["players"][0]["mod_token"]
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-        response = ModTestClient(ws, token).auth(protocol_version="1.14")
+        response = ModTestClient(ws, token).auth(protocol_version="1.15")
     assert response["type"] == "auth_ok"
     assert response["seed"]["race_item_catalog"] == {
         "goods": {
@@ -175,7 +175,7 @@ def test_auth_ok_carries_the_held_item_and_the_catalog(
         held = {"grant_id": 1, "item": "hammer", "confirmed": confirmed}
         _update_player(integration_db, race_with_participants, 0, held_item=held)
         with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-            response = ModTestClient(ws, token).auth(protocol_version="1.14")
+            response = ModTestClient(ws, token).auth(protocol_version="1.15")
         assert response["held_item"] == "hammer"
         catalog = response["seed"]["race_item_catalog"]
         assert catalog["goods"]["race_item"]["icon_id"] == 60396
@@ -184,7 +184,7 @@ def test_auth_ok_carries_the_held_item_and_the_catalog(
     # Items off: the mod holds nothing, whatever the row says.
     _patch_items_graph(integration_db, race_id, items=False)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-        response = ModTestClient(ws, token).auth(protocol_version="1.14")
+        response = ModTestClient(ws, token).auth(protocol_version="1.15")
     assert response["held_item"] is None
 
 
@@ -218,7 +218,7 @@ def test_switching_race_items_makes_the_mods_authenticate_again(
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["seed"]["race_item_catalog"] == EMPTY_CATALOG
+        assert mod0.auth(protocol_version="1.15")["seed"]["race_item_catalog"] == EMPTY_CATALOG
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
         assert mod1.auth(protocol_version="1.12")["type"] == "auth_ok"
         mod0.receive_until_type("leaderboard_update")  # mod1's connect broadcast
@@ -234,7 +234,7 @@ def test_switching_race_items_makes_the_mods_authenticate_again(
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        response = mod0.auth(protocol_version="1.14")
+        response = mod0.auth(protocol_version="1.15")
         assert response["race"]["race_items"] is True
         assert response["seed"]["race_item_catalog"]["items"]["hammer"]["goods"] == "race_item"
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1:
@@ -245,11 +245,11 @@ def test_switching_race_items_makes_the_mods_authenticate_again(
     # Switching back off closes the mods too; they get an empty catalog again.
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         switch(False)
         assert _expect_close(mod0) == 1000
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
-        response = ModTestClient(ws0, players[0]["mod_token"]).auth(protocol_version="1.14")
+        response = ModTestClient(ws0, players[0]["mod_token"]).auth(protocol_version="1.15")
         assert response["seed"]["race_item_catalog"] == EMPTY_CATALOG
 
 
@@ -342,7 +342,7 @@ def _start_items_race(integration_client, race_with_participants) -> str:
     players = race_with_participants["players"]
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod0.send_ready()
         mod0.receive()  # leaderboard_update
     response = integration_client.post(
@@ -438,7 +438,7 @@ def test_new_boss_kill_grants_an_item(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         grants = _of_type(_kill(mod0, BOSS_FLAG, 55_000), "item_grant")
     assert len(grants) == 1
@@ -467,7 +467,7 @@ def test_item_received_confirms_the_grant(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         _kill(mod0, BOSS_FLAG, 55_000)
         # A stale id confirms nothing; the real one does.
@@ -490,7 +490,7 @@ def test_kill_while_holding_grants_nothing(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         assert _of_type(_kill(mod0, BOSS_FLAG, 55_000), "item_grant")
         assert not _of_type(_kill(mod0, SECOND_BOSS_FLAG, 60_000), "item_grant")
@@ -509,13 +509,13 @@ def test_unconfirmed_grant_is_resent_on_reconnect(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         _kill(mod0, BOSS_FLAG, 55_000)
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14", drain=False)["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15", drain=False)["type"] == "auth_ok"
         resent = mod0.receive_until_type("item_grant")
         assert resent["grant_id"] == 1
         assert resent["item"] == "hammer"
@@ -525,7 +525,7 @@ def test_unconfirmed_grant_is_resent_on_reconnect(
 
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14", drain=False)["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15", drain=False)["type"] == "auth_ok"
         seen = []
         while True:
             msg = mod0.receive()
@@ -543,7 +543,7 @@ def test_unconfirmed_grant_is_resent_after_an_inventory_without_it(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         _kill(mod0, BOSS_FLAG, 55_000)
 
@@ -590,7 +590,7 @@ def test_rune_pouch_variant_follows_progress(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         _walk_three_arenas(mod0)
         grants = _of_type(_kill(mod0, BOSS_FLAG, 55_000), "item_grant")
     assert [g["item"] for g in grants] == ["rune_pouch_3"]
@@ -673,9 +673,9 @@ def test_red_shell_hits_the_runner_ahead(
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
-        assert mod1.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod1.auth(protocol_version="1.15")["type"] == "auth_ok"
         _put_two_runners_in_play(mod0, mod1)
         _update_player(integration_db, race_with_participants, 1, held_item=_held("red_shell"))
         history = _player_row(integration_db, race_with_participants, 1).zone_history
@@ -723,9 +723,9 @@ def test_blue_shell_used_while_leading_hits_its_sender(
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
-        assert mod1.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod1.auth(protocol_version="1.15")["type"] == "auth_ok"
         # Player 0 leads (one layer ahead) and holds the Blue Shell.
         _put_two_runners_in_play(mod0, mod1)
         _update_player(integration_db, race_with_participants, 0, held_item=_held("blue_shell"))
@@ -804,9 +804,9 @@ def test_items_rank_a_runner_ahead_in_igt_above_a_deeper_one(
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
-        assert mod1.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod1.auth(protocol_version="1.15")["type"] == "auth_ok"
         _put_two_runners_in_play(mod0, mod1)
         _leads_in_igt_on_a_shallower_layer(
             integration_db, race_with_participants, held_item=_held("red_shell")
@@ -894,7 +894,7 @@ def test_use_flag_is_acked_once_the_use_is_resolved(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod0.send_status_update(igt_ms=10_000, death_count=0)
         _barrier(mod0, 100)
         _update_player(integration_db, race_with_participants, 0, held_item=_held("mushroom"))
@@ -935,9 +935,9 @@ def test_shield_blocks_and_is_removed(integration_client, race_with_participants
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
-        assert mod1.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod1.auth(protocol_version="1.15")["type"] == "auth_ok"
         _put_two_runners_in_play(mod0, mod1)
         _update_player(integration_db, race_with_participants, 0, held_item=_held("shield"))
         _update_player(integration_db, race_with_participants, 1, held_item=_held("red_shell"))
@@ -978,9 +978,9 @@ def test_use_of_an_item_not_held_is_ignored(
         integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws1,
     ):
         mod0 = ModTestClient(ws0, players[0]["mod_token"])
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod1 = ModTestClient(ws1, players[1]["mod_token"])
-        assert mod1.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod1.auth(protocol_version="1.15")["type"] == "auth_ok"
         _put_two_runners_in_play(mod0, mod1)
         _update_player(integration_db, race_with_participants, 1, held_item=_held("red_shell"))
         mod1.send_event_flag(USE_FLAG, igt_ms=30_000, message_id=300)
@@ -1030,7 +1030,7 @@ def test_item_inventory_message_round_trip(
     token = _start_items_race(integration_client, race_with_participants)
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
         mod0 = ModTestClient(ws0, token)
-        assert mod0.auth(protocol_version="1.14")["type"] == "auth_ok"
+        assert mod0.auth(protocol_version="1.15")["type"] == "auth_ok"
         mod0.send_status_update(igt_ms=10_000, death_count=0)
         _update_player(integration_db, race_with_participants, 0, held_item=_held("shield"))
         ws0.send_json({"type": "item_inventory", "goods": ["race_item", "shield"]})
