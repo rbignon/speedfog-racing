@@ -7,6 +7,7 @@
   import Leaderboard from "$lib/components/Leaderboard.svelte";
   import RaceStatus from "$lib/components/RaceStatus.svelte";
   import RunModeChip from "$lib/components/RunModeChip.svelte";
+  import UnrankedChip from "$lib/components/UnrankedChip.svelte";
 
   import SpectatorCount from "$lib/components/SpectatorCount.svelte";
   import ParticipantCard from "$lib/components/ParticipantCard.svelte";
@@ -1290,6 +1291,9 @@
               {/if}
             {/if}
             <RunModeChip mode={initialRace.mode} />
+            {#if initialRace.unranked_reason}
+              <UnrankedChip reason={initialRace.unranked_reason} />
+            {/if}
             {#if liveRaceEndsAt && raceStatus === "running"}
               <span class="race-ends-pill">
                 Ends in {formatCountdown(liveRaceEndsAt, now)}
@@ -1309,10 +1313,6 @@
           </div>
         </header>
       </div>
-
-      {#if initialRace.unranked_reason}
-        <p class="unranked-notice">{initialRace.unranked_reason}</p>
-      {/if}
 
       {#if editingRules || modeRuleLines.length > 0 || displayRuleLines.length > 0 || (isOrganizer && canEditRules)}
         <div class="race-rules-card">
@@ -2066,14 +2066,6 @@
     color: var(--color-danger);
   }
 
-  .unranked-notice {
-    margin: 0 0 1rem;
-    padding: 0.5rem 1rem;
-    border-left: 3px solid var(--color-text-secondary);
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-sm);
-  }
-
   .race-header-wrapper {
     container: race-header / inline-size;
   }
@@ -2148,6 +2140,24 @@
     .header-right :global(.dropdown) {
       left: 0;
       right: auto;
+    }
+
+    /* Left-aligned badges wrap anywhere, so a tooltip hung on the Unranked
+       chip could run past the right edge (a phone) or under the sidebar:
+       it hangs from the badge block instead, at its left edge and within
+       its width. */
+    .header-right {
+      position: relative;
+    }
+
+    .header-right :global(.unranked-status) {
+      position: static;
+    }
+
+    .header-right :global(.unranked-tip) {
+      left: 0;
+      right: auto;
+      max-width: min(22rem, 100%);
     }
   }
 
