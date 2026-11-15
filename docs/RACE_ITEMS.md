@@ -15,7 +15,7 @@ This document is the operational reference for the server side (rules, lifecycle
 - Any change of the option (on or off, with or without a redraw) closes every connected mod of the race with code 1000, as a race reset does: the catalog and the protocol gate below only apply at auth, so each mod reconnects and authenticates again, gets the catalog that matches, and an older mod meets the gate. Spectators stay connected.
 - A runner holds at most one item. A boss kill made while holding one grants nothing, then or later.
 - Only playing runners are ever targets; finished, abandoned and disqualified runners are skipped.
-- An items race needs a mod speaking protocol 1.13 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
+- An items race needs a mod speaking protocol 1.14 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
 - Items races stay out of the speedrun boards, the community stats and the generator calibration, since items distort clear times and deaths.
 - Items and deathless can be combined; nothing validates the choice.
 
@@ -39,19 +39,19 @@ Among the playing runners, in item order (index `i` of `n`):
 
 Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_race_item_catalog` in `server/speedfog_racing/services/race_items.py`): `goods` by goods key (`goods_id`, `use_flag`, `remove_flag`, `icon`, `icon_id`) and `items` by item key (`name`, `icon`, `icon_id`, `goods`, `effect_speffect`, `duration_ms`). Every usable item is held as the one Race Item goods (`race_item`, use flag `1050290101`); the Shield, never used, is held as its own goods (`shield`, no use flag). An item on a goods the catalog lacks is dropped. The rules (target, effect, banner wording) live in `ITEM_RULES` in the same module. Positions (just ahead, just behind, best-ranked) are in item order.
 
-| Item                            | Tiers (default) | Target                         | Effect                                   |
-| ------------------------------- | --------------- | ------------------------------ | ---------------------------------------- |
-| `shield`                        | middle          | passive                        | blocks the next item aimed at the holder |
-| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes (its effect row)            |
-| `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`     |
-| `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`  |
-| `mushroom`                      | front, middle   | self                           | infinite stamina (its effect row)        |
-| `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)            |
-| `ink`                           | middle          | every other playing runner     | exits hidden (overlay only)              |
-| `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                            |
-| `lightning`                     | back            | every other playing runner     | slowed                                   |
-| `flask_stopper`                 | back            | every other playing runner     | flasks blocked                           |
-| `toxic_blossom`                 | back            | every other playing runner     | poisoned                                 |
+| Item                            | Tiers (default) | Target                         | Effect                                                        |
+| ------------------------------- | --------------- | ------------------------------ | ------------------------------------------------------------- |
+| `shield`                        | middle          | passive                        | blocks the next item aimed at the holder                      |
+| `rune_pouch` (`_1`, `_2`, `_3`) | front           | self                           | grants runes (its effect row)                                 |
+| `banana`                        | front           | the playing runner just behind | damage, base `race_items_banana_pct`                          |
+| `red_shell`                     | middle, back    | the playing runner just ahead  | damage, base `race_items_red_shell_pct`                       |
+| `mushroom`                      | front, middle   | self                           | infinite stamina (its effect row)                             |
+| `hammer`                        | middle          | every other playing runner     | fat roll (load at 97% of max)                                 |
+| `ink`                           | middle          | every other playing runner     | exits hidden (overlay only), once in a zone with unused exits |
+| `blue_shell`                    | back            | the best-ranked playing runner | max HP halved                                                 |
+| `lightning`                     | back            | every other playing runner     | slowed                                                        |
+| `flask_stopper`                 | back            | every other playing runner     | flasks blocked                                                |
+| `toxic_blossom`                 | back            | every other playing runner     | poisoned                                                      |
 
 The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. When the pool is empty nothing is granted (a `race item draw: nothing to draw` warning, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
 
@@ -140,8 +140,8 @@ Grants and effects wait until the player is loaded on the race save (no wrong sa
 
 ### Effects
 
-- `speffect`: the SpEffect is applied to the player.
-- `equip_load` (the Hammer): the mod first sets the SpEffect row's max equip load rate so the player's current load sits at `load_pct`% of the max (97 by default, a fat roll), then applies it. The current load is the sum of the weights of the equipped weapons, armor and talismans (`ChrAsm.equipment_param_ids` at PlayerGameData + 0x398, read from EquipParamWeapon, EquipParamProtector and EquipParamAccessory through libeldenring's in-memory params, a weapon's row dropping its upgrade level); arrows and bolts are left out, their param weight is not a load weight (10 for plain Arrows); the max is PlayerGameData + 0x98C, the equipment screen's value. The rate is capped at 1, so a runner already that heavy is left alone, and a runner with nothing equipped (load 0) cannot be made heavier: both still see the banner and reminder. A running Hammer points at the same row, so the max read while it runs already includes the rate written last: when the max equals the last base times the last rate, the mod computes from that base (`core::equip_load::base_max`), so a second Hammer follows the current equipment instead of writing 1 and cancelling the first. An unreadable load, or params not indexed yet (`prewarm_params`), keeps the row's rate (the seed's 0.35, or the last one written). The log line `[ITEMS] Equip load rate set` gives `current` and `max`, to compare with the equipment screen.
+- `speffect`: the SpEffect is applied to the player. `duration_ms` is set for a timed effect (Mushroom, Blue Shell, Lightning, Flask Stopper) and absent for an instant one (Rune Pouch, Toxic Blossom).
+- `equip_load` (the Hammer): the mod first sets the SpEffect row's max equip load rate so the player's current load sits at `load_pct`% of the max (97 by default, a fat roll), then applies it (`duration_ms` carries its time). The current load is the sum of the weights of the equipped weapons, armor and talismans (`ChrAsm.equipment_param_ids` at PlayerGameData + 0x398, read from EquipParamWeapon, EquipParamProtector and EquipParamAccessory through libeldenring's in-memory params, a weapon's row dropping its upgrade level); arrows and bolts are left out, their param weight is not a load weight (10 for plain Arrows); the max is PlayerGameData + 0x98C, the equipment screen's value. The rate is capped at 1, so a runner already that heavy is left alone, and a runner with nothing equipped (load 0) cannot be made heavier: both still see the banner and reminder. A running Hammer points at the same row, so the max read while it runs already includes the rate written last: when the max equals the last base times the last rate, the mod computes from that base (`core::equip_load::base_max`), so a second Hammer follows the current equipment instead of writing 1 and cancelling the first. An unreadable load, or params not indexed yet (`prewarm_params`), keeps the row's rate (the seed's 0.35, or the last one written). The log line `[ITEMS] Equip load rate set` gives `current` and `max`, to compare with the equipment screen.
 - `damage`: computed when applied, with `h = 100 * hp / max_hp`: `h >= floor + base` deals `base`% of max HP; `h >= floor + tail` deals down to exactly `floor`%; otherwise `tail`%; at least 1 HP always remains. Max is the effective max HP (halved under a Blue Shell).
 - `ink`: overlay only, see below.
 - an unknown kind is ignored with a warning.

@@ -321,6 +321,7 @@ def test_hammer_payload_targets_a_share_of_the_max_load(monkeypatch):
     assert effect_payload("hammer", _entry(speffect=99)).model_dump() == {
         "kind": "equip_load",
         "speffect_id": 99,
+        "duration_ms": 15000,
         "load_pct": 97,
     }
     # A full 100 could round past the max and overload the target.
@@ -333,6 +334,7 @@ def test_other_effect_payloads():
     assert effect_payload("lightning", _entry(speffect=99)).model_dump() == {
         "kind": "speffect",
         "speffect_id": 99,
+        "duration_ms": 15000,
     }
     assert effect_payload("ink", _entry(duration_ms=20000)).model_dump() == {
         "kind": "ink",
@@ -341,11 +343,26 @@ def test_other_effect_payloads():
     assert effect_payload("shield", _entry()) is None
 
 
+def test_timed_effects_carry_their_duration():
+    mushroom = effect_payload("mushroom", _entry(speffect=5, duration_ms=30000))
+    assert mushroom and mushroom.model_dump() == {
+        "kind": "speffect",
+        "speffect_id": 5,
+        "duration_ms": 30000,
+    }
+    hammer = effect_payload("hammer", _entry(speffect=99, duration_ms=15000))
+    assert hammer and hammer.duration_ms == 15000
+    # An instant effect has no duration to send.
+    pouch = effect_payload("rune_pouch", _entry(speffect=7, duration_ms=None))
+    assert pouch and "duration_ms" not in pouch.model_dump()
+
+
 def test_self_items_send_their_effect_row():
     # The sender's own mod applies a self item's effect row (stamina, runes).
     assert effect_payload("mushroom", _entry(speffect=1450826)).model_dump() == {
         "kind": "speffect",
         "speffect_id": 1450826,
+        "duration_ms": 15000,
     }
-    pouch = effect_payload("rune_pouch_3", _entry(speffect=1450823))
+    pouch = effect_payload("rune_pouch_3", _entry(speffect=1450823, duration_ms=None))
     assert pouch and pouch.model_dump() == {"kind": "speffect", "speffect_id": 1450823}

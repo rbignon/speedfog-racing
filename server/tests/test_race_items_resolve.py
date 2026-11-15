@@ -253,7 +253,7 @@ async def test_mushroom_answers_its_own_mod_with_its_effect(items_db):
             ids["Alice"],
             ItemEffectMessage(
                 item="mushroom",
-                effect=ItemEffectPayload(kind="speffect", speffect_id=1450826),
+                effect=ItemEffectPayload(kind="speffect", speffect_id=1450826, duration_ms=30000),
                 banner=None,
                 reminder=None,
             ),

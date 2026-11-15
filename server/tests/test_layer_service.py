@@ -161,6 +161,20 @@ def test_compute_zone_update_basic():
     assert result["exits"][1]["to_name"] == UNDISCOVERED_EXIT_NAME
 
 
+def test_zone_update_carries_the_unused_exit_count():
+    def count(value):
+        node = {"display_name": "N", "exits": []}
+        if value is not ...:
+            node["unused_exits"] = value
+        graph = {"nodes": {"n": node}}
+        return compute_zone_update("n", graph, zone_history=None)["unused_exits"]
+
+    assert count(3) == 3
+    assert count(0) == 0
+    for bad in (..., -1, True, 2.0, "3", None):
+        assert count(bad) is None
+
+
 def test_compute_zone_update_discovered():
     """Some exits discovered via zone_history."""
     history = [

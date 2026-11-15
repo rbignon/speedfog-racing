@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.13"
+PROTOCOL_VERSION = "1.14"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
@@ -32,7 +32,7 @@ RANKED_SOLO_MIN_PROTOCOL = "1.9"
 # Oldest protocol a race with items accepts at auth: from 1.13 the mod reads
 # the {goods, items} catalog, holds every usable item as the one Race Item
 # goods and applies item effects, a self item's included.
-RACE_ITEMS_MIN_PROTOCOL = "1.13"
+RACE_ITEMS_MIN_PROTOCOL = "1.14"
 
 # auth_error for a mod too old for a race with items. The race's pack carries
 # the current mod, so downloading it again is the fix.
@@ -579,6 +579,8 @@ class ZoneUpdateMessage(BaseModel):
     layer: int | None = None
     is_first_visit: bool = False
     exits: list[ExitInfo]
+    # Exits of the node no edge takes; None on a seed that predates graph 4.13.
+    unused_exits: int | None = None
     message_id: int | None = None
 
 

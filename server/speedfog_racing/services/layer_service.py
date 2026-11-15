@@ -151,6 +151,10 @@ def compute_zone_update(
     else:
         layer = None
 
+    unused_exits = node_data.get("unused_exits")
+    if isinstance(unused_exits, bool) or not isinstance(unused_exits, int) or unused_exits < 0:
+        unused_exits = None
+
     return {
         "type": "zone_update",
         "node_id": node_id,
@@ -159,6 +163,7 @@ def compute_zone_update(
         "original_tier": original_tier,
         "layer": layer,
         "exits": exits,
+        "unused_exits": unused_exits,
         "is_first_visit": is_first_visit,
     }
 

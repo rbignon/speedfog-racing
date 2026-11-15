@@ -205,7 +205,7 @@ ITEM_RULES: dict[str, ItemRule] = {
         "others",
         "ink",
         "Hides everyone else's exits for {s} s",
-        "Exits hidden for {s} s",
+        "Exits hidden for {s} s in a zone with unused exits",
         "Ink",
     ),
     "blue_shell": ItemRule(
@@ -385,7 +385,11 @@ def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | N
     key = base_key(item_key)
     kind = ITEM_RULES[key].effect
     if kind == "speffect":
-        return ItemEffectPayload(kind="speffect", speffect_id=entry.effect_speffect)
+        return ItemEffectPayload(
+            kind="speffect",
+            speffect_id=entry.effect_speffect,
+            duration_ms=entry.duration_ms,
+        )
     if kind == "damage":
         return ItemEffectPayload(
             kind="damage",
@@ -399,6 +403,7 @@ def effect_payload(item_key: str, entry: CatalogEntry) -> "ItemEffectPayload | N
         return ItemEffectPayload(
             kind="equip_load",
             speffect_id=entry.effect_speffect,
+            duration_ms=entry.duration_ms,
             # 100 could round past the max and overload the target.
             load_pct=min(_percent(settings.race_items_hammer_load_pct), 99),
         )
