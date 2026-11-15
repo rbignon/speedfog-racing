@@ -205,7 +205,7 @@ ITEM_RULES: dict[str, ItemRule] = {
         "others",
         "ink",
         "Hides everyone else's exits for {s} s",
-        "Exits hidden for {s} s in a zone with unused exits",
+        "Exits hidden for {s} s in a hub zone",
         "Ink",
     ),
     "blue_shell": ItemRule(
