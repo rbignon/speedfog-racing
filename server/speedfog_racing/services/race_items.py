@@ -239,7 +239,7 @@ ITEM_RULES: dict[str, ItemRule] = {
         "ink",
         "Hides everyone else's exits for {s} s",
         "Exits hidden for {s} s in a hub zone",
-        "Ink",
+        "Exits hidden",
     ),
     "blue_shell": ItemRule(
         "leader",

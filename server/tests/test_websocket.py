@@ -13,6 +13,7 @@ from speedfog_racing.websocket.handler import (
     extract_boss_flags,
     extract_flag_layers,
     final_boss_node,
+    node_defeat_flag,
     parse_zone_query_input,
     record_boss_kill,
 )
@@ -2132,6 +2133,12 @@ def test_extract_boss_flags_ignores_missing_or_invalid_flags():
         }
     }
     assert extract_boss_flags(graph) == {}
+
+
+def test_node_defeat_flag_reverses_the_boss_flags():
+    flags = {10000800: "a", 1035500800: "b"}
+    assert node_defeat_flag(flags, "b") == 1035500800
+    assert node_defeat_flag(flags, "c") is None
 
 
 def test_record_boss_kill_lands_on_the_most_recent_visit():

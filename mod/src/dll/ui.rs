@@ -36,6 +36,8 @@ use super::websocket::ConnectionStatus;
 /// Atlas pixel sizes of the banner faces (about the 1080p banner sizes).
 const BANNER_TITLE_ATLAS_PX: f32 = 64.0;
 const BANNER_BODY_ATLAS_PX: f32 = 32.0;
+/// Stands for the seconds left on a pending ink's row (`render_item_reminders`).
+const INK_PENDING_LABEL: &str = "pending";
 
 impl ImguiRenderLoop for RaceTracker {
     fn initialize<'a>(
@@ -627,8 +629,8 @@ impl RaceTracker {
     /// Race item rows of the panel: the item held (icon and gold name, no
     /// countdown), then the timed rows: icon, text (danger for an effect
     /// received, gold for the sender's own) and the seconds left, right
-    /// aligned. Texts were built on receipt; only the seconds are written
-    /// here, into a reused buffer.
+    /// aligned (`pending` for an ink waiting for its zone). Texts were built
+    /// on receipt; only the seconds are written here, into a reused buffer.
     fn render_item_reminders(
         &self,
         ui: &hudhook::imgui::Ui,
@@ -672,14 +674,13 @@ impl RaceTracker {
                 FeedTone::Malus => c.danger,
                 FeedTone::Gain => c.gold,
             };
-            // An ink waiting for a zone has no time left: no seconds drawn.
-            let Some(left) = left else {
-                let text = truncate_to_width(ui, &reminder.text, max_width - used);
-                ui.text_colored(color, &text);
-                continue;
-            };
             bufs.reminder_secs.clear();
-            write_seconds_left(&mut bufs.reminder_secs, left);
+            match left {
+                Some(left) => write_seconds_left(&mut bufs.reminder_secs, left),
+                // An ink waiting for its zone has no time left yet: the row
+                // says so, unlike the held item's.
+                None => bufs.reminder_secs.push_str(INK_PENDING_LABEL),
+            }
             let secs_width = ui.calc_text_size(&bufs.reminder_secs)[0];
             let text = truncate_to_width(ui, &reminder.text, max_width - used - secs_width - 8.0);
             ui.text_colored(color, &text);

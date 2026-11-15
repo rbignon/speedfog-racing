@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.15";
+pub const PROTOCOL_VERSION: &str = "1.16";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -582,6 +582,10 @@ pub enum ServerMessage {
         /// graph.json 4.13.
         #[serde(default)]
         unused_exits: Option<u32>,
+        /// The zone's boss defeat flag (a boss arena, the final boss aside),
+        /// one of the seed's `boss_flags`; `None` elsewhere.
+        #[serde(default)]
+        defeat_flag: Option<u32>,
         #[serde(default)]
         message_id: Option<u64>,
     },
@@ -937,6 +941,7 @@ mod tests {
                 is_first_visit,
                 exits,
                 unused_exits,
+                defeat_flag,
                 message_id,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
@@ -951,8 +956,10 @@ mod tests {
                 assert!(!exits[0].discovered);
                 assert!(exits[1].discovered);
                 assert_eq!(message_id, None);
-                // A seed older than graph.json 4.13 sends no count.
+                // A seed older than graph.json 4.13 sends no count, and a
+                // server older than 1.16 no defeat flag.
                 assert_eq!(unused_exits, None);
+                assert_eq!(defeat_flag, None);
             }
             _ => panic!("Expected ZoneUpdate"),
         }
@@ -964,6 +971,17 @@ mod tests {
             r#"{"type":"zone_update","node_id":"n","display_name":"N","tier":1,"unused_exits":2}"#;
         match serde_json::from_str::<ServerMessage>(json).unwrap() {
             ServerMessage::ZoneUpdate { unused_exits, .. } => assert_eq!(unused_exits, Some(2)),
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_defeat_flag() {
+        let json = r#"{"type":"zone_update","node_id":"n","display_name":"N","tier":1,"defeat_flag":10000800}"#;
+        match serde_json::from_str::<ServerMessage>(json).unwrap() {
+            ServerMessage::ZoneUpdate { defeat_flag, .. } => {
+                assert_eq!(defeat_flag, Some(10_000_800))
+            }
             _ => panic!("Expected ZoneUpdate"),
         }
     }

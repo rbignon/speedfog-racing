@@ -57,6 +57,7 @@ from speedfog_racing.websocket.handler import (
     extract_boss_flags,
     extract_event_ids,
     extract_flag_layers,
+    node_defeat_flag,
 )
 from speedfog_racing.websocket.race.items import (
     confirm_grant,
@@ -1332,6 +1333,7 @@ async def broadcast_race_start(
         if graph_json:
             start_node = get_start_node(graph_json)
             if start_node:
+                defeat_flag = node_defeat_flag(extract_boss_flags(graph_json), start_node)
                 for conn in room.mods.values():
                     msg = compute_zone_update(
                         start_node,
@@ -1339,6 +1341,7 @@ async def broadcast_race_start(
                         None,
                         is_first_visit=True,
                         reveal_exits=reveal_exits,
+                        defeat_flag=defeat_flag,
                     )
                     if msg:
                         msg = translate_zone_update(msg, conn.locale)

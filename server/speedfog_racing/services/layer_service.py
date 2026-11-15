@@ -62,12 +62,15 @@ def compute_zone_update(
     *,
     is_first_visit: bool = False,
     reveal_exits: bool = False,
+    defeat_flag: int | None = None,
 ) -> dict[str, Any] | None:
     """Compute a zone_update message payload for a given node.
 
     An exit names its destination once the destination is in
     ``zone_history``, or always with ``reveal_exits`` (a run on a seed known
-    beforehand), which treats every exit as discovered.
+    beforehand), which treats every exit as discovered. ``defeat_flag`` is the
+    node's boss defeat flag as the mod reads it (``extract_boss_flags``), None
+    when the node is no boss arena the mod tracks.
 
     Returns a dict matching ZoneUpdateMessage shape, or None if node not found.
     """
@@ -164,6 +167,7 @@ def compute_zone_update(
         "layer": layer,
         "exits": exits,
         "unused_exits": unused_exits,
+        "defeat_flag": defeat_flag,
         "is_first_visit": is_first_visit,
     }
 

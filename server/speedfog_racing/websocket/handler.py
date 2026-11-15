@@ -270,6 +270,11 @@ def extract_boss_flags(graph_json: dict[str, Any]) -> dict[int, str]:
     return {flag: node_id for flag, node_id in flags.items() if flag not in shared}
 
 
+def node_defeat_flag(boss_flags: dict[int, str], node_id: str) -> int | None:
+    """The defeat flag ``boss_flags`` (``extract_boss_flags``) maps to ``node_id``."""
+    return next((flag for flag, node in boss_flags.items() if node == node_id), None)
+
+
 def final_boss_node(graph_json: dict[str, Any]) -> str | None:
     """The id of the graph's ``final_boss`` node, None when it has none or several."""
     nodes = graph_json.get("nodes", {})
@@ -743,6 +748,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
             zone_history,
             is_first_visit=is_first_visit,
             reveal_exits=self._reveal_exits,
+            defeat_flag=node_defeat_flag(self._boss_flags(graph_json), node_id),
         )
         if msg:
             if message_id is not None:

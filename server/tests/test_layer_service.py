@@ -175,6 +175,12 @@ def test_zone_update_carries_the_unused_exit_count():
         assert count(bad) is None
 
 
+def test_zone_update_takes_the_defeat_flag_from_the_caller_not_the_node():
+    # The caller decides (the mod tracks no final boss or shared flag).
+    graph = {"nodes": {"n": {"display_name": "N", "exits": [], "defeat_flag": 10000800}}}
+    assert compute_zone_update("n", graph, None)["defeat_flag"] is None
+
+
 def test_compute_zone_update_discovered():
     """Some exits discovered via zone_history."""
     history = [

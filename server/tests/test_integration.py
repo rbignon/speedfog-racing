@@ -4604,6 +4604,30 @@ def test_boss_kill_lands_on_the_most_recent_visit(
     assert igt_ms == 55_000
 
 
+def test_zone_update_names_the_boss_arena_defeat_flag(
+    integration_client, race_with_participants, integration_db
+):
+    """A boss arena's zone_update carries the defeat flag the mod watches
+    (a pending Ink starts at that boss's kill); another zone's and the final
+    boss's carry none."""
+    race_id = race_with_participants["race_id"]
+    _patch_boss_graph(integration_db, race_id, final_boss=True)
+    token = _start_race_and_connect(integration_client, race_with_participants)
+
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth()["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        for flag, igt, node, defeat_flag in (
+            (9000001, 20_000, "node_b", BOSS_FLAG),
+            (9000000, 30_000, "node_a", None),
+            (9000004, 40_000, "node_end", None),
+        ):
+            mod0.send_event_flag(flag, igt_ms=igt)
+            zu = mod0.receive_until_type("zone_update")
+            assert (zu["node_id"], zu["defeat_flag"]) == (node, defeat_flag)
+
+
 def test_boss_kill_at_igt_zero_is_acked_and_ignored(
     integration_client, race_with_participants, integration_db
 ):

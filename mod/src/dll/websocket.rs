@@ -696,6 +696,7 @@ fn message_loop(
                             is_first_visit,
                             exits,
                             unused_exits,
+                            defeat_flag,
                             message_id,
                         } => {
                             if incoming_tx
@@ -708,6 +709,7 @@ fn message_loop(
                                     is_first_visit,
                                     exits,
                                     unused_exits,
+                                    defeat_flag,
                                     message_id,
                                 })
                                 .is_err()
