@@ -218,9 +218,10 @@ pub fn apply_speffect(effect_id: u32) -> bool {
 /// Write `seconds` as the time left of the player's active SpEffect
 /// `effect_id` (its entry's removal timer). False when the player, its
 /// SpEffect list or an entry with that id is not found, or the write fails.
-/// Every read and the write go through `PointerChain` (ReadProcessMemory /
-/// WriteProcessMemory), so an entry freed under the walk fails instead of
-/// faulting.
+/// Every read after PlayerIns (which `read_player_ins` reads raw, as
+/// `apply_speffect` does) and the write go through `PointerChain`
+/// (ReadProcessMemory / WriteProcessMemory), so an entry freed under the
+/// walk fails instead of faulting.
 pub fn set_speffect_timer(effect_id: u32, seconds: f32) -> bool {
     profile_span!("sp_effect_apply.set_speffect_timer");
     let player_ins = read_player_ins(&Pointers::new());
@@ -252,11 +253,15 @@ pub fn set_speffect_timer(effect_id: u32, seconds: f32) -> bool {
         }
         entry = read_ptr(addr + SP_EFFECT_ENTRY_NEXT_OFFSET);
     }
-    warn!(
-        effect_id,
-        max = SP_EFFECT_LIST_MAX_ENTRIES,
-        "SpEffect list longer than the walk bound, timer not set"
-    );
+    // A list of exactly the bound ends here; only a further entry is one
+    // the walk never read.
+    if entry.is_some() {
+        warn!(
+            effect_id,
+            max = SP_EFFECT_LIST_MAX_ENTRIES,
+            "[ITEMS] SpEffect list longer than the walk bound, timer not set"
+        );
+    }
     false
 }
 

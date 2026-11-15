@@ -16,13 +16,15 @@ use std::time::Duration;
 const FULL_EPS_S: f32 = 0.25;
 
 /// A SpEffect row's timing, read from its param row: its own endurance
-/// (`effectEndurance`, seconds) and, when it cycles another row
-/// (`cycleOccurrenceSpEffectId`), that row's id and endurance. The cycled
-/// row is the tail: applied again while the row runs, it outlasts the row
-/// by its own endurance.
+/// (`effectEndurance`, seconds), its cycle interval (`motionInterval`,
+/// seconds) and, when it cycles another row (`cycleOccurrenceSpEffectId`),
+/// that row's id and endurance. The cycled row is the tail: applied again
+/// every interval while the row runs, it outlasts the row by its own
+/// endurance.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct SpEffectTiming {
     pub endurance_s: f32,
+    pub interval_s: f32,
     pub tail: Option<(u32, f32)>,
 }
 
@@ -36,22 +38,19 @@ pub struct TimedApply {
     pub full: bool,
 }
 
-/// Plan the application of `speffect_id` with `left_s` seconds left. When
-/// the time left fits in the tail's endurance, the tail row alone carries
-/// it; otherwise the row runs what the tail will not, capped at its own
-/// endurance. A tail without endurance counts as none; no timing (the row
-/// unreadable) is a plain application of the row.
-pub fn timed_apply(speffect_id: u32, timing: Option<SpEffectTiming>, left_s: f32) -> TimedApply {
-    let Some(timing) = timing else {
-        return TimedApply {
-            speffect_id,
-            timer_s: left_s,
-            full: true,
-        };
-    };
+/// Plan the application of `speffect_id`, whose row's timing is `timing`,
+/// with `left_s` seconds left. When the time left fits in the tail's
+/// endurance plus one cycle interval, the tail row alone carries it, for at
+/// most its own endurance (a row left with less than a cycle could run out
+/// before its first cycled application, losing the whole tail); otherwise
+/// the row runs what the tail will not, capped at its own endurance. A tail
+/// without endurance counts as none.
+pub fn timed_apply(speffect_id: u32, timing: SpEffectTiming, left_s: f32) -> TimedApply {
     let tail = timing.tail.filter(|&(_, endurance)| endurance > 0.0);
     let (speffect_id, timer_s, endurance) = match tail {
-        Some((tail_id, tail_s)) if left_s <= tail_s => (tail_id, left_s, tail_s),
+        Some((tail_id, tail_s)) if left_s <= tail_s + timing.interval_s => {
+            (tail_id, left_s.min(tail_s), tail_s)
+        }
         _ => {
             let row_left = left_s - tail.map_or(0.0, |(_, tail_s)| tail_s);
             let timer_s = if timing.endurance_s > 0.0 {
@@ -132,6 +131,7 @@ mod tests {
 
     const MUSHROOM: SpEffectTiming = SpEffectTiming {
         endurance_s: 15.0,
+        interval_s: 0.5,
         tail: Some((102360, 15.0)),
     };
 
@@ -139,7 +139,7 @@ mod tests {
     fn timed_apply_splits_the_time_left_over_the_cycled_tail() {
         // 30 s in all: the row's own 15 s, then the cycled row's 15 s.
         assert_eq!(
-            timed_apply(1450826, Some(MUSHROOM), 30.0),
+            timed_apply(1450826, MUSHROOM, 30.0),
             TimedApply {
                 speffect_id: 1450826,
                 timer_s: 15.0,
@@ -147,7 +147,7 @@ mod tests {
             }
         );
         assert_eq!(
-            timed_apply(1450826, Some(MUSHROOM), 25.0),
+            timed_apply(1450826, MUSHROOM, 25.0),
             TimedApply {
                 speffect_id: 1450826,
                 timer_s: 10.0,
@@ -156,13 +156,41 @@ mod tests {
         );
         // Within the tail's own time: the tail row alone.
         assert_eq!(
-            timed_apply(1450826, Some(MUSHROOM), 10.0),
+            timed_apply(1450826, MUSHROOM, 10.0),
             TimedApply {
                 speffect_id: 102360,
                 timer_s: 10.0,
                 full: false
             }
         );
+        // More than both: the row capped at its own endurance.
+        assert_eq!(
+            timed_apply(1450826, MUSHROOM, 40.0),
+            TimedApply {
+                speffect_id: 1450826,
+                timer_s: 15.0,
+                full: true
+            }
+        );
+    }
+
+    #[test]
+    fn timed_apply_never_leaves_the_row_less_than_a_cycle() {
+        // 0.3 s of row could run out before its first cycled application,
+        // losing the whole tail: the tail row alone, at its full 15 s.
+        assert_eq!(
+            timed_apply(1450826, MUSHROOM, 15.3),
+            TimedApply {
+                speffect_id: 102360,
+                timer_s: 15.0,
+                full: true
+            }
+        );
+        // More than a cycle of row left: the row, then its tail.
+        let plan = timed_apply(1450826, MUSHROOM, 15.6);
+        assert_eq!(plan.speffect_id, 1450826);
+        assert!((plan.timer_s - 0.6).abs() < 1e-4, "{plan:?}");
+        assert!(!plan.full);
     }
 
     #[test]
@@ -171,40 +199,42 @@ mod tests {
         // still a fresh application, nothing to write.
         let lightning = SpEffectTiming {
             endurance_s: 15.0,
+            interval_s: 0.06,
             tail: Some((4101, 0.1)),
         };
-        let plan = timed_apply(1450830, Some(lightning), 15.0);
+        let plan = timed_apply(1450830, lightning, 15.0);
         assert_eq!(plan.speffect_id, 1450830);
         assert!(plan.full);
     }
 
     #[test]
-    fn timed_apply_without_a_tail_or_a_timing() {
+    fn timed_apply_without_a_tail() {
         let plain_row = SpEffectTiming {
             endurance_s: 15.0,
+            interval_s: 0.0,
             tail: None,
         };
         assert_eq!(
-            timed_apply(7, Some(plain_row), 7.0),
+            timed_apply(7, plain_row, 7.0),
             TimedApply {
                 speffect_id: 7,
                 timer_s: 7.0,
                 full: false
             }
         );
-        // A tail without endurance counts as none.
-        let zero_tail = SpEffectTiming {
+        // A tail without endurance counts as none: its -1 s takes nothing
+        // off the row's time.
+        let no_endurance_tail = SpEffectTiming {
             endurance_s: 15.0,
-            tail: Some((8, 0.0)),
+            interval_s: 0.0,
+            tail: Some((8, -1.0)),
         };
-        assert_eq!(timed_apply(7, Some(zero_tail), 7.0).speffect_id, 7);
-        // No timing read: a plain application of the row.
         assert_eq!(
-            timed_apply(7, None, 7.0),
+            timed_apply(7, no_endurance_tail, 7.0),
             TimedApply {
                 speffect_id: 7,
                 timer_s: 7.0,
-                full: true
+                full: false
             }
         );
     }

@@ -206,9 +206,10 @@ pub fn set_equip_load_rate(speffect_id: u32, rate: f32) -> bool {
 }
 
 /// The timing of SpEffect row `speffect_id` (`core::timed_effects`): its
-/// `effectEndurance` and, when its `cycleOccurrenceSpEffectId` names a row,
-/// that row's id and endurance. `None` when the row is missing or the params
-/// are not indexed yet; a cycled id <= 0 or a missing cycled row is no tail.
+/// `effectEndurance`, its `motionInterval` and, when its
+/// `cycleOccurrenceSpEffectId` names a row, that row's id and endurance.
+/// `None` when the row is missing or the params are not indexed yet; a
+/// cycled id <= 0 or a missing cycled row is no tail.
 pub fn speffect_timing(speffect_id: u32) -> Option<SpEffectTiming> {
     profile_span!("race_items.speffect_timing");
     let params = Lazy::get(&PARAMS)?.read();
@@ -221,6 +222,7 @@ pub fn speffect_timing(speffect_id: u32) -> Option<SpEffectTiming> {
         });
     Some(SpEffectTiming {
         endurance_s: row.effect_endurance,
+        interval_s: row.motion_interval,
         tail,
     })
 }

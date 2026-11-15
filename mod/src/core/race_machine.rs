@@ -1634,6 +1634,18 @@ impl RaceMachine {
             MachineMessage::ZoneQueryAck { message_id } => {
                 if self.in_flight_zone_queries.remove(&message_id).is_some() {
                     info!(message_id, "[WS] Zone query acknowledged (no zone_update)");
+                    // No zone_update comes for this query (unresolved, as
+                    // after some death reloads): an ink waiting for the next
+                    // reveal goes by the current zone, unless a reveal is
+                    // pending (it decides).
+                    let zone = self.race_state.current_zone.as_ref();
+                    if self.pending_zone_update.is_none()
+                        && zone.is_none_or(|z| z.unused_exits != Some(0))
+                        && self.item_feed.start_pending_ink(self.play_clock.at(now))
+                    {
+                        let unused_exits = zone.and_then(|z| z.unused_exits);
+                        info!(?unused_exits, "[ITEMS] Ink started (zone query unresolved)");
+                    }
                 } else {
                     warn!(message_id, "[WS] Ack for unknown zone query");
                 }
@@ -2052,10 +2064,14 @@ impl RaceMachine {
         }
         self.frame_snapshot = input.snapshot;
         // The play clock runs while the player is in the world, the signal
-        // `loading_exit` keys on: loading screens and the main menu do not
-        // eat the race item timers.
-        self.play_clock
-            .set_running(self.frame_snapshot.position_readable, now);
+        // `loading_exit` keys on, on the race save: loading screens, the
+        // main menu and a wrong save (where a malus would run out at no
+        // in-game cost) do not eat the race item timers. `wrong_save` is
+        // set further down: a frame late at worst.
+        self.play_clock.set_running(
+            self.frame_snapshot.position_readable && !self.wrong_save,
+            now,
+        );
         self.item_feed.advance(now, self.play_clock.at(now));
 
         // Blackscreen IGT freeze (ported from SoulSplitter's UpdateTimer):
@@ -2220,12 +2236,12 @@ impl RaceMachine {
             };
             if position_readable && (loading_done || timed_out) {
                 let zone = self.pending_zone_update.take().unwrap();
-                if loading_done {
-                    info!(name = %zone.display_name, "[RACE] Zone revealed");
-                } else {
-                    warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout, reveal signal stuck)");
-                }
                 let unused_exits = zone.unused_exits;
+                if loading_done {
+                    info!(name = %zone.display_name, ?unused_exits, "[RACE] Zone revealed");
+                } else {
+                    warn!(name = %zone.display_name, ?unused_exits, "[RACE] Zone revealed (timeout, reveal signal stuck)");
+                }
                 self.race_state.current_zone = Some(zone);
                 if unused_exits != Some(0)
                     && self.item_feed.start_pending_ink(self.play_clock.at(now))
@@ -2787,8 +2803,9 @@ impl RaceMachine {
     /// params), the grant spawns, each preceded by its item's icon write
     /// (the failed ones again only when `retry_grants`: a game load or a
     /// reconnection), the timed effects with time left applied again with
-    /// it (`reapply_effects`: a game load, which dropped them), then the
-    /// pending effects, whose banner, reminder and duration start now. A
+    /// it (`loading_exit`: a game load, which dropped them), then the
+    /// pending effects, whose banner, reminder and duration start now (an
+    /// ink applied on a loading exit waits for the next zone reveal). A
     /// grant's banner waits for its spawn's outcome (`grant_spawn_result`).
     /// An outdated seed pack holds it all: its regulation may lack the race
     /// goods and their effects. A run that is over drops it all.
@@ -2796,7 +2813,7 @@ impl RaceMachine {
         &mut self,
         report_inventory: bool,
         retry_grants: bool,
-        reapply_effects: bool,
+        loading_exit: bool,
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
@@ -2846,7 +2863,7 @@ impl RaceMachine {
             self.spawning_grants.push(grant);
         }
         let play = self.play_clock.at(now);
-        if reapply_effects {
+        if loading_exit {
             // An equip load effect comes back as its SpEffect alone: the
             // rate written at its application stays in its row.
             self.timed_effects.prune(play);
@@ -2885,16 +2902,27 @@ impl RaceMachine {
                 ItemAction::Ink(duration) => {
                     // The reminder is the ink's own row, not a timed one; the
                     // ink waits while the zone has no unused exit to hide.
+                    // The newest zone decides: the one a pending reveal
+                    // brings, else the current one (no zone at all starts
+                    // it). On a loading exit the destination's zone_update
+                    // has not come yet (the fog flags deferred to this exit
+                    // go out on this frame): the next reveal decides.
                     let row = reminder.take().map(|r| FeedRow {
                         icon: effect.icon.clone(),
                         text: r.text,
                         tone: FeedTone::Malus,
                     });
-                    let zone = self.race_state.current_zone.as_ref();
-                    let start = zone.is_none_or(|z| z.unused_exits != Some(0));
+                    let zone = self
+                        .pending_zone_update
+                        .as_ref()
+                        .or(self.race_state.current_zone.as_ref());
+                    let start = !loading_exit && zone.is_none_or(|z| z.unused_exits != Some(0));
                     self.item_feed.hit_ink(row, duration, start, play);
                     if self.item_feed.ink_pending() {
-                        info!("[ITEMS] Ink waits for a zone with unused exits");
+                        info!(
+                            loading_exit,
+                            "[ITEMS] Ink waits for a zone with unused exits"
+                        );
                     }
                 }
             }
@@ -7547,9 +7575,8 @@ mod tests {
         assert!(!m.ink_active(t1 + secs(15)));
     }
 
-    /// The server's zone_update with `unused_exits`, revealed by a loaded
-    /// frame at `at`.
-    fn reveal_zone(m: &mut RaceMachine, unused_exits: Option<u32>, igt: u32, at: Instant) {
+    /// The server's zone_update with `unused_exits`.
+    fn zone_update_with_exits(unused_exits: Option<u32>) -> MachineMessage {
         let mut msg = zone_update("Zone", None);
         if let MachineMessage::ZoneUpdate {
             unused_exits: count,
@@ -7558,7 +7585,13 @@ mod tests {
         {
             *count = unused_exits;
         }
-        m.handle_message(msg, at);
+        msg
+    }
+
+    /// The server's zone_update with `unused_exits`, revealed by a loaded
+    /// frame at `at`.
+    fn reveal_zone(m: &mut RaceMachine, unused_exits: Option<u32>, igt: u32, at: Instant) {
+        m.handle_message(zone_update_with_exits(unused_exits), at);
         m.tick(tick_in(snap(Some(igt), true), true, None), at + ms(10));
         assert_eq!(
             m.race_state.current_zone.as_ref().unwrap().unused_exits,
@@ -7697,6 +7730,106 @@ mod tests {
         // 6 s played of 30.
         assert!(m.ink_active(t2 + secs(23)));
         assert!(!m.ink_active(t2 + secs(25)));
+    }
+
+    /// From a zone with unused exits, an Ink received during a load and
+    /// applied on its loading exit frame (whose `position`, when given,
+    /// sends a zone query): it waits, the zone it came from no longer
+    /// decides. The exit's effects and time.
+    fn ink_during_a_load(
+        m: &mut RaceMachine,
+        now: Instant,
+        position: bool,
+    ) -> (Vec<Effect>, Instant) {
+        reveal_zone(m, Some(2), 61_000, now + ms(100));
+        let start = now + secs(1);
+        m.tick(tick_in(snap(Some(62_000), false), true, None), start);
+        ink_hit(m, start + secs(1));
+        let mut input = tick_in(snap(Some(62_000), true), true, items_scan(m, &[]));
+        if position {
+            input.position = Some(PlayerPosition {
+                map_id: 0x0A000000,
+                map_id_str: "m10_00_00_00".to_string(),
+                x: 1.0,
+                y: 2.0,
+                z: 3.0,
+                play_region_id: None,
+            });
+        }
+        let exit = start + secs(2);
+        let fx = m.tick(input, exit);
+        assert!(!m.ink_active(exit));
+        assert_eq!(ink_rows(m, exit), [("Ink".to_string(), None)]);
+        (fx, exit)
+    }
+
+    #[test]
+    fn an_ink_applied_at_a_loading_exit_waits_for_the_next_reveal() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let (_, exit) = ink_during_a_load(&mut m, now, false);
+        // The fog gate led into a two-gate arena: it still waits.
+        reveal_zone(&mut m, Some(0), 62_100, exit + ms(100));
+        let t1 = exit + ms(110);
+        assert!(!m.ink_active(t1));
+        assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), None)]);
+        // On into a zone with an unused exit: 30 s from its reveal.
+        reveal_zone(&mut m, Some(1), 70_000, exit + secs(8));
+        let t2 = exit + secs(8) + ms(10);
+        assert_eq!(ink_rows(&m, t2), [("Ink".to_string(), Some(secs(30)))]);
+        assert!(m.ink_active(t2 + ms(29_900)));
+        assert!(!m.ink_active(t2 + secs(30)));
+    }
+
+    #[test]
+    fn an_ink_applied_at_a_reload_starts_when_the_zone_comes_back() {
+        // A death or a quit-out reload: the server sends the same zone again.
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let (_, exit) = ink_during_a_load(&mut m, now, false);
+        reveal_zone(&mut m, Some(2), 62_100, exit + ms(100));
+        let t1 = exit + ms(110);
+        assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), Some(secs(30)))]);
+    }
+
+    #[test]
+    fn an_ink_applied_at_a_loading_exit_starts_on_an_unresolved_zone_query() {
+        // No zone_update comes for an unresolved zone query: its ack lets
+        // the current zone decide.
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let (fx, exit) = ink_during_a_load(&mut m, now, true);
+        let message_id = fx
+            .iter()
+            .find_map(|e| match e {
+                Effect::SendZoneQuery { message_id, .. } => Some(*message_id),
+                _ => None,
+            })
+            .expect("a zone query at the loading exit");
+        let t1 = exit + ms(100);
+        m.handle_message(MachineMessage::ZoneQueryAck { message_id }, t1);
+        assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), Some(secs(30)))]);
+    }
+
+    #[test]
+    fn an_ink_hit_with_a_reveal_pending_follows_the_zone_to_come() {
+        for (current, coming, starts) in [(Some(2), Some(0), false), (Some(0), Some(3), true)] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            reveal_zone(&mut m, current, 61_000, now + ms(100));
+            // The next zone's update is in, its reveal waits for the fade
+            // to clear.
+            m.handle_message(zone_update_with_exits(coming), now + ms(200));
+            ink_hit(&mut m, now + ms(300));
+            let t1 = now + ms(320);
+            m.tick(
+                tick_in(snap_load(Some(61_300), true, Some(true)), true, None),
+                t1,
+            );
+            assert!(m.pending_zone_update.is_some(), "coming: {coming:?}");
+            assert_eq!(m.ink_active(t1), starts, "coming: {coming:?}");
+            assert_eq!(ink_rows(&m, t1).len(), 1, "coming: {coming:?}");
+        }
     }
 
     #[test]
@@ -8540,7 +8673,7 @@ mod tests {
     fn assert_left_about(left: Option<u32>, expected_ms: u32) {
         let left = left.expect("a timed application");
         assert!(
-            (expected_ms - FRAME_MS..=expected_ms).contains(&left),
+            (expected_ms.saturating_sub(FRAME_MS)..=expected_ms).contains(&left),
             "{left} ms left, expected about {expected_ms}"
         );
     }
@@ -8677,7 +8810,13 @@ mod tests {
     fn no_reapply_into_a_wrong_save() {
         let now = Instant::now();
         let mut m = running_items_machine(now);
-        m.handle_message(item_hit(timed(MUSHROOM_FX, 30_000), None), now + ms(100));
+        m.handle_message(
+            item_hit(
+                timed(MUSHROOM_FX, 30_000),
+                Some(("Infinite stamina", 30_000)),
+            ),
+            now + ms(100),
+        );
         let t1 = now + ms(120);
         m.tick(tick_in(snap(Some(60_100), true), true, None), t1);
 
@@ -8691,14 +8830,28 @@ mod tests {
         );
         assert!(m.wrong_save);
         assert!(speffects_applied(&fx).is_empty(), "{fx:?}");
+        // Played on, the wrong save stops the play clock from its next
+        // frame: the reminder row does not count down there.
+        let wrong = t1 + secs(2) + FRAME;
+        m.tick(tick_in(snap(Some(500_017), true), true, None), wrong);
+        let frozen: Vec<_> = m.item_reminders(wrong).map(|(_, left)| left).collect();
+        m.tick(tick_in(snap(Some(501_000), true), true, None), t1 + secs(3));
+        let later: Vec<_> = m
+            .item_reminders(t1 + secs(3))
+            .map(|(_, left)| left)
+            .collect();
+        assert_eq!(later, frozen);
 
         // The race save is back: its loading exit applies the Mushroom
-        // again, the play on the wrong save counted.
+        // again, the time on the wrong save not counted (a frame at most).
         m.tick(tick_in(snap(Some(60_500), false), true, None), t1 + secs(4));
         assert!(!m.wrong_save);
         let reads = items_scan(&m, &[]);
         let fx = m.tick(tick_in(snap(Some(60_600), true), true, reads), t1 + secs(5));
-        assert_eq!(speffects_applied(&fx), [(MUSHROOM_FX, Some(27_000))]);
+        let again = speffects_applied(&fx);
+        assert_eq!(again.len(), 1, "{fx:?}");
+        assert_eq!(again[0].0, MUSHROOM_FX);
+        assert_left_about(again[0].1, 29_000);
     }
 
     #[test]

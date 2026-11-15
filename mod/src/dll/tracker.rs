@@ -993,7 +993,9 @@ impl RaceTracker {
     /// entry survived (a hit while the same effect runs, or a load the game
     /// kept it through); otherwise the planned row (the cycled tail row when
     /// the time left fits in it) is applied, then its entry's timer written,
-    /// unless the row's own endurance already is the time left.
+    /// unless the row's own endurance already is the time left. A timing
+    /// unreadable (params not indexed yet, row missing) applies the row as
+    /// it is, with no timer write: it runs its own duration.
     fn apply_item_speffect(speffect_id: u32, left_ms: Option<u32>) {
         let Some(left_ms) = left_ms else {
             if sp_effect_apply::apply_speffect(speffect_id) {
@@ -1003,7 +1005,18 @@ impl RaceTracker {
             }
             return;
         };
-        let timing = race_items::speffect_timing(speffect_id);
+        let Some(timing) = race_items::speffect_timing(speffect_id) else {
+            if sp_effect_apply::apply_speffect(speffect_id) {
+                warn!(
+                    speffect_id,
+                    left_ms,
+                    "[ITEMS] SpEffect applied, timing unreadable (runs its full row duration)"
+                );
+            } else {
+                warn!(speffect_id, left_ms, "[ITEMS] SpEffect not applied");
+            }
+            return;
+        };
         let left_s = Duration::from_millis(u64::from(left_ms)).as_secs_f32();
         let plan = timed_apply(speffect_id, timing, left_s);
         let row = plan.speffect_id;
