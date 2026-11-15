@@ -105,20 +105,23 @@ def _patch_items_graph(
 EMPTY_CATALOG: dict[str, object] = {}
 
 
-def test_a_1_12_mod_is_refused_on_an_items_race(
-    integration_client, race_with_participants, integration_db
+# 1.12 spoke the per-item goods (it would spawn nothing of the catalog); 1.13
+# reads the catalog but neither times the effects across loads nor holds an Ink
+# on `unused_exits`.
+@pytest.mark.parametrize("protocol_version", ["1.12", "1.13"])
+def test_a_mod_before_1_14_is_refused_on_an_items_race(
+    integration_client, race_with_participants, integration_db, protocol_version
 ):
     race_id = race_with_participants["race_id"]
     _patch_items_graph(integration_db, race_id)
     token = race_with_participants["players"][0]["mod_token"]
-    # 1.12 spoke the per-item goods: it would spawn nothing of the 1.13 catalog.
     with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-        response = ModTestClient(ws, token).auth(protocol_version="1.12")
+        response = ModTestClient(ws, token).auth(protocol_version=protocol_version)
     assert response["type"] == "auth_error"
     assert response["message"] == RACE_ITEMS_OLD_MOD_MESSAGE
 
 
-def test_items_race_accepts_1_13(integration_client, race_with_participants, integration_db):
+def test_items_race_accepts_1_14(integration_client, race_with_participants, integration_db):
     race_id = race_with_participants["race_id"]
     _patch_items_graph(integration_db, race_id, catalog=_catalog(("hammer", HAMMER)))
     token = race_with_participants["players"][0]["mod_token"]

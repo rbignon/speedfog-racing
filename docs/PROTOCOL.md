@@ -166,11 +166,12 @@ download the pack again (it carries the current mod), and each compared by
   newer (`RANKED_SOLO_MIN_PROTOCOL` in `websocket/schemas.py`), the version
   from which the mod reports debug flags in a solo session.
 - A race with items (`race_items` on) requires protocol 1.14 or newer
-  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod reads the
-  `{goods, items}` catalog, holds every usable item as the one Race Item goods
-  and applies item effects, a self item's included. Switching the option in
-  SETUP closes the race's mods with code 1000, so each one authenticates again
-  and meets the gate (and gets the matching catalog).
+  (`RACE_ITEMS_MIN_PROTOCOL`), the version from which the mod times the timed
+  effects with the duration they carry (`duration_ms`) and applies them again
+  after a load, and holds an Ink until the zone has unused exits
+  (`zone_update.unused_exits`). Switching the option in SETUP closes the
+  race's mods with code 1000, so each one authenticates again and meets the
+  gate (and gets the matching catalog).
 
 Other races, Daily Seeds, events and practice sessions keep accepting any mod
 of the current major.

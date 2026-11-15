@@ -29,9 +29,9 @@ PROTOCOL_VERSION = "1.14"
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
 
-# Oldest protocol a race with items accepts at auth: from 1.13 the mod reads
-# the {goods, items} catalog, holds every usable item as the one Race Item
-# goods and applies item effects, a self item's included.
+# Oldest protocol a race with items accepts at auth: from 1.14 the mod times
+# the timed effects with the duration they carry and applies them again after
+# a load, and holds an Ink until the zone has unused exits (`unused_exits`).
 RACE_ITEMS_MIN_PROTOCOL = "1.14"
 
 # auth_error for a mod too old for a race with items. The race's pack carries
