@@ -146,8 +146,12 @@ time is the first kill's IGT minus the first entry on the node in the whole
 history (the Boss tab of `/stats` uses the same anchor), its head
 reads "kill", and its reference line "kill best X, median Y, N runners" comes
 from the field's kills (not its depth times). "vs best" is against the
-fastest kill among the selected runners of that column, and the field rank
-is the kill's rank in the field's kills. A kill belongs to its node's depth:
+fastest kill among the selected runners, all kill columns of the depth
+together, as depth times compare across the depth's nodes: a runner reads
+what their boss cost against the quickest kill next to it. A kill is never
+compared to a depth time, so a depth column keeps the selection's best
+depth time as its reference. The field rank stays the kill's rank in the
+field's kills on that node. A kill belongs to its node's depth:
 a runner who left the boss unbeaten for a deeper depth and came back to kill
 it has the detour in that time, never a time from the re-entry. A boss
 column with no kill yet, and every non-boss column, stays a depth column.

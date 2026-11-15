@@ -869,26 +869,85 @@ describe("boss kill times", () => {
       new Set(["a1"]),
     );
 
-    it("compares kill times within the column only", () => {
-      const cols = buildLayerDetail(1, runners, gaps, depthField, killField);
+    it("compares kill times across the depth's kill columns", () => {
+      // b1 is a kill node too: other's 15 s kill there is the depth's best.
+      const bothKills = computeKillStats(
+        runners.map((r) => r.timeline),
+        new Set(["a1", "b1"]),
+      );
+      const cols = buildLayerDetail(1, runners, gaps, depthField, bothKills);
+      const a1 = cols.find((c) => c.nodeId === "a1")!;
+      const b1 = cols.find((c) => c.nodeId === "b1")!;
+      expect(a1.metric).toBe("kill");
+      expect(a1.rows.map((r) => [r.id, r.state, r.timeMs, r.vsBestMs])).toEqual(
+        [
+          ["fast", "done", 30_000, 15_000],
+          ["slow", "done", 60_000, 45_000],
+          ["hole", "unknown", null, null],
+        ],
+      );
+      // The field rank stays the kill's rank on its own boss.
+      expect(a1.rows[1].fieldRank).toBe(2);
+      expect(b1.metric).toBe("kill");
+      expect(b1.rows.map((r) => [r.id, r.state, r.timeMs, r.vsBestMs])).toEqual(
+        [["other", "done", 15_000, 0]],
+      );
+    });
+
+    it("never compares a kill time to a depth time", () => {
+      // quick's 15 s on b1 (no kill node here) beats every kill of a1.
+      const quick = runner(
+        "quick",
+        [at("start", 0), at("b1", 10_000), at("a2", 25_000)],
+        "finished",
+      );
+      const all = [...runners, quick];
+      const cols = buildLayerDetail(1, all, new Map(), depthField, killField);
       const a1 = cols.find((c) => c.nodeId === "a1")!;
       const b1 = cols.find((c) => c.nodeId === "b1")!;
       expect(a1.metric).toBe("kill");
       expect(a1.field).toBe(killField.get("a1"));
-      expect(a1.rows.map((r) => [r.id, r.state, r.timeMs, r.vsBestMs])).toEqual(
-        [
-          ["fast", "done", 30_000, 0],
-          ["slow", "done", 60_000, 30_000],
-          ["hole", "unknown", null, null],
-        ],
-      );
-      expect(a1.rows[1].fieldRank).toBe(2);
+      expect(a1.rows.map((r) => [r.id, r.vsBestMs])).toEqual([
+        ["fast", 0],
+        ["slow", 30_000],
+        ["hole", null],
+      ]);
+      // b1 keeps the depth times' reference: quick's 15 s on the depth.
+      expect(b1.metric).toBe("depth");
+      expect(b1.rows.map((r) => [r.id, r.timeMs, r.vsBestMs])).toEqual([
+        ["quick", 15_000, 0],
+        ["other", 90_000, 75_000],
+      ]);
       expect(b1).toEqual(
-        buildLayerDetail(1, runners, gaps, depthField).find(
+        buildLayerDetail(1, all, new Map(), depthField).find(
           (c) => c.nodeId === "b1",
         ),
       );
-      expect(b1.metric).toBe("depth");
+    });
+
+    it("keeps a depth column on the depth times of every runner", () => {
+      // brisk: a 30 s kill on a1 and a 40 s depth time, the depth's best.
+      const brisk = runner(
+        "brisk",
+        [
+          at("start", 0),
+          at("a1", 10_000, { boss_kill_igt_ms: 40_000 }),
+          at("a2", 50_000),
+        ],
+        "finished",
+      );
+      const cols = buildLayerDetail(
+        1,
+        [...runners, brisk],
+        new Map(),
+        depthField,
+        killField,
+      );
+      const b1 = cols.find((c) => c.nodeId === "b1")!;
+      // Not 60 s (against brisk's kill), not 0 (b1's runners alone).
+      expect(b1.rows.map((r) => [r.id, r.vsBestMs])).toEqual([
+        ["other", 50_000],
+      ]);
     });
 
     it("shows a runner resting after the kill with the kill time", () => {

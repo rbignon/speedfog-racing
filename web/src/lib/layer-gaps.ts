@@ -405,7 +405,9 @@ export interface DetailRow {
   entryGapMs: number | null;
   /** done: time on the layer; live: time so far; otherwise null. */
   timeMs: number | null;
-  /** done only: time on the layer minus the selection's shortest. */
+  /** done only: the time minus the selection's best on the layer: on a kill
+   * column the fastest kill over the layer's kill columns, otherwise the
+   * shortest time on the layer over every selected runner. */
   vsBestMs: number | null;
   /** done only: rank of the time through the node among the field. */
   fieldRank: number | null;
@@ -542,15 +544,28 @@ export function buildLayerDetail(
   });
   // The order above is the depth order: the switch never reorders columns.
   if (killField) {
+    const killColumns: DetailColumn[] = [];
     for (const column of result) {
       const stats = killField.get(column.nodeId);
-      if (stats) toKillColumn(column, stats, layer, runners, visits, igts);
+      if (!stats) continue;
+      toKillColumn(column, stats, layer, runners, visits, igts);
+      killColumns.push(column);
+    }
+    // Kills compare across the depth like depth times, never with them.
+    const bestKill = Math.min(...killColumns.map(fastestDone));
+    for (const column of killColumns) {
+      for (const row of column.rows) {
+        if (row.state === "done" && row.timeMs !== null) {
+          row.vsBestMs = row.timeMs - bestKill;
+        }
+      }
     }
   }
   return result;
 }
 
-/** Turns a depth column into a kill column, in place. */
+/** Turns a depth column into a kill column, in place. Its rows' vs best is
+ * left to the caller, which compares kills across the layer's columns. */
 function toKillColumn(
   column: DetailColumn,
   stats: NodeFieldStats,
@@ -580,12 +595,6 @@ function toKillColumn(
       }
     } else {
       row.state = "unknown";
-    }
-  }
-  const best = fastestDone(column);
-  for (const row of column.rows) {
-    if (row.state === "done" && row.timeMs !== null) {
-      row.vsBestMs = row.timeMs - best;
     }
   }
   column.metric = "kill";
