@@ -14,7 +14,7 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
-use crate::core::item_feed::{FeedBanner, FeedHeld, FeedReminder, FeedTone, ItemFeed};
+use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
@@ -85,6 +85,7 @@ pub enum MachineMessage {
         layer: Option<i32>,
         is_first_visit: bool,
         exits: Vec<ExitInfo>,
+        unused_exits: Option<u32>,
         message_id: Option<u64>,
     },
     /// Aggregated death counts per zone for death marker flags
@@ -160,6 +161,8 @@ pub struct ZoneUpdateData {
     #[allow(dead_code)] // Kept for future use (e.g., spectator UI)
     pub is_first_visit: bool,
     pub exits: Vec<ExitInfo>,
+    /// Exits no edge takes; `None` on a seed older than graph.json 4.13.
+    pub unused_exits: Option<u32>,
 }
 
 /// A coded server condition, displayed while fresh (the server re-sends
@@ -1114,8 +1117,11 @@ impl RaceMachine {
     }
 
     /// Race item reminder rows still running at `now`, with their time
-    /// left on the play clock.
-    pub fn item_reminders(&self, now: Instant) -> impl Iterator<Item = (&FeedReminder, Duration)> {
+    /// left on the play clock (`None` for an ink waiting for a zone).
+    pub fn item_reminders(
+        &self,
+        now: Instant,
+    ) -> impl Iterator<Item = (&FeedRow, Option<Duration>)> {
         self.item_feed.reminders(self.play_clock.at(now))
     }
 
@@ -1559,6 +1565,7 @@ impl RaceMachine {
                 layer,
                 is_first_visit,
                 exits,
+                unused_exits,
                 message_id,
             } => {
                 if let Some(mid) = message_id {
@@ -1575,6 +1582,7 @@ impl RaceMachine {
                     layer,
                     is_first_visit,
                     exits,
+                    unused_exits,
                 });
                 self.pending_zone_received_at = Some(now);
                 self.zone_stall_warned = false;
@@ -2217,7 +2225,13 @@ impl RaceMachine {
                 } else {
                     warn!(name = %zone.display_name, "[RACE] Zone revealed (timeout, reveal signal stuck)");
                 }
+                let unused_exits = zone.unused_exits;
                 self.race_state.current_zone = Some(zone);
+                if unused_exits != Some(0)
+                    && self.item_feed.start_pending_ink(self.play_clock.at(now))
+                {
+                    info!(?unused_exits, "[ITEMS] Ink started");
+                }
                 self.zone_version = self.zone_version.wrapping_add(1);
                 self.pre_reveal_layer = None;
                 self.pending_zone_received_at = None;
@@ -2847,6 +2861,7 @@ impl RaceMachine {
         }
         for effect in std::mem::take(&mut self.pending_item_effects) {
             info!(action = ?effect.action, "[ITEMS] Effect applied");
+            let mut reminder = effect.reminder;
             match effect.action {
                 ItemAction::Shell(apply) => {
                     if let Effect::ApplySpEffect {
@@ -2867,9 +2882,23 @@ impl RaceMachine {
                     }
                     effects.push(apply);
                 }
-                ItemAction::Ink(duration) => self.item_feed.set_ink(duration, play),
+                ItemAction::Ink(duration) => {
+                    // The reminder is the ink's own row, not a timed one; the
+                    // ink waits while the zone has no unused exit to hide.
+                    let row = reminder.take().map(|r| FeedRow {
+                        icon: effect.icon.clone(),
+                        text: r.text,
+                        tone: FeedTone::Malus,
+                    });
+                    let zone = self.race_state.current_zone.as_ref();
+                    let start = zone.is_none_or(|z| z.unused_exits != Some(0));
+                    self.item_feed.hit_ink(row, duration, start, play);
+                    if self.item_feed.ink_pending() {
+                        info!("[ITEMS] Ink waits for a zone with unused exits");
+                    }
+                }
             }
-            if let Some(reminder) = effect.reminder {
+            if let Some(reminder) = reminder {
                 self.item_feed.add_reminder(
                     effect.icon,
                     reminder.text,
@@ -2900,6 +2929,7 @@ impl RaceMachine {
         self.retry_grants.clear();
         self.pending_item_effects.clear();
         self.timed_effects.clear();
+        self.item_feed.drop_pending_ink();
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -4002,6 +4032,7 @@ mod tests {
             layer: Some(2),
             is_first_visit: true,
             exits: Vec::new(),
+            unused_exits: None,
             message_id,
         }
     }
@@ -7432,7 +7463,7 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0.text, "Fat-roll");
         assert_eq!(rows[0].0.tone, FeedTone::Malus);
-        assert_eq!(rows[0].1, secs(15));
+        assert_eq!(rows[0].1, Some(secs(15)));
         assert_eq!(
             banner_title(&m),
             Some(("HAMMER".to_string(), FeedTone::Malus))
@@ -7514,6 +7545,158 @@ mod tests {
         assert!(m.ink_active(t1));
         assert!(m.ink_active(t1 + ms(14_999)));
         assert!(!m.ink_active(t1 + secs(15)));
+    }
+
+    /// The server's zone_update with `unused_exits`, revealed by a loaded
+    /// frame at `at`.
+    fn reveal_zone(m: &mut RaceMachine, unused_exits: Option<u32>, igt: u32, at: Instant) {
+        let mut msg = zone_update("Zone", None);
+        if let MachineMessage::ZoneUpdate {
+            unused_exits: count,
+            ..
+        } = &mut msg
+        {
+            *count = unused_exits;
+        }
+        m.handle_message(msg, at);
+        m.tick(tick_in(snap(Some(igt), true), true, None), at + ms(10));
+        assert_eq!(
+            m.race_state.current_zone.as_ref().unwrap().unused_exits,
+            unused_exits
+        );
+    }
+
+    fn ink_hit(m: &mut RaceMachine, at: Instant) {
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Ink {
+                    duration_ms: 30_000,
+                },
+                Some(("Ink", 30_000)),
+            ),
+            at,
+        );
+    }
+
+    fn ink_rows(m: &RaceMachine, at: Instant) -> Vec<(String, Option<Duration>)> {
+        m.item_reminders(at)
+            .map(|(row, left)| (row.text.clone(), left))
+            .collect()
+    }
+
+    #[test]
+    fn ink_waits_for_a_zone_with_unused_exits() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        reveal_zone(&mut m, Some(0), 61_000, now + ms(100));
+        ink_hit(&mut m, now + ms(200));
+        let t1 = now + ms(300);
+        m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
+        assert!(!m.ink_active(t1));
+        assert_eq!(ink_rows(&m, t1), [("Ink".to_string(), None)]);
+        // Still pending a minute on: it never counted down.
+        let t2 = t1 + secs(60);
+        m.tick(tick_in(snap(Some(121_200), true), true, None), t2);
+        assert!(!m.ink_active(t2));
+
+        reveal_zone(&mut m, Some(2), 121_300, t2 + ms(100));
+        let t3 = t2 + ms(110);
+        assert!(m.ink_active(t3));
+        let left = ink_rows(&m, t3)[0].1.unwrap();
+        assert!(secs(30) - left < ms(50), "{left:?}");
+        assert!(m.ink_active(t3 + ms(29_900)));
+        assert!(!m.ink_active(t3 + secs(30)));
+    }
+
+    #[test]
+    fn ink_starts_at_once_in_a_zone_with_unused_exits() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        reveal_zone(&mut m, Some(1), 61_000, now + ms(100));
+        ink_hit(&mut m, now + ms(200));
+        let t1 = now + ms(300);
+        m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
+        assert!(m.ink_active(t1));
+        assert!(m.ink_active(t1 + ms(29_900)));
+        assert!(!m.ink_active(t1 + secs(30)));
+    }
+
+    #[test]
+    fn ink_starts_at_once_when_the_count_is_unknown() {
+        for known_zone in [true, false] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            if known_zone {
+                reveal_zone(&mut m, None, 61_000, now + ms(100));
+            } else {
+                assert!(m.race_state.current_zone.is_none());
+            }
+            ink_hit(&mut m, now + ms(200));
+            let t1 = now + ms(300);
+            m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
+            assert!(m.ink_active(t1), "zone known: {known_zone}");
+        }
+    }
+
+    #[test]
+    fn a_pending_ink_goes_with_the_run() {
+        for finished in [false, true] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            reveal_zone(&mut m, Some(0), 61_000, now + ms(100));
+            ink_hit(&mut m, now + ms(200));
+            let t1 = now + ms(300);
+            m.tick(tick_in(snap(Some(61_200), true), true, None), t1);
+            assert_eq!(ink_rows(&m, t1).len(), 1);
+            if finished {
+                m.handle_message(
+                    MachineMessage::LeaderboardUpdate {
+                        participants: vec![test_participant("p1", "finished", 3)],
+                        leader_splits: None,
+                    },
+                    t1 + ms(10),
+                );
+                m.tick(tick_in(snap(Some(61_300), true), true, None), t1 + ms(20));
+            } else {
+                // A reset: the room closes, the same runner comes back to a
+                // race in setup, then the new start.
+                m.handle_message(
+                    MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+                    t1 + ms(5),
+                );
+                m.handle_message(
+                    MachineMessage::StatusChanged(ConnectionStatus::Connected),
+                    t1 + ms(6),
+                );
+                m.handle_message(auth_ok_with_items("setup", true), t1 + ms(7));
+                m.handle_message(MachineMessage::RaceStart(0), t1 + ms(10));
+            }
+            assert!(ink_rows(&m, t1 + ms(30)).is_empty(), "finished: {finished}");
+            reveal_zone(&mut m, Some(3), 61_400, t1 + ms(100));
+            assert!(!m.ink_active(t1 + ms(120)), "finished: {finished}");
+            assert!(
+                ink_rows(&m, t1 + ms(120)).is_empty(),
+                "finished: {finished}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_running_ink_does_not_count_down_during_a_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        ink_hit(&mut m, now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert!(m.ink_active(t1));
+        m.tick(tick_in(snap(Some(66_000), true), true, None), t1 + secs(5));
+        // A 2 minute load.
+        load(&mut m, t1 + secs(5), secs(120), 66_000, true);
+        let t2 = t1 + secs(126);
+        m.tick(tick_in(snap(Some(67_000), true), true, None), t2);
+        // 6 s played of 30.
+        assert!(m.ink_active(t2 + secs(23)));
+        assert!(!m.ink_active(t2 + secs(25)));
     }
 
     #[test]
@@ -7680,7 +7863,7 @@ mod tests {
         let rows: Vec<_> = m.item_reminders(now + ms(200)).collect();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0.tone, FeedTone::Gain);
-        assert_eq!(rows[0].1, secs(15));
+        assert_eq!(rows[0].1, Some(secs(15)));
     }
 
     #[test]
@@ -8378,7 +8561,7 @@ mod tests {
         let t2 = t1 + secs(26);
         m.tick(tick_in(snap(Some(67_000), true), true, None), t2);
         let left: Vec<_> = m.item_reminders(t2).map(|(_, left)| left).collect();
-        assert_eq!(left, [secs(9)]);
+        assert_eq!(left, [Some(secs(9))]);
     }
 
     #[test]

@@ -695,6 +695,7 @@ fn message_loop(
                             layer,
                             is_first_visit,
                             exits,
+                            unused_exits,
                             message_id,
                         } => {
                             if incoming_tx
@@ -706,6 +707,7 @@ fn message_loop(
                                     layer,
                                     is_first_visit,
                                     exits,
+                                    unused_exits,
                                     message_id,
                                 })
                                 .is_err()

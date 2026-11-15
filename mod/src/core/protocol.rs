@@ -550,6 +550,10 @@ pub enum ServerMessage {
         is_first_visit: bool,
         #[serde(default)]
         exits: Vec<ExitInfo>,
+        /// Exits of the zone no edge takes; `None` on a seed older than
+        /// graph.json 4.13.
+        #[serde(default)]
+        unused_exits: Option<u32>,
         #[serde(default)]
         message_id: Option<u64>,
     },
@@ -902,6 +906,7 @@ mod tests {
                 layer,
                 is_first_visit,
                 exits,
+                unused_exits,
                 message_id,
             } => {
                 assert_eq!(node_id, "graveyard_cave_e235");
@@ -916,7 +921,19 @@ mod tests {
                 assert!(!exits[0].discovered);
                 assert!(exits[1].discovered);
                 assert_eq!(message_id, None);
+                // A seed older than graph.json 4.13 sends no count.
+                assert_eq!(unused_exits, None);
             }
+            _ => panic!("Expected ZoneUpdate"),
+        }
+    }
+
+    #[test]
+    fn test_server_zone_update_unused_exits() {
+        let json =
+            r#"{"type":"zone_update","node_id":"n","display_name":"N","tier":1,"unused_exits":2}"#;
+        match serde_json::from_str::<ServerMessage>(json).unwrap() {
+            ServerMessage::ZoneUpdate { unused_exits, .. } => assert_eq!(unused_exits, Some(2)),
             _ => panic!("Expected ZoneUpdate"),
         }
     }

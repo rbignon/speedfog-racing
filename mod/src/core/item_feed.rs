@@ -40,14 +40,34 @@ impl FeedBanner {
     }
 }
 
-/// A timed row of the race panel.
+/// A row of the race panel: icon, text and colour family.
 #[derive(Debug, Clone, PartialEq)]
-pub struct FeedReminder {
+pub struct FeedRow {
     pub icon: String,
     pub text: String,
     pub tone: FeedTone,
+}
+
+/// A timed row of the race panel.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeedReminder {
+    pub row: FeedRow,
     /// End on the play clock.
     pub ends_at: Duration,
+}
+
+/// The ink: waiting for a zone with unused exits, or running to its end.
+#[derive(Debug, Clone, PartialEq)]
+enum Ink {
+    Pending {
+        row: Option<FeedRow>,
+        duration: Duration,
+    },
+    Running {
+        row: Option<FeedRow>,
+        /// End on the play clock.
+        ends_at: Duration,
+    },
 }
 
 /// The race item held: a row with no countdown, shown while its goods is in
@@ -66,8 +86,7 @@ pub struct ItemFeed {
     queue: VecDeque<FeedBanner>,
     reminders: Vec<FeedReminder>,
     held: Option<FeedHeld>,
-    /// End of the ink on the play clock.
-    ink_until: Option<Duration>,
+    ink: Option<Ink>,
 }
 
 impl ItemFeed {
@@ -98,6 +117,9 @@ impl ItemFeed {
             }
         }
         self.reminders.retain(|r| r.ends_at > play);
+        if matches!(&self.ink, Some(Ink::Running { ends_at, .. }) if *ends_at <= play) {
+            self.ink = None;
+        }
     }
 
     /// Banner on screen, if any (as of the last `advance`).
@@ -129,31 +151,40 @@ impl ItemFeed {
         play: Duration,
     ) {
         let ends_at = play + duration;
-        if let Some(existing) = self.reminders.iter_mut().find(|r| r.text == text) {
+        if let Some(existing) = self.reminders.iter_mut().find(|r| r.row.text == text) {
             if ends_at > existing.ends_at {
                 existing.ends_at = ends_at;
-                existing.icon = icon;
-                existing.tone = tone;
+                existing.row.icon = icon;
+                existing.row.tone = tone;
             }
         } else {
             self.reminders.push(FeedReminder {
-                icon,
-                text,
-                tone,
+                row: FeedRow { icon, text, tone },
                 ends_at,
             });
         }
     }
 
-    /// Live reminders at `play` with their time left; expired ones are
-    /// skipped.
-    pub fn reminders(&self, play: Duration) -> impl Iterator<Item = (&FeedReminder, Duration)> {
-        self.reminders.iter().filter_map(move |r| {
+    /// Live rows at `play` with their time left: the timed reminders, then
+    /// the ink's row (`None` while it waits for a zone, its time left while
+    /// it runs). Expired ones are skipped.
+    pub fn reminders(&self, play: Duration) -> impl Iterator<Item = (&FeedRow, Option<Duration>)> {
+        let timed = self.reminders.iter().filter_map(move |r| {
             r.ends_at
                 .checked_sub(play)
                 .filter(|left| !left.is_zero())
-                .map(|left| (r, left))
-        })
+                .map(|left| (&r.row, Some(left)))
+        });
+        let ink = self.ink.as_ref().and_then(move |ink| match ink {
+            Ink::Pending { row, .. } => row.as_ref().map(|row| (row, None)),
+            Ink::Running { row, ends_at } => row.as_ref().and_then(|row| {
+                ends_at
+                    .checked_sub(play)
+                    .filter(|left| !left.is_zero())
+                    .map(|left| (row, Some(left)))
+            }),
+        });
+        timed.chain(ink)
     }
 
     /// Show (or stop showing) the held item row.
@@ -165,24 +196,61 @@ impl ItemFeed {
         self.held.as_ref()
     }
 
-    /// Start or extend the ink for `duration` from `play`; the latest end
-    /// wins.
-    pub fn set_ink(&mut self, duration: Duration, play: Duration) {
+    /// An ink hit. Running: the later end wins. Pending: nothing changes.
+    /// Otherwise it runs for `duration` from `play` when `start`, else it
+    /// waits (`start_pending_ink`) with its row and duration.
+    pub fn hit_ink(
+        &mut self,
+        row: Option<FeedRow>,
+        duration: Duration,
+        start: bool,
+        play: Duration,
+    ) {
         let ends_at = play + duration;
-        if self.ink_until.is_none_or(|current| ends_at > current) {
-            self.ink_until = Some(ends_at);
+        match &mut self.ink {
+            Some(Ink::Pending { .. }) => {}
+            Some(Ink::Running { ends_at: end, .. }) if play < *end => {
+                if ends_at > *end {
+                    *end = ends_at;
+                }
+            }
+            _ if start => self.ink = Some(Ink::Running { row, ends_at }),
+            _ => self.ink = Some(Ink::Pending { row, duration }),
         }
     }
 
+    /// Run the pending ink from `play`; true when there was one.
+    pub fn start_pending_ink(&mut self, play: Duration) -> bool {
+        let Some(Ink::Pending { row, duration }) = self.ink.take() else {
+            return false;
+        };
+        self.ink = Some(Ink::Running {
+            row,
+            ends_at: play + duration,
+        });
+        true
+    }
+
+    pub fn ink_pending(&self) -> bool {
+        matches!(self.ink, Some(Ink::Pending { .. }))
+    }
+
     pub fn ink_active(&self, play: Duration) -> bool {
-        self.ink_until.is_some_and(|end| play < end)
+        matches!(&self.ink, Some(Ink::Running { ends_at, .. }) if play < *ends_at)
+    }
+
+    /// Forget a pending ink (the run is over); a running one plays out.
+    pub fn drop_pending_ink(&mut self) {
+        if self.ink_pending() {
+            self.ink = None;
+        }
     }
 
     /// Drop the reminder rows, the held row and the ink; banners play on.
     pub fn clear_timers(&mut self) {
         self.reminders.clear();
         self.held = None;
-        self.ink_until = None;
+        self.ink = None;
     }
 
     /// Forget everything (race change, disconnect).
@@ -303,8 +371,10 @@ mod tests {
         );
         let rows: Vec<_> = feed.reminders(at + secs(10)).collect();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].0.ends_at, at + secs(20));
-        assert_eq!(rows[0].1, secs(10));
+        assert_eq!(rows[0].1, Some(secs(10)));
+        // Its end is the latest one: gone 10 s on.
+        assert_eq!(feed.reminders(at + secs(20)).count(), 0);
+        assert_eq!(feed.reminders(at + secs(19)).count(), 1);
     }
 
     #[test]
@@ -339,7 +409,15 @@ mod tests {
         // A minute of wall time, five seconds of it played.
         feed.advance(t0 + secs(60), secs(5));
         let left: Vec<_> = feed.reminders(secs(5)).map(|(_, left)| left).collect();
-        assert_eq!(left, [secs(10)]);
+        assert_eq!(left, [Some(secs(10))]);
+    }
+
+    fn ink_row() -> Option<FeedRow> {
+        Some(FeedRow {
+            icon: "ink".into(),
+            text: "Ink".into(),
+            tone: FeedTone::Malus,
+        })
     }
 
     #[test]
@@ -347,13 +425,66 @@ mod tests {
         let mut feed = ItemFeed::new();
         let at = Duration::ZERO;
         assert!(!feed.ink_active(at));
-        feed.set_ink(secs(15), at);
-        feed.set_ink(secs(15), at + secs(10));
-        feed.set_ink(secs(1), at + secs(11));
+        feed.hit_ink(None, secs(15), true, at);
+        feed.hit_ink(None, secs(15), true, at + secs(10));
+        feed.hit_ink(None, secs(1), true, at + secs(11));
         assert!(feed.ink_active(at + secs(24)));
         assert!(!feed.ink_active(at + secs(25)));
         feed.clear();
         assert!(!feed.ink_active(at + secs(12)));
+    }
+
+    #[test]
+    fn a_second_ink_while_running_keeps_the_later_end() {
+        let mut feed = ItemFeed::new();
+        feed.hit_ink(ink_row(), secs(30), true, secs(0));
+        // A hit that waits for a zone is still a running ink's extension.
+        feed.hit_ink(ink_row(), secs(30), false, secs(10));
+        assert!(!feed.ink_pending());
+        assert!(feed.ink_active(secs(39)));
+        assert!(!feed.ink_active(secs(40)));
+        // A shorter one never shortens it.
+        feed.hit_ink(ink_row(), secs(5), true, secs(12));
+        assert!(feed.ink_active(secs(39)));
+        assert_eq!(feed.reminders(secs(30)).count(), 1);
+    }
+
+    #[test]
+    fn a_second_ink_while_pending_changes_nothing() {
+        let mut feed = ItemFeed::new();
+        feed.hit_ink(ink_row(), secs(30), false, secs(0));
+        feed.hit_ink(None, secs(10), true, secs(5));
+        assert!(feed.ink_pending());
+        assert!(!feed.ink_active(secs(6)));
+        assert!(feed.start_pending_ink(secs(8)));
+        assert!(feed.ink_active(secs(37)));
+        assert!(!feed.ink_active(secs(38)));
+        assert_eq!(feed.reminders(secs(8)).count(), 1);
+        assert!(!feed.start_pending_ink(secs(9)));
+    }
+
+    #[test]
+    fn a_pending_ink_row_has_no_time_left() {
+        let mut feed = ItemFeed::new();
+        feed.add_reminder(
+            "i".into(),
+            "Slowed".into(),
+            FeedTone::Malus,
+            secs(15),
+            secs(0),
+        );
+        feed.hit_ink(ink_row(), secs(30), false, secs(0));
+        let rows: Vec<_> = feed
+            .reminders(secs(3))
+            .map(|(row, left)| (row.text.clone(), left))
+            .collect();
+        assert_eq!(
+            rows,
+            [("Slowed".into(), Some(secs(12))), ("Ink".into(), None)]
+        );
+        feed.start_pending_ink(secs(3));
+        let left: Vec<_> = feed.reminders(secs(4)).map(|(_, left)| left).collect();
+        assert_eq!(left, [Some(secs(11)), Some(secs(29))]);
     }
 
     #[test]

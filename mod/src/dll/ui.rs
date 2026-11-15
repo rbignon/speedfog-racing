@@ -668,13 +668,19 @@ impl RaceTracker {
                 ui.same_line_with_spacing(0.0, 4.0);
                 used = icon_size + 4.0;
             }
-            bufs.reminder_secs.clear();
-            write_seconds_left(&mut bufs.reminder_secs, left);
-            let secs_width = ui.calc_text_size(&bufs.reminder_secs)[0];
             let color = match reminder.tone {
                 FeedTone::Malus => c.danger,
                 FeedTone::Gain => c.gold,
             };
+            // An ink waiting for a zone has no time left: no seconds drawn.
+            let Some(left) = left else {
+                let text = truncate_to_width(ui, &reminder.text, max_width - used);
+                ui.text_colored(color, &text);
+                continue;
+            };
+            bufs.reminder_secs.clear();
+            write_seconds_left(&mut bufs.reminder_secs, left);
+            let secs_width = ui.calc_text_size(&bufs.reminder_secs)[0];
             let text = truncate_to_width(ui, &reminder.text, max_width - used - secs_width - 8.0);
             ui.text_colored(color, &text);
             ui.same_line_with_pos(max_width - secs_width);
