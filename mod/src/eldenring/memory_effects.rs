@@ -23,11 +23,15 @@
 //!   (x, y, z) at + 0x2D4 (fromsoftware-rs `ChrCtrl.scale_size_*`;
 //!   Hexinton "Model width"; Crowd Control's giant and tiny), 1 by default.
 //! - Animation speed: libeldenring's `animation_speed` (PlayerIns + 0x190
-//!   module container, + 0x28 behavior module, + 0x17C8 f32, 1 by default)
-//!   and `torrent_animation_speed` (the same chain on Torrent, resolved by
-//!   group, else from the first entry of libeldenring's static slot, the
-//!   third chr set holder: the summon buddy set only while no legacy block
-//!   set is registered, see Foes below).
+//!   module container, + 0x28 behavior module, + 0x17C8 f32, 1 by default),
+//!   and the same chain on Torrent, the first entry of the summon buddy set
+//!   (see Foes below; the game fills its first slots with horses, Torrent
+//!   first in a solo world, read in the 1.17.0 executable and checked in
+//!   game by docs/RACE_ITEMS.md H.4). Only on 1.17.x, like the foes walk; another
+//!   version falls back to libeldenring's `torrent_animation_speed`, whose
+//!   group lookup and static slot (the third chr set holder, the summon
+//!   buddy set only while no legacy block set is registered) can land on
+//!   another character.
 //! - Camera: every LockCamParam row's `camDistTarget`, `chrOrgOffset_Y` and
 //!   `camFovY`, through libeldenring's in-memory params (Crowd Control
 //!   writes row 0 the same way, the TGA table's custom FOV every row).
@@ -70,6 +74,11 @@ use crate::core::protocol::CameraVariant;
 use crate::profile_span;
 
 const CHR_INS_RENDER_FLAGS_OFFSET: usize = 0x1C5;
+/// ChrIns + 0x190: its module container; + 0x28 there, the behavior module,
+/// whose f32 at + 0x17C8 is the animation speed (libeldenring's chain).
+const CHR_INS_MODULES_OFFSET: usize = 0x190;
+const MODULES_BEHAVIOR_OFFSET: usize = 0x28;
+const BEHAVIOR_ANIM_SPEED_OFFSET: usize = 0x17C8;
 const CHR_INS_CHR_CTRL_OFFSET: usize = 0x58;
 const CHR_CTRL_SCALE_OFFSET: usize = 0x2D4;
 
@@ -90,6 +99,30 @@ struct ChrSetHead {
     capacity: u32,
     _pad: u32,
     entries: usize,
+}
+
+/// Whether the WorldChrMan offsets this module walks are known: 1.17.x,
+/// the game versions they were checked on.
+fn chr_set_offsets_known() -> bool {
+    matches!(
+        get_version(),
+        Version::V2_07_0 | Version::V2_07_1 | Version::V2_07_2
+    )
+}
+
+/// Torrent's animation speed: the first entry of the summon buddy set
+/// embedded in WorldChrMan, through the player's chain. None when that
+/// entry is empty or unreadable. 1.17.x only (`chr_set_offsets_known`).
+fn torrent_animation_speed() -> Option<PointerChain<f32>> {
+    let wcm = read_ptr(Pointers::new().base_addresses.world_chr_man)?;
+    let torrent = read_ptr(wcm + WCM_SUMMON_BUDDY_CHR_SET_OFFSET + CHR_SET_ENTRIES_OFFSET)
+        .and_then(read_ptr)
+        .filter(|&chr| chr != 0)?;
+    Some(PointerChain::new(&[
+        torrent + CHR_INS_MODULES_OFFSET,
+        MODULES_BEHAVIOR_OFFSET,
+        BEHAVIOR_ANIM_SPEED_OFFSET,
+    ]))
 }
 
 /// The player's PlayerIns, 0 while the player is not loaded.
@@ -145,7 +178,8 @@ pub fn set_player_scale(scale: f32) -> bool {
 /// Set the player's animation speed, and Torrent's when it is loaded (a
 /// slowed runner does not escape on horseback; Torrent's speed is the
 /// gait while mounted). False when the player's is unreadable or
-/// unwritable; Torrent not found is only logged at debug level.
+/// unwritable; Torrent not found, or holding no plausible speed (another
+/// layout), is only logged at debug level.
 pub fn set_anim_speed(speed: f32) -> bool {
     profile_span!("race_items.set_anim_speed");
     let pointers = Pointers::new();
@@ -158,23 +192,39 @@ pub fn set_anim_speed(speed: f32) -> bool {
         }
         info!(before, speed, "[ITEMS] Player animation speed written");
     }
-    match pointers.torrent_animation_speed.resolve() {
-        SpeedTargetResolution::Ready(torrent) => match torrent.read() {
-            Some(before) if before != speed => {
-                if torrent.write(speed).is_some() {
-                    info!(before, speed, "[ITEMS] Torrent animation speed written");
-                } else {
-                    debug!(speed, "[ITEMS] Torrent animation speed unwritable");
-                }
-            }
-            _ => {}
-        },
-        SpeedTargetResolution::Unavailable(reason) => {
+    let torrent = if chr_set_offsets_known() {
+        torrent_animation_speed().ok_or("summon buddy set entry empty")
+    } else {
+        match pointers.torrent_animation_speed.resolve() {
+            SpeedTargetResolution::Ready(torrent) => Ok(torrent),
+            SpeedTargetResolution::Unavailable(reason) => Err(reason),
+        }
+    };
+    let torrent = match torrent {
+        Ok(torrent) => torrent,
+        Err(reason) => {
             debug!(
                 reason,
                 speed, "[ITEMS] Torrent not found, its animation speed not written"
             );
+            return true;
         }
+    };
+    match torrent.read() {
+        Some(before) if !(0.01..=100.0).contains(&before) => {
+            debug!(
+                before,
+                speed, "[ITEMS] Torrent animation speed implausible, not written"
+            );
+        }
+        Some(before) if before != speed => {
+            if torrent.write(speed).is_some() {
+                info!(before, speed, "[ITEMS] Torrent animation speed written");
+            } else {
+                debug!(speed, "[ITEMS] Torrent animation speed unwritable");
+            }
+        }
+        _ => {}
     }
     true
 }
@@ -250,18 +300,15 @@ pub fn set_camera(variant: Option<CameraVariant>, originals: &mut HashMap<u64, C
 
 /// Hide (`hide`) or show the characters around: one bounded walk over
 /// WorldChrMan's chr sets (`core::foes`), the player, ghost and debug chr
-/// sets, the player and Torrent left out. `record` holds the characters the mod hid: a hide walk
-/// rebuilds it from what it met (each hide recorded once its write worked),
-/// a show walk empties it. Returns how many render bits changed. Every read
-/// is fault-safe; each set's entries are read in one call. Only on 1.17.x,
-/// the game versions whose offsets were checked.
+/// sets, the player and Torrent left out. `record` holds the characters the
+/// mod hid: a hide walk rebuilds it from what it met (each hide recorded
+/// once its write worked), a show walk empties it. Returns how many render
+/// bits changed. Every read is fault-safe; each set's entries are read in
+/// one call. Only on 1.17.x (`chr_set_offsets_known`).
 pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
     profile_span!("race_items.walk_foes");
     let mut walk = record.walk(hide);
-    if !matches!(
-        get_version(),
-        Version::V2_07_0 | Version::V2_07_1 | Version::V2_07_2
-    ) {
+    if !chr_set_offsets_known() {
         warn!("[ITEMS] Foes walk skipped: chr set offsets unknown for this game version");
         walk.missed_set();
         walk.finish();
