@@ -6,7 +6,6 @@ calls them under the race's ``items_lock`` and sends what they return.
 
 import logging
 import random
-import time
 import uuid
 from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass, field
@@ -189,8 +188,8 @@ async def resolve_item_use(
     graph_json: Mapping[str, Any],
     *,
     is_connected: Callable[[uuid.UUID], bool],
-    star_until: MutableMapping[uuid.UUID, float] | None = None,
-    now: float | None = None,
+    star_until: MutableMapping[uuid.UUID, float],
+    now: float,
     rng: random.Random | None = None,
 ) -> ItemResolution:
     """Consume the runner's held item and resolve it on its targets.
@@ -202,18 +201,15 @@ async def resolve_item_use(
     item's grant (``held_item["igt_ms"]``, 0 when absent) was made before the
     kill that granted it: the replay of an earlier use, ignored too, so it
     never spends an item granted since. Targets come from the playing
-    runners in item order. A runner whose ``star_until`` (``time.monotonic()``
-    deadline, set when they use a Star) is still ahead of ``now`` is blocked
-    first: nothing is spent and a Shield stays, the holder gets an
-    ``item_notice``. A held shield blocks the item and is spent,
+    runners in item order. ``star_until`` is the room's Star window
+    (``RaceRoom.star_until``, ``time.monotonic()`` deadlines) and ``now`` the
+    same clock's time: a runner whose deadline, set when they use a Star, is
+    still ahead of ``now`` is blocked first: nothing is spent and a Shield
+    stays, the holder gets an ``item_notice``. A held shield blocks the item and is spent,
     connected or not; a target without a connected mod is a miss. A self item
     sends its effect, without a banner, to the sender's own mod. Logs one
     ``use`` event with every target's outcome.
     """
-    if star_until is None:
-        star_until = {}
-    if now is None:
-        now = time.monotonic()
     catalog = extract_race_item_catalog(graph_json)
     goods = catalog.goods.get(goods_key)
     shield = catalog.items.get("shield")

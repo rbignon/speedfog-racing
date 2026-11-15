@@ -166,7 +166,10 @@ async def _use(
     star_until: dict[uuid.UUID, float] | None = None,
     now: float = 1000.0,
 ) -> ItemResolution:
-    """The sender's mod reports the use flag of ``goods`` (the Race Item by default)."""
+    """The sender's mod reports the use flag of ``goods`` (the Race Item by default).
+
+    Without ``star_until`` the use gets a window of its own, empty: pass the
+    room's to carry a Star across uses."""
     return await resolve_item_use(
         session_maker,
         race_id,

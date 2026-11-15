@@ -4,6 +4,7 @@ The wire schemas are imported inside the builders: ``websocket.schemas`` pulls i
 the services package, which imports this module.
 """
 
+import logging
 import random
 import uuid
 from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -17,6 +18,8 @@ from speedfog_racing.models import Seed
 
 if TYPE_CHECKING:
     from speedfog_racing.websocket.schemas import ItemBanner, ItemEffectPayload, ItemReminder
+
+logger = logging.getLogger(__name__)
 
 RACE_ITEMS_PLUGIN = "race_items"
 
@@ -182,6 +185,11 @@ EffectKind = Literal[
     "scale",
     "camera",
 ]
+# The effects the mod writes into the game's memory: it requires their
+# duration_ms and drops the whole message without it.
+_MEMORY_KINDS: frozenset[EffectKind] = frozenset(
+    {"vanish", "unseen_foes", "slow_mo", "scale", "camera"}
+)
 CameraVariant = Literal["first_person", "inverted", "wide"]
 CAMERA_VARIANTS: tuple[CameraVariant, ...] = ("first_person", "inverted", "wide")
 
@@ -274,7 +282,7 @@ ITEM_RULES: dict[str, ItemRule] = {
         "ahead",
         "slow_mo",
         "Slows the runner ahead for {s} s",
-        "Half speed for {s} s",
+        "Slowed down for {s} s",
         "Slow-mo",
     ),
     "mini": ItemRule(
@@ -449,8 +457,9 @@ def effect_payload(
     item_key: str, entry: CatalogEntry, variant: CameraVariant | None = None
 ) -> "ItemEffectPayload | None":
     """The wire effect an item applies to a target (a self item's target is its
-    sender's own mod); None for the passive Shield. ``variant`` is the Camera's
-    (drawn when absent)."""
+    sender's own mod); None for the passive Shield, and for a memory effect
+    whose catalog entry has no ``duration_ms`` (logged: the mod would drop the
+    message). ``variant`` is the Camera's (drawn when absent)."""
     from speedfog_racing.websocket.schemas import ItemEffectPayload
 
     key = base_key(item_key)
@@ -478,6 +487,13 @@ def effect_payload(
             # 100 could round past the max and overload the target.
             load_pct=min(_percent(settings.race_items_hammer_load_pct), 99),
         )
+    if kind in _MEMORY_KINDS and entry.duration_ms is None:
+        logger.warning(
+            "Race item %s has no duration_ms in its seed catalog: its %s effect is not sent",
+            item_key,
+            kind,
+        )
+        return None
     if kind == "vanish":
         return ItemEffectPayload(kind="vanish", duration_ms=entry.duration_ms)
     if kind == "unseen_foes":

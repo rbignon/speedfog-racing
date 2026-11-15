@@ -394,6 +394,15 @@ def test_memory_effect_payloads(monkeypatch):
     assert effect_payload("mini", _entry("Mini", 15000, None)).scale_pct == 25
 
 
+@pytest.mark.parametrize("key", ["vanish", "unseen_foes", "slow_mo", "mini", "giant", "camera"])
+def test_a_memory_effect_without_duration_is_not_sent(key, caplog):
+    # The mod requires duration_ms on these kinds and would drop the whole
+    # message: nothing goes, and the server says why.
+    with caplog.at_level(logging.WARNING, logger="speedfog_racing.services.race_items"):
+        assert effect_payload(key, _entry(key, None, None), "wide") is None
+    assert any(key in r.getMessage() for r in caplog.records if r.levelno == logging.WARNING)
+
+
 def test_camera_draws_a_variant_and_names_it():
     entry = _entry("Camera", 15000, None)
     lines = {
