@@ -224,16 +224,22 @@ impl ItemFeed {
         }
     }
 
-    /// Run the pending ink from `play`; true when there was one.
+    /// Run the pending ink from `play`; true when there was one. A running
+    /// ink plays on untouched.
     pub fn start_pending_ink(&mut self, play: Duration) -> bool {
-        let Some(Ink::Pending { row, duration }) = self.ink.take() else {
-            return false;
-        };
-        self.ink = Some(Ink::Running {
-            row,
-            ends_at: play + duration,
-        });
-        true
+        match self.ink.take() {
+            Some(Ink::Pending { row, duration }) => {
+                self.ink = Some(Ink::Running {
+                    row,
+                    ends_at: play + duration,
+                });
+                true
+            }
+            other => {
+                self.ink = other;
+                false
+            }
+        }
     }
 
     pub fn ink_pending(&self) -> bool {
@@ -465,7 +471,10 @@ mod tests {
         assert!(feed.ink_active(secs(37)));
         assert!(!feed.ink_active(secs(38)));
         assert_eq!(feed.reminders(secs(8)).count(), 1);
+        // A running ink is no pending one: it keeps its end.
         assert!(!feed.start_pending_ink(secs(9)));
+        assert!(feed.ink_active(secs(37)));
+        assert!(!feed.ink_active(secs(38)));
     }
 
     #[test]
