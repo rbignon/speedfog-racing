@@ -165,6 +165,11 @@ impl ItemFeed {
         }
     }
 
+    /// Drop the reminder row with this text, if any.
+    pub fn remove_reminder(&mut self, text: &str) {
+        self.reminders.retain(|r| r.row.text != text);
+    }
+
     /// Live rows at `play` with their time left: the timed reminders, then
     /// the ink's row (`None` while it waits for a zone, its time left while
     /// it runs). Expired ones are skipped.

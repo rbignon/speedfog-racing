@@ -324,7 +324,7 @@ pub struct RaceTracker {
     // first write; emptied once written back.
     camera_originals: HashMap<u64, CameraRow>,
 
-    // The characters the foes walk hid, within one loaded world.
+    // The characters the foes walks hid (`core::foes`).
     foes_record: FoesRecord,
 
     // Saves the unacknowledged event flags next to the DLL (None when the
@@ -1102,15 +1102,13 @@ impl RaceTracker {
     /// default after an effect was written there; a default is never written
     /// over and over. The Camera's rows go back only when their own values
     /// are saved, and the foes are walked only when `walk_foes`. A failed
-    /// write keeps the last value written, so the next state tries again (a
-    /// restore included). The foes record is forgotten when the PlayerIns
-    /// differs from the last write's: a load came in between.
+    /// write keeps the last value written, so the next state the machine
+    /// sends tries again; once every effect ended the machine sends the
+    /// defaults once, so a failed restore waits for a later memory effect.
+    /// The foes walks keep their own record of the characters they hid
+    /// (`core::foes`), across loads.
     fn apply_memory_state(&mut self, state: MemoryState, walk_foes: bool) {
         profile_span!("apply_memory_state");
-        let forgotten = self.foes_record.see_player(memory_effects::player_ins());
-        if forgotten > 0 {
-            info!(forgotten, "[ITEMS] New world, the foes record is forgotten");
-        }
         let written = &mut self.memory_written;
         if state.player_hidden || written.player_hidden {
             if memory_effects::set_player_rendered(!state.player_hidden) {
@@ -1153,7 +1151,7 @@ impl RaceTracker {
             }
         }
         if walk_foes {
-            memory_effects::walk_foes(state.foes_hidden, &mut self.foes_record.hidden);
+            memory_effects::walk_foes(state.foes_hidden, &mut self.foes_record);
             written.foes_hidden = state.foes_hidden;
         }
     }

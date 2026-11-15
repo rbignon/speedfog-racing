@@ -12,6 +12,7 @@
 //! this crate's AGPL-3.0).
 
 use std::collections::HashMap;
+use std::mem::{discriminant, Discriminant};
 use std::time::Instant;
 
 use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, ItemFeed};
@@ -508,6 +509,10 @@ pub struct RaceMachine {
     /// Memory race item effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
     /// Camera) on the play clock; `maintain_memory_effects` writes them.
     memory_effects: MemoryEffects,
+    /// The reminder text of the last memory effect started, per kind: the
+    /// next one of the kind (a Giant on a Mini, a Camera on another
+    /// variant) replaces that effect, so its row goes.
+    memory_reminders: Vec<(Discriminant<MemoryEffect>, String)>,
     /// The memory state last handed to the shell (the default until an
     /// effect: the game's own), and when; with the last foes walk.
     memory_written: MemoryState,
@@ -667,6 +672,7 @@ impl RaceMachine {
             play_clock: PlayClock::default(),
             timed_effects: TimedEffects::default(),
             memory_effects: MemoryEffects::default(),
+            memory_reminders: Vec::new(),
             memory_written: MemoryState::default(),
             memory_written_at: now,
             foes_walked_at: now,
@@ -1332,6 +1338,7 @@ impl RaceMachine {
                     self.item_feed.clear();
                     self.timed_effects.clear();
                     self.memory_effects.clear();
+                    self.memory_reminders.clear();
                     self.pending_grants.clear();
                     self.spawning_grants.clear();
                     self.retry_grants.clear();
@@ -3017,6 +3024,19 @@ impl RaceMachine {
                 // Written by `maintain_memory_effects`, on this same frame.
                 ItemAction::Memory(memory, duration) => {
                     self.memory_effects.start(memory, duration, play);
+                    // The effect of the kind it replaces loses its row; a
+                    // row of the same text is merged by `add_reminder`.
+                    let kind = discriminant(&memory);
+                    let text = reminder.as_ref().map(|r| r.text.clone());
+                    if let Some(i) = self.memory_reminders.iter().position(|(k, _)| *k == kind) {
+                        let (_, previous) = self.memory_reminders.swap_remove(i);
+                        if text.as_ref() != Some(&previous) {
+                            self.item_feed.remove_reminder(&previous);
+                        }
+                    }
+                    if let Some(text) = text {
+                        self.memory_reminders.push((kind, text));
+                    }
                 }
             }
             if let Some(reminder) = reminder {
@@ -3052,6 +3072,7 @@ impl RaceMachine {
         self.pending_item_effects.clear();
         self.timed_effects.clear();
         self.memory_effects.clear();
+        self.memory_reminders.clear();
         self.item_feed.drop_pending_ink();
     }
 
@@ -3093,6 +3114,7 @@ impl RaceMachine {
         } else {
             if !self.wrong_save {
                 self.memory_effects.clear();
+                self.memory_reminders.clear();
             }
             if self.memory_written == MemoryState::default() {
                 return;
@@ -9433,6 +9455,73 @@ mod tests {
         let (end_at, end_state, end_walk) = *writes.last().unwrap();
         assert_eq!((end_state, end_walk), (MemoryState::default(), true));
         assert_within_a_frame(end_at, exit + secs(14) - FRAME);
+    }
+
+    #[test]
+    fn a_second_hit_of_a_memory_kind_replaces_its_reminder_row() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let reminders = |m: &RaceMachine, at| -> Vec<String> {
+            m.item_reminders(at)
+                .map(|(row, _)| row.text.clone())
+                .collect()
+        };
+        // Mini, then Giant 5 s later: one scale, one row, the Giant's.
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Scale {
+                    scale_pct: 50,
+                    duration_ms: 15_000,
+                },
+                Some(("Mini", 15_000)),
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert_eq!(reminders(&m, t1), ["Mini"]);
+        let t2 = t1 + secs(5);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Scale {
+                    scale_pct: 150,
+                    duration_ms: 15_000,
+                },
+                Some(("Giant", 15_000)),
+            ),
+            t2,
+        );
+        m.tick(tick_in(snap(Some(66_000), true), true, None), t2);
+        assert_eq!(reminders(&m, t2), ["Giant"]);
+        // A Vanish beside it keeps its own row; a Camera then another
+        // variant: the later one's row alone.
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Vanish {
+                    duration_ms: 15_000,
+                },
+                Some(("Invisible", 15_000)),
+            ),
+            t2 + ms(10),
+        );
+        for (variant, text) in [
+            (CameraVariant::Inverted, "Upside down"),
+            (CameraVariant::Wide, "Wide camera"),
+        ] {
+            m.handle_message(
+                item_hit(
+                    ItemEffectPayload::Camera {
+                        variant,
+                        duration_ms: 15_000,
+                    },
+                    Some((text, 15_000)),
+                ),
+                t2 + ms(10),
+            );
+        }
+        let t3 = t2 + ms(20);
+        m.tick(tick_in(snap(Some(66_020), true), true, None), t3);
+        assert_eq!(reminders(&m, t3), ["Giant", "Invisible", "Wide camera"]);
     }
 
     #[test]

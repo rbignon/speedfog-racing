@@ -9,6 +9,9 @@
 //! already there), and logs at info only when the value in the game changed:
 //! the first write, the restore, or a refresh against the game resetting it.
 //! The foes walk returns how many characters it changed and logs each walk.
+//! Every read after PlayerIns is fault-safe (`ReadProcessMemory`); PlayerIns
+//! itself is read raw, as the SpEffect apply reads it, and the LockCamParam
+//! rows are read and written in process, volatile.
 //!
 //! ### Layout sources
 //!
@@ -37,7 +40,7 @@
 //!
 //! Unverified by this mod in game until the lot's checks.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 use libeldenring::memedit::PointerChain;
@@ -51,7 +54,8 @@ use tracing::{debug, info, warn};
 use super::race_items::{read_bytes, read_ptr};
 use super::sp_effect_apply::{player_ins_offset, read_player_ins};
 use crate::core::foes::{
-    self, RenderWrite, CHR_SET_ENTRY_SIZE, MAX_CHR_SETS, MAX_CHR_SET_CAPACITY, RENDER_BIT,
+    self, FoesRecord, RenderWrite, CHR_SET_ENTRY_SIZE, MAX_CHR_SETS, MAX_CHR_SET_CAPACITY,
+    RENDER_BIT,
 };
 use crate::core::memory_effects::CameraRow;
 use crate::core::protocol::CameraVariant;
@@ -79,7 +83,7 @@ struct ChrSetHead {
 }
 
 /// The player's PlayerIns, 0 while the player is not loaded.
-pub fn player_ins() -> usize {
+fn player_ins() -> usize {
     read_player_ins(&Pointers::new()) as usize
 }
 
@@ -236,27 +240,33 @@ pub fn set_camera(variant: Option<CameraVariant>, originals: &mut HashMap<u64, C
 
 /// Hide (`hide`) or show the characters around: one bounded walk over
 /// WorldChrMan's chr sets (`core::foes`), the player chr set, the player and
-/// Torrent left out. `hidden` is the record of the characters the mod hid;
-/// a show walk forgets it. Returns how many render bits changed. Every read
+/// Torrent left out. `record` holds the characters the mod hid: a hide walk
+/// rebuilds it from what it met (each hide recorded once its write worked),
+/// a show walk empties it. Returns how many render bits changed. Every read
 /// is fault-safe; each set's entries are read in one call. Only on 1.17.x,
 /// the game versions whose offsets were checked.
-pub fn walk_foes(hide: bool, hidden: &mut HashSet<usize>) -> usize {
+pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
     profile_span!("race_items.walk_foes");
+    let mut walk = record.walk(hide);
     if !matches!(
         get_version(),
         Version::V2_07_0 | Version::V2_07_1 | Version::V2_07_2
     ) {
         warn!("[ITEMS] Foes walk skipped: chr set offsets unknown for this game version");
+        walk.missed_set();
+        walk.finish();
         return 0;
     }
     let sets_read = read_ptr(Pointers::new().base_addresses.world_chr_man).and_then(|wcm| {
         let count = PointerChain::<u32>::new(&[wcm + WCM_CHR_SET_COUNT_OFFSET]).read()?;
-        let count = count.min(MAX_CHR_SETS) as usize;
-        let pointers = read_bytes(wcm + WCM_CHR_SETS_OFFSET, count * 8)?;
-        Some((wcm, pointers))
+        let read = count.min(MAX_CHR_SETS) as usize;
+        let pointers = read_bytes(wcm + WCM_CHR_SETS_OFFSET, read * 8)?;
+        Some((wcm, count, pointers))
     });
-    let Some((wcm, set_pointers)) = sets_read else {
+    let Some((wcm, set_count, set_pointers)) = sets_read else {
         warn!(hide, "[ITEMS] Foes walk skipped: chr sets unreadable");
+        walk.missed_set();
+        walk.finish();
         return 0;
     };
     let player = read_ptr(wcm + player_ins_offset()).unwrap_or(0);
@@ -264,11 +274,13 @@ pub fn walk_foes(hide: bool, hidden: &mut HashSet<usize>) -> usize {
         .and_then(|set| read_ptr(set + CHR_SET_ENTRIES_OFFSET))
         .and_then(read_ptr)
         .unwrap_or(0);
-    let (mut sets, mut slots, mut visited, mut unreadable, mut changed, mut capped) =
-        (0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let (mut sets, mut skipped, mut slots, mut visited, mut unreadable, mut changed, mut capped) =
+        (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
     for set in foes::chr_sets(&set_pointers, wcm + WCM_PLAYER_CHR_SET_OFFSET) {
         let Some(head) = PointerChain::<ChrSetHead>::new(&[set + CHR_SET_HEAD_OFFSET]).read()
         else {
+            skipped += 1;
+            walk.missed_set();
             continue;
         };
         if head.capacity == 0 || head.entries == 0 {
@@ -276,21 +288,19 @@ pub fn walk_foes(hide: bool, hidden: &mut HashSet<usize>) -> usize {
         }
         if head.capacity > MAX_CHR_SET_CAPACITY {
             capped += 1;
+            walk.missed_set();
         }
         let capacity = head.capacity.min(MAX_CHR_SET_CAPACITY) as usize;
         let Some(entries) = read_bytes(head.entries, capacity * CHR_SET_ENTRY_SIZE) else {
+            skipped += 1;
+            walk.missed_set();
             continue;
         };
         sets += 1;
         slots += capacity;
-        let plan = foes::plan_chr_set(
-            &entries,
-            player,
-            torrent,
-            |chr| PointerChain::<u8>::new(&[chr + CHR_INS_RENDER_FLAGS_OFFSET]).read(),
-            hide,
-            hidden,
-        );
+        let plan = walk.plan_set(&entries, player, torrent, |chr| {
+            PointerChain::<u8>::new(&[chr + CHR_INS_RENDER_FLAGS_OFFSET]).read()
+        });
         visited += plan.visited;
         unreadable += plan.unreadable;
         for write in plan.writes {
@@ -298,21 +308,27 @@ pub fn walk_foes(hide: bool, hidden: &mut HashSet<usize>) -> usize {
                 RenderWrite::Hide(chr) => (chr, false),
                 RenderWrite::Show(chr) => (chr, true),
             };
-            if set_render_bit(chr, shown).is_some_and(|before| (before & RENDER_BIT != 0) != shown)
-            {
+            // The record learns only the writes that were made.
+            let Some(before) = set_render_bit(chr, shown) else {
+                continue;
+            };
+            walk.written(write);
+            if (before & RENDER_BIT != 0) != shown {
                 changed += 1;
             }
         }
     }
-    foes::finish_walk(hide, hidden);
+    let recorded = walk.finish();
     info!(
         hide,
+        set_count,
         sets,
+        skipped,
         slots,
         visited,
         unreadable,
         changed,
-        recorded = hidden.len(),
+        recorded,
         torrent_found = torrent != 0,
         "[ITEMS] Foes walked"
     );
