@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.14";
+pub const PROTOCOL_VERSION: &str = "1.15";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -481,7 +481,35 @@ pub enum ItemEffectPayload {
         #[serde(default)]
         duration_ms: Option<u32>,
     },
+    /// The player turns invisible for `duration_ms` (1.15).
+    Vanish { duration_ms: u32 },
+    /// The enemies around the player are hidden for `duration_ms` (1.15).
+    UnseenFoes { duration_ms: u32 },
+    /// The player's animations run at `speed_pct` percent of their speed
+    /// for `duration_ms` (1.15).
+    SlowMo { speed_pct: u16, duration_ms: u32 },
+    /// The player is scaled to `scale_pct` percent of their size for
+    /// `duration_ms`: Mini below 100, Giant above (1.15).
+    Scale { scale_pct: u16, duration_ms: u32 },
+    /// The camera turns to `variant` for `duration_ms` (1.15).
+    Camera {
+        variant: CameraVariant,
+        duration_ms: u32,
+    },
     /// A kind this build does not know: ignored with a warning.
+    #[serde(other)]
+    Unknown,
+}
+
+/// The Camera item's variant, drawn by the server at each use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CameraVariant {
+    FirstPerson,
+    Inverted,
+    Wide,
+    /// A variant this build does not know: the effect is dropped with a
+    /// warning.
     #[serde(other)]
     Unknown,
 }
@@ -610,6 +638,8 @@ pub enum ServerMessage {
         #[serde(default)]
         banner: Option<ItemBanner>,
     },
+    /// A banner with nothing applied (1.15): a Star holder's block.
+    ItemNotice { banner: ItemBanner },
 }
 
 // =============================================================================
@@ -1964,6 +1994,85 @@ mod tests {
                 speffect_id: 1450821,
                 duration_ms: None
             }
+        );
+    }
+
+    #[test]
+    fn memory_effect_kinds_parse() {
+        // 1.15: the memory effects, each with its duration.
+        let parse = |json: &str| serde_json::from_str::<ItemEffectPayload>(json).unwrap();
+        assert_eq!(
+            parse(r#"{"kind":"vanish","duration_ms":15000}"#),
+            ItemEffectPayload::Vanish { duration_ms: 15000 }
+        );
+        assert_eq!(
+            parse(r#"{"kind":"unseen_foes","duration_ms":15000}"#),
+            ItemEffectPayload::UnseenFoes { duration_ms: 15000 }
+        );
+        assert_eq!(
+            parse(r#"{"kind":"slow_mo","duration_ms":15000,"speed_pct":50}"#),
+            ItemEffectPayload::SlowMo {
+                speed_pct: 50,
+                duration_ms: 15000
+            }
+        );
+        // The scale setting goes up to 300, past a byte.
+        assert_eq!(
+            parse(r#"{"kind":"scale","duration_ms":15000,"scale_pct":300}"#),
+            ItemEffectPayload::Scale {
+                scale_pct: 300,
+                duration_ms: 15000
+            }
+        );
+        for (wire, variant) in [
+            ("first_person", CameraVariant::FirstPerson),
+            ("inverted", CameraVariant::Inverted),
+            ("wide", CameraVariant::Wide),
+        ] {
+            assert_eq!(
+                parse(&format!(
+                    r#"{{"kind":"camera","duration_ms":15000,"variant":"{wire}"}}"#
+                )),
+                ItemEffectPayload::Camera {
+                    variant,
+                    duration_ms: 15000
+                },
+                "{wire}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_camera_variant_is_unknown() {
+        // A variant from a later server: the message still parses (the
+        // machine drops the effect).
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"item_effect","item":"camera",
+                "effect":{"kind":"camera","duration_ms":15000,"variant":"fisheye"}}"#,
+        )
+        .unwrap();
+        let ServerMessage::ItemEffect { effect, .. } = msg else {
+            panic!("not an item_effect");
+        };
+        assert_eq!(
+            effect,
+            ItemEffectPayload::Camera {
+                variant: CameraVariant::Unknown,
+                duration_ms: 15000
+            }
+        );
+    }
+
+    #[test]
+    fn item_notice_carries_a_banner() {
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"item_notice","banner":{"icon":"star","title":"Star",
+                "line":"Blocked Red Shell","detail":"from bob"}}"#,
+        )
+        .unwrap();
+        assert!(
+            matches!(msg, ServerMessage::ItemNotice { ref banner } if banner.title == "Star"),
+            "{msg:?}"
         );
     }
 

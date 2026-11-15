@@ -867,6 +867,15 @@ impl RaceTracker {
                     load_pct,
                     left_ms,
                 } => self.apply_equip_load(speffect_id, load_pct, left_ms),
+                // Logged only: this build does not write the memory effects
+                // into the game yet. Debug level: the machine asks again
+                // every 250 ms while one is live, and logs each change.
+                Effect::ApplyMemoryState { state, walk_foes } => {
+                    debug!(
+                        ?state,
+                        walk_foes, "[ITEMS] Memory state not written (no game write in this build)"
+                    );
+                }
             }
         }
     }

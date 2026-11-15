@@ -790,6 +790,14 @@ fn message_loop(
                                 warn!("[WS] Incoming channel full/closed: item_remove dropped");
                             }
                         }
+                        ServerMessage::ItemNotice { banner } => {
+                            if incoming_tx
+                                .send(MachineMessage::ItemNotice { banner })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: item_notice dropped");
+                            }
+                        }
                         _ => {}
                     }
                 }

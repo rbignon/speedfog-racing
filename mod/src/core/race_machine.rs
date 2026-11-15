@@ -16,10 +16,12 @@ use std::time::Instant;
 
 use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
+use crate::core::memory_effects::{MemoryEffect, MemoryEffects, MemoryState};
 use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
-    ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder, ParticipantInfo,
-    ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus, SeedInfo,
+    CameraVariant, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder,
+    ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus,
+    SeedInfo,
 };
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
@@ -144,6 +146,10 @@ pub enum MachineMessage {
     ItemRemove {
         goods: String,
         banner: Option<ItemBanner>,
+    },
+    /// A banner with nothing applied: a Star holder's block.
+    ItemNotice {
+        banner: ItemBanner,
     },
 }
 
@@ -385,6 +391,13 @@ pub enum Effect {
         load_pct: u8,
         left_ms: Option<u32>,
     },
+    /// Write the memory race item effects: every field of `state`, a `None`
+    /// or `false` field as the game's default (see `MemoryState`). Walk the
+    /// characters around to hide or show the foes only when `walk_foes`.
+    ApplyMemoryState {
+        state: MemoryState,
+        walk_foes: bool,
+    },
 }
 
 /// A granted race item on its way to the inventory (see `pending_grants`):
@@ -407,6 +420,9 @@ enum ItemAction {
     Shell(Effect),
     /// Overlay only: exit destinations stay hidden this long.
     Ink(Duration),
+    /// Written into the game's memory this long (see
+    /// `RaceMachine::maintain_memory_effects`).
+    Memory(MemoryEffect, Duration),
 }
 
 /// A race item effect waiting for a loaded frame: its banner (none for the
@@ -489,6 +505,14 @@ pub struct RaceMachine {
     /// Timed SpEffects the race items applied, applied again with their
     /// time left at each loading exit (the game drops them at a load).
     timed_effects: TimedEffects,
+    /// Memory race item effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
+    /// Camera) on the play clock; `maintain_memory_effects` writes them.
+    memory_effects: MemoryEffects,
+    /// The memory state last handed to the shell (the default until an
+    /// effect: the game's own), and when; with the last foes walk.
+    memory_written: MemoryState,
+    memory_written_at: Instant,
+    foes_walked_at: Instant,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -642,6 +666,10 @@ impl RaceMachine {
             item_feed: ItemFeed::new(),
             play_clock: PlayClock::default(),
             timed_effects: TimedEffects::default(),
+            memory_effects: MemoryEffects::default(),
+            memory_written: MemoryState::default(),
+            memory_written_at: now,
+            foes_walked_at: now,
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -1298,10 +1326,12 @@ impl RaceMachine {
                     participants.len()
                 ));
                 // Race items queued or shown for another participant are not
-                // this one's; a reconnection as the same one keeps them.
+                // this one's; a reconnection as the same one keeps them. The
+                // next loaded frame writes the memory defaults back.
                 if self.my_participant_id.as_deref() != Some(participant_id.as_str()) {
                     self.item_feed.clear();
                     self.timed_effects.clear();
+                    self.memory_effects.clear();
                     self.pending_grants.clear();
                     self.spawning_grants.clear();
                     self.retry_grants.clear();
@@ -1780,7 +1810,45 @@ impl RaceMachine {
                         load_pct,
                         left_ms: duration_ms,
                     })),
-                    ItemEffectPayload::Unknown => None,
+                    ItemEffectPayload::Vanish { duration_ms } => Some(ItemAction::Memory(
+                        MemoryEffect::Vanish,
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
+                    ItemEffectPayload::UnseenFoes { duration_ms } => Some(ItemAction::Memory(
+                        MemoryEffect::UnseenFoes,
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
+                    ItemEffectPayload::SlowMo {
+                        speed_pct,
+                        duration_ms,
+                    } => Some(ItemAction::Memory(
+                        MemoryEffect::SlowMo {
+                            speed: f32::from(speed_pct) / 100.0,
+                        },
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
+                    ItemEffectPayload::Scale {
+                        scale_pct,
+                        duration_ms,
+                    } => Some(ItemAction::Memory(
+                        MemoryEffect::Scale {
+                            scale: f32::from(scale_pct) / 100.0,
+                        },
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
+                    // A camera this build does not know has nothing to write.
+                    ItemEffectPayload::Camera {
+                        variant: CameraVariant::Unknown,
+                        ..
+                    }
+                    | ItemEffectPayload::Unknown => None,
+                    ItemEffectPayload::Camera {
+                        variant,
+                        duration_ms,
+                    } => Some(ItemAction::Memory(
+                        MemoryEffect::Camera(variant),
+                        Duration::from_millis(u64::from(duration_ms)),
+                    )),
                 };
                 match action {
                     Some(action) => {
@@ -1801,7 +1869,7 @@ impl RaceMachine {
                         });
                     }
                     None => {
-                        warn!(item = %item, "[ITEMS] Effect of an unknown kind, dropped");
+                        warn!(item = %item, "[ITEMS] Effect of an unknown kind or variant, dropped");
                     }
                 }
             }
@@ -1828,6 +1896,13 @@ impl RaceMachine {
                     );
                 }
                 self.item_feed.push_banner(banner, now);
+            }
+            MachineMessage::ItemNotice { banner } => {
+                self.last_received_debug = Some("item_notice".to_string());
+                info!(title = %banner.title, "[ITEMS] Notice received");
+                // Nothing to apply: shown at once, as a Shield's block.
+                self.item_feed
+                    .push_banner(FeedBanner::from_wire(&banner, FeedTone::Gain), now);
             }
             MachineMessage::ItemRemove { goods, banner } => {
                 self.last_received_debug = Some(format!("item_remove({goods})"));
@@ -1902,6 +1977,16 @@ const WRONG_SAVE_RECOVERY_SLACK_MS: u32 = 10_000;
 /// so this log is the only trace left when position readability breaks or
 /// flickers and reveals silently stop firing.
 const ZONE_REVEAL_STALL_WARN: Duration = Duration::from_secs(30);
+
+/// While a memory race item effect is live on a loaded race save, its state
+/// is written again this often (wall time), so a field the game reset or a
+/// write that failed comes back shortly.
+const MEMORY_REFRESH_INTERVAL: Duration = Duration::from_millis(250);
+
+/// While the foes are hidden, the write walks the characters around this
+/// often, hiding those loaded since. A walk visits every loaded character:
+/// it is the costly part of the write.
+const FOES_WALK_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A server condition displays while its last receipt is younger than
 /// this; the server re-sends ~1/s while the condition holds, so display
@@ -2565,6 +2650,7 @@ impl RaceMachine {
             // No report without a connection: the reconnect frame sends it.
             // The effects are local: a load gets them back all the same.
             self.flush_race_items(false, loading_exit, loading_exit, now, &mut effects);
+            self.maintain_memory_effects(loading_exit, now, &mut effects);
             return effects;
         }
 
@@ -2665,6 +2751,7 @@ impl RaceMachine {
             now,
             &mut effects,
         );
+        self.maintain_memory_effects(loading_exit, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -2805,7 +2892,9 @@ impl RaceMachine {
     /// reconnection), the timed effects with time left applied again with
     /// it (`loading_exit`: a game load, which dropped them), then the
     /// pending effects, whose banner, reminder and duration start now (an
-    /// ink applied on a loading exit waits for the next zone reveal). A
+    /// ink applied on a loading exit waits for the next zone reveal; a
+    /// memory effect starts on the play clock, `maintain_memory_effects`
+    /// writes it). A
     /// grant's banner waits for its spawn's outcome (`grant_spawn_result`).
     /// An outdated seed pack holds it all: its regulation may lack the race
     /// goods and their effects. A run that is over drops it all.
@@ -2925,6 +3014,10 @@ impl RaceMachine {
                         );
                     }
                 }
+                // Written by `maintain_memory_effects`, on this same frame.
+                ItemAction::Memory(memory, duration) => {
+                    self.memory_effects.start(memory, duration, play);
+                }
             }
             if let Some(reminder) = reminder {
                 self.item_feed.add_reminder(
@@ -2942,8 +3035,9 @@ impl RaceMachine {
     }
 
     /// Drop the race item work waiting for a load: grants, failed spawns,
-    /// effects (logged when any was waiting), and the timed effects a load
-    /// would apply again (the game runs out the ones it holds).
+    /// effects (logged when any was waiting), the timed effects a load
+    /// would apply again (the game runs out the ones it holds) and the
+    /// memory effects (the next loaded frame writes their defaults back).
     fn drop_waiting_race_items(&mut self, reason: &'static str) {
         let grants = self.pending_grants.len() + self.retry_grants.len();
         let item_effects = self.pending_item_effects.len();
@@ -2957,7 +3051,70 @@ impl RaceMachine {
         self.retry_grants.clear();
         self.pending_item_effects.clear();
         self.timed_effects.clear();
+        self.memory_effects.clear();
         self.item_feed.drop_pending_ink();
+    }
+
+    /// Keep the memory race item effects in the game, right after
+    /// `flush_race_items` (which starts them), on a loaded frame: emit
+    /// `ApplyMemoryState` when the state they give changes, at a loading
+    /// exit (a load may reset what was written) and, while any is live,
+    /// every `MEMORY_REFRESH_INTERVAL` of wall time, the foes walked when
+    /// hidden or shown, through a load and every `FOES_WALK_INTERVAL` while
+    /// hidden (for the characters loaded since). A wrong save gets the
+    /// defaults once, the effects kept with their time left (the play clock
+    /// stops there) for the race save's next loading exit. Once none is
+    /// live (ended, or dropped with the run: run over, new start, another
+    /// participant), the defaults are written once.
+    fn maintain_memory_effects(
+        &mut self,
+        loading_exit: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
+        // Nothing to write into while the player is not loaded: the next
+        // loaded frame writes the state.
+        if !self.frame_snapshot.position_readable {
+            return;
+        }
+        let play = self.play_clock.at(now);
+        let (state, walk_foes) = if !self.wrong_save && self.memory_effects.any_live(play) {
+            let state = self.memory_effects.state(play);
+            let walk_due = state.foes_hidden
+                && now.saturating_duration_since(self.foes_walked_at) >= FOES_WALK_INTERVAL;
+            let refresh_due =
+                now.saturating_duration_since(self.memory_written_at) >= MEMORY_REFRESH_INTERVAL;
+            if state == self.memory_written && !loading_exit && !walk_due && !refresh_due {
+                return;
+            }
+            let walk_foes = state.foes_hidden != self.memory_written.foes_hidden
+                || (state.foes_hidden && (loading_exit || walk_due));
+            (state, walk_foes)
+        } else {
+            if !self.wrong_save {
+                self.memory_effects.clear();
+            }
+            if self.memory_written == MemoryState::default() {
+                return;
+            }
+            // Shows back the foes the last walks hid.
+            (MemoryState::default(), self.memory_written.foes_hidden)
+        };
+        if state != self.memory_written {
+            info!(
+                ?state,
+                walk_foes,
+                loading_exit,
+                wrong_save = self.wrong_save,
+                "[ITEMS] Memory state changed"
+            );
+        }
+        self.memory_written = state;
+        self.memory_written_at = now;
+        if walk_foes {
+            self.foes_walked_at = now;
+        }
+        effects.push(Effect::ApplyMemoryState { state, walk_foes });
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -8938,5 +9095,404 @@ mod tests {
             let fx = load(&mut m, t1 + secs(2), secs(5), 62_000, true);
             assert!(speffects_applied(&fx).is_empty(), "{end}: {fx:?}");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Memory effects
+    // ------------------------------------------------------------------
+
+    /// The memory states a batch writes, with their foes walk.
+    fn memory_writes(effects: &[Effect]) -> Vec<(MemoryState, bool)> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::ApplyMemoryState { state, walk_foes } => Some((*state, *walk_foes)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Loaded frames at `igt`, one every `FRAME` after `from` up to `until`:
+    /// the memory writes, with when each went.
+    fn memory_frames(
+        m: &mut RaceMachine,
+        igt: u32,
+        from: Instant,
+        until: Instant,
+    ) -> Vec<(Instant, MemoryState, bool)> {
+        let mut writes = Vec::new();
+        let mut at = from + FRAME;
+        while at <= until {
+            let fx = m.tick(tick_in(snap(Some(igt), true), true, None), at);
+            writes.extend(
+                memory_writes(&fx)
+                    .into_iter()
+                    .map(|(state, walk)| (at, state, walk)),
+            );
+            at += FRAME;
+        }
+        writes
+    }
+
+    /// `at` falls in the frame starting at `from`.
+    fn assert_within_a_frame(at: Instant, from: Instant) {
+        assert!(
+            (from..from + FRAME).contains(&at),
+            "{:?} after the expected time",
+            at.checked_duration_since(from)
+        );
+    }
+
+    #[test]
+    fn a_memory_effect_is_written_on_change_and_refreshed() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::SlowMo {
+                    speed_pct: 50,
+                    duration_ms: 15_000,
+                },
+                Some(("Slow-mo", 15_000)),
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        let slow = MemoryState {
+            anim_speed: Some(0.5),
+            ..MemoryState::default()
+        };
+        // Written when applied, with its banner and reminder as any effect.
+        assert_eq!(memory_writes(&fx), [(slow, false)]);
+        assert_eq!(m.item_reminders(t1).count(), 1);
+        assert!(banner_title(&m).is_some());
+
+        // Written again every 250 ms of wall time, not every frame; no foes
+        // to walk.
+        let writes = memory_frames(&mut m, 61_000, t1, t1 + secs(2));
+        assert_eq!(writes.len(), 7, "{writes:?}");
+        let mut last = t1;
+        for &(at, state, walk) in &writes {
+            assert_eq!((state, walk), (slow, false));
+            assert_within_a_frame(at, last + ms(250));
+            last = at;
+        }
+
+        // Unseen Foes on top: written at once with a walk, then every
+        // second's write walks the foes again, the others leave them.
+        let t2 = t1 + secs(2);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::UnseenFoes {
+                    duration_ms: 15_000,
+                },
+                None,
+            ),
+            t2,
+        );
+        let both = MemoryState {
+            foes_hidden: true,
+            ..slow
+        };
+        let writes = memory_frames(&mut m, 61_000, t2, t2 + secs(5));
+        assert_eq!(writes[0], (t2 + FRAME, both, true));
+        assert!(writes.iter().all(|&(_, state, _)| state == both));
+        let walks: Vec<Instant> = writes
+            .iter()
+            .filter(|&&(_, _, walk)| walk)
+            .map(|&(at, _, _)| at)
+            .collect();
+        assert_eq!(walks.len(), 5, "{writes:?}");
+        for pair in walks.windows(2) {
+            assert_within_a_frame(pair[1], pair[0] + secs(1));
+        }
+        assert!(writes.len() > 3 * walks.len(), "{writes:?}");
+
+        // The Slow-mo ends (15 s from t1): the speed goes back, the foes stay
+        // hidden. The Unseen Foes ends (15 s from its first frame): one write
+        // of the defaults, walking the foes back, then nothing.
+        let writes = memory_frames(&mut m, 61_000, t2 + secs(5), t2 + secs(20));
+        let foes_only = MemoryState {
+            foes_hidden: true,
+            ..MemoryState::default()
+        };
+        let first_foes_only = writes.iter().position(|w| w.1 == foes_only).unwrap();
+        assert_within_a_frame(writes[first_foes_only].0, t1 + secs(15));
+        assert!(writes[..first_foes_only].iter().all(|w| w.1 == both));
+        let (end_at, end_state, end_walk) = *writes.last().unwrap();
+        assert_eq!((end_state, end_walk), (MemoryState::default(), true));
+        assert_within_a_frame(end_at, t2 + FRAME + secs(15));
+        assert!(writes[first_foes_only..writes.len() - 1]
+            .iter()
+            .all(|w| w.1 == foes_only));
+    }
+
+    #[test]
+    fn memory_effects_come_back_at_the_loading_exit() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Vanish {
+                    duration_ms: 15_000,
+                },
+                Some(("Invisible", 15_000)),
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        let hidden = MemoryState {
+            player_hidden: true,
+            ..MemoryState::default()
+        };
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert_eq!(memory_writes(&fx), [(hidden, false)]);
+
+        // 5 s loaded, then a 20 s load from the next frame: nothing is
+        // written while the player is not loaded.
+        memory_frames(&mut m, 61_000, t1, t1 + secs(5));
+        let start = t1 + secs(5) + FRAME;
+        let mut fx = m.tick(tick_in(snap(Some(66_000), false), true, None), start);
+        fx.extend(m.tick(
+            tick_in(snap(Some(66_000), false), true, None),
+            start + secs(10),
+        ));
+        assert!(memory_writes(&fx).is_empty(), "{fx:?}");
+
+        // The loading exit writes it again, with no change to trigger it.
+        let exit = start + secs(20);
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(tick_in(snap(Some(66_000), true), true, reads), exit);
+        assert_eq!(memory_writes(&fx), [(hidden, false)]);
+
+        // Its time left runs from there, the load not counted: 5 s and a
+        // frame were played before it.
+        let writes = memory_frames(&mut m, 66_000, exit, exit + secs(12));
+        let (end_at, end_state, _) = *writes.last().unwrap();
+        assert_eq!(end_state, MemoryState::default());
+        assert_within_a_frame(end_at, exit + secs(10) - FRAME);
+        assert!(writes[..writes.len() - 1].iter().all(|w| w.1 == hidden));
+    }
+
+    #[test]
+    fn memory_effects_are_restored_when_the_run_ends() {
+        let first_person = MemoryState {
+            player_hidden: true,
+            foes_hidden: true,
+            camera: Some(CameraVariant::FirstPerson),
+            ..MemoryState::default()
+        };
+        for end in ["new start", "finished", "another participant"] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            m.handle_message(
+                item_hit(
+                    ItemEffectPayload::Camera {
+                        variant: CameraVariant::FirstPerson,
+                        duration_ms: 15_000,
+                    },
+                    None,
+                ),
+                now + ms(100),
+            );
+            m.handle_message(
+                item_hit(
+                    ItemEffectPayload::UnseenFoes {
+                        duration_ms: 15_000,
+                    },
+                    None,
+                ),
+                now + ms(100),
+            );
+            let t1 = now + ms(120);
+            let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+            assert_eq!(memory_writes(&fx), [(first_person, true)], "{end}");
+
+            let t2 = t1 + secs(1);
+            let mut fx = Vec::new();
+            match end {
+                "new start" => {
+                    // A race reset: the same runner authenticates again, the
+                    // race in setup, and the start comes before any frame.
+                    fx.extend(m.handle_message(auth_ok_with_items("setup", true), t2));
+                    fx.extend(m.handle_message(MachineMessage::RaceStart(0), t2 + ms(10)));
+                }
+                "another participant" => {
+                    let mut other = auth_ok_with_items("running", true);
+                    if let MachineMessage::AuthOk {
+                        participant_id,
+                        participants,
+                        ..
+                    } = &mut other
+                    {
+                        *participant_id = "p2".to_string();
+                        participants[0] = test_participant("p2", "playing", 1);
+                    }
+                    fx.extend(m.handle_message(other, t2));
+                }
+                status => {
+                    fx.extend(m.handle_message(
+                        MachineMessage::LeaderboardUpdate {
+                            participants: vec![test_participant("p1", status, 3)],
+                            leader_splits: None,
+                        },
+                        t2,
+                    ));
+                    fx.extend(m.tick(tick_in(snap(Some(61_500), true), true, None), t2 + ms(10)));
+                    // Even a run live again later (its status put back)
+                    // gets nothing back.
+                    fx.extend(m.handle_message(
+                        MachineMessage::LeaderboardUpdate {
+                            participants: vec![test_participant("p1", "playing", 3)],
+                            leader_splits: None,
+                        },
+                        t2 + ms(20),
+                    ));
+                }
+            }
+            // The next frames, a load, and past the effects' end: the
+            // defaults once, the foes walked back, then nothing.
+            let mut writes = memory_writes(&fx);
+            writes.extend(
+                memory_frames(&mut m, 61_500, t2 + ms(20), t2 + secs(2))
+                    .into_iter()
+                    .map(|(_, state, walk)| (state, walk)),
+            );
+            writes.extend(memory_writes(&load(
+                &mut m,
+                t2 + secs(3),
+                secs(5),
+                62_000,
+                true,
+            )));
+            writes.extend(
+                memory_frames(&mut m, 62_000, t2 + secs(8), t2 + secs(20))
+                    .into_iter()
+                    .map(|(_, state, walk)| (state, walk)),
+            );
+            assert_eq!(writes, [(MemoryState::default(), true)], "{end}");
+        }
+    }
+
+    #[test]
+    fn a_wrong_save_gets_the_defaults_and_the_race_save_the_effects() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Scale {
+                    scale_pct: 50,
+                    duration_ms: 15_000,
+                },
+                Some(("Mini", 15_000)),
+            ),
+            now + ms(100),
+        );
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::UnseenFoes {
+                    duration_ms: 15_000,
+                },
+                None,
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        let mini = MemoryState {
+            foes_hidden: true,
+            scale: Some(0.5),
+            ..MemoryState::default()
+        };
+        let fx = m.tick(tick_in(snap(Some(60_100), true), true, None), t1);
+        assert_eq!(memory_writes(&fx), [(mini, true)]);
+
+        // Another, further-along save is loaded: its loading exit gets the
+        // defaults once, the foes walked back.
+        m.tick(tick_in(snap(Some(60_100), false), true, None), t1 + secs(1));
+        let reads = items_scan(&m, &[]);
+        let fx = m.tick(
+            tick_in(snap(Some(500_000), true), true, reads),
+            t1 + secs(2),
+        );
+        assert!(m.wrong_save);
+        assert_eq!(memory_writes(&fx), [(MemoryState::default(), true)]);
+        // Played on, it gets no refresh.
+        let writes = memory_frames(&mut m, 500_000, t1 + secs(2), t1 + secs(4));
+        assert!(writes.is_empty(), "{writes:?}");
+
+        // The race save is back: its loading exit writes the effects again,
+        // with the time they had left (1 s and a frame were played).
+        m.tick(tick_in(snap(Some(60_500), false), true, None), t1 + secs(4));
+        assert!(!m.wrong_save);
+        let reads = items_scan(&m, &[]);
+        let exit = t1 + secs(5);
+        let fx = m.tick(tick_in(snap(Some(60_600), true), true, reads), exit);
+        assert_eq!(memory_writes(&fx), [(mini, true)]);
+        let writes = memory_frames(&mut m, 60_600, exit, exit + secs(15));
+        let (end_at, end_state, end_walk) = *writes.last().unwrap();
+        assert_eq!((end_state, end_walk), (MemoryState::default(), true));
+        assert_within_a_frame(end_at, exit + secs(14) - FRAME);
+    }
+
+    #[test]
+    fn an_unknown_camera_variant_is_dropped_with_a_warning() {
+        let logs = LogCapture::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(logs.clone())
+            .with_max_level(tracing::Level::WARN)
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            let mut fx = m.handle_message(
+                item_hit(
+                    ItemEffectPayload::Camera {
+                        variant: CameraVariant::Unknown,
+                        duration_ms: 15_000,
+                    },
+                    Some(("Camera", 15_000)),
+                ),
+                now + ms(100),
+            );
+            fx.extend(m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120)));
+            assert!(memory_writes(&fx).is_empty(), "{fx:?}");
+            // Dropped whole: no banner, no reminder.
+            assert_eq!(banner_title(&m), None);
+            assert_eq!(m.item_reminders(now + ms(120)).count(), 0);
+        });
+        assert!(
+            logs.contents()
+                .contains("[ITEMS] Effect of an unknown kind or variant, dropped"),
+            "{}",
+            logs.contents()
+        );
+    }
+
+    #[test]
+    fn an_item_notice_shows_its_banner() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // A notice applies nothing: it waits for no load.
+        m.tick(
+            tick_in(snap(Some(60_000), false), true, None),
+            now + ms(100),
+        );
+        let mut fx = m.handle_message(
+            MachineMessage::ItemNotice {
+                banner: wire_banner("star", "Star"),
+            },
+            now + ms(200),
+        );
+        // In the tone of the Shield's block banner.
+        assert_eq!(banner_title(&m), Some(("STAR".to_string(), FeedTone::Gain)));
+        fx.extend(m.tick(
+            tick_in(snap(Some(60_100), true), true, items_scan(&m, &[])),
+            now + secs(1),
+        ));
+        assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
+        assert!(memory_writes(&fx).is_empty(), "{fx:?}");
+        assert_eq!(m.item_reminders(now + secs(1)).count(), 0);
     }
 }

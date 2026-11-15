@@ -15,6 +15,7 @@ pub mod item_feed;
 pub mod item_inventory;
 pub mod livesplit;
 pub mod map_utils;
+pub mod memory_effects;
 pub mod play_clock;
 pub mod profile;
 pub mod protocol;
