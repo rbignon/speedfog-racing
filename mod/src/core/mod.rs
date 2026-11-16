@@ -10,6 +10,7 @@ pub mod flag_buffer;
 pub mod foes;
 pub mod format;
 pub mod hunter;
+pub mod hunter_spawn;
 pub mod igt_fix;
 pub mod item_banner;
 pub mod item_damage;

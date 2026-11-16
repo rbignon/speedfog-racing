@@ -26,6 +26,7 @@ use crate::core::race_machine::{
 use crate::core::talisman_thief::pick_talisman;
 use crate::core::timed_effects::timed_apply;
 use crate::eldenring::equip_change;
+use crate::eldenring::hunter::{self, HunterWatch};
 use crate::eldenring::memory_effects;
 use crate::eldenring::race_items;
 use crate::eldenring::sp_effect_apply;
@@ -329,6 +330,10 @@ pub struct RaceTracker {
     // The characters the foes walks hid (`core::foes`).
     foes_record: FoesRecord,
 
+    // The Hunter's last spawn request, for the shell's log lines (never a
+    // pointer to him: each look walks the debug chr set again).
+    hunter_watch: HunterWatch,
+
     // Saves the unacknowledged event flags next to the DLL (None when the
     // DLL folder is unknown: nothing survives a restart then).
     unacked_store: Option<UnackedStore>,
@@ -476,6 +481,7 @@ impl RaceTracker {
             memory_written: MemoryState::default(),
             camera_originals: HashMap::new(),
             foes_record: FoesRecord::default(),
+            hunter_watch: HunterWatch::default(),
             unacked_store,
             #[cfg(debug_assertions)]
             debug_info: DebugInfo::default(),
@@ -916,26 +922,28 @@ impl RaceTracker {
                         warn!(weapon_id, "[ITEMS] Junk weapon not in hand");
                     }
                 }
-                // No game access for the Hunter in this build yet: each step
-                // is logged and answered as nothing happening (no Hunter
-                // spawned or seen), so the server hears an outcome.
+                // Each step and its outcome are logged inside.
                 Effect::RequestHunter {
                     chr_id,
                     npc_param_id,
                     think_id,
                 } => {
-                    warn!(
+                    let started = hunter::request_hunter(
                         chr_id,
-                        npc_param_id, think_id, "[ITEMS] Hunter not spawned by this build"
+                        npc_param_id,
+                        think_id,
+                        &mut self.hunter_watch,
                     );
-                    self.machine.hunter_request_result(false, Instant::now());
+                    self.machine.hunter_request_result(started, Instant::now());
                 }
                 Effect::FindHunter { npc_param_id } => {
-                    debug!(npc_param_id, "[ITEMS] Hunter not looked for by this build");
-                    self.machine.hunter_seen(false, Instant::now());
+                    let found = hunter::find_hunter(npc_param_id, &mut self.hunter_watch);
+                    self.machine.hunter_seen(found, Instant::now());
                 }
                 Effect::EndHunter { npc_param_id } => {
-                    info!(npc_param_id, "[ITEMS] Hunter end not applied by this build");
+                    if !hunter::end_hunter(npc_param_id, &mut self.hunter_watch) {
+                        warn!(npc_param_id, "[ITEMS] Hunter end incomplete, he may remain");
+                    }
                 }
                 Effect::SendItemReport {
                     report_id,

@@ -9,6 +9,7 @@
 pub mod equip_change;
 mod event_flags;
 mod game_state;
+pub mod hunter;
 pub mod igt_hook;
 pub mod item_spawner;
 pub mod memory_effects;

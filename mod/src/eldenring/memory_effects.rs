@@ -79,7 +79,7 @@ use crate::profile_span;
 const CHR_INS_RENDER_FLAGS_OFFSET: usize = 0x1C5;
 /// ChrIns + 0x190: its module container; + 0x28 there, the behavior module,
 /// whose f32 at + 0x17C8 is the animation speed (libeldenring's chain).
-const CHR_INS_MODULES_OFFSET: usize = 0x190;
+pub(super) const CHR_INS_MODULES_OFFSET: usize = 0x190;
 const MODULES_BEHAVIOR_OFFSET: usize = 0x28;
 const BEHAVIOR_ANIM_SPEED_OFFSET: usize = 0x17C8;
 const CHR_INS_CHR_CTRL_OFFSET: usize = 0x58;
@@ -88,20 +88,20 @@ const CHR_CTRL_SCALE_OFFSET: usize = 0x2D4;
 const WCM_PLAYER_CHR_SET_OFFSET: usize = 0x10EE0;
 const WCM_GHOST_CHR_SET_OFFSET: usize = 0x10F38;
 const WCM_SUMMON_BUDDY_CHR_SET_OFFSET: usize = 0x10F90;
-const WCM_DEBUG_CHR_SET_OFFSET: usize = 0x10FE8;
+pub(super) const WCM_DEBUG_CHR_SET_OFFSET: usize = 0x10FE8;
 /// The set count, its holders right after it (`core::foes::HOLDER_BLOCK_SIZE`).
 const WCM_CHR_SET_COUNT_OFFSET: usize = 0x1CC58;
 /// ChrSet + 0x10: its capacity, then its entries pointer at + 0x18.
-const CHR_SET_HEAD_OFFSET: usize = 0x10;
-const CHR_SET_ENTRIES_OFFSET: usize = 0x18;
+pub(super) const CHR_SET_HEAD_OFFSET: usize = 0x10;
+pub(super) const CHR_SET_ENTRIES_OFFSET: usize = 0x18;
 
 /// ChrSet + 0x10 to + 0x20, read in one go.
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct ChrSetHead {
-    capacity: u32,
+pub(super) struct ChrSetHead {
+    pub(super) capacity: u32,
     _pad: u32,
-    entries: usize,
+    pub(super) entries: usize,
 }
 
 /// Whether the WorldChrMan offsets this module walks are known: 1.17.x,

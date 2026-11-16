@@ -28,6 +28,10 @@ UI over TCP port `8086`. You can see:
   `race_items.equipped_talismans` and `event_flag.set_flag` inside),
   `race_items.spawn_talisman`, and `equip_change.equip_junk_weapon` (with
   `race_items.read_inventory` and `equip_change.change_equipment` inside).
+- The Hunter: `race_items.find_hunter` (the walk over the debug chr set,
+  every 250 ms during the 3 s after a spawn request, then once a second
+  while he hunts), `race_items.request_hunter` and `race_items.end_hunter`
+  (once per request and per end).
 - A separate timeline for the WebSocket worker thread (`ws-worker`), and one
   for the LiveSplit pipe thread (`livesplit`: `livesplit_connect`,
   `livesplit_poll`).
@@ -87,6 +91,14 @@ opens a TCP listener.
   open world and once in a legacy dungeon (the `[ITEMS] Foes walked` log line
   gives the sets, entry slots and characters it visited): a few hundred
   microseconds is fine, a millisecond or more is worth reporting.
+- **`race_items.find_hunter` while the Hunter is out.** It reads the debug
+  chr set (the characters the debug creator spawned) and the NpcParam row of
+  each one, on the render thread, so its duration lands on the frame that
+  runs it: every 250 ms for 3 s after a request, then once a second for his
+  60 s, never on the frames between. Capture one Hunter in the open world and
+  one in a legacy dungeon (`docs/RACE_ITEMS.md`, check J.18): the walk is a
+  handful of fault-safe reads while the set holds only him, so a few hundred
+  microseconds or more is worth reporting.
 - **`imgui_window` vs `tracker_update` ratio.** If rendering dominates, investigate
   `render_leaderboard`. If logic dominates, investigate the event flag loop.
 
