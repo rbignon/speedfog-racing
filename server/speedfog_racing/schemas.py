@@ -139,6 +139,7 @@ class CreateRaceRequest(BaseModel):
 class UpdateRaceRequest(BaseModel):
     """Request to update race properties. Organizer only.
 
+    name: SETUP only; trimmed, blank or null refused.
     scheduled_at / open_registration / max_participants / private_dag / deathless /
     race_items: SETUP only.
     is_public: editable at any status.
@@ -147,6 +148,7 @@ class UpdateRaceRequest(BaseModel):
     custom_rules: SETUP or RUNNING only; blank/whitespace is stored as null.
     """
 
+    name: str | None = Field(default=None, max_length=200)
     scheduled_at: datetime | None = None
     is_public: bool | None = None
     open_registration: bool | None = None

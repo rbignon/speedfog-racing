@@ -78,6 +78,10 @@ The deferred-close handoff between auto-finish and hard-close looks like this:
 
 Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_finish`, so concurrent transitions from `/finish`, the inactivity monitor, or the other hard-close path collapse to a single winner without duplicate finalization side effects: chat messages, notifications, and reward grants.
 
+### Name
+
+`name` (1 to 200 characters, trimmed) is set at creation and editable through `PATCH /api/races/{id}` in SETUP only, by the organizer or an admin; the race page offers it as an "Edit" beside the title. A blank or null name is refused (400), and so is a rename once the race has started, so the history, the speedrun boards and the event brackets keep the name the race was played under. A rename broadcasts `race_info_update` (web and mod) and renames the calendar events, the Discord scheduled event and the events.malenia.win one; the Discord announcement post keeps the old name.
+
 ### Run mode
 
 `Race.mode` (`RunMode`: `normal`, `speedrun`, `set_seed`; default `normal`) is set when the race is created and never changes, like `TrainingSession.mode`. Races of every mode count for the speedrun.fog boards, community races, Daily Seeds and event races alike, except a race that drew a SEEN seed (see "Draws" under Seed Status), a `normal` community race reset after its start (see "RUNNING or FINISHED → SETUP" above) and a community race re-rolled without a seed report, which a `speedrun` race cannot be (see "Reroll" under Seed Status); a `set_seed` race is a replay, so its runs are not blind. A `speedrun` race is the community race sure to count: a fresh seed, no reset, and a reroll only with a seed report. See `SPEEDRUN.md`.

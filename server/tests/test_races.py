@@ -3735,6 +3735,122 @@ async def test_update_custom_rules_normalization(test_client, organizer, async_s
             assert resp.json()["custom_rules"] is None
 
 
+async def _make_named_race(async_session, organizer, seed_number: str, **race_kwargs) -> uuid.UUID:
+    async with async_session() as db:
+        seed = Seed(
+            seed_number=seed_number,
+            pool_name="standard",
+            graph_json={},
+            total_layers=5,
+            folder_path=f"/test/{seed_number}",
+            status=SeedStatus.CONSUMED,
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(name="Typo Rcae", organizer_id=organizer.id, seed_id=seed.id, **race_kwargs)
+        db.add(race)
+        await db.commit()
+        return race.id
+
+
+async def _race_name(async_session, race_id: uuid.UUID) -> str:
+    async with async_session() as db:
+        race = await db.get(Race, race_id)
+        return race.name
+
+
+async def test_update_name_in_setup(test_client, organizer, async_session):
+    """A SETUP race takes a trimmed new name and broadcasts it; the same name again is a no-op."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    race_id = await _make_named_race(async_session, organizer, "s_name_1", status=RaceStatus.SETUP)
+
+    with mock_patch(
+        "speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()
+    ) as mock_broadcast:
+        async with test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"name": "  Typo Race  "},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["name"] == "Typo Race"
+            assert mock_broadcast.call_count == 1
+
+            same = await client.patch(
+                f"/api/races/{race_id}",
+                json={"name": "Typo Race"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert same.status_code == 200
+            assert mock_broadcast.call_count == 1  # no extra broadcast on no-op
+
+    assert await _race_name(async_session, race_id) == "Typo Race"
+
+
+async def test_update_name_refused_outside_setup(test_client, organizer, async_session):
+    """The name is frozen once the race has started, and after it finished."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    race_id = await _make_named_race(
+        async_session,
+        organizer,
+        "s_name_2",
+        status=RaceStatus.RUNNING,
+        started_at=datetime.now(UTC),
+    )
+
+    with mock_patch("speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()):
+        async with test_client as client:
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"name": "New"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 400
+
+            async with async_session() as db:
+                r = await db.get(Race, race_id)
+                r.status = RaceStatus.FINISHED
+                await db.commit()
+
+            resp = await client.patch(
+                f"/api/races/{race_id}",
+                json={"name": "New"},
+                headers={"Authorization": f"Bearer {organizer.api_token}"},
+            )
+            assert resp.status_code == 400
+
+    assert await _race_name(async_session, race_id) == "Typo Rcae"
+
+
+async def test_update_name_rejects_blank_null_and_too_long(test_client, organizer, async_session):
+    """Whitespace or null never blanks the name, and 200 characters is the cap."""
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch as mock_patch
+
+    race_id = await _make_named_race(async_session, organizer, "s_name_3", status=RaceStatus.SETUP)
+
+    with mock_patch("speedfog_racing.api.races.broadcast_race_info_update", new=AsyncMock()):
+        async with test_client as client:
+            for body, expected in (
+                ({"name": "   "}, 400),
+                ({"name": None}, 400),
+                ({"name": "x" * 201}, 422),
+            ):
+                resp = await client.patch(
+                    f"/api/races/{race_id}",
+                    json=body,
+                    headers={"Authorization": f"Bearer {organizer.api_token}"},
+                )
+                assert resp.status_code == expected, body
+
+    assert await _race_name(async_session, race_id) == "Typo Rcae"
+
+
 @pytest.mark.asyncio
 async def test_build_race_info_includes_custom_rules(async_session, organizer):
     """build_race_info carries custom_rules so it reaches connected clients."""

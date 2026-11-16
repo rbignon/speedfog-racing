@@ -656,11 +656,9 @@ async def update_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     _require_organizer(race, user)
 
-    # Snapshot every RaceInfo field PATCH could mutate, so we only broadcast
+    # Snapshot every RaceInfo field PATCH can mutate, so we only broadcast
     # race_info_update when something actually changed (no-op PATCHes stay
-    # quiet). `name` is currently immutable via PATCH but included in the
-    # snapshot so the day a rename endpoint lands here, the broadcast fires
-    # without anyone having to remember to update both tuples.
+    # quiet).
     pre_snapshot = (
         race.name,
         race.is_public,
@@ -674,6 +672,21 @@ async def update_race(
         race.deathless,
         race.race_items,
     )
+
+    # name: SETUP only (a typo fix before the start; frozen once played)
+    if "name" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="name can only be edited in SETUP status",
+            )
+        new_name = (request.name or "").strip()
+        if not new_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="name cannot be empty",
+            )
+        race.name = new_name
 
     # is_public can be changed at any status
     if request.is_public is not None:
