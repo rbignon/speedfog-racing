@@ -24,6 +24,10 @@ UI over TCP port `8086`. You can see:
   `race_items.set_player_scale`, `race_items.set_anim_speed` and
   `race_items.set_camera` inside it, and `race_items.walk_foes` (the walk
   over the characters around, once a second while Unseen Foes runs).
+- Race item equipment, once per effect: `steal_talisman` (with
+  `race_items.equipped_talismans` and `event_flag.set_flag` inside),
+  `race_items.spawn_talisman`, and `equip_change.equip_junk_weapon` (with
+  `race_items.read_inventory` and `equip_change.change_equipment` inside).
 - A separate timeline for the WebSocket worker thread (`ws-worker`), and one
   for the LiveSplit pipe thread (`livesplit`: `livesplit_connect`,
   `livesplit_poll`).

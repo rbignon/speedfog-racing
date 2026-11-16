@@ -19,11 +19,13 @@ use crate::core::foes::FoesRecord;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
 use crate::core::memory_effects::{CameraRow, MemoryState};
-use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo};
+use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
+use crate::core::talisman_thief::pick_talisman;
 use crate::core::timed_effects::timed_apply;
+use crate::eldenring::equip_change;
 use crate::eldenring::memory_effects;
 use crate::eldenring::race_items;
 use crate::eldenring::sp_effect_apply;
@@ -889,33 +891,34 @@ impl RaceTracker {
                 Effect::ApplyMemoryState { state, walk_foes } => {
                     self.apply_memory_state(state, walk_foes)
                 }
-                // No game access for the lot 4 effects in this build yet:
-                // each is logged and answered as nothing happening (nothing
-                // taken, no Hunter spawned or seen), so the server hears an
-                // outcome.
                 Effect::StealTalisman {
                     talismans,
                     roll,
                     report_id,
                 } => {
-                    warn!(
-                        report_id,
-                        roll,
-                        table = talismans.len(),
-                        "[ITEMS] Talisman steal not applied by this build, nothing taken"
-                    );
-                    let report = self.machine.talisman_steal_result(report_id, None);
+                    let stolen = self.steal_talisman(&talismans, roll, report_id);
+                    let report = self.machine.talisman_steal_result(report_id, stolen);
                     self.execute_effects(report);
                 }
                 Effect::SpawnTalisman { talisman_id } => {
-                    warn!(
-                        talisman_id,
-                        "[ITEMS] Talisman gift not applied by this build"
-                    );
+                    if race_items::spawn_talisman(talisman_id) {
+                        info!(talisman_id, "[ITEMS] Talisman given");
+                    } else {
+                        warn!(
+                            talisman_id,
+                            "[ITEMS] Talisman not given (the give function or MapItemMan is unavailable)"
+                        );
+                    }
                 }
                 Effect::EquipJunkWeapon { weapon_id } => {
-                    warn!(weapon_id, "[ITEMS] Junk weapon not applied by this build");
+                    // Each step and its outcome are logged inside.
+                    if !equip_change::equip_junk_weapon(weapon_id) {
+                        warn!(weapon_id, "[ITEMS] Junk weapon not in hand");
+                    }
                 }
+                // No game access for the Hunter in this build yet: each step
+                // is logged and answered as nothing happening (no Hunter
+                // spawned or seen), so the server hears an outcome.
                 Effect::RequestHunter {
                     chr_id,
                     npc_param_id,
@@ -955,9 +958,54 @@ impl RaceTracker {
             return;
         }
         self.race_items_prewarmed = true;
-        info!("[ITEMS] Prewarming the SpEffect apply function and the params");
+        info!("[ITEMS] Prewarming the SpEffect apply function, the equip function and the params");
         std::thread::spawn(sp_effect_apply::prewarm);
+        std::thread::spawn(equip_change::prewarm);
         std::thread::spawn(race_items::prewarm_params);
+    }
+
+    /// Take one of the talismans the player wears (the Talisman Thief): the
+    /// one `pick_talisman` picks among the worn talismans the seed's table
+    /// knows, by raising its flag (the seed's event removes it from its
+    /// slot). Returns its id, or `None` with nothing written when the slots
+    /// are unreadable, no worn talisman is in the table, or the flag write
+    /// fails.
+    fn steal_talisman(&self, talismans: &[TalismanFlag], roll: u32, report_id: u64) -> Option<u32> {
+        profile_span!("steal_talisman");
+        let Some(equipped) = race_items::equipped_talismans() else {
+            warn!(
+                report_id,
+                "[ITEMS] Talisman slots unreadable, nothing taken"
+            );
+            return None;
+        };
+        let Some(picked) = pick_talisman(&equipped, talismans, roll) else {
+            info!(
+                report_id,
+                ?equipped,
+                "[ITEMS] No worn talisman in the table, nothing taken"
+            );
+            return None;
+        };
+        if self.event_flag_reader.set_flag(picked.flag, true) {
+            info!(
+                report_id,
+                ?equipped,
+                roll,
+                talisman_id = picked.id,
+                flag = picked.flag,
+                "[ITEMS] Talisman removal flag raised"
+            );
+            Some(picked.id)
+        } else {
+            warn!(
+                report_id,
+                talisman_id = picked.id,
+                flag = picked.flag,
+                "[ITEMS] Talisman removal flag not written, nothing taken"
+            );
+            None
+        }
     }
 
     /// Give a granted race item's goods unless the inventory already holds

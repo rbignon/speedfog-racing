@@ -6,6 +6,7 @@
 //! Game-memory reading and hooking, consumed by the dll shell; the pure
 //! race logic in `core::race_machine` receives these reads as plain data.
 
+pub mod equip_change;
 mod event_flags;
 mod game_state;
 pub mod igt_hook;

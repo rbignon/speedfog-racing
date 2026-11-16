@@ -1,7 +1,7 @@
-//! Race item game access for the shell: goods spawn, inventory quantity,
-//! the goods' icon, the player's HP and equip load, the equip load
-//! effect's rate and a SpEffect row's timing. Called on rare events (a
-//! grant, a game load, an effect), never per frame.
+//! Race item game access for the shell: goods and talisman spawn, inventory
+//! quantity, the goods' icon, the talismans worn, the player's HP and equip
+//! load, the equip load effect's rate and a SpEffect row's timing. Called on
+//! rare events (a grant, a game load, an effect), never per frame.
 //!
 //! ### Inventory layout source
 //!
@@ -46,6 +46,15 @@ use crate::profile_span;
 /// Goods type flag in item ID encoding (high nibble 0x4 = EquipParamGoods).
 const GOODS_TYPE_FLAG: u32 = 0x4000_0000;
 
+/// Talisman type flag in item ID encoding (high nibble 0x2 =
+/// EquipParamAccessory).
+const ACCESSORY_TYPE_FLAG: u32 = 0x2000_0000;
+
+/// ChrAsm slot of the first of the four talisman slots (fromsoftware-rs
+/// `ChrAsmSlot`: 17 to 20), whose `equipment_param_ids` hold raw
+/// EquipParamAccessory ids, -1 for an empty slot.
+const TALISMAN_FIRST_SLOT: usize = 17;
+
 /// PlayerGameData + 0x410: `InventoryItemsData` of the held inventory.
 const PLAYER_GAME_DATA_INVENTORY_ITEMS_OFFSET: usize = 0x410;
 
@@ -71,11 +80,32 @@ pub fn spawn_goods(goods_id: u32) -> bool {
     inject_one(GOODS_TYPE_FLAG | goods_id)
 }
 
+/// Give one talisman (EquipParamAccessory row `talisman_id`). False when
+/// nothing was injected, as `spawn_goods`.
+pub fn spawn_talisman(talisman_id: u32) -> bool {
+    profile_span!("race_items.spawn_talisman");
+    inject_one(ACCESSORY_TYPE_FLAG | talisman_id)
+}
+
+/// The talismans the player wears: the four talisman slots' param ids in
+/// slot order, raw EquipParamAccessory ids, -1 for an empty slot (the
+/// `equipment_param_ids` the equip load also reads). `None` when unreadable.
+pub fn equipped_talismans() -> Option<[i32; 4]> {
+    profile_span!("race_items.equipped_talismans");
+    let game_data_man = read_ptr(Pointers::new().base_addresses.game_data_man)?;
+    let player_game_data = read_ptr(game_data_man + GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET)?;
+    PointerChain::<[i32; 4]>::new(&[player_game_data
+        + CHRASM_EQUIPMENT_PARAM_IDS_OFFSET
+        + 4 * TALISMAN_FIRST_SLOT])
+    .read()
+}
+
 /// The held inventory's normal and key item lists, copied out of game
 /// memory once, for as many goods lookups as needed.
 pub struct HeldInventory {
     normal: Vec<u8>,
     key: Vec<u8>,
+    key_capacity: u32,
 }
 
 impl HeldInventory {
@@ -106,7 +136,20 @@ impl HeldInventory {
         Some(Self {
             normal: read_list(lists.normal_head, lists.normal_capacity, lists.normal_len)?,
             key: read_list(lists.key_head, lists.key_capacity, lists.key_len)?,
+            key_capacity: lists.key_capacity,
         })
+    }
+
+    /// The normal list's entries, its whole capacity in position order:
+    /// where a given weapon lands (`core::item_inventory::new_copy`).
+    pub(super) fn normal_entries(&self) -> &[u8] {
+        &self.normal
+    }
+
+    /// The key list's capacity, the inventory index of the normal list's
+    /// first entry (`core::item_inventory::normal_index`).
+    pub(super) fn key_capacity(&self) -> u32 {
+        self.key_capacity
     }
 
     /// How many of a goods item the lists hold (0 when absent).

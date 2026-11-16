@@ -1,7 +1,8 @@
 //! Race item inventory scan: how many of one item a block of the game's
-//! inventory entries holds, and which entry a give added. The shell copies a
-//! whole entry list out of game memory in one read, then hands the bytes
-//! here. Also the Junk Weapon's choice of slot.
+//! inventory entries holds, and which entry a give added, with its
+//! inventory index. The shell copies a whole entry list out of game memory
+//! in one read, then hands the bytes here. Also the Junk Weapon's choice of
+//! slot.
 //!
 //! Entry layout derived from fromsoftware-rs `cs/player_game_data.rs`
 //! (`EquipInventoryDataListEntry`): `gaitem_handle` u32, `item_id` u32,
@@ -115,6 +116,14 @@ pub fn new_copy(before: &[u32], entries: &[u8], item_id: u32) -> Option<(usize, 
     new.into_iter()
         .max_by_key(|&(_, _, sort_id)| sort_id)
         .map(|(position, handle, _)| (position, handle))
+}
+
+/// The game's inventory index of the normal list's entry at `position`
+/// (what equipping it takes): the key items come first, so it is the key
+/// list's capacity plus the position, the gaps a removed item left counted.
+/// `None` past `u32`, a position no list holds.
+pub fn normal_index(key_capacity: u32, position: usize) -> Option<u32> {
+    u32::try_from(position).ok()?.checked_add(key_capacity)
 }
 
 /// Number of right weapon slots (ChrAsm keeps three per hand).
@@ -250,6 +259,15 @@ mod tests {
         let list = weapons(&[(0x8080_0001, CLUB, 10), (u32::MAX, u32::MAX, 0)]);
         assert_eq!(new_copy(&handles_of(&list, CLUB), &list, CLUB), None);
         assert_eq!(new_copy(&[], &[], CLUB), None);
+    }
+
+    #[test]
+    fn a_normal_entry_is_indexed_after_the_key_items() {
+        assert_eq!(normal_index(384, 0), Some(384));
+        assert_eq!(normal_index(384, 7), Some(391));
+        assert_eq!(normal_index(u32::MAX - 1, 1), Some(u32::MAX));
+        assert_eq!(normal_index(384, usize::MAX), None);
+        assert_eq!(normal_index(u32::MAX, 1), None);
     }
 
     #[test]
