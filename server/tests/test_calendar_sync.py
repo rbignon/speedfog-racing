@@ -146,7 +146,24 @@ async def test_update_reschedule_patches_both(async_session):
             race_id, scheduled_changed=True, metadata_changed=False
         )
         mu_d.assert_called_once()
+        assert mu_d.call_args[1]["name"] is None
         mu_m.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_update_rename_patches_discord_name(async_session):
+    from speedfog_racing.services import calendar_sync
+
+    race_id = await _make_race(async_session, discord_event_id="d1", malenia_event_id="m1")
+    with _patch_providers(async_session) as (_m, _c1, _c2, mu_d, mu_m, *_):
+        await calendar_sync.update_calendar_events(
+            race_id, scheduled_changed=False, metadata_changed=True, name_changed=True
+        )
+        mu_d.assert_called_once()
+        assert mu_d.call_args[1]["name"] == "Sync Race"
+        assert mu_d.call_args[1]["scheduled_at"] is None
+        mu_m.assert_called_once()
+        assert mu_m.call_args[1]["race_name"] == "Sync Race"
 
 
 @pytest.mark.asyncio

@@ -889,6 +889,32 @@ async def test_update_scheduled_event():
             call_args = mock_req.call_args
             assert call_args[0][0] == "PATCH"
             assert "/guilds/guild-456/scheduled-events/event-123" in call_args[0][1]
+            assert "name" not in call_args[1]["json"]
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_event_name_only():
+    """A rename PATCHes the name alone, leaving the times as they are."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await update_scheduled_event("event-123", name="Friday Fog")
+
+            mock_req.assert_called_once()
+            assert mock_req.call_args[1]["json"] == {"name": "Friday Fog"}
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_event_nothing_to_send():
+    """No time and no name: no request at all."""
+    with patch("speedfog_racing.discord._discord_api_request", new_callable=AsyncMock) as mock_req:
+        with patch("speedfog_racing.discord.settings") as mock_settings:
+            mock_settings.discord_guild_id = "guild-456"
+
+            await update_scheduled_event("event-123")
+
+            mock_req.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -87,12 +87,15 @@ async def update_calendar_events(
     *,
     scheduled_changed: bool,
     metadata_changed: bool,
+    name_changed: bool = False,
 ) -> None:
     """Re-sync the calendar event on both providers after a race PATCH.
 
-    ``scheduled_changed`` / ``metadata_changed`` compare pre- vs post-PATCH state
-    and cannot be reconstructed from the DB, so the caller passes them in. Current
-    id presence and qualification are read from the freshly loaded race.
+    ``scheduled_changed`` / ``metadata_changed`` / ``name_changed`` compare pre- vs
+    post-PATCH state and cannot be reconstructed from the DB, so the caller passes
+    them in. ``metadata_changed`` covers every malenia title/description input;
+    ``name_changed`` is the one of them a Discord event also shows. Current id
+    presence and qualification are read from the freshly loaded race.
     """
     async with async_session_maker() as session:
         race = (
@@ -120,8 +123,12 @@ async def update_calendar_events(
             return
 
         # Existing events: patch only what changed.
-        if scheduled_changed and race.discord_event_id:
-            await update_scheduled_event(race.discord_event_id, scheduled_at=race.scheduled_at)
+        if race.discord_event_id and (scheduled_changed or name_changed):
+            await update_scheduled_event(
+                race.discord_event_id,
+                scheduled_at=race.scheduled_at if scheduled_changed else None,
+                name=race.name if name_changed else None,
+            )
         if race.malenia_event_id and (scheduled_changed or metadata_changed):
             mode_display = format_pool_display_name(race.seed.pool if race.seed else None)
             await update_calendar_event(

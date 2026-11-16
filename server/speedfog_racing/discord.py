@@ -96,19 +96,28 @@ async def create_scheduled_event(
 async def update_scheduled_event(
     event_id: str,
     *,
-    scheduled_at: datetime,
+    scheduled_at: datetime | None = None,
+    name: str | None = None,
 ) -> None:
-    """Update scheduled time of an existing Discord event."""
+    """Update the scheduled time and/or the name of an existing Discord event.
+
+    Only the given fields are sent; with neither, no request is made.
+    """
     guild_id = settings.discord_guild_id
     if not guild_id:
+        return
+    payload: dict[str, object] = {}
+    if scheduled_at is not None:
+        payload["scheduled_start_time"] = scheduled_at.isoformat()
+        payload["scheduled_end_time"] = (scheduled_at + EVENT_DURATION).isoformat()
+    if name is not None:
+        payload["name"] = name
+    if not payload:
         return
     await _discord_api_request(
         "PATCH",
         f"/guilds/{guild_id}/scheduled-events/{event_id}",
-        json={
-            "scheduled_start_time": scheduled_at.isoformat(),
-            "scheduled_end_time": (scheduled_at + EVENT_DURATION).isoformat(),
-        },
+        json=payload,
     )
 
 
