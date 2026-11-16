@@ -1037,6 +1037,7 @@ export async function createRace(
 export async function updateRace(
   raceId: string,
   data: {
+    name?: string;
     scheduled_at?: string | null;
     is_public?: boolean;
     open_registration?: boolean;

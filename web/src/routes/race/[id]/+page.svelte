@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { tick, untrack } from "svelte";
   import { page } from "$app/state";
   import { auth } from "$lib/stores/auth.svelte";
   import { getEffectiveLocale } from "$lib/stores/locale.svelte";
@@ -94,6 +94,11 @@
   let rulesInput = $state("");
   let rulesError = $state<string | null>(null);
   let rulesSaving = $state(false);
+  let editingName = $state(false);
+  let nameInput = $state("");
+  let nameError = $state<string | null>(null);
+  let nameSaving = $state(false);
+  let nameInputEl = $state<HTMLInputElement>();
   let deathlessSaving = $state(false);
   let deathlessError = $state<string | null>(null);
   let raceItemsSaving = $state(false);
@@ -420,6 +425,9 @@
   }
 
   let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
+  // The name is frozen once the race starts (the server refuses it too), so
+  // an editor left open drops back to the plain title at the start.
+  let canEditName = $derived(isOrganizer && raceStatus === "setup");
   // Role gate for the race settings an admin may edit on the organizer's
   // behalf; each call site keeps its own status window. Never on a daily.
   // Invites, participant removal, custom rules and the setup map preview
@@ -954,6 +962,48 @@
     }
   }
 
+  async function startEditName() {
+    nameInput = raceName;
+    nameError = null;
+    editingName = true;
+    await tick();
+    nameInputEl?.select();
+  }
+
+  async function saveName() {
+    const name = nameInput.trim();
+    if (name === raceName) {
+      editingName = false;
+      return;
+    }
+    nameSaving = true;
+    nameError = null;
+    try {
+      await updateRace(initialRace.id, { name });
+      initialRace = await fetchRace(initialRace.id);
+      editingName = false;
+    } catch (e) {
+      nameError = e instanceof Error ? e.message : "Failed to update";
+    } finally {
+      nameSaving = false;
+    }
+    if (editingName) {
+      // Disabled during the request, the input lost focus: give it back so
+      // Enter and Escape keep working after an error.
+      await tick();
+      nameInputEl?.focus();
+    }
+  }
+
+  function onNameKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      saveName();
+    } else if (e.key === "Escape") {
+      editingName = false;
+    }
+  }
+
   function startEditRules() {
     rulesInput = liveCustomRules ?? "";
     rulesError = null;
@@ -1252,11 +1302,48 @@
       <div class="race-header-wrapper">
         <header class="race-header">
           <div class="race-title">
-            <h1 class:frog={isFrogRace} title={raceName}>
-              {#if isFrogRace}
-                <img src="/badges/frog.svg" alt="" class="frog-icon" />
-              {/if}{raceName}
-            </h1>
+            {#if editingName && canEditName}
+              <input
+                class="race-name-input"
+                type="text"
+                aria-label="Race name"
+                maxlength="200"
+                bind:this={nameInputEl}
+                bind:value={nameInput}
+                onkeydown={onNameKeydown}
+                disabled={nameSaving}
+              />
+              <div class="schedule-edit-actions">
+                <button
+                  class="btn-inline"
+                  onclick={saveName}
+                  disabled={nameSaving}
+                >
+                  {nameSaving ? "..." : "Save"}
+                </button>
+                <button
+                  class="btn-inline btn-inline-secondary"
+                  onclick={() => (editingName = false)}
+                  disabled={nameSaving}
+                >
+                  Cancel
+                </button>
+              </div>
+              {#if nameError}
+                <span class="schedule-error">{nameError}</span>
+              {/if}
+            {:else}
+              <div class="race-title-row">
+                <h1 class:frog={isFrogRace} title={raceName}>
+                  {#if isFrogRace}
+                    <img src="/badges/frog.svg" alt="" class="frog-icon" />
+                  {/if}{raceName}
+                </h1>
+                {#if canEditName}
+                  <button class="btn-edit" onclick={startEditName}>Edit</button>
+                {/if}
+              </div>
+            {/if}
             <p class="organizer">
               Organized by {initialRace.organizer.twitch_display_name ||
                 initialRace.organizer.twitch_username}
@@ -2082,6 +2169,9 @@
   .race-title {
     flex: 0 1 auto;
     min-width: 0;
+    /* Stacked under 50rem, the header no longer shrinks the title: this cap
+       keeps the name editor's input inside it. */
+    max-width: 100%;
   }
 
   .race-header h1 {
@@ -2096,6 +2186,41 @@
 
   .race-header h1.frog {
     color: #5cb168;
+  }
+
+  /* The organizer's Edit stays on the title's line; the title keeps the
+     ellipsis and the button never shrinks under it. */
+  .race-title-row {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .race-title-row .btn-edit {
+    flex: none;
+  }
+
+  /* A fixed width, since .race-title takes its content's width (a percentage
+     would resolve against the input itself); max-width yields to the badges. */
+  .race-name-input {
+    display: block;
+    width: 36rem;
+    max-width: 100%;
+    margin-bottom: 0.35rem;
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 0.3rem 0.6rem;
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+  }
+
+  .race-name-input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .race-header h1 .frog-icon {
