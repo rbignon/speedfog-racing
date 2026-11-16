@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.16";
+pub const PROTOCOL_VERSION: &str = "1.17";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -75,6 +75,14 @@ pub enum ClientMessage {
     ItemReceived { grant_id: u64 },
     /// Catalog goods keys of the race goods currently held (quantity above 0).
     ItemInventory { goods: Vec<String> },
+    /// The outcome of a `steal_talisman` or `hunter` effect (1.17): whether
+    /// a talisman was taken or the Hunter spawned. `talisman_id` is the
+    /// talisman taken, sent null otherwise.
+    ItemReport {
+        report_id: u64,
+        landed: bool,
+        talisman_id: Option<u32>,
+    },
     /// Heartbeat response
     Pong,
 }
@@ -496,9 +504,40 @@ pub enum ItemEffectPayload {
         variant: CameraVariant,
         duration_ms: u32,
     },
+    /// The Talisman Thief takes one of the talismans the player wears
+    /// (1.17): `talismans` is the seed's table, `roll` picks among those
+    /// worn (`core::talisman_thief`). Answered with an `item_report`.
+    StealTalisman {
+        talismans: Vec<TalismanFlag>,
+        roll: u32,
+        report_id: u64,
+    },
+    /// The thief's gift, once the victim reported the talisman taken (1.17).
+    Talisman { talisman_id: u32 },
+    /// A junk weapon forced into the player's right hand (1.17).
+    JunkWeapon { weapon_id: u32 },
+    /// The Hunter: the character `chr_id` spawned with the NpcParam row
+    /// `npc_param_id` (its tier's) and the NpcThinkParam row `think_id`,
+    /// hunting the player for `duration_ms` once found (1.17). Answered
+    /// with an `item_report`.
+    Hunter {
+        chr_id: u32,
+        npc_param_id: u32,
+        think_id: u32,
+        duration_ms: u32,
+        report_id: u64,
+    },
     /// A kind this build does not know: ignored with a warning.
     #[serde(other)]
     Unknown,
+}
+
+/// One talisman of the seed's table: its EquipParamAccessory id and the
+/// event flag whose removal event takes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TalismanFlag {
+    pub id: u32,
+    pub flag: u32,
 }
 
 /// The Camera item's variant, drawn by the server at each use.
@@ -2058,6 +2097,80 @@ mod tests {
                 "{wire}"
             );
         }
+    }
+
+    #[test]
+    fn lot_4_effect_kinds_parse() {
+        // 1.17: the Talisman Thief (to the victim, then the gift to the
+        // thief), the Junk Weapon and the Hunter.
+        let parse = |json: &str| serde_json::from_str::<ItemEffectPayload>(json).unwrap();
+        assert_eq!(
+            parse(
+                r#"{"kind":"steal_talisman","talismans":[{"id":1000,"flag":1050290300},
+                    {"id":1001,"flag":1050290301}],"roll":4294967295,"report_id":12}"#
+            ),
+            ItemEffectPayload::StealTalisman {
+                talismans: vec![
+                    TalismanFlag {
+                        id: 1000,
+                        flag: 1_050_290_300
+                    },
+                    TalismanFlag {
+                        id: 1001,
+                        flag: 1_050_290_301
+                    },
+                ],
+                roll: u32::MAX,
+                report_id: 12,
+            }
+        );
+        assert_eq!(
+            parse(r#"{"kind":"talisman","talisman_id":1000}"#),
+            ItemEffectPayload::Talisman { talisman_id: 1000 }
+        );
+        assert_eq!(
+            parse(r#"{"kind":"junk_weapon","weapon_id":11010000}"#),
+            ItemEffectPayload::JunkWeapon {
+                weapon_id: 11_010_000
+            }
+        );
+        assert_eq!(
+            parse(
+                r#"{"kind":"hunter","chr_id":2130,"npc_param_id":1450855,
+                    "think_id":1450850,"duration_ms":60000,"report_id":13}"#
+            ),
+            ItemEffectPayload::Hunter {
+                chr_id: 2130,
+                npc_param_id: 1_450_855,
+                think_id: 1_450_850,
+                duration_ms: 60_000,
+                report_id: 13,
+            }
+        );
+    }
+
+    #[test]
+    fn item_report_sends_a_null_talisman_when_none_was_taken() {
+        // The server reads a missing or null talisman_id the same; the wire
+        // shape names it null.
+        assert_eq!(
+            serde_json::to_string(&ClientMessage::ItemReport {
+                report_id: 13,
+                landed: false,
+                talisman_id: None,
+            })
+            .unwrap(),
+            r#"{"type":"item_report","report_id":13,"landed":false,"talisman_id":null}"#
+        );
+        assert_eq!(
+            serde_json::to_string(&ClientMessage::ItemReport {
+                report_id: 12,
+                landed: true,
+                talisman_id: Some(1000),
+            })
+            .unwrap(),
+            r#"{"type":"item_report","report_id":12,"landed":true,"talisman_id":1000}"#
+        );
     }
 
     #[test]

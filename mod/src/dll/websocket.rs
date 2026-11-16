@@ -55,6 +55,11 @@ pub enum OutgoingMessage {
     ItemInventory {
         goods: Vec<String>,
     },
+    ItemReport {
+        report_id: u64,
+        landed: bool,
+        talisman_id: Option<u32>,
+    },
     Shutdown,
 }
 
@@ -197,6 +202,18 @@ impl RaceWebSocketClient {
     pub fn send_item_inventory(&self, goods: Vec<String>) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::ItemInventory { goods }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_item_report(&self, report_id: u64, landed: bool, talisman_id: Option<u32>) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::ItemReport {
+                report_id,
+                landed,
+                talisman_id,
+            }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -354,6 +371,32 @@ fn websocket_thread(
                                 message_id,
                                 quit_out,
                             });
+                        }
+                        // The outcome of a steal or a Hunter played while
+                        // disconnected: nothing plays it again, and the
+                        // server waits for it a few minutes.
+                        OutgoingMessage::ItemReport {
+                            report_id,
+                            landed,
+                            talisman_id,
+                        } => {
+                            let msg = ClientMessage::ItemReport {
+                                report_id,
+                                landed,
+                                talisman_id,
+                            };
+                            let sent = serde_json::to_string(&msg)
+                                .map_err(|e| e.to_string())
+                                .and_then(|json| {
+                                    socket.send(Message::Text(json)).map_err(|e| e.to_string())
+                                });
+                            match sent {
+                                Ok(()) => info!(
+                                    report_id,
+                                    landed, "[WS] Sending: item_report (queued while disconnected)"
+                                ),
+                                Err(e) => warn!(report_id, "[WS] item_report lost: {}", e),
+                            }
                         }
                         // Dropped: ready and status updates are stale; an
                         // item_received is answered again when the server
@@ -617,6 +660,22 @@ fn message_loop(
             Ok(OutgoingMessage::ItemInventory { goods }) => {
                 info!(?goods, "[WS] Sending: item_inventory");
                 let msg = ClientMessage::ItemInventory { goods };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::ItemReport {
+                report_id,
+                landed,
+                talisman_id,
+            }) => {
+                info!(report_id, landed, ?talisman_id, "[WS] Sending: item_report");
+                let msg = ClientMessage::ItemReport {
+                    report_id,
+                    landed,
+                    talisman_id,
+                };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))

@@ -9,6 +9,7 @@ pub mod equip_load;
 pub mod flag_buffer;
 pub mod foes;
 pub mod format;
+pub mod hunter;
 pub mod igt_fix;
 pub mod item_banner;
 pub mod item_damage;
@@ -21,6 +22,7 @@ pub mod play_clock;
 pub mod profile;
 pub mod protocol;
 pub mod race_machine;
+pub mod talisman_thief;
 pub mod timed_effects;
 pub mod types;
 

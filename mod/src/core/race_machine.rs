@@ -15,6 +15,7 @@ use std::collections::HashMap;
 use std::mem::{discriminant, Discriminant};
 use std::time::Instant;
 
+use crate::core::hunter::{self, Hunter, HunterNotice, HunterSpec, HunterStep};
 use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, InkStart, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
 use crate::core::memory_effects::{MemoryEffect, MemoryEffects, MemoryState};
@@ -22,7 +23,7 @@ use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
     CameraVariant, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder,
     ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus,
-    SeedInfo,
+    SeedInfo, TalismanFlag,
 };
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
@@ -403,6 +404,50 @@ pub enum Effect {
         state: MemoryState,
         walk_foes: bool,
     },
+    /// Take one of the talismans the player wears (the Talisman Thief): the
+    /// shell reads the talisman slots, picks one with
+    /// `core::talisman_thief::pick_talisman` and raises its flag (the seed's
+    /// event removes it), then hands the id taken, or `None`, to
+    /// `RaceMachine::talisman_steal_result` and executes what it returns.
+    StealTalisman {
+        talismans: Vec<TalismanFlag>,
+        roll: u32,
+        report_id: u64,
+    },
+    /// Give the player a talisman (the thief's gift).
+    SpawnTalisman {
+        talisman_id: u32,
+    },
+    /// Give the player the junk weapon and equip it in the right hand in use
+    /// (`core::item_inventory::junk_slot`), unless that hand already holds it
+    /// (`junk_is_free`); the copy equipped is the one the give added
+    /// (`new_copy`).
+    EquipJunkWeapon {
+        weapon_id: u32,
+    },
+    /// Spawn the Hunter behind the player; the shell answers
+    /// `RaceMachine::hunter_request_result`.
+    RequestHunter {
+        chr_id: u32,
+        npc_param_id: u32,
+        think_id: u32,
+    },
+    /// Look for a live character of the Hunter's NpcParam row; the shell
+    /// answers `RaceMachine::hunter_seen`.
+    FindHunter {
+        npc_param_id: u32,
+    },
+    /// End the Hunter: clear a spawn still pending and bring every live
+    /// character of that NpcParam row to 0 HP.
+    EndHunter {
+        npc_param_id: u32,
+    },
+    /// Send `item_report`: the outcome of a steal or of a Hunter.
+    SendItemReport {
+        report_id: u64,
+        landed: bool,
+        talisman_id: Option<u32>,
+    },
 }
 
 /// A granted race item on its way to the inventory (see `pending_grants`):
@@ -421,13 +466,17 @@ struct PendingGrant {
 #[derive(Debug)]
 enum ItemAction {
     /// Executed by the shell (`ApplySpEffect`, `ApplyItemDamage`,
-    /// `ApplyEquipLoad`).
+    /// `ApplyEquipLoad`, `StealTalisman`, `SpawnTalisman`,
+    /// `EquipJunkWeapon`).
     Shell(Effect),
     /// Overlay only: exit destinations stay hidden this long.
     Ink(Duration),
     /// Written into the game's memory this long (see
     /// `RaceMachine::maintain_memory_effects`).
     Memory(MemoryEffect, Duration),
+    /// The Hunter, sent out through `RaceMachine::maintain_hunter`; his
+    /// banner and reminder wait in him until he is found.
+    Hunter(HunterSpec),
 }
 
 /// A race item effect waiting for a loaded frame: its banner (none for the
@@ -522,6 +571,11 @@ pub struct RaceMachine {
     memory_written: MemoryState,
     memory_written_at: Instant,
     foes_walked_at: Instant,
+    /// The Hunter sent after this runner (`maintain_hunter`).
+    hunter: Hunter,
+    /// The last loading exit: a Hunter spawns once the player has been
+    /// loaded `hunter::SETTLE` since (none seen yet: settled).
+    last_loading_exit: Option<Instant>,
     pub last_status_update: Instant,
     pub last_flag_poll: Instant,
     pub ready_sent: bool,
@@ -680,6 +734,8 @@ impl RaceMachine {
             memory_written: MemoryState::default(),
             memory_written_at: now,
             foes_walked_at: now,
+            hunter: Hunter::default(),
+            last_loading_exit: None,
             last_status_update: now,
             last_flag_poll: now,
             ready_sent: false,
@@ -1348,6 +1404,7 @@ impl RaceMachine {
                     self.retry_grants.clear();
                     self.pending_item_effects.clear();
                     self.handled_grants.clear();
+                    self.drop_hunter("another participant", &mut effects);
                 }
                 self.my_participant_id = Some(participant_id);
                 self.my_participant_index = participants
@@ -1466,7 +1523,7 @@ impl RaceMachine {
                     // A reset keeps the participant, so its auth_ok kept the
                     // race items of the voided run; the server's reset
                     // cleared its side of them.
-                    self.drop_waiting_race_items("new start");
+                    self.drop_waiting_race_items("new start", &mut effects);
                     self.item_feed.clear_timers();
                     self.held_item = None;
                 }
@@ -1860,6 +1917,35 @@ impl RaceMachine {
                         MemoryEffect::Camera(variant),
                         Duration::from_millis(u64::from(duration_ms)),
                     )),
+                    ItemEffectPayload::StealTalisman {
+                        talismans,
+                        roll,
+                        report_id,
+                    } => Some(ItemAction::Shell(Effect::StealTalisman {
+                        talismans,
+                        roll,
+                        report_id,
+                    })),
+                    ItemEffectPayload::Talisman { talisman_id } => {
+                        Some(ItemAction::Shell(Effect::SpawnTalisman { talisman_id }))
+                    }
+                    ItemEffectPayload::JunkWeapon { weapon_id } => {
+                        Some(ItemAction::Shell(Effect::EquipJunkWeapon { weapon_id }))
+                    }
+                    ItemEffectPayload::Hunter {
+                        chr_id,
+                        npc_param_id,
+                        think_id,
+                        duration_ms,
+                        report_id,
+                    } => Some(ItemAction::Hunter(HunterSpec {
+                        chr_id,
+                        npc_param_id,
+                        think_id,
+                        duration: Duration::from_millis(u64::from(duration_ms)),
+                        report_id,
+                        notice: HunterNotice::default(),
+                    })),
                 };
                 match action {
                     Some(action) => {
@@ -2118,6 +2204,41 @@ impl RaceMachine {
                 "[ITEMS] Grant spawn failed, retried at the next load or reconnection"
             );
             self.retry_grants.push(grant);
+        }
+    }
+
+    /// The shell's outcome for a `StealTalisman`: the talisman it took, or
+    /// `None` (nothing worn the table knows, slots unreadable). Returns the
+    /// `item_report` to send: landed with the talisman, or not landed.
+    pub fn talisman_steal_result(&self, report_id: u64, stolen: Option<u32>) -> Vec<Effect> {
+        match stolen {
+            Some(talisman_id) => info!(report_id, talisman_id, "[ITEMS] Talisman stolen"),
+            None => info!(report_id, "[ITEMS] Nothing to steal"),
+        }
+        vec![Effect::SendItemReport {
+            report_id,
+            landed: stolen.is_some(),
+            talisman_id: stolen,
+        }]
+    }
+
+    /// The shell's outcome for a `RequestHunter`: `started` when the spawn
+    /// was handed to the game. A refused one counts as a miss at once.
+    pub fn hunter_request_result(&mut self, started: bool, now: Instant) {
+        if !started {
+            info!("[ITEMS] Hunter spawn refused, counted as a miss");
+        }
+        self.hunter.request_result(started, now);
+    }
+
+    /// The shell's outcome for a `FindHunter`: `found` when a live character
+    /// of the Hunter's row is around. One that hunted and is gone (a load or
+    /// a kill removed him) ends the hunt there.
+    pub fn hunter_seen(&mut self, found: bool, now: Instant) {
+        let hunting = self.hunter.is_hunting();
+        self.hunter.seen(found, now, self.play_clock.at(now));
+        if hunting && !self.hunter.is_hunting() {
+            info!("[ITEMS] Hunter gone (a load or a kill removed him), the hunt is over");
         }
     }
 
@@ -2385,6 +2506,7 @@ impl RaceMachine {
         // Loading screen exit: send deferred event_flags (certain) or zone_query (probabilistic)
         let loading_exit = position_readable && !self.was_position_readable;
         if loading_exit {
+            self.last_loading_exit = Some(now);
             let quit_out = std::mem::take(&mut self.pending_quit_out);
             if quit_out
                 && self.is_race_running()
@@ -2671,6 +2793,7 @@ impl RaceMachine {
             // The effects are local: a load gets them back all the same.
             self.flush_race_items(false, loading_exit, loading_exit, now, &mut effects);
             self.maintain_memory_effects(loading_exit, now, &mut effects);
+            self.maintain_hunter(now, &mut effects);
             return effects;
         }
 
@@ -2772,6 +2895,7 @@ impl RaceMachine {
             &mut effects,
         );
         self.maintain_memory_effects(loading_exit, now, &mut effects);
+        self.maintain_hunter(now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -2941,7 +3065,7 @@ impl RaceMachine {
         // Once the run is over (race not running, runner finished or out),
         // what still waits is dropped rather than held for a load.
         if !self.is_race_running() || self.am_i_finished() || self.am_i_abandoned() {
-            self.drop_waiting_race_items("run not live");
+            self.drop_waiting_race_items("run not live", effects);
             return;
         }
         if !self.frame_snapshot.position_readable || self.wrong_save || self.seed_mismatch {
@@ -3000,6 +3124,7 @@ impl RaceMachine {
         for effect in std::mem::take(&mut self.pending_item_effects) {
             info!(action = ?effect.action, "[ITEMS] Effect applied");
             let mut reminder = effect.reminder;
+            let mut banner = effect.banner;
             match effect.action {
                 ItemAction::Shell(apply) => {
                     if let Effect::ApplySpEffect {
@@ -3065,6 +3190,29 @@ impl RaceMachine {
                         self.memory_reminders.push((kind, text));
                     }
                 }
+                // His banner and reminder wait for him (`maintain_hunter`).
+                ItemAction::Hunter(mut spec) => {
+                    spec.notice = HunterNotice {
+                        banner: banner.take(),
+                        icon: effect.icon.clone(),
+                        reminder: reminder.take(),
+                    };
+                    let report_id = spec.report_id;
+                    if self.hunter.start(spec, now) {
+                        info!(report_id, "[ITEMS] Hunter sent out");
+                    } else {
+                        // One at a time: the sender learns this one missed.
+                        info!(
+                            report_id,
+                            "[ITEMS] Hunter missed, another one is awaited or hunting"
+                        );
+                        effects.push(Effect::SendItemReport {
+                            report_id,
+                            landed: false,
+                            talisman_id: None,
+                        });
+                    }
+                }
             }
             if let Some(reminder) = reminder {
                 self.item_feed.add_reminder(
@@ -3075,7 +3223,7 @@ impl RaceMachine {
                     play,
                 );
             }
-            if let Some(banner) = effect.banner {
+            if let Some(banner) = banner {
                 self.item_feed.push_banner(banner, now);
             }
         }
@@ -3083,9 +3231,10 @@ impl RaceMachine {
 
     /// Drop the race item work waiting for a load: grants, failed spawns,
     /// effects (logged when any was waiting), the timed effects a load
-    /// would apply again (the game runs out the ones it holds) and the
-    /// memory effects (the next loaded frame writes their defaults back).
-    fn drop_waiting_race_items(&mut self, reason: &'static str) {
+    /// would apply again (the game runs out the ones it holds), the
+    /// memory effects (the next loaded frame writes their defaults back)
+    /// and the Hunter (`drop_hunter`).
+    fn drop_waiting_race_items(&mut self, reason: &'static str, effects: &mut Vec<Effect>) {
         let grants = self.pending_grants.len() + self.retry_grants.len();
         let item_effects = self.pending_item_effects.len();
         if grants + item_effects > 0 {
@@ -3101,6 +3250,17 @@ impl RaceMachine {
         self.memory_effects.clear();
         self.memory_reminders.clear();
         self.item_feed.drop_unstarted_ink();
+        self.drop_hunter(reason, effects);
+    }
+
+    /// Forget the Hunter; one requested and not missed yet, or hunting, may
+    /// be in the world: ended (`EndHunter`), wherever the player is.
+    fn drop_hunter(&mut self, reason: &'static str, effects: &mut Vec<Effect>) {
+        let npc_param_id = self.hunter.spec().map(|spec| spec.npc_param_id);
+        if let (true, Some(npc_param_id)) = (self.hunter.clear(), npc_param_id) {
+            info!(npc_param_id, reason, "[ITEMS] Hunter ended");
+            effects.push(Effect::EndHunter { npc_param_id });
+        }
     }
 
     /// What `zone`, the zone that decides, makes of an ink not run yet (no
@@ -3188,6 +3348,75 @@ impl RaceMachine {
             self.foes_walked_at = now;
         }
         effects.push(Effect::ApplyMemoryState { state, walk_foes });
+    }
+
+    /// Run the Hunter's life (`core::hunter`), right after
+    /// `maintain_memory_effects`, on a loaded frame of the race save: his
+    /// spawn once the player has been loaded `hunter::SETTLE` since the last
+    /// loading exit, the looks for him, his end, the report, and his banner
+    /// and reminder once found. A few comparisons while nothing is due.
+    fn maintain_hunter(&mut self, now: Instant, effects: &mut Vec<Effect>) {
+        if !self.frame_snapshot.position_readable || self.wrong_save {
+            return;
+        }
+        let settled = self
+            .last_loading_exit
+            .is_none_or(|at| now.saturating_duration_since(at) >= hunter::SETTLE);
+        let play = self.play_clock.at(now);
+        for step in self.hunter.tick(now, play, settled) {
+            let Some(&HunterSpec {
+                chr_id,
+                npc_param_id,
+                think_id,
+                report_id,
+                ..
+            }) = self.hunter.spec()
+            else {
+                break;
+            };
+            match step {
+                HunterStep::Request => {
+                    info!(
+                        report_id,
+                        chr_id, npc_param_id, think_id, "[ITEMS] Hunter spawn requested"
+                    );
+                    effects.push(Effect::RequestHunter {
+                        chr_id,
+                        npc_param_id,
+                        think_id,
+                    });
+                }
+                HunterStep::Find => effects.push(Effect::FindHunter { npc_param_id }),
+                HunterStep::End => {
+                    info!(npc_param_id, "[ITEMS] Hunter ended");
+                    effects.push(Effect::EndHunter { npc_param_id });
+                }
+                HunterStep::Report { landed } => {
+                    info!(report_id, landed, "[ITEMS] Hunter reported");
+                    effects.push(Effect::SendItemReport {
+                        report_id,
+                        landed,
+                        talisman_id: None,
+                    });
+                }
+                HunterStep::Found => {
+                    info!(report_id, "[ITEMS] Hunter found, he hunts");
+                    let notice = self.hunter.take_notice();
+                    if let Some(reminder) = notice.reminder {
+                        self.item_feed.add_reminder(
+                            notice.icon,
+                            reminder.text,
+                            FeedTone::Malus,
+                            Duration::from_millis(u64::from(reminder.duration_ms)),
+                            play,
+                        );
+                    }
+                    if let Some(banner) = notice.banner {
+                        self.item_feed.push_banner(banner, now);
+                    }
+                }
+            }
+        }
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -9867,5 +10096,383 @@ mod tests {
         assert_eq!(item_steps(&fx), ["report"], "{fx:?}");
         assert!(memory_writes(&fx).is_empty(), "{fx:?}");
         assert_eq!(m.item_reminders(now + secs(1)).count(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Talisman Thief, Junk Weapon, Hunter
+    // ------------------------------------------------------------------
+
+    /// The Hunter's NpcParam row (tier 6) and think row.
+    const HUNTER_ROW: u32 = 1_450_855;
+    const HUNTER_THINK: u32 = 1_450_850;
+
+    fn lot_4_hit(
+        item: &str,
+        effect: ItemEffectPayload,
+        banner: Option<&str>,
+        reminder: Option<&str>,
+    ) -> MachineMessage {
+        MachineMessage::ItemEffect {
+            item: item.to_string(),
+            effect,
+            banner: banner.map(|title| wire_banner(item, title)),
+            reminder: reminder.map(|text| ItemReminder {
+                text: text.to_string(),
+                duration_ms: 60_000,
+            }),
+        }
+    }
+
+    fn steal(report_id: u64) -> MachineMessage {
+        lot_4_hit(
+            "talisman_thief",
+            ItemEffectPayload::StealTalisman {
+                talismans: vec![TalismanFlag {
+                    id: 1000,
+                    flag: 1_050_290_300,
+                }],
+                roll: 5,
+                report_id,
+            },
+            None,
+            None,
+        )
+    }
+
+    fn hunter(report_id: u64) -> MachineMessage {
+        lot_4_hit(
+            "hunter",
+            ItemEffectPayload::Hunter {
+                chr_id: 2130,
+                npc_param_id: HUNTER_ROW,
+                think_id: HUNTER_THINK,
+                duration_ms: 60_000,
+                report_id,
+            },
+            Some("Hunter"),
+            Some("Hunted"),
+        )
+    }
+
+    /// The Hunter's effects and the item reports of a batch.
+    fn hunter_steps(effects: Vec<Effect>) -> Vec<Effect> {
+        effects
+            .into_iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::RequestHunter { .. }
+                        | Effect::FindHunter { .. }
+                        | Effect::EndHunter { .. }
+                        | Effect::SendItemReport { .. }
+                )
+            })
+            .collect()
+    }
+
+    /// Loaded frames at `igt`, one every `FRAME` after `from` up to `until`,
+    /// every Hunter spawn handed to the game and every look finding him
+    /// while `found` says so: the Hunter's effects and the reports, with
+    /// when.
+    fn hunter_frames(
+        m: &mut RaceMachine,
+        from: Instant,
+        until: Instant,
+        found: impl Fn(Instant) -> bool,
+    ) -> Vec<(Instant, Effect)> {
+        let mut steps = Vec::new();
+        let mut at = from + FRAME;
+        while at <= until {
+            for effect in m.tick(tick_in(snap(Some(61_000), true), true, None), at) {
+                match effect {
+                    Effect::RequestHunter { .. } => m.hunter_request_result(true, at),
+                    Effect::FindHunter { .. } => m.hunter_seen(found(at), at),
+                    Effect::EndHunter { .. } | Effect::SendItemReport { .. } => {}
+                    _ => continue,
+                }
+                steps.push((at, effect));
+            }
+            at += FRAME;
+        }
+        steps
+    }
+
+    fn reminder_texts(m: &RaceMachine, now: Instant) -> Vec<String> {
+        m.item_reminders(now)
+            .map(|(row, _)| row.text.clone())
+            .collect()
+    }
+
+    #[test]
+    fn a_steal_reports_what_the_shell_took() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(steal(7), now + ms(100));
+        // Applied on a loaded frame, as any effect.
+        let fx = m.tick(
+            tick_in(snap(Some(61_000), false), true, None),
+            now + ms(120),
+        );
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::StealTalisman { .. })),
+            "{fx:?}"
+        );
+        let fx = load(&mut m, now + ms(140), secs(5), 61_000, true);
+        assert!(
+            fx.contains(&Effect::StealTalisman {
+                talismans: vec![TalismanFlag {
+                    id: 1000,
+                    flag: 1_050_290_300
+                }],
+                roll: 5,
+                report_id: 7,
+            }),
+            "{fx:?}"
+        );
+        assert_eq!(
+            m.talisman_steal_result(7, Some(1000)),
+            [Effect::SendItemReport {
+                report_id: 7,
+                landed: true,
+                talisman_id: Some(1000),
+            }]
+        );
+        // No banner of its own: the server sends one after the report.
+        assert_eq!(banner_title(&m), None);
+    }
+
+    #[test]
+    fn a_failed_steal_reports_nothing_taken() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(steal(8), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(
+            m.talisman_steal_result(8, None),
+            [Effect::SendItemReport {
+                report_id: 8,
+                landed: false,
+                talisman_id: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn the_gift_and_the_junk_weapon_are_applied_with_their_banner() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            lot_4_hit(
+                "talisman_thief",
+                ItemEffectPayload::Talisman { talisman_id: 1000 },
+                Some("Talisman Thief"),
+                None,
+            ),
+            now + ms(100),
+        );
+        m.handle_message(
+            lot_4_hit(
+                "junk_weapon",
+                ItemEffectPayload::JunkWeapon {
+                    weapon_id: 11_010_000,
+                },
+                Some("Junk Weapon"),
+                None,
+            ),
+            now + ms(100),
+        );
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        let applied: Vec<_> = fx
+            .iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::SpawnTalisman { .. } | Effect::EquipJunkWeapon { .. }
+                )
+            })
+            .collect();
+        assert_eq!(
+            applied,
+            [
+                &Effect::SpawnTalisman { talisman_id: 1000 },
+                &Effect::EquipJunkWeapon {
+                    weapon_id: 11_010_000
+                }
+            ]
+        );
+        assert_eq!(
+            banner_title(&m),
+            Some(("TALISMAN THIEF".to_string(), FeedTone::Malus))
+        );
+    }
+
+    #[test]
+    fn the_hunter_banner_waits_for_him() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), now + ms(100));
+        // Not seen for 1 s.
+        let t1 = now + ms(100);
+        let steps = hunter_frames(&mut m, t1, t1 + secs(1), |_| false);
+        assert_eq!(
+            steps[0],
+            (
+                t1 + FRAME,
+                Effect::RequestHunter {
+                    chr_id: 2130,
+                    npc_param_id: HUNTER_ROW,
+                    think_id: HUNTER_THINK,
+                }
+            )
+        );
+        assert!(steps[1..].iter().all(|(_, e)| *e
+            == Effect::FindHunter {
+                npc_param_id: HUNTER_ROW
+            }));
+        assert_eq!(steps.len(), 4, "{steps:?}");
+        assert_eq!(banner_title(&m), None);
+        assert!(reminder_texts(&m, t1 + secs(1)).is_empty());
+
+        // Seen: his banner and reminder show, and he is reported landed.
+        let t2 = t1 + secs(1);
+        let steps = hunter_frames(&mut m, t2, t2 + secs(1), |_| true);
+        let report = Effect::SendItemReport {
+            report_id: 13,
+            landed: true,
+            talisman_id: None,
+        };
+        assert_eq!(
+            steps.iter().filter(|(_, e)| *e == report).count(),
+            1,
+            "{steps:?}"
+        );
+        assert_eq!(
+            banner_title(&m),
+            Some(("HUNTER".to_string(), FeedTone::Malus))
+        );
+        assert_eq!(reminder_texts(&m, t2 + secs(1)), ["Hunted"]);
+    }
+
+    #[test]
+    fn the_hunter_waits_for_the_load_to_settle() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), now + ms(100));
+        // Received during a load: applied at its exit, spawned 2.5 s later.
+        let fx = load(&mut m, now + ms(100), secs(5), 61_000, true);
+        assert_eq!(hunter_steps(fx), []);
+        let exit = now + ms(100) + secs(5);
+        let steps = hunter_frames(&mut m, exit, exit + secs(3), |_| false);
+        assert!(
+            matches!(steps[0].1, Effect::RequestHunter { .. }),
+            "{steps:?}"
+        );
+        assert!(
+            (exit + secs(5) / 2..exit + secs(5) / 2 + FRAME).contains(&steps[0].0),
+            "{:?} after the exit",
+            steps[0].0 - exit
+        );
+    }
+
+    #[test]
+    fn a_second_hunter_is_reported_missed_at_once() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), now + ms(100));
+        let t1 = now + ms(100);
+        hunter_frames(&mut m, t1, t1 + ms(500), |_| false);
+        m.handle_message(hunter(14), t1 + ms(500));
+        let steps = hunter_frames(&mut m, t1 + ms(500), t1 + secs(2), |_| true);
+        assert_eq!(
+            steps[0],
+            (
+                t1 + ms(500) + FRAME,
+                Effect::SendItemReport {
+                    report_id: 14,
+                    landed: false,
+                    talisman_id: None,
+                }
+            )
+        );
+        // The first one goes on: found, reported landed, his banner alone.
+        assert!(steps.iter().any(|(_, e)| *e
+            == Effect::SendItemReport {
+                report_id: 13,
+                landed: true,
+                talisman_id: None,
+            }));
+        assert!(!steps
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::RequestHunter { .. })));
+        assert_eq!(reminder_texts(&m, t1 + secs(2)), ["Hunted"]);
+    }
+
+    #[test]
+    fn the_hunter_is_ended_when_the_run_ends() {
+        for end in ["finished", "new start", "another participant"] {
+            let now = Instant::now();
+            let mut m = running_items_machine(now);
+            m.handle_message(hunter(13), now + ms(100));
+            let t1 = now + ms(100);
+            hunter_frames(&mut m, t1, t1 + secs(2), |_| true);
+
+            let t2 = t1 + secs(2);
+            let mut fx = Vec::new();
+            match end {
+                "new start" => {
+                    fx.extend(m.handle_message(auth_ok_with_items("setup", true), t2));
+                    fx.extend(m.handle_message(MachineMessage::RaceStart(0), t2 + ms(10)));
+                }
+                "another participant" => {
+                    let mut other = auth_ok_with_items("running", true);
+                    if let MachineMessage::AuthOk {
+                        participant_id,
+                        participants,
+                        ..
+                    } = &mut other
+                    {
+                        *participant_id = "p2".to_string();
+                        participants[0] = test_participant("p2", "playing", 1);
+                    }
+                    fx.extend(m.handle_message(other, t2));
+                }
+                status => {
+                    fx.extend(m.handle_message(
+                        MachineMessage::LeaderboardUpdate {
+                            participants: vec![test_participant("p1", status, 3)],
+                            leader_splits: None,
+                        },
+                        t2,
+                    ));
+                }
+            }
+            // The next frames, a load and past his time: ended once, never
+            // looked for again.
+            let mut steps = hunter_steps(fx);
+            steps.extend(
+                hunter_frames(&mut m, t2 + ms(20), t2 + secs(2), |_| true)
+                    .into_iter()
+                    .map(|(_, e)| e),
+            );
+            steps.extend(hunter_steps(load(
+                &mut m,
+                t2 + secs(3),
+                secs(5),
+                62_000,
+                true,
+            )));
+            steps.extend(
+                hunter_frames(&mut m, t2 + secs(8), t2 + secs(70), |_| true)
+                    .into_iter()
+                    .map(|(_, e)| e),
+            );
+            assert_eq!(
+                steps,
+                [Effect::EndHunter {
+                    npc_param_id: HUNTER_ROW
+                }],
+                "{end}"
+            );
+        }
     }
 }

@@ -889,6 +889,59 @@ impl RaceTracker {
                 Effect::ApplyMemoryState { state, walk_foes } => {
                     self.apply_memory_state(state, walk_foes)
                 }
+                // No game access for the lot 4 effects in this build yet:
+                // each is logged and answered as nothing happening (nothing
+                // taken, no Hunter spawned or seen), so the server hears an
+                // outcome.
+                Effect::StealTalisman {
+                    talismans,
+                    roll,
+                    report_id,
+                } => {
+                    warn!(
+                        report_id,
+                        roll,
+                        table = talismans.len(),
+                        "[ITEMS] Talisman steal not applied by this build, nothing taken"
+                    );
+                    let report = self.machine.talisman_steal_result(report_id, None);
+                    self.execute_effects(report);
+                }
+                Effect::SpawnTalisman { talisman_id } => {
+                    warn!(
+                        talisman_id,
+                        "[ITEMS] Talisman gift not applied by this build"
+                    );
+                }
+                Effect::EquipJunkWeapon { weapon_id } => {
+                    warn!(weapon_id, "[ITEMS] Junk weapon not applied by this build");
+                }
+                Effect::RequestHunter {
+                    chr_id,
+                    npc_param_id,
+                    think_id,
+                } => {
+                    warn!(
+                        chr_id,
+                        npc_param_id, think_id, "[ITEMS] Hunter not spawned by this build"
+                    );
+                    self.machine.hunter_request_result(false, Instant::now());
+                }
+                Effect::FindHunter { npc_param_id } => {
+                    debug!(npc_param_id, "[ITEMS] Hunter not looked for by this build");
+                    self.machine.hunter_seen(false, Instant::now());
+                }
+                Effect::EndHunter { npc_param_id } => {
+                    info!(npc_param_id, "[ITEMS] Hunter end not applied by this build");
+                }
+                Effect::SendItemReport {
+                    report_id,
+                    landed,
+                    talisman_id,
+                } => {
+                    self.ws_client
+                        .send_item_report(report_id, landed, talisman_id);
+                }
             }
         }
     }
