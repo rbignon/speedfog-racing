@@ -19,22 +19,30 @@ from speedfog_racing.config import settings
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceItemEvent
 from speedfog_racing.services.race_items import (
     ITEM_RULES,
+    PENDING_REPORT_TTL_S,
+    PendingReport,
     Runner,
     available_base_keys,
     base_key,
     draw_base_key,
     draw_camera_variant,
+    draw_junk_weapon,
     effect_payload,
     extract_race_item_catalog,
     grant_banner,
+    hunter_lost_banner,
+    hunter_npc_param,
     ink_can_land,
     item_order,
+    nothing_to_steal_banner,
     reminder_for,
     resolve_targets,
     result_banner,
     rune_pouch_variant,
     shield_banner,
     star_banner,
+    stolen_banner,
+    stolen_notice_banner,
     target_banner,
     tier_of,
     tier_pool,
@@ -42,6 +50,7 @@ from speedfog_racing.services.race_items import (
 from speedfog_racing.websocket.race.manager import leaderboard_gaps, sort_leaderboard
 from speedfog_racing.websocket.schemas import (
     ItemEffectMessage,
+    ItemEffectPayload,
     ItemGrantMessage,
     ItemNoticeMessage,
     ItemRemoveMessage,
@@ -205,6 +214,8 @@ async def resolve_item_use(
     *,
     is_connected: Callable[[uuid.UUID], bool],
     star_until: MutableMapping[uuid.UUID, float],
+    pending_reports: MutableMapping[int, PendingReport],
+    next_report_id: Callable[[], int],
     now: float,
     rng: random.Random | None = None,
 ) -> ItemResolution:
@@ -225,8 +236,15 @@ async def resolve_item_use(
     connected or not; a target without a connected mod is a miss. A self item
     sends its effect, without a banner, to the sender's own mod. Logs one
     ``use`` event with every target's outcome.
+
+    The Talisman Thief and the Hunter send their target an effect carrying a
+    ``report_id``, registered in ``pending_reports`` (``RaceRoom.pending_reports``;
+    entries older than five minutes are dropped when one is added) until the
+    target's mod answers (``resolve_item_report``). The Junk Weapon draws its
+    weapon from the seed's list at each use.
     """
     catalog = extract_race_item_catalog(graph_json)
+    rng = rng if rng is not None else random.Random()
     goods = catalog.goods.get(goods_key)
     shield = catalog.items.get("shield")
     async with session_maker() as db:
@@ -280,6 +298,7 @@ async def resolve_item_use(
         stars: list[str] = []
         offline = 0
         variant = draw_camera_variant(rng) if rule.effect == "camera" else None
+        weapon = draw_junk_weapon(catalog, rng) if rule.effect == "junk_weapon" else None
         outcomes: list[dict[str, str]] = []
         if rule.target == "self":
             payload = effect_payload(item_key, entry)
@@ -300,7 +319,47 @@ async def resolve_item_use(
                 Runner(p.id, p.user.twitch_display_name or p.user.twitch_username)
                 for p in item_standings(race.participants, graph_json)
             ]
-            payload = effect_payload(item_key, entry, variant)
+            payload = effect_payload(item_key, entry, variant, catalog=catalog, weapon=weapon)
+
+            def payload_for(target: Participant) -> ItemEffectPayload | None:
+                """The target's effect; the two reported kinds get a report of
+                their own, registered for the target's answer."""
+                if rule.effect not in ("steal_talisman", "hunter"):
+                    return payload
+                report_id = next_report_id()
+                reported = effect_payload(
+                    item_key,
+                    entry,
+                    catalog=catalog,
+                    rng=rng,
+                    report_id=report_id,
+                    npc_param_id=(
+                        hunter_npc_param(
+                            catalog.hunter,
+                            graph_json,
+                            target.current_zone,
+                            log_ref=f"race={race_id} target={target.id}",
+                        )
+                        if rule.effect == "hunter" and catalog.hunter is not None
+                        else None
+                    ),
+                )
+                if reported is not None:
+                    for stale in [
+                        rid
+                        for rid, pending in pending_reports.items()
+                        if now - pending.created > PENDING_REPORT_TTL_S
+                    ]:
+                        del pending_reports[stale]
+                    pending_reports[report_id] = PendingReport(
+                        "steal" if rule.effect == "steal_talisman" else "hunter",
+                        participant_id,
+                        target.id,
+                        item_key,
+                        now,
+                    )
+                return reported
+
             for runner in resolve_targets(rule.target, participant_id, playing):
                 target = by_id[runner.participant_id]
                 # A Blue Shell used while leading hits its own sender.
@@ -324,15 +383,22 @@ async def resolve_item_use(
                     )
                     blocked.append(runner.name)
                     outcome = "blocked"
-                elif payload is not None and is_connected(target.id):
+                elif is_connected(target.id) and (effect := payload_for(target)) is not None:
                     resolution.effects.append(
                         (
                             target.id,
                             ItemEffectMessage(
                                 item=item_key,
-                                effect=payload,
-                                banner=target_banner(
-                                    item_key, entry, "yourself" if own else sender_name, variant
+                                effect=effect,
+                                # The thief's banner comes with the victim's report.
+                                banner=None
+                                if rule.effect == "steal_talisman"
+                                else target_banner(
+                                    item_key,
+                                    entry,
+                                    "yourself" if own else sender_name,
+                                    variant,
+                                    weapon.name if weapon else "",
                                 ),
                                 reminder=reminder_for(item_key, entry, variant),
                             ),
@@ -347,7 +413,16 @@ async def resolve_item_use(
 
         resolution.result = ItemResultMessage(
             item=item_key,
-            banner=result_banner(item_key, entry, hits, blocked, offline, stars, variant),
+            banner=result_banner(
+                item_key,
+                entry,
+                hits,
+                blocked,
+                offline,
+                stars,
+                variant,
+                weapon.name if weapon else "",
+            ),
             # Only a self item affects its sender.
             reminder=reminder_for(item_key, entry) if rule.target == "self" else None,
         )
@@ -359,6 +434,127 @@ async def resolve_item_use(
                 item=item_key,
                 igt_ms=igt_ms,
                 targets=outcomes,
+            )
+        )
+        await db.commit()
+        return resolution
+
+
+async def resolve_item_report(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    reporter_id: uuid.UUID,
+    report_id: int,
+    landed: bool,
+    talisman_id: int | None,
+    graph_json: Mapping[str, Any],
+    *,
+    pending_reports: MutableMapping[int, PendingReport],
+    is_connected: Callable[[uuid.UUID], bool],
+    now: float,
+) -> ItemResolution:
+    """Answer a target's ``item_report`` (the outcome of a Talisman Thief or
+    Hunter effect it played).
+
+    Only the effect's target answers, once, within five minutes: the pending
+    entry is spent by the first answer, and an unknown, foreign or expired
+    ``report_id`` changes nothing. A landed steal gives the thief the
+    ``talisman`` effect (``talisman_id`` must be in the seed's table, else the
+    report counts as not landed) and tells the victim; a steal not landed tells
+    the thief there was nothing to steal. A Hunter not landed tells its sender
+    the trail was lost, landed sends nothing. A thief whose mod is gone loses
+    the talisman (logged). Each answered report logs a ``report`` event.
+    """
+    pending = pending_reports.get(report_id)
+    if pending is None or pending.target_id != reporter_id:
+        logger.info(
+            "Race item report ignored (unknown or not its target): race=%s participant=%s "
+            "report=%d",
+            race_id,
+            reporter_id,
+            report_id,
+        )
+        return ItemResolution()
+    del pending_reports[report_id]
+    if now - pending.created > PENDING_REPORT_TTL_S:
+        logger.info(
+            "Race item report ignored (expired): race=%s participant=%s report=%d",
+            race_id,
+            reporter_id,
+            report_id,
+        )
+        return ItemResolution()
+    catalog = extract_race_item_catalog(graph_json)
+    entry = catalog.items.get(pending.item_key)
+    async with session_maker() as db:
+        race = await _load_race(db, race_id)
+        by_id = {p.id: p for p in race.participants} if race else {}
+        target = by_id.get(reporter_id)
+        sender = by_id.get(pending.sender_id)
+        if race is None or entry is None or target is None or sender is None:
+            logger.warning(
+                "Race item report dropped (race, runner or item gone): race=%s report=%d",
+                race_id,
+                report_id,
+            )
+            return ItemResolution()
+        target_name = target.user.twitch_display_name or target.user.twitch_username
+        sender_name = sender.user.twitch_display_name or sender.user.twitch_username
+        resolution = ItemResolution()
+        record: dict[str, Any] = {"participant_id": str(reporter_id)}
+        if pending.kind == "steal":
+            talisman = catalog.talismans.get(talisman_id) if talisman_id is not None else None
+            if landed and talisman is not None and talisman_id is not None:
+                record.update(outcome="stolen", talisman_id=talisman_id)
+                if is_connected(sender.id):
+                    resolution.effects.append(
+                        (
+                            sender.id,
+                            ItemEffectMessage(
+                                item=pending.item_key,
+                                effect=ItemEffectPayload(kind="talisman", talisman_id=talisman_id),
+                                banner=stolen_banner(entry, talisman.name, target_name),
+                            ),
+                        )
+                    )
+                else:
+                    logger.warning(
+                        "Talisman %d stolen but the thief is offline, it is lost: race=%s thief=%s",
+                        talisman_id,
+                        race_id,
+                        sender.id,
+                    )
+                resolution.notices.append(
+                    (
+                        target.id,
+                        ItemNoticeMessage(
+                            banner=stolen_notice_banner(entry, talisman.name, sender_name)
+                        ),
+                    )
+                )
+            else:
+                record.update(outcome="nothing")
+                resolution.notices.append(
+                    (
+                        sender.id,
+                        ItemNoticeMessage(banner=nothing_to_steal_banner(entry, target_name)),
+                    )
+                )
+        elif landed:
+            record.update(outcome="spawned")
+        else:
+            record.update(outcome="missed")
+            resolution.notices.append(
+                (sender.id, ItemNoticeMessage(banner=hunter_lost_banner(entry, target_name)))
+            )
+        db.add(
+            RaceItemEvent(
+                race_id=race_id,
+                participant_id=pending.sender_id,
+                kind="report",
+                item=pending.item_key,
+                igt_ms=target.igt_ms,
+                targets=[record],
             )
         )
         await db.commit()

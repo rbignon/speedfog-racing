@@ -15,7 +15,7 @@ This document is the operational reference for the server side (rules, lifecycle
 - Any change of the option (on or off, with or without a redraw) closes every connected mod of the race with code 1000, as a race reset does: the catalog and the protocol gate below only apply at auth, so each mod reconnects and authenticates again, gets the catalog that matches, and an older mod meets the gate. Spectators stay connected.
 - A runner holds at most one item. A boss kill made while holding one grants nothing, then or later.
 - Only playing runners are ever targets; finished, abandoned and disqualified runners are skipped.
-- An items race needs a mod speaking protocol 1.16 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
+- An items race needs a mod speaking protocol 1.17 or later (`RACE_ITEMS_MIN_PROTOCOL`); older mods are refused at auth.
 - Items races stay out of the speedrun boards, the community stats and the generator calibration, since items distort clear times and deaths.
 - Items and deathless can be combined; nothing validates the choice.
 
@@ -59,9 +59,24 @@ Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_rac
 | `mini`                          | middle          | every other playing runner     | scaled to `race_items_mini_scale_pct` (memory effect, 15 s)                              |
 | `giant`                         | middle          | every other playing runner     | scaled to `race_items_giant_scale_pct` (memory effect, 15 s)                             |
 | `camera`                        | middle, back    | the playing runner just ahead  | a camera variant drawn at each use (memory effect, 15 s)                                 |
+| `talisman_thief`                | middle, back    | the playing runner just ahead  | takes one of the target's equipped talismans for the sender (permanent)                  |
+| `junk_weapon`                   | back            | the playing runner just ahead  | forces a junk weapon into the target's right hand (permanent)                            |
+| `hunter`                        | back            | the best-ranked playing runner | Margit hunts the leader for 60 s (the sender too when leading, as the Blue Shell)        |
+
+The Talisman Thief, the Junk Weapon and the Hunter need data blocks of graph.json 4.14 beside `goods` and `items`: `race_items.talismans` (`{id, name, flag}`), `race_items.junk_weapons` (`{id, name}`) and `race_items.hunter` (`{chr_id, think_param, npc_params}`, `npc_params[t - 1]` being the NpcParam row of tier `t`). `extract_race_item_catalog` leaves an item out of `items` when its block is missing, empty or malformed (logged), so a seed generated before 4.14 never draws it. The talisman flags come from the seed: nobody recomputes them.
 
 The Star's effect is a SpEffect row; the six others have no row (`effect_speffect` null): the mod applies them by writing the game's memory, from the `item_effect` kinds listed in `docs/PROTOCOL.md`. The Camera's variant (`first_person`, `inverted` or `wide`, uniform) is drawn by the server at each use, so the target's banner, the target's reminder and the sender's result name the same one.
 The draw is weighted inside the tier's pool: `race_items_tier_weights` maps each tier to its item weights (base key to weight), so an item can sit in several tiers; the pool is the tier's items with a weight above 0 that the seed's catalog has. The Ink is left out of the pool when no other playing runner can still meet a zone with unused exits, the only zones where the mod runs one (`ink_can_land`: the runner's `current_zone` or a node reachable from it along the graph's `edges` has unused exits, any count but 0, as the mod reads it; a count unknown, on a seed that predates graph.json 4.13, or a runner not placed yet counts as one), checked only when the drawn tier holds the Ink, logged `race item draw: ink left out` with the tier: the draw goes on among the tier's other items. When the pool is empty nothing is granted (a `race item draw: nothing to draw` warning, no `item_grant_count` bump, no event). A draw of `rune_pouch` becomes the variant matching progress: `current_layer / total_layers` below 1/3 gives `rune_pouch_1`, below 2/3 `rune_pouch_2`, else `rune_pouch_3`. A drawn key absent from the seed's catalog grants nothing (logged).
+
+**Reported items.**
+
+The Talisman Thief and the Hunter play out in the target's game, so the server learns the outcome from the target's mod (`item_report`), the round trip below. At the use, the target (Star and Shield blocks and offline targets as for any item) gets an `item_effect` carrying a `report_id` and the sender's result reads `Hit {name}`; the server registers a `PendingReport` (kind `steal` or `hunter`, sender, target, item, time) in `RaceRoom.pending_reports`, in memory under `items_lock`, with ids from `RaceRoom.next_report_id` (positive, counting up per room).
+
+- **Talisman Thief.** The effect (`steal_talisman`) has no banner and carries the seed's whole talisman table (`{id, flag}`) and a `roll` (`rng.getrandbits(32)`) the victim's mod uses to pick among the talismans it wears. The victim's mod removes the talisman and answers `item_report {report_id, landed, talisman_id}`. Landed with a `talisman_id` of the table: the thief gets a `talisman` effect with the banner `Talisman Thief` / `Stole {talisman}` / `from {victim}` and the victim an `item_notice` `Talisman Thief` / `{talisman} stolen` / `by {thief}`. Anything else (nothing worn, a talisman outside the table) counts as not landed: the thief gets an `item_notice` `Talisman Thief` / `Nothing to steal` / `{victim} wears no talisman`. A thief whose mod is gone at the report loses the talisman (logged warning; the event still reads `stolen`).
+- **Junk Weapon.** The weapon is drawn uniformly from `junk_weapons` at each use and sent as `junk_weapon {weapon_id}` with the banner `{weapon} forced into your right hand` / `from {sender}`; the result detail is the weapon name. No report.
+- **Hunter.** The effect (`hunter`) carries `chr_id`, `think_id` (the seed's `hunter`), `duration_ms` (60 s, from the catalog entry; an entry without it sends no effect, logged, as the memory kinds) and `npc_param_id`, the row of the tier of the leader's node (`nodes[current_zone].tier`, clamped to `1..len(npc_params)`; a leader with no current zone or a node without a tier gets tier 1, logged). Banner `Margit hunts you for {s}s` / `from {sender}`, reminder `Hunted` (the mod shows both once he is found); the result detail is `{s}s`. The mod reports whether he spawned: not landed sends the sender an `item_notice` `Hunter` / `The Hunter lost the trail` / `{leader}`, landed sends nothing.
+
+`resolve_item_report` answers a report only from its effect's target, once (the entry is spent by the first answer, whatever it says) and within 300 s of the effect: an unknown or foreign id, a second report or a late one changes nothing. Entries older than 300 s are dropped when a new one is registered. Each answered report logs a `report` event (`item` the item key, actor the sender, `targets` `[{"participant_id": target, "outcome": "stolen" | "nothing" | "spawned" | "missed", "talisman_id"?}]`).
 
 ### Damage curve
 
@@ -90,6 +105,7 @@ For banana and red shell, with `h` the target's current HP as a percentage of ma
    The Star is a self item that also opens a window: using it sets `star_until[sender] = now + duration_ms / 1000` (`now` is `time.monotonic()`; `RaceRoom.star_until`, in memory only, used under `items_lock`), and a target whose deadline is still ahead of `now` is blocked, connected or not. The window covers only the Star's user and ends with the effect. The block is logged `blocked` like a Shield's. The window runs on wall time while the mod times the invincibility on its play clock, which a load pauses: a fog gate taken during the Star ends the window that much before the invincibility.
 
 8. **Result.** The sender gets `item_result` (banner, plus the reminder for a self item). The handler sends the removals (a Shield spent), the notices (a Star holder's block), the effects (a self item's to its sender), then the result.
+9. **Report.** A Talisman Thief or Hunter use is not final until its target's `item_report` (see Reported items); the handler (`_handle_item_report`) runs it under `items_lock` and sends the notices, then the effects.
 
 Grants, confirmations and uses run under `RaceRoom.items_lock`, so concurrent connections cannot grant, confirm or spend over each other: two items aimed at one Shield holder spend the Shield once. A grant after a kill and a use also send their messages under the lock, so a later item message to a runner cannot overtake them.
 
@@ -120,13 +136,16 @@ The banner title is the catalog `name`. The sender's result line:
 
 The result detail is `{pct}% HP` for a damage item, `{s} s` for a timed one, else empty; it stays empty when nothing landed (every target blocked, missed or offline), so it never reads as dealt. A target's banner reads `from {sender}` under the item's target line. A Shield holder whose Shield blocked sees title `Shield`, line `Blocked {item name}`, detail `from {sender}`; a Star holder's Star block sends an `item_notice` with title `Star` and the same line and detail. The Camera's detail reads `{reminder}, {s} s`.
 
-Target lines and reminders of the new items: Vanish `You are invisible for {s} s` / `Invisible`; Unseen Foes `Enemies unseen for {s} s` / `Unseen foes`; Slow-mo `Slowed down for {s} s` / `Slow-mo` (the speed is a setting); Mini `Shrunk for {s} s` / `Mini`; Giant `Giant for {s} s` / `Giant`; Camera per variant `First-person camera for {s} s` / `First person`, `Upside-down camera for {s} s` / `Upside down`, `Wide camera for {s} s` / `Wide camera`; Star reminder `Invincible`.
+The new reported items add: Talisman Thief, to the thief `Stole {talisman}` / `from {victim}`, to the victim `{talisman} stolen` / `by {thief}` (an `item_notice`), to the thief again `Nothing to steal` / `{victim} wears no talisman`; Junk Weapon `{weapon} forced into your right hand`, result detail the weapon name; Hunter `Margit hunts you for {s} s` / `Hunted`, to its sender `The Hunter lost the trail` / `{leader}`. Their grant lines are `Steals a talisman from the runner ahead`, `Forces a junk weapon on the runner ahead` and `Sends Margit after the leader for {s} s`.
+
+Target lines and reminders of the memory items: Vanish `You are invisible for {s} s` / `Invisible`; Unseen Foes `Enemies unseen for {s} s` / `Unseen foes`; Slow-mo `Slowed down for {s} s` / `Slow-mo` (the speed is a setting); Mini `Shrunk for {s} s` / `Mini`; Giant `Giant for {s} s` / `Giant`; Camera per variant `First-person camera for {s} s` / `First person`, `Upside-down camera for {s} s` / `Upside down`, `Wide camera for {s} s` / `Wide camera`; Star reminder `Invincible`.
 
 ## Persistence
 
 - `Participant.held_item`: `{"grant_id": int, "item": str, "confirmed": bool, "igt_ms": int}` or null, `igt_ms` being the IGT of the grant (the boss kill; the runner's IGT for a `give` of the bot tool), read as 0 when absent (rows written before it). The column is JSON: reassign a new dict, never mutate in place.
 - `Participant.item_grant_count`: grants handed out so far; a reset keeps it, so ids never repeat.
-- `race_item_events`: the item log (`race_id`, `participant_id`, `kind`, `item`, `igt_ms`, `targets`, `created_at`); `kind` is `grant`, `use`, `lost` or `take_back`, and `item` is the item key (the goods key for a `take_back`). Kept for audits and later web use.
+- Pending reports (`RaceRoom.pending_reports`) live in memory for 5 minutes: a server restart forgets them, and a report that arrives after is ignored (a stolen talisman is then lost to the thief, but the victim's slot is already empty).
+- `race_item_events`: the item log (`race_id`, `participant_id`, `kind`, `item`, `igt_ms`, `targets`, `created_at`); `kind` is `grant`, `use`, `report`, `lost` or `take_back`, and `item` is the item key (the goods key for a `take_back`). Kept for audits and later web use.
 
 ## Server settings
 

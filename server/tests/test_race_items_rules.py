@@ -18,6 +18,7 @@ from speedfog_racing.services.race_items import (
     draw_base_key,
     draw_camera_variant,
     effect_payload,
+    extract_race_item_catalog,
     grant_banner,
     ink_can_land,
     item_order,
@@ -476,3 +477,70 @@ def test_ink_can_land_when_a_count_or_a_runner_is_unknown():
     # A runner not placed yet, or on a node the graph lacks.
     assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=0, end=0), [None])
     assert ink_can_land(_hub_graph(s=0, a=0, b=0, c=0, end=0), ["gone"])
+
+
+def _seed_graph(**blocks: object) -> dict:
+    goods = {
+        "race_item": {
+            "goods_id": 1450801,
+            "use_flag": 1050290101,
+            "remove_flag": 1050290201,
+            "icon": "item_box",
+            "icon_id": 60396,
+        }
+    }
+    items = {
+        key: {
+            "name": key,
+            "icon": key,
+            "icon_id": 1,
+            "goods": "race_item",
+            "effect_speffect": None,
+            "duration_ms": 60000 if key == "hunter" else None,
+        }
+        for key in ("talisman_thief", "junk_weapon", "hunter", "red_shell")
+    }
+    return {
+        "plugins": {"race_items": {"enabled": True}},
+        "race_items": {"goods": goods, "items": items, **blocks},
+    }
+
+
+FULL_BLOCKS = {
+    "talismans": [{"id": 1000, "name": "Crimson Amber Medallion", "flag": 1050290300}],
+    "junk_weapons": [{"id": 11010000, "name": "Club"}],
+    "hunter": {"chr_id": 2130, "think_param": 1450850, "npc_params": [1450850, 1450851]},
+}
+
+
+def test_an_item_without_its_seed_data_is_not_drawn(caplog):
+    full = extract_race_item_catalog(_seed_graph(**FULL_BLOCKS))
+    assert {"talisman_thief", "junk_weapon", "hunter"} <= set(full.items)
+    assert full.hunter is not None and full.hunter.npc_params == (1450850, 1450851)
+
+    for missing, dropped in [
+        ("talismans", "talisman_thief"),
+        ("junk_weapons", "junk_weapon"),
+        ("hunter", "hunter"),
+    ]:
+        blocks = {k: v for k, v in FULL_BLOCKS.items() if k != missing}
+        with caplog.at_level(logging.INFO):
+            catalog = extract_race_item_catalog(_seed_graph(**blocks))
+        assert dropped not in catalog.items
+        assert "red_shell" in catalog.items
+        assert len(catalog.items) == 3
+        assert dropped in caplog.text
+        caplog.clear()
+
+    # An empty or malformed block counts as missing.
+    empty = extract_race_item_catalog(
+        _seed_graph(talismans=[], junk_weapons=[{"id": "x"}], hunter={"chr_id": 1})
+    )
+    assert set(empty.items) == {"red_shell"}
+
+
+def test_the_new_items_are_in_their_default_tiers():
+    weights = DEFAULT_RACE_ITEMS_TIER_WEIGHTS
+    assert {t for t, w in weights.items() if "talisman_thief" in w} == {"middle", "back"}
+    assert {t for t, w in weights.items() if "junk_weapon" in w} == {"back"}
+    assert {t for t, w in weights.items() if "hunter" in w} == {"back"}

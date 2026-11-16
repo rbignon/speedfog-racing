@@ -20,6 +20,7 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "mini": 1,
         "giant": 1,
         "camera": 1,
+        "talisman_thief": 1,
     },
     "back": {
         "red_shell": 1,
@@ -32,6 +33,9 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "unseen_foes": 1,
         "slow_mo": 1,
         "camera": 1,
+        "talisman_thief": 1,
+        "junk_weapon": 1,
+        "hunter": 1,
     },
 }
 

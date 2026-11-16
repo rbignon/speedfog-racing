@@ -1,6 +1,7 @@
 """WebSocket connection manager for race rooms."""
 
 import asyncio
+import itertools
 import logging
 import uuid
 from collections.abc import Awaitable, Callable, Sequence
@@ -19,6 +20,7 @@ from speedfog_racing.services.chat_access import (
 )
 from speedfog_racing.services.debug_flags import can_see_debug_flags
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
+from speedfog_racing.services.race_items import PendingReport
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.handler import close_evicted
 from speedfog_racing.websocket.race.projection import (
@@ -97,6 +99,15 @@ class RaceRoom:
     # Runner -> time.monotonic() until which a Star blocks the items aimed at
     # them (in memory only: the window is five seconds). Used under items_lock.
     star_until: dict[uuid.UUID, float] = field(default_factory=dict, repr=False, compare=False)
+    # report_id -> the Talisman Thief or Hunter effect awaiting its target's
+    # `item_report` (in memory only: forgotten after five minutes). Used under
+    # items_lock; ids come from `next_report_id` and are positive.
+    pending_reports: dict[int, PendingReport] = field(
+        default_factory=dict, repr=False, compare=False
+    )
+    next_report_id: Callable[[], int] = field(
+        default_factory=lambda: itertools.count(1).__next__, repr=False, compare=False
+    )
 
     async def ghost_participants(
         self, load: Callable[[], Awaitable[Sequence[Participant] | None]]

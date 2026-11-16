@@ -1,6 +1,8 @@
 """Race item uses resolved by direct calls: targets, shields, misses and the item log."""
 
 import asyncio
+import itertools
+import random
 import uuid
 from collections.abc import Callable
 
@@ -19,10 +21,11 @@ from speedfog_racing.models import (
     SeedStatus,
     User,
 )
-from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN, shield_banner
+from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN, PendingReport, shield_banner
 from speedfog_racing.websocket.race.items import (
     ItemResolution,
     reconcile_inventory,
+    resolve_item_report,
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import manager
@@ -78,7 +81,7 @@ def _catalog(*items: tuple[str, dict], shield: bool = True) -> dict:
 
 GRAPH = {
     "total_layers": 5,
-    "nodes": {},
+    "nodes": {"n7": {"tier": 7}, "n40": {"tier": 40}, "ntierless": {}},
     "plugins": {RACE_ITEMS_PLUGIN: {"enabled": True}},
     RACE_ITEMS_PLUGIN: _catalog(
         ("rune_pouch_2", _item("Rune Pouch", 60386, speffect=1450822)),
@@ -87,8 +90,19 @@ GRAPH = {
         ("hammer", _item("Hammer", 60390, speffect=1450827, duration_ms=15000)),
         ("blue_shell", _item("Blue Shell", 60392, speffect=1450829, duration_ms=15000)),
         ("star", _item("Star", 60397, speffect=1450833, duration_ms=5000)),
+        ("talisman_thief", _item("Talisman Thief", 60404)),
+        ("junk_weapon", _item("Junk Weapon", 60405)),
+        ("hunter", _item("Hunter", 60406, duration_ms=60000)),
     ),
 }
+GRAPH[RACE_ITEMS_PLUGIN].update(
+    talismans=[
+        {"id": 1000, "name": "Crimson Amber Medallion", "flag": 1050290300},
+        {"id": 1010, "name": "Cerulean Amber Medallion", "flag": 1050290301},
+    ],
+    junk_weapons=[{"id": 11010000, "name": "Club"}, {"id": 12000000, "name": "Large Club"}],
+    hunter={"chr_id": 2130, "think_param": 1450850, "npc_params": list(range(1450850, 1450884))},
+)
 
 
 @pytest.fixture
@@ -155,6 +169,9 @@ async def _field(
         return race.id, ids
 
 
+_report_ids = itertools.count(1).__next__
+
+
 async def _use(
     session_maker,
     race_id: uuid.UUID,
@@ -165,11 +182,13 @@ async def _use(
     online: Callable[[uuid.UUID], bool] = lambda _: True,
     star_until: dict[uuid.UUID, float] | None = None,
     now: float = 1000.0,
+    pending_reports: dict[int, PendingReport] | None = None,
+    rng: random.Random | None = None,
 ) -> ItemResolution:
     """The sender's mod reports the use flag of ``goods`` (the Race Item by default).
 
-    Without ``star_until`` the use gets a window of its own, empty: pass the
-    room's to carry a Star across uses."""
+    Without ``star_until`` or ``pending_reports`` the use gets a window of its
+    own, empty: pass the room's to carry them across uses."""
     return await resolve_item_use(
         session_maker,
         race_id,
@@ -179,7 +198,10 @@ async def _use(
         GRAPH,
         is_connected=online,
         star_until={} if star_until is None else star_until,
+        pending_reports={} if pending_reports is None else pending_reports,
+        next_report_id=_report_ids,
         now=now,
+        rng=rng,
     )
 
 
@@ -538,3 +560,306 @@ async def test_a_star_window_is_per_runner_and_expires(items_db):
     hit = await _use(items_db, race_id, ids["Bea"], star_until=star_until, now=205.0)
     assert hit.notices == []
     assert sorted(pid for pid, _ in hit.effects) == sorted([ids["Ann"], ids["Cy"]])
+
+
+# ---------------------------------------------------------------------------
+# Talisman Thief, Junk Weapon and Hunter: the report round trip
+# ---------------------------------------------------------------------------
+
+
+async def _place(session_maker, participant_id: uuid.UUID, zone: str | None) -> None:
+    async with session_maker() as db:
+        participant = await db.get(Participant, participant_id)
+        assert participant is not None
+        participant.current_zone = zone
+        await db.commit()
+
+
+async def _report(
+    session_maker,
+    race_id: uuid.UUID,
+    reporter: uuid.UUID,
+    report_id: int,
+    pending: dict[int, PendingReport],
+    *,
+    landed: bool = True,
+    talisman_id: int | None = None,
+    online: Callable[[uuid.UUID], bool] = lambda _: True,
+    now: float = 1010.0,
+) -> ItemResolution:
+    return await resolve_item_report(
+        session_maker,
+        race_id,
+        reporter,
+        report_id,
+        landed,
+        talisman_id,
+        GRAPH,
+        pending_reports=pending,
+        is_connected=online,
+        now=now,
+    )
+
+
+async def _report_events(session_maker, race_id: uuid.UUID) -> list[RaceItemEvent]:
+    return await _events(session_maker, race_id, "report")
+
+
+async def _steal_field(session_maker):
+    """Alice (back, thief) holds the Talisman Thief, Bob is just ahead."""
+    return await _field(
+        session_maker,
+        ("Alice", PLAYING, 1, "talisman_thief"),
+        ("Bob", PLAYING, 2, None),
+        ("Cleo", PLAYING, 3, None),
+    )
+
+
+async def test_steal_payload_carries_the_table_and_a_roll(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    resolution = await _use(
+        items_db, race_id, ids["Alice"], pending_reports=pending, rng=random.Random(5)
+    )
+    [(victim, message)] = resolution.effects
+    assert victim == ids["Bob"]
+    effect = message.effect
+    assert effect.kind == "steal_talisman"
+    assert [(t.id, t.flag) for t in effect.talismans or []] == [
+        (1000, 1050290300),
+        (1010, 1050290301),
+    ]
+    assert effect.roll == random.Random(5).getrandbits(32)
+    assert effect.report_id is not None and effect.report_id > 0
+    assert message.banner is None
+    assert list(pending) == [effect.report_id]
+    assert pending[effect.report_id].target_id == ids["Bob"]
+    assert resolution.result is not None
+    assert resolution.result.banner.line == "Hit Bob"
+
+
+async def test_a_landed_steal_gives_the_talisman_to_the_thief(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    resolution = await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
+    [(thief, message)] = resolution.effects
+    assert thief == ids["Alice"]
+    assert message.effect.model_dump() == {"kind": "talisman", "talisman_id": 1000}
+    assert message.banner is not None
+    assert (message.banner.title, message.banner.line, message.banner.detail) == (
+        "Talisman Thief",
+        "Stole Crimson Amber Medallion",
+        "from Bob",
+    )
+    [(victim, notice)] = resolution.notices
+    assert victim == ids["Bob"]
+    assert (notice.banner.title, notice.banner.line, notice.banner.detail) == (
+        "Talisman Thief",
+        "Crimson Amber Medallion stolen",
+        "by Alice",
+    )
+    [event] = await _report_events(items_db, race_id)
+    assert event.targets == [
+        {"participant_id": str(ids["Bob"]), "outcome": "stolen", "talisman_id": 1000}
+    ]
+
+
+async def test_a_talisman_outside_the_table_counts_as_not_landed(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    resolution = await _report(
+        items_db, race_id, ids["Bob"], report_id, pending, talisman_id=999999
+    )
+    assert resolution.effects == []
+    [(thief, notice)] = resolution.notices
+    assert thief == ids["Alice"]
+    assert notice.banner.line == "Nothing to steal"
+
+
+async def test_an_offline_thief_loses_the_talisman_but_the_steal_stands(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    resolution = await _report(
+        items_db,
+        race_id,
+        ids["Bob"],
+        report_id,
+        pending,
+        talisman_id=1010,
+        online=lambda pid: pid != ids["Alice"],
+    )
+    assert resolution.effects == []
+    assert [pid for pid, _ in resolution.notices] == [ids["Bob"]]
+    [event] = await _report_events(items_db, race_id)
+    assert event.targets is not None and event.targets[0]["outcome"] == "stolen"
+
+
+async def test_nothing_to_steal_tells_the_thief(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    resolution = await _report(items_db, race_id, ids["Bob"], report_id, pending, landed=False)
+    assert resolution.effects == []
+    [(thief, notice)] = resolution.notices
+    assert thief == ids["Alice"]
+    assert (notice.banner.title, notice.banner.line, notice.banner.detail) == (
+        "Talisman Thief",
+        "Nothing to steal",
+        "Bob wears no talisman",
+    )
+    [event] = await _report_events(items_db, race_id)
+    assert event.targets == [{"participant_id": str(ids["Bob"]), "outcome": "nothing"}]
+
+
+async def _hunter_use(items_db, *, leader_zone: str | None):
+    race_id, ids = await _field(
+        items_db,
+        ("Alice", PLAYING, 1, "hunter"),
+        ("Bob", PLAYING, 3, None),
+    )
+    await _place(items_db, ids["Bob"], leader_zone)
+    pending: dict[int, PendingReport] = {}
+    resolution = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    return race_id, ids, pending, resolution
+
+
+async def test_a_hunter_miss_tells_the_sender(items_db):
+    race_id, ids, pending, use = await _hunter_use(items_db, leader_zone="n7")
+    [(leader, message)] = use.effects
+    assert leader == ids["Bob"]
+    effect = message.effect
+    assert (effect.kind, effect.chr_id, effect.think_id, effect.duration_ms) == (
+        "hunter",
+        2130,
+        1450850,
+        60000,
+    )
+    assert message.banner is not None
+    assert (message.banner.line, message.banner.detail) == (
+        "Margit hunts you for 60s",
+        "from Alice",
+    )
+    assert message.reminder is not None and message.reminder.text == "Hunted"
+    assert effect.report_id is not None
+    resolution = await _report(
+        items_db, race_id, ids["Bob"], effect.report_id, pending, landed=False
+    )
+    [(sender, notice)] = resolution.notices
+    assert sender == ids["Alice"]
+    assert (notice.banner.title, notice.banner.line, notice.banner.detail) == (
+        "Hunter",
+        "The Hunter lost the trail",
+        "Bob",
+    )
+    [event] = await _report_events(items_db, race_id)
+    assert event.targets == [{"participant_id": str(ids["Bob"]), "outcome": "missed"}]
+
+
+async def test_a_landed_hunter_report_sends_nothing(items_db):
+    race_id, ids, pending, use = await _hunter_use(items_db, leader_zone="n7")
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    resolution = await _report(items_db, race_id, ids["Bob"], report_id, pending)
+    assert (resolution.effects, resolution.notices) == ([], [])
+    [event] = await _report_events(items_db, race_id)
+    assert event.targets == [{"participant_id": str(ids["Bob"]), "outcome": "spawned"}]
+
+
+@pytest.mark.parametrize(
+    "zone,expected",
+    [("n7", 1450856), ("n40", 1450883), ("ntierless", 1450850), (None, 1450850)],
+)
+async def test_hunter_row_follows_the_leader_tier(items_db, zone, expected):
+    _, _, _, use = await _hunter_use(items_db, leader_zone=zone)
+    assert use.effects[0][1].effect.npc_param_id == expected
+
+
+async def test_a_report_is_answered_once_and_only_from_its_target(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+
+    # Another runner, the sender, an unknown id: nothing, the entry stays.
+    for reporter, rid in [(ids["Cleo"], report_id), (ids["Alice"], report_id), (ids["Bob"], 999)]:
+        answer = await _report(items_db, race_id, reporter, rid, pending, talisman_id=1000)
+        assert (answer.effects, answer.notices) == ([], [])
+    assert report_id in pending
+
+    first = await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
+    assert len(first.effects) == 1
+    again = await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
+    assert (again.effects, again.notices) == ([], [])
+    assert len(await _report_events(items_db, race_id)) == 1
+
+
+async def test_a_report_expires_after_300_seconds_and_old_entries_are_dropped(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending, now=1000.0)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    late = await _report(
+        items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000, now=1301.0
+    )
+    assert (late.effects, late.notices) == ([], [])
+    assert report_id not in pending
+    assert await _report_events(items_db, race_id) == []
+
+    # A new report purges the entries older than 300 s.
+    stale = PendingReport("steal", ids["Alice"], ids["Bob"], "talisman_thief", 0.0)
+    pending[500] = stale
+    race_id, ids = await _steal_field(items_db)
+    await _use(items_db, race_id, ids["Alice"], pending_reports=pending, now=1000.0)
+    assert 500 not in pending
+
+
+async def test_junk_weapon_draws_from_the_list_and_names_it(items_db):
+    race_id, ids = await _field(
+        items_db, ("Alice", PLAYING, 1, "junk_weapon"), ("Bob", PLAYING, 2, None)
+    )
+    expected = random.Random(3).choice(GRAPH[RACE_ITEMS_PLUGIN]["junk_weapons"])
+    resolution = await _use(items_db, race_id, ids["Alice"], rng=random.Random(3))
+    [(victim, message)] = resolution.effects
+    assert victim == ids["Bob"]
+    assert (message.effect.kind, message.effect.weapon_id) == ("junk_weapon", expected["id"])
+    assert message.banner is not None
+    assert message.banner.line == f"{expected['name']} forced into your right hand"
+    assert message.banner.detail == "from Alice"
+    assert resolution.result is not None
+    assert (resolution.result.banner.line, resolution.result.banner.detail) == (
+        "Hit Bob",
+        expected["name"],
+    )
+
+
+async def test_a_star_or_shield_blocks_the_new_items_without_a_report(items_db):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    star = {ids["Bob"]: 2000.0}
+    blocked = await _use(
+        items_db, race_id, ids["Alice"], pending_reports=pending, star_until=star, now=1000.0
+    )
+    assert blocked.effects == []
+    assert pending == {}
+
+    race_id, ids = await _field(
+        items_db,
+        ("Alice", PLAYING, 1, "hunter"),
+        ("Bob", PLAYING, 2, "shield"),
+    )
+    blocked = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    assert blocked.effects == [] and len(blocked.removals) == 1
+    assert pending == {}

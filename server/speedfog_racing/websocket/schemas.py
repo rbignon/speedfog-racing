@@ -22,20 +22,22 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.16"
+PROTOCOL_VERSION = "1.17"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
 
-# Oldest protocol a race with items accepts at auth: from 1.16 the mod runs an
+# Oldest protocol a race with items accepts at auth: from 1.17 the mod plays
+# the Talisman Thief, Junk Weapon and Hunter effects and answers them with an
+# `item_report`; from 1.16 the mod runs an
 # Ink held in a boss arena from the boss's kill (`defeat_flag`); from 1.15 it
 # applies the memory effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
 # Camera) and shows an `item_notice`; from 1.14 it times the timed effects with
 # the duration they carry and applies them again after a load, and holds an
 # Ink until the zone has unused exits (`unused_exits`).
-RACE_ITEMS_MIN_PROTOCOL = "1.16"
+RACE_ITEMS_MIN_PROTOCOL = "1.17"
 
 # auth_error for a mod too old for a race with items. The race's pack carries
 # the current mod, so downloading it again is the fix.
@@ -612,6 +614,13 @@ class ItemReminder(BaseModel):
     duration_ms: int
 
 
+class TalismanRow(BaseModel):
+    """One talisman of the seed's table, as the victim's mod reads it."""
+
+    id: int
+    flag: int
+
+
 class ItemEffectPayload(BaseModel):
     """What an item does to its target; the fields used depend on ``kind``."""
 
@@ -625,6 +634,10 @@ class ItemEffectPayload(BaseModel):
         "slow_mo",
         "scale",
         "camera",
+        "steal_talisman",
+        "talisman",
+        "junk_weapon",
+        "hunter",
     ]
     speffect_id: int | None = None
     base_pct: int | None = None
@@ -635,6 +648,14 @@ class ItemEffectPayload(BaseModel):
     speed_pct: int | None = None
     scale_pct: int | None = None
     variant: Literal["first_person", "inverted", "wide"] | None = None
+    talismans: list[TalismanRow] | None = None
+    roll: int | None = None
+    report_id: int | None = None
+    talisman_id: int | None = None
+    weapon_id: int | None = None
+    chr_id: int | None = None
+    npc_param_id: int | None = None
+    think_id: int | None = None
 
     @model_serializer(mode="wrap")
     def _drop_none(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -701,6 +722,16 @@ class ItemInventoryMessage(BaseModel):
 
     type: Literal["item_inventory"] = "item_inventory"
     goods: list[str] = Field(default_factory=list)
+
+
+class ItemReportMessage(BaseModel):
+    """Mod to server: the outcome of a ``steal_talisman`` or ``hunter`` effect it
+    played. ``talisman_id`` is null unless a talisman was taken."""
+
+    type: Literal["item_report"] = "item_report"
+    report_id: int
+    landed: bool
+    talisman_id: int | None = None
 
 
 class ZoneQueryAckMessage(BaseModel):

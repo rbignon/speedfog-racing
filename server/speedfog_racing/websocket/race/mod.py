@@ -64,6 +64,7 @@ from speedfog_racing.websocket.race.items import (
     grant_item,
     pending_grant_message,
     reconcile_inventory,
+    resolve_item_report,
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import (
@@ -250,6 +251,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         self._message_handlers["finished"] = self._handle_finished_message
         self._message_handlers["item_received"] = self._handle_item_received
         self._message_handlers["item_inventory"] = self._handle_item_inventory
+        self._message_handlers["item_report"] = self._handle_item_report
         self._participant_id: uuid.UUID | None = None
         self._user_id: uuid.UUID | None = None
         self._cached_graph_json: dict[str, Any] | None = None
@@ -527,6 +529,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                     graph,
                     is_connected=lambda pid: pid in room.mods,
                     star_until=room.star_until,
+                    pending_reports=room.pending_reports,
+                    next_report_id=room.next_report_id,
                     now=time.monotonic(),
                 )
                 for target_id, removal in resolution.removals:
@@ -566,6 +570,45 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
             for message in messages:
                 await room.send_to_mod(self._participant_id, message.model_dump_json())
+
+    async def _handle_item_report(self, msg: dict[str, Any]) -> None:
+        """The mod played a Talisman Thief or Hunter effect: answer its outcome."""
+        report_id, landed, talisman_id = (
+            msg.get("report_id"),
+            msg.get("landed"),
+            msg.get("talisman_id"),
+        )
+        graph = self._cached_graph_json
+        if (
+            self._participant_id is None
+            or not graph
+            or not isinstance(report_id, int)
+            or isinstance(report_id, bool)
+            or not isinstance(landed, bool)
+            or not (talisman_id is None or isinstance(talisman_id, int))
+        ):
+            return
+        room = manager.get_or_create_room(self._race_id)
+        try:
+            async with room.items_lock:
+                resolution = await resolve_item_report(
+                    self.session_maker,
+                    self._race_id,
+                    self._participant_id,
+                    report_id,
+                    landed,
+                    talisman_id,
+                    graph,
+                    pending_reports=room.pending_reports,
+                    is_connected=lambda pid: pid in room.mods,
+                    now=time.monotonic(),
+                )
+                for target_id, notice in resolution.notices:
+                    await room.send_to_mod(target_id, notice.model_dump_json())
+                for target_id, effect in resolution.effects:
+                    await room.send_to_mod(target_id, effect.model_dump_json())
+        except Exception:
+            logger.exception("Race item report failed: %s", self.log_ref)
 
     async def _on_disconnect(self) -> None:
         assert self._participant_id is not None

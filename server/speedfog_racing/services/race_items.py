@@ -51,11 +51,58 @@ class CatalogEntry:
 
 
 @dataclass(frozen=True)
+class TalismanEntry:
+    """One talisman the Talisman Thief can take (``race_items.talismans``): the
+    flag is the seed's, nobody recomputes it downstream."""
+
+    name: str
+    flag: int
+
+
+@dataclass(frozen=True)
+class JunkWeapon:
+    """One weapon the Junk Weapon can force into a hand (``race_items.junk_weapons``)."""
+
+    id: int
+    name: str
+
+
+@dataclass(frozen=True)
+class HunterRows:
+    """The Hunter's rows (``race_items.hunter``): ``npc_params[t - 1]`` is tier ``t``'s."""
+
+    chr_id: int
+    think_param: int
+    npc_params: tuple[int, ...]
+
+
+@dataclass(frozen=True)
 class RaceItemCatalog:
-    """A seed's race item catalog; ``items`` only holds entries whose goods is in ``goods``."""
+    """A seed's race item catalog; ``items`` only holds entries whose goods is in
+    ``goods`` and, for the Talisman Thief, the Junk Weapon and the Hunter, whose
+    data block (``talismans``, ``junk_weapons``, ``hunter``) the seed carries."""
 
     goods: dict[str, GoodsEntry] = field(default_factory=dict)
     items: dict[str, CatalogEntry] = field(default_factory=dict)
+    talismans: dict[int, TalismanEntry] = field(default_factory=dict)
+    junk_weapons: tuple[JunkWeapon, ...] = ()
+    hunter: HunterRows | None = None
+
+
+@dataclass
+class PendingReport:
+    """A Talisman Thief or Hunter effect sent to its target, awaiting the
+    target's ``item_report`` (``RaceRoom.pending_reports``, in memory only)."""
+
+    kind: Literal["steal", "hunter"]
+    sender_id: uuid.UUID
+    target_id: uuid.UUID
+    item_key: str
+    created: float
+
+
+# A report not answered after this long is forgotten.
+PENDING_REPORT_TTL_S = 300.0
 
 
 def _plugin_enabled(graph_json: Mapping[str, Any]) -> bool:
@@ -118,6 +165,47 @@ def _parse_item(raw: object) -> CatalogEntry | None:
     return None
 
 
+def _parse_talismans(raw: object) -> dict[int, TalismanEntry]:
+    result: dict[int, TalismanEntry] = {}
+    if not isinstance(raw, list):
+        return result
+    for row in raw:
+        if not isinstance(row, Mapping):
+            continue
+        tid, name, flag = row.get("id"), row.get("name"), row.get("flag")
+        if _is_int(tid) and isinstance(name, str) and _is_int(flag):
+            result[tid] = TalismanEntry(name, flag)
+    return result
+
+
+def _parse_junk_weapons(raw: object) -> tuple[JunkWeapon, ...]:
+    if not isinstance(raw, list):
+        return ()
+    weapons: list[JunkWeapon] = []
+    for row in raw:
+        if not isinstance(row, Mapping):
+            continue
+        wid, name = row.get("id"), row.get("name")
+        if _is_int(wid) and isinstance(name, str):
+            weapons.append(JunkWeapon(wid, name))
+    return tuple(weapons)
+
+
+def _parse_hunter(raw: object) -> HunterRows | None:
+    if not isinstance(raw, Mapping):
+        return None
+    chr_id, think, params = raw.get("chr_id"), raw.get("think_param"), raw.get("npc_params")
+    if (
+        _is_int(chr_id)
+        and _is_int(think)
+        and isinstance(params, list)
+        and params
+        and all(_is_int(p) for p in params)
+    ):
+        return HunterRows(chr_id, think, tuple(params))
+    return None
+
+
 def extract_race_item_catalog(graph_json: Mapping[str, Any]) -> RaceItemCatalog:
     """The valid goods and items of a seed (graph.json 4.12 ``{goods, items}``).
 
@@ -139,12 +227,23 @@ def extract_race_item_catalog(graph_json: Mapping[str, Any]) -> RaceItemCatalog:
         entry = _parse_goods(value)
         if isinstance(key, str) and entry is not None:
             goods[key] = entry
+    talismans = _parse_talismans(raw.get("talismans"))
+    junk_weapons = _parse_junk_weapons(raw.get("junk_weapons"))
+    hunter = _parse_hunter(raw.get("hunter"))
+    has_data = {
+        "talisman_thief": bool(talismans),
+        "junk_weapon": bool(junk_weapons),
+        "hunter": hunter is not None,
+    }
     items: dict[str, CatalogEntry] = {}
     for key, value in raw_items.items():
         item = _parse_item(value)
         if isinstance(key, str) and item is not None and item.goods in goods:
+            if not has_data.get(key, True):
+                logger.info("Race item %s left out: its seed data block is missing or empty", key)
+                continue
             items[key] = item
-    return RaceItemCatalog(goods, items)
+    return RaceItemCatalog(goods, items, talismans, junk_weapons, hunter)
 
 
 def seed_has_race_items(graph_json: Mapping[str, Any]) -> bool:
@@ -184,11 +283,14 @@ EffectKind = Literal[
     "slow_mo",
     "scale",
     "camera",
+    "steal_talisman",
+    "junk_weapon",
+    "hunter",
 ]
-# The effects the mod writes into the game's memory: it requires their
-# duration_ms and drops the whole message without it.
+# The effects the mod writes into the game's memory (the Hunter's spawn is timed
+# the same way): it requires their duration_ms and drops the whole message without it.
 _MEMORY_KINDS: frozenset[EffectKind] = frozenset(
-    {"vanish", "unseen_foes", "slow_mo", "scale", "camera"}
+    {"vanish", "unseen_foes", "slow_mo", "scale", "camera", "hunter"}
 )
 CameraVariant = Literal["first_person", "inverted", "wide"]
 CAMERA_VARIANTS: tuple[CameraVariant, ...] = ("first_person", "inverted", "wide")
@@ -293,7 +395,26 @@ ITEM_RULES: dict[str, ItemRule] = {
     ),
     # The target line and the reminder depend on the variant drawn at each use.
     "camera": ItemRule("ahead", "camera", "Messes with the camera of the runner ahead for {s}s"),
+    # The victim's mod answers with an item_report: no banner until it does.
+    "talisman_thief": ItemRule(
+        "ahead", "steal_talisman", "Steals a talisman from the runner ahead"
+    ),
+    "junk_weapon": ItemRule(
+        "ahead",
+        "junk_weapon",
+        "Forces a junk weapon on the runner ahead",
+        "{weapon} forced into your right hand",
+    ),
+    "hunter": ItemRule(
+        "leader",
+        "hunter",
+        "Sends Margit after the leader for {s}s",
+        "Margit hunts you for {s}s",
+        "Hunted",
+    ),
 }
+
+STEAL_TITLE = "Talisman Thief"
 
 _MISSED_LINE = {
     "ahead": "Missed: nobody ahead",
@@ -488,17 +609,48 @@ def _seconds(entry: CatalogEntry) -> int:
     return (entry.duration_ms or 0) // 1000
 
 
-def _format(template: str, key: str, entry: CatalogEntry) -> str:
-    return template.format(s=_seconds(entry), pct=_damage_pct(key))
+def _format(template: str, key: str, entry: CatalogEntry, weapon: str = "") -> str:
+    return template.format(s=_seconds(entry), pct=_damage_pct(key), weapon=weapon)
+
+
+def draw_junk_weapon(catalog: RaceItemCatalog, rng: random.Random) -> JunkWeapon | None:
+    """The Junk Weapon's weapon, uniform at each use; None without a list."""
+    return rng.choice(catalog.junk_weapons) if catalog.junk_weapons else None
+
+
+def hunter_npc_param(
+    hunter: HunterRows, graph_json: Mapping[str, Any], zone: str | None, *, log_ref: object = ""
+) -> int:
+    """The Hunter's NpcParam row for the leader standing in ``zone``: the row of
+    its node's tier, clamped to the rows the seed carries. A leader without a
+    current zone, or a node without a tier, gets tier 1 (logged)."""
+    nodes = graph_json.get("nodes")
+    node = nodes.get(zone) if isinstance(nodes, Mapping) and zone is not None else None
+    tier = node.get("tier") if isinstance(node, Mapping) else None
+    if not _is_int(tier):
+        logger.warning("Hunter: no tier for zone %r, using tier 1: %s", zone, log_ref)
+        tier = 1
+    return hunter.npc_params[max(1, min(tier, len(hunter.npc_params))) - 1]
 
 
 def effect_payload(
-    item_key: str, entry: CatalogEntry, variant: CameraVariant | None = None
+    item_key: str,
+    entry: CatalogEntry,
+    variant: CameraVariant | None = None,
+    *,
+    catalog: RaceItemCatalog | None = None,
+    rng: random.Random | None = None,
+    report_id: int | None = None,
+    weapon: JunkWeapon | None = None,
+    npc_param_id: int | None = None,
 ) -> "ItemEffectPayload | None":
     """The wire effect an item applies to a target (a self item's target is its
     sender's own mod); None for the passive Shield, and for a memory effect
     whose catalog entry has no ``duration_ms`` (logged: the mod would drop the
-    message). ``variant`` is the Camera's (drawn when absent)."""
+    message). ``variant`` is the Camera's (drawn when absent). The Talisman
+    Thief, Junk Weapon and Hunter need the seed's ``catalog`` and, per target,
+    their ``report_id`` (the two reports), the Junk Weapon's ``weapon`` and the
+    Hunter's ``npc_param_id``; None when one is missing."""
     from speedfog_racing.websocket.schemas import ItemEffectPayload
 
     key = base_key(item_key)
@@ -533,6 +685,32 @@ def effect_payload(
             kind,
         )
         return None
+    if kind == "steal_talisman":
+        if catalog is None or not catalog.talismans or report_id is None:
+            return None
+        from speedfog_racing.websocket.schemas import TalismanRow
+
+        return ItemEffectPayload(
+            kind="steal_talisman",
+            talismans=[TalismanRow(id=tid, flag=t.flag) for tid, t in catalog.talismans.items()],
+            roll=(rng or random.Random()).getrandbits(32),
+            report_id=report_id,
+        )
+    if kind == "junk_weapon":
+        return (
+            None if weapon is None else ItemEffectPayload(kind="junk_weapon", weapon_id=weapon.id)
+        )
+    if kind == "hunter":
+        if catalog is None or catalog.hunter is None or npc_param_id is None or report_id is None:
+            return None
+        return ItemEffectPayload(
+            kind="hunter",
+            chr_id=catalog.hunter.chr_id,
+            npc_param_id=npc_param_id,
+            think_id=catalog.hunter.think_param,
+            duration_ms=entry.duration_ms,
+            report_id=report_id,
+        )
     if kind == "vanish":
         return ItemEffectPayload(kind="vanish", duration_ms=entry.duration_ms)
     if kind == "unseen_foes":
@@ -568,7 +746,11 @@ def grant_banner(item_key: str, entry: CatalogEntry) -> "ItemBanner":
 
 
 def target_banner(
-    item_key: str, entry: CatalogEntry, sender: str, variant: CameraVariant | None = None
+    item_key: str,
+    entry: CatalogEntry,
+    sender: str,
+    variant: CameraVariant | None = None,
+    weapon: str = "",
 ) -> "ItemBanner":
     """Banner shown to a runner the item hits."""
     from speedfog_racing.websocket.schemas import ItemBanner
@@ -580,7 +762,7 @@ def target_banner(
     return ItemBanner(
         icon=entry.icon,
         title=entry.name,
-        line=_format(template, key, entry),
+        line=_format(template, key, entry, weapon),
         detail=f"from {sender}",
     )
 
@@ -593,6 +775,7 @@ def result_banner(
     offline: int,
     stars: Sequence[str] = (),
     variant: CameraVariant | None = None,
+    weapon: str = "",
 ) -> "ItemBanner":
     """Banner shown to the sender once the item resolved. ``blocked`` names the
     runners whose shield blocked it, ``stars`` those whose Star did."""
@@ -607,6 +790,8 @@ def result_banner(
         detail = f"{_damage_pct(key)}% HP"
     elif landed and rule.effect == "camera" and entry.duration_ms is not None:
         detail = f"{_CAMERA_REMINDERS[variant or 'first_person']}, {_seconds(entry)}s"
+    elif landed and rule.effect == "junk_weapon":
+        detail = weapon
     elif landed and entry.duration_ms is not None and rule.reminder is not None:
         detail = f"{_seconds(entry)}s"
 
@@ -628,6 +813,45 @@ def result_banner(
     else:
         line = _MISSED_LINE.get(rule.target, "Missed: no other runner")
     return ItemBanner(icon=entry.icon, title=entry.name, line=line, detail=detail)
+
+
+def stolen_banner(entry: CatalogEntry, talisman: str, victim: str) -> "ItemBanner":
+    """Banner shown to the thief once the victim's mod reported the talisman taken."""
+    from speedfog_racing.websocket.schemas import ItemBanner
+
+    return ItemBanner(
+        icon=entry.icon, title=STEAL_TITLE, line=f"Stole {talisman}", detail=f"from {victim}"
+    )
+
+
+def stolen_notice_banner(entry: CatalogEntry, talisman: str, thief: str) -> "ItemBanner":
+    """Banner shown to the victim whose talisman was taken."""
+    from speedfog_racing.websocket.schemas import ItemBanner
+
+    return ItemBanner(
+        icon=entry.icon, title=STEAL_TITLE, line=f"{talisman} stolen", detail=f"by {thief}"
+    )
+
+
+def nothing_to_steal_banner(entry: CatalogEntry, victim: str) -> "ItemBanner":
+    """Banner shown to the thief when the victim wore no talisman."""
+    from speedfog_racing.websocket.schemas import ItemBanner
+
+    return ItemBanner(
+        icon=entry.icon,
+        title=STEAL_TITLE,
+        line="Nothing to steal",
+        detail=f"{victim} wears no talisman",
+    )
+
+
+def hunter_lost_banner(entry: CatalogEntry, leader: str) -> "ItemBanner":
+    """Banner shown to the Hunter's sender when the spawn failed."""
+    from speedfog_racing.websocket.schemas import ItemBanner
+
+    return ItemBanner(
+        icon=entry.icon, title=entry.name, line="The Hunter lost the trail", detail=leader
+    )
 
 
 def shield_banner(item_name: str, sender: str) -> "ItemBanner":
