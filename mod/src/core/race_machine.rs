@@ -3265,9 +3265,9 @@ impl RaceMachine {
         self.drop_hunter(reason, effects);
     }
 
-    /// Forget the Hunter; one requested and not missed yet, or hunting, may
-    /// be in the world: ended (`EndHunter`), wherever the player is. His
-    /// reminder row goes too.
+    /// Forget the Hunter; one requested and not missed yet, hunting, or
+    /// still watched after his last miss may be in the world: ended
+    /// (`EndHunter`), wherever the player is. His reminder row goes too.
     fn drop_hunter(&mut self, reason: &'static str, effects: &mut Vec<Effect>) {
         let npc_param_id = self.hunter.spec().map(|spec| spec.npc_param_id);
         if let (true, Some(npc_param_id)) = (self.hunter.clear(), npc_param_id) {
@@ -10368,6 +10368,52 @@ mod tests {
             Some(("HUNTER".to_string(), FeedTone::Malus))
         );
         assert_eq!(reminder_texts(&m, t2 + secs(1)), ["Hunted"]);
+    }
+
+    #[test]
+    fn a_hunter_arriving_after_the_last_miss_is_ended_unseen() {
+        let now = Instant::now();
+        let t1 = now + ms(100);
+        // When the last miss is reported, never seeing him.
+        let missed = Effect::SendItemReport {
+            report_id: 13,
+            landed: false,
+            talisman_id: None,
+        };
+        let mut dry = running_items_machine(now);
+        dry.handle_message(hunter(13), t1);
+        let last = hunter_frames(&mut dry, t1, t1 + secs(30), |_| false)
+            .into_iter()
+            .find(|(_, e)| *e == missed)
+            .unwrap()
+            .0;
+
+        // He shows up 4 s after it: ended once, with no banner (one shown
+        // then would still be up 2 s later), no row and no other report.
+        let late = |at: Instant| at >= last + secs(4);
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), t1);
+        let steps = hunter_frames(&mut m, t1, last + secs(6), late);
+        let after: Vec<_> = steps.into_iter().filter(|(at, _)| *at > last).collect();
+        let ends: Vec<_> = after
+            .iter()
+            .filter(|(_, e)| matches!(e, Effect::EndHunter { .. }))
+            .collect();
+        assert_eq!(ends.len(), 1, "{after:?}");
+        assert_eq!(after.last(), Some(ends[0]), "{after:?}");
+        assert!(
+            !after
+                .iter()
+                .any(|(_, e)| matches!(e, Effect::SendItemReport { .. })),
+            "{after:?}"
+        );
+        assert_eq!(banner_title(&m), None);
+        assert!(reminder_texts(&m, last + secs(6)).is_empty());
+        // Nothing more for him.
+        assert_eq!(
+            hunter_frames(&mut m, last + secs(6), last + secs(30), late),
+            []
+        );
     }
 
     #[test]

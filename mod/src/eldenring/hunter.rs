@@ -3,7 +3,8 @@
 //! ended at 0 HP. Called when the race machine emits `Effect::RequestHunter`,
 //! `Effect::FindHunter` and `Effect::EndHunter` (`core::hunter` decides
 //! when: the looks at most every 250 ms while a spawn is awaited and every
-//! second while he hunts), never per frame.
+//! second while he hunts or is watched after the last miss), never per
+//! frame.
 //!
 //! No pointer to him is kept between calls: each look and each end walks
 //! the debug chr set again, so a load that frees him leaves nothing stale.

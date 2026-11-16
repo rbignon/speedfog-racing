@@ -11,7 +11,9 @@
 //! `FIND_WINDOW`. Not seen by then (or the spawn refused), the request
 //! missed: he is ended, so a late arrival does not stay, and requested again
 //! `RETRY_DELAY` later, up to `MAX_REQUESTS` requests; the last miss is
-//! reported not landed. Seen, he is reported landed, his banner and
+//! reported not landed, and he is still looked for every `HUNT_CHECK` for
+//! `LINGER` after it: one that arrives then is ended, with nothing shown
+//! and no other report. Seen, he is reported landed, his banner and
 //! reminder show (`HunterStep::Found`), and he hunts for the effect's
 //! duration of play time, looked for every `HUNT_CHECK`: a load or a kill
 //! that removes him ends the hunt there, otherwise he is ended once his
@@ -34,6 +36,9 @@ pub const RETRY_DELAY: Duration = Duration::from_millis(1500);
 pub const MAX_REQUESTS: u8 = 3;
 /// While he hunts, he is looked for this often.
 pub const HUNT_CHECK: Duration = Duration::from_secs(1);
+/// After the last miss, he is still looked for (every `HUNT_CHECK`) this
+/// long: a late arrival is ended.
+pub const LINGER: Duration = Duration::from_secs(10);
 
 /// What the runner is shown once he is found: the banner, and the reminder
 /// row drawn with `icon`.
@@ -97,6 +102,14 @@ enum State {
         next_check: Instant,
         announced: bool,
     },
+    /// Missed for good and reported: still looked for at `next_find` until
+    /// `until`, so a late arrival is ended (`stray`: one was seen, ended at
+    /// the next tick).
+    Lingering {
+        until: Instant,
+        next_find: Instant,
+        stray: bool,
+    },
 }
 
 #[derive(Debug, Default)]
@@ -110,9 +123,9 @@ pub struct Hunter {
 impl Hunter {
     /// Send `spec` out: requested at the first `tick` where the player is
     /// settled. `false` when one is already awaited or hunting: the caller
-    /// reports this one missed.
+    /// reports this one missed. The watch after a last miss gives way to it.
     pub fn start(&mut self, spec: HunterSpec, now: Instant) -> bool {
-        if !matches!(self.state, State::Idle) {
+        if !matches!(self.state, State::Idle | State::Lingering { .. }) {
             return false;
         }
         self.spec = Some(spec);
@@ -153,7 +166,11 @@ impl Hunter {
                     steps.push(HunterStep::End);
                     if requests >= MAX_REQUESTS {
                         steps.push(HunterStep::Report { landed: false });
-                        self.state = State::Idle;
+                        self.state = State::Lingering {
+                            until: now + LINGER,
+                            next_find: now + HUNT_CHECK,
+                            stray: false,
+                        };
                     } else {
                         self.state = State::Waiting {
                             requests,
@@ -193,6 +210,25 @@ impl Hunter {
                     };
                 }
             }
+            State::Lingering {
+                until,
+                next_find,
+                stray,
+            } => {
+                if stray {
+                    steps.push(HunterStep::End);
+                    self.state = State::Idle;
+                } else if now >= until {
+                    self.state = State::Idle;
+                } else if now >= next_find {
+                    steps.push(HunterStep::Find);
+                    self.state = State::Lingering {
+                        until,
+                        next_find: now + HUNT_CHECK,
+                        stray: false,
+                    };
+                }
+            }
         }
         steps
     }
@@ -210,7 +246,8 @@ impl Hunter {
     /// The shell's answer to a `Find`: `found` when a live character of his
     /// row is around. Found while looked for, he hunts from `play` on; gone
     /// while hunting (a load or a kill removed him), the hunt is over, with
-    /// nothing left to end.
+    /// nothing left to end. Found after the last miss, he arrived late: the
+    /// next `tick` ends him, and that is all.
     pub fn seen(&mut self, found: bool, now: Instant, play: Duration) {
         match self.state {
             State::Looking { .. } if found => {
@@ -222,14 +259,27 @@ impl Hunter {
                 };
             }
             State::Hunting { .. } if !found => self.state = State::Idle,
+            State::Lingering {
+                until, next_find, ..
+            } if found => {
+                self.state = State::Lingering {
+                    until,
+                    next_find,
+                    stray: true,
+                };
+            }
             _ => {}
         }
     }
 
     /// Forget him (the run is over). `true` when he had to be ended: a spawn
-    /// was requested and not missed yet, or he hunts, so he may be there.
+    /// was requested and not missed yet, he hunts, or the last miss is still
+    /// watched, so he may be there.
     pub fn clear(&mut self) -> bool {
-        let end = matches!(self.state, State::Looking { .. } | State::Hunting { .. });
+        let end = matches!(
+            self.state,
+            State::Looking { .. } | State::Hunting { .. } | State::Lingering { .. }
+        );
         self.state = State::Idle;
         self.spec = None;
         end
@@ -379,17 +429,115 @@ mod tests {
                 assert_within_a_frame(next, end + RETRY_DELAY);
             }
         }
-        // The third miss is reported, and that is all.
+        // The third miss is reported; only looks follow (the watch after
+        // the last miss, see `the_watch_after_the_last_miss_lasts_ten_seconds`).
         let last = ends[2];
-        assert_eq!(
-            steps[steps.len() - 2..],
-            [
-                (last, HunterStep::End),
-                (last, HunterStep::Report { landed: false })
-            ]
+        let report = steps
+            .iter()
+            .position(|&step| step == (last, HunterStep::Report { landed: false }))
+            .unwrap();
+        assert_eq!(steps[report - 1], (last, HunterStep::End));
+        assert!(
+            steps[report + 1..]
+                .iter()
+                .all(|&(_, step)| step == HunterStep::Find),
+            "{steps:?}"
         );
         assert!(!h.clear(), "nothing left to end");
         assert!(h.start(spec(14), run.t0 + secs(30)), "a new one can come");
+    }
+
+    /// When the last miss of a Hunter never seen falls, from `run`'s start.
+    fn last_miss(run: &Run) -> Duration {
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        let steps = run.frames(&mut h, Duration::ZERO, secs(30));
+        let missed = times(&steps, HunterStep::Report { landed: false });
+        assert_eq!(missed.len(), 1, "{steps:?}");
+        missed[0]
+    }
+
+    #[test]
+    fn the_watch_after_the_last_miss_lasts_ten_seconds() {
+        let run = Run::new(Duration::ZERO..Duration::ZERO);
+        let last = last_miss(&run);
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        let steps = run.frames(&mut h, Duration::ZERO, last + secs(60));
+        let after: Vec<_> = steps.iter().filter(|&&(at, _)| at > last).collect();
+        // Looked for every second, nothing else: nine looks, the tenth
+        // would fall when the watch ends.
+        assert!(
+            after.iter().all(|&&(_, step)| step == HunterStep::Find),
+            "{after:?}"
+        );
+        assert_eq!(after.len(), 9, "{after:?}");
+        let mut prev = last;
+        for &&(at, _) in &after {
+            assert_within_a_frame(at, prev + HUNT_CHECK);
+            prev = at;
+        }
+        assert!(prev < last + LINGER);
+        assert!(!h.clear(), "the watch is over: nothing to end");
+
+        // Cleared during the watch: he may be there, so he is ended.
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        run.frames(&mut h, Duration::ZERO, last + secs(5));
+        assert!(h.clear());
+    }
+
+    #[test]
+    fn a_late_arrival_after_the_last_miss_is_ended() {
+        let mut run = Run::new(Duration::ZERO..Duration::ZERO);
+        let last = last_miss(&run);
+        // He shows up 4 s after the last miss.
+        run.found = last + secs(4)..secs(1000);
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        let steps = run.frames(&mut h, Duration::ZERO, last + secs(30));
+        let after: Vec<_> = steps.iter().copied().filter(|&(at, _)| at > last).collect();
+        let seen = *times(&after, HunterStep::Find)
+            .iter()
+            .find(|&&at| at >= last + secs(4))
+            .unwrap();
+        // Ended on the next frame, and that is all: never shown, no other
+        // report.
+        assert_eq!(after.last(), Some(&(seen + FRAME, HunterStep::End)));
+        assert_eq!(times(&after, HunterStep::End).len(), 1, "{after:?}");
+        assert!(times(&steps, HunterStep::Found).is_empty());
+        assert_eq!(times(&steps, HunterStep::Report { landed: false }), [last]);
+        assert!(times(&steps, HunterStep::Report { landed: true }).is_empty());
+        assert!(!h.clear(), "ended: nothing left");
+    }
+
+    #[test]
+    fn a_new_hunter_supersedes_the_watch() {
+        let mut run = Run::new(Duration::ZERO..Duration::ZERO);
+        let last = last_miss(&run);
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        run.frames(&mut h, Duration::ZERO, last + secs(2));
+        // A new one during the watch is sent out at once.
+        let sent = last + secs(2);
+        assert!(h.start(spec(14), run.t0 + sent));
+        assert_eq!(h.spec().map(|s| s.report_id), Some(14));
+        // Requested on the next frame, looked for every 250 ms; seen, he
+        // hunts as the new one (shown, reported landed), not ended as a late
+        // arrival.
+        run.found = sent + secs(1)..secs(1000);
+        let steps = run.frames(&mut h, sent, sent + secs(5));
+        assert_eq!(steps[0], (sent + FRAME, HunterStep::Request));
+        let finds = times(&steps, HunterStep::Find);
+        assert_within_a_frame(finds[0], sent + FRAME + FIND_INTERVAL);
+        assert_eq!(times(&steps, HunterStep::Found).len(), 1, "{steps:?}");
+        assert_eq!(
+            times(&steps, HunterStep::Report { landed: true }).len(),
+            1,
+            "{steps:?}"
+        );
+        assert!(times(&steps, HunterStep::End).is_empty(), "{steps:?}");
+        assert!(h.is_hunting());
     }
 
     #[test]

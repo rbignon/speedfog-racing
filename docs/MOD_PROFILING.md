@@ -30,8 +30,8 @@ UI over TCP port `8086`. You can see:
   `race_items.read_inventory` and `equip_change.change_equipment` inside).
 - The Hunter: `race_items.find_hunter` (the walk over the debug chr set,
   every 250 ms during the 3 s after a spawn request, then once a second
-  while he hunts), `race_items.request_hunter` and `race_items.end_hunter`
-  (once per request and per end).
+  while he hunts and for 10 s after a last miss), `race_items.request_hunter`
+  and `race_items.end_hunter` (once per request and per end).
 - A separate timeline for the WebSocket worker thread (`ws-worker`), and one
   for the LiveSplit pipe thread (`livesplit`: `livesplit_connect`,
   `livesplit_poll`).
@@ -95,7 +95,7 @@ opens a TCP listener.
   chr set (the characters the debug creator spawned) and the NpcParam row of
   each one, on the render thread, so its duration lands on the frame that
   runs it: every 250 ms for 3 s after a request, then once a second for his
-  60 s, never on the frames between. Capture one Hunter in the open world and
+  60 s (or for 10 s after a last miss), never on the frames between. Capture one Hunter in the open world and
   one in a legacy dungeon (`docs/RACE_ITEMS.md`, check J.18): the walk is a
   handful of fault-safe reads while the set holds only him, so a few hundred
   microseconds or more is worth reporting.
