@@ -573,6 +573,9 @@ pub struct RaceMachine {
     foes_walked_at: Instant,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
+    /// The text of the reminder row his `Found` added: the row goes when he
+    /// is gone or ended, whatever time it had left.
+    hunter_row: Option<String>,
     /// The last loading exit: a Hunter spawns once the player has been
     /// loaded `hunter::SETTLE` since (none seen yet: settled).
     last_loading_exit: Option<Instant>,
@@ -735,6 +738,7 @@ impl RaceMachine {
             memory_written_at: now,
             foes_walked_at: now,
             hunter: Hunter::default(),
+            hunter_row: None,
             last_loading_exit: None,
             last_status_update: now,
             last_flag_poll: now,
@@ -2233,12 +2237,20 @@ impl RaceMachine {
 
     /// The shell's outcome for a `FindHunter`: `found` when a live character
     /// of the Hunter's row is around. One that hunted and is gone (a load or
-    /// a kill removed him) ends the hunt there.
+    /// a kill removed him) ends the hunt there, his reminder row with it.
     pub fn hunter_seen(&mut self, found: bool, now: Instant) {
         let hunting = self.hunter.is_hunting();
         self.hunter.seen(found, now, self.play_clock.at(now));
         if hunting && !self.hunter.is_hunting() {
             info!("[ITEMS] Hunter gone (a load or a kill removed him), the hunt is over");
+            self.drop_hunter_row();
+        }
+    }
+
+    /// Remove the reminder row of the Hunter found last, if any is left.
+    fn drop_hunter_row(&mut self) {
+        if let Some(text) = self.hunter_row.take() {
+            self.item_feed.remove_reminder(&text);
         }
     }
 
@@ -3254,13 +3266,15 @@ impl RaceMachine {
     }
 
     /// Forget the Hunter; one requested and not missed yet, or hunting, may
-    /// be in the world: ended (`EndHunter`), wherever the player is.
+    /// be in the world: ended (`EndHunter`), wherever the player is. His
+    /// reminder row goes too.
     fn drop_hunter(&mut self, reason: &'static str, effects: &mut Vec<Effect>) {
         let npc_param_id = self.hunter.spec().map(|spec| spec.npc_param_id);
         if let (true, Some(npc_param_id)) = (self.hunter.clear(), npc_param_id) {
             info!(npc_param_id, reason, "[ITEMS] Hunter ended");
             effects.push(Effect::EndHunter { npc_param_id });
         }
+        self.drop_hunter_row();
     }
 
     /// What `zone`, the zone that decides, makes of an ink not run yet (no
@@ -3354,7 +3368,8 @@ impl RaceMachine {
     /// `maintain_memory_effects`, on a loaded frame of the race save: his
     /// spawn once the player has been loaded `hunter::SETTLE` since the last
     /// loading exit, the looks for him, his end, the report, and his banner
-    /// and reminder once found. A few comparisons while nothing is due.
+    /// and reminder once found (the row goes when he does, see
+    /// `drop_hunter_row`). A few comparisons while nothing is due.
     fn maintain_hunter(&mut self, now: Instant, effects: &mut Vec<Effect>) {
         if !self.frame_snapshot.position_readable || self.wrong_save {
             return;
@@ -3390,6 +3405,7 @@ impl RaceMachine {
                 HunterStep::End => {
                     info!(npc_param_id, "[ITEMS] Hunter ended");
                     effects.push(Effect::EndHunter { npc_param_id });
+                    self.drop_hunter_row();
                 }
                 HunterStep::Report { landed } => {
                     info!(report_id, landed, "[ITEMS] Hunter reported");
@@ -3402,6 +3418,7 @@ impl RaceMachine {
                 HunterStep::Found => {
                     info!(report_id, "[ITEMS] Hunter found, he hunts");
                     let notice = self.hunter.take_notice();
+                    self.hunter_row = notice.reminder.as_ref().map(|r| r.text.clone());
                     if let Some(reminder) = notice.reminder {
                         self.item_feed.add_reminder(
                             notice.icon,
@@ -10408,6 +10425,39 @@ mod tests {
     }
 
     #[test]
+    fn the_hunted_row_ends_with_the_hunt() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), now + ms(100));
+        let t1 = now + ms(100);
+        hunter_frames(&mut m, t1, t1 + secs(2), |_| true);
+        assert_eq!(reminder_texts(&m, t1 + secs(2)), ["Hunted"]);
+
+        // A load or a kill removed him: the next look ends the hunt, his row
+        // with it (well before its 60 s), and nothing more comes out for
+        // him, no end either.
+        let gone = t1 + secs(2);
+        let mut steps = hunter_frames(&mut m, gone, gone + secs(2), |_| false);
+        assert_eq!(steps.len(), 1, "{steps:?}");
+        assert!(reminder_texts(&m, gone + secs(2)).is_empty());
+        steps.extend(hunter_frames(
+            &mut m,
+            gone + secs(2),
+            gone + secs(70),
+            |_| false,
+        ));
+        assert_eq!(
+            steps,
+            [(
+                steps[0].0,
+                Effect::FindHunter {
+                    npc_param_id: HUNTER_ROW
+                }
+            )]
+        );
+    }
+
+    #[test]
     fn the_hunter_is_ended_when_the_run_ends() {
         for end in ["finished", "new start", "another participant"] {
             let now = Instant::now();
@@ -10454,6 +10504,8 @@ mod tests {
                     .into_iter()
                     .map(|(_, e)| e),
             );
+            // His row goes with him.
+            assert!(reminder_texts(&m, t2 + secs(2)).is_empty(), "{end}");
             steps.extend(hunter_steps(load(
                 &mut m,
                 t2 + secs(3),
