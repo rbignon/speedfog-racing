@@ -39,16 +39,19 @@
 //!   offsets checked in the 1.17.0 executable): the set count at + 0x1CC58
 //!   and as many holders from + 0x1CC60 (`core::foes::CHR_SET_HOLDER_SIZE`;
 //!   the game registers a set by inserting its holder in index order and
-//!   writing `chr_sets[index]` at + 0x1DED8, an array with holes, not walked),
-//!   the player, ghost and debug chr sets embedded at + 0x10EE0, + 0x10F38
-//!   and + 0x10FE8 (no foes: left out), the summon buddy set (Torrent its
-//!   first entry, spirit ashes after it) at + 0x10F90; a ChrSet holds its
-//!   capacity at + 0x10 and its entries at + 0x18. Every offset is below
-//!   PlayerIns (+ 0x1E508), the same on 1.17.0 and 1.17.2; the fields after
-//!   it moved between the two, and none is used. libeldenring's static
-//!   Torrent slot (+ 0x1CC90, the third holder) is the summon buddy set only
-//!   while no world block set is registered below it, so the walk reads the
-//!   embedded set instead.
+//!   writing `chr_sets[index]` at + 0x1DED8, an array with holes, not
+//!   walked), the player, ghost, summon buddy (Torrent its first entry,
+//!   spirit ashes after it) and debug chr sets embedded at WorldChrMan +
+//!   0x10EE0, 0x10F38, 0x10F90 and 0x10FE8 (no foes: left out); a ChrSet
+//!   holds its capacity at + 0x10 and its entries at + 0x18, every non-null
+//!   one walked (the game's own list of the characters it updates, rebuilt
+//!   each frame at + 0x1F1B0 on 1.17.0 and 1.17.1 from these holders, takes
+//!   the same entries, reading no load status; see `core::foes`). Every
+//!   offset is below PlayerIns (+ 0x1E508), the same on 1.17.0 and 1.17.2;
+//!   the fields after it moved between the two, and none is used.
+//!   libeldenring's static Torrent slot (+ 0x1CC90, the third holder) is the
+//!   summon buddy set only while no world block set is registered below it,
+//!   so the walk reads the embedded set instead.
 //!
 //! Unverified by this mod in game until the lot's checks.
 
@@ -299,8 +302,8 @@ pub fn set_camera(variant: Option<CameraVariant>, originals: &mut HashMap<u64, C
 }
 
 /// Hide (`hide`) or show the characters around: one bounded walk over
-/// WorldChrMan's chr sets (`core::foes`), the player, ghost and debug chr
-/// sets, the player and Torrent left out. `record` holds the characters the
+/// WorldChrMan's chr sets (`core::foes`), the player, ghost, summon buddy
+/// and debug chr sets, the player and Torrent left out. `record` holds the characters the
 /// mod hid: a hide walk rebuilds it from what it met (each hide recorded
 /// once its write worked), a show walk empties it. Returns how many render
 /// bits changed. Every read is fault-safe; each set's entries are read in
@@ -339,6 +342,7 @@ pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
     let left_out = [
         wcm + WCM_PLAYER_CHR_SET_OFFSET,
         wcm + WCM_GHOST_CHR_SET_OFFSET,
+        wcm + WCM_SUMMON_BUDDY_CHR_SET_OFFSET,
         wcm + WCM_DEBUG_CHR_SET_OFFSET,
     ];
     for set in foes::chr_sets(holders, &left_out) {

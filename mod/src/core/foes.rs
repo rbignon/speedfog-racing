@@ -6,14 +6,20 @@
 //! render byte of each character on it, then applies what a `FoesWalk`
 //! decides and tells it which writes worked; this module only decides.
 //!
-//! A walk considers only the characters in the world (entry load status
-//! Active). Hiding clears the bit on a character that has it set, recorded
-//! once the write worked; showing sets it back only on a recorded character
-//! met again with it cleared and not dying, so a character the game hides
-//! or is removing is never shown. A hide walk that read every set rebuilds
-//! the record from what it met, so the record follows the characters
-//! through a load: one the mod hid that survives it (a death, a warp that
-//! keeps the map block) stays recorded, one gone is dropped.
+//! A walk considers every character on a set, reading no load status: the
+//! game builds its own list of the characters it updates the same way, each
+//! frame (every non-null entry of every set its holders name, through
+//! `ChrSet` vtable slot 2, in the 1.17.x executables), while the byte
+//! fromsoftware-rs names the load status (entry + 0x08) is not 2, `Active`,
+//! on most characters in the world (a walk that required it met one character
+//! among some 1600 slots, enemies around). Hiding clears the bit on a
+//! character that has it set, recorded once the write worked; showing sets it
+//! back only on a recorded character met again with it cleared and not dying,
+//! so a character the game hides or is removing is never shown. A hide walk
+//! that read every set rebuilds the record from what it met, so the record
+//! follows the characters through a load: one the mod hid that survives it (a
+//! death, a warp that keeps the map block) stays recorded, one gone is
+//! dropped.
 
 use std::collections::HashSet;
 
@@ -23,13 +29,8 @@ pub const RENDER_BIT: u8 = 0x08;
 /// (fromsoftware-rs `death_flag`).
 pub const DEATH_BIT: u8 = 0x80;
 /// One chr set entry: the ChrIns pointer at +0 (null for an empty slot),
-/// its load status and flags after it.
+/// then 8 bytes the walk does not read.
 pub const CHR_SET_ENTRY_SIZE: usize = 0x10;
-/// Chr set entry + 0x08: the load status (fromsoftware-rs `ChrLoadStatus`).
-const ENTRY_LOAD_STATUS_OFFSET: usize = 0x08;
-/// The load status of a character in the world (`Active`; the others are
-/// loading, network setup or unloading).
-pub const LOAD_STATUS_ACTIVE: u8 = 2;
 /// One WorldChrMan chr set holder: the ChrSet pointer at +0, the set's
 /// index at +8. The game keeps its holders packed and sorted by index, as
 /// many as its set count; its `chr_sets` pointer array is indexed by the
@@ -58,8 +59,8 @@ pub enum RenderWrite {
 /// What the walk decided for one chr set.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct SetPlan {
-    /// Characters on the set the walk may change (active ones, the player
-    /// and Torrent left out), readable or not.
+    /// Characters on the set the walk may change (the player and Torrent
+    /// left out), readable or not.
     pub visited: usize,
     /// Of those, the ones whose render byte could not be read: left alone.
     pub unreadable: usize,
@@ -82,7 +83,8 @@ pub fn holders_in(block: &[u8]) -> (u32, &[u8]) {
 /// The chr sets to walk from WorldChrMan's chr set holders
 /// (`CHR_SET_HOLDER_SIZE` bytes each, a trailing partial holder ignored):
 /// the non-null ones, the sets `left_out` (the players', the phantoms', the
-/// debug spawns': no foes there) left out.
+/// player's spirit ashes and Torrent, the debug spawns': no foes there)
+/// left out.
 pub fn chr_sets<'a>(holders: &'a [u8], left_out: &'a [usize]) -> impl Iterator<Item = usize> + 'a {
     holders
         .chunks_exact(CHR_SET_HOLDER_SIZE)
@@ -145,11 +147,11 @@ pub struct FoesWalk<'a> {
 impl FoesWalk<'_> {
     /// Decide the render writes for one chr set's entry block (`entries`, as
     /// read: `CHR_SET_ENTRY_SIZE` bytes per entry, a trailing partial entry
-    /// ignored). Empty slots, entries not Active, the local `player` and
-    /// `torrent` are skipped; `render_byte` reads a character's ChrIns +
-    /// 0x1C5 (`None` when unreadable). Hiding clears the bit of each
-    /// character that has it set (recorded by `written`); a recorded one met
-    /// already cleared, or unreadable, stays recorded. Showing sets the bit
+    /// ignored). Empty slots, the local `player` and `torrent` are skipped;
+    /// `render_byte` reads a character's ChrIns + 0x1C5 (`None` when
+    /// unreadable). Hiding clears the bit of each character that has it set
+    /// (recorded by `written`); a recorded one met already cleared, or
+    /// unreadable, stays recorded. Showing sets the bit
     /// back on each recorded character met with it cleared, unless it is
     /// dying (`DEATH_BIT`); one the game showed again needs no write.
     pub fn plan_set(
@@ -162,11 +164,7 @@ impl FoesWalk<'_> {
         let mut plan = SetPlan::default();
         for entry in entries.chunks_exact(CHR_SET_ENTRY_SIZE) {
             let chr = pointer_at(entry);
-            if chr == 0
-                || chr == player
-                || chr == torrent
-                || entry[ENTRY_LOAD_STATUS_OFFSET] != LOAD_STATUS_ACTIVE
-            {
+            if chr == 0 || chr == player || chr == torrent {
                 continue;
             }
             plan.visited += 1;
@@ -245,27 +243,29 @@ mod tests {
     const TORRENT: usize = 0x7FF0_0000_2000;
     const DRAWN: u8 = RENDER_BIT | 0x02;
     const NOT_DRAWN: u8 = 0x02;
-    /// Two of the other load statuses: loading in, and on its way out.
-    const INITIALIZING: u8 = 1;
-    const UNLOADING: u8 = 5;
+    /// A value of the byte fromsoftware-rs names the load status (entry +
+    /// 0x08) other than its `Active`, as most characters in the world read
+    /// in game, and `Active`.
+    const STATUS_OTHER: u8 = 0;
+    const STATUS_ACTIVE: u8 = 2;
 
-    /// A chr set entry block: each pointer in its slot with its load
-    /// status, the bytes after them filled with a marker so a misaligned
-    /// read cannot pass for a pointer.
+    /// A chr set entry block: each pointer in its slot with the byte at
+    /// offset 0x08, the other bytes after it filled with a marker so a
+    /// misaligned read cannot pass for a pointer.
     fn entries_with_status(chrs: &[(usize, u8)]) -> Vec<u8> {
         let mut bytes = Vec::new();
         for &(chr, status) in chrs {
             let mut entry = [0xA5u8; CHR_SET_ENTRY_SIZE];
             entry[..8].copy_from_slice(&(chr as u64).to_le_bytes());
-            entry[ENTRY_LOAD_STATUS_OFFSET] = status;
+            entry[8] = status;
             bytes.extend_from_slice(&entry);
         }
         bytes
     }
 
-    /// A block of Active entries.
+    /// A block of entries, the byte at offset 0x08 not `Active`.
     fn entries(chrs: &[usize]) -> Vec<u8> {
-        let chrs: Vec<_> = chrs.iter().map(|&chr| (chr, LOAD_STATUS_ACTIVE)).collect();
+        let chrs: Vec<_> = chrs.iter().map(|&chr| (chr, STATUS_OTHER)).collect();
         entries_with_status(&chrs)
     }
 
@@ -298,27 +298,26 @@ mod tests {
     }
 
     #[test]
-    fn hiding_clears_only_drawn_active_foes_and_records_them() {
-        // A drawn foe, a foe the game hides, an unreadable one, empty
-        // slots, the player, Torrent, and drawn foes loading in or out.
+    fn hiding_clears_only_drawn_foes_and_records_them() {
+        // Drawn foes whatever the byte at offset 0x08 (`Active` or not), a
+        // foe the game hides, an unreadable one, empty slots, the player and
+        // Torrent.
         let bytes = HashMap::from([
             (0x100, DRAWN),
             (0x200, NOT_DRAWN),
             (0x400, DRAWN),
-            (0x500, DRAWN),
             (PLAYER, DRAWN),
             (TORRENT, DRAWN),
         ]);
         let block = entries_with_status(&[
-            (0, LOAD_STATUS_ACTIVE),
-            (0x100, LOAD_STATUS_ACTIVE),
-            (PLAYER, LOAD_STATUS_ACTIVE),
-            (0x200, LOAD_STATUS_ACTIVE),
-            (0, 0),
-            (TORRENT, LOAD_STATUS_ACTIVE),
-            (0x300, LOAD_STATUS_ACTIVE),
-            (0x400, INITIALIZING),
-            (0x500, UNLOADING),
+            (0, STATUS_OTHER),
+            (0x100, STATUS_OTHER),
+            (PLAYER, STATUS_ACTIVE),
+            (0x200, STATUS_OTHER),
+            (0, STATUS_ACTIVE),
+            (TORRENT, STATUS_OTHER),
+            (0x300, STATUS_OTHER),
+            (0x400, STATUS_ACTIVE),
         ]);
         let mut record = FoesRecord::default();
         let mut walk = record.walk(true);
@@ -326,14 +325,15 @@ mod tests {
         assert_eq!(
             plan,
             SetPlan {
-                visited: 3,
+                visited: 4,
                 unreadable: 1,
-                writes: vec![RenderWrite::Hide(0x100)],
+                writes: vec![RenderWrite::Hide(0x100), RenderWrite::Hide(0x400)],
             }
         );
         walk.written(RenderWrite::Hide(0x100));
-        assert_eq!(walk.finish(), 1);
-        assert_eq!(record.hidden, HashSet::from([0x100]));
+        walk.written(RenderWrite::Hide(0x400));
+        assert_eq!(walk.finish(), 2);
+        assert_eq!(record.hidden, HashSet::from([0x100, 0x400]));
     }
 
     #[test]
@@ -391,25 +391,23 @@ mod tests {
     }
 
     #[test]
-    fn showing_skips_a_dying_foe_and_one_not_active() {
-        // Recorded and still hidden: 0x100 dying (the game is removing it),
-        // 0x200 unloading, 0x300 loading in again at a recorded address;
-        // 0x400 as it should be, drawn back.
-        let mut record = record_of(&[0x100, 0x200, 0x300, 0x400]);
+    fn showing_skips_a_dying_foe() {
+        // Recorded and still hidden: 0x100 dying (the game is removing it);
+        // 0x200 and 0x300 as they should be, drawn back whatever the byte at
+        // offset 0x08.
+        let mut record = record_of(&[0x100, 0x200, 0x300]);
         let bytes = HashMap::from([
             (0x100, NOT_DRAWN | DEATH_BIT),
             (0x200, NOT_DRAWN),
             (0x300, NOT_DRAWN),
-            (0x400, NOT_DRAWN),
         ]);
         let set = entries_with_status(&[
-            (0x100, LOAD_STATUS_ACTIVE),
-            (0x200, UNLOADING),
-            (0x300, INITIALIZING),
-            (0x400, LOAD_STATUS_ACTIVE),
+            (0x100, STATUS_ACTIVE),
+            (0x200, STATUS_OTHER),
+            (0x300, STATUS_ACTIVE),
         ]);
         let writes = walk(&mut record, false, PLAYER, &[set], &bytes);
-        assert_eq!(writes, [RenderWrite::Show(0x400)]);
+        assert_eq!(writes, [RenderWrite::Show(0x200), RenderWrite::Show(0x300)]);
         assert!(record.is_empty(), "{record:?}");
     }
 
