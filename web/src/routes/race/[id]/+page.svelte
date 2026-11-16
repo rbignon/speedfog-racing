@@ -425,16 +425,16 @@
   }
 
   let isOrganizer = $derived(auth.user?.id === initialRace.organizer.id);
-  // The name is frozen once the race starts (the server refuses it too), so
-  // an editor left open drops back to the plain title at the start.
-  let canEditName = $derived(isOrganizer && raceStatus === "setup");
   // Role gate for the race settings an admin may edit on the organizer's
   // behalf; each call site keeps its own status window. Never on a daily.
-  // Invites, participant removal, custom rules, the name and the setup map
-  // preview stay organizer-only.
+  // Invites, participant removal, custom rules and the setup map preview
+  // stay organizer-only.
   let canEditRace = $derived(
     (isOrganizer || auth.isAdmin) && initialRace.daily_date === null,
   );
+  // The name is frozen once the race starts (the server refuses it too), so
+  // an editor left open drops back to the plain title at the start.
+  let canEditName = $derived(canEditRace && raceStatus === "setup");
   // Cheat detections (staff only): REST snapshot plus live updates.
   let debugFlags = $derived(
     isOrganizer || auth.isAdmin
