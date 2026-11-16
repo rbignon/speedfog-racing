@@ -141,6 +141,15 @@ async def test_render_race_og_invalidates_cache_on_reschedule(tmp_path: Path) ->
     assert key1 != key2
 
 
+async def test_render_race_og_invalidates_cache_on_rename(tmp_path: Path) -> None:
+    race = _race(status="setup", participants=[], max_participants=20)
+    out_dir = tmp_path / "og"
+    _, key1 = await render_race_og(race, cache_dir=out_dir, avatar_lookup=lambda url: b"AVATAR")
+    race.name = "Friday Night Fog Renamed"
+    _, key2 = await render_race_og(race, cache_dir=out_dir, avatar_lookup=lambda url: b"AVATAR")
+    assert key1 != key2
+
+
 async def test_build_context_scheduled_label_uses_organizer_timezone() -> None:
     race = _race(
         status="setup",

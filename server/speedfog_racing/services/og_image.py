@@ -288,6 +288,8 @@ def _cache_key(race: Race) -> str:
             + f"|max={race.max_participants}"
             + f"|sched={scheduled}"
             + f"|tz={tz}"
+            # Renamable in SETUP only, so the finished snapshot leaves it out.
+            + f"|name={race.name}"
         )
     return hashlib.sha256(snapshot.encode("utf-8")).hexdigest()[:8]
 
