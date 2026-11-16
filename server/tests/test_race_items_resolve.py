@@ -275,7 +275,7 @@ async def test_mushroom_answers_its_own_mod_with_its_effect(items_db):
     ]
     assert resolution.removals == []
     assert resolution.result is not None
-    assert resolution.result.banner.line == "Infinite stamina for 30 s"
+    assert resolution.result.banner.line == "Infinite stamina for 30s"
     assert resolution.result.reminder is not None
     assert resolution.result.reminder.model_dump() == {
         "text": "Infinite stamina",

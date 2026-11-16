@@ -195,9 +195,9 @@ CAMERA_VARIANTS: tuple[CameraVariant, ...] = ("first_person", "inverted", "wide"
 
 # The Camera's target line and reminder per variant, drawn at each use.
 _CAMERA_TARGET_LINES: dict[str, str] = {
-    "first_person": "First-person camera for {s} s",
-    "inverted": "Upside-down camera for {s} s",
-    "wide": "Wide camera for {s} s",
+    "first_person": "First-person camera for {s}s",
+    "inverted": "Upside-down camera for {s}s",
+    "wide": "Wide camera for {s}s",
 }
 _CAMERA_REMINDERS: dict[str, str] = {
     "first_person": "First person",
@@ -226,73 +226,73 @@ ITEM_RULES: dict[str, ItemRule] = {
     "rune_pouch": ItemRule("self", "speffect", "Use it for runes"),
     "banana": ItemRule("behind", "damage", "Hits the runner behind", "Hit for {pct}% HP"),
     "red_shell": ItemRule("ahead", "damage", "Hits the runner ahead", "Hit for {pct}% HP"),
-    "mushroom": ItemRule("self", "speffect", "Infinite stamina for {s} s", "", "Infinite stamina"),
+    "mushroom": ItemRule("self", "speffect", "Infinite stamina for {s}s", "", "Infinite stamina"),
     "hammer": ItemRule(
         "others",
         "equip_load",
-        "Everyone else fat-rolls for {s} s",
-        "Fat-roll for {s} s",
+        "Everyone else fat-rolls for {s}s",
+        "Fat-roll for {s}s",
         "Fat-roll",
     ),
     "ink": ItemRule(
         "others",
         "ink",
-        "Hides everyone else's exits for {s} s",
-        "Exits hidden for {s} s in a hub zone",
+        "Hides everyone else's exits for {s}s",
+        "Exits hidden for {s}s in a hub zone",
         "Exits hidden",
     ),
     "blue_shell": ItemRule(
         "leader",
         "speffect",
-        "Halves the leader's max HP for {s} s",
-        "Max HP halved for {s} s",
+        "Halves the leader's max HP for {s}s",
+        "Max HP halved for {s}s",
         "Max HP halved",
     ),
     "lightning": ItemRule(
         "others",
         "speffect",
-        "Slows everyone else for {s} s",
-        "Slowed for {s} s",
+        "Slows everyone else for {s}s",
+        "Slowed for {s}s",
         "Slowed",
     ),
     "flask_stopper": ItemRule(
         "others",
         "speffect",
-        "Blocks everyone else's flasks for {s} s",
-        "Flasks blocked for {s} s",
+        "Blocks everyone else's flasks for {s}s",
+        "Flasks blocked for {s}s",
         "Flasks blocked",
     ),
     "toxic_blossom": ItemRule("others", "speffect", "Poisons everyone else", "Poisoned"),
-    "star": ItemRule("self", "speffect", "Invincible for {s} s", "", "Invincible"),
+    "star": ItemRule("self", "speffect", "Invincible for {s}s", "", "Invincible"),
     "vanish": ItemRule(
         "others",
         "vanish",
-        "Everyone else turns invisible for {s} s",
-        "You are invisible for {s} s",
+        "Everyone else turns invisible for {s}s",
+        "You are invisible for {s}s",
         "Invisible",
     ),
     "unseen_foes": ItemRule(
         "others",
         "unseen_foes",
-        "Hides everyone else's enemies for {s} s",
-        "Enemies unseen for {s} s",
+        "Hides everyone else's enemies for {s}s",
+        "Enemies unseen for {s}s",
         "Unseen foes",
     ),
     "slow_mo": ItemRule(
         "ahead",
         "slow_mo",
-        "Slows the runner ahead for {s} s",
-        "Slowed down for {s} s",
+        "Slows the runner ahead for {s}s",
+        "Slowed down for {s}s",
         "Slow-mo",
     ),
     "mini": ItemRule(
-        "others", "scale", "Shrinks everyone else for {s} s", "Shrunk for {s} s", "Mini"
+        "others", "scale", "Shrinks everyone else for {s}s", "Shrunk for {s}s", "Mini"
     ),
     "giant": ItemRule(
-        "others", "scale", "Everyone else grows huge for {s} s", "Giant for {s} s", "Giant"
+        "others", "scale", "Everyone else grows huge for {s}s", "Giant for {s}s", "Giant"
     ),
     # The target line and the reminder depend on the variant drawn at each use.
-    "camera": ItemRule("ahead", "camera", "Messes with the camera of the runner ahead for {s} s"),
+    "camera": ItemRule("ahead", "camera", "Messes with the camera of the runner ahead for {s}s"),
 }
 
 _MISSED_LINE = {
@@ -606,9 +606,9 @@ def result_banner(
     if landed and rule.effect == "damage":
         detail = f"{_damage_pct(key)}% HP"
     elif landed and rule.effect == "camera" and entry.duration_ms is not None:
-        detail = f"{_CAMERA_REMINDERS[variant or 'first_person']}, {_seconds(entry)} s"
+        detail = f"{_CAMERA_REMINDERS[variant or 'first_person']}, {_seconds(entry)}s"
     elif landed and entry.duration_ms is not None and rule.reminder is not None:
-        detail = f"{_seconds(entry)} s"
+        detail = f"{_seconds(entry)}s"
 
     if rule.target == "self":
         line = "Runes added" if key == "rune_pouch" else _format(rule.grant_line, key, entry)

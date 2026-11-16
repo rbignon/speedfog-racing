@@ -255,9 +255,9 @@ def test_result_banner_lines(key, hits, blocked, offline, line):
 def test_result_banner_details_and_self_results(monkeypatch):
     monkeypatch.setattr(settings, "race_items_red_shell_pct", 25)
     assert result_banner("red_shell", _entry("Red Shell"), ["A"], [], 0).detail == "25% HP"
-    assert result_banner("hammer", _entry("Hammer", 30000), ["A"], [], 0).detail == "30 s"
+    assert result_banner("hammer", _entry("Hammer", 30000), ["A"], [], 0).detail == "30s"
     mushroom = result_banner("mushroom", _entry("Mushroom", 20000), [], [], 0)
-    assert (mushroom.line, mushroom.detail) == ("Infinite stamina for 20 s", "20 s")
+    assert (mushroom.line, mushroom.detail) == ("Infinite stamina for 20s", "20s")
     assert result_banner("rune_pouch_2", _entry("Pouch"), [], [], 0).line == "Runes added"
 
 
@@ -265,15 +265,15 @@ def test_result_banner_without_a_hit_quotes_no_strength():
     # Nothing landed: the item's strength would read as if it had.
     assert result_banner("red_shell", _entry("Red Shell"), [], ["C"], 0).detail == ""
     assert result_banner("hammer", _entry("Hammer", 15000), [], [], 2).detail == ""
-    assert result_banner("hammer", _entry("Hammer", 15000), ["A"], ["C"], 0).detail == "15 s"
+    assert result_banner("hammer", _entry("Hammer", 15000), ["A"], ["C"], 0).detail == "15s"
 
 
 def test_grant_and_target_banners_format_values(monkeypatch):
     monkeypatch.setattr(settings, "race_items_banana_pct", 12)
     e = _entry("Hammer", 45000)
-    assert grant_banner("hammer", e).line == "Everyone else fat-rolls for 45 s"
+    assert grant_banner("hammer", e).line == "Everyone else fat-rolls for 45s"
     b = target_banner("hammer", e, "Bob")
-    assert (b.title, b.line, b.detail) == ("Hammer", "Fat-roll for 45 s", "from Bob")
+    assert (b.title, b.line, b.detail) == ("Hammer", "Fat-roll for 45s", "from Bob")
     assert target_banner("banana", _entry("Banana"), "Bob").line == "Hit for 12% HP"
 
 
@@ -407,9 +407,9 @@ def test_a_memory_effect_without_duration_is_not_sent(key, caplog):
 def test_camera_draws_a_variant_and_names_it():
     entry = _entry("Camera", 15000, None)
     lines = {
-        "first_person": ("First-person camera for 15 s", "First person"),
-        "inverted": ("Upside-down camera for 15 s", "Upside down"),
-        "wide": ("Wide camera for 15 s", "Wide camera"),
+        "first_person": ("First-person camera for 15s", "First person"),
+        "inverted": ("Upside-down camera for 15s", "Upside down"),
+        "wide": ("Wide camera for 15s", "Wide camera"),
     }
     rng = random.Random(7)
     seen = set()
@@ -426,7 +426,7 @@ def test_camera_draws_a_variant_and_names_it():
         rem = reminder_for("camera", entry, variant)
         assert rem and (rem.text, rem.duration_ms) == (reminder, 15000)
         assert result_banner("camera", entry, ["Ann"], [], 0, variant=variant).detail == (
-            f"{reminder}, 15 s"
+            f"{reminder}, 15s"
         )
         seen.add(variant)
     assert seen == set(lines)

@@ -448,7 +448,7 @@ def test_new_boss_kill_grants_an_item(
     assert grants[0]["banner"] == {
         "icon": "hammer",
         "title": "Hammer",
-        "line": "Everyone else fat-rolls for 20 s",
+        "line": "Everyone else fat-rolls for 20s",
         "detail": "",
     }
     # The grant keeps the kill's IGT: a use older than it is a replay.
@@ -744,11 +744,11 @@ def test_blue_shell_used_while_leading_hits_its_sender(
     assert effect["banner"] == {
         "icon": "blue_shell",
         "title": "Blue Shell",
-        "line": "Max HP halved for 15 s",
+        "line": "Max HP halved for 15s",
         "detail": "from yourself",
     }
     [result] = _of_type(sender_seen, "item_result")
-    assert (result["banner"]["line"], result["banner"]["detail"]) == ("Hit yourself", "15 s")
+    assert (result["banner"]["line"], result["banner"]["detail"]) == ("Hit yourself", "15s")
     assert _of_type(other_seen, "item_effect") == []
     [event] = _use_events(integration_db, race_id)
     assert event.targets == [{"participant_id": players[0]["participant_id"], "outcome": "hit"}]
