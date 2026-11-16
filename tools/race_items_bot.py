@@ -23,6 +23,11 @@ A console drives the bots while you play:
                           runner gets it at its next load (fog gate, quit-out)
     use BOT               BOT uses its item (the Race Item's use flag)
     inventory BOT         BOT reports its inventory (the goods of what it holds)
+    steal BOT MODE        how BOT answers a Talisman Thief: MODE `lands` (default,
+                          it loses the first talisman of the seed's table) or
+                          `nothing` (it wears none)
+    hunter BOT MODE       how BOT answers a Hunter: MODE `lands` (default, he
+                          spawned) or `miss` (he lost the trail)
     quit
 
 Typical layout: one bot walks ahead, one stays at the start, so every target
@@ -129,6 +134,8 @@ class Bot:
     held: str | None = None  # the race item in its "inventory"
     killed: set[str] = field(default_factory=set)
     last_error: str = ""
+    steal_nothing: bool = False  # answer a Talisman Thief with "nothing to steal"
+    hunter_miss: bool = False  # answer a Hunter with "lost the trail"
 
 
 class Console:
@@ -354,6 +361,7 @@ class Console:
                     # Without a banner: the effect of the bot's own self item.
                     how = "applies its" if msg.get("banner") is None else "hit by"
                     log(f"[{bot.name}] {how} {msg['item']}: {msg['effect']}")
+                    await self.report(bot, msg["effect"])
                 elif kind == "item_notice":
                     banner = msg.get("banner", {})
                     log(
@@ -376,6 +384,40 @@ class Console:
                     )
         except websockets.ConnectionClosed:
             pass  # reported by supervise
+
+    async def report(self, bot: Bot, effect: dict[str, Any]) -> None:
+        """Answer the effects that wait for the target's mod (item_report)."""
+        kind = effect.get("kind")
+        if kind == "talisman":
+            log(f"[{bot.name}] stole talisman {effect.get('talisman_id')}")
+        elif kind == "steal_talisman":
+            table = effect.get("talismans") or []
+            landed = bool(table) and not bot.steal_nothing
+            talisman_id = table[0]["id"] if landed else None
+            await self.send(
+                bot,
+                {
+                    "type": "item_report",
+                    "report_id": effect["report_id"],
+                    "landed": landed,
+                    "talisman_id": talisman_id,
+                },
+            )
+            log(
+                f"[{bot.name}] reports the steal: landed={landed} talisman={talisman_id}"
+            )
+        elif kind == "hunter":
+            landed = not bot.hunter_miss
+            await self.send(
+                bot,
+                {
+                    "type": "item_report",
+                    "report_id": effect["report_id"],
+                    "landed": landed,
+                    "talisman_id": None,
+                },
+            )
+            log(f"[{bot.name}] reports the hunter: landed={landed}")
 
     # --- in-game time ---
 
@@ -623,6 +665,19 @@ class Console:
                     await self.status()
                 elif cmd == "give" and len(args) == 2:
                     await self.give(args[0], args[1])
+                elif cmd in ("steal", "hunter") and len(args) == 2:
+                    bot = self.bot(args[0])
+                    miss = "nothing" if cmd == "steal" else "miss"
+                    if bot is None:
+                        continue
+                    if args[1] not in ("lands", miss):
+                        log(f"usage: {cmd} BOT lands|{miss}")
+                    elif cmd == "steal":
+                        bot.steal_nothing = args[1] == miss
+                        log(f"[{bot.name}] steal: {args[1]}")
+                    else:
+                        bot.hunter_miss = args[1] == miss
+                        log(f"[{bot.name}] hunter: {args[1]}")
                 elif cmd in ("ahead", "boss", "use", "inventory") and len(args) == 1:
                     bot = self.bot(args[0])
                     if bot is None:
