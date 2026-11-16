@@ -430,8 +430,8 @@
   let canEditName = $derived(isOrganizer && raceStatus === "setup");
   // Role gate for the race settings an admin may edit on the organizer's
   // behalf; each call site keeps its own status window. Never on a daily.
-  // Invites, participant removal, custom rules and the setup map preview
-  // stay organizer-only.
+  // Invites, participant removal, custom rules, the name and the setup map
+  // preview stay organizer-only.
   let canEditRace = $derived(
     (isOrganizer || auth.isAdmin) && initialRace.daily_date === null,
   );

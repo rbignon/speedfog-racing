@@ -80,7 +80,7 @@ Both hard-close paths use the same optimistic-lock pattern as `check_race_auto_f
 
 ### Name
 
-`name` (1 to 200 characters, trimmed) is set at creation and editable through `PATCH /api/races/{id}` in SETUP only, by the organizer or an admin; the race page offers it as an "Edit" beside the title. A blank or null name is refused (400), and so is a rename once the race has started, so the history, the speedrun boards and the event brackets keep the name the race was played under. A rename broadcasts `race_info_update` (web and mod) and renames the calendar events, the Discord scheduled event and the events.malenia.win one; the Discord announcement post keeps the old name.
+`name` (1 to 200 characters, trimmed) is set at creation and editable through `PATCH /api/races/{id}` in SETUP only, by the organizer or an admin; the race page offers it to the organizer alone, as an "Edit" beside the title. A blank or null name is refused (400), and so is a rename once the race has started, so the history, the speedrun boards and the event brackets keep the name the race was played under. A rename broadcasts `race_info_update` (web and mod) and renames the calendar events, the Discord scheduled event and the events.malenia.win one; the Discord announcement post keeps the old name.
 
 ### Run mode
 
