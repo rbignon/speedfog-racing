@@ -2057,8 +2057,6 @@
     overflow-y: auto;
   }
 
-  /* The header stacks on its own width, not the viewport's: the sidebar and
-     the chat panel both eat into it. */
   .dq-notice {
     margin: 0 0 1rem;
     padding: 0.75rem 1rem;
@@ -2066,6 +2064,8 @@
     color: var(--color-danger);
   }
 
+  /* The header stacks on its own width, not the viewport's: the sidebar and
+     the chat panel both eat into it. */
   .race-header-wrapper {
     container: race-header / inline-size;
   }
@@ -2133,6 +2133,8 @@
       flex: none;
       min-width: 0;
       justify-content: flex-start;
+      /* Holds the Unranked chip's tooltip, see below. */
+      position: relative;
     }
 
     /* Left-aligned, the calendar sits near the left edge: its menu opens
@@ -2146,10 +2148,6 @@
        chip could run past the right edge (a phone) or under the sidebar:
        it hangs from the badge block instead, at its left edge and within
        its width. */
-    .header-right {
-      position: relative;
-    }
-
     .header-right :global(.unranked-status) {
       position: static;
     }
