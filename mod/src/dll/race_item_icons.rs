@@ -69,6 +69,18 @@ const ICON_PNGS: &[(&str, &[u8])] = &[
         "camera",
         include_bytes!("../../assets/race_items/camera.png"),
     ),
+    (
+        "talisman_thief",
+        include_bytes!("../../assets/race_items/talisman_thief.png"),
+    ),
+    (
+        "junk_weapon",
+        include_bytes!("../../assets/race_items/junk_weapon.png"),
+    ),
+    (
+        "hunter",
+        include_bytes!("../../assets/race_items/hunter.png"),
+    ),
 ];
 const UNKNOWN_PNG: &[u8] = include_bytes!("../../assets/race_items/unknown.png");
 
