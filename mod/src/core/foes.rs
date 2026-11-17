@@ -93,6 +93,18 @@ pub fn chr_sets<'a>(holders: &'a [u8], left_out: &'a [usize]) -> impl Iterator<I
 }
 
 /// The little-endian pointer at the start of `bytes` (8 bytes at least).
+/// The characters on a chr set, out of its entries: what the shell reads
+/// again right before it writes, to leave alone a character the game took
+/// off the set (freed, its address maybe another object's by now) since
+/// the read `plan_set` worked from.
+pub fn characters_in(entries: &[u8]) -> HashSet<usize> {
+    entries
+        .chunks_exact(CHR_SET_ENTRY_SIZE)
+        .map(pointer_at)
+        .filter(|&chr| chr != 0)
+        .collect()
+}
+
 fn pointer_at(bytes: &[u8]) -> usize {
     let mut pointer = [0u8; 8];
     pointer.copy_from_slice(&bytes[..8]);
@@ -537,5 +549,14 @@ mod tests {
         assert_eq!(count, 1000);
         assert_eq!(holders.len(), 3 * CHR_SET_HOLDER_SIZE);
         assert_eq!(holders_in(&block[..3]), (0, &[][..]));
+    }
+
+    #[test]
+    fn characters_in_reads_the_pointers_and_skips_empty_slots() {
+        // The marker bytes after each pointer never read as one.
+        let block = entries(&[0x1000, 0, 0x2000]);
+        assert_eq!(characters_in(&block), HashSet::from([0x1000, 0x2000]));
+        // A block cut mid-entry: the whole entries alone.
+        assert_eq!(characters_in(&block[..CHR_SET_ENTRY_SIZE + 4]).len(), 1);
     }
 }

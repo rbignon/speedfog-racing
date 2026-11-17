@@ -236,7 +236,7 @@ mod tests {
 
     #[test]
     fn a_second_hit_of_a_kind_takes_the_later_end() {
-        // Mini at 0, Giant at 5: one scale, the Giant's, until 20 s.
+        // A shrink at 0, a Giant at 5: one scale, the Giant's, until 20 s.
         let mut fx = MemoryEffects::default();
         fx.start(MemoryEffect::Scale { scale: 0.5 }, secs(15), Duration::ZERO);
         assert_eq!(fx.state(secs(2)).scale, Some(0.5));

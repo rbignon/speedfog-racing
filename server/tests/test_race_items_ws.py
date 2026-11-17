@@ -11,6 +11,8 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.config import settings
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceItemEvent
 from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN
+from speedfog_racing.websocket.race import mod as race_mod
+from speedfog_racing.websocket.race.items import resolve_item_use
 from speedfog_racing.websocket.schemas import (
     RACE_ITEMS_OLD_MOD_MESSAGE,
     ItemBanner,
@@ -1003,6 +1005,46 @@ def test_use_flag_is_acked_once_the_use_is_resolved(
     assert seen[-1]["message_id"] == 300
     assert held is None
     assert [(e.item, e.igt_ms) for e in events] == [("mushroom", 30_000)]
+
+
+def test_a_use_whose_resolution_failed_stays_unacked_and_its_replay_resolves(
+    integration_client, race_with_participants, integration_db, monkeypatch
+):
+    race_id = race_with_participants["race_id"]
+    _patch_items_graph(integration_db, race_id, catalog=_catalog(("mushroom", MUSHROOM)))
+    token = _start_items_race(integration_client, race_with_participants)
+    calls = 0
+
+    async def failing_once(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("database gone")
+        return await resolve_item_use(*args, **kwargs)
+
+    monkeypatch.setattr(race_mod, "resolve_item_use", failing_once)
+    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws0:
+        mod0 = ModTestClient(ws0, token)
+        assert mod0.auth(protocol_version="1.18")["type"] == "auth_ok"
+        mod0.send_status_update(igt_ms=10_000, death_count=0)
+        _barrier(mod0, 100)
+        _update_player(integration_db, race_with_participants, 0, held_item=_held("mushroom"))
+
+        # The first resolution fails: no ACK. Its replay (what the mod does
+        # with an unacked flag) resolves the item still held, then is acked.
+        mod0.send_event_flag(USE_FLAG, igt_ms=30_000, message_id=300)
+        mod0.send_event_flag(USE_FLAG, igt_ms=30_000, message_id=300)
+        seen = _receive_until(mod0, "event_flag_ack")
+        held = _held_item(integration_db, race_with_participants)
+
+    # An ACK of the failed use would have come first, alone.
+    assert [m["type"] for m in seen if m["type"] != "leaderboard_update"] == [
+        "item_effect",
+        "item_result",
+        "event_flag_ack",
+    ]
+    assert calls == 2
+    assert held is None
 
 
 def test_shield_blocks_and_is_removed(integration_client, race_with_participants, integration_db):

@@ -315,7 +315,7 @@ impl ItemFeed {
         self.ink = None;
     }
 
-    /// Forget everything (race change, disconnect).
+    /// Forget everything (an authentication as another participant).
     pub fn clear(&mut self) {
         *self = Self::default();
     }

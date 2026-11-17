@@ -510,11 +510,12 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # The kill is already committed: a failed draw must not drop the socket.
             logger.exception("Race item grant failed: %s", self.log_ref)
 
-    async def _on_item_used(self, entity: Participant, goods_key: str, igt_ms: int) -> None:
-        """Resolve a use of the held item and send its messages (races with items on)."""
+    async def _on_item_used(self, entity: Participant, goods_key: str, igt_ms: int) -> bool:
+        """Resolve a use of the held item and send its messages (races with
+        items on). False when the resolution failed: the flag stays unacked."""
         graph = self._cached_graph_json
         if not entity.race.race_items or not graph:
-            return
+            return True
         try:
             room = manager.get_or_create_room(self._race_id)
             # The sends stay under the lock so a later item message to the
@@ -542,9 +543,15 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 if resolution.result is not None:
                     await room.send_to_mod(entity.id, resolution.result.model_dump_json())
         except Exception:
-            # A failed resolution must not drop the socket; the flag is acked
-            # once this returns, so the use is lost (logged).
+            # A failed resolution must not drop the socket. The database
+            # holds nothing of it (the commit is the resolution's last
+            # step; a Star window or a pending report it opened in the room
+            # stays, harmless), so the flag is left unacked: the mod replays
+            # it at its next reconnection, and the item is still held then
+            # unless an inventory report cleared it as lost meanwhile.
             logger.exception("Race item use failed: %s", self.log_ref)
+            return False
+        return True
 
     async def _handle_item_received(self, msg: dict[str, Any]) -> None:
         """The mod has the granted goods: confirm the held item."""

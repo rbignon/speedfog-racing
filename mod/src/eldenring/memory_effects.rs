@@ -329,6 +329,7 @@ pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
         .unwrap_or(0);
     let (mut sets, mut skipped, mut slots, mut visited, mut unreadable, mut changed, mut capped) =
         (0usize, 0usize, 0usize, 0usize, 0usize, 0usize, 0usize);
+    let mut gone = 0usize;
     let left_out = [
         wcm + WCM_PLAYER_CHR_SET_OFFSET,
         wcm + WCM_GHOST_CHR_SET_OFFSET,
@@ -362,11 +363,27 @@ pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
         });
         visited += plan.visited;
         unreadable += plan.unreadable;
+        if plan.writes.is_empty() {
+            continue;
+        }
+        // The plan took one read per character: the game may have freed
+        // some since. The entries once more, right before the writes, and
+        // only a character still on the set is written.
+        let Some(present) = read_bytes(head.entries, capacity * CHR_SET_ENTRY_SIZE)
+            .map(|e| foes::characters_in(&e))
+        else {
+            walk.missed_set();
+            continue;
+        };
         for write in plan.writes {
             let (chr, shown) = match write {
                 RenderWrite::Hide(chr) => (chr, false),
                 RenderWrite::Show(chr) => (chr, true),
             };
+            if !present.contains(&chr) {
+                gone += 1;
+                continue;
+            }
             // The record learns only the writes that were made.
             let Some(before) = set_render_bit(chr, shown) else {
                 continue;
@@ -386,6 +403,7 @@ pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
         slots,
         visited,
         unreadable,
+        gone,
         changed,
         recorded,
         torrent_found = torrent != 0,

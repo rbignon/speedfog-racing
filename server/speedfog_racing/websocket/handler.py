@@ -970,9 +970,9 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 # Race item use flag (a goods'; the held item says what the use
                 # does): never a zone_history entry. The hook resolves the use
                 # after the session and the ACK follows it, so a use the server
-                # never committed is replayed. The hook ignores a runner holding
-                # no item of that goods: the replay of a resolved use (ACK lost)
-                # or a stray copy is harmless.
+                # never committed (a restart, a failed resolution) is replayed.
+                # The hook ignores a runner holding no item of that goods: the
+                # replay of a resolved use (ACK lost) or a stray copy is harmless.
                 logger.info(
                     "event_flag: flag_id=%d item_use goods=%s igt_ms=%d message_id=%s %s",
                     flag_id,
@@ -1127,8 +1127,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
             return
 
         if used_goods is not None:
-            await self._on_item_used(entity, used_goods, igt)
-            if message_id is not None:
+            resolved = await self._on_item_used(entity, used_goods, igt)
+            if resolved and message_id is not None:
                 await self._send_event_flag_ack(message_id)
             return
 
@@ -1463,13 +1463,15 @@ class BaseModHandler(BaseHandler, Generic[T]):
         ``_load_entity_for_event_flag``, a light load on races (no field, seed
         or casters): load anything else in a session of your own."""
 
-    async def _on_item_used(self, entity: T, goods_key: str, igt_ms: int) -> None:
+    async def _on_item_used(self, entity: T, goods_key: str, igt_ms: int) -> bool:
         """Called for each race item use flag, with the key of the goods it
         belongs to, outside the DB session and before the ACK, which is sent
-        once it returns: commit the use before returning. A replay calls it
-        again, so an override acts only on an item the runner holds as that
-        goods. ``entity`` is the same light load as for ``_on_boss_killed``.
-        Override to resolve the use (race)."""
+        once it returns True: commit the use before returning. False (the
+        resolution failed) leaves the flag unacked, so the mod replays it. A
+        replay calls it again, so an override acts only on an item the runner
+        holds as that goods. ``entity`` is the same light load as for
+        ``_on_boss_killed``. Override to resolve the use (race)."""
+        return True
 
     def _wall_reference(self, entity: T) -> datetime | None:
         """Wall-clock timestamp of the last accepted IGT report, for the

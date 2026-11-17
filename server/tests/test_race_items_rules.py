@@ -373,6 +373,9 @@ def test_self_items_send_their_effect_row():
 
 
 def test_memory_effect_payloads(monkeypatch):
+    # Set here, not read from the settings: a local .env may tune them.
+    monkeypatch.setattr(settings, "race_items_slow_mo_speed_pct", 50)
+    monkeypatch.setattr(settings, "race_items_giant_scale_pct", 150)
     vanish = effect_payload("vanish", _entry("Vanish", 15000, None))
     assert vanish and vanish.model_dump() == {"kind": "vanish", "duration_ms": 15000}
     foes = effect_payload("unseen_foes", _entry("Unseen Foes", 15000, None))
@@ -393,6 +396,8 @@ def test_memory_effect_payloads(monkeypatch):
 
 
 def test_lightning_payload(monkeypatch):
+    # Set here, not read from the settings: a local .env may tune it.
+    monkeypatch.setattr(settings, "race_items_lightning_scale_pct", 50)
     lightning = effect_payload("lightning", _entry("Lightning", 15000, 1450830))
     assert lightning and lightning.model_dump() == {
         "kind": "lightning",

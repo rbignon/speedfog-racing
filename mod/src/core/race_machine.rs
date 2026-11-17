@@ -1133,7 +1133,7 @@ impl RaceMachine {
         })
     }
 
-    /// The race has items on (overlay tag, use flag reads, inventory reports).
+    /// The race has items on (use flag reads, inventory reports).
     pub fn race_items_on(&self) -> bool {
         self.race_state
             .race
@@ -1558,6 +1558,12 @@ impl RaceMachine {
                     self.drop_waiting_race_items("new start", &mut effects);
                     self.item_feed.clear_timers();
                     self.held_item = None;
+                    // A use of the voided run still unacked would be
+                    // replayed into this one, where its IGT may pass for a
+                    // use of an item granted since.
+                    let use_flags = &self.item_use_flags;
+                    self.in_flight_event_flags
+                        .retain(|_, flag| use_flags.binary_search(&flag.flag_id).is_err());
                 }
                 // Immediately reflect running status so is_race_running() gates open
                 // without waiting for the race_status_change message that follows.
@@ -3367,7 +3373,11 @@ impl RaceMachine {
         self.pending_item_effects.clear();
         self.timed_effects.clear();
         self.memory_effects.clear();
-        self.memory_reminders.clear();
+        // Their rows go with them: the defaults are written back at once,
+        // unlike a timed SpEffect, which the game runs out under its row.
+        for (_, text) in self.memory_reminders.drain(..) {
+            self.item_feed.remove_reminder(&text);
+        }
         self.item_feed.drop_unstarted_ink();
         self.drop_hunter(reason, effects);
     }
@@ -10073,6 +10083,85 @@ mod tests {
     }
 
     #[test]
+    fn a_new_start_forgets_the_unacked_uses_of_the_voided_run() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // A use sent, never acked (its resolution failed on the server),
+        // beside a fog flag in flight.
+        let scan = items_scan(&m, &[USE_FLAG]);
+        m.tick(tick_in(snap(Some(60_000), true), true, scan), now + ms(150));
+        m.in_flight_event_flags.insert(
+            9_999,
+            BufferedEventFlag {
+                flag_id: 100,
+                igt_ms: 59_000,
+            },
+        );
+        let in_flight = |m: &RaceMachine| -> Vec<u32> {
+            let mut flags: Vec<_> = m
+                .in_flight_event_flags
+                .values()
+                .map(|f| f.flag_id)
+                .collect();
+            flags.sort_unstable();
+            flags
+        };
+        assert_eq!(in_flight(&m), [100, USE_FLAG]);
+
+        // A race reset run again: the use belonged to the voided run.
+        m.handle_message(auth_ok_with_items("setup", true), now + secs(1));
+        m.handle_message(MachineMessage::RaceStart(0), now + secs(2));
+        assert_eq!(in_flight(&m), [100]);
+    }
+
+    #[test]
+    fn a_memory_effects_row_goes_with_the_run_a_timed_one_stays() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Scale {
+                    scale_pct: 150,
+                    duration_ms: 15_000,
+                },
+                Some(("Giant", 15_000)),
+            ),
+            now + ms(100),
+        );
+        m.handle_message(
+            item_hit(
+                ItemEffectPayload::Speffect {
+                    speffect_id: 1_450_827,
+                    duration_ms: Some(15_000),
+                },
+                Some(("Flasks blocked", 15_000)),
+            ),
+            now + ms(100),
+        );
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        let rows = |m: &RaceMachine, at| -> Vec<String> {
+            m.item_reminders(at)
+                .map(|(row, _)| row.text.clone())
+                .collect()
+        };
+        assert_eq!(rows(&m, t1), ["Giant", "Flasks blocked"]);
+
+        // The finish writes the scale back at once, so its row goes; the
+        // game still runs the SpEffect out, under its row.
+        let t2 = t1 + secs(1);
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![test_participant("p1", "finished", 3)],
+                leader_splits: None,
+            },
+            t2,
+        );
+        m.tick(tick_in(snap(Some(62_000), true), true, None), t2 + ms(10));
+        assert_eq!(rows(&m, t2 + ms(10)), ["Flasks blocked"]);
+    }
+
+    #[test]
     fn memory_effects_are_restored_when_the_run_ends() {
         let first_person = MemoryState {
             player_hidden: true,
@@ -10182,7 +10271,7 @@ mod tests {
                     scale_pct: 50,
                     duration_ms: 15_000,
                 },
-                Some(("Mini", 15_000)),
+                Some(("Shrunk", 15_000)),
             ),
             now + ms(100),
         );
@@ -10196,13 +10285,13 @@ mod tests {
             now + ms(100),
         );
         let t1 = now + ms(120);
-        let mini = MemoryState {
+        let shrunk = MemoryState {
             foes_hidden: true,
             scale: Some(0.5),
             ..MemoryState::default()
         };
         let fx = m.tick(tick_in(snap(Some(60_100), true), true, None), t1);
-        assert_eq!(memory_writes(&fx), [(mini, true)]);
+        assert_eq!(memory_writes(&fx), [(shrunk, true)]);
 
         // Another, further-along save is loaded: its loading exit gets the
         // defaults once, the foes walked back.
@@ -10225,7 +10314,7 @@ mod tests {
         let reads = items_scan(&m, &[]);
         let exit = t1 + secs(5);
         let fx = m.tick(tick_in(snap(Some(60_600), true), true, reads), exit);
-        assert_eq!(memory_writes(&fx), [(mini, true)]);
+        assert_eq!(memory_writes(&fx), [(shrunk, true)]);
         let writes = memory_frames(&mut m, 60_600, exit, exit + secs(15));
         let (end_at, end_state, end_walk) = *writes.last().unwrap();
         assert_eq!((end_state, end_walk), (MemoryState::default(), true));
@@ -10357,20 +10446,20 @@ mod tests {
                 .map(|(row, _)| row.text.clone())
                 .collect()
         };
-        // Mini, then Giant 5 s later: one scale, one row, the Giant's.
+        // A shrink, then a Giant 5 s later: one scale, one row, the Giant's.
         m.handle_message(
             item_hit(
                 ItemEffectPayload::Scale {
                     scale_pct: 50,
                     duration_ms: 15_000,
                 },
-                Some(("Mini", 15_000)),
+                Some(("Shrunk", 15_000)),
             ),
             now + ms(100),
         );
         let t1 = now + ms(120);
         m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
-        assert_eq!(reminders(&m, t1), ["Mini"]);
+        assert_eq!(reminders(&m, t1), ["Shrunk"]);
         let t2 = t1 + secs(5);
         m.handle_message(
             item_hit(
