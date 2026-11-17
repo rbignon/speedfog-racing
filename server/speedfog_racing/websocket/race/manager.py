@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
-from time import monotonic
+from time import monotonic, time_ns
 from typing import Any
 
 from fastapi import WebSocket
@@ -78,6 +78,12 @@ class SpectatorConnection:
     connection_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
+# Report ids of every room of the process: one counter started from the clock
+# in milliseconds, so neither a room made again for its race nor a restarted
+# server issues an id again that a report a mod still queues could match.
+_report_ids = itertools.count(time_ns() // 1_000_000)
+
+
 @dataclass
 class RaceRoom:
     """A room for a specific race with mod and spectator connections."""
@@ -101,12 +107,13 @@ class RaceRoom:
     star_until: dict[uuid.UUID, float] = field(default_factory=dict, repr=False, compare=False)
     # report_id -> the Talisman Thief or Hunter effect awaiting its target's
     # `item_report` (in memory only: forgotten after five minutes). Used under
-    # items_lock; ids come from `next_report_id` and are positive.
+    # items_lock; ids come from `next_report_id`, the process-wide counter
+    # above, and are positive.
     pending_reports: dict[int, PendingReport] = field(
         default_factory=dict, repr=False, compare=False
     )
     next_report_id: Callable[[], int] = field(
-        default_factory=lambda: itertools.count(1).__next__, repr=False, compare=False
+        default_factory=lambda: _report_ids.__next__, repr=False, compare=False
     )
 
     async def ghost_participants(

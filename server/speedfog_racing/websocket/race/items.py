@@ -463,7 +463,8 @@ async def resolve_item_report(
     report counts as not landed) and tells the victim; a steal not landed tells
     the thief there was nothing to steal. A Hunter not landed tells its sender
     the trail was lost, landed sends nothing. A thief whose mod is gone loses
-    the talisman (logged). Each answered report logs a ``report`` event.
+    the talisman (logged). Each answered report logs a ``report`` event (the
+    sender as actor, the target's IGT) and an INFO line.
     """
     pending = pending_reports.get(report_id)
     if pending is None or pending.target_id != reporter_id:
@@ -558,6 +559,14 @@ async def resolve_item_report(
             )
         )
         await db.commit()
+        logger.info(
+            "Race item report answered: race=%s report=%d kind=%s outcome=%s talisman=%s",
+            race_id,
+            report_id,
+            pending.kind,
+            record["outcome"],
+            talisman_id,
+        )
         return resolution
 
 

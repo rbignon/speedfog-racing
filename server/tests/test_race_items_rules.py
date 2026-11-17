@@ -524,12 +524,14 @@ def test_an_item_without_its_seed_data_is_not_drawn(caplog):
         ("hunter", "hunter"),
     ]:
         blocks = {k: v for k, v in FULL_BLOCKS.items() if k != missing}
-        with caplog.at_level(logging.INFO):
+        with caplog.at_level(logging.DEBUG):
             catalog = extract_race_item_catalog(_seed_graph(**blocks))
         assert dropped not in catalog.items
         assert "red_shell" in catalog.items
         assert len(catalog.items) == 3
-        assert dropped in caplog.text
+        # Every catalog parse of a pre-4.14 seed says it: debug only.
+        levels = {r.levelno for r in caplog.records if dropped in r.getMessage()}
+        assert levels == {logging.DEBUG}
         caplog.clear()
 
     # An empty or malformed block counts as missing.

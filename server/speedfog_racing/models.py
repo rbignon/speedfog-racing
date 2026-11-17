@@ -808,7 +808,7 @@ class ChatMessage(Base):
 
 
 class RaceItemEvent(Base):
-    """One entry of a race's item log: a grant, a use, a loss or a take back."""
+    """One entry of a race's item log: a grant, a use, a report, a loss or a take back."""
 
     __tablename__ = "race_item_events"
     __table_args__ = (Index("ix_race_item_events_race_created", "race_id", "created_at"),)
@@ -817,16 +817,19 @@ class RaceItemEvent(Base):
     race_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("races.id", ondelete="CASCADE"), nullable=False
     )
-    # The actor.
+    # The actor; a "report" stores the item's sender.
     participant_id: Mapped[uuid.UUID] = mapped_column(
         Uuid, ForeignKey("participants.id", ondelete="CASCADE"), nullable=False
     )
-    # "grant", "use", "lost" or "take_back".
+    # "grant", "use", "report", "lost" or "take_back".
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     # The item key; a "take_back" stores the goods key taken back.
     item: Mapped[str] = mapped_column(String(50), nullable=False)
+    # The actor's IGT; a "report" stores its target's, at the report.
     igt_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Entries {"participant_id": str, "outcome": "hit" | "blocked" | "offline"}.
+    # Entries {"participant_id": str, "outcome": "hit" | "blocked" | "offline"}; a
+    # "report" holds its target's, "outcome": "stolen" | "nothing" | "spawned" |
+    # "missed", with "talisman_id" when "stolen".
     targets: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON(none_as_null=True), nullable=True
     )

@@ -2,6 +2,7 @@
 
 import asyncio
 import itertools
+import logging
 import random
 import uuid
 from collections.abc import Callable
@@ -28,7 +29,7 @@ from speedfog_racing.websocket.race.items import (
     resolve_item_report,
     resolve_item_use,
 )
-from speedfog_racing.websocket.race.manager import manager
+from speedfog_racing.websocket.race.manager import RaceRoom, manager
 from speedfog_racing.websocket.schemas import (
     ItemEffectMessage,
     ItemEffectPayload,
@@ -803,6 +804,34 @@ async def test_a_report_is_answered_once_and_only_from_its_target(items_db):
     again = await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
     assert (again.effects, again.notices) == ([], [])
     assert len(await _report_events(items_db, race_id)) == 1
+
+
+async def test_each_answered_report_logs_one_line(items_db, caplog):
+    race_id, ids = await _steal_field(items_db)
+    pending: dict[int, PendingReport] = {}
+    use = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
+    report_id = use.effects[0][1].effect.report_id
+    assert report_id is not None
+    with caplog.at_level(logging.INFO, logger="speedfog_racing.websocket.race.items"):
+        await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
+        # Spent: the second answer is ignored, not logged as answered.
+        await _report(items_db, race_id, ids["Bob"], report_id, pending, talisman_id=1000)
+    [line] = [r.getMessage() for r in caplog.records if "report answered" in r.getMessage()]
+    for part in (f"race={race_id}", f"report={report_id}", "kind=steal", "outcome=stolen"):
+        assert part in line
+    assert "talisman=1000" in line
+
+
+async def test_report_ids_never_restart_in_a_recreated_room():
+    """A room is dropped with its last connection and made again for the same
+    race: its ids go on past every id issued before, so a report a mod still
+    queues from the old room never matches a new effect."""
+    race_id = uuid.uuid4()
+    first = RaceRoom(race_id=race_id)
+    issued = [first.next_report_id() for _ in range(3)]
+    again = RaceRoom(race_id=race_id)
+    assert again.next_report_id() > max(issued)
+    assert RaceRoom(race_id=uuid.uuid4()).next_report_id() not in issued
 
 
 async def test_a_report_expires_after_300_seconds_and_old_entries_are_dropped(items_db):

@@ -240,7 +240,8 @@ def extract_race_item_catalog(graph_json: Mapping[str, Any]) -> RaceItemCatalog:
         item = _parse_item(value)
         if isinstance(key, str) and item is not None and item.goods in goods:
             if not has_data.get(key, True):
-                logger.info("Race item %s left out: its seed data block is missing or empty", key)
+                # Debug: every catalog parse of a seed older than 4.14 says it.
+                logger.debug("Race item %s left out: its seed data block is missing or empty", key)
                 continue
             items[key] = item
     return RaceItemCatalog(goods, items, talismans, junk_weapons, hunter)
@@ -312,8 +313,9 @@ _CAMERA_REMINDERS: dict[str, str] = {
 class ItemRule:
     """Rules of one base item key.
 
-    ``grant_line`` and ``target_line`` may use ``{s}`` (seconds) and ``{pct}``
-    (damage percent); ``reminder`` is the label of the countdown line, if any.
+    ``grant_line`` and ``target_line`` may use ``{s}`` (seconds), ``{pct}``
+    (damage percent) and ``{weapon}`` (the Junk Weapon's weapon name, drawn at
+    each use); ``reminder`` is the label of the countdown line, if any.
     """
 
     target: TargetRule
