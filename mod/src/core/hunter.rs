@@ -17,7 +17,12 @@
 //! reminder show (`HunterStep::Found`), and he hunts for the effect's
 //! duration of play time, looked for every `HUNT_CHECK`: a load or a kill
 //! that removes him ends the hunt there, otherwise he is ended once his
-//! time is up.
+//! time is up. A quit-out is the exception (`Hunter::quit_out`): reloading
+//! the save must not shake him off, so he is brought back once the player
+//! settles, through the same requests, for the play time his hunt had
+//! left, with no new banner and no new report; missed for good, the hunt
+//! ends there. A death or a fog gate still ends it, on his way back too
+//! (`Hunter::load`).
 
 use std::time::{Duration, Instant};
 
@@ -86,14 +91,20 @@ enum State {
     #[default]
     Idle,
     /// To be requested, not before `not_before` (and the player settled);
-    /// `requests` made so far.
-    Waiting { requests: u8, not_before: Instant },
+    /// `requests` made so far. `back`: brought back after a quit-out, his
+    /// hunt ending at that play time.
+    Waiting {
+        requests: u8,
+        not_before: Instant,
+        back: Option<Duration>,
+    },
     /// Requested (`requests` so far, this one included), looked for at
-    /// `next_find` until `deadline`.
+    /// `next_find` until `deadline`; `back` as in `Waiting`.
     Looking {
         requests: u8,
         deadline: Instant,
         next_find: Instant,
+        back: Option<Duration>,
     },
     /// Found: hunts until `ends_at` (play time), looked for at `next_check`;
     /// `announced` once `Found` and the landed report went out.
@@ -132,8 +143,91 @@ impl Hunter {
         self.state = State::Waiting {
             requests: 0,
             not_before: now,
+            back: None,
         };
         true
+    }
+
+    /// The player quit out and loaded the save again (the machine's
+    /// quit-out latch, at the loading exit): the world he was in is gone.
+    /// Hunting, or being brought back already, he is brought back once the
+    /// player settles, his hunt ending at the same play time (the play
+    /// clock stood still meanwhile); awaited, the request the quit-out
+    /// interrupted is made again and does not count. `true` when he is to
+    /// be brought back.
+    pub fn quit_out(&mut self, now: Instant) -> bool {
+        let state = std::mem::take(&mut self.state);
+        let (state, back) = match state {
+            State::Hunting {
+                ends_at,
+                announced: true,
+                ..
+            }
+            | State::Waiting {
+                back: Some(ends_at),
+                ..
+            }
+            | State::Looking {
+                back: Some(ends_at),
+                ..
+            } => (
+                State::Waiting {
+                    requests: 0,
+                    not_before: now,
+                    back: Some(ends_at),
+                },
+                true,
+            ),
+            // Seen but neither shown nor reported yet: sent out afresh.
+            State::Hunting {
+                announced: false, ..
+            } => (
+                State::Waiting {
+                    requests: 0,
+                    not_before: now,
+                    back: None,
+                },
+                false,
+            ),
+            State::Looking {
+                requests,
+                back: None,
+                ..
+            } => (
+                State::Waiting {
+                    requests: requests.saturating_sub(1),
+                    not_before: now,
+                    back: None,
+                },
+                false,
+            ),
+            other => (other, false),
+        };
+        self.state = state;
+        back
+    }
+
+    /// A loading exit that was no quit-out (a death, a fog gate, a warp):
+    /// while he hunts, the next look no longer finds him and the hunt ends
+    /// there (`seen`); on his way back after a quit-out, nothing would look
+    /// before his request, so his time is up here: the next `tick` ends the
+    /// hunt, with no report (a request already made gets the watch for a
+    /// late arrival). `true` when it ended a return.
+    pub fn load(&mut self) -> bool {
+        match &mut self.state {
+            State::Waiting {
+                back: Some(ends_at),
+                ..
+            }
+            | State::Looking {
+                back: Some(ends_at),
+                ..
+            } => {
+                *ends_at = Duration::ZERO;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// The steps due at `now` (`play` on the play clock); `settled`: the
@@ -145,7 +239,26 @@ impl Hunter {
             State::Idle => {}
             State::Waiting {
                 requests,
+                back: Some(ends_at),
+                ..
+            } if play >= ends_at => {
+                // His time ran out before he was back: the hunt is over, and
+                // a request already made is watched for a late arrival.
+                steps.push(HunterStep::End);
+                self.state = if requests > 0 {
+                    State::Lingering {
+                        until: now + LINGER,
+                        next_find: now + HUNT_CHECK,
+                        stray: false,
+                    }
+                } else {
+                    State::Idle
+                };
+            }
+            State::Waiting {
+                requests,
                 not_before,
+                back,
             } => {
                 if settled && now >= not_before {
                     steps.push(HunterStep::Request);
@@ -153,6 +266,7 @@ impl Hunter {
                         requests: requests + 1,
                         deadline: now + FIND_WINDOW,
                         next_find: now + FIND_INTERVAL,
+                        back,
                     };
                 }
             }
@@ -160,12 +274,18 @@ impl Hunter {
                 requests,
                 deadline,
                 next_find,
+                back,
             } => {
-                if now >= deadline {
-                    // Missed: a late arrival must not stay.
+                let time_up = back.is_some_and(|ends_at| play >= ends_at);
+                if time_up || now >= deadline {
+                    // Missed, or his time ran out on the way back: a late
+                    // arrival must not stay.
                     steps.push(HunterStep::End);
-                    if requests >= MAX_REQUESTS {
-                        steps.push(HunterStep::Report { landed: false });
+                    if time_up || requests >= MAX_REQUESTS {
+                        // Brought back, he was reported landed already.
+                        if back.is_none() {
+                            steps.push(HunterStep::Report { landed: false });
+                        }
                         self.state = State::Lingering {
                             until: now + LINGER,
                             next_find: now + HUNT_CHECK,
@@ -175,6 +295,7 @@ impl Hunter {
                         self.state = State::Waiting {
                             requests,
                             not_before: now + RETRY_DELAY,
+                            back,
                         };
                     }
                 } else if now >= next_find {
@@ -183,6 +304,7 @@ impl Hunter {
                         requests,
                         deadline,
                         next_find: now + FIND_INTERVAL,
+                        back,
                     };
                 }
             }
@@ -244,18 +366,19 @@ impl Hunter {
     }
 
     /// The shell's answer to a `Find`: `found` when a live character of his
-    /// row is around. Found while looked for, he hunts from `play` on; gone
-    /// while hunting (a load or a kill removed him), the hunt is over, with
-    /// nothing left to end. Found after the last miss, he arrived late: the
-    /// next `tick` ends him, and that is all.
+    /// row is around. Found while looked for, he hunts from `play` on, or,
+    /// brought back after a quit-out, until his hunt's end, already shown and
+    /// reported; gone while hunting (a load or a kill removed him), the hunt
+    /// is over, with nothing left to end. Found after the last miss, he
+    /// arrived late: the next `tick` ends him, and that is all.
     pub fn seen(&mut self, found: bool, now: Instant, play: Duration) {
         match self.state {
-            State::Looking { .. } if found => {
+            State::Looking { back, .. } if found => {
                 let duration = self.spec.as_ref().map_or(Duration::ZERO, |s| s.duration);
                 self.state = State::Hunting {
-                    ends_at: play + duration,
+                    ends_at: back.unwrap_or(play + duration),
                     next_check: now + HUNT_CHECK,
-                    announced: false,
+                    announced: back.is_some(),
                 };
             }
             State::Hunting { .. } if !found => self.state = State::Idle,
@@ -291,9 +414,15 @@ impl Hunter {
         self.spec.as_ref()
     }
 
-    /// Whether he was found and still hunts.
+    /// Whether his hunt is on: he was found and still hunts, or he is being
+    /// brought back after a quit-out.
     pub fn is_hunting(&self) -> bool {
-        matches!(self.state, State::Hunting { .. })
+        matches!(
+            self.state,
+            State::Hunting { .. }
+                | State::Waiting { back: Some(_), .. }
+                | State::Looking { back: Some(_), .. }
+        )
     }
 
     /// His banner and reminder, taken once he is found (empty after).
@@ -653,5 +782,188 @@ mod tests {
             assert!(h.clear(), "{until:?}");
             assert!(run.frames(&mut h, until, until + secs(5)).is_empty());
         }
+    }
+
+    /// A Hunter seen at the first look, hunting until `quit` with no load
+    /// before; then a quit-out whose unload lasts `unload`, `quit_out`
+    /// told at the loading exit: that exit, and when he was seen.
+    fn quit_out_while_hunting(
+        run: &mut Run,
+        h: &mut Hunter,
+        quit: Duration,
+        unload: Duration,
+    ) -> (Duration, Duration) {
+        assert!(h.start(spec(13), run.t0));
+        let before = run.frames(h, Duration::ZERO, quit);
+        let found = times(&before, HunterStep::Found);
+        assert_eq!(found.len(), 1, "{before:?}");
+        // Shown on the frame after the look that saw him.
+        let seen = found[0] - FRAME;
+        assert_eq!(times(&before, HunterStep::Find)[0], seen);
+        assert!(h.is_hunting());
+        let exit = quit + unload;
+        run.lag = unload;
+        run.settled_at = exit + SETTLE;
+        assert!(h.quit_out(run.t0 + exit), "brought back");
+        assert!(h.is_hunting(), "the hunt goes on");
+        (exit, seen)
+    }
+
+    #[test]
+    fn a_quit_out_brings_him_back_for_the_time_left() {
+        let mut run = Run::new(Duration::ZERO..secs(1000));
+        let mut h = Hunter::default();
+        let (exit, seen) = quit_out_while_hunting(&mut run, &mut h, secs(10), secs(20));
+        let after = run.frames(&mut h, exit, secs(200));
+        // Requested once the player settled, found at the first look: no
+        // new banner, no new report.
+        assert_within_a_frame(times(&after, HunterStep::Request)[0], exit + SETTLE);
+        assert_eq!(times(&after, HunterStep::Request).len(), 1, "{after:?}");
+        assert!(times(&after, HunterStep::Found).is_empty(), "{after:?}");
+        assert!(
+            !after
+                .iter()
+                .any(|(_, step)| matches!(step, HunterStep::Report { .. })),
+            "{after:?}"
+        );
+        // Ended when his 60 s of play end, the 20 s unload not counted.
+        assert_eq!(times(&after, HunterStep::End).len(), 1, "{after:?}");
+        assert_within_a_frame(times(&after, HunterStep::End)[0], seen + secs(80));
+        assert!(!h.is_hunting());
+        assert!(!h.clear(), "already ended");
+    }
+
+    #[test]
+    fn missed_on_his_way_back_the_hunt_ends_quietly() {
+        // Seen before the quit-out only.
+        let mut run = Run::new(Duration::ZERO..secs(10));
+        let mut h = Hunter::default();
+        let (exit, _) = quit_out_while_hunting(&mut run, &mut h, secs(10), secs(20));
+        let after = run.frames(&mut h, exit, exit + secs(30));
+        // Three requests, each missed and ended; the hunt holds until the
+        // last one, and no report goes out: he was reported landed.
+        let requests = times(&after, HunterStep::Request);
+        let ends = times(&after, HunterStep::End);
+        assert_eq!(requests.len(), 3, "{after:?}");
+        assert_eq!(ends.len(), 3, "{after:?}");
+        assert_within_a_frame(requests[0], exit + SETTLE);
+        assert!(
+            !after
+                .iter()
+                .any(|(_, step)| matches!(step, HunterStep::Report { .. })),
+            "{after:?}"
+        );
+        assert!(!h.is_hunting());
+        // The watch after the last miss follows, as after a first spawn.
+        assert!(after
+            .iter()
+            .filter(|&&(at, _)| at > ends[2])
+            .all(|&(_, step)| step == HunterStep::Find));
+        assert!(
+            !h.quit_out(run.t0 + exit + secs(30)),
+            "nothing to bring back"
+        );
+    }
+
+    #[test]
+    fn his_time_running_out_before_he_is_back_ends_the_hunt() {
+        let mut run = Run::new(Duration::ZERO..secs(1000));
+        let mut h = Hunter::default();
+        // Quit out with about 1 s of his 60 s left: the settle is longer.
+        let (exit, seen) = quit_out_while_hunting(&mut run, &mut h, secs(59), secs(20));
+        let after = run.frames(&mut h, exit, exit + secs(30));
+        assert_eq!(after.len(), 1, "{after:?}");
+        assert_eq!(after[0].1, HunterStep::End);
+        assert_within_a_frame(after[0].0, seen + secs(80));
+        assert!(!h.is_hunting());
+        assert!(!h.clear(), "nothing requested since the quit-out");
+    }
+
+    #[test]
+    fn a_quit_out_while_he_is_looked_for_requests_him_again() {
+        let mut run = Run::new(Duration::ZERO..Duration::ZERO);
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        // Quit out during the first look.
+        let before = run.frames(&mut h, Duration::ZERO, secs(1));
+        assert_eq!(times(&before, HunterStep::Request).len(), 1);
+        let exit = secs(21);
+        run.lag = secs(20);
+        run.settled_at = exit + SETTLE;
+        assert!(!h.quit_out(run.t0 + exit), "not hunting yet");
+        // The interrupted request does not count: three more, then the miss
+        // is reported.
+        let after = run.frames(&mut h, exit, exit + secs(30));
+        assert_eq!(times(&after, HunterStep::Request).len(), 3, "{after:?}");
+        assert_within_a_frame(times(&after, HunterStep::Request)[0], exit + SETTLE);
+        assert_eq!(times(&after, HunterStep::Report { landed: false }).len(), 1);
+    }
+
+    #[test]
+    fn a_second_quit_out_on_his_way_back_keeps_his_end() {
+        let mut run = Run::new(Duration::ZERO..secs(1000));
+        let mut h = Hunter::default();
+        let (exit, seen) = quit_out_while_hunting(&mut run, &mut h, secs(10), secs(20));
+        // Quit out again 1 s after the exit, before his request: another
+        // 20 s unload.
+        assert!(run.frames(&mut h, exit, exit + secs(1)).is_empty());
+        let exit2 = exit + secs(21);
+        run.lag = secs(40);
+        run.settled_at = exit2 + SETTLE;
+        assert!(h.quit_out(run.t0 + exit2));
+        let after = run.frames(&mut h, exit2, secs(300));
+        assert_within_a_frame(times(&after, HunterStep::Request)[0], exit2 + SETTLE);
+        // His 60 s of play end with 40 s of unloads not counted.
+        assert_eq!(times(&after, HunterStep::End).len(), 1, "{after:?}");
+        assert_within_a_frame(times(&after, HunterStep::End)[0], seen + secs(100));
+        assert!(times(&after, HunterStep::Found).is_empty());
+    }
+
+    #[test]
+    fn a_quit_out_before_he_is_shown_sends_him_out_afresh() {
+        let run = Run::new(Duration::ZERO..secs(1000));
+        let mut h = Hunter::default();
+        assert!(h.start(spec(13), run.t0));
+        // Seen by the first look, quit out before the next tick shows him.
+        let at = FRAME;
+        assert_eq!(h.tick(run.t0 + at, at, true), [HunterStep::Request]);
+        h.request_result(true, run.t0 + at);
+        let look = at + FIND_INTERVAL + FRAME;
+        assert_eq!(h.tick(run.t0 + look, look, true), [HunterStep::Find]);
+        h.seen(true, run.t0 + look, look);
+        assert!(!h.quit_out(run.t0 + look), "never shown: not brought back");
+        // Requested again from the start, then shown and reported once.
+        let steps = run.frames(&mut h, look, look + secs(5));
+        assert_eq!(times(&steps, HunterStep::Request).len(), 1, "{steps:?}");
+        assert_eq!(times(&steps, HunterStep::Found).len(), 1, "{steps:?}");
+        assert_eq!(
+            times(&steps, HunterStep::Report { landed: true }).len(),
+            1,
+            "{steps:?}"
+        );
+    }
+
+    #[test]
+    fn a_load_on_his_way_back_ends_the_hunt() {
+        // A death or a fog gate right after the quit-out's exit, before he
+        // is back: the hunt ends at once, quietly, never requested.
+        let mut run = Run::new(Duration::ZERO..secs(1000));
+        let mut h = Hunter::default();
+        let (exit, _) = quit_out_while_hunting(&mut run, &mut h, secs(10), secs(20));
+        assert!(run.frames(&mut h, exit, exit + secs(1)).is_empty());
+        let exit2 = exit + secs(6);
+        run.lag = secs(25);
+        run.settled_at = exit2 + SETTLE;
+        assert!(h.load());
+        let after = run.frames(&mut h, exit2, exit2 + secs(30));
+        assert_eq!(after, [(exit2 + FRAME, HunterStep::End)]);
+        assert!(!h.is_hunting());
+        // A load while he hunts is left to the next look (`seen`).
+        let mut h = Hunter::default();
+        let run = Run::new(Duration::ZERO..secs(1000));
+        assert!(h.start(spec(13), run.t0));
+        run.frames(&mut h, Duration::ZERO, secs(2));
+        assert!(!h.load());
+        assert!(h.is_hunting());
     }
 }

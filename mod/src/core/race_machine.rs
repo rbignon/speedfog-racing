@@ -2520,6 +2520,17 @@ impl RaceMachine {
         if loading_exit {
             self.last_loading_exit = Some(now);
             let quit_out = std::mem::take(&mut self.pending_quit_out);
+            // Reloading the save must not shake the Hunter off; any other
+            // load ends his hunt, on his way back too.
+            if quit_out {
+                if self.hunter.quit_out(now) {
+                    info!(
+                        "[ITEMS] Quit-out during a hunt: the Hunter comes back once the player settles"
+                    );
+                }
+            } else if self.hunter.load() {
+                info!("[ITEMS] A load on the Hunter's way back ends the hunt");
+            }
             if quit_out
                 && self.is_race_running()
                 && !self.am_i_finished()
@@ -3367,9 +3378,10 @@ impl RaceMachine {
     /// Run the Hunter's life (`core::hunter`), right after
     /// `maintain_memory_effects`, on a loaded frame of the race save: his
     /// spawn once the player has been loaded `hunter::SETTLE` since the last
-    /// loading exit, the looks for him, his end, the report, and his banner
-    /// and reminder once found (the row goes when he does, see
-    /// `drop_hunter_row`). A few comparisons while nothing is due.
+    /// loading exit (his return after a quit-out too), the looks for him, his
+    /// end, the report, and his banner and reminder once found (the row goes
+    /// when the hunt does, see `drop_hunter_row`). A few comparisons while
+    /// nothing is due.
     fn maintain_hunter(&mut self, now: Instant, effects: &mut Vec<Effect>) {
         if !self.frame_snapshot.position_readable || self.wrong_save {
             return;
@@ -3405,7 +3417,11 @@ impl RaceMachine {
                 HunterStep::End => {
                     info!(npc_param_id, "[ITEMS] Hunter ended");
                     effects.push(Effect::EndHunter { npc_param_id });
-                    self.drop_hunter_row();
+                    // A miss on his way back after a quit-out keeps the
+                    // hunt, and its row.
+                    if !self.hunter.is_hunting() {
+                        self.drop_hunter_row();
+                    }
                 }
                 HunterStep::Report { landed } => {
                     info!(report_id, landed, "[ITEMS] Hunter reported");
@@ -10501,6 +10517,178 @@ mod tests {
                 }
             )]
         );
+    }
+
+    /// A quit-out from `start`: the menu and the save load last `length`,
+    /// then the save is back in the world with the IGT it last flushed
+    /// (1.5 s behind the 61 s the Hunter frames run at): the loading exit's
+    /// effects.
+    fn quit_out_load(m: &mut RaceMachine, start: Instant, length: Duration) -> Vec<Effect> {
+        m.tick(tick_in(snap(None, false), true, None), start);
+        m.tick(tick_in(snap(None, false), true, None), start + length / 2);
+        let reads = items_scan(m, &[]);
+        m.tick(
+            tick_in(snap(Some(59_500), true), true, reads),
+            start + length,
+        )
+    }
+
+    #[test]
+    fn a_quit_out_does_not_shake_off_the_hunter() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let t1 = now + ms(100);
+        m.handle_message(hunter(13), t1);
+        let before = hunter_frames(&mut m, t1, t1 + secs(5), |_| true);
+        let landed = Effect::SendItemReport {
+            report_id: 13,
+            landed: true,
+            talisman_id: None,
+        };
+        assert_eq!(
+            before.iter().filter(|(_, e)| *e == landed).count(),
+            1,
+            "{before:?}"
+        );
+
+        // Quit out 5 s in: the exit keeps the hunt and its row.
+        let quit = t1 + secs(5);
+        let exit = quit + secs(20);
+        let fx = quit_out_load(&mut m, quit, secs(20));
+        assert!(m
+            .get_status(exit)
+            .is_some_and(|s| s.starts_with("Quit-out")));
+        assert_eq!(hunter_steps(fx), []);
+        assert_eq!(reminder_texts(&m, exit), ["Hunted"]);
+
+        // Brought back once the player settled, with no new report; ended
+        // when his 60 s of play end (5 s were played before the quit-out).
+        let mut after = hunter_frames(&mut m, exit, exit + secs(30), |_| true);
+        assert_eq!(reminder_texts(&m, exit + secs(30)), ["Hunted"]);
+        after.extend(hunter_frames(
+            &mut m,
+            exit + secs(30),
+            exit + secs(70),
+            |_| true,
+        ));
+        assert!(
+            matches!(after[0].1, Effect::RequestHunter { .. }),
+            "{after:?}"
+        );
+        assert!(
+            (exit + secs(5) / 2..exit + secs(5) / 2 + FRAME).contains(&after[0].0),
+            "{:?} after the exit",
+            after[0].0 - exit
+        );
+        assert!(
+            !after
+                .iter()
+                .any(|(_, e)| matches!(e, Effect::SendItemReport { .. })),
+            "{after:?}"
+        );
+        let ends: Vec<_> = after
+            .iter()
+            .filter(|(_, e)| matches!(e, Effect::EndHunter { .. }))
+            .collect();
+        assert_eq!(ends.len(), 1, "{after:?}");
+        assert!(
+            (exit + secs(55)..exit + secs(56)).contains(&ends[0].0),
+            "ended {:?} after the exit",
+            ends[0].0 - exit
+        );
+        assert!(reminder_texts(&m, exit + secs(70)).is_empty());
+    }
+
+    #[test]
+    fn a_return_missed_for_good_drops_the_hunted_row() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        let t1 = now + ms(100);
+        m.handle_message(hunter(13), t1);
+        hunter_frames(&mut m, t1, t1 + secs(5), |_| true);
+        let quit = t1 + secs(5);
+        let exit = quit + secs(20);
+        quit_out_load(&mut m, quit, secs(20));
+        // Never found again: the row holds through the first miss (ended
+        // 5.5 s after the exit: 2.5 s settle, 3 s look) and goes with the
+        // third; no report goes out.
+        let mut after = hunter_frames(&mut m, exit, exit + secs(8), |_| false);
+        assert_eq!(
+            after
+                .iter()
+                .filter(|(_, e)| matches!(e, Effect::EndHunter { .. }))
+                .count(),
+            1,
+            "{after:?}"
+        );
+        assert_eq!(reminder_texts(&m, exit + secs(8)), ["Hunted"]);
+        after.extend(hunter_frames(
+            &mut m,
+            exit + secs(8),
+            exit + secs(20),
+            |_| false,
+        ));
+        assert_eq!(
+            after
+                .iter()
+                .filter(|(_, e)| matches!(e, Effect::EndHunter { .. }))
+                .count(),
+            3,
+            "{after:?}"
+        );
+        assert!(
+            !after
+                .iter()
+                .any(|(_, e)| matches!(e, Effect::SendItemReport { .. })),
+            "{after:?}"
+        );
+        assert!(reminder_texts(&m, exit + secs(20)).is_empty());
+    }
+
+    #[test]
+    fn only_a_quit_out_brings_the_hunter_back() {
+        let now = Instant::now();
+        let t1 = now + ms(100);
+        let no_request = |steps: &[(Instant, Effect)]| {
+            !steps
+                .iter()
+                .any(|(_, e)| matches!(e, Effect::RequestHunter { .. }))
+        };
+
+        // A fog gate while he hunts: gone at the first look after it, never
+        // requested again.
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), t1);
+        hunter_frames(&mut m, t1, t1 + secs(5), |_| true);
+        let fx = load(&mut m, t1 + secs(5), secs(5), 61_000, true);
+        let exit = t1 + secs(10);
+        // The exit frame's look (he hunts, no settle) finds him gone.
+        for effect in hunter_steps(fx) {
+            assert!(matches!(effect, Effect::FindHunter { .. }), "{effect:?}");
+            m.hunter_seen(false, exit);
+        }
+        let after = hunter_frames(&mut m, exit, exit + secs(30), |_| false);
+        assert!(no_request(&after), "{after:?}");
+        assert!(reminder_texts(&m, exit + secs(30)).is_empty());
+
+        // A death or a fog gate on his way back after a quit-out: the hunt
+        // ends at that exit, quietly, never requested.
+        let mut m = running_items_machine(now);
+        m.handle_message(hunter(13), t1);
+        hunter_frames(&mut m, t1, t1 + secs(5), |_| true);
+        let quit_exit = t1 + secs(25);
+        quit_out_load(&mut m, t1 + secs(5), secs(20));
+        hunter_frames(&mut m, quit_exit, quit_exit + secs(1), |_| true);
+        let fx = load(&mut m, quit_exit + secs(1), secs(5), 61_000, true);
+        let exit = quit_exit + secs(6);
+        assert!(
+            !fx.iter()
+                .any(|e| matches!(e, Effect::SendItemReport { .. })),
+            "{fx:?}"
+        );
+        assert!(reminder_texts(&m, exit).is_empty());
+        let after = hunter_frames(&mut m, exit, exit + secs(30), |_| true);
+        assert!(no_request(&after), "{after:?}");
     }
 
     #[test]
