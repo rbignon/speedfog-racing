@@ -19,7 +19,7 @@ use crate::core::foes::FoesRecord;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
 use crate::core::memory_effects::{CameraRow, MemoryState};
-use crate::core::protocol::{ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag};
+use crate::core::protocol::{CameraVariant, ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
@@ -43,8 +43,8 @@ use super::websocket::RaceWebSocketClient;
 #[cfg(debug_assertions)]
 const DEBUG_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
 
-/// How often a memory state the game does not hold is written again
-/// (`retry_memory_state`).
+/// How long the memory writes stay quiet before a state the game does not
+/// hold is written again (`retry_memory_state`).
 const MEMORY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// Consecutive update() panics before tracking latches off (~5 s at 60 FPS).
 pub(crate) const MAX_CONSECUTIVE_UPDATE_PANICS: u32 = 300;
@@ -326,8 +326,8 @@ pub struct RaceTracker {
     // field (`apply_memory_state`): a field back at its default is written
     // once, only when an effect was written there.
     memory_written: MemoryState,
-    // When a state the game does not hold was last written again
-    // (`retry_memory_state`).
+    // When a memory state was last written, whoever asked
+    // (`retry_memory_state` waits from there).
     memory_retry_at: Instant,
 
     // The LockCamParam rows' own values, by row id, saved by the Camera's
@@ -1173,6 +1173,17 @@ impl RaceTracker {
             );
             return;
         }
+        // Applied without its timer, a row with less time left than its own
+        // duration would run that whole duration again at every load.
+        if !plan.full && !race_items::layout_known() {
+            warn!(
+                speffect_id,
+                row,
+                left_ms,
+                "[ITEMS] SpEffect not applied again (its timer cannot be set on this game version)"
+            );
+            return;
+        }
         if !sp_effect_apply::apply_speffect(row) {
             warn!(
                 speffect_id,
@@ -1229,6 +1240,9 @@ impl RaceTracker {
     /// (`core::foes`), across loads.
     fn apply_memory_state(&mut self, state: MemoryState, walk_foes: bool) {
         profile_span!("apply_memory_state");
+        // A retry only once the writes have been quiet for its interval:
+        // never beside the machine's own refresh of a live effect.
+        self.memory_retry_at = Instant::now();
         let written = &mut self.memory_written;
         if state.player_hidden || written.player_hidden {
             if memory_effects::set_player_rendered(!state.player_hidden) {
@@ -1260,15 +1274,21 @@ impl RaceTracker {
                 );
             }
         }
-        if state.camera.is_some() || !self.camera_originals.is_empty() {
-            if memory_effects::set_camera(state.camera, &mut self.camera_originals) {
-                written.camera = state.camera;
-            } else {
-                warn!(
-                    camera = ?state.camera,
-                    "[ITEMS] Camera rows not written (params not indexed yet, or no LockCamParam row)"
-                );
-            }
+        // The first-person camera sits inside the body, hidden by the render
+        // bit: where that bit is not written (`layout_known`), the variant
+        // is left out rather than shown through the player's own model.
+        let camera = state
+            .camera
+            .filter(|&v| v != CameraVariant::FirstPerson || race_items::layout_known());
+        if camera.is_none() && self.camera_originals.is_empty() {
+            written.camera = state.camera;
+        } else if memory_effects::set_camera(camera, &mut self.camera_originals) {
+            written.camera = state.camera;
+        } else {
+            warn!(
+                ?camera,
+                "[ITEMS] Camera rows not written (params not indexed yet, or no LockCamParam row)"
+            );
         }
         if walk_foes {
             memory_effects::walk_foes(state.foes_hidden, &mut self.foes_record);
@@ -1282,8 +1302,8 @@ impl RaceTracker {
     /// The machine sends a state when it changes and refreshes it only
     /// while an effect is live, so the defaults that end an effect go out
     /// once: lost, they would never come again, and the camera rows live
-    /// until the game exits. One comparison per frame; the write at most
-    /// every `MEMORY_RETRY_INTERVAL`, on a loaded frame.
+    /// until the game exits. One comparison per frame; the write on a loaded
+    /// frame, once no state was written for `MEMORY_RETRY_INTERVAL`.
     fn retry_memory_state(&mut self, loaded: bool, now: Instant) {
         let sent = self.machine.memory_state_sent();
         if sent == self.memory_written
@@ -1292,7 +1312,6 @@ impl RaceTracker {
         {
             return;
         }
-        self.memory_retry_at = now;
         info!(?sent, written = ?self.memory_written, "[ITEMS] Memory state written again");
         let walk_foes = sent.foes_hidden != self.memory_written.foes_hidden;
         self.apply_memory_state(sent, walk_foes);

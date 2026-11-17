@@ -3147,6 +3147,17 @@ impl RaceMachine {
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
+        // The shell answers a spawn within the batch that asked for it: one
+        // still unanswered here lost its batch (a frame that panicked is
+        // skipped whole) and would otherwise wait for ever, every resend
+        // of its grant taken for a spawn under way.
+        if !self.spawning_grants.is_empty() {
+            warn!(
+                count = self.spawning_grants.len(),
+                "[ITEMS] Grant spawns never answered, retried at the next load or reconnection"
+            );
+            self.retry_grants.append(&mut self.spawning_grants);
+        }
         // Once the run is over (race not running, runner finished or out),
         // what still waits is dropped rather than held for a load.
         if !self.is_race_running() || self.am_i_finished() || self.am_i_abandoned() {
@@ -8721,6 +8732,21 @@ mod tests {
         m.handle_message(auth_ok_with_items("running", true), now + secs(4));
         let fx = items_load(&mut m, now + secs(5));
         assert!(spawned_goods(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_spawn_never_answered_is_retried_at_the_next_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(spawned_goods(&fx), [RACE_ITEM_GOODS]);
+
+        // The shell lost that batch: no `grant_spawn_result` ever comes.
+        let fx = m.tick(tick_in(snap(Some(61_100), true), true, None), now + ms(200));
+        assert!(spawned_goods(&fx).is_empty(), "{fx:?}");
+        let fx = items_load(&mut m, now + secs(1));
+        assert_eq!(spawned_goods(&fx), [RACE_ITEM_GOODS]);
     }
 
     #[test]
