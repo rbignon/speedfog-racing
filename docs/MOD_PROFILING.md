@@ -95,7 +95,7 @@ opens a TCP listener.
   chr set (the characters the debug creator spawned) and the NpcParam row of
   each one, on the render thread, so its duration lands on the frame that
   runs it: every 250 ms for 3 s after a request, then once a second for his
-  60 s (or for 10 s after a last miss), never on the frames between. Capture one Hunter in the open world and
+  30 s (or for 10 s after a last miss), never on the frames between. Capture one Hunter in the open world and
   one in a legacy dungeon (`docs/RACE_ITEMS.md`, check J.18): the walk is a
   handful of fault-safe reads while the set holds only him, so a few hundred
   microseconds or more is worth reporting.
