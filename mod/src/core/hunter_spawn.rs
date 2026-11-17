@@ -1,7 +1,8 @@
 //! What the shell writes to spawn the Hunter through the game's debug
 //! character creator (`eldenring::hunter`): the creator's offset in
-//! WorldChrMan for a game build, the model name, and the point behind the
-//! player he appears at. Pure: the shell reads and writes the game.
+//! WorldChrMan for a game build, the model name, the point behind the
+//! player he appears at, and how a look and his end judge a character of
+//! his row from its HP. Pure: the shell reads and writes the game.
 //!
 //! The point follows the player's physics module (the Havok position the
 //! creator takes, and the orientation quaternion next to it): the yaw is
@@ -88,6 +89,23 @@ pub fn placement(position: [f32; 3], orientation: [f32; 4]) -> Option<Placement>
         yaw,
         spawn: [x - BEHIND_M * sin, y + LIFT_M, z - BEHIND_M * cos],
     })
+}
+
+/// Whether a character of the Hunter's row is alive for his end and for a
+/// request's check for one already there: its HP read (`None`: unreadable)
+/// and above 0. The end writes 0 HP only over such a character, never over
+/// one it could not read.
+pub fn alive(hp: Option<i32>) -> bool {
+    hp.is_some_and(|hp| hp > 0)
+}
+
+/// Whether a look finds the Hunter in a character of his row, HP `hp`
+/// (`None`: unreadable); `seen`: the watched request's Hunter was seen
+/// before. A read HP decides (above 0). An unreadable one is no sign he is
+/// gone: one already seen keeps hunting, so his end still comes and kills
+/// him; one never seen is not seen yet, and the next look tries again.
+pub fn found_by_a_look(hp: Option<i32>, seen: bool) -> bool {
+    hp.map_or(seen, |hp| hp > 0)
 }
 
 #[cfg(test)]
@@ -190,5 +208,24 @@ mod tests {
         assert_eq!(placement([f32::NAN, 0.0, 0.0], facing(0.0)), None);
         assert_eq!(placement(AT, [0.0, f32::INFINITY, 0.0, 1.0]), None);
         assert_eq!(placement(AT, [0.0; 4]), None);
+    }
+
+    #[test]
+    fn an_unreadable_hp_keeps_a_seen_hunter_and_is_never_killed() {
+        // A look: a misread HP is no sign he is gone once seen, so the hunt
+        // goes on to its end; before that, he is not seen yet.
+        assert!(found_by_a_look(None, true));
+        assert!(!found_by_a_look(None, false));
+        // A read HP decides, seen or not.
+        for seen in [false, true] {
+            assert!(found_by_a_look(Some(1), seen));
+            assert!(!found_by_a_look(Some(0), seen));
+            assert!(!found_by_a_look(Some(-5), seen));
+        }
+        // The end (and a request's check for one already there): only an HP
+        // read above 0, so 0 HP is never written over an unreadable one.
+        assert!(alive(Some(1)));
+        assert!(!alive(Some(0)));
+        assert!(!alive(None));
     }
 }

@@ -1,7 +1,8 @@
 //! Race item game access for the shell: goods and talisman spawn, inventory
 //! quantity, the goods' icon, the talismans worn, the player's HP and equip
-//! load, the equip load effect's rate and a SpEffect row's timing. Called on
-//! rare events (a grant, a game load, an effect), never per frame.
+//! load, the equip load effect's rate, a SpEffect row's timing and whether a
+//! param row exists. Called on rare events (a grant, a game load, an
+//! effect), never per frame.
 //!
 //! ### Inventory layout source
 //!
@@ -304,6 +305,17 @@ fn param_row<T: 'static>(params: &Params, name: &str, id: u32) -> Option<&'stati
     unsafe { params.iter_param::<T>(name) }?
         .find(|row| row.id == u64::from(id))?
         .param
+}
+
+/// Whether the loaded regulation holds row `id` of the param `name` (the
+/// game's own table, as `param_row` reads it). `None` when the params are not
+/// indexed yet (`prewarm_params`) or hold no param of that name.
+pub(super) fn param_has_row(name: &str, id: u32) -> Option<bool> {
+    let params = Lazy::get(&PARAMS)?.read();
+    // SAFETY: the params live for the whole game session; only the row ids
+    // are read, no row is touched.
+    let mut ids = unsafe { params.iter_param_ids(name) }?;
+    Some(ids.any(|row| row == u64::from(id)))
 }
 
 /// Pointer stored at `addr`, `None` when unreadable or null.

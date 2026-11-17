@@ -49,7 +49,13 @@
 //!   its event entity id at + 0x1E8; HP and max HP at + 0x138 and + 0x13C of
 //!   its data module (ChrIns + 0x190, + 0), the chain libeldenring reads the
 //!   player's HP through. Writing 0 HP kills (Crowd Control's "kill nearby
-//!   enemies" does the same).
+//!   enemies" does the same). An HP that cannot be read keeps a Hunter
+//!   already seen hunting and is never written
+//!   (`core::hunter_spawn::found_by_a_look` and `alive`).
+//! - Rows: before a request, his NpcParam and NpcThinkParam rows are looked
+//!   up in the loaded regulation (libeldenring's params, by id): a seed built
+//!   by a FogModWrapper older than his rows lacks them, and the request is a
+//!   miss.
 //!
 //! Unverified by this mod in game until the Windows check.
 
@@ -65,12 +71,12 @@ use super::memory_effects::{
     ChrSetHead, CHR_INS_MODULES_OFFSET, CHR_SET_ENTRIES_OFFSET, CHR_SET_HEAD_OFFSET,
     WCM_DEBUG_CHR_SET_OFFSET,
 };
-use super::race_items::{read_bytes, read_ptr};
+use super::race_items::{param_has_row, read_bytes, read_ptr};
 use super::scan::module_base_and_size;
 use super::sp_effect_apply::{player_ins_offset, read_player_ins};
 use crate::core::foes::{CHR_SET_ENTRY_SIZE, MAX_CHR_SET_CAPACITY};
 use crate::core::hunter_spawn::{
-    creator_offset, model_name, placement, CREATOR_RTTI_NAME, MODEL_NAME_LEN,
+    self, creator_offset, found_by_a_look, model_name, placement, CREATOR_RTTI_NAME, MODEL_NAME_LEN,
 };
 use crate::profile_span;
 
@@ -146,8 +152,14 @@ struct Character {
 }
 
 impl Character {
+    fn hp(&self) -> Option<i32> {
+        self.hp.map(|[hp, _]| hp)
+    }
+
+    /// HP read above 0 (`core::hunter_spawn::alive`): the end's rule and a
+    /// request's, never a look's.
     fn alive(&self) -> bool {
-        self.hp.is_some_and(|[hp, _]| hp > 0)
+        hunter_spawn::alive(self.hp())
     }
 }
 
@@ -258,10 +270,11 @@ fn hunters_in_debug_set(wcm: usize, npc_param_id: u32) -> Option<Vec<Character>>
 /// `npc_param_id` and `think_id`) behind the player. True when the request
 /// is written, or when a live character of his row is already on the debug
 /// chr set (a late spawn of an earlier request: no second Margit). False,
-/// with nothing queued, when this build has no creator offset, the player,
-/// the creator or its RTTI is unreadable, another request is pending, the
-/// player's pose is unreadable, or a field write fails. Every outcome logs
-/// an `[ITEMS] Hunter` line.
+/// with nothing queued, when this build has no creator offset, the loaded
+/// regulation lacks his NpcParam or NpcThinkParam row (or the params are not
+/// indexed yet), the player, the creator or its RTTI is unreadable, another
+/// request is pending, the player's pose is unreadable, or a field write
+/// fails. Every outcome logs an `[ITEMS] Hunter` line.
 pub fn request_hunter(
     chr_id: u32,
     npc_param_id: u32,
@@ -272,6 +285,27 @@ pub fn request_hunter(
     let Some(offset) = creator_offset_here() else {
         return false;
     };
+    // A seed built by a FogModWrapper older than his rows carries their ids
+    // in graph.json, not the rows: the game is never asked for a row it lacks.
+    for (param, row) in [("NpcParam", npc_param_id), ("NpcThinkParam", think_id)] {
+        match param_has_row(param, row) {
+            Some(true) => {}
+            Some(false) => {
+                warn!(
+                    param,
+                    row, "[ITEMS] Hunter not requested: row missing from the regulation"
+                );
+                return false;
+            }
+            None => {
+                warn!(
+                    param,
+                    row, "[ITEMS] Hunter not requested: params not indexed yet"
+                );
+                return false;
+            }
+        }
+    }
     let pointers = Pointers::new();
     let player = read_player_ins(&pointers) as usize;
     if player == 0 {
@@ -415,11 +449,12 @@ pub fn request_hunter(
 
 /// Whether a live character of NpcParam row `npc_param_id` (HP above 0) is
 /// on the debug chr set. False on a build with no creator offset. An
-/// unreadable set answers as the last look did: seen for a Hunter already
-/// seen (he keeps hunting until his end), not seen otherwise. Logs, for the
-/// watched request: the spawn byte back at 0, his first sighting (`Hunter
-/// spawned`), each look that sees him afterwards (`Hunter tick`), and the
-/// first that no longer does (`Hunter lost`).
+/// unreadable set, or a character of his row whose HP is unreadable, answers
+/// as the last look did: seen for a Hunter already seen (he keeps hunting
+/// until his end), not seen otherwise. Logs, for the watched request: the
+/// spawn byte back at 0, his first sighting (`Hunter spawned`), each look
+/// that sees him afterwards (`Hunter tick`), and the first that no longer
+/// does (`Hunter lost`).
 pub fn find_hunter(npc_param_id: u32, watch: &mut HunterWatch) -> bool {
     profile_span!("race_items.find_hunter");
     let Some(offset) = creator_offset_here() else {
@@ -447,7 +482,8 @@ pub fn find_hunter(npc_param_id: u32, watch: &mut HunterWatch) -> bool {
         );
         return seen;
     };
-    let him = found.iter().find(|c| c.alive());
+    // An unreadable HP keeps a Hunter already seen (`found_by_a_look`).
+    let him = found.iter().find(|c| found_by_a_look(c.hp(), seen));
     let now = Instant::now();
     let Some(watched) = watch
         .request
