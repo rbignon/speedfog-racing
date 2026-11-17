@@ -22,22 +22,22 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.17"
+PROTOCOL_VERSION = "1.18"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
 # that RaceInfo.ranked marks. A protocol fact, not a tunable.
 RANKED_SOLO_MIN_PROTOCOL = "1.9"
 
-# Oldest protocol a race with items accepts at auth: from 1.17 the mod plays
+# Oldest protocol a race with items accepts at auth: from 1.18 the mod applies
+# the Lightning (`lightning`: its slow walk and its shrink); from 1.17 it plays
 # the Talisman Thief, Junk Weapon and Hunter effects and answers them with an
-# `item_report`; from 1.16 the mod runs an
-# Ink held in a boss arena from the boss's kill (`defeat_flag`); from 1.15 it
-# applies the memory effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
-# Camera) and shows an `item_notice`; from 1.14 it times the timed effects with
-# the duration they carry and applies them again after a load, and holds an
-# Ink until the zone has unused exits (`unused_exits`).
-RACE_ITEMS_MIN_PROTOCOL = "1.17"
+# `item_report`; from 1.16 it runs an Ink held in a boss arena from the boss's
+# kill (`defeat_flag`); from 1.15 it applies the memory effects (Vanish, Unseen
+# Foes, Slow-mo, Giant, Camera) and shows an `item_notice`; from 1.14 it times
+# the timed effects with the duration they carry and applies them again after a
+# load, and holds an Ink until the zone has unused exits (`unused_exits`).
+RACE_ITEMS_MIN_PROTOCOL = "1.18"
 
 # auth_error for a mod too old for a race with items. The race's pack carries
 # the current mod, so downloading it again is the fix.
@@ -633,6 +633,7 @@ class ItemEffectPayload(BaseModel):
         "unseen_foes",
         "slow_mo",
         "scale",
+        "lightning",
         "camera",
         "steal_talisman",
         "talisman",

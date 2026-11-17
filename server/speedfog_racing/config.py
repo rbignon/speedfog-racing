@@ -17,7 +17,6 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "ink": 1,
         "vanish": 1,
         "slow_mo": 1,
-        "mini": 1,
         "giant": 1,
         "camera": 1,
         "talisman_thief": 1,
@@ -111,10 +110,11 @@ class Settings(BaseSettings):
     # load (70 to 99 is a fat roll; clamped to 0..99). The other race item
     # percentages are clamped to 0..100 when sent to the mod.
     race_items_hammer_load_pct: int = 97
-    # Slow-mo's speed percent of the target (clamped to 10..100); Mini and
-    # Giant scale the targets to these percents (clamped to 25..300).
+    # Slow-mo's speed percent of the target (clamped to 10..100); the
+    # Lightning and the Giant scale the targets to these percents (clamped to
+    # 25..300).
     race_items_slow_mo_speed_pct: int = 50
-    race_items_mini_scale_pct: int = 50
+    race_items_lightning_scale_pct: int = 50
     race_items_giant_scale_pct: int = 150
     # Runners rank for race items (draw tier, targets) in leaderboard order, a
     # runner moving above one it leads by this many seconds of IGT at the same

@@ -283,15 +283,17 @@ EffectKind = Literal[
     "unseen_foes",
     "slow_mo",
     "scale",
+    "lightning",
     "camera",
     "steal_talisman",
     "junk_weapon",
     "hunter",
 ]
-# The effects the mod writes into the game's memory (the Hunter's spawn is timed
-# the same way): it requires their duration_ms and drops the whole message without it.
+# The effects the mod writes into the game's memory (the Hunter's spawn and the
+# Lightning's shrink are timed the same way): it requires their duration_ms and
+# drops the whole message without it.
 _MEMORY_KINDS: frozenset[EffectKind] = frozenset(
-    {"vanish", "unseen_foes", "slow_mo", "scale", "camera", "hunter"}
+    {"vanish", "unseen_foes", "slow_mo", "scale", "lightning", "camera", "hunter"}
 )
 CameraVariant = Literal["first_person", "inverted", "wide"]
 CAMERA_VARIANTS: tuple[CameraVariant, ...] = ("first_person", "inverted", "wide")
@@ -352,12 +354,13 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Max HP halved for {s}s",
         "Max HP halved",
     ),
+    # Its SpEffect row forces a slow walk; the mod shrinks the target too.
     "lightning": ItemRule(
         "others",
-        "speffect",
-        "Slows everyone else for {s}s",
-        "Slowed for {s}s",
-        "Slowed",
+        "lightning",
+        "Slows and shrinks everyone else for {s}s",
+        "Slowed and shrunk for {s}s",
+        "Slowed and shrunk",
     ),
     "flask_stopper": ItemRule(
         "others",
@@ -388,9 +391,6 @@ ITEM_RULES: dict[str, ItemRule] = {
         "Slows the runner ahead for {s}s",
         "Slowed down for {s}s",
         "Slow-mo",
-    ),
-    "mini": ItemRule(
-        "others", "scale", "Shrinks everyone else for {s}s", "Shrunk for {s}s", "Mini"
     ),
     "giant": ItemRule(
         "others", "scale", "Everyone else grows huge for {s}s", "Giant for {s}s", "Giant"
@@ -595,9 +595,11 @@ def _damage_pct(key: str) -> int:
 
 
 def _scale_pct(key: str) -> int:
-    """Mini and Giant sizes, clamped to what the mod can apply."""
+    """The Lightning's and the Giant's sizes, clamped to what the mod can apply."""
     value = (
-        settings.race_items_mini_scale_pct if key == "mini" else settings.race_items_giant_scale_pct
+        settings.race_items_lightning_scale_pct
+        if key == "lightning"
+        else settings.race_items_giant_scale_pct
     )
     return max(25, min(300, value))
 
@@ -726,6 +728,20 @@ def effect_payload(
     if kind == "scale":
         return ItemEffectPayload(
             kind="scale", duration_ms=entry.duration_ms, scale_pct=_scale_pct(key)
+        )
+    if kind == "lightning":
+        if entry.effect_speffect is None:
+            logger.warning(
+                "Race item %s has no effect_speffect in its seed catalog: its lightning "
+                "effect is not sent",
+                item_key,
+            )
+            return None
+        return ItemEffectPayload(
+            kind="lightning",
+            speffect_id=entry.effect_speffect,
+            duration_ms=entry.duration_ms,
+            scale_pct=_scale_pct(key),
         )
     if kind == "camera":
         return ItemEffectPayload(

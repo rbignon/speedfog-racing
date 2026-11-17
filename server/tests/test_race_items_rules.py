@@ -30,6 +30,7 @@ from speedfog_racing.services.race_items import (
     target_banner,
     tier_of,
     tier_pool,
+    unknown_tier_items,
 )
 
 
@@ -334,7 +335,7 @@ def test_hammer_payload_targets_a_share_of_the_max_load(monkeypatch):
 
 
 def test_other_effect_payloads():
-    assert effect_payload("lightning", _entry(speffect=99)).model_dump() == {
+    assert effect_payload("flask_stopper", _entry(speffect=99)).model_dump() == {
         "kind": "speffect",
         "speffect_id": 99,
         "duration_ms": 15000,
@@ -378,25 +379,58 @@ def test_memory_effect_payloads(monkeypatch):
     assert foes and foes.model_dump() == {"kind": "unseen_foes", "duration_ms": 15000}
     slow = effect_payload("slow_mo", _entry("Slow-mo", 15000, None))
     assert slow and (slow.kind, slow.speed_pct) == ("slow_mo", 50)
-    mini = effect_payload("mini", _entry("Mini", 15000, None))
     giant = effect_payload("giant", _entry("Giant", 15000, None))
-    assert mini and mini.model_dump() == {"kind": "scale", "duration_ms": 15000, "scale_pct": 50}
-    assert giant and giant.scale_pct == 150
+    assert giant and giant.model_dump() == {"kind": "scale", "duration_ms": 15000, "scale_pct": 150}
 
     monkeypatch.setattr(settings, "race_items_slow_mo_speed_pct", 5)
-    monkeypatch.setattr(settings, "race_items_mini_scale_pct", 10)
     monkeypatch.setattr(settings, "race_items_giant_scale_pct", 400)
     assert effect_payload("slow_mo", _entry("Slow-mo", 15000, None)).speed_pct == 10
-    assert effect_payload("mini", _entry("Mini", 15000, None)).scale_pct == 25
     assert effect_payload("giant", _entry("Giant", 15000, None)).scale_pct == 300
     monkeypatch.setattr(settings, "race_items_slow_mo_speed_pct", 500)
-    monkeypatch.setattr(settings, "race_items_mini_scale_pct", 5)
-    monkeypatch.setattr(settings, "race_items_giant_scale_pct", 400)
+    monkeypatch.setattr(settings, "race_items_giant_scale_pct", 10)
     assert effect_payload("slow_mo", _entry("Slow-mo", 15000, None)).speed_pct == 100
-    assert effect_payload("mini", _entry("Mini", 15000, None)).scale_pct == 25
+    assert effect_payload("giant", _entry("Giant", 15000, None)).scale_pct == 25
 
 
-@pytest.mark.parametrize("key", ["vanish", "unseen_foes", "slow_mo", "mini", "giant", "camera"])
+def test_lightning_payload(monkeypatch):
+    lightning = effect_payload("lightning", _entry("Lightning", 15000, 1450830))
+    assert lightning and lightning.model_dump() == {
+        "kind": "lightning",
+        "speffect_id": 1450830,
+        "duration_ms": 15000,
+        "scale_pct": 50,
+    }
+    monkeypatch.setattr(settings, "race_items_lightning_scale_pct", 10)
+    assert effect_payload("lightning", _entry("Lightning", 15000, 1450830)).scale_pct == 25
+    monkeypatch.setattr(settings, "race_items_lightning_scale_pct", 400)
+    assert effect_payload("lightning", _entry("Lightning", 15000, 1450830)).scale_pct == 300
+
+
+def test_lightning_without_its_row_or_duration_is_not_sent(caplog):
+    # The mod needs both to slow and to shrink for the same time.
+    with caplog.at_level(logging.WARNING, logger="speedfog_racing.services.race_items"):
+        assert effect_payload("lightning", _entry("Lightning", None, 1450830)) is None
+        assert effect_payload("lightning", _entry("Lightning", 15000, None)) is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 2 and all("lightning" in r.getMessage() for r in warnings)
+
+
+def test_mini_in_the_tier_weights_is_an_unknown_key():
+    # A prod .env written before the Mini went still names it: warned at
+    # startup, never drawn.
+    assert unknown_tier_items({"middle": {"mini": 1, "giant": 1}}) == ["mini"]
+    assert "mini" not in DEFAULT_RACE_ITEMS_TIER_WEIGHTS["middle"]
+
+
+def test_a_seed_still_listing_mini_never_draws_it():
+    available = available_base_keys(["mini", "giant", "lightning"])
+    assert "mini" not in tier_pool("middle", {"middle": {"mini": 1, "giant": 1}}, available)
+    assert "mini" not in tier_pool("middle", settings.race_items_tier_weights, available)
+
+
+@pytest.mark.parametrize(
+    "key", ["vanish", "unseen_foes", "slow_mo", "giant", "camera", "lightning"]
+)
 def test_a_memory_effect_without_duration_is_not_sent(key, caplog):
     # The mod requires duration_ms on these kinds and would drop the whole
     # message: nothing goes, and the server says why.
