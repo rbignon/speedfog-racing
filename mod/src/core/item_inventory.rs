@@ -77,45 +77,84 @@ pub fn quantity_in_entries(entries: &[u8], item_id: u32) -> u32 {
     })
 }
 
-/// The gaitem handles of the entries holding `item_id`, read before a give:
-/// what `new_copy` tells the new entry from.
-pub fn handles_of(entries: &[u8], item_id: u32) -> Vec<u32> {
-    entries_of(entries, item_id)
+/// First item id of the next category (protectors): every weapon id is
+/// below it.
+const WEAPON_ID_END: u32 = 0x1000_0000;
+
+/// Whether `item_id` is the weapon `weapon_id` at any upgrade level: a
+/// weapon id is its base (a multiple of 10000), plus its affinity (a
+/// multiple of 100, 0 to 1200), plus its upgrade level (the last two
+/// digits), so the two match once the level is dropped. A weapon given may
+/// not land at the level asked: the Item Randomizer's auto-upgrade (on in
+/// SpeedFog seeds by default) raises it to the runner's best level as the
+/// game adds it.
+pub fn same_weapon(item_id: u32, weapon_id: u32) -> bool {
+    item_id < WEAPON_ID_END && item_id / 100 == weapon_id / 100
+}
+
+/// The whole entries of `entries` holding the weapon `weapon_id` at any
+/// upgrade level (`same_weapon`), with their position.
+fn weapon_entries_of(entries: &[u8], weapon_id: u32) -> impl Iterator<Item = (usize, &[u8])> {
+    entries
+        .chunks_exact(ENTRY_SIZE)
+        .enumerate()
+        .filter(move |(_, entry)| same_weapon(field(entry, ENTRY_ITEM_ID_OFFSET), weapon_id))
+}
+
+/// The gaitem handles of the entries holding the weapon `weapon_id` at any
+/// upgrade level, read before a give: what `new_copy` tells the new entry
+/// from.
+pub fn handles_of(entries: &[u8], weapon_id: u32) -> Vec<u32> {
+    weapon_entries_of(entries, weapon_id)
         .map(|(_, entry)| field(entry, ENTRY_HANDLE_OFFSET))
         .collect()
 }
 
-/// The entry a give of `item_id` added, from the entries read after it:
-/// its position in `entries` and its gaitem handle. `before` holds the
-/// handles of that item's entries before the give (`handles_of`): a weapon
-/// never stacks, each instance has its own entry and handle, so the new one
-/// is the entry whose handle is not there. Not the first entry of the id
-/// (the game's own lookup): that may be the runner's own copy, with its Ash
-/// of War, maybe equipped elsewhere; nor the last one, since a new item may
-/// fill the gap a removed one left. Several new ones (logged) give the last
-/// acquired (highest `sort_id`); none, `None` (nothing added: the
-/// inventory was full).
-pub fn new_copy(before: &[u32], entries: &[u8], item_id: u32) -> Option<(usize, u32)> {
-    let new: Vec<(usize, u32, u32)> = entries_of(entries, item_id)
+/// The entry a give of the weapon `weapon_id` added, from the entries read
+/// after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewCopy {
+    /// Its position in the entries read.
+    pub position: usize,
+    pub handle: u32,
+    /// Its full item id: `weapon_id` at the upgrade level it landed at.
+    pub item_id: u32,
+}
+
+/// The entry a give of the weapon `weapon_id` added, from the entries read
+/// after it, at whatever upgrade level it landed (`same_weapon`). `before`
+/// holds the handles of that weapon's entries before the give
+/// (`handles_of`): a weapon never stacks, each instance has its own entry
+/// and handle, so the new one is the entry whose handle is not there. Not
+/// the first entry of the id (the game's own lookup): that may be the
+/// runner's own copy, with its Ash of War, maybe equipped elsewhere; nor
+/// the last one, since a new item may fill the gap a removed one left.
+/// Several new ones (logged) give the last acquired (highest `sort_id`);
+/// none, `None` (nothing added: the inventory was full).
+pub fn new_copy(before: &[u32], entries: &[u8], weapon_id: u32) -> Option<NewCopy> {
+    let new: Vec<(NewCopy, u32)> = weapon_entries_of(entries, weapon_id)
         .map(|(position, entry)| {
             (
-                position,
-                field(entry, ENTRY_HANDLE_OFFSET),
+                NewCopy {
+                    position,
+                    handle: field(entry, ENTRY_HANDLE_OFFSET),
+                    item_id: field(entry, ENTRY_ITEM_ID_OFFSET),
+                },
                 field(entry, ENTRY_SORT_ID_OFFSET),
             )
         })
-        .filter(|(_, handle, _)| !before.contains(handle))
+        .filter(|(copy, _)| !before.contains(&copy.handle))
         .collect();
     if new.len() > 1 {
         warn!(
-            item_id,
+            weapon_id,
             count = new.len(),
-            "[ITEMS] Several new copies of a given item, the last acquired taken"
+            "[ITEMS] Several new copies of a given weapon, the last acquired taken"
         );
     }
     new.into_iter()
-        .max_by_key(|&(_, _, sort_id)| sort_id)
-        .map(|(position, handle, _)| (position, handle))
+        .max_by_key(|&(_, sort_id)| sort_id)
+        .map(|(copy, _)| copy)
 }
 
 /// The game's inventory index of the normal list's entry at `position`
@@ -142,10 +181,11 @@ pub fn junk_slot(right_weapon_slot: u32) -> usize {
     1 + 2 * slot as usize
 }
 
-/// Whether the right hand already holds `weapon_id`, that exact weapon
-/// (same upgrade and affinity): forcing it in would change nothing.
+/// Whether the right hand already holds the weapon `weapon_id`, at any
+/// upgrade level (`same_weapon`, the level a give lands at is not the one
+/// asked): forcing in another copy would change nothing.
 pub fn junk_is_free(held_param_id: i32, weapon_id: u32) -> bool {
-    u32::try_from(held_param_id) == Ok(weapon_id)
+    u32::try_from(held_param_id).is_ok_and(|held| same_weapon(held, weapon_id))
 }
 
 #[cfg(test)]
@@ -237,7 +277,50 @@ mod tests {
             (0x8080_0003, CLUB, 12),
             (0x8080_0002, 0x0010_0000, 11),
         ]);
-        assert_eq!(new_copy(&handles, &after, CLUB), Some((1, 0x8080_0003)));
+        assert_eq!(
+            new_copy(&handles, &after, CLUB),
+            Some(NewCopy {
+                position: 1,
+                handle: 0x8080_0003,
+                item_id: CLUB,
+            })
+        );
+    }
+
+    #[test]
+    fn the_new_copy_is_found_at_the_level_it_landed_at() {
+        // The runner's own Club +7 sits first; the give landed at +25 (the
+        // Item Randomizer's auto-upgrade), not at the +0 asked for.
+        let before = weapons(&[(0x8080_0001, CLUB + 7, 10)]);
+        let handles = handles_of(&before, CLUB);
+        assert_eq!(handles, [0x8080_0001]);
+        let after = weapons(&[(0x8080_0001, CLUB + 7, 10), (0x8080_0002, CLUB + 25, 11)]);
+        assert_eq!(
+            new_copy(&handles, &after, CLUB),
+            Some(NewCopy {
+                position: 1,
+                handle: 0x8080_0002,
+                item_id: CLUB + 25,
+            })
+        );
+    }
+
+    #[test]
+    fn another_affinity_or_category_is_another_item() {
+        assert!(same_weapon(CLUB, CLUB));
+        assert!(same_weapon(CLUB + 25, CLUB));
+        // Heavy Club +3 and Occult Club +25: other affinities.
+        assert!(!same_weapon(CLUB + 100 + 3, CLUB));
+        assert!(!same_weapon(CLUB + 1200 + 25, CLUB));
+        // A protector or goods row with the same digits, and an empty entry.
+        assert!(!same_weapon(0x1000_0000 | CLUB, CLUB));
+        assert!(!same_weapon(0x4000_0000 | CLUB, CLUB));
+        assert!(!same_weapon(u32::MAX, CLUB));
+        let list = weapons(&[
+            (0x8080_0001, CLUB + 100, 10),
+            (0xB000_0001, 0x4000_0000 | CLUB, 11),
+        ]);
+        assert_eq!(new_copy(&[], &list, CLUB), None);
     }
 
     #[test]
@@ -248,7 +331,7 @@ mod tests {
             (0x8080_0001, CLUB, 10),
         ]);
         assert_eq!(
-            new_copy(&[0x8080_0001], &after, CLUB),
+            new_copy(&[0x8080_0001], &after, CLUB).map(|copy| (copy.position, copy.handle)),
             Some((0, 0x8080_0005))
         );
     }
@@ -284,9 +367,11 @@ mod tests {
     #[test]
     fn a_hand_holding_that_junk_already_is_free() {
         assert!(junk_is_free(11_010_000, CLUB));
-        // Another upgrade or affinity of it is another weapon.
-        assert!(!junk_is_free(11_010_003, CLUB));
+        // At any upgrade level: a give lands at the runner's best one.
+        assert!(junk_is_free(11_010_025, CLUB));
+        // Another affinity of it is another weapon.
         assert!(!junk_is_free(11_010_100, CLUB));
+        assert!(!junk_is_free(11_010_103, CLUB));
         // A slot read as -1 holds no weapon.
         assert!(!junk_is_free(-1, CLUB));
     }

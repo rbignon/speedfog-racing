@@ -63,7 +63,9 @@ use crate::core::constants::{
     CHRASM_EQUIPMENT_PARAM_IDS_OFFSET, CHRASM_WEP_SLOT_RIGHT_OFFSET,
     GAMEDATAMAN_PLAYER_GAME_DATA_OFFSET,
 };
-use crate::core::item_inventory::{handles_of, junk_is_free, junk_slot, new_copy, normal_index};
+use crate::core::item_inventory::{
+    handles_of, junk_is_free, junk_slot, new_copy, normal_index, NewCopy,
+};
 use crate::profile_span;
 
 /// ChangeEquipment's body right after its prologue, one row per
@@ -223,9 +225,11 @@ fn read<T>(addr: usize) -> Option<T> {
 
 /// Give the junk weapon `weapon_id` and equip that copy in the right hand in
 /// use (`core::item_inventory::junk_slot`) through ChangeEquipment, then
-/// read the slot back. Every step logs an `[ITEMS] Junk weapon` line. True
-/// when the read-back shows the weapon in that slot, or when the hand
-/// already held it (`junk_is_free`, nothing given). False otherwise: nothing
+/// read the slot back. The copy may land at another upgrade level than the
+/// one asked (`core::item_inventory::same_weapon`): it is found, equipped
+/// and read back at the level it has. Every step logs an `[ITEMS] Junk
+/// weapon` line. True when the read-back shows the copy in that slot, or
+/// when the hand already held that weapon (`junk_is_free`, nothing given). False otherwise: nothing
 /// is given when the failure comes before the give (ChangeEquipment
 /// unresolved, player or inventory unreadable); a weapon given whose copy is
 /// not found (the inventory was full) stays where the game put it.
@@ -310,7 +314,12 @@ pub fn equip_junk_weapon(weapon_id: u32) -> bool {
         );
         return false;
     };
-    let Some((position, handle)) = new_copy(&had, inventory.normal_entries(), weapon_id) else {
+    let Some(NewCopy {
+        position,
+        handle,
+        item_id: copy_id,
+    }) = new_copy(&had, inventory.normal_entries(), weapon_id)
+    else {
         warn!(
             weapon_id,
             had = format_args!("{had:08X?}"),
@@ -332,6 +341,7 @@ pub fn equip_junk_weapon(weapon_id: u32) -> bool {
     info!(
         weapon_id,
         handle = format_args!("0x{handle:08X}"),
+        copy_id,
         had = format_args!("{had:08X?}"),
         position,
         key_capacity,
@@ -374,11 +384,12 @@ pub fn equip_junk_weapon(weapon_id: u32) -> bool {
         return false;
     };
     // The game equips by handle and index; the param id and the entry
-    // follow from them (a weapon's full item id is its param id).
+    // follow from them (a weapon's full item id is its param id): the
+    // copy's id, at the upgrade level it landed at.
     let in_hand = after.index == index
         && after.handle == handle
-        && u32::try_from(after.param_id) == Ok(weapon_id)
-        && after.entry_id == weapon_id;
+        && u32::try_from(after.param_id) == Ok(copy_id)
+        && after.entry_id == copy_id;
     // The slot is the one in hand, so the game goes one-handed.
     if in_hand && after.arm_style == ARM_STYLE_ONE_HANDED {
         info!(
