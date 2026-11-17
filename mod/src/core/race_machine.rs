@@ -474,6 +474,13 @@ enum ItemAction {
     /// Written into the game's memory this long (see
     /// `RaceMachine::maintain_memory_effects`).
     Memory(MemoryEffect, Duration),
+    /// The Lightning: the timed SpEffect `speffect_id` (its slow walk) and
+    /// the memory scale `scale`, both this long.
+    Lightning {
+        speffect_id: u32,
+        scale: f32,
+        duration: Duration,
+    },
     /// The Hunter, sent out through `RaceMachine::maintain_hunter`; his
     /// banner and reminder wait in him until he is found.
     Hunter(HunterSpec),
@@ -559,12 +566,13 @@ pub struct RaceMachine {
     /// Timed SpEffects the race items applied, applied again with their
     /// time left at each loading exit (the game drops them at a load).
     timed_effects: TimedEffects,
-    /// Memory race item effects (Vanish, Unseen Foes, Slow-mo, Mini, Giant,
-    /// Camera) on the play clock; `maintain_memory_effects` writes them.
+    /// Memory race item effects (Vanish, Unseen Foes, Slow-mo, Giant, Camera,
+    /// the Lightning's shrink) on the play clock; `maintain_memory_effects` writes them.
     memory_effects: MemoryEffects,
     /// The reminder text of the last memory effect started, per kind: the
-    /// next one of the kind (a Giant on a Mini, a Camera on another
-    /// variant) replaces that effect, so its row goes.
+    /// next one of the kind (a Giant on another, a Camera on another
+    /// variant) replaces that effect, so its row goes. The Lightning's
+    /// shrink records none: its row is its slow walk's.
     memory_reminders: Vec<(Discriminant<MemoryEffect>, String)>,
     /// The memory state last handed to the shell (the default until an
     /// effect: the game's own), and when; with the last foes walk.
@@ -1908,6 +1916,15 @@ impl RaceMachine {
                         },
                         Duration::from_millis(u64::from(duration_ms)),
                     )),
+                    ItemEffectPayload::Lightning {
+                        speffect_id,
+                        scale_pct,
+                        duration_ms,
+                    } => Some(ItemAction::Lightning {
+                        speffect_id,
+                        scale: f32::from(scale_pct) / 100.0,
+                        duration: Duration::from_millis(u64::from(duration_ms)),
+                    }),
                     // A camera this build does not know has nothing to write.
                     ItemEffectPayload::Camera {
                         variant: CameraVariant::Unknown,
@@ -3211,6 +3228,29 @@ impl RaceMachine {
                     }
                     if let Some(text) = text {
                         self.memory_reminders.push((kind, text));
+                    }
+                }
+                // The slow walk as any timed SpEffect (applied again with
+                // its time left after a load), the shrink as a memory scale.
+                // The scale it replaces (a Giant) loses its row; its own row
+                // is its timed reminder below, not a memory one, so a later
+                // Giant replacing the shrink leaves it to the slow walk.
+                ItemAction::Lightning {
+                    speffect_id,
+                    scale,
+                    duration,
+                } => {
+                    self.timed_effects.start(speffect_id, duration, play);
+                    effects.push(Effect::ApplySpEffect {
+                        speffect_id,
+                        left_ms: Some(u32::try_from(duration.as_millis()).unwrap_or(u32::MAX)),
+                    });
+                    let memory = MemoryEffect::Scale { scale };
+                    self.memory_effects.start(memory, duration, play);
+                    let kind = discriminant(&memory);
+                    if let Some(i) = self.memory_reminders.iter().position(|(k, _)| *k == kind) {
+                        let (_, previous) = self.memory_reminders.swap_remove(i);
+                        self.item_feed.remove_reminder(&previous);
                     }
                 }
                 // His banner and reminder wait for him (`maintain_hunter`).
@@ -10001,6 +10041,122 @@ mod tests {
         let (end_at, end_state, end_walk) = *writes.last().unwrap();
         assert_eq!((end_state, end_walk), (MemoryState::default(), true));
         assert_within_a_frame(end_at, exit + secs(14) - FRAME);
+    }
+
+    fn lightning_hit() -> MachineMessage {
+        item_hit(
+            ItemEffectPayload::Lightning {
+                speffect_id: LIGHTNING_FX,
+                scale_pct: 50,
+                duration_ms: 15_000,
+            },
+            Some(("Slowed and shrunk", 15_000)),
+        )
+    }
+
+    fn giant_hit() -> MachineMessage {
+        item_hit(
+            ItemEffectPayload::Scale {
+                scale_pct: 150,
+                duration_ms: 15_000,
+            },
+            Some(("Giant", 15_000)),
+        )
+    }
+
+    fn reminder_rows(m: &RaceMachine, at: Instant) -> Vec<String> {
+        m.item_reminders(at)
+            .map(|(row, _)| row.text.clone())
+            .collect()
+    }
+
+    fn scales(writes: &[(MemoryState, bool)]) -> Vec<Option<f32>> {
+        writes.iter().map(|(state, _)| state.scale).collect()
+    }
+
+    #[test]
+    fn the_lightning_slows_and_shrinks() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(lightning_hit(), now + ms(100));
+        let t1 = now + ms(120);
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        assert!(
+            fx.contains(&Effect::ApplySpEffect {
+                speffect_id: LIGHTNING_FX,
+                left_ms: Some(15_000),
+            }),
+            "{fx:?}"
+        );
+        assert_eq!(scales(&memory_writes(&fx)), [Some(0.5)]);
+        assert_eq!(reminder_rows(&m, t1), ["Slowed and shrunk"]);
+        // Both end with its 15 s of play.
+        let writes = memory_frames(&mut m, 61_000, t1, t1 + secs(16));
+        let (end_at, end_state, _) = *writes.last().unwrap();
+        assert_eq!(end_state.scale, None);
+        assert_within_a_frame(end_at, t1 + secs(15));
+        assert!(reminder_rows(&m, t1 + secs(16)).is_empty());
+    }
+
+    #[test]
+    fn the_lightning_survives_a_load() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(lightning_hit(), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        memory_frames(&mut m, 61_000, t1, t1 + secs(5));
+        // A 5 s load from 5 s in: both come back with about 10 s left.
+        let fx = load(&mut m, t1 + secs(5), secs(5), 61_000, true);
+        let left = fx.iter().find_map(|e| match e {
+            Effect::ApplySpEffect {
+                speffect_id: LIGHTNING_FX,
+                left_ms,
+            } => Some(*left_ms),
+            _ => None,
+        });
+        assert_left_about(left.flatten(), 10_000);
+        assert_eq!(scales(&memory_writes(&fx)), [Some(0.5)]);
+        let exit = t1 + secs(10);
+        let writes = memory_frames(&mut m, 61_000, exit, exit + secs(11));
+        let (end_at, end_state, _) = *writes.last().unwrap();
+        assert_eq!(end_state.scale, None);
+        assert!(
+            (exit + secs(9)..exit + secs(10) + FRAME).contains(&end_at),
+            "ended {:?} after the exit",
+            end_at - exit
+        );
+    }
+
+    #[test]
+    fn a_giant_during_the_lightning_keeps_its_row() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(lightning_hit(), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        // The Giant 5 s later: his size wins, the Lightning's row stays (its
+        // slow walk goes on) and goes at its own end.
+        let t2 = t1 + secs(5);
+        m.handle_message(giant_hit(), t2);
+        let fx = m.tick(tick_in(snap(Some(66_000), true), true, None), t2);
+        assert_eq!(scales(&memory_writes(&fx)), [Some(1.5)]);
+        assert_eq!(reminder_rows(&m, t2), ["Slowed and shrunk", "Giant"]);
+        assert_eq!(reminder_rows(&m, t1 + secs(16)), ["Giant"]);
+    }
+
+    #[test]
+    fn the_lightning_replaces_a_giant() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(giant_hit(), now + ms(100));
+        let t1 = now + ms(120);
+        m.tick(tick_in(snap(Some(61_000), true), true, None), t1);
+        let t2 = t1 + secs(5);
+        m.handle_message(lightning_hit(), t2);
+        let fx = m.tick(tick_in(snap(Some(66_000), true), true, None), t2);
+        assert_eq!(scales(&memory_writes(&fx)), [Some(0.5)]);
+        assert_eq!(reminder_rows(&m, t2), ["Slowed and shrunk"]);
     }
 
     #[test]

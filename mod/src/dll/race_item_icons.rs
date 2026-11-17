@@ -63,7 +63,6 @@ const ICON_PNGS: &[(&str, &[u8])] = &[
         "slow_mo",
         include_bytes!("../../assets/race_items/slow_mo.png"),
     ),
-    ("mini", include_bytes!("../../assets/race_items/mini.png")),
     ("giant", include_bytes!("../../assets/race_items/giant.png")),
     (
         "camera",

@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.17";
+pub const PROTOCOL_VERSION: &str = "1.18";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -497,8 +497,16 @@ pub enum ItemEffectPayload {
     /// for `duration_ms` (1.15).
     SlowMo { speed_pct: u16, duration_ms: u32 },
     /// The player is scaled to `scale_pct` percent of their size for
-    /// `duration_ms`: Mini below 100, Giant above (1.15).
+    /// `duration_ms` (1.15; the Giant).
     Scale { scale_pct: u16, duration_ms: u32 },
+    /// The Lightning: apply the SpEffect `speffect_id` (a forced slow walk)
+    /// and scale the player to `scale_pct` percent of their size, both for
+    /// `duration_ms` (1.18).
+    Lightning {
+        speffect_id: u32,
+        scale_pct: u16,
+        duration_ms: u32,
+    },
     /// The camera turns to `variant` for `duration_ms` (1.15).
     Camera {
         variant: CameraVariant,
@@ -2050,6 +2058,23 @@ mod tests {
             ItemEffectPayload::Speffect {
                 speffect_id: 1450821,
                 duration_ms: None
+            }
+        );
+    }
+
+    #[test]
+    fn lightning_kind_parses() {
+        // 1.18: the slow walk row and the size, for one duration.
+        let effect: ItemEffectPayload = serde_json::from_str(
+            r#"{"kind":"lightning","speffect_id":1450830,"duration_ms":15000,"scale_pct":50}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            effect,
+            ItemEffectPayload::Lightning {
+                speffect_id: 1450830,
+                scale_pct: 50,
+                duration_ms: 15000
             }
         );
     }

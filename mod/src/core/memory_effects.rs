@@ -1,7 +1,7 @@
 //! Memory race item effects, on the play clock.
 //!
-//! Vanish, Unseen Foes, Slow-mo, Mini, Giant and the Camera have no SpEffect
-//! row: the shell writes them into the game's memory. The race machine keeps
+//! Vanish, Unseen Foes, Slow-mo, Giant, the Camera and the Lightning's shrink
+//! have no SpEffect row: the shell writes them into the game's memory. The race machine keeps
 //! when each ends on the play clock (`core::play_clock`) and derives from the
 //! live ones the state the game should hold (`MemoryState`), which the shell
 //! writes. Pure timing: every method takes the play time.
@@ -11,8 +11,8 @@ use std::time::Duration;
 
 use super::protocol::CameraVariant;
 
-/// A memory effect with its value. Mini and Giant are both `Scale`: they
-/// write the same field.
+/// A memory effect with its value. The Giant and the Lightning's shrink are
+/// both `Scale`: they write the same field.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum MemoryEffect {
     Vanish,
@@ -35,7 +35,7 @@ pub struct MemoryState {
     pub foes_hidden: bool,
     /// The player's animation speed (Slow-mo).
     pub anim_speed: Option<f32>,
-    /// The player's scale (Mini, Giant).
+    /// The player's scale (Giant, the Lightning's shrink).
     pub scale: Option<f32>,
     pub camera: Option<CameraVariant>,
 }
