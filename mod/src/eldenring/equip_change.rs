@@ -56,7 +56,7 @@ use libeldenring::pointers::Pointers;
 use tracing::{info, warn};
 
 use super::item_spawner::inject_one;
-use super::race_items::{read_ptr, HeldInventory};
+use super::race_items::{layout_known, read_ptr, HeldInventory};
 use super::scan::{module_base_and_size, scan_pattern_unique};
 use super::sp_effect_apply::read_player_ins;
 use crate::core::constants::{
@@ -244,6 +244,15 @@ pub fn equip_junk_weapon(weapon_id: u32) -> bool {
         );
         return false;
     };
+    // The function's body is the same on 1.16.2, but the PlayerGameData
+    // offsets it is called with (its `this` among them) are 1.17.x's.
+    if !layout_known() {
+        warn!(
+            weapon_id,
+            "[ITEMS] Junk weapon skipped, nothing given: game version outside 1.17.x"
+        );
+        return false;
+    }
     let pointers = Pointers::new();
     if read_player_ins(&pointers).is_null() {
         warn!(

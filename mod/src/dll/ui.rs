@@ -233,6 +233,16 @@ impl ImguiRenderLoop for RaceTracker {
                     error!(
                         "Update panicking persistently; tracking disabled until the game restarts"
                     );
+                    // Nothing restores a running memory effect after this:
+                    // the camera rows would stay as written until the game
+                    // exits. Guarded like `update`, it runs outside it.
+                    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        self.restore_memory_defaults()
+                    }))
+                    .is_err()
+                    {
+                        error!("Memory defaults not restored (the restore panicked)");
+                    }
                 }
                 build_hidden_window(ui);
                 crate::core::profile::frame_mark();

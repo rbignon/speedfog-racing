@@ -42,6 +42,10 @@ use super::websocket::RaceWebSocketClient;
 
 #[cfg(debug_assertions)]
 const DEBUG_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// How often a memory state the game does not hold is written again
+/// (`retry_memory_state`).
+const MEMORY_RETRY_INTERVAL: Duration = Duration::from_secs(1);
 /// Consecutive update() panics before tracking latches off (~5 s at 60 FPS).
 pub(crate) const MAX_CONSECUTIVE_UPDATE_PANICS: u32 = 300;
 pub(crate) const LEADERBOARD_REFRESH_INTERVAL_MS: u32 = 250;
@@ -322,6 +326,9 @@ pub struct RaceTracker {
     // field (`apply_memory_state`): a field back at its default is written
     // once, only when an effect was written there.
     memory_written: MemoryState,
+    // When a state the game does not hold was last written again
+    // (`retry_memory_state`).
+    memory_retry_at: Instant,
 
     // The LockCamParam rows' own values, by row id, saved by the Camera's
     // first write; emptied once written back.
@@ -479,6 +486,7 @@ impl RaceTracker {
             race_items_prewarmed: false,
             equip_load_last: None,
             memory_written: MemoryState::default(),
+            memory_retry_at: Instant::now(),
             camera_originals: HashMap::new(),
             foes_record: FoesRecord::default(),
             hunter_watch: HunterWatch::default(),
@@ -672,6 +680,7 @@ impl RaceTracker {
             [None, None]
         };
 
+        let loaded = snapshot.position_readable;
         let input = TickInput {
             snapshot,
             connected,
@@ -683,6 +692,7 @@ impl RaceTracker {
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
+        self.retry_memory_state(loaded, now);
 
         {
             profile_span!("livesplit_publish");
@@ -1213,7 +1223,8 @@ impl RaceTracker {
     /// are saved, and the foes are walked only when `walk_foes`. A failed
     /// write keeps the last value written, so the next state the machine
     /// sends tries again; once every effect ended the machine sends the
-    /// defaults once, so a failed restore waits for a later memory effect.
+    /// defaults once, and `retry_memory_state` writes again a state the
+    /// game does not hold.
     /// The foes walks keep their own record of the characters they hid
     /// (`core::foes`), across loads.
     fn apply_memory_state(&mut self, state: MemoryState, walk_foes: bool) {
@@ -1222,7 +1233,7 @@ impl RaceTracker {
         if state.player_hidden || written.player_hidden {
             if memory_effects::set_player_rendered(!state.player_hidden) {
                 written.player_hidden = state.player_hidden;
-            } else {
+            } else if race_items::layout_known() {
                 warn!(
                     hidden = state.player_hidden,
                     "[ITEMS] Player render bit not written (unreadable)"
@@ -1234,7 +1245,7 @@ impl RaceTracker {
             let scale = state.scale.unwrap_or(1.0);
             if memory_effects::set_player_scale(scale) {
                 written.scale = state.scale;
-            } else {
+            } else if race_items::layout_known() {
                 warn!(scale, "[ITEMS] Player scale not written (unreadable)");
             }
         }
@@ -1263,6 +1274,36 @@ impl RaceTracker {
             memory_effects::walk_foes(state.foes_hidden, &mut self.foes_record);
             written.foes_hidden = state.foes_hidden;
         }
+    }
+
+    /// Write again the memory state the machine last sent when the game does
+    /// not hold it: its batch was lost (a frame that panicked after the
+    /// machine's tick is skipped whole, see `render`), or a write failed.
+    /// The machine sends a state when it changes and refreshes it only
+    /// while an effect is live, so the defaults that end an effect go out
+    /// once: lost, they would never come again, and the camera rows live
+    /// until the game exits. One comparison per frame; the write at most
+    /// every `MEMORY_RETRY_INTERVAL`, on a loaded frame.
+    fn retry_memory_state(&mut self, loaded: bool, now: Instant) {
+        let sent = self.machine.memory_state_sent();
+        if sent == self.memory_written
+            || !loaded
+            || now.saturating_duration_since(self.memory_retry_at) < MEMORY_RETRY_INTERVAL
+        {
+            return;
+        }
+        self.memory_retry_at = now;
+        info!(?sent, written = ?self.memory_written, "[ITEMS] Memory state written again");
+        let walk_foes = sent.foes_hidden != self.memory_written.foes_hidden;
+        self.apply_memory_state(sent, walk_foes);
+    }
+
+    /// Give the game its defaults back, whatever the machine wants: the
+    /// last thing tracking does before it stops for good (`render`), since
+    /// nothing would restore them after.
+    pub(crate) fn restore_memory_defaults(&mut self) {
+        let walk_foes = self.memory_written.foes_hidden;
+        self.apply_memory_state(MemoryState::default(), walk_foes);
     }
 
     /// Spawn runtime items (gems/AoW) unless already spawned this session or

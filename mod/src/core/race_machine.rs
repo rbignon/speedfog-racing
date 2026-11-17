@@ -1205,6 +1205,13 @@ impl RaceMachine {
         self.item_feed.set_held(row);
     }
 
+    /// The memory state last handed to the shell (`ApplyMemoryState`), the
+    /// one the game should hold: the shell compares it with what it wrote,
+    /// to write again a state whose batch it lost.
+    pub fn memory_state_sent(&self) -> MemoryState {
+        self.memory_written
+    }
+
     /// Row of the race item held, if any, while the run is live: an item
     /// left unspent at the finish or when out stops showing.
     pub fn item_held(&self) -> Option<&FeedHeld> {
@@ -1447,6 +1454,19 @@ impl RaceMachine {
                 // a restarted process restores its icon and row from it.
                 if let Some(ref item) = held_item {
                     info!(item = %item, "[ITEMS] Held item named at auth");
+                }
+                // A grant still queued that the server no longer holds (its
+                // goods spent or taken back while this mod was offline, the
+                // `item_remove` lost) must not spawn at the next load; the
+                // one it holds unconfirmed comes again right after this.
+                let queued = self.pending_grants.len() + self.retry_grants.len();
+                self.pending_grants
+                    .retain(|g| held_item.as_deref() == Some(g.item.as_str()));
+                self.retry_grants
+                    .retain(|g| held_item.as_deref() == Some(g.item.as_str()));
+                let dropped = queued - self.pending_grants.len() - self.retry_grants.len();
+                if dropped > 0 {
+                    info!(dropped, "[ITEMS] Queued grants dropped (not held at auth)");
                 }
                 self.held_item = held_item;
                 // Don't clear triggered_flags on reconnect: finish_event and
@@ -1832,6 +1852,18 @@ impl RaceMachine {
                 {
                     info!(grant_id, item = %item, "[ITEMS] Grant already waiting for the load");
                 } else {
+                    // The server only grants to a runner holding nothing: a
+                    // grant still queued here is gone on its side (spent,
+                    // lost), and its goods must not spawn after this one's.
+                    let queued = self.pending_grants.len() + self.retry_grants.len();
+                    if queued > 0 {
+                        info!(
+                            grant_id,
+                            queued, "[ITEMS] Queued grants dropped (a newer grant)"
+                        );
+                        self.pending_grants.clear();
+                        self.retry_grants.clear();
+                    }
                     match self
                         .item_and_goods(&item)
                         .map(|(entry, goods)| (goods.goods_id, entry.icon_id))
@@ -2024,8 +2056,21 @@ impl RaceMachine {
             }
             MachineMessage::ItemRemove { goods, banner } => {
                 self.last_received_debug = Some(format!("item_remove({goods})"));
-                match self.catalog_goods(&goods).map(|entry| entry.remove_flag) {
-                    Some(remove_flag) => {
+                match self
+                    .catalog_goods(&goods)
+                    .map(|entry| (entry.remove_flag, entry.goods_id))
+                {
+                    Some((remove_flag, goods_id)) => {
+                        // The server holds no item of that goods any more:
+                        // a grant of it still queued would spawn a copy at
+                        // the next load, after the removal.
+                        let queued = self.pending_grants.len() + self.retry_grants.len();
+                        self.pending_grants.retain(|g| g.goods_id != goods_id);
+                        self.retry_grants.retain(|g| g.goods_id != goods_id);
+                        let dropped = queued - self.pending_grants.len() - self.retry_grants.len();
+                        if dropped > 0 {
+                            info!(goods = %goods, dropped, "[ITEMS] Queued grants dropped (goods removed)");
+                        }
                         if self.wrong_save {
                             // No flag writes into a foreign save: the race
                             // save's next inventory report gets the removal
@@ -8595,6 +8640,124 @@ mod tests {
             ink_rows(&m, t1 + secs(60)),
             [("Ink".to_string(), Some(secs(30)))]
         );
+    }
+
+    /// The spawn requests of a batch, by goods id.
+    fn spawned_goods(effects: &[Effect]) -> Vec<u32> {
+        effects
+            .iter()
+            .filter_map(|e| match e {
+                Effect::SpawnRaceItem { goods_id, .. } => Some(*goods_id),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// A game load: an unloaded frame, then the loading exit's batch.
+    fn items_load(m: &mut RaceMachine, at: Instant) -> Vec<Effect> {
+        m.tick(tick_in(snap(Some(62_000), false), true, None), at);
+        let scan = items_scan(m, &[]);
+        m.tick(tick_in(snap(Some(62_100), true), true, scan), at + ms(500))
+    }
+
+    #[test]
+    fn a_removed_goods_takes_its_failed_grant_with_it() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert_eq!(spawned_goods(&fx), [SHIELD_GOODS]);
+        m.grant_spawn_result(1, false, now + ms(120));
+
+        // The server spent the Shield (it blocked a hit) before the goods
+        // ever spawned: the next load must not bring it back.
+        m.handle_message(
+            MachineMessage::ItemRemove {
+                goods: "shield".to_string(),
+                banner: None,
+            },
+            now + ms(200),
+        );
+        let fx = items_load(&mut m, now + secs(1));
+        assert!(spawned_goods(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_removed_goods_takes_its_grant_not_spawned_yet() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        // Both arrive before the frame that would spawn it (a load).
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        m.handle_message(
+            MachineMessage::ItemRemove {
+                goods: "shield".to_string(),
+                banner: None,
+            },
+            now + ms(110),
+        );
+        let fx = m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        assert!(spawned_goods(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn an_auth_keeps_only_the_queued_grant_of_the_item_held() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, false, now + ms(120));
+
+        // Still held on the server: the reconnection tries the spawn again.
+        m.handle_message(
+            holding(auth_ok_with_items("running", true), "shield"),
+            now + secs(1),
+        );
+        let fx = items_load(&mut m, now + secs(2));
+        assert_eq!(spawned_goods(&fx), [SHIELD_GOODS]);
+        m.grant_spawn_result(1, false, now + secs(3));
+
+        // Spent while the mod was offline (its `item_remove` lost): the
+        // server names no held item, and the Shield never spawns.
+        m.handle_message(auth_ok_with_items("running", true), now + secs(4));
+        let fx = items_load(&mut m, now + secs(5));
+        assert!(spawned_goods(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_removed_goods_keeps_the_grant_of_another_goods() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "red_shell"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, false, now + ms(120));
+
+        // A stray Shield taken back says nothing of the Race Item.
+        m.handle_message(
+            MachineMessage::ItemRemove {
+                goods: "shield".to_string(),
+                banner: None,
+            },
+            now + ms(200),
+        );
+        let fx = items_load(&mut m, now + secs(1));
+        assert_eq!(spawned_goods(&fx), [RACE_ITEM_GOODS]);
+    }
+
+    #[test]
+    fn a_newer_grant_drops_the_ones_still_queued() {
+        let now = Instant::now();
+        let mut m = running_items_machine(now);
+        m.handle_message(grant(1, "shield"), now + ms(100));
+        m.tick(tick_in(snap(Some(61_000), true), true, None), now + ms(120));
+        m.grant_spawn_result(1, false, now + ms(120));
+
+        // The server only grants to a runner holding nothing: grant 1 is
+        // gone on its side (spent, lost), whatever message said so.
+        m.handle_message(grant(2, "red_shell"), now + ms(200));
+        let fx = items_load(&mut m, now + secs(1));
+        assert_eq!(spawned_goods(&fx), [RACE_ITEM_GOODS]);
+        m.grant_spawn_result(2, true, now + secs(2));
+        assert_eq!(m.item_held().map(|row| row.key.as_str()), Some("red_shell"));
     }
 
     #[test]

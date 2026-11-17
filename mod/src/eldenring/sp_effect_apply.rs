@@ -32,11 +32,13 @@
 //! `SpEffect_code`, function `SpEffect.addForSelf`), which calls the wrapper
 //! as `(ChrIns*, effect_id, 1)`. The pattern matches inside the wrapper;
 //! the entry point is `match - 0x1D`, mirroring the TGA script's
-//! `AOBScanModuleUnique(...) - 0x1D`.
+//! `AOBScanModuleUnique(...) - 0x1D`, and is kept only when the wrapper's
+//! prologue sits there (`WRAPPER_PROLOGUE`).
 
 use std::ffi::c_void;
 use std::sync::OnceLock;
 
+use super::race_items::layout_known;
 use super::scan::{module_base_and_size, scan_pattern_unique};
 use libeldenring::memedit::PointerChain;
 use libeldenring::pointers::Pointers;
@@ -94,6 +96,16 @@ const APPLY_SP_EFFECT_PATTERN: &[Option<u8>] = &[
 /// Distance from the AOB match back to the wrapper's entry point.
 const WRAPPER_ENTRY_OFFSET: usize = 0x1D;
 
+/// The prologue expected at the entry: `mov rax, rsp; mov [rax+8], rbx;`
+/// `mov [rax+0x10], rsi; push rdi; sub rsp, 0xC0`. The same bytes in every
+/// executable from 1.10 to 1.17.2. The pattern matches inside the body, so
+/// a build that keeps the body but changes what precedes it would put the
+/// entry mid-instruction: the address is executed only behind this check.
+const WRAPPER_PROLOGUE: [u8; 19] = [
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x70, 0x10, 0x57, 0x48, 0x81, 0xEC, 0xC0,
+    0x00, 0x00, 0x00,
+];
+
 /// MS x64 calling convention, registers only:
 /// - RCX = ChrIns* (the character receiving the effect; here PlayerIns)
 /// - EDX = effect_id
@@ -102,7 +114,8 @@ const WRAPPER_ENTRY_OFFSET: usize = 0x1D;
 /// No stack arguments: see the module docs for why that matters.
 type ApplySpEffectFn = unsafe extern "system" fn(chr_ins: *mut c_void, effect_id: u32, flag: u32);
 
-/// Resolved once per process. None means scanning failed.
+/// Resolved once per process. None means the scan or the prologue check
+/// failed.
 static APPLY_FN_ADDR: OnceLock<Option<usize>> = OnceLock::new();
 
 /// WorldChrMan -> PlayerIns offset, version-dependent. Single source of
@@ -130,20 +143,28 @@ fn resolve_apply_fn() -> Option<usize> {
         // Unique-match scan: the pattern anchors mid-body, so a false match
         // would resolve to an arbitrary address that we then execute. The
         // TGA script asserts uniqueness the same way (AOBScanModuleUnique).
-        match scan_pattern_unique(base, size, APPLY_SP_EFFECT_PATTERN) {
-            Some(addr) => {
-                let entry = addr - WRAPPER_ENTRY_OFFSET;
-                info!(
-                    addr = format!("0x{entry:X}"),
-                    "Resolved ApplySpEffect function"
-                );
-                Some(entry)
-            }
-            None => {
-                warn!("ApplySpEffect AOB pattern not found (or ambiguous) in eldenring.exe");
-                None
-            }
-        }
+        let Some(found) = scan_pattern_unique(base, size, APPLY_SP_EFFECT_PATTERN) else {
+            warn!("ApplySpEffect AOB pattern not found (or ambiguous) in eldenring.exe");
+            return None;
+        };
+        // SAFETY: an entry at or past `base` lies in the module image
+        // scanned above, its 19 bytes ending before the match.
+        let Some(entry) = found.checked_sub(WRAPPER_ENTRY_OFFSET).filter(|&entry| {
+            entry >= base
+                && unsafe { std::slice::from_raw_parts(entry as *const u8, WRAPPER_PROLOGUE.len()) }
+                    == WRAPPER_PROLOGUE
+        }) else {
+            warn!(
+                found = format_args!("0x{found:X}"),
+                "ApplySpEffect prologue not the expected one, SpEffects disabled"
+            );
+            return None;
+        };
+        info!(
+            addr = format!("0x{entry:X}"),
+            "Resolved ApplySpEffect function"
+        );
+        Some(entry)
     })
 }
 
@@ -221,11 +242,13 @@ pub fn apply_speffect(effect_id: u32) -> bool {
 /// Every read after PlayerIns (which `read_player_ins` reads raw, as
 /// `apply_speffect` does) and the write go through `PointerChain`
 /// (ReadProcessMemory / WriteProcessMemory), so an entry freed under the
-/// walk fails instead of faulting.
+/// walk fails instead of faulting. The list's offsets are 1.17.x's: false
+/// on another game version (`layout_known`), where the row then runs its
+/// own duration.
 pub fn set_speffect_timer(effect_id: u32, seconds: f32) -> bool {
     profile_span!("sp_effect_apply.set_speffect_timer");
     let player_ins = read_player_ins(&Pointers::new());
-    if player_ins.is_null() {
+    if player_ins.is_null() || !layout_known() {
         return false;
     }
     let read_ptr = |addr: usize| {

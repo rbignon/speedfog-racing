@@ -20,6 +20,7 @@
 //! check.
 
 use std::ffi::c_void;
+use std::sync::OnceLock;
 
 use libeldenring::memedit::PointerChain;
 use libeldenring::params::{
@@ -27,6 +28,8 @@ use libeldenring::params::{
     PARAMS,
 };
 use libeldenring::pointers::Pointers;
+use libeldenring::prelude::base_addresses::Version;
+use libeldenring::version::get_version;
 use once_cell::sync::Lazy;
 use tracing::{info, warn};
 use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
@@ -43,6 +46,31 @@ use crate::core::item_inventory::{
 };
 use crate::core::timed_effects::SpEffectTiming;
 use crate::profile_span;
+
+/// Whether this game version is one the raw offsets race items write
+/// through were checked on: 1.17.x. Elsewhere those writes and the game's
+/// equip function are left alone (the render bit, the scale, the chr set
+/// walk, a SpEffect's timer, the junk weapon): the effect then does nothing
+/// in the game, which beats a write into whatever sits at that offset.
+/// Resolved once per process, an unknown version logged then.
+pub fn layout_known() -> bool {
+    static KNOWN: OnceLock<bool> = OnceLock::new();
+    *KNOWN.get_or_init(|| {
+        let version = get_version();
+        let known = matches!(
+            version,
+            Version::V2_07_0 | Version::V2_07_1 | Version::V2_07_2
+        );
+        if !known {
+            let (major, minor, patch): (u32, u32, u32) = version.into();
+            warn!(
+                exe_version = format_args!("{major}.{minor}.{patch}"),
+                "[ITEMS] Game version outside 1.17.x: the race item effects written into game memory are off"
+            );
+        }
+        known
+    })
+}
 
 /// Goods type flag in item ID encoding (high nibble 0x4 = EquipParamGoods).
 const GOODS_TYPE_FLAG: u32 = 0x4000_0000;

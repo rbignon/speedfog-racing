@@ -45,7 +45,7 @@ The split is intentional: the user's chosen skin is per-session, the catalog is 
 
 ## Function Resolution: AOB Pattern Scan
 
-Elden Ring does not expose the apply wrapper as a stable export, and `libeldenring`'s pointer table doesn't include it. The mod locates it by scanning the executable section of `eldenring.exe` for a 19-byte pattern matching a unique instruction sequence inside the wrapper body; the entry point is the match address minus `0x1D`.
+Elden Ring does not expose the apply wrapper as a stable export, and `libeldenring`'s pointer table doesn't include it. The mod locates it by scanning the executable section of `eldenring.exe` for a 19-byte pattern matching a unique instruction sequence inside the wrapper body; the entry point is the match address minus `0x1D`, kept only when the wrapper's 19-byte prologue sits there (`WRAPPER_PROLOGUE`: `mov rax, rsp; mov [rax+8], rbx; mov [rax+0x10], rsi; push rdi; sub rsp, 0xC0`, the same bytes in every executable from 1.10 to 1.17.2). The pattern matches inside the body, so without that check a build keeping the body behind another prologue would have the mod call into the middle of an instruction.
 
 ### Pattern Source
 
@@ -132,12 +132,13 @@ INFO [PHANTOM_SKIN] Applied skin=gold-aura id=1450700
 
 ## Failure Modes
 
-| Symptom                                                        | Cause                                                                             | Recovery                               |
-| -------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------- |
-| `ApplySpEffect AOB pattern not found (or ambiguous)`           | Game patch changed the wrapper's code, or the pattern now matches more than once. | Update `APPLY_SP_EFFECT_PATTERN`.      |
-| `Skin not in this seed's catalog (older seed?)`                | Seed was generated before the skin was added to the catalog.                      | Regenerate seed, or pick another skin. |
-| `Seed catalog has the skin but no SpEffects; nothing to apply` | Catalog entry has empty `speffects` (build-time bug).                             | Fix `data/phantom_skins.toml`.         |
-| `Cannot apply SpEffect: player not loaded yet` (debug)         | Polled mid-loading screen.                                                        | Self-heals, the next tick succeeds.    |
+| Symptom                                                           | Cause                                                                             | Recovery                                                                  |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `ApplySpEffect AOB pattern not found (or ambiguous)`              | Game patch changed the wrapper's code, or the pattern now matches more than once. | Update `APPLY_SP_EFFECT_PATTERN`.                                         |
+| `ApplySpEffect prologue not the expected one, SpEffects disabled` | The pattern still matches, but the function's entry moved or changed.             | Read the new entry, update `WRAPPER_ENTRY_OFFSET` and `WRAPPER_PROLOGUE`. |
+| `Skin not in this seed's catalog (older seed?)`                   | Seed was generated before the skin was added to the catalog.                      | Regenerate seed, or pick another skin.                                    |
+| `Seed catalog has the skin but no SpEffects; nothing to apply`    | Catalog entry has empty `speffects` (build-time bug).                             | Fix `data/phantom_skins.toml`.                                            |
+| `Cannot apply SpEffect: player not loaded yet` (debug)            | Polled mid-loading screen.                                                        | Self-heals, the next tick succeeds.                                       |
 
 ## Testing
 

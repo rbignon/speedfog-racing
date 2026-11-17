@@ -61,12 +61,10 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use libeldenring::memedit::PointerChain;
 use libeldenring::params::{LockCamParam, PARAMS};
 use libeldenring::pointers::{Pointers, SpeedTargetResolution};
-use libeldenring::prelude::base_addresses::Version;
-use libeldenring::version::get_version;
 use once_cell::sync::Lazy;
 use tracing::{debug, info, warn};
 
-use super::race_items::{read_bytes, read_ptr};
+use super::race_items::{layout_known, read_bytes, read_ptr};
 use super::sp_effect_apply::{player_ins_offset, read_player_ins};
 use crate::core::foes::{
     self, FoesRecord, RenderWrite, CHR_SET_ENTRY_SIZE, HOLDER_BLOCK_SIZE, MAX_CHR_SET_CAPACITY,
@@ -104,18 +102,9 @@ pub(super) struct ChrSetHead {
     pub(super) entries: usize,
 }
 
-/// Whether the WorldChrMan offsets this module walks are known: 1.17.x,
-/// the game versions they were checked on.
-fn chr_set_offsets_known() -> bool {
-    matches!(
-        get_version(),
-        Version::V2_07_0 | Version::V2_07_1 | Version::V2_07_2
-    )
-}
-
 /// Torrent's animation speed: the first entry of the summon buddy set
 /// embedded in WorldChrMan, through the player's chain. None when that
-/// entry is empty or unreadable. 1.17.x only (`chr_set_offsets_known`).
+/// entry is empty or unreadable. 1.17.x only (`layout_known`).
 fn torrent_animation_speed() -> Option<PointerChain<f32>> {
     let wcm = read_ptr(Pointers::new().base_addresses.world_chr_man)?;
     let torrent = read_ptr(wcm + WCM_SUMMON_BUDDY_CHR_SET_OFFSET + CHR_SET_ENTRIES_OFFSET)
@@ -134,11 +123,11 @@ fn player_ins() -> usize {
 }
 
 /// Draw the player (`shown`) or not. False when the player or its render
-/// byte is unreadable.
+/// byte is unreadable, or on a game version outside 1.17.x (`layout_known`).
 pub fn set_player_rendered(shown: bool) -> bool {
     profile_span!("race_items.set_player_rendered");
     let player = player_ins();
-    if player == 0 {
+    if player == 0 || !layout_known() {
         return false;
     }
     let Some(before) = set_render_bit(player, shown) else {
@@ -155,11 +144,12 @@ pub fn set_player_rendered(shown: bool) -> bool {
 }
 
 /// Set the player's scale on its three axes. False when the player or its
-/// ChrCtrl is unreadable, or the write fails.
+/// ChrCtrl is unreadable, the write fails, or on a game version outside
+/// 1.17.x (`layout_known`).
 pub fn set_player_scale(scale: f32) -> bool {
     profile_span!("race_items.set_player_scale");
     let player = player_ins();
-    if player == 0 {
+    if player == 0 || !layout_known() {
         return false;
     }
     let chain =
@@ -195,7 +185,7 @@ pub fn set_anim_speed(speed: f32) -> bool {
         }
         info!(before, speed, "[ITEMS] Player animation speed written");
     }
-    let torrent = if chr_set_offsets_known() {
+    let torrent = if layout_known() {
         torrent_animation_speed().ok_or("summon buddy set entry empty")
     } else {
         match pointers.torrent_animation_speed.resolve() {
@@ -307,11 +297,11 @@ pub fn set_camera(variant: Option<CameraVariant>, originals: &mut HashMap<u64, C
 /// mod hid: a hide walk rebuilds it from what it met (each hide recorded
 /// once its write worked), a show walk empties it. Returns how many render
 /// bits changed. Every read is fault-safe; each set's entries are read in
-/// one call. Only on 1.17.x (`chr_set_offsets_known`).
+/// one call. Only on 1.17.x (`layout_known`).
 pub fn walk_foes(hide: bool, record: &mut FoesRecord) -> usize {
     profile_span!("race_items.walk_foes");
     let mut walk = record.walk(hide);
-    if !chr_set_offsets_known() {
+    if !layout_known() {
         warn!("[ITEMS] Foes walk skipped: chr set offsets unknown for this game version");
         walk.missed_set();
         walk.finish();
