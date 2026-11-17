@@ -180,12 +180,21 @@ async def confirm_grant(
 def pending_grant_message(
     participant: Participant, graph_json: Mapping[str, Any] | None
 ) -> ItemGrantMessage | None:
-    """The grant message for a held, unconfirmed item (re-sent until confirmed)."""
+    """The grant message for a held, unconfirmed item (re-sent until confirmed).
+    None for an item no rule knows any more (a seed generated before it went
+    still lists it in its catalog): its banner has no rule to come from."""
     held = participant.held_item
     if not held or held.get("confirmed") or graph_json is None:
         return None
     entry = extract_race_item_catalog(graph_json).items.get(held["item"])
     if entry is None:
+        return None
+    if base_key(held["item"]) not in ITEM_RULES:
+        logger.warning(
+            "Held race item %s has no rule: its grant is not sent again (participant %s)",
+            held["item"],
+            participant.id,
+        )
         return None
     return ItemGrantMessage(
         grant_id=held["grant_id"], item=held["item"], banner=grant_banner(held["item"], entry)

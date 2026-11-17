@@ -25,6 +25,7 @@ from speedfog_racing.models import (
 from speedfog_racing.services.race_items import RACE_ITEMS_PLUGIN, PendingReport, shield_banner
 from speedfog_racing.websocket.race.items import (
     ItemResolution,
+    pending_grant_message,
     reconcile_inventory,
     resolve_item_report,
     resolve_item_use,
@@ -892,3 +893,21 @@ async def test_a_star_or_shield_blocks_the_new_items_without_a_report(items_db):
     blocked = await _use(items_db, race_id, ids["Alice"], pending_reports=pending)
     assert blocked.effects == [] and len(blocked.removals) == 1
     assert pending == {}
+
+
+def test_a_held_item_no_rule_knows_gets_no_pending_grant():
+    # A seed generated before the Mini went still lists it: a Mini held and
+    # not confirmed yet must not break the auth that would send it again.
+    graph = {
+        **GRAPH,
+        RACE_ITEMS_PLUGIN: {
+            **GRAPH[RACE_ITEMS_PLUGIN],
+            "items": {**GRAPH[RACE_ITEMS_PLUGIN]["items"], "mini": _item("Mini", 60401)},
+        },
+    }
+    held = {"grant_id": 3, "item": "mini", "confirmed": False, "igt_ms": 1000}
+    assert pending_grant_message(Participant(held_item=held), graph) is None
+    # A known item still goes out.
+    held = {"grant_id": 4, "item": "red_shell", "confirmed": False, "igt_ms": 1000}
+    message = pending_grant_message(Participant(held_item=held), graph)
+    assert message is not None and message.item == "red_shell"

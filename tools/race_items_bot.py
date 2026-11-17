@@ -56,6 +56,7 @@ import sys
 import time
 import uuid
 from collections import deque
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -81,6 +82,20 @@ def node_flags(graph: dict[str, Any]) -> dict[str, int]:
     ):
         flags.setdefault(node, int(flag))
     return flags
+
+
+def give_refusal(
+    catalog_items: Collection[str], ruled: Collection[str], item: str
+) -> str | None:
+    """Why `give` refuses ITEM, or None: an item outside the seed's catalog,
+    or one outside `ruled`, the catalog keys a server rule knows (a seed
+    generated before an item went still lists it, and the server could not
+    resolve it)."""
+    if item not in catalog_items:
+        return f"no item {item!r}: {', '.join(sorted(catalog_items))}"
+    if item not in ruled:
+        return f"no rule for {item!r} any more: it cannot be given"
+    return None
 
 
 def forward_path(
@@ -585,8 +600,12 @@ class Console:
         from speedfog_racing.database import async_session_maker
         from speedfog_racing.models import Participant, User
 
-        if item not in self.catalog.items:
-            log(f"no item {item!r}: {', '.join(sorted(self.catalog.items))}")
+        from speedfog_racing.services.race_items import ITEM_RULES, base_key
+
+        ruled = [key for key in self.catalog.items if base_key(key) in ITEM_RULES]
+        refusal = give_refusal(self.catalog.items, ruled, item)
+        if refusal is not None:
+            log(refusal)
             return
         async with async_session_maker() as db:
             p = (

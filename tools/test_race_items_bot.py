@@ -5,7 +5,7 @@ Run from tools/: cd tools && uv run --project ../server pytest test_race_items_b
 
 from __future__ import annotations
 
-from race_items_bot import deepest_nodes, forward_path, node_flags
+from race_items_bot import deepest_nodes, forward_path, give_refusal, node_flags
 
 GRAPH = {
     "nodes": {
@@ -58,3 +58,12 @@ def test_the_current_node_is_not_a_goal():
 
 def test_deepest_nodes_stop_before_the_final_boss():
     assert deepest_nodes(GRAPH) == {"deep"}
+
+
+def test_give_refuses_an_item_the_seed_or_the_rules_lack():
+    # A seed generated before the Mini went still lists it; no rule knows it.
+    catalog = {"mini", "red_shell"}
+    ruled = {"red_shell"}
+    assert give_refusal(catalog, ruled, "red_shell") is None
+    assert give_refusal(catalog, ruled, "mini") is not None
+    assert give_refusal(catalog, ruled, "banana") is not None
