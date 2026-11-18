@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import io
 import zipfile
 
 import pytest
+import generate_pool
 from generate_pool import (
     POOLS_DIR,
     add_dll_to_config,
     deep_merge,
     process_seed,
     resolve_pool_config,
+    run_speedfog,
     validate_pool_config,
 )
 
@@ -303,3 +306,45 @@ class TestModConfig:
             assert (
                 "speedfog_abc123def456/lib/RandomizerHelper_config.ini" in zf.namelist()
             )
+
+
+class TestRunSpeedfogCommand:
+    @pytest.fixture
+    def commands(self, monkeypatch):
+        """Replace the speedfog subprocess; yield the commands it was given."""
+        seen: list[list[str]] = []
+
+        class FakeProc:
+            returncode = 0
+            stdout = io.StringIO("")
+
+            def __init__(self, command, **kwargs):
+                seen.append(command)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def kill(self):
+                pass
+
+        monkeypatch.setattr(generate_pool.subprocess, "Popen", FakeProc)
+        return seen
+
+    def test_max_attempts_is_forwarded(self, commands, tmp_path):
+        (tmp_path / "123").mkdir()
+
+        seed_dir = run_speedfog(
+            tmp_path, tmp_path / "c.toml", tmp_path, tmp_path, max_attempts=3000
+        )
+
+        assert seed_dir == tmp_path / "123"
+        command = commands[0]
+        assert command[command.index("--max-attempts") + 1] == "3000"
+
+    def test_speedfog_default_attempts_without_the_option(self, commands, tmp_path):
+        run_speedfog(tmp_path, tmp_path / "c.toml", tmp_path, tmp_path)
+
+        assert "--max-attempts" not in commands[0]

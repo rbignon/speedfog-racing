@@ -237,6 +237,16 @@ Examples:
         help="Number of parallel workers (default: 1, sequential)",
     )
     parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=None,
+        help=(
+            "Seeds speedfog draws before giving up on one pool seed"
+            " (default: speedfog's own, 100). Raise it for a pool that"
+            " rejects most draws, such as one with [budget] max_path_weight"
+        ),
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -272,6 +282,7 @@ def run_speedfog(
     *,
     verbose: bool = False,
     seed: int | None = None,
+    max_attempts: int | None = None,
 ) -> Path | None:
     """Run speedfog to generate a single seed.
 
@@ -279,7 +290,8 @@ def run_speedfog(
     Stdout/stderr are always captured to ``output_dir/generation.log``.
     If verbose is True, output is also printed to the terminal.
     ``seed`` fixes speedfog's RNG seed (single attempt, no reroll); by
-    default speedfog draws seeds until one generates.
+    default speedfog draws seeds until one generates, ``max_attempts``
+    of them at most (speedfog's own default when None).
     """
     command = [
         "uv",
@@ -293,6 +305,8 @@ def run_speedfog(
     ]
     if seed is not None:
         command += ["--seed", str(seed)]
+    if max_attempts is not None:
+        command += ["--max-attempts", str(max_attempts)]
     log_path = output_dir / "generation.log"
     with open(log_path, "w", encoding="utf-8") as log_file:
         try:
@@ -480,6 +494,7 @@ def generate_one_seed(
     failed_dir: Path,
     *,
     verbose: bool = False,
+    max_attempts: int | None = None,
 ) -> SeedResult:
     """Generate and process a single seed."""
     seed_slug = uuid.uuid4().hex[:12]
@@ -498,6 +513,7 @@ def generate_one_seed(
             temp_path,
             game_dir,
             verbose=verbose,
+            max_attempts=max_attempts,
         )
         if seed_dir is None:
             print(f"{prefix} Failed: speedfog generation error")
@@ -565,6 +581,10 @@ def main() -> int:
         print("Error: --jobs must be a positive integer")
         return 1
 
+    if args.max_attempts is not None and args.max_attempts <= 0:
+        print("Error: --max-attempts must be a positive integer")
+        return 1
+
     # Validate paths
     speedfog_path = get_speedfog_path(args)
     if not speedfog_path.exists():
@@ -617,6 +637,7 @@ def main() -> int:
                     output_pool_dir=pool_setup.output_dir,
                     failed_dir=pool_setup.failed_dir,
                     verbose=args.verbose,
+                    max_attempts=args.max_attempts,
                 )
             )
     else:
@@ -637,6 +658,7 @@ def main() -> int:
                     output_pool_dir=pool_setup.output_dir,
                     failed_dir=pool_setup.failed_dir,
                     verbose=args.verbose,
+                    max_attempts=args.max_attempts,
                 )
                 futures[fut] = (pool_setup.name, idx)
             for future in as_completed(futures):

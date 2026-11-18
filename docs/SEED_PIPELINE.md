@@ -39,7 +39,7 @@ python tools/generate_pool.py \
 
 1. **Generate seed number**: `uuid4().hex[:12]` (e.g., `a1b2c3d4e5f6`). Stored as `seed_number` in the DB.
 
-2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --logs --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`).
+2. **Run speedfog**: subprocess call via `uv run speedfog <config> -o <temp_dir> --game-dir <path>`. Each seed gets its own temp directory. Output is streamed to `<temp>/generation.log` (and optionally to stdout with `--verbose`). speedfog draws RNG seeds until one passes its validation, 100 at most by default; `--max-attempts N` raises that limit for a pool that rejects most draws, such as a Set Seed grind pool with `[budget] max_path_weight` (see speedfog's `docs/dag-generation.md`, "Fastest path cap", for the attempts a given cap needs). A draw costs about 10 ms and the 5 minute timeout of one speedfog run covers the draws plus the build: a few thousand attempts fit, tens of thousands do not.
 
 3. **Post-process the seed directory**:
    - Register the racing mod in `modengine2/config_speedfog.toml`'s `external_dlls` array (`"..\\lib\\speedfog_racing.dll"`). The path is resolved by ModEngine 2 against the config's directory, so the `..\` prefix walks back up to the seed root. The zip does not carry the DLL itself: the server appends its current build to every seed pack at download (see section 3), so a mod release needs no pool regeneration.
