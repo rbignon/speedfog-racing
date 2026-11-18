@@ -11,6 +11,12 @@ Usage:
     cd server && uv run python ../tools/extract_zone_times.py --report-only
     cd server && uv run python ../tools/extract_zone_times.py --since 2026-06-01 \\
         --types mini_dungeon legacy_dungeon --deviation 0 --min-samples 30
+    cd server && uv run python ../tools/extract_zone_times.py --bands \\
+        --since 2026-07-27 --bands-json /tmp/bands.json
+
+``--bands`` reports the major and final boss arenas per scaling band (early,
+mid, late: speedfog's ``weight_band``) and proposes ``weight = { early, mid,
+late }`` tables, in real minutes, for zone_metadata.toml.
 """
 
 from __future__ import annotations
@@ -23,9 +29,10 @@ import math
 import statistics
 import sys
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import asyncpg
 
@@ -38,6 +45,19 @@ DB_URL = "postgresql://speedfog:speedfog@localhost/speedfog_racing"
 _SPEEDFOG_DATA = Path(__file__).resolve().parent.parent.parent / "speedfog" / "data"
 ZONE_METADATA_PATH = _SPEEDFOG_DATA / "zone_metadata.toml"
 CLUSTERS_JSON_PATH = _SPEEDFOG_DATA / "clusters.json"
+
+# Scaling bands of a major boss arena's weight: speedfog's own definition.
+sys.path.insert(0, str(_SPEEDFOG_DATA.parent))
+from speedfog.boss_arena_constraints import (  # noqa: E402
+    WEIGHT_BANDS,
+    weight_band,
+)
+
+BANDED_TYPES = ("major_boss", "final_boss")
+# A band measured on fewer clears takes the value of the nearest measured one.
+BAND_MIN_SAMPLES = 20
+# Clears a player needs before their speed is factored out of the estimate.
+PLAYER_MIN_CLEARS = 5
 
 
 def _round_half(value: float) -> float:
@@ -95,6 +115,7 @@ class ParticipantData:
     status: str
     igt_ms: int
     seed_id: str
+    user_id: str = ""
 
 
 async def load_participants(
@@ -106,7 +127,8 @@ async def load_participants(
     """
     rows = await conn.fetch(
         """
-        SELECT p.zone_history::text, p.status, p.igt_ms, r.seed_id::text
+        SELECT p.zone_history::text, p.status, p.igt_ms, r.seed_id::text,
+               p.user_id::text
         FROM participants p
         JOIN races r ON p.race_id = r.id
         WHERE p.zone_history IS NOT NULL
@@ -126,6 +148,7 @@ async def load_participants(
                     status=row["status"],
                     igt_ms=row["igt_ms"],
                     seed_id=str(row["seed_id"]),
+                    user_id=str(row["user_id"]),
                 )
             )
     return participants
@@ -178,12 +201,31 @@ def _compute_outcome(
     return "abandoned"
 
 
-def compute_cluster_durations(
+@dataclass(frozen=True)
+class Clear:
+    """One participant's cleared traversal of one node of their seed."""
+
+    node_id: str
+    minutes: float
+    tier: int | None  # scaling tier of the node in that seed, None if absent
+    user_id: str
+    # The seed placed this (non final_boss) cluster as its final boss. Only
+    # yielded on request: see ``iter_cluster_clears``.
+    as_final: bool = False
+    # The seed shuffled the boss of this arena: the time measures the drawn
+    # boss. Major arenas with a shuffled boss are dropped before this point
+    # unless they are the seed's final boss or of type final_boss.
+    shuffled: bool = False
+
+
+def iter_cluster_clears(
     participants: list[ParticipantData],
     seed_graphs: dict[str, dict],
     cluster_types: Mapping[str, str] | None = None,
-) -> dict[str, list[float]]:
-    """Compute cluster traversal durations in minutes.
+    *,
+    include_final: bool = False,
+) -> Iterator[Clear]:
+    """Yield cluster traversal durations in minutes, one per clear.
 
     For each participant, accumulates total time spent in each node across
     all visits (including re-traversals after deaths or backtracks), then
@@ -210,9 +252,12 @@ def compute_cluster_durations(
     from before a cluster's type was reclassified are kept: the zones and
     the traversal are the same.
 
-    Returns: {node_id: [cluster_duration_minutes, ...]}
+    ``include_final`` yields the clears of a cluster placed as the seed's
+    final boss too, marked ``as_final``, instead of dropping them: the only
+    data there is for a major boss the pools only ever use as a final boss.
+
+    Prints the filter counts on stderr once exhausted.
     """
-    cluster_durations: dict[str, list[float]] = defaultdict(list)
     skipped_backed = 0
     skipped_other = 0
     skipped_final = 0
@@ -277,12 +322,29 @@ def compute_cluster_durations(
                     and cluster_type != "final_boss"
                 ):
                     skipped_final += 1
+                    if include_final:
+                        yield Clear(
+                            node_id=node_id,
+                            minutes=total_ms / 1000.0 / 60.0,
+                            tier=seed_node.get("tier"),
+                            user_id=p.user_id,
+                            as_final=True,
+                            shuffled=bool(seed_node.get("randomized_bosses")),
+                        )
                     continue
                 if cluster_type == "major_boss" and seed_node.get("randomized_bosses"):
                     skipped_shuffled += 1
                     continue
 
-            cluster_durations[node_id].append(total_ms / 1000.0 / 60.0)
+            yield Clear(
+                node_id=node_id,
+                minutes=total_ms / 1000.0 / 60.0,
+                tier=seed_nodes.get(node_id, {}).get("tier"),
+                user_id=p.user_id,
+                shuffled=bool(seed_nodes.get(node_id, {}).get("randomized_bosses"))
+                and cluster_types is not None
+                and cluster_types.get(node_id) in BANDED_TYPES,
+            )
 
     print(
         f"  Filtered: {skipped_backed} backed, {skipped_other} playing/abandoned, "
@@ -290,7 +352,211 @@ def compute_cluster_durations(
         file=sys.stderr,
     )
 
+
+def compute_cluster_durations(
+    participants: list[ParticipantData],
+    seed_graphs: dict[str, dict],
+    cluster_types: Mapping[str, str] | None = None,
+) -> dict[str, list[float]]:
+    """Cluster traversal durations in minutes (see ``iter_cluster_clears``).
+
+    Returns: {node_id: [cluster_duration_minutes, ...]}
+    """
+    cluster_durations: dict[str, list[float]] = defaultdict(list)
+    for clear in iter_cluster_clears(participants, seed_graphs, cluster_types):
+        cluster_durations[clear.node_id].append(clear.minutes)
     return cluster_durations
+
+
+@dataclass
+class BandEstimate:
+    """Per-band clear time of one major or final boss arena."""
+
+    counts: dict[str, int]  # clears per band
+    plain: dict[str, float]  # median minutes, measured bands only
+    adjusted: dict[str, float]  # same, each player's speed factored out
+    weights: dict[str, float] | None  # proposal for every band, None if no data
+    from_final: bool = False  # measured on clears as a seed's final boss
+
+
+def _fill_bands(measured: Mapping[str, float]) -> dict[str, float] | None:
+    """Every band from the measured ones: a missing band takes the nearest
+    measured band's value (the later one when two are equally near)."""
+    if not measured:
+        return None
+    filled = {}
+    for i, band in enumerate(WEIGHT_BANDS):
+        nearest = min(
+            (b for b in WEIGHT_BANDS if b in measured),
+            key=lambda b: (abs(WEIGHT_BANDS.index(b) - i), -WEIGHT_BANDS.index(b)),
+        )
+        filled[band] = measured[nearest]
+    return filled
+
+
+def estimate_band_weights(
+    clears: list[Clear],
+    cluster_types: Mapping[str, str],
+    *,
+    min_samples: int = BAND_MIN_SAMPLES,
+    adjust: bool = True,
+) -> dict[str, BandEstimate]:
+    """``{cluster id: BandEstimate}`` for the major and final boss arenas.
+
+    A band's value is the median clear time of the arena at that band's
+    tiers, in real minutes; a band with fewer than ``min_samples`` clears
+    is not measured and takes the nearest measured band's value in
+    ``weights``. Clears without a tier, and clears of an arena whose boss
+    the seed shuffled, are ignored. Clears as a seed's final
+    boss (``as_final``) only count for a cluster with no measured band
+    otherwise: a major boss the pools never place mid-run.
+
+    ``adjust`` factors each player's speed out before taking the proposal's
+    median: fast players are over-represented on the hard, optional fights
+    and at late tiers, which a plain median reads as a short fight. A
+    player's factor is the median of ``log(minutes / cell median)`` over
+    their clears in measured cells, for players with at least
+    ``PLAYER_MIN_CLEARS`` of them; factors are centered on their
+    clear-weighted median so the overall level stays that of the typical
+    participant.
+    """
+    cells: dict[tuple[str, str], list[Clear]] = defaultdict(list)
+    final_cells: dict[tuple[str, str], list[Clear]] = defaultdict(list)
+    for clear in clears:
+        if clear.shuffled:
+            continue  # another boss stood in the arena
+        if cluster_types.get(clear.node_id) in BANDED_TYPES and clear.tier is not None:
+            target = final_cells if clear.as_final else cells
+            target[(clear.node_id, weight_band(clear.tier))].append(clear)
+    measured_nodes = {
+        node_id for (node_id, _), group in cells.items() if len(group) >= min_samples
+    }
+    from_final = set()
+    for (node_id, band), group in final_cells.items():
+        if node_id not in measured_nodes:
+            cells[(node_id, band)].extend(group)
+            from_final.add(node_id)
+
+    plain = {
+        cell: statistics.median(c.minutes for c in group)
+        for cell, group in cells.items()
+        if len(group) >= min_samples
+    }
+
+    logs: dict[str, list[float]] = defaultdict(list)
+    for cell, group in cells.items():
+        if cell in plain:
+            for c in group:
+                logs[c.user_id].append(math.log(c.minutes / plain[cell]))
+    factors = {
+        user: statistics.median(values)
+        for user, values in logs.items()
+        if len(values) >= PLAYER_MIN_CLEARS
+    }
+    measured_clears = [c for cell in plain for c in cells[cell]]
+    center = (
+        statistics.median(factors.get(c.user_id, 0.0) for c in measured_clears)
+        if measured_clears
+        else 0.0
+    )
+    adjusted = {
+        cell: statistics.median(
+            c.minutes / math.exp(factors.get(c.user_id, center) - center)
+            for c in cells[cell]
+        )
+        for cell in plain
+    }
+
+    estimates = {}
+    for node_id in sorted({cell[0] for cell in cells}):
+        chosen = adjusted if adjust else plain
+        measured = {
+            b: chosen[(node_id, b)] for b in WEIGHT_BANDS if (node_id, b) in chosen
+        }
+        filled = _fill_bands(measured)
+        estimates[node_id] = BandEstimate(
+            counts={b: len(cells.get((node_id, b), [])) for b in WEIGHT_BANDS},
+            plain={
+                b: plain[(node_id, b)] for b in WEIGHT_BANDS if (node_id, b) in plain
+            },
+            adjusted={
+                b: adjusted[(node_id, b)]
+                for b in WEIGHT_BANDS
+                if (node_id, b) in adjusted
+            },
+            weights=(
+                {b: max(0.01, round(v, 2)) for b, v in filled.items()}
+                if filled is not None
+                else None
+            ),
+            from_final=node_id in from_final,
+        )
+    return estimates
+
+
+def current_band_weights(info: dict, metadata: dict, node_id: str) -> dict[str, float]:
+    """The cluster's weight in each band today (a flat weight three times)."""
+    bands = info.get("weights")
+    if isinstance(bands, dict):
+        return {b: float(bands[b]) for b in WEIGHT_BANDS}
+    weight, _ = get_current_weight(node_id, info, metadata)
+    return {b: float(weight) for b in WEIGHT_BANDS}
+
+
+def format_band_report(
+    estimates: Mapping[str, BandEstimate],
+    cluster_info: dict[str, dict],
+    current_metadata: dict,
+) -> list[str]:
+    """Per-band table of the major arenas, then the proposed TOML tables.
+
+    A single-zone cluster is proposed under ``[zones.<zone>]``, unless it
+    already carries a ``[clusters.<id>]`` weight (which wins); a multi-zone
+    cluster under ``[clusters.<id>]``.
+    """
+
+    def cell(values: Mapping[str, float], band: str) -> str:
+        return f"{values[band]:5.2f}" if band in values else "    -"
+
+    lines = ["", "=" * 80, "MAJOR BOSS ARENAS PER SCALING BAND (minutes)", "=" * 80]
+    lines.append(
+        f"{'cluster':<34} {'current e/m/l':<17} {'plain e/m/l':<17} "
+        f"{'adjusted e/m/l':<17} n e/m/l"
+    )
+    proposals: list[str] = []
+    for node_id, est in estimates.items():
+        info = cluster_info[node_id]
+        current = current_band_weights(info, current_metadata, node_id)
+        counts = "/".join(str(est.counts[b]) for b in WEIGHT_BANDS)
+        lines.append(
+            f"{node_id[:34]:<34} "
+            f"{' '.join(cell(current, b) for b in WEIGHT_BANDS)} "
+            f"{' '.join(cell(est.plain, b) for b in WEIGHT_BANDS)} "
+            f"{' '.join(cell(est.adjusted, b) for b in WEIGHT_BANDS)} {counts}"
+        )
+        if est.weights is None:
+            continue
+        table = ", ".join(f"{b} = {est.weights[b]:g}" for b in WEIGHT_BANDS)
+        in_clusters = node_id in current_metadata.get("clusters", {}) and (
+            "weight" in current_metadata["clusters"][node_id]
+        )
+        if info["n_zones"] == 1 and not in_clusters:
+            header = f"[zones.{info['primary_zone']}]"
+        else:
+            header = f"[clusters.{node_id}]"
+        filled = [b for b in WEIGHT_BANDS if b not in est.adjusted]
+        notes = []
+        if filled:
+            notes.append(f"{', '.join(filled)} from the nearest band")
+        if est.from_final:
+            notes.append("measured as a final boss")
+        note = f"  # {'; '.join(notes)}" if notes else ""
+        proposals.append(f"{header}  # {info['display_name']}")
+        proposals.append(f"weight = {{ {table} }}{note}")
+        proposals.append("")
+    lines += ["", "=" * 80, "PROPOSED BAND TABLES (zone_metadata.toml)", "=" * 80, ""]
+    lines += proposals
+    return lines
 
 
 def compute_duration_stats(durations: list[float]) -> dict:
@@ -322,6 +588,7 @@ def build_cluster_info(clusters_json: dict[str, dict]) -> dict[str, dict]:
             "n_zones": len(zones),
             "primary_zone": zones[0] if zones else cluster_id,
             "weight": cdata.get("weight"),
+            "weights": cdata.get("weights"),
             "display_name": cdata.get("display_name", ""),
         }
     return info
@@ -376,13 +643,20 @@ def get_current_weight(
     Otherwise single-zone: zone override from [zones.*] or type default;
     multi-zone: clusters.json weight.
 
+    A per-band weight table (major boss arenas) reads as its mid value
+    here; ``current_band_weights`` gives the three bands.
+
     Returns: (effective_weight, override_value_or_None)
     """
+
+    def scalar(weight: Any) -> int | float:
+        return weight["mid"] if isinstance(weight, dict) else weight
+
     clusters_meta = metadata.get("clusters", {})
     if node_id in clusters_meta:
         cm = clusters_meta[node_id]
         if isinstance(cm, dict) and "weight" in cm:
-            return cm["weight"], cm["weight"]
+            return scalar(cm["weight"]), scalar(cm["weight"])
 
     if info["n_zones"] == 1:
         zone_name = info["primary_zone"]
@@ -390,7 +664,7 @@ def get_current_weight(
         if zone_name in zones_meta:
             zm = zones_meta[zone_name]
             if isinstance(zm, dict) and "weight" in zm:
-                return zm["weight"], zm["weight"]
+                return scalar(zm["weight"]), scalar(zm["weight"])
             if isinstance(zm, int | float):
                 return zm, zm
         defaults = metadata.get("defaults", {})
@@ -686,6 +960,34 @@ async def main():
         help="Only report clusters of these types (e.g. mini_dungeon legacy_dungeon)",
     )
     parser.add_argument(
+        "--bands",
+        action="store_true",
+        help=(
+            "Report the major and final boss arenas per scaling band and "
+            "propose weight = { early, mid, late } tables, instead of the "
+            "usual report"
+        ),
+    )
+    parser.add_argument(
+        "--bands-json",
+        type=Path,
+        help="With --bands: also write the proposals as {cluster_id: bands} JSON",
+    )
+    parser.add_argument(
+        "--band-min-samples",
+        type=int,
+        default=BAND_MIN_SAMPLES,
+        help=(
+            "With --bands: clears a band needs to be measured "
+            f"(default: {BAND_MIN_SAMPLES}); a thinner band takes the nearest one"
+        ),
+    )
+    parser.add_argument(
+        "--no-adjust",
+        action="store_true",
+        help="With --bands: propose plain medians, player speed not factored out",
+    )
+    parser.add_argument(
         "--db-url",
         default=DB_URL,
         help="PostgreSQL connection URL",
@@ -705,12 +1007,47 @@ async def main():
             file=sys.stderr,
         )
 
-        all_cluster_durations = compute_cluster_durations(
-            participants,
-            seed_graphs,
-            {nid: info["type"] for nid, info in cluster_info.items()},
-        )
+        cluster_types = {nid: info["type"] for nid, info in cluster_info.items()}
         current_metadata = load_zone_metadata(args.metadata)
+
+        if args.bands:
+            if args.since is None:
+                print(
+                    "WARNING: --bands without --since: tiers above 21 were "
+                    "clamped before 2026-07-27, older late clears were played "
+                    "at a lower scaling than their tier says",
+                    file=sys.stderr,
+                )
+            estimates = estimate_band_weights(
+                list(
+                    iter_cluster_clears(
+                        participants, seed_graphs, cluster_types, include_final=True
+                    )
+                ),
+                cluster_types,
+                min_samples=args.band_min_samples,
+                adjust=not args.no_adjust,
+            )
+            print(
+                "\n".join(format_band_report(estimates, cluster_info, current_metadata))
+            )
+            if args.bands_json:
+                args.bands_json.write_text(
+                    json.dumps(
+                        {
+                            nid: {"weights": est.weights, "counts": est.counts}
+                            for nid, est in estimates.items()
+                            if est.weights is not None
+                        },
+                        indent=2,
+                    ),
+                    encoding="utf-8",
+                )
+            return
+
+        all_cluster_durations = compute_cluster_durations(
+            participants, seed_graphs, cluster_types
+        )
 
         # Filter to current clusters only (ignore stale data from old seeds)
         cluster_durations = {
