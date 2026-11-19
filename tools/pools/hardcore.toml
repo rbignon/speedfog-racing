@@ -15,6 +15,12 @@ Smithing stones are sold at Roundtable
 [run]
 sentry_torch_shop = false
 
+[budget]
+# The late tiers (final_tier 28) stretch the gaps between major bosses: at
+# _base's 4, generation exhausts 100 attempts on 44% of runs (48% on
+# hardcore_boss_shuffle, 16% on hardcore_boss_rush, which both inherit this).
+tolerance = 4.5
+
 [requirements]
 legacy_dungeons = 2
 bosses = 7
