@@ -344,6 +344,11 @@ class TestRunSpeedfogCommand:
         command = commands[0]
         assert command[command.index("--max-attempts") + 1] == "3000"
 
+    def test_cli_default_raises_speedfog_attempts(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["generate_pool.py", "--pool", "standard"])
+
+        assert generate_pool.parse_args().max_attempts == 300
+
     def test_speedfog_default_attempts_without_the_option(self, commands, tmp_path):
         run_speedfog(tmp_path, tmp_path / "c.toml", tmp_path, tmp_path)
 

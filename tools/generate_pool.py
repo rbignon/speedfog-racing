@@ -44,6 +44,10 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 POOLS_DIR = SCRIPT_DIR / "pools"
 DLL_NAME = "speedfog_racing.dll"
 SPEEDFOG_TIMEOUT_SECONDS = 5 * 60
+# speedfog's own default (100) is exhausted on 7 to 23% of runs by the
+# tolerance-4 pools; 300 leaves about 1% at worst (chill). Attempts only cost
+# the Python generation, a few seconds for 300.
+DEFAULT_MAX_ATTEMPTS = 300
 
 
 def deep_merge(base: dict, override: dict) -> dict:
@@ -239,10 +243,10 @@ Examples:
     parser.add_argument(
         "--max-attempts",
         type=int,
-        default=None,
+        default=DEFAULT_MAX_ATTEMPTS,
         help=(
             "Seeds speedfog draws before giving up on one pool seed"
-            " (default: speedfog's own, 100). Raise it for a pool that"
+            f" (default: {DEFAULT_MAX_ATTEMPTS}). Raise it for a pool that"
             " rejects most draws, such as one with [budget] max_path_weight"
         ),
     )
@@ -581,7 +585,7 @@ def main() -> int:
         print("Error: --jobs must be a positive integer")
         return 1
 
-    if args.max_attempts is not None and args.max_attempts <= 0:
+    if args.max_attempts <= 0:
         print("Error: --max-attempts must be a positive integer")
         return 1
 
