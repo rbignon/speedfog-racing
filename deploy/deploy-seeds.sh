@@ -27,6 +27,7 @@ UPLOAD_ONLY=false
 DISCARD=false
 VERBOSE=""
 JOBS=""
+MAX_ATTEMPTS=""
 FAILED_POOLS=()
 PARTIAL_POOLS=()
 
@@ -45,6 +46,7 @@ Options:
   --output DIR      Local output directory (default: tools/output)
   --discard         Mark every old seed not DISCARDED yet as DISCARDED (after extract, before scan)
   -j, --jobs N      Parallel workers across all pools (default: 1, sequential)
+  --max-attempts N  Seeds speedfog draws per pool seed (default: generate_pool.py's)
   -v, --verbose     Pass -v to generate_pool.py
   -h, --help        Show this help
 
@@ -81,6 +83,7 @@ while [[ $# -gt 0 ]]; do
         --output) OUTPUT_DIR="$2"; shift 2 ;;
         --discard) DISCARD=true; shift ;;
         -j|--jobs) JOBS="$2"; shift 2 ;;
+        --max-attempts) MAX_ATTEMPTS="$2"; shift 2 ;;
         -v|--verbose) VERBOSE="-v"; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1"; exit 1 ;;
@@ -197,6 +200,7 @@ if [[ "$UPLOAD_ONLY" == false ]]; then
         --game-dir "$GAME_DIR" \
         --output "$OUTPUT_DIR" \
         ${JOBS:+--jobs "$JOBS"} \
+        ${MAX_ATTEMPTS:+--max-attempts "$MAX_ATTEMPTS"} \
         $VERBOSE \
         && rc=0 || rc=$?
 
