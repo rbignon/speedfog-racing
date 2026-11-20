@@ -85,10 +85,7 @@ def _seed(suffix: str, graph: dict, status: SeedStatus = SeedStatus.AVAILABLE) -
 
 
 def _relay_race(organizer: User) -> Race:
-    race = Race(name="Relay", organizer_id=organizer.id)
-    # Task 2 gives Race a relay_team_size column; until then a plain attribute.
-    race.relay_team_size = 3  # type: ignore[attr-defined]
-    return race
+    return Race(name="Relay", organizer_id=organizer.id, relay_team_size=3)
 
 
 @pytest.fixture

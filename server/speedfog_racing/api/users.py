@@ -26,6 +26,7 @@ from speedfog_racing.models import (
     Pool,
     Race,
     RaceStatus,
+    RelayTeam,
     RunMode,
     Seed,
     TrainingSession,
@@ -165,6 +166,9 @@ async def get_my_races(
             selectinload(Race.seed).defer(Seed.graph_json),
             selectinload(Race.participants).options(
                 defer(Participant.zone_history), selectinload(Participant.user)
+            ),
+            selectinload(Race.relay_teams).options(
+                defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
             ),
             selectinload(Race.casters).selectinload(Caster.user),
         )
@@ -326,12 +330,23 @@ async def get_user_activity(
         .options(
             defer(Participant.zone_history),
             selectinload(Participant.race).selectinload(Race.seed).defer(Seed.graph_json),
+            selectinload(Participant.race)
+            .selectinload(Race.relay_teams)
+            .options(defer(RelayTeam.zone_history), defer(RelayTeam.character_state)),
         )
     )
     participations = part_q.scalars().all()
 
     # 2. Organized races
-    org_q = await db.execute(select(Race).where(Race.organizer_id == user_id))
+    org_q = await db.execute(
+        select(Race)
+        .where(Race.organizer_id == user_id)
+        .options(
+            selectinload(Race.relay_teams).options(
+                defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
+            )
+        )
+    )
     organized_races = org_q.scalars().all()
 
     # Batch-compute counts and placements for all relevant races
@@ -396,7 +411,15 @@ async def get_user_activity(
 
     # 3. Caster roles
     caster_q = await db.execute(
-        select(Caster).where(Caster.user_id == user_id).options(selectinload(Caster.race))
+        select(Caster)
+        .where(Caster.user_id == user_id)
+        .options(
+            selectinload(Caster.race).options(
+                selectinload(Race.relay_teams).options(
+                    defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
+                )
+            )
+        )
     )
     caster_roles = caster_q.scalars().all()
 
