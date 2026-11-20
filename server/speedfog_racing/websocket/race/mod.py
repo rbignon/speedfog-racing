@@ -48,7 +48,7 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.services.race_items import extract_race_item_catalog, seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.services.relay import leaderboard_entries, leaderboard_entry
+from speedfog_racing.services.relay import RelayTeamRow, leaderboard_entries, load_relay_row
 from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
@@ -664,6 +664,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             return await self._load_entity_for_status_update(db)
         return await self._load_entity(db)
 
+    async def _player_entry(
+        self, entity: Participant, graph_json: dict[str, Any] | None
+    ) -> Participant | RelayTeamRow:
+        """What a ``player_update`` for ``entity`` carries: the runner, or on a
+        relay race their team's row. The entity may come from a light loader
+        (no ``race.participants``), so the row is loaded on its own; a solo
+        race pays nothing."""
+        if not entity.race.is_relay or entity.relay_team_id is None:
+            return entity
+        async with self.session_maker() as db:
+            row = await load_relay_row(db, entity.relay_team_id, graph_json)
+        return row or entity
+
     def _get_graph_json(self, entity: Participant) -> dict[str, Any] | None:
         # Prefer cached graph_json (avoids lazy-loading race.seed when
         # the entity was loaded without it, e.g. _load_participant_no_seed).
@@ -850,7 +863,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await asyncio.gather(
                 manager.broadcast_player_update(
                     entity.race_id,
-                    leaderboard_entry(entity.race, entity, self._cached_graph_json),
+                    await self._player_entry(entity, self._cached_graph_json),
                     graph_json=self._cached_graph_json,
                     project_ghosts=entity.race.projects_ghosts,
                     weapons=weapons,
@@ -876,7 +889,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             else:
                 await manager.broadcast_player_update(
                     entity.race_id,
-                    leaderboard_entry(entity.race, entity, _get_graph_json(entity)),
+                    await self._player_entry(entity, _get_graph_json(entity)),
                     graph_json=_get_graph_json(entity),
                     project_ghosts=entity.race.projects_ghosts,
                     weapons=weapons,
@@ -954,7 +967,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
-                leaderboard_entry(entity.race, entity, seed_graph),
+                await self._player_entry(entity, seed_graph),
                 graph_json=seed_graph,
                 project_ghosts=entity.race.projects_ghosts,
             )
@@ -1010,7 +1023,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
-                leaderboard_entry(entity.race, entity, _get_graph_json(entity)),
+                await self._player_entry(entity, _get_graph_json(entity)),
                 graph_json=_get_graph_json(entity),
                 project_ghosts=entity.race.projects_ghosts,
             )
