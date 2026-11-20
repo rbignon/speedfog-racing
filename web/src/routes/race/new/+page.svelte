@@ -35,7 +35,7 @@
     { key: "classic", label: "Classic", tagline: "Same seed, no extra rule" },
     {
       key: "items",
-      label: "Items",
+      label: "Elden Drift",
       tagline: "Boss kills give items",
       isNew: true,
     },
@@ -271,7 +271,7 @@
         : speedrun
           ? "Create Speedrun Race"
           : items
-            ? "Create Items Race"
+            ? "Create Elden Drift Race"
             : "Create Race"}
     </h1>
     {#if setSeed !== null}
@@ -360,20 +360,26 @@
             <div class="pool-content format-content">
               {#if format === "items"}
                 <p class="hint">
-                  Each boss kill gives a Mario Kart style item to use on the
-                  other runners: the further back you are, the harder it hits.
+                  Elden Ring meets kart racing: each boss kill gives you an item
+                  to use against the other runners, and the further back you
+                  are, the harder it hits.
                 </p>
                 <RaceItemsLegend />
                 <p class="hint">
-                  Items races do not count on the Speedrun boards or the
+                  Elden Drift races do not count on the Speedrun boards or the
                   community stats.
                 </p>
               {:else if format === "speedrun"}
                 <p class="hint">
-                  Always a fresh seed and no reset, so the race counts on the
-                  Speedrun boards; a seed re-roll asks for a reason, sent to the
-                  admins. The game modes below then count only the fresh seeds a
-                  speedrun race can draw.
+                  Race for a place on the Speedrun boards: a fresh seed nobody
+                  has seen, no reset, and your time counts on them.
+                  <a href="/speedrun" target="_blank" rel="noopener"
+                    >See the boards</a
+                  >
+                </p>
+                <p class="hint">
+                  The game modes below count only the fresh seeds a speedrun
+                  race can draw.
                 </p>
               {:else}
                 <p class="hint">

@@ -193,7 +193,7 @@ describe("/race/new: the Speedrun format", () => {
   });
 });
 
-describe("/race/new: the Items format", () => {
+describe("/race/new: the Elden Drift (items) format", () => {
   it("only offers the pools holding items seeds, and counts those", async () => {
     vi.mocked(fetchPoolStats).mockResolvedValue({
       standard: pool("Standard", 1, 6),
@@ -207,7 +207,7 @@ describe("/race/new: the Items format", () => {
       name: "Create Race",
     }) as HTMLButtonElement;
 
-    await fireEvent.click(formatOption(/^Items/)!);
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
 
     // Standard stays selected with nothing to draw: no silent pool switch.
     expect(standard.disabled).toBe(true);
@@ -225,7 +225,7 @@ describe("/race/new: the Items format", () => {
       standard: pool("Standard", 1, 6, 0, 0, 2),
     });
     await openPage("");
-    await fireEvent.click(formatOption(/^Items/)!);
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
     await submitPrivate("Kart");
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
@@ -237,7 +237,7 @@ describe("/race/new: the Items format", () => {
       standard: pool("Standard", 1, 6, 0, 0, 2),
     });
     await openPage("");
-    await fireEvent.click(formatOption(/^Items/)!);
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
     await fireEvent.click(formatOption(/^Speedrun/)!);
     await submitPrivate("Fast");
 
@@ -295,7 +295,7 @@ describe("/race/new: seen seeds", () => {
 
     // An items race counts on no board, whatever seed it draws.
     await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
-    await fireEvent.click(formatOption(/^Items/)!);
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
     expect(screen.queryByText(warning)).toBeNull();
 
     // A speedrun race never draws a seen seed.
