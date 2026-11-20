@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing.auth import get_app_access_token, invalidate_app_access_token
 from speedfog_racing.config import settings
 from speedfog_racing.models import Caster, Participant, Race, RaceStatus
+from speedfog_racing.services.relay import leaderboard_entries
 
 if TYPE_CHECKING:
     from speedfog_racing.websocket.race.manager import ConnectionManager
@@ -181,7 +182,7 @@ class TwitchLiveService:
             try:
                 await ws_manager.broadcast_leaderboard(
                     race.id,
-                    list(race.participants),
+                    leaderboard_entries(race, graph),
                     graph_json=graph,
                     project_ghosts=race.projects_ghosts,
                 )

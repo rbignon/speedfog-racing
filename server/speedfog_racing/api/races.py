@@ -98,6 +98,7 @@ from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.relay import (
+    leaderboard_entries,
     prepare_relay_start,
     relay_cap,
     relay_start_error,
@@ -1054,7 +1055,10 @@ async def add_participant(
         race = await _get_race_or_404(db, race_id, load_participants=True)
         graph_json = race.seed.graph_json if race.seed else None
         await manager.broadcast_leaderboard(
-            race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+            race_id,
+            leaderboard_entries(race, graph_json),
+            graph_json=graph_json,
+            project_ghosts=race.projects_ghosts,
         )
         await broadcast_race_state_update(race_id, race)
 
@@ -1187,7 +1191,10 @@ async def remove_participation(db: AsyncSession, race: Race, participant: Partic
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race_id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -1321,7 +1328,10 @@ async def after_disqualification_change(
         room.set_participant_status(participant.user_id, participant.status)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race_id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race_id, race)
     fire_disqualification_notification(
@@ -1651,7 +1661,10 @@ async def join_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race_id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -1729,7 +1742,10 @@ async def leave_race(
     race = await _get_race_or_404(db, race_id, load_participants=True)
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race_id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race_id, race)
 
@@ -2102,7 +2118,10 @@ async def apply_seed_reroll(
     if is_daily:
         graph_json = race.seed.graph_json if race.seed else None
         await manager.broadcast_leaderboard(
-            race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+            race_id,
+            leaderboard_entries(race, graph_json),
+            graph_json=graph_json,
+            project_ghosts=race.projects_ghosts,
         )
     await broadcast_race_state_update(race_id, race)
     # race_state is spectator-only; mods learn the new seed_id (to flag a stale
@@ -2330,7 +2349,10 @@ async def abandon_race(
     # Broadcast updates
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race_id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race_id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race_id, race)
 

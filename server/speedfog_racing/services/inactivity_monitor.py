@@ -19,6 +19,7 @@ from speedfog_racing.models import (
     compute_late_join_deadlines,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+from speedfog_racing.services.relay import leaderboard_entries
 from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)
@@ -204,7 +205,7 @@ async def inactivity_monitor_loop(
                         graph_json = race.seed.graph_json if race.seed else None
                         await manager.broadcast_leaderboard(
                             race_id,
-                            race.participants,
+                            leaderboard_entries(race, graph_json),
                             graph_json=graph_json,
                             project_ghosts=race.projects_ghosts,
                         )

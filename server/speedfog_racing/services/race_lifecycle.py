@@ -19,6 +19,7 @@ from speedfog_racing.models import (
 # module top would re-enter `services/__init__.py` mid-load and crash anything
 # that loads `rewards.service` first (e.g. the backfill CLI). We import lazily
 # inside the two call sites instead.
+from speedfog_racing.services.relay import leaderboard_entries
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,10 @@ async def finalize_race(
     # to ABANDONED, so the in-game overlay can't react to its own auto-abandon.
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race.id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race.id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
 
     await broadcast_race_state_update(race.id, race)

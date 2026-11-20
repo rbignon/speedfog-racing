@@ -145,6 +145,13 @@ divides by zero (at least one member) and is recomputed when a member leaves.
 
 ## Progress and guards
 
+On a relay race the live messages (`race_state`, `leaderboard_update`, `player_update`,
+and `auth_ok.participants`) carry one row per team, built by `relay_team_to_info`
+from the `RelayTeamRow`s of `leaderboard_entries`; every broadcast of the leaderboard
+passes those entries, and a runner's `player_update` goes out as their team's row
+(`leaderboard_entry`). The row shape is in `docs/PROTOCOL.md` ("Relay rows"). A loader
+feeding these rows must not defer `RelayTeam.zone_history`.
+
 ## Lifecycle
 
 ## Exclusions

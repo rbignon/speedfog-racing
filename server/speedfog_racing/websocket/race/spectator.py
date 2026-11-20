@@ -37,6 +37,7 @@ from speedfog_racing.services.chat_access import (
 )
 from speedfog_racing.services.event_service import leaderboard_points
 from speedfog_racing.services.i18n import translate_graph_json
+from speedfog_racing.services.relay import leaderboard_entries
 from speedfog_racing.websocket.handler import BaseSpectatorHandler, close_evicted
 from speedfog_racing.websocket.race.manager import (
     SEND_TIMEOUT,
@@ -702,7 +703,7 @@ def build_race_state_payload(
     room = manager.get_room(race.id)
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
-    sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
+    sorted_participants, _ = sort_leaderboard(leaderboard_entries(race, graph), graph_json=graph)
     points_map = leaderboard_points(race)
     participant_infos: list[ParticipantInfo] = [
         participant_to_info(
@@ -747,7 +748,7 @@ async def send_leaderboard_state(websocket: WebSocket, race: Race) -> None:
     connected_ids = set(room.mods.keys()) if room else set()
     graph = race.seed.graph_json if race.seed else None
     payload = build_leaderboard_payload(
-        race.participants, connected_ids=connected_ids, graph_json=graph
+        leaderboard_entries(race, graph), connected_ids=connected_ids, graph_json=graph
     )
     await websocket.send_text(payload)
 

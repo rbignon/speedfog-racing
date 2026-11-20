@@ -238,3 +238,14 @@ def leaderboard_entries(
         total_layers=total_layers,
         setup=race.status == RaceStatus.SETUP,
     )
+
+
+def leaderboard_entry(
+    race: Race, participant: Participant, graph_json: Mapping[str, Any] | None
+) -> Participant | RelayTeamRow:
+    """The row a runner's progress shows on: their team's on a relay race, else themselves."""
+    if race.is_relay:
+        for row in leaderboard_entries(race, graph_json):
+            if isinstance(row, RelayTeamRow) and row.id == participant.relay_team_id:
+                return row
+    return participant

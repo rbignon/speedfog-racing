@@ -160,6 +160,21 @@ class NameTemplatePayload(BaseModel):
     gradient: list[str] | None = None
 
 
+class RelayMember(BaseModel):
+    """One member of a relay team, as the unfolded team row lists them."""
+
+    participant_id: str
+    name: str
+    zones: int
+    # Any ParticipantStatus value (registered in setup, finished or
+    # disqualified at the end).
+    status: str
+    online: bool
+    # The member's last relay_ready (false when offline).
+    ready: bool
+    validated: bool
+
+
 class ParticipantInfo(BaseModel):
     """Participant info for leaderboard."""
 
@@ -196,6 +211,11 @@ class ParticipantInfo(BaseModel):
     # one: None means "no new observation" (loading screen, every other
     # message), never "unarmed", so clients keep the last combo they know.
     weapons: list[int] | None = None
+    # Relay races: the row is a team. Null on every other race.
+    relay_holder: str | None = None
+    relay_holder_id: str | None = None
+    relay_cap: int | None = None
+    relay_members: list[RelayMember] | None = None
 
 
 class RaceInfo(BaseModel):
