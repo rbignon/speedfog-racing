@@ -2,6 +2,47 @@
 
 All notable changes to SpeedFog Racing are documented in this file.
 
+## [1.34.0] - 2026-11-20
+
+### Elden Drift
+
+- **New race format: Elden Drift**, a race with items. **Each boss kill gives you an item** (if you hold none), drawn by your place in the race: mild or defensive ones at the front, punishing ones at the back. Use it from your quick item slot
+  - **At the front**: Rune Pouch (runes, more of them later in the race), Banana (damages the runner just behind you)
+  - **At the front and in the middle**: Mushroom (infinite stamina for 30 s), Giant (everyone else grows huge for 15 s)
+  - **In the middle**: Shield (held, not used: blocks the next item aimed at you), Ink (hides everyone else's exits on their overlay for 30 s), Junk Weapon (forces a junk weapon into the right hand of the runner just ahead of you)
+  - **In the middle and at the back**: Red Shell (heavy damage to the runner just ahead of you), Hammer (everyone else fat-rolls for 15 s), Vanish (everyone else's character turns invisible for 15 s), Slow-mo (slows the runner just ahead of you for 15 s), Camera (first-person, upside-down or wide camera for the runner just ahead of you, for 15 s), Talisman Thief (steals a talisman from the runner just ahead of you, for good), Toxic Blossom (poisons everyone else)
+  - **At the back**: Blue Shell (halves the leader's max HP for 15 s), Lightning (slows and shrinks everyone else for 15 s), Flask Stopper (blocks everyone else's flasks for 15 s), Star (invincible for 15 s, and items aimed at you are blocked), Unseen Foes (hides everyone else's enemies for 15 s), Hunter (sends Margit after the leader for 15 s)
+  - The Banana and the Red Shell never kill, and the Blue Shell and the Hunter hit the leader **even if that is you**
+- Elden Drift races are for community races only (no Daily Seed, Speedrun or event race), and count on neither the Speedrun boards nor the community stats
+- Thanks to Ayanee_Ksh for the item icons
+
+### Races
+
+- **Rename a race** while it is in setup: the organizer gets an Edit button beside its title
+
+### Daily Seed
+
+- A streak can now bank up to **3 freezes** (was 2), from the Daily Seed of November 21st. The cap was briefly 7 from November 11th: if you hold more than 3, you keep them, and earn a new one once you are back under 3
+
+### Stats
+
+- **Boss kill times**: the mod now reports the moment each boss dies
+  - The **layer comparison** of a race can show the time to the boss kill instead of the time spent on the depth (Boss kill / Depth time switch)
+  - The **Boss tab** of the Stats page shows the median time to kill a boss, once it has five recorded kills
+- A boss renamed over time (duos and trios named after the fight, for instance) keeps a single row in the Boss tab, under its latest name
+
+### In-game
+
+- A **fog gate crossed while disconnected from the server is no longer lost if you close the game** before the connection comes back: the mod sends it at the next launch, with the time you crossed it at
+
+### Seeds
+
+- **Major boss arenas now weigh differently in the early, mid and late game**, from the fight lengths measured in your races: a boss that drags on at high scaling counts for more there, so parallel paths have closer durations
+- **Randomized minor bosses of the same depth are closer in fight length**: the longest one weighs at most twice the shortest
+- **Chill**: enemy scaling now rises steadily through the run, instead of staying low early and ramping up hard at the end
+- **Sprint** now always opens on a boss arena
+- Dragons can no longer be drawn in the Demi-Human Chiefs' arena
+
 ## [1.33.0] - 2026-11-08
 
 ### LiveSplit
