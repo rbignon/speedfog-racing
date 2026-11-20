@@ -89,6 +89,65 @@ def reset_relay_team(team: RelayTeam) -> None:
     team.baton_free = False
 
 
+def _members_by_team(race: Race) -> list[tuple[RelayTeam, list[Participant]]]:
+    """The teams in ``created_at`` order, each with its members (a team can be empty)."""
+    by_team: dict[UUID, list[Participant]] = defaultdict(list)
+    for p in sorted(race.participants, key=lambda p: p.created_at):
+        if p.relay_team_id is not None:
+            by_team[p.relay_team_id].append(p)
+    return [
+        (t, by_team.get(t.id, [])) for t in sorted(race.relay_teams, key=lambda t: t.created_at)
+    ]
+
+
+def relay_start_error(race: Race) -> str | None:
+    """Why a relay race cannot start yet, or None.
+
+    A team with no member is ignored. At least two other teams are needed, each
+    with at least two ready members; a member who is not ready is left out at
+    the start (``prepare_relay_start``) and does not count here.
+    """
+    teams = [(t, members) for t, members in _members_by_team(race) if members]
+    if len(teams) < 2:
+        return "At least 2 teams are required to start a relay race"
+    for team, members in teams:
+        if sum(1 for m in members if m.status == ParticipantStatus.READY) < RELAY_TEAM_SIZE_MIN:
+            return f"{team.name} needs at least {RELAY_TEAM_SIZE_MIN} ready runners"
+    return None
+
+
+def prepare_relay_start(race: Race) -> None:
+    """Fix the teams at the start of a validated relay race.
+
+    A member who is not ready is set ABANDONED (still attached to the team, so
+    ``team_cap`` ignores them). Each team with a member becomes READY, its baton
+    held by its first runner when ready, else by its first ready member.
+    """
+    for team, members in _members_by_team(race):
+        if not members:
+            continue
+        ready = [m for m in members if m.status == ParticipantStatus.READY]
+        for m in members:
+            if m.status not in (
+                ParticipantStatus.READY,
+                ParticipantStatus.ABANDONED,
+                ParticipantStatus.DISQUALIFIED,
+            ):
+                m.status = ParticipantStatus.ABANDONED
+        first = next((m for m in ready if m.id == team.first_runner_id), None)
+        team.holder_id = (first or ready[0]).id
+        team.status = ParticipantStatus.READY
+
+
+def reset_relay_race(race: Race) -> None:
+    """Back to fresh teams after a reset: every team reset, member counters zeroed."""
+    for team in race.relay_teams:
+        reset_relay_team(team)
+    for p in race.participants:
+        p.relay_zones = 0
+        p.relay_validated = False
+
+
 @dataclass(frozen=True)
 class RelayTeamRow:
     """A team seen as a leaderboard row: the participant fields the leaderboard
