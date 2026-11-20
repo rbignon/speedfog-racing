@@ -229,7 +229,38 @@ describe("/race/new: the Elden Drift (items) format", () => {
     await submitPrivate("Kart");
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
-    expect(postedBody()).toMatchObject({ mode: "normal", race_items: true });
+    expect(postedBody()).toMatchObject({
+      mode: "normal",
+      race_items: true,
+      late_join_window_minutes: 5,
+    });
+  });
+
+  it("shortens the default late-join window, but not one the organizer typed", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6, 0, 0, 2),
+    });
+    await openPage("");
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Advanced options/ }),
+    );
+    const lateJoin = () =>
+      screen
+        .getByText(/Allow joining up to/)
+        .querySelector("input[type=number]") as HTMLInputElement;
+
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
+    expect(lateJoin().value).toBe("5");
+    await fireEvent.click(formatOption(/^Classic/)!);
+    expect(lateJoin().value).toBe("30");
+
+    await fireEvent.input(lateJoin(), { target: { value: "45" } });
+    await fireEvent.click(formatOption(/^Elden Drift/)!);
+    expect(lateJoin().value).toBe("45");
+
+    await submitPrivate("Kart");
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ late_join_window_minutes: 45 });
   });
 
   it("drops the items when the Speedrun format replaces it", async () => {

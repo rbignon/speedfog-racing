@@ -59,6 +59,8 @@
   let lateJoinEnabled = $state(true);
   let autoEndEnabled = $state(false);
   let lateJoinWindowMinutes = $state(30);
+  // Once the organizer types a window, no format's default replaces it.
+  let lateJoinWindowEdited = false;
   let raceDurationMinutes = $state(120);
   let deathless = $state(false);
   let privateDag = $state(false);
@@ -78,6 +80,18 @@
   let creating = $state(false);
   let error = $state<string | null>(null);
   let authChecked = $state(false);
+
+  // Picks a format and, unless the organizer set one, its late-join window:
+  // on an items race, just long enough to join a race seen starting.
+  function setFormat(next: RaceFormat) {
+    format = next;
+    if (lateJoinWindowEdited) return;
+    const window = next === "items" ? 5 : 30;
+    // Never past the auto-end, which the server refuses.
+    lateJoinWindowMinutes = autoEndEnabled
+      ? Math.min(window, raceDurationMinutes)
+      : window;
+  }
 
   // Seeds this race could draw: a normal race also takes SEEN seeds (seeds
   // put aside before their race started), a speedrun race never does, and
@@ -178,7 +192,7 @@
     if (search === appliedSearch) return;
     appliedSearch = search;
     untrack(() => {
-      format = asked.speedrun ? "speedrun" : "classic";
+      setFormat(asked.speedrun ? "speedrun" : "classic");
       seedSummary = null;
       seedError = null;
       if (asked.seed !== null) loadSeed(asked.seed);
@@ -346,7 +360,7 @@
                     type="radio"
                     name="format"
                     checked={format === f.key}
-                    onchange={() => (format = f.key)}
+                    onchange={() => setFormat(f.key)}
                     disabled={creating}
                   />
                   <span class="format-name">
@@ -367,7 +381,8 @@
                 <RaceItemsLegend />
                 <p class="hint">
                   Elden Drift races do not count on the Speedrun boards or the
-                  community stats.
+                  community stats. Late joiners get 5 minutes by default (see
+                  the advanced options).
                 </p>
               {:else if format === "speedrun"}
                 <p class="hint">
@@ -642,6 +657,7 @@
                   <input
                     type="number"
                     bind:value={lateJoinWindowMinutes}
+                    oninput={() => (lateJoinWindowEdited = true)}
                     min="1"
                     max={autoEndEnabled ? raceDurationMinutes : undefined}
                     disabled={creating}
