@@ -1,6 +1,7 @@
 """Relay team routes, and the rule that nobody is registered on a relay race without a team."""
 
 import pytest
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -481,3 +482,52 @@ async def test_team_change_broadcasts_race_state(
         )
     assert response.status_code == 200
     assert calls == ["leaderboard", "state"]
+
+
+async def test_placement_counts_members_under_the_team_lock(
+    rt_session, organizer, alice, bob, carol, monkeypatch
+):
+    """The team row is locked before its members are counted, and a team that
+    vanished or filled since the race was loaded is refused, not joined."""
+    from speedfog_racing.api.relay_teams import place_in_team
+    from speedfog_racing.schemas import RelayTeamChoice
+
+    race = await _race(rt_session, organizer, [[bob], [alice]], team_size=2)
+    team1, team2 = await _teams(rt_session, race)
+    seen: list[str] = []
+    real_execute = AsyncSession.execute
+
+    async def spy(self, statement, *args, **kwargs):
+        text = str(statement)
+        if getattr(statement, "_for_update_arg", None) is not None:
+            seen.append("lock")
+        elif "count(" in text.lower():
+            seen.append("count")
+        return await real_execute(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "execute", spy)
+    async with rt_session() as db:
+        loaded = (await db.execute(select(Race).where(Race.id == race.id))).scalar_one()
+        member = (
+            await db.execute(select(Participant).where(Participant.user_id == alice.id))
+        ).scalar_one()
+        seen.clear()
+        await place_in_team(
+            db, loaded, member, RelayTeamChoice(relay_team_id=team1.id), by_organizer=False
+        )
+        assert seen.index("lock") < seen.index("count")
+        await db.commit()
+
+    # Another session fills team 1 and deletes team 2 after this one loaded them.
+    async with rt_session() as db:
+        loaded = (await db.execute(select(Race).where(Race.id == race.id))).scalar_one()
+        late = Participant(race_id=race.id, user_id=carol.id, color_index=0)
+        db.add(late)
+        await db.flush()
+        for choice, code in ((team1.id, 409), (team2.id, 404)):
+            with pytest.raises(HTTPException) as refused:
+                await place_in_team(
+                    db, loaded, late, RelayTeamChoice(relay_team_id=choice), by_organizer=False
+                )
+            assert refused.value.status_code == code
+        assert late.relay_team_id is None
