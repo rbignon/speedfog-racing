@@ -100,6 +100,11 @@ for an unknown user carries none, the invitee picks on the invite page.
   its members take the team color.
 - Members and the organizer rename a team and choose its first runner; the first
   runner must be a member.
+- Placement locks the team rows it decides on (`SELECT ... FOR UPDATE`, ascending id,
+  so a move locks the target and the team left in one order) and counts the members
+  after the lock: two runners cannot both take the last slot, and a team deleted
+  while someone joins it answers 404 instead of leaving them without a team. Team
+  deletion and `vacate_team` take the same lock.
 - Every change ends like `join_race`: the leaderboard and the race state are broadcast.
 
 | Case                                                          | Answer                                          |

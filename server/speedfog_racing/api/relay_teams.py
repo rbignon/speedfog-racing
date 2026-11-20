@@ -7,6 +7,7 @@ calls ``vacate_team``.
 
 import asyncio
 import logging
+from collections.abc import Collection
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,7 +15,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api import races as races_api
-from speedfog_racing.auth import get_current_user, require_not_banned
+from speedfog_racing.auth import require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import (
     ChatChannel,
@@ -54,12 +55,39 @@ async def _member_count(db: AsyncSession, team_id: UUID) -> int:
     return int(result.scalar_one())
 
 
+async def _lock_teams(
+    db: AsyncSession, race: Race, team_ids: Collection[UUID]
+) -> dict[UUID, RelayTeam]:
+    """Row-lock the race's teams among ``team_ids``, in ascending id order, and re-read them.
+
+    Placement and deletion decide on a team's members and existence, so they hold
+    its row first: two runners cannot both take the last slot, and a team cannot
+    vanish under someone joining it. One order for every caller (a move locks two
+    teams) keeps opposite moves from deadlocking. A team missing from the result
+    no longer exists in this race. The lock is a no-op on SQLite.
+    """
+    if not team_ids:
+        return {}
+    result = await db.execute(
+        select(RelayTeam)
+        .where(RelayTeam.id.in_(sorted(team_ids)), RelayTeam.race_id == race.id)
+        .order_by(RelayTeam.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    return {t.id: t for t in result.scalars()}
+
+
 async def _team_in_race(db: AsyncSession, race: Race, team_id: UUID) -> RelayTeam:
     """The race's team, or 404 (a team of another race is not found either)."""
     team = await db.get(RelayTeam, team_id)
     if team is None or team.race_id != race.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
+        raise _team_not_found()
     return team
+
+
+def _team_not_found() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Team not found")
 
 
 async def _new_team(
@@ -91,8 +119,8 @@ async def vacate_team(db: AsyncSession, race: Race, participant: Participant) ->
     team_id = participant.relay_team_id
     if team_id is None:
         return
+    team = (await _lock_teams(db, race, [team_id])).get(team_id)
     participant.relay_team_id = None
-    team = await db.get(RelayTeam, team_id)
     if team is None:
         return
     if team.first_runner_id == participant.id:
@@ -133,9 +161,17 @@ async def place_in_team(
             )
     else:
         assert choice.relay_team_id is not None
-        team = await _team_in_race(db, race, choice.relay_team_id)
-        if participant.relay_team_id == team.id:
+        if participant.relay_team_id == choice.relay_team_id:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Already in that team")
+        # Lock the target and the team being left together, then decide on the
+        # re-read: the count and the team's existence are only true under the lock.
+        held = [choice.relay_team_id]
+        if participant.relay_team_id is not None:
+            held.append(participant.relay_team_id)
+        locked = await _lock_teams(db, race, held)
+        team = locked.get(choice.relay_team_id)
+        if team is None:
+            raise _team_not_found()
         assert race.relay_team_size is not None
         if await _member_count(db, team.id) >= race.relay_team_size:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team is full")
@@ -247,7 +283,7 @@ async def update_relay_team(
     team_id: UUID,
     request: UpdateRelayTeamRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> RaceDetailResponse:
     """Rename a team or choose its first runner: its members and the organizer."""
     race = await _load_relay_race(db, race_id)
@@ -274,12 +310,14 @@ async def delete_relay_team(
     race_id: UUID,
     team_id: UUID,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> None:
     """The organizer deletes an empty team."""
     race = await _load_relay_race(db, race_id)
     races_api._require_organizer(race, user)
-    team = await _team_in_race(db, race, team_id)
+    team = (await _lock_teams(db, race, [team_id])).get(team_id)
+    if team is None:
+        raise _team_not_found()
     if await _member_count(db, team.id) > 0:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team has members")
     await db.delete(team)
@@ -316,7 +354,7 @@ async def move_participant_to_relay_team(
     participant_id: UUID,
     request: MoveToRelayTeamRequest,
     db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_not_banned),
 ) -> RaceDetailResponse:
     """The organizer moves a runner to another team."""
     race = await _load_relay_race(db, race_id)
