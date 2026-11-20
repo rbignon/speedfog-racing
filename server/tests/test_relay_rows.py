@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from speedfog_racing import database as db_module
 from speedfog_racing.database import Base
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RelayTeam, User
-from speedfog_racing.services.relay import leaderboard_entries, leaderboard_entry
+from speedfog_racing.services.relay import leaderboard_entries, load_relay_row
 from speedfog_racing.websocket.race import spectator as race_spectator
 from speedfog_racing.websocket.race.manager import (
     ConnectionManager,
@@ -188,7 +188,6 @@ async def test_solo_rows_carry_no_relay_field(rr_session, sample_graph_json):
     async with rr_session() as db:
         race = await _load(db, race_id)
     assert leaderboard_entries(race, race.seed.graph_json) is race.participants
-    assert leaderboard_entry(race, race.participants[0], None) is race.participants[0]
     dumped = participant_to_info(race.participants[0]).model_dump()
     assert dumped["relay_holder"] is None and dumped["relay_holder_id"] is None
     assert dumped["relay_cap"] is None and dumped["relay_members"] is None
@@ -218,7 +217,7 @@ async def test_team_zone_history_reaches_race_state(rr_session, relay_race):
     assert by_name["Team 1"]["zone_history"] == history
 
 
-async def test_broadcast_sends_team_rows_to_the_room(relay_race):
+async def test_broadcast_sends_team_rows_to_the_room(rr_session, relay_race):
     class _WS:
         def __init__(self) -> None:
             self.sent: list[str] = []
@@ -237,10 +236,10 @@ async def test_broadcast_sends_team_rows_to_the_room(relay_race):
         relay_race.id, leaderboard_entries(relay_race, graph), graph_json=graph
     )
     team = _team(relay_race, "Team 2")
-    member = next(p for p in relay_race.participants if p.relay_team_id == team.id)
-    await mgr.broadcast_player_update(
-        relay_race.id, leaderboard_entry(relay_race, member, graph), graph_json=graph
-    )
+    async with rr_session() as db:
+        row = await load_relay_row(db, team.id, graph)
+    assert row is not None
+    await mgr.broadcast_player_update(relay_race.id, row, graph_json=graph)
 
     update = json.loads(ws.sent[0])
     assert {p["id"] for p in update["participants"]} == {str(t.id) for t in relay_race.relay_teams}
@@ -248,3 +247,85 @@ async def test_broadcast_sends_team_rows_to_the_room(relay_race):
     assert player["type"] == "player_update"
     assert player["player"]["id"] == str(team.id)
     assert len(player["player"]["relay_members"]) == 2
+
+
+class _WS:
+    def __init__(self) -> None:
+        self.sent: list[str] = []
+
+    async def send_text(self, message: str) -> None:
+        self.sent.append(message)
+
+
+async def _handler_with_spectator(rr_session, race, monkeypatch):
+    from unittest.mock import MagicMock
+
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    mgr = ConnectionManager()
+    monkeypatch.setattr(race_mod, "manager", mgr)
+    ws = _WS()
+    conn = race_spectator.SpectatorConnection(websocket=ws, locale="en")  # type: ignore[arg-type]
+    mgr.get_or_create_room(race.id).spectators[conn.connection_id] = conn
+    handler = race_mod.RaceModHandler(MagicMock(), race.id, rr_session)
+    handler._cached_graph_json = race.seed.graph_json
+    return handler, ws
+
+
+@pytest.mark.parametrize("loader", ["_load_participant_no_seed", "_load_participant_light"])
+async def test_runner_update_goes_out_as_the_team_row_from_a_light_loader(
+    rr_session, relay_race, monkeypatch, loader
+):
+    # The status_update fast path loads the runner without race.participants:
+    # the team row is loaded on its own instead of read off the race.
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    team = _team(relay_race, "Team 1")
+    handler, ws = await _handler_with_spectator(rr_session, relay_race, monkeypatch)
+    async with rr_session() as db:
+        entity = await getattr(race_mod, loader)(db, team.holder_id)
+    handler._participant_id = entity.id
+
+    await handler._broadcast_after_status_update(
+        entity, became_active=False, death_delta=0, history_changed=False, weapons=None
+    )
+
+    player = json.loads(ws.sent[0])["player"]
+    assert player["id"] == str(team.id)
+    assert player["relay_holder_id"] == str(team.holder_id)
+    assert len(player["relay_members"]) == 2
+
+
+async def test_event_flag_and_zone_query_updates_go_out_as_the_team_row(
+    rr_session, relay_race, monkeypatch
+):
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    team = _team(relay_race, "Team 1")
+    handler, ws = await _handler_with_spectator(rr_session, relay_race, monkeypatch)
+    graph = relay_race.seed.graph_json
+    async with rr_session() as db:
+        entity = await race_mod._load_participant_no_seed(db, team.holder_id)
+    await handler._broadcast_after_event_flag(
+        entity, "n1", graph, is_first_visit=False, prev_zone_history_len=None
+    )
+    async with rr_session() as db:
+        entity = await race_mod._load_participant(db, team.holder_id)
+    await handler._broadcast_after_zone_query(
+        entity, is_first_visit=False, prev_zone_history_len=None
+    )
+
+    players = [json.loads(m) for m in ws.sent if '"player_update"' in m]
+    assert [p["player"]["id"] for p in players] == [str(team.id)] * 2
+
+
+async def test_death_counts_aggregate_over_team_rows(relay_race):
+    from speedfog_racing.websocket.race.mod import aggregate_death_counts
+
+    a, b = sorted(relay_race.relay_teams, key=lambda t: t.name)
+    a.zone_history = [{"node_id": "n1", "deaths": 2}, {"node_id": "n2"}]
+    b.zone_history = [{"node_id": "n1", "deaths": 1}, {"node_id": "n3", "deaths": 0}]
+
+    rows = leaderboard_entries(relay_race, relay_race.seed.graph_json)
+
+    assert aggregate_death_counts(rows) == {"n1": 3}

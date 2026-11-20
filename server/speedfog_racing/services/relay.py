@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement
+from sqlalchemy import ColumnElement, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, RelayTeam, Seed
 
@@ -240,12 +242,21 @@ def leaderboard_entries(
     )
 
 
-def leaderboard_entry(
-    race: Race, participant: Participant, graph_json: Mapping[str, Any] | None
-) -> Participant | RelayTeamRow:
-    """The row a runner's progress shows on: their team's on a relay race, else themselves."""
-    if race.is_relay:
-        for row in leaderboard_entries(race, graph_json):
-            if isinstance(row, RelayTeamRow) and row.id == participant.relay_team_id:
-                return row
-    return participant
+async def load_relay_row(
+    db: AsyncSession, team_id: UUID, graph_json: Mapping[str, Any] | None
+) -> RelayTeamRow | None:
+    """One team's row, from queries of its own: the team (``zone_history``
+    included) and its members with their users. For callers whose entity was
+    loaded without ``race.participants``."""
+    team = await db.get(RelayTeam, team_id, populate_existing=True)
+    if team is None:
+        return None
+    result = await db.execute(
+        select(Participant)
+        .where(Participant.relay_team_id == team_id)
+        .options(selectinload(Participant.user))
+        .order_by(Participant.created_at)
+    )
+    members = list(result.scalars().all())
+    total_layers = int((graph_json or {}).get("total_layers") or 0)
+    return RelayTeamRow(team, tuple(members), team_cap(total_layers, members))
