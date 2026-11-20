@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from speedfog_racing.config import settings
 from speedfog_racing.models import Pool, Race, RaceStatus, RunMode, Seed, SeedStatus
 from speedfog_racing.services.race_items import race_items_seed_clause, seed_has_race_items
+from speedfog_racing.services.relay import relay_seed_clause, seed_has_relay
 from speedfog_racing.services.seed_difficulty import compute_seed_difficulty
 from speedfog_racing.services.speedrun_service import (
     _is_training,
@@ -309,6 +310,7 @@ async def scan_pool(db: AsyncSession, pool_name: str = "standard") -> int:
             total_layers=total_layers,
             difficulty_score=difficulty_score,
             race_items=seed_has_race_items(graph_json),
+            relay=seed_has_relay(graph_json),
             folder_path=str(entry),
             status=SeedStatus.AVAILABLE,
         )
@@ -328,10 +330,12 @@ async def _random_seed(
     excluded: Collection[uuid.UUID],
     *,
     require_race_items: bool = False,
+    require_relay: bool = False,
 ) -> Seed | None:
     """One seed picked uniformly among the pool's seeds in ``statuses``.
 
-    With ``require_race_items`` only seeds that carry the race items plugin qualify.
+    With ``require_race_items`` only seeds that carry the race items plugin qualify;
+    with ``require_relay``, only seeds that carry the relay block.
     """
     query = (
         select(Seed)
@@ -345,6 +349,8 @@ async def _random_seed(
         query = query.where(Seed.id.not_in(excluded))
     if require_race_items:
         query = query.where(race_items_seed_clause())
+    if require_relay:
+        query = query.where(relay_seed_clause())
     return (await db.execute(query)).scalar_one_or_none()
 
 
@@ -356,6 +362,7 @@ async def get_available_seed(
     allow_seen: bool = False,
     rerolled_seed_ids: Collection[uuid.UUID] = (),
     require_race_items: bool = False,
+    require_relay: bool = False,
 ) -> Seed | None:
     """Get a random seed to draw from the pool.
 
@@ -376,6 +383,7 @@ async def get_available_seed(
             (``Race.rerolled_seed_ids``), left out of every candidate set
         require_race_items: Draw only seeds that carry the race items plugin
             (the floor count still covers every AVAILABLE seed)
+        require_relay: Draw only seeds that carry the relay block (same floor rule)
 
     Returns:
         A random Seed, or None if the pool has none to draw
@@ -383,7 +391,12 @@ async def get_available_seed(
     excluded = {*rerolled_seed_ids, *([exclude_id] if exclude_id is not None else [])}
     if not allow_seen:
         return await _random_seed(
-            db, pool_name, (SeedStatus.AVAILABLE,), excluded, require_race_items=require_race_items
+            db,
+            pool_name,
+            (SeedStatus.AVAILABLE,),
+            excluded,
+            require_race_items=require_race_items,
+            require_relay=require_relay,
         )
     above_floor = await _available_count(db, pool_name, exclude_id) > await speedrun_floor(
         db, pool_name
@@ -395,7 +408,12 @@ async def get_available_seed(
     )
     for status in order:
         seed = await _random_seed(
-            db, pool_name, (status,), excluded, require_race_items=require_race_items
+            db,
+            pool_name,
+            (status,),
+            excluded,
+            require_race_items=require_race_items,
+            require_relay=require_relay,
         )
         if seed is not None:
             return seed
@@ -504,11 +522,19 @@ async def assign_seed_to_race(
     Raises:
         ValueError: If no seeds are available in the pool
     """
+    # Task 2 replaces the getattr with the Race column.
+    is_relay = getattr(race, "relay_team_size", None) is not None
     seed = await get_available_seed(
-        db, pool_name, allow_seen=allow_seen, require_race_items=race.race_items
+        db,
+        pool_name,
+        allow_seen=allow_seen,
+        require_race_items=race.race_items,
+        require_relay=is_relay,
     )
 
     if seed is None:
+        if is_relay:
+            raise ValueError(f"No relay seed available in pool '{pool_name}'")
         if race.race_items:
             raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         raise ValueError(f"No available seeds in mode '{pool_name}'")
@@ -582,6 +608,8 @@ async def reroll_seed_for_race(
     pool_name = old_seed.pool_name
 
     rerolled = race.rerolled_seed_ids or []
+    # Task 2 replaces the getattr with the Race column.
+    is_relay = getattr(race, "relay_team_size", None) is not None
     new_seed: Seed | None
     if race.mode == RunMode.SPEEDRUN:
         # AVAILABLE seeds only, and a seed this race gave up is never AVAILABLE
@@ -595,8 +623,11 @@ async def reroll_seed_for_race(
             allow_seen=not race_draws_fresh_seeds(race),
             rerolled_seed_ids=[uuid.UUID(seed_id) for seed_id in rerolled],
             require_race_items=race.race_items,
+            require_relay=is_relay,
         )
     if new_seed is None:
+        if is_relay:
+            raise ValueError(f"No relay seed available in pool '{pool_name}'")
         if race.race_items:
             raise ValueError(f"No seed with race items available in pool '{pool_name}'")
         if rerolled:
@@ -650,6 +681,22 @@ async def get_race_items_counts(db: AsyncSession) -> dict[str, int]:
         .where(
             Seed.status.in_((SeedStatus.AVAILABLE, SeedStatus.SEEN)),
             race_items_seed_clause(),
+        )
+        .group_by(Seed.pool_name)
+    )
+    return {pool_name: count for pool_name, count in result}
+
+
+async def get_relay_counts(db: AsyncSession) -> dict[str, int]:
+    """Per pool, the AVAILABLE and SEEN seeds carrying the relay block.
+
+    These are the seeds a relay race can draw. Pools without one are absent.
+    """
+    result = await db.execute(
+        select(Seed.pool_name, func.count(Seed.id))
+        .where(
+            Seed.status.in_((SeedStatus.AVAILABLE, SeedStatus.SEEN)),
+            relay_seed_clause(),
         )
         .group_by(Seed.pool_name)
     )

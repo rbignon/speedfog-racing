@@ -243,6 +243,8 @@ class Seed(Base):
         Index("ix_seeds_pool_status", "pool_name", "status"),
         # Items race draws and their pool counts (race_items_seed_clause).
         Index("ix_seeds_race_items", "race_items"),
+        # Relay race draws and their pool counts (relay_seed_clause).
+        Index("ix_seeds_relay", "relay"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -256,6 +258,9 @@ class Seed(Base):
     race_items: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="0", nullable=False
     )
+    # The seed carries the relay block (``seed_has_relay`` of its graph),
+    # derived at scan time like ``race_items``.
+    relay: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
     folder_path: Mapped[str] = mapped_column(String(500), nullable=False)
     status: Mapped[SeedStatus] = mapped_column(Enum(SeedStatus), default=SeedStatus.AVAILABLE)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
