@@ -458,7 +458,7 @@ class RewardsService:
         participant(s) with the lowest ``igt_ms``. Idempotent through the
         first-time-only grant.
         """
-        if not race.is_public or race.daily_date is not None:
+        if not race.is_public or race.daily_date is not None or race.is_relay:
             return
         racers = [
             p
@@ -525,13 +525,17 @@ class RewardsService:
 
         Idempotent: grant_permanent_badge and grant_name_template both no-op on
         re-grant. Safe to call after every race finish; counts only Participant
-        rows with status=FINISHED across all races (daily seeds included, solo
-        training sessions excluded since they create no Participant row).
+        rows with status=FINISHED across all races but relay races (daily seeds
+        included, solo training sessions excluded since they create no
+        Participant row).
         """
         count = await self.session.scalar(
-            select(func.count(Participant.id)).where(
+            select(func.count(Participant.id))
+            .join(Race, Race.id == Participant.race_id)
+            .where(
                 Participant.user_id == user_id,
                 Participant.status == ParticipantStatus.FINISHED,
+                Race.relay_team_size.is_(None),
             )
         )
         finished = count or 0

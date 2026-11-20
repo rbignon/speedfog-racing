@@ -16,6 +16,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RelayTeam,
     User,
     compute_late_join_deadlines,
 )
@@ -24,6 +25,7 @@ from speedfog_racing.schemas import (
     ParticipantPreview,
     ParticipantResponse,
     RaceResponse,
+    RelayTeamOut,
     UserResponse,
 )
 from speedfog_racing.services.pool_service import format_pool_display_name
@@ -124,6 +126,19 @@ def participant_response(participant: Participant) -> ParticipantResponse:
         igt_ms=participant.igt_ms,
         death_count=participant.death_count,
         color_index=participant.color_index,
+        relay_team_id=participant.relay_team_id,
+    )
+
+
+def relay_team_out(team: RelayTeam, participants: Sequence[Participant]) -> RelayTeamOut:
+    """A relay team with the ids of its members, in the order of ``participants``."""
+    return RelayTeamOut(
+        id=team.id,
+        name=team.name,
+        color_index=team.color_index,
+        placeholder=team.placeholder,
+        first_runner_id=team.first_runner_id,
+        member_ids=[p.id for p in participants if p.relay_team_id == team.id],
     )
 
 
@@ -172,7 +187,18 @@ def race_response(race: Race, user: User | None = None) -> RaceResponse:
         elif any(c.user_id == user.id for c in casters):
             my_role = "casting"
 
-    if not (is_open_setup or is_open_late_join) or is_full:
+    # A relay race whose runners cannot start a team has room only in a team
+    # with a free slot.
+    relay_has_room = (
+        not race.is_relay
+        or race.relay_runners_create_teams
+        or any(
+            sum(1 for p in race.participants if p.relay_team_id == t.id)
+            < (race.relay_team_size or 0)
+            for t in race.relay_teams
+        )
+    )
+    if not (is_open_setup or is_open_late_join) or is_full or not relay_has_room:
         can_join = False
     elif user is None:
         can_join = True

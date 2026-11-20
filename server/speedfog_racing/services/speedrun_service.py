@@ -201,6 +201,9 @@ def race_draws_fresh_seeds(race: Race) -> bool:
     )
 
 
+RELAY_UNRANKED_REASON = (
+    "Relay race: teams share one run, so this race does not count on the Speedrun boards."
+)
 RACE_ITEMS_UNRANKED_REASON = (
     "Race items: items change clear times and deaths, so this race does not count on the "
     "Speedrun boards."
@@ -221,6 +224,7 @@ REROLLED_UNRANKED_REASON = (
 
 
 _UNRANKED_REASONS: dict[UnrankedCode, str] = {
+    "relay": RELAY_UNRANKED_REASON,
     "race_items": RACE_ITEMS_UNRANKED_REASON,
     "seen_seed": SEEN_SEED_UNRANKED_REASON,
     "reset": RESET_UNRANKED_REASON,
@@ -236,7 +240,8 @@ def race_unranked_reason(race: Race) -> str | None:
 
 def race_unranked_code(race: Race) -> UnrankedCode | None:
     """Why a race's finishers count on no board, None when they can count (its
-    seed's pool and layer count still decide which board). A race with items
+    seed's pool and layer count still decide which board). A relay race
+    (``Race.relay_team_size``) never counts, whatever else it is. A race with items
     (``Race.race_items``) never counts, whatever its mode or kind. A community race
     (any mode, neither a Daily Seed nor an event race) whose seed was re-rolled
     without a seed report (``Race.rerolled_without_report``): its organizer
@@ -250,6 +255,8 @@ def race_unranked_code(race: Race) -> UnrankedCode | None:
     puts the race back on the boards). The reroll comes first since nothing
     clears it: a race shows the reason that only ends with the race. Python
     twin of ``counts_on_boards_clause``; keep them in step."""
+    if race.is_relay:
+        return "relay"
     if race.race_items:
         return "race_items"
     community = race.daily_date is None and race.event_id is None
@@ -272,6 +279,7 @@ def counts_on_boards_clause() -> ColumnElement[bool]:
     """The races whose finishers can count on the boards: SQL twin of
     ``race_unranked_reason``; keep them in step."""
     return and_(
+        Race.relay_team_size.is_(None),
         Race.race_items.is_(False),
         Race.seed_was_seen.is_(False),
         or_(

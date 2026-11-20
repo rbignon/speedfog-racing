@@ -225,6 +225,10 @@ class RaceInfo(BaseModel):
     private_dag: bool = False
     deathless: bool = False
     race_items: bool = False
+    # Relay race: the team size (null on a solo race) and whether runners may
+    # start a team of their own. Both live-editable, so they ride race_info_update.
+    relay_team_size: int | None = None
+    relay_runners_create_teams: bool = True
     # Speedrun or Set Seed run. A solo session reads debug flags only when ranked
     # (races always do).
     ranked: bool = False
@@ -275,6 +279,8 @@ def build_race_info(race: Any, *, countdown_seconds: int = 0) -> "RaceInfo":
         private_dag=race.private_dag,
         deathless=race.deathless,
         race_items=race.race_items,
+        relay_team_size=race.relay_team_size,
+        relay_runners_create_teams=race.relay_runners_create_teams,
         ranked=race.mode != RunMode.NORMAL,
         countdown_seconds=countdown_seconds,
         seed_id=str(race.seed_id) if race.seed_id else None,

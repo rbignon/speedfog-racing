@@ -1842,6 +1842,11 @@ async def admin_attach_race_to_event(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="A race with race items cannot join an event",
         )
+    if race.is_relay:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="A relay race cannot join an event",
+        )
     if request.slot is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="slot is required"

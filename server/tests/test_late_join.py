@@ -129,6 +129,7 @@ def _make_race(
         private_dag=private_dag,
         deathless=deathless,
         race_items=False,
+        relay_runners_create_teams=True,
         mode=RunMode.NORMAL,
         seed_was_seen=False,
         created_at=datetime.now(UTC),

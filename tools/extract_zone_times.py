@@ -98,6 +98,7 @@ async def load_seed_graphs(
           AND p.zone_history::text NOT IN ('null', '[]')
           AND ($1::date IS NULL OR r.created_at >= $1::date)
           AND NOT r.race_items
+          AND r.relay_team_size IS NULL
         """,
         since,
     )
@@ -135,6 +136,7 @@ async def load_participants(
           AND p.zone_history::text NOT IN ('null', '[]')
           AND ($1::date IS NULL OR r.created_at >= $1::date)
           AND NOT r.race_items
+          AND r.relay_team_size IS NULL
         """,
         since,
     )
