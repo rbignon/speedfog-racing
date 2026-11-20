@@ -20,6 +20,7 @@ major_bosses = 4
 [structure]
 layers_count = 15
 final_tier = 13
+first_layer_type = "boss_arena"
 
 [structure.final_boss_candidates]
 # Base game remembrance bosses
