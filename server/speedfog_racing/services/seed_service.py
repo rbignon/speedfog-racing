@@ -522,8 +522,7 @@ async def assign_seed_to_race(
     Raises:
         ValueError: If no seeds are available in the pool
     """
-    # Task 2 replaces the getattr with the Race column.
-    is_relay = getattr(race, "relay_team_size", None) is not None
+    is_relay = race.is_relay
     seed = await get_available_seed(
         db,
         pool_name,
@@ -608,8 +607,7 @@ async def reroll_seed_for_race(
     pool_name = old_seed.pool_name
 
     rerolled = race.rerolled_seed_ids or []
-    # Task 2 replaces the getattr with the Race column.
-    is_relay = getattr(race, "relay_team_size", None) is not None
+    is_relay = race.is_relay
     new_seed: Seed | None
     if race.mode == RunMode.SPEEDRUN:
         # AVAILABLE seeds only, and a seed this race gave up is never AVAILABLE

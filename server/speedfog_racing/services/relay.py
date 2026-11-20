@@ -4,14 +4,23 @@ A relay seed is a seed whose ``graph.json`` has a top-level ``relay`` object
 (the generator writes it when its relay plugin is enabled).
 """
 
-from collections.abc import Mapping
+import math
+from collections import defaultdict
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from sqlalchemy import ColumnElement
 
-from speedfog_racing.models import Seed
+from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, RelayTeam, Seed
 
 RELAY_PLUGIN = "relay"
+
+RELAY_TEAM_SIZE_MIN = 2
+RELAY_TEAM_SIZE_MAX = 6
+RELAY_TEAM_NAME_MAX = 40
 
 
 def seed_has_relay(graph_json: Mapping[str, Any]) -> bool:
@@ -33,3 +42,140 @@ def relay_flags(graph_json: Mapping[str, Any]) -> dict[str, int] | None:
         return None
     block: Mapping[str, Any] = graph_json[RELAY_PLUGIN]
     return {k: v for k, v in block.items() if k != "warp_flag_count"}
+
+
+def relay_cap(total_layers: int, active_members: int) -> int:
+    """Zones one runner may play: ``ceil(total_layers / active_members) + 1``."""
+    return math.ceil(total_layers / active_members) + 1
+
+
+def is_active_member(p: Participant) -> bool:
+    """Whether a member still shares the team's run (not abandoned, not disqualified)."""
+    return p.status not in (ParticipantStatus.ABANDONED, ParticipantStatus.DISQUALIFIED)
+
+
+def team_cap(total_layers: int, members: Sequence[Participant]) -> int:
+    """The team's cap on the members still in; never divides by zero."""
+    return relay_cap(total_layers, max(1, sum(1 for m in members if is_active_member(m))))
+
+
+def default_team_name(existing: Collection[str]) -> str:
+    """``Team {n}``, the lowest n at or above the team count plus one that is not taken."""
+    n = len(existing) + 1
+    while f"Team {n}" in existing:
+        n += 1
+    return f"Team {n}"
+
+
+def reset_relay_team(team: RelayTeam) -> None:
+    """Back to a fresh team: progress, baton and state cleared, status REGISTERED.
+
+    Identity (name, color, placeholder) and ``first_runner_id`` are kept.
+    """
+    team.status = ParticipantStatus.REGISTERED
+    team.current_zone = None
+    team.current_layer = 0
+    team.igt_ms = 0
+    team.death_count = 0
+    team.finished_at = None
+    team.last_igt_change_at = None
+    team.zone_history = None
+    team.layer_entry_igts = {}
+    team.entry_flag_id = None
+    team.character_state = None
+    team.character_state_igt_ms = None
+    team.holder_id = None
+    team.holder_offline_since = None
+    team.baton_free = False
+
+
+@dataclass(frozen=True)
+class RelayTeamRow:
+    """A team seen as a leaderboard row: the participant fields the leaderboard
+    reads come from the team, so a relay race ranks like a solo one."""
+
+    team: RelayTeam
+    members: tuple[Participant, ...]
+    cap: int
+
+    @property
+    def id(self) -> UUID:
+        return self.team.id
+
+    @property
+    def status(self) -> ParticipantStatus:
+        return self.team.status
+
+    @property
+    def current_zone(self) -> str | None:
+        return self.team.current_zone
+
+    @property
+    def current_layer(self) -> int:
+        return self.team.current_layer
+
+    @property
+    def igt_ms(self) -> int:
+        return self.team.igt_ms
+
+    @property
+    def death_count(self) -> int:
+        return self.team.death_count
+
+    @property
+    def color_index(self) -> int:
+        return self.team.color_index
+
+    @property
+    def zone_history(self) -> list[dict[str, Any]] | None:
+        return self.team.zone_history
+
+    @property
+    def layer_entry_igts(self) -> dict[str, int]:
+        return self.team.layer_entry_igts
+
+    @property
+    def finished_at(self) -> datetime | None:
+        return self.team.finished_at
+
+    @property
+    def holder(self) -> Participant | None:
+        return next((m for m in self.members if m.id == self.team.holder_id), None)
+
+
+def relay_rows(
+    teams: Sequence[RelayTeam],
+    participants: Sequence[Participant],
+    *,
+    total_layers: int,
+    setup: bool,
+) -> list[RelayTeamRow]:
+    """One row per team, in ``created_at`` order. A team without member is kept
+    only in setup (a placeholder waiting for runners), hidden once started."""
+    by_team: dict[UUID, list[Participant]] = defaultdict(list)
+    for p in participants:
+        if p.relay_team_id is not None:
+            by_team[p.relay_team_id].append(p)
+    rows = []
+    for team in sorted(teams, key=lambda t: t.created_at):
+        members = by_team.get(team.id, [])
+        if not members and not setup:
+            continue
+        rows.append(RelayTeamRow(team, tuple(members), team_cap(total_layers, members)))
+    return rows
+
+
+def leaderboard_entries(
+    race: Race, graph_json: Mapping[str, Any] | None
+) -> Sequence[Participant] | list[RelayTeamRow]:
+    """What the leaderboard ranks: the participants of a solo race, the team rows
+    of a relay race."""
+    if not race.is_relay:
+        return race.participants
+    total_layers = int((graph_json or {}).get("total_layers") or 0)
+    return relay_rows(
+        race.relay_teams,
+        race.participants,
+        total_layers=total_layers,
+        setup=race.status == RaceStatus.SETUP,
+    )

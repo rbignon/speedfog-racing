@@ -478,6 +478,12 @@ class Race(Base):
     # role inside the event, "qualifier:<mode>:<n>" or "<stage>:<n>".
     event_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("events.id"), nullable=True)
     event_slot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # Relay race: NULL on every other race, else the size of a team (2 to 6).
+    relay_team_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Whether runners may create teams themselves (the organizer always may).
+    relay_runners_create_teams: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="1", nullable=False
+    )
 
     # Relationships
     organizer: Mapped["User"] = relationship(back_populates="organized_races")
@@ -494,6 +500,20 @@ class Race(Base):
         back_populates="race", cascade="all, delete-orphan"
     )
     event: Mapped["Event | None"] = relationship(back_populates="races")
+    # Selectin-loaded with the race, like ``participants``, so a sync helper
+    # reads ``race.relay_teams`` on any loaded race (empty on a solo race).
+    # The members of a team are not: no loader ever adds ``RelayTeam.members``.
+    relay_teams: Mapped[list["RelayTeam"]] = relationship(
+        back_populates="race",
+        order_by="RelayTeam.created_at",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def is_relay(self) -> bool:
+        """Whether this is a relay race (teams share one run, one runner at a time)."""
+        return self.relay_team_size is not None
 
     @property
     def is_event_qualifier(self) -> bool:
@@ -529,6 +549,7 @@ class Participant(Base):
         Index("ix_participants_race_user", "race_id", "user_id"),
         # Inactivity monitor (runs every 60s) filters by status + last_igt_change_at.
         Index("ix_participants_status_igt_change", "status", "last_igt_change_at"),
+        Index("ix_participants_relay_team", "relay_team_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -588,6 +609,19 @@ class Participant(Base):
     status_before_disqualification: Mapped[ParticipantStatus | None] = mapped_column(
         Enum(ParticipantStatus), nullable=True
     )
+    # Relay races: the team of this runner (NULL on every other race), the zones
+    # counted for them (against the team's cap) and whether they passed the
+    # fresh-save gate at the start. SET NULL: a deleted team never takes a
+    # participant row with it.
+    relay_team_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("relay_teams.id", ondelete="SET NULL", name="fk_participants_relay_team_id"),
+        nullable=True,
+    )
+    relay_zones: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    relay_validated: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
     # Used by inactivity_monitor to scope the no-show timeout per-participant
     # (late-joiners must not be abandoned based on Race.started_at alone).
     created_at: Mapped[datetime] = mapped_column(
@@ -597,6 +631,94 @@ class Participant(Base):
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
     user: Mapped["User"] = relationship(back_populates="participations", foreign_keys=[user_id])
+
+
+class RelayTeam(Base):
+    """A team of a relay race: one run shared by its members, one runner at a time.
+
+    The team carries the progress a solo participant carries on its own row
+    (zone, layer, IGT, zone history), so the leaderboard ranks teams; see
+    ``services/relay.py`` for the participant-shaped ``RelayTeamRow``.
+    """
+
+    __tablename__ = "relay_teams"
+    __table_args__ = (Index("ix_relay_teams_race", "race_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    race_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("races.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    color_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Created by the organizer: kept while empty.
+    placeholder: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    # Participants and teams point at each other: the two keys towards
+    # participants are added after both tables exist (``use_alter``).
+    first_runner_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "participants.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_relay_teams_first_runner_id",
+        ),
+        nullable=True,
+    )
+    holder_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "participants.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_relay_teams_holder_id",
+        ),
+        nullable=True,
+    )
+    holder_offline_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # The baton can be taken without the offline wait.
+    baton_free: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="0", nullable=False
+    )
+    status: Mapped[ParticipantStatus] = mapped_column(
+        Enum(ParticipantStatus), default=ParticipantStatus.REGISTERED
+    )
+
+    # Team progress, as on Participant.
+    current_zone: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    current_layer: Mapped[int] = mapped_column(Integer, default=0)
+    igt_ms: Mapped[int] = mapped_column(Integer, default=0)
+    death_count: Mapped[int] = mapped_column(Integer, default=0)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_igt_change_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    zone_history: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
+    layer_entry_igts: Mapped[dict[str, int]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default="{}"
+    )
+    # Connection flag of the last zone entered through a fog gate.
+    entry_flag_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Last CharacterState received, and the team IGT when it was received.
+    character_state: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON(none_as_null=True), nullable=True
+    )
+    character_state_igt_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    race: Mapped["Race"] = relationship(back_populates="relay_teams")
+    # Read only, and only through an explicit ``selectinload(RelayTeam.members)``.
+    members: Mapped[list["Participant"]] = relationship(
+        primaryjoin="RelayTeam.id == Participant.relay_team_id",
+        foreign_keys="Participant.relay_team_id",
+        order_by="Participant.created_at",
+        viewonly=True,
+    )
 
 
 class DailyStreakFreeze(Base):

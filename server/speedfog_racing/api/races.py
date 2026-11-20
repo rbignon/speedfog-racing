@@ -48,6 +48,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RelayTeam,
     RunMode,
     Seed,
     SeedStatus,
@@ -495,6 +496,9 @@ async def list_joinable_races(
             selectinload(Race.participants).options(
                 defer(Participant.zone_history), selectinload(Participant.user)
             ),
+            selectinload(Race.relay_teams).options(
+                defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
+            ),
             selectinload(Race.casters).selectinload(Caster.user),
         )
         .outerjoin(participant_count_sq, Race.id == participant_count_sq.c.race_id)
@@ -559,6 +563,9 @@ async def list_races(
         selectinload(Race.seed).defer(Seed.graph_json),
         selectinload(Race.participants).options(
             defer(Participant.zone_history), selectinload(Participant.user)
+        ),
+        selectinload(Race.relay_teams).options(
+            defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
         ),
         selectinload(Race.casters).selectinload(Caster.user),
     )
