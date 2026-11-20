@@ -299,7 +299,7 @@ describe("ranked race creation links", () => {
   const search = (href: string) =>
     new URL(href, "http://localhost").searchParams;
 
-  it("opens /race/new with the Speedrun option on and the pool picked", () => {
+  it("opens /race/new on the Speedrun format with the pool picked", () => {
     expect(
       parseRaceNewParams(search(speedrunRaceNewHref("boss rush"))),
     ).toEqual({ seed: null, speedrun: true, pool: "boss rush" });

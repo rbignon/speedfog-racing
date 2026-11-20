@@ -52,6 +52,7 @@ function pool(
   available: number,
   seen = 0,
   speedrunFloor = 0,
+  raceItemsAvailable = 0,
 ): PoolInfo {
   return {
     available,
@@ -61,7 +62,7 @@ function pool(
     discarded: 0,
     played_by_user: null,
     pool_config: { name, sort_order: sortOrder } as PoolConfig,
-    race_items_available: 0,
+    race_items_available: raceItemsAvailable,
   };
 }
 
@@ -96,15 +97,9 @@ async function openPage(search: string) {
   return view;
 }
 
-// The Speedrun race option sits in the Advanced options panel, folded by
-// default: unfold it first.
-async function speedrunOption(): Promise<HTMLInputElement | null> {
-  if (!screen.queryByText("Late joiners")) {
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Advanced options/ }),
-    );
-  }
-  return screen.queryByLabelText("Speedrun race") as HTMLInputElement | null;
+// A tile of the Format picker; null on a Set Seed race, which has none.
+function formatOption(name: RegExp): HTMLInputElement | null {
+  return screen.queryByRole("radio", { name }) as HTMLInputElement | null;
 }
 
 async function submitPrivate(name: string) {
@@ -138,14 +133,11 @@ afterEach(() => {
   auth.initialized = false;
 });
 
-describe("/race/new: the Speedrun race option", () => {
+describe("/race/new: the Speedrun format", () => {
   it("is on with the pool picked from ?mode=speedrun&pool=", async () => {
-    const { container } = await openPage("?mode=speedrun&pool=sprint");
+    await openPage("?mode=speedrun&pool=sprint");
 
-    // Folded, the Advanced options trigger already shows it on.
-    const active = [...container.querySelectorAll(".advanced-option.active")];
-    expect(active.map((el) => el.textContent?.trim())).toContain("✓ speedrun");
-    expect((await speedrunOption())?.checked).toBe(true);
+    expect(formatOption(/^Speedrun/)?.checked).toBe(true);
     expect(
       screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -163,14 +155,14 @@ describe("/race/new: the Speedrun race option", () => {
     await fireEvent.click(screen.getByRole("tab", { name: /Standard/ }));
     expect(nameInput.placeholder).toBe("e.g. Standard Grinding");
 
-    await fireEvent.click((await speedrunOption())!);
+    await fireEvent.click(formatOption(/^Classic/)!);
     expect(nameInput.placeholder).toBe("e.g. Sunday Showdown");
   });
 
   it("stays off when ?pool= alone picks the pool", async () => {
     await openPage("?pool=sprint");
 
-    expect((await speedrunOption())?.checked).toBe(false);
+    expect(formatOption(/^Speedrun/)?.checked).toBe(false);
     expect(
       screen.getByRole("tab", { name: /Sprint/ }).getAttribute("aria-selected"),
     ).toBe("true");
@@ -188,12 +180,69 @@ describe("/race/new: the Speedrun race option", () => {
     });
   });
 
-  it("sends a normal race when the option is left off", async () => {
+  it("sends a normal race without items in the Classic format", async () => {
     await openPage("");
     await submitPrivate("Plain one");
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
-    expect(postedBody()).toMatchObject({ mode: "normal", seed: null });
+    expect(postedBody()).toMatchObject({
+      mode: "normal",
+      seed: null,
+      race_items: false,
+    });
+  });
+});
+
+describe("/race/new: the Items format", () => {
+  it("only offers the pools holding items seeds, and counts those", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6),
+      sprint: pool("Sprint", 2, 4, 1, 0, 3),
+    });
+    await openPage("");
+    const standard = screen.getByRole("tab", {
+      name: /Standard/,
+    }) as HTMLButtonElement;
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+
+    await fireEvent.click(formatOption(/^Items/)!);
+
+    // Standard stays selected with nothing to draw: no silent pool switch.
+    expect(standard.disabled).toBe(true);
+    expect(create.disabled).toBe(true);
+    expect(screen.getByText("No seed with race items here yet")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+
+    expect(screen.getByText(/3 seeds available/)).toBeTruthy();
+    expect(create.disabled).toBe(false);
+  });
+
+  it("sends a normal race with items", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6, 0, 0, 2),
+    });
+    await openPage("");
+    await fireEvent.click(formatOption(/^Items/)!);
+    await submitPrivate("Kart");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ mode: "normal", race_items: true });
+  });
+
+  it("drops the items when the Speedrun format replaces it", async () => {
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6, 0, 0, 2),
+    });
+    await openPage("");
+    await fireEvent.click(formatOption(/^Items/)!);
+    await fireEvent.click(formatOption(/^Speedrun/)!);
+    await submitPrivate("Fast");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ mode: "speedrun", race_items: false });
   });
 });
 
@@ -216,7 +265,7 @@ describe("/race/new: seen seeds", () => {
     expect(screen.getByText(/2 seeds available/)).toBeTruthy();
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click((await speedrunOption())!);
+    await fireEvent.click(formatOption(/^Speedrun/)!);
 
     expect(sprint.disabled).toBe(true);
     expect(create.disabled).toBe(true);
@@ -230,7 +279,7 @@ describe("/race/new: seen seeds", () => {
       // Above its floor: a fresh seed.
       standard: pool("Standard", 1, 6, 3, 5),
       // At its floor with seen seeds: one of them.
-      sprint: pool("Sprint", 2, 4, 2, 4),
+      sprint: pool("Sprint", 2, 4, 2, 4, 3),
       // At its floor without any: the reserve, fresh.
       long: pool("Long", 3, 3, 0, 5),
     });
@@ -244,13 +293,18 @@ describe("/race/new: seen seeds", () => {
     await fireEvent.click(screen.getByRole("tab", { name: /Long/ }));
     expect(screen.queryByText(warning)).toBeNull();
 
+    // An items race counts on no board, whatever seed it draws.
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+    await fireEvent.click(formatOption(/^Items/)!);
+    expect(screen.queryByText(warning)).toBeNull();
+
     // A speedrun race never draws a seen seed.
     await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
-    await fireEvent.click((await speedrunOption())!);
+    await fireEvent.click(formatOption(/^Speedrun/)!);
     expect(screen.queryByText(warning)).toBeNull();
   });
 
-  it("disables Create when the speedrun option leaves the selected pool with nothing to draw", async () => {
+  it("disables Create when the Speedrun format leaves the selected pool with nothing to draw", async () => {
     vi.mocked(fetchPoolStats).mockResolvedValue({
       standard: pool("Standard", 1, 3),
       sprint: pool("Sprint", 2, 0, 2),
@@ -262,7 +316,7 @@ describe("/race/new: seen seeds", () => {
     }) as HTMLButtonElement;
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click((await speedrunOption())!);
+    await fireEvent.click(formatOption(/^Speedrun/)!);
 
     // Another pool still has seeds, but the selected one has none to draw.
     expect(create.disabled).toBe(true);
@@ -287,7 +341,7 @@ describe("/race/new: the speedrun floor", () => {
     expect(screen.getByText(/4 seeds available/)).toBeTruthy();
     expect(create.disabled).toBe(false);
 
-    await fireEvent.click((await speedrunOption())!);
+    await fireEvent.click(formatOption(/^Speedrun/)!);
 
     // The server would refuse the draw: the floor's seeds are a reserve.
     expect(sprint.disabled).toBe(true);
@@ -344,7 +398,7 @@ describe("/race/new?seed=: a Set Seed race", () => {
       `/speedrun?pool=standard&start=set&seed=${SEED}`,
     );
     expect(screen.queryByRole("tablist")).toBeNull();
-    expect(await speedrunOption()).toBeNull();
+    expect(formatOption(/^Speedrun/)).toBeNull();
     expect(screen.getByText(`Seed ${SEED}, fixed: no reroll`)).toBeTruthy();
   });
 
@@ -418,6 +472,6 @@ describe("/race/new?seed=: a Set Seed race", () => {
     );
     expect(screen.queryByText(/^Seed /)).toBeNull();
     expect(screen.getByRole("tablist")).toBeTruthy();
-    expect((await speedrunOption())?.checked).toBe(false);
+    expect(formatOption(/^Speedrun/)?.checked).toBe(false);
   });
 });

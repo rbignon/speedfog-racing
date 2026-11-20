@@ -152,7 +152,7 @@ export function parseSpeedrunFloor(raw: string): number | null | undefined {
   return /^\d+$/.test(text) ? Number(text) : undefined;
 }
 
-/** Race creation for a speedrun race: the Speedrun option on, `pool` picked. */
+/** Race creation for a speedrun race: the Speedrun format selected, `pool` picked. */
 export function speedrunRaceNewHref(pool: string): string {
   return `/race/new?mode=speedrun&pool=${encodeURIComponent(pool)}`;
 }

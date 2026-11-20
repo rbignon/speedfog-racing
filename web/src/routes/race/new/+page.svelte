@@ -16,15 +16,34 @@
   import DateTimePicker from "$lib/components/DateTimePicker.svelte";
   import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
   import { formatPoolName } from "$lib/utils/format";
-  import { raceItemsAvailability } from "$lib/raceItems";
+  import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
   import {
     parseRaceNewParams,
     seedPageHref,
     startRunHref,
   } from "$lib/speedrun";
 
-  // `?seed=<n>` makes a Set Seed race on that seed, `?mode=speedrun` turns
-  // the Speedrun option on and `?pool=` picks the pool. Applied on arrival
+  // The race formats, one per race: each changes what the race is, and no
+  // two combine. A Set Seed race has none to pick, its seed decides.
+  type RaceFormat = "classic" | "items" | "speedrun";
+  const FORMATS: {
+    key: RaceFormat;
+    label: string;
+    tagline: string;
+    isNew?: boolean;
+  }[] = [
+    { key: "classic", label: "Classic", tagline: "Same seed, no extra rule" },
+    {
+      key: "items",
+      label: "Items",
+      tagline: "Boss kills give items",
+      isNew: true,
+    },
+    { key: "speedrun", label: "Speedrun", tagline: "Counts on the boards" },
+  ];
+
+  // `?seed=<n>` makes a Set Seed race on that seed, `?mode=speedrun` picks
+  // the Speedrun format and `?pool=` picks the pool. Applied on arrival
   // (see the effect below); what the organizer changes afterwards stays
   // theirs.
   let asked = $derived(parseRaceNewParams(page.url.searchParams));
@@ -42,10 +61,13 @@
   let lateJoinWindowMinutes = $state(30);
   let raceDurationMinutes = $state(120);
   let deathless = $state(false);
-  let raceItems = $state(false);
   let privateDag = $state(false);
   let customRules = $state("");
-  let speedrun = $state(untrack(() => asked.speedrun));
+  let format = $state<RaceFormat>(
+    untrack(() => (asked.speedrun ? "speedrun" : "classic")),
+  );
+  let speedrun = $derived(format === "speedrun");
+  let items = $derived(setSeed === null && format === "items");
   // A Set Seed race's seed, as the server knows it; the lookup's error text
   // ("Unknown seed", "Ambiguous seed ID") otherwise.
   let seedSummary = $state<SpeedrunSeedSummary | null>(null);
@@ -59,8 +81,10 @@
 
   // Seeds this race could draw: a normal race also takes SEEN seeds (seeds
   // put aside before their race started), a speedrun race never does, and
-  // leaves the pool's speedrun floor in reserve.
+  // leaves the pool's speedrun floor in reserve; an items race only takes
+  // the seeds carrying the items.
   function drawable(info: PoolInfo): number {
+    if (items) return info.race_items_available;
     return speedrun
       ? Math.max(0, info.available - info.speedrun_floor)
       : info.available + info.seen;
@@ -88,9 +112,11 @@
     pools[poolName] ? drawable(pools[poolName]) : 0,
   );
   // At or under its floor, a pool gives a normal race a SEEN seed first,
-  // which counts on no Speedrun board: say so before the race exists.
+  // which counts on no Speedrun board: say so before the race exists. An
+  // items race counts on none anyway.
   let drawsSeenSeed = $derived(
     !speedrun &&
+      !items &&
       pools[poolName] !== undefined &&
       pools[poolName].seen > 0 &&
       pools[poolName].available <= pools[poolName].speedrun_floor,
@@ -112,22 +138,12 @@
   );
   // A Set Seed race draws nothing from the pools: it only needs its seed.
   // Otherwise the selected pool itself must have something to draw (another
-  // pool having seeds is not enough once the Speedrun option hides seen ones).
+  // pool having seeds is not enough once the format narrows what it can draw).
   let canCreate = $derived(
     setSeed === null
       ? hasAvailablePool && selectedAvailable > 0
       : seedSummary?.replayable === true,
   );
-
-  // The option needs a normal race on a pool holding plugin seeds; a
-  // ticked box that stops qualifying (mode or pool switch) is not sent.
-  let raceItemsAvail = $derived(
-    raceItemsAvailability(
-      setSeed === null && !speedrun ? "normal" : "other",
-      pools[poolName],
-    ),
-  );
-  let raceItemsOn = $derived(raceItems && raceItemsAvail.enabled);
 
   // Advanced-options state grid shown inside the trigger: one entry per
   // option, checked when the option is active for this race (actual
@@ -136,11 +152,8 @@
     { label: "late joiners", active: lateJoinEnabled },
     { label: "auto-end", active: autoEndEnabled },
     { label: "deathless", active: deathless },
-    { label: "race items", active: raceItemsOn },
     { label: "private map", active: privateDag },
     { label: "custom rules", active: customRules.trim() !== "" },
-    // A Set Seed race's mode is set by its seed.
-    ...(setSeed === null ? [{ label: "speedrun", active: speedrun }] : []),
   ]);
 
   $effect(() => {
@@ -165,7 +178,7 @@
     if (search === appliedSearch) return;
     appliedSearch = search;
     untrack(() => {
-      speedrun = asked.speedrun;
+      format = asked.speedrun ? "speedrun" : "classic";
       seedSummary = null;
       seedError = null;
       if (asked.seed !== null) loadSeed(asked.seed);
@@ -236,7 +249,7 @@
         deathless,
         seedSummary ? "set_seed" : speedrun ? "speedrun" : "normal",
         seedSummary?.seed_number ?? null,
-        raceItemsOn,
+        items,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -257,7 +270,9 @@
         ? "Create Set Seed Race"
         : speedrun
           ? "Create Speedrun Race"
-          : "Create Race"}
+          : items
+            ? "Create Items Race"
+            : "Create Race"}
     </h1>
     {#if setSeed !== null}
       {#if seedSummary}
@@ -316,10 +331,65 @@
         />
       </div>
 
+      {#if setSeed === null}
+        <div class="form-group">
+          <span id="format-label">Format</span>
+          <div class="pool-container">
+            <div
+              class="format-tabs"
+              role="radiogroup"
+              aria-labelledby="format-label"
+            >
+              {#each FORMATS as f (f.key)}
+                <label class="format-tab" class:active={format === f.key}>
+                  <input
+                    type="radio"
+                    name="format"
+                    checked={format === f.key}
+                    onchange={() => (format = f.key)}
+                    disabled={creating}
+                  />
+                  <span class="format-name">
+                    {f.label}
+                    {#if f.isNew}<span class="new-badge">New</span>{/if}
+                  </span>
+                  <span class="format-tagline">{f.tagline}</span>
+                </label>
+              {/each}
+            </div>
+            <div class="pool-content format-content">
+              {#if format === "items"}
+                <p class="hint">
+                  Each boss kill gives a Mario Kart style item to use on the
+                  other runners: the further back you are, the harder it hits.
+                </p>
+                <RaceItemsLegend />
+                <p class="hint">
+                  Items races do not count on the Speedrun boards or the
+                  community stats.
+                </p>
+              {:else if format === "speedrun"}
+                <p class="hint">
+                  Always a fresh seed and no reset, so the race counts on the
+                  Speedrun boards; a seed re-roll asks for a reason, sent to the
+                  admins. The game modes below then count only the fresh seeds a
+                  speedrun race can draw.
+                </p>
+              {:else}
+                <p class="hint">
+                  Everyone runs the same seed, with nothing added: the race as
+                  it has always been.
+                </p>
+              {/if}
+            </div>
+          </div>
+        </div>
+      {/if}
+
       <div class="form-group">
         <span>Game Mode</span>
         {#if setSeed !== null}
-          <!-- The seed sets the pool: no mode grid, no Speedrun option. -->
+          <!-- The seed sets the pool: no mode grid, no format to pick. -->
           <div class="pool-container">
             <div class="seed-mode">
               {#if seedSummary}
@@ -366,6 +436,8 @@
                 <p class="seeds-available">
                   {#if speedrun && selectedAvailable === 0}
                     No fresh seed right now
+                  {:else if items && selectedAvailable === 0}
+                    No seed with race items here yet
                   {:else}
                     {selectedAvailable} seed{selectedAvailable !== 1 ? "s" : ""} available
                   {/if}
@@ -384,6 +456,8 @@
             <p class="empty-pools">
               {#if speedrun}
                 No fresh seed right now in any game mode.
+              {:else if items}
+                No seed with race items in any game mode yet.
               {:else}
                 No seeds available in any game mode. New seeds need to be
                 generated.
@@ -617,27 +691,6 @@
               </p>
             </div>
 
-            {#if setSeed === null && !speedrun}
-              <div class="form-group">
-                <span>Race items <span class="new-badge">New</span></span>
-                <label class="radio-label">
-                  <input
-                    type="checkbox"
-                    bind:checked={raceItems}
-                    disabled={creating || !raceItemsAvail.enabled}
-                  />
-                  Boss kills give Mario Kart style items
-                </label>
-                <p class="hint">
-                  Items hit other runners. Items races do not count on the
-                  Speedrun boards or the community stats.
-                </p>
-                {#if raceItemsAvail.hint}
-                  <p class="hint">{raceItemsAvail.hint}</p>
-                {/if}
-              </div>
-            {/if}
-
             <div class="form-group">
               <span>Spoiler protection</span>
               <label class="radio-label">
@@ -668,26 +721,6 @@
                 rule per line.
               </p>
             </div>
-
-            {#if setSeed === null}
-              <div class="form-group">
-                <span>Speedrun</span>
-                <label class="radio-label">
-                  <input
-                    type="checkbox"
-                    bind:checked={speedrun}
-                    disabled={creating}
-                  />
-                  Speedrun race
-                </label>
-                <p class="hint">
-                  Always a fresh seed and no reset, so the race counts on the
-                  Speedrun boards; a seed re-roll asks for a reason, sent to the
-                  admins. The game modes above then count only the fresh seeds a
-                  speedrun race can draw.
-                </p>
-              </div>
-            {/if}
           </div>
         {/if}
       </div>
@@ -776,6 +809,86 @@
     letter-spacing: 0.09em;
     color: var(--color-text-secondary);
     text-transform: uppercase;
+  }
+
+  /* The format picker: tiles in the game mode tabs' vocabulary, each a
+     label over its hidden radio. */
+  .format-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    background: var(--color-border);
+    row-gap: 1px;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .format-tab {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 110px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.65rem 0.5rem;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: all var(--transition);
+  }
+
+  .format-tab:last-child {
+    border-right: none;
+  }
+
+  .format-tab:not(:has(input:disabled)):hover {
+    color: var(--color-text);
+    background: var(--color-surface-elevated);
+  }
+
+  .format-tab.active {
+    background: var(--color-surface-elevated);
+    color: var(--color-gold);
+    box-shadow: inset 0 -2px 0 var(--color-gold);
+  }
+
+  .format-tab:has(input:focus-visible) {
+    outline: 2px solid var(--color-gold);
+    outline-offset: -2px;
+  }
+
+  .format-tab:has(input:disabled) {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .format-tab input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .format-name {
+    font-weight: 600;
+  }
+
+  .format-tagline {
+    font-size: var(--font-size-xs);
+    color: var(--color-text-disabled);
+    text-align: center;
+  }
+
+  .format-tab.active .format-tagline {
+    color: var(--color-text-secondary);
+  }
+
+  .format-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    font-size: var(--font-size-sm);
+    color: var(--color-text-secondary);
   }
 
   /* The speedrun page's Beta badge, sized for a form label. */
