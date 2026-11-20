@@ -17,6 +17,7 @@
   import WatchLive from "$lib/components/WatchLive.svelte";
   import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
+  import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
   import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
   import DisqualifyModal from "$lib/components/DisqualifyModal.svelte";
   import { mergeDebugFlags } from "$lib/debugFlags";
@@ -1454,7 +1455,12 @@
           {:else if displayRuleLines.length > 0}
             <ul class="race-rules-list">
               {#each displayRuleLines as line}
-                <li>{line}</li>
+                <li>
+                  {line}
+                  {#if line === RACE_ITEMS_RULE}
+                    <RaceItemsLegend />
+                  {/if}
+                </li>
               {/each}
             </ul>
           {/if}

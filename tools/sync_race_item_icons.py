@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = ["pillow"]
 # ///
-"""Copy the race item icons from the speedfog repo into the mod's assets.
+"""Copy the race item icons from the speedfog repo into the mod's and the web's assets.
 
 The icon names come from the `[icons]` table of speedfog's
 data/plugins/race_items.toml; each one must exist as
@@ -14,9 +14,10 @@ written at 160x160, downscaled when larger: the banner draws it at 7.5% of the s
 width (144 px at 1080p), and the full-size art would weigh megabytes in the
 DLL. The final art lands by replacing the PNGs in speedfog, running this tool
 and releasing the mod. `unknown.png` (the fallback icon) is not in the catalog
-and is never touched.
+and is never touched. The same icons are also written at 64x64 for the site
+(`--web-dest`), which draws them small.
 
-Usage: uv run tools/sync_race_item_icons.py [--speedfog-dir DIR] [--dest DIR]
+Usage: uv run tools/sync_race_item_icons.py [--speedfog-dir DIR] [--dest DIR] [--web-dest DIR]
 """
 
 from __future__ import annotations
@@ -32,9 +33,11 @@ from PIL import Image
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MOD_SIZE = 160
+WEB_SIZE = 64
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SPEEDFOG = REPO_ROOT.parent / "speedfog"
 DEFAULT_DEST = REPO_ROOT / "mod" / "assets" / "race_items"
+DEFAULT_WEB_DEST = REPO_ROOT / "web" / "static" / "race_items"
 
 
 def png_size(data: bytes) -> tuple[int, int] | None:
@@ -60,15 +63,13 @@ def check_icon(path: Path) -> str | None:
     return None
 
 
-def write_icon(source: Path, dest: Path) -> None:
-    """Copy one icon, downscaled to MOD_SIZE x MOD_SIZE when larger."""
+def write_icon(source: Path, dest: Path, size: int) -> None:
+    """Copy one icon, downscaled to size x size when larger."""
     with Image.open(source) as image:
-        if image.size == (MOD_SIZE, MOD_SIZE):
+        if image.size == (size, size):
             shutil.copyfile(source, dest)
             return
-        resized = image.convert("RGBA").resize(
-            (MOD_SIZE, MOD_SIZE), Image.Resampling.BICUBIC
-        )
+        resized = image.convert("RGBA").resize((size, size), Image.Resampling.BICUBIC)
     resized.save(dest, optimize=True)
 
 
@@ -76,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--speedfog-dir", type=Path, default=DEFAULT_SPEEDFOG)
     parser.add_argument("--dest", type=Path, default=DEFAULT_DEST)
+    parser.add_argument("--web-dest", type=Path, default=DEFAULT_WEB_DEST)
     args = parser.parse_args(argv)
 
     plugins = args.speedfog_dir / "data" / "plugins"
@@ -102,10 +104,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {line}", file=sys.stderr)
         return 1
 
-    args.dest.mkdir(parents=True, exist_ok=True)
-    for name, path in sources.items():
-        write_icon(path, args.dest / f"{name}.png")
-    print(f"copied {len(sources)} icons to {args.dest} at {MOD_SIZE}x{MOD_SIZE}")
+    for dest, size in ((args.dest, MOD_SIZE), (args.web_dest, WEB_SIZE)):
+        dest.mkdir(parents=True, exist_ok=True)
+        for name, path in sources.items():
+            write_icon(path, dest / f"{name}.png", size)
+        print(f"copied {len(sources)} icons to {dest} at {size}x{size}")
     return 0
 
 

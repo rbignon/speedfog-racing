@@ -1,5 +1,5 @@
 """Tests for sync_race_item_icons.py: validation is all-or-nothing, large
-icons are downscaled to the mod's size.
+icons are downscaled to the mod's and the web's sizes.
 
 Run: cd tools && uv run --project ../server --with pillow pytest test_sync_race_item_icons.py
 """
@@ -37,34 +37,47 @@ def _speedfog(tmp_path, icons=("shield", "banana")):
     return tmp_path / "speedfog", plugins
 
 
+def _sync(sf, dest) -> int:
+    return sync_race_item_icons.main(
+        [
+            "--speedfog-dir",
+            str(sf),
+            "--dest",
+            str(dest),
+            "--web-dest",
+            str(dest.parent / "web"),
+        ]
+    )
+
+
 def test_copies_every_icon_listed_in_the_catalog(tmp_path):
     sf, plugins = _speedfog(tmp_path)
     for name in ("shield", "banana"):
         (plugins / f"race_items_icon_{name}.png").write_bytes(_png(160, 160))
     dest = tmp_path / "out"
-    assert (
-        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) == 0
-    )
+    assert _sync(sf, dest) == 0
     for name in ("shield", "banana"):
         assert (dest / f"{name}.png").read_bytes() == (
             plugins / f"race_items_icon_{name}.png"
         ).read_bytes()
 
 
-def test_downscales_a_large_icon_to_the_mod_size(tmp_path):
+def test_downscales_a_large_icon_to_the_mod_and_web_sizes(tmp_path):
     sf, plugins = _speedfog(tmp_path, icons=("shield",))
     # Left half red, right half blue: the halves must survive the downscale.
     art = Image.new("RGBA", (1024, 1024), (0, 0, 255, 255))
     art.paste((255, 0, 0, 255), (0, 0, 512, 1024))
     art.save(plugins / "race_items_icon_shield.png")
     dest = tmp_path / "out"
-    assert (
-        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) == 0
-    )
+    assert _sync(sf, dest) == 0
     with Image.open(dest / "shield.png") as icon:
         assert icon.size == (160, 160)
         assert icon.convert("RGBA").getpixel((20, 80)) == (255, 0, 0, 255)
         assert icon.convert("RGBA").getpixel((140, 80)) == (0, 0, 255, 255)
+    with Image.open(tmp_path / "web" / "shield.png") as icon:
+        assert icon.size == (64, 64)
+        assert icon.convert("RGBA").getpixel((8, 32)) == (255, 0, 0, 255)
+        assert icon.convert("RGBA").getpixel((56, 32)) == (0, 0, 255, 255)
 
 
 @pytest.mark.parametrize("size", [(128, 128), (1024, 512)])
@@ -73,29 +86,26 @@ def test_refuses_a_wrong_size_and_copies_nothing(tmp_path, capsys, size):
     (plugins / "race_items_icon_shield.png").write_bytes(_png(160, 160))
     (plugins / "race_items_icon_banana.png").write_bytes(_png(*size))
     dest = tmp_path / "out"
-    assert (
-        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) != 0
-    )
+    assert _sync(sf, dest) != 0
     assert "race_items_icon_banana.png" in capsys.readouterr().err
     assert not dest.exists() or not list(dest.iterdir())
+    assert not (tmp_path / "web").exists()
 
 
 def test_refuses_a_missing_icon(tmp_path, capsys):
     sf, plugins = _speedfog(tmp_path)
     (plugins / "race_items_icon_shield.png").write_bytes(_png(160, 160))
     dest = tmp_path / "out"
-    assert (
-        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) != 0
-    )
+    assert _sync(sf, dest) != 0
     assert "race_items_icon_banana.png" in capsys.readouterr().err
     assert not dest.exists() or not list(dest.iterdir())
+    assert not (tmp_path / "web").exists()
 
 
 def test_refuses_a_file_that_is_not_a_png(tmp_path, capsys):
     sf, plugins = _speedfog(tmp_path, icons=("shield",))
     (plugins / "race_items_icon_shield.png").write_bytes(b"GIF89a" + b"\x00" * 40)
     dest = tmp_path / "out"
-    assert (
-        sync_race_item_icons.main(["--speedfog-dir", str(sf), "--dest", str(dest)]) != 0
-    )
+    assert _sync(sf, dest) != 0
     assert "race_items_icon_shield.png" in capsys.readouterr().err
+    assert not (tmp_path / "web").exists()
