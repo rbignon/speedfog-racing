@@ -996,10 +996,15 @@ def counts_for_community_stats() -> ColumnElement[bool]:
 
     Normal races count, Daily Seeds and event races included; Speedrun and
     Set Seed races (a replay, or a possibly fished draw) stay out, and so do
-    races with items (they change clear times and deaths). Lives here so the
-    services can use it without importing the API layer.
+    races with items (they change clear times and deaths) and relay races (a
+    team shares one run, so no runner has a run of their own). Lives here so
+    the services can use it without importing the API layer.
     """
-    return and_(Race.mode == RunMode.NORMAL, Race.race_items.is_(False))
+    return and_(
+        Race.mode == RunMode.NORMAL,
+        Race.race_items.is_(False),
+        Race.relay_team_size.is_(None),
+    )
 
 
 def compute_late_join_deadlines(race: Race) -> tuple[datetime | None, datetime | None]:

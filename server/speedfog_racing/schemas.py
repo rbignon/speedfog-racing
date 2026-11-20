@@ -96,6 +96,8 @@ class CreateRaceRequest(BaseModel):
     private_dag: bool = False
     deathless: bool = False
     race_items: bool = False
+    # Relay race: teams of this many runners share one run (2 to 6).
+    relay_team_size: int | None = Field(default=None, ge=2, le=6)
     custom_rules: str | None = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
@@ -135,13 +137,28 @@ class CreateRaceRequest(BaseModel):
             raise ValueError("race_items is only available on normal races")
         return self
 
+    @model_validator(mode="after")
+    def validate_relay(self) -> "CreateRaceRequest":
+        if self.relay_team_size is None:
+            return self
+        if self.mode != RunMode.NORMAL:
+            raise ValueError("relay_team_size is only available on normal races")
+        for option, on in (
+            ("race_items", self.race_items),
+            ("deathless", self.deathless),
+            ("late_join_window_minutes", self.late_join_window_minutes is not None),
+        ):
+            if on:
+                raise ValueError(f"{option} is not available on a relay race")
+        return self
+
 
 class UpdateRaceRequest(BaseModel):
     """Request to update race properties. Organizer only.
 
     name: SETUP only; trimmed, blank or null refused.
     scheduled_at / open_registration / max_participants / private_dag / deathless /
-    race_items: SETUP only.
+    race_items / relay_runners_create_teams: SETUP only.
     is_public: editable at any status.
     late_join_window_minutes: SETUP only.
     race_duration_minutes: SETUP, or RUNNING to extend (never shorten).
@@ -158,6 +175,8 @@ class UpdateRaceRequest(BaseModel):
     private_dag: bool | None = None
     deathless: bool | None = None
     race_items: bool | None = None
+    # Relay race only: whether runners may start a team of their own when they join.
+    relay_runners_create_teams: bool | None = None
     custom_rules: str | None = Field(default=None, max_length=1000)
 
 
@@ -406,6 +425,8 @@ class ParticipantResponse(BaseModel):
     # Disqualification reason, filled only for the participant themselves,
     # the race organizer and admins; null for everyone else.
     disqualification_reason: str | None = None
+    # Relay race: the team this runner belongs to (null on every other race).
+    relay_team_id: UUID | None = None
 
 
 class DisqualifyRequest(BaseModel):
@@ -530,7 +551,18 @@ class PendingInviteResponse(BaseModel):
 
 
 # Why a race's finishers count on no Speedrun board (``race_unranked_code``).
-UnrankedCode = Literal["race_items", "seen_seed", "reset", "rerolled"]
+UnrankedCode = Literal["relay", "race_items", "seen_seed", "reset", "rerolled"]
+
+
+class RelayTeamOut(BaseModel):
+    """A team of a relay race as the race page lists it."""
+
+    id: UUID
+    name: str
+    color_index: int
+    placeholder: bool
+    first_runner_id: UUID | None = None
+    member_ids: list[UUID] = []
 
 
 class RaceDetailResponse(BaseModel):
@@ -559,6 +591,11 @@ class RaceDetailResponse(BaseModel):
     private_dag: bool = False
     deathless: bool = False
     race_items: bool = False
+    relay_team_size: int | None = None
+    relay_runners_create_teams: bool = True
+    # Zones one runner may play on a full team (null on a solo race).
+    relay_cap: int | None = None
+    relay_teams: list[RelayTeamOut] = []
     custom_rules: str | None = None
     daily_date: date | None = None
     mode: RunMode

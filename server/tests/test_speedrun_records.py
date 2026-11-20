@@ -182,6 +182,7 @@ def test_only_races_that_can_count_schedule_the_check():
             seed_played=False,
             rerolled_without_report=False,
             race_items=False,
+            is_relay=False,
             is_public=False,
             discord_event_id=None,
         )

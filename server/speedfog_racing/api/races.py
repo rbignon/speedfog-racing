@@ -21,6 +21,7 @@ from speedfog_racing.api.helpers import (
     parse_enum_csv,
     participant_response,
     race_response,
+    relay_team_out,
     user_response,
 )
 from speedfog_racing.api.speedrun import resolve_seed_or_404
@@ -94,6 +95,7 @@ from speedfog_racing.services.event_service import leaderboard_points, update_pl
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
+from speedfog_racing.services.relay import relay_cap
 from speedfog_racing.services.sanctions_service import (
     cancel_disqualification,
     disqualify,
@@ -155,6 +157,13 @@ def _seed_total_paths(seed: Seed) -> int:
     return int(gj.get("total_paths", 0))
 
 
+def _not_on_relay(option: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"{option} is not available on a relay race",
+    )
+
+
 def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailResponse:
     """Convert Race model to RaceDetailResponse."""
     casters = (
@@ -214,6 +223,14 @@ def _race_detail_response(race: Race, user: User | None = None) -> RaceDetailRes
         private_dag=race.private_dag,
         deathless=race.deathless,
         race_items=race.race_items,
+        relay_team_size=race.relay_team_size,
+        relay_runners_create_teams=race.relay_runners_create_teams,
+        relay_cap=(
+            relay_cap(race.seed.total_layers, race.relay_team_size)
+            if race.relay_team_size and race.seed and race.seed.total_layers
+            else None
+        ),
+        relay_teams=[relay_team_out(t, race.participants) for t in race.relay_teams],
         custom_rules=race.custom_rules,
         daily_date=race.daily_date,
         mode=race.mode,
@@ -393,6 +410,7 @@ async def create_race(
         private_dag=request.private_dag,
         deathless=request.deathless,
         race_items=request.race_items,
+        relay_team_size=request.relay_team_size,
         custom_rules=(request.custom_rules or "").strip() or None,
         mode=request.mode,
     )
@@ -431,6 +449,14 @@ async def create_race(
             color_index=0,
         )
         db.add(participant)
+        if race.is_relay:
+            # The organizer opens team 1 as its first runner. Both rows are
+            # flushed before the link, since each references the other.
+            team = RelayTeam(race_id=race.id, name="Team 1", color_index=0)
+            db.add(team)
+            await db.flush()
+            participant.relay_team_id = team.id
+            team.first_runner_id = participant.id
 
     await db.commit()
 
@@ -678,6 +704,7 @@ async def update_race(
         race.custom_rules,
         race.deathless,
         race.race_items,
+        race.relay_runners_create_teams,
     )
 
     # name: SETUP only (a typo fix before the start; frozen once played)
@@ -757,6 +784,8 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="late_join_window_minutes can only be edited in SETUP status",
             )
+        if race.is_relay and request.late_join_window_minutes is not None:
+            raise _not_on_relay("late_join_window_minutes")
         race.late_join_window_minutes = request.late_join_window_minutes
 
     # race_duration_minutes: SETUP always; RUNNING only to extend (never shorten)
@@ -794,6 +823,8 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="deathless can only be edited in SETUP status",
             )
+        if race.is_relay and request.deathless:
+            raise _not_on_relay("deathless")
         race.deathless = bool(request.deathless)
 
     # race_items: SETUP only, community races only
@@ -808,7 +839,20 @@ async def update_race(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="race_items is only available on community races",
             )
+        if race.is_relay and request.race_items:
+            raise _not_on_relay("race_items")
         race.race_items = bool(request.race_items)
+
+    # relay_runners_create_teams: SETUP only, relay races only
+    if "relay_runners_create_teams" in request.model_fields_set:
+        if race.status != RaceStatus.SETUP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="relay_runners_create_teams can only be edited in SETUP status",
+            )
+        if not race.is_relay:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Not a relay race")
+        race.relay_runners_create_teams = bool(request.relay_runners_create_teams)
 
     # custom_rules: SETUP or RUNNING only (descriptive text, blank -> None)
     if "custom_rules" in request.model_fields_set:
@@ -881,6 +925,7 @@ async def update_race(
         race.custom_rules,
         race.deathless,
         race.race_items,
+        race.relay_runners_create_teams,
     )
     if post_snapshot != pre_snapshot:
         await broadcast_race_info_update(race)

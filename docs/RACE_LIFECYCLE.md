@@ -134,6 +134,10 @@ race with code 1000, as a reset does, so each one reconnects under the new
 setting (an older mod is then refused). Spectators stay connected. See
 `RACE_ITEMS.md`.
 
+### Relay
+
+`relay_team_size` (int 2 to 6, null by default, fixed at creation): the race is a relay, where teams of that many runners share one run, one runner at a time. A relay race is a normal community race: creating one with `race_items`, `deathless`, a late-join window or a `mode` other than `normal` is a 422, and editing those options on once the race exists is a 400 (turning them off stays allowed). It draws only seeds that carry the relay plugin (a 400 with no race left behind when the pool has none). A racing organizer opens `Team 1` as its first runner at creation. `relay_runners_create_teams` (bool, default true) is the only edit of the option: SETUP only, relay races only, broadcast like the other options, and when off a race with no team holding a free slot stops being joinable. A relay race cannot join an event, counts on no Speedrun board, in no community statistic and grants no reward (see `RELAY.md`).
+
 ### IGT cutoff
 
 `igt_cutoff_ms` (int, ms, nullable, set by the server only): the in-game
