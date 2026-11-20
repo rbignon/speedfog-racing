@@ -74,3 +74,9 @@ allcraft = true
 
 [plugin.race_items]
 enabled = true
+
+# Relay races: flag-driven lock and warps, inert while no flag is raised
+# (speedfog docs/plugins/relay.md). On for every pool so any race can be a
+# relay race once its pool is regenerated.
+[plugin.relay]
+enabled = true
