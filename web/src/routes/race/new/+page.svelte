@@ -363,10 +363,8 @@
                     onchange={() => setFormat(f.key)}
                     disabled={creating}
                   />
-                  <span class="format-name">
-                    {f.label}
-                    {#if f.isNew}<span class="new-badge">New</span>{/if}
-                  </span>
+                  <span class="format-name">{f.label}</span>
+                  {#if f.isNew}<span class="format-badge">New</span>{/if}
                   <span class="format-tagline">{f.tagline}</span>
                 </label>
               {/each}
@@ -913,16 +911,20 @@
     color: var(--color-text-secondary);
   }
 
-  /* The speedrun page's Beta badge, sized for a form label. */
-  .new-badge {
-    padding: 0.1em 0.4em;
-    background: var(--color-gold);
-    border-radius: var(--radius-sm);
-    color: var(--color-ink-on-accent);
-    font-family: var(--font-display);
-    font-size: 0.95em;
+  /* A tag over its tile's corner, as the game mode tabs' "Recommended". */
+  .format-badge {
+    position: absolute;
+    top: -0.9em;
+    right: 0.4rem;
+    font-size: 0.6rem;
     font-weight: 600;
-    letter-spacing: 0.05em;
+    color: var(--color-gold);
+    background: var(--color-surface-elevated);
+    padding: 0.05em 0.45em;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-gold);
+    white-space: nowrap;
+    line-height: 1.4;
   }
 
   input[type="text"] {
