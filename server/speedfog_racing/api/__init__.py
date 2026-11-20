@@ -13,6 +13,7 @@ from speedfog_racing.api.invites import router as invites_router
 from speedfog_racing.api.og import router as og_router
 from speedfog_racing.api.pools import router as pools_router
 from speedfog_racing.api.races import router as races_router
+from speedfog_racing.api.relay_teams import router as relay_teams_router
 from speedfog_racing.api.rewards import router as rewards_router
 from speedfog_racing.api.speedrun import router as speedrun_router
 from speedfog_racing.api.stats import router as stats_router
@@ -25,6 +26,7 @@ api_router = APIRouter()
 api_router.include_router(auth_router, prefix="/auth", tags=["auth"])
 api_router.include_router(i18n_router, prefix="/i18n", tags=["i18n"])
 api_router.include_router(races_router, prefix="/races", tags=["races"])
+api_router.include_router(relay_teams_router, prefix="/races", tags=["relay"])
 api_router.include_router(daily_router, prefix="/daily", tags=["daily"])
 api_router.include_router(events_router, prefix="/events", tags=["events"])
 api_router.include_router(pools_router, prefix="/pools", tags=["pools"])

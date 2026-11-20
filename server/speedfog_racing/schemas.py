@@ -180,10 +180,58 @@ class UpdateRaceRequest(BaseModel):
     custom_rules: str | None = Field(default=None, max_length=1000)
 
 
-class AddParticipantRequest(BaseModel):
-    """Request to add a participant to a race."""
+class RelayTeamChoice(BaseModel):
+    """The team a runner enters on a relay race: an existing one, or a new one."""
+
+    relay_team_id: UUID | None = None
+    create_team: bool = False
+
+
+class AddParticipantRequest(RelayTeamChoice):
+    """Request to add a participant to a race.
+
+    On a relay race the team choice places an existing user; an invite carries
+    none, the invitee picks when accepting.
+    """
 
     twitch_username: str
+
+
+def _clean_team_name(value: str | None) -> str | None:
+    # Imported here: the services package imports this module.
+    from speedfog_racing.services.relay import RELAY_TEAM_NAME_MAX
+
+    if value is None:
+        return None
+    name = value.strip()
+    if not name:
+        raise ValueError("A team name cannot be blank")
+    if len(name) > RELAY_TEAM_NAME_MAX:
+        raise ValueError(f"A team name is at most {RELAY_TEAM_NAME_MAX} characters")
+    return name
+
+
+class CreateRelayTeamRequest(BaseModel):
+    """Body of ``POST /races/{id}/relay-teams``."""
+
+    name: str | None = None
+
+    _clean_name = field_validator("name")(_clean_team_name)
+
+
+class UpdateRelayTeamRequest(BaseModel):
+    """Body of ``PATCH /races/{id}/relay-teams/{team_id}``."""
+
+    name: str | None = None
+    first_runner_id: UUID | None = None
+
+    _clean_name = field_validator("name")(_clean_team_name)
+
+
+class MoveToRelayTeamRequest(BaseModel):
+    """Body of ``POST /races/{id}/participants/{participant_id}/relay-team``."""
+
+    team_id: UUID
 
 
 class AddCasterRequest(BaseModel):
@@ -738,6 +786,11 @@ class InviteInfoResponse(BaseModel):
     # The invite page warns that a Set Seed race replays a played seed.
     race_mode: RunMode
     twitch_username: str
+    # The invite page of a relay race picks a team.
+    race_id: UUID
+    relay_team_size: int | None = None
+    relay_runners_create_teams: bool = True
+    relay_teams: list[RelayTeamOut] = []
 
 
 class InviteResponse(BaseModel):

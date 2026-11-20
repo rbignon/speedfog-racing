@@ -8,13 +8,19 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.api.helpers import late_join_window_open, participant_response
+from speedfog_racing.api.helpers import (
+    late_join_window_open,
+    participant_response,
+    relay_team_out,
+)
+from speedfog_racing.api.relay_teams import place_in_team
 from speedfog_racing.auth import require_not_banned
 from speedfog_racing.database import get_db
 from speedfog_racing.models import Invite, Participant, Race, RaceStatus, User
 from speedfog_racing.schemas import (
     AcceptInviteResponse,
     InviteInfoResponse,
+    RelayTeamChoice,
 )
 from speedfog_racing.services.calendar_sync import add_calendar_participant
 from speedfog_racing.websocket import broadcast_race_state_update
@@ -45,8 +51,17 @@ async def get_invite_info(
 ) -> InviteInfoResponse:
     """Get public information about an invite."""
     invite = await _get_invite_or_404(db, token)
+    race = invite.race
+    members: list[Participant] = []
+    if race.is_relay:
+        result = await db.execute(select(Participant).where(Participant.race_id == race.id))
+        members = list(result.scalars())
 
     return InviteInfoResponse(
+        race_id=race.id,
+        relay_team_size=race.relay_team_size,
+        relay_runners_create_teams=race.relay_runners_create_teams,
+        relay_teams=[relay_team_out(t, members) for t in race.relay_teams],
         token=invite.token,
         race_name=invite.race.name,
         organizer_name=invite.race.organizer.twitch_display_name
@@ -60,12 +75,14 @@ async def get_invite_info(
 @router.post("/{token}/accept", response_model=AcceptInviteResponse)
 async def accept_invite(
     token: str,
+    choice: RelayTeamChoice | None = None,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_not_banned),
 ) -> AcceptInviteResponse:
     """Accept an invite and become a participant.
 
-    The authenticated user's Twitch username must match the invite.
+    The authenticated user's Twitch username must match the invite. On a relay
+    race the body names the team to join or asks for a new one.
     """
     invite = await _get_invite_or_404(db, token)
 
@@ -122,12 +139,16 @@ async def accept_invite(
         color_index=next_color,
     )
     db.add(participant)
+    await place_in_team(
+        db, invite.race, participant, choice or RelayTeamChoice(), by_organizer=False
+    )
 
     # Mark invite as accepted
     invite.accepted = True
 
     await db.commit()
     await db.refresh(participant)
+    db.expire(invite.race, ["relay_teams"])
 
     # Broadcast updated state to spectators and mods
     race_result = await db.execute(
