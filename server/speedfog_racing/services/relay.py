@@ -8,7 +8,7 @@ import math
 from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -23,6 +23,9 @@ RELAY_PLUGIN = "relay"
 RELAY_TEAM_SIZE_MIN = 2
 RELAY_TEAM_SIZE_MAX = 6
 RELAY_TEAM_NAME_MAX = 40
+
+# Seconds an offline holder keeps the baton before a teammate may take it.
+RELAY_OFFLINE_WAIT_S = 60
 
 
 def seed_has_relay(graph_json: Mapping[str, Any]) -> bool:
@@ -89,6 +92,25 @@ def reset_relay_team(team: RelayTeam) -> None:
     team.holder_id = None
     team.holder_offline_since = None
     team.baton_free = False
+
+
+def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -> int | None:
+    """Seconds before the team's baton can be taken, as ``RelayInfo`` tells it.
+
+    0 once it is free: ``baton_free`` is set, the team has no holder, or the
+    holder has been offline for the whole wait (or no offline stamp is known).
+    None while the holder is online and the baton not free.
+    """
+    if team.baton_free or team.holder_id is None:
+        return 0
+    if holder_connected:
+        return None
+    since = team.holder_offline_since
+    if since is None:
+        return 0
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=UTC)
+    return max(0, RELAY_OFFLINE_WAIT_S - int((now - since).total_seconds()))
 
 
 def _members_by_team(race: Race) -> list[tuple[RelayTeam, list[Participant]]]:

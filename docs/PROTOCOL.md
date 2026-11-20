@@ -124,7 +124,7 @@ Daily Seeds are regular `Race` rows with `daily_date IS NOT NULL`; the underlyin
 ## Protocol Version
 
 The mod-server wire protocol carries its own version, independent from
-release numbers. Current: **1.18**. It is defined in
+release numbers. Current: **1.19**. It is defined in
 `server/speedfog_racing/websocket/schemas.py` (`PROTOCOL_VERSION`) and
 `mod/src/core/protocol.rs` (`PROTOCOL_VERSION`), which must stay identical.
 
@@ -136,6 +136,7 @@ Bump rules:
 
 Version history:
 
+- **1.19** - relay races: `auth_ok.relay` (`RelayInfo | null`, the runner's team, role and the seed's relay flags; null on any other race), server to mod `relay_update`, `relay_release`, `relay_take` and `relay_refused`, mod to server `relay_ready`, `relay_handoff_request`, `relay_take_request`, `relay_state` and `relay_taken` (see [Relay messages](#relay-messages-relay-races)). A relay race refuses a mod below 1.19 at auth; every other race keeps accepting a 1.18 mod, which never sees the fields. The mod crate speaks 1.18 until its relay lot lands.
 - **1.18** - the Lightning slows and shrinks: `item_effect.effect.kind` gains `lightning {speffect_id, duration_ms, scale_pct}` (to every other runner: its SpEffect row forces a slow walk, `scale_pct` the size, both for `duration_ms`); the Mini and its `scale` use are gone, `scale` stays for the Giant. A race with items refuses a mod below 1.18 at auth: a 1.17 mod drops the unknown kind, so its runner would never be hit by a Lightning.
 - **1.17** - race items lot 4 (graph.json 4.14): `item_effect.effect.kind` gains `steal_talisman {talismans, roll, report_id}` (the Talisman Thief, to the victim; `talismans` is the seed's table, a list of `{id, flag}`, `roll` a random u32 picking among the talismans the victim wears), `talisman {talisman_id}` (to the thief, once the victim reported), `junk_weapon {weapon_id}` (to the victim) and `hunter {chr_id, npc_param_id, think_id, duration_ms, report_id}` (to the leader); new mod to server `item_report {report_id, landed, talisman_id}`, the outcome of a `steal_talisman` or `hunter` effect (`talisman_id` null unless a talisman was taken), which the server answers with an `item_effect` (`talisman`) or `item_notice`. A race with items refuses a mod below 1.17 at auth: a 1.16 mod knows none of the three effects.
 - **1.16** - `zone_update.defeat_flag` (int or null): the zone's boss defeat flag, one of the seed's `boss_flags` (a boss arena, the final boss's aside), null elsewhere. In a boss arena with unused exits whose boss lives, the mod hides the exits at once and runs the Ink's time from the kill. A race with items refuses a mod below 1.16 at auth: a 1.15 mod would run that time through the fight.
@@ -167,7 +168,7 @@ message, and that is the rejection above. The `MIN_MOD_VERSION` server
 setting can additionally reject old _release_ versions for non-protocol
 emergencies.
 
-Two capability gates exist, each with an `auth_error` telling the player to
+Three capability gates exist, each with an `auth_error` telling the player to
 download the pack again (it carries the current mod), and each compared by
 `protocol_at_least` in `versioning.py`, which reads an absent value as 1.0:
 
@@ -187,6 +188,10 @@ download the pack again (it carries the current mod), and each compared by
   (`zone_update.unused_exits`). Switching the option in SETUP closes the
   race's mods with code 1000, so each one authenticates again and meets the
   gate (and gets the matching catalog).
+
+- A relay race requires protocol 1.19 or newer (`RELAY_MIN_PROTOCOL`), the
+  version from which the mod speaks the `relay_*` messages and reads
+  `auth_ok.relay`.
 
 Other races, Daily Seeds, events and practice sessions keep accepting any mod
 of the current major.
@@ -230,6 +235,18 @@ First message after connection. Authenticates the mod. Must arrive within 5 seco
 `protocol_version` (optional): wire-protocol version spoken by the mod (see [Protocol Version](#protocol-version)). Absent on pre-versioning builds, which are assumed to speak `1.0`. An incompatible major is rejected with `auth_error` + close 4003.
 
 `mod_version` (optional): mod release version, used for server logs and the admin activity view only, never for decisions (except the emergency `MIN_MOD_VERSION` gate).
+
+#### Relay messages from the mod (relay races)
+
+Sent only on a relay race, by a mod of protocol 1.19 or newer. The server answers a refused request with `relay_refused`. See [Relay messages](#relay-messages-relay-races) for the types and the two sequences.
+
+| Message                 | Fields                                                            | When                                                                           |
+| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `relay_ready`           | `ready: bool`                                                     | A waiting runner is (or stops being) loaded at the Chapel with its lock raised |
+| `relay_handoff_request` | `to_participant_id: str`                                          | The holder confirmed a teammate in the menu                                    |
+| `relay_take_request`    | (none)                                                            | A waiting runner holds F8 on a free baton                                      |
+| `relay_state`           | `handoff_id: str \| null`, `state: CharacterState`, `igt_ms: int` | Checkpoint at a zone entry (`handoff_id` null) or answer to `relay_release`    |
+| `relay_taken`           | `handoff_id: str`                                                 | The new holder applied everything and raised its warp flag                     |
 
 #### `item_received`
 
@@ -416,6 +433,8 @@ Authentication successful. Contains initial race state.
 `latest_mod_version`: (string, optional) no longer sent. The server used it as a soft update notice on protocol-minor lag; that concept does not fit the seed-pack distribution model (see [Protocol Version](#protocol-version)), so the server omits it unconditionally. The field name stays reserved because deployed mod builds still render a notice when it is present.
 
 **Note:** The `race` object includes `started_at`, `seeds_released_at`, and `race_ends_at`. `started_at` is the effective gameplay start: on race launch the server sets it to `now + countdown_seconds` so the countdown window doesn't eat into the configured duration. `race_ends_at` is `null` until the race transitions to `running` (it is computed from `started_at + race_duration_minutes`); when the race starts, the server pushes a [`race_info_update`](#race_info_update) so mods that authed in `setup` pick up the now-populated value. The `race` object also includes `quit_out_penalty_ms` (integer milliseconds, default 2000, 0 disables); the mod applies this penalty to the in-game timer at the reload after each detected quit-out during a running race or training session, with an overlay banner. The `race` object also carries `attempt_id` (string, optional), an opaque id of the run's current attempt: the race's `started_at` and seed (absent before the start, so a mod that authed in setup gets it from the `race_info_update` pushed at the start), or a solo session's reset count. It changes when a race is reset and run again, when its seed is re-rolled after the start (a Daily Seed), or when a Set Seed solo run is reset. The mod saves it with the event flags the server has not acknowledged, and a relaunch drops those of another attempt (see "Surviving a Game Restart" in `EVENT_FLAG_TRACKING.md`). Older mods ignore it; no protocol bump, since the server never needs to know whether a mod reads it.
+
+On a relay race `auth_ok` gains `relay` (a `RelayInfo`, see [Relay messages](#relay-messages-relay-races)); it is `null` on any other race.
 
 #### `auth_error`
 
@@ -640,6 +659,59 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 | `item_notice` | `banner`                                 | A banner with nothing applied: a Star holder's "blocked" banner (shown like a Shield's block banner), or the notice of a steal or Hunter report                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | `item_result` | `item`, `banner`, `reminder?`            | Outcome of the runner's own item use (hit, blocked, missed, or the self item's line)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | `item_remove` | `goods`, `banner?`                       | Raise the goods' `remove_flag` so the game drops it; with a banner to a shield holder whose shield blocked                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+
+#### Relay messages (relay races)
+
+Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state: it comes with `auth_ok` and again in every `relay_update`.
+
+`CharacterState`: `attributes` (exactly 8 integers: vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane), `level`, `runes`, `items` (at most 4000 raw item ids with their category nibble, only the transferable ones, each once) and `grace_flags` (at most 1000 event flags of the lit graces).
+
+`RelayMember`: `{participant_id, name, zones, status, online, ready, validated}`. `ready` is the member's last `relay_ready`, false when offline; `status` is any participant status.
+
+`RelayInfo`:
+
+```json
+{
+  "team_id": "uuid",
+  "team_name": "Red Team",
+  "team_status": "playing",
+  "cap": 5,
+  "holder_id": "uuid",
+  "holder_online": true,
+  "zone_name": "Leyndell, Royal Capital",
+  "baton_free_in_s": null,
+  "role": "holder",
+  "gates_locked": false,
+  "members": [],
+  "flags": {
+    "lock_flag": 1050290500,
+    "chapel_warp_flag": 1050290501,
+    "warp_flag_base": 1050290510,
+    "zone_flag_base": 1050294000
+  }
+}
+```
+
+- `team_status`: the team's participant status. `finished`, `abandoned` or `disqualified` tells the mod its race is over: it lowers its lock.
+- `holder_id`: null when the team has no holder.
+- `zone_name`: display name of the zone a taker would restart (the zone of the team's last fog gate, or the start zone before any gate), null when unknown.
+- `role`: `holder` only for the team's holder while the baton is not free. Once the baton is free (a take nobody acknowledged), the nominal holder reads `waiting` with `baton_free_in_s: 0`, locks again, and may take the baton back like any teammate.
+- `gates_locked`: true for a holder at or over their cap.
+- `baton_free_in_s`: null while the holder is online; otherwise the seconds before the baton can be taken (the offline wait is 60 s), 0 when it is free.
+- `flags`: the seed's `relay` block minus `warp_flag_count`.
+
+| Message         | Fields                                                                                                                                       | When                                                                                                                                               |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `relay_update`  | `relay: RelayInfo`                                                                                                                           | Anything in `RelayInfo` changed for this mod's team (each connected member gets its own `role` and `gates_locked`)                                 |
+| `relay_release` | `handoff_id: str`, `to_name: str`                                                                                                            | To the holder: send your state, lock, go to the Chapel                                                                                             |
+| `relay_take`    | `handoff_id: str`, `state: CharacterState \| null`, `igt_ms: int`, `defeat_flags: int[]`, `warp_flag: int \| null`, `zone_name: str \| null` | To the new holder. `state` null: no state known yet. `warp_flag` null: the team has taken no gate yet, stay at the Chapel                          |
+| `relay_refused` | `code: str`, `message: str`                                                                                                                  | A request was refused. Codes: `not_holder`, `target_unavailable`, `target_at_cap`, `at_cap`, `holder_online`, `not_ready`, `not_validated`, `busy` |
+
+Handoff: `relay_handoff_request` (holder), the server checks, `relay_release` (holder), `relay_state` with the `handoff_id` (holder), the server stores the state, flips the holder, sends `relay_take` (target) and `relay_update` to the team; the giver's mod reads `role: "waiting"` in that update and only then locks and warps to the Chapel (the lock follows the server's word, so a cancelled handoff never strands a holder locked); `relay_taken` (target), then `relay_update` to the team and a leaderboard broadcast.
+
+Takeover: `relay_take_request` (teammate), the server checks, flips the holder and sends `relay_take` with the stored state and the last team IGT; then `relay_taken`.
+
+A `relay_state` carrying an expired or unknown `handoff_id` is answered with a `relay_update` to its sender, so a giver who already locked learns that it still holds the baton. A request made while the race is not running, or during the countdown, is refused with `busy`. A `relay_take` not acknowledged within 30 s sets the baton free; a `relay_release` not answered within 15 s cancels the handoff.
 
 #### `death_counts`
 

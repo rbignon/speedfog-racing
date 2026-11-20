@@ -136,6 +136,15 @@ A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_
 
 ## Baton
 
+What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py`, wire shapes in `PROTOCOL.md`, protocol 1.19). It is sent in `auth_ok` and again, one message per connected member with its own `role` and `gates_locked`, by `send_relay_updates`. A relay race refuses a mod below `RELAY_MIN_PROTOCOL` (1.19) at auth with `RELAY_OLD_MOD_MESSAGE`; other races still accept a 1.18 mod.
+
+- Role: `holder` only for the team's holder while the baton is not free. When `baton_free` is set the nominal holder reads `waiting` with `baton_free_in_s: 0`, like everyone else.
+- `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, floored at 0 (0 too when the stamp is missing).
+- `gates_locked`: a holder whose `relay_zones` reached the team's cap.
+- `zone_name`: the node of `entry_flag_id` in the graph's `event_map`, else the start node.
+- Readiness: `RaceRoom.relay_ready` holds the members loaded at the Chapel with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected); a disconnect drops the member from it.
+- `RaceRoom.relay_lock` serializes the baton operations of the race, and `relay_pending` holds the handoff in flight per team.
+
 ## Cap
 
 A runner may play `ceil(total_layers / active_members) + 1` zones (`relay_cap`),

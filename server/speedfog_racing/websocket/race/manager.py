@@ -28,6 +28,7 @@ from speedfog_racing.websocket.race.projection import (
     ProjectedParticipant,
     project_participant_at,
 )
+from speedfog_racing.websocket.race.relay import PendingHandoff, relay_member_wire
 from speedfog_racing.websocket.schemas import (
     DailyStreakUpdateMessage,
     DebugFlagsDetectedMessage,
@@ -36,7 +37,6 @@ from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
-    RelayMember,
     SpectatorCountMessage,
     ZoneHistoryMessage,
 )
@@ -104,6 +104,16 @@ class RaceRoom:
     _ghosts_expire_at: float = field(default=0.0, repr=False, compare=False)
     _ghosts_loading: asyncio.Task[Sequence[Participant] | None] | None = field(
         default=None, repr=False, compare=False
+    )
+
+    # Serializes the baton operations of this race's relay teams.
+    relay_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
+    # Relay members loaded at the Chapel with their lock raised (their last
+    # `relay_ready` was true). Used under relay_lock; dropped on disconnect.
+    relay_ready: set[uuid.UUID] = field(default_factory=set, repr=False, compare=False)
+    # team_id -> the handoff awaiting its answer or its acknowledgement.
+    relay_pending: dict[uuid.UUID, PendingHandoff] = field(
+        default_factory=dict, repr=False, compare=False
     )
 
     # Serializes the item flow (grants, uses, inventory sync) of this race.
@@ -435,6 +445,7 @@ class ConnectionManager:
             )
             return
         room.mods.pop(participant_id, None)
+        room.relay_ready.discard(participant_id)
         logger.info(f"Mod disconnected: race={race_id}, participant={participant_id}")
         if not room.mods and not room.spectators:
             self.rooms.pop(race_id, None)
@@ -888,10 +899,11 @@ def compute_gap_ms(
 def _relay_ready_ids(row: RelayTeamRow) -> Collection[uuid.UUID]:
     """The members of ``row`` whose last ``relay_ready`` was true.
 
-    The single place the member ``ready`` flag comes from: nothing tracks it
-    yet, so every member reads as not ready.
+    The single place the member ``ready`` flag comes from: the room's
+    ``relay_ready``, empty when the race has no room.
     """
-    return ()
+    room = manager.get_room(row.team.race_id)
+    return room.relay_ready if room else ()
 
 
 def relay_team_to_info(
@@ -919,18 +931,7 @@ def relay_team_to_info(
         tier = get_tier_for_node(team.current_zone, graph_json)
     holder = row.holder
     holder_username = holder.user.twitch_username if holder else None
-    members = [
-        RelayMember(
-            participant_id=str(m.id),
-            name=m.user.twitch_display_name or m.user.twitch_username,
-            zones=m.relay_zones,
-            status=m.status.value,
-            online=m.id in connected,
-            ready=m.id in connected and m.id in ready_ids,
-            validated=m.relay_validated,
-        )
-        for m in row.members
-    ]
+    members = [relay_member_wire(m, connected=connected, ready=ready_ids) for m in row.members]
     return ParticipantInfo(
         id=str(team.id),
         twitch_username=f"team-{str(team.id)[:8]}",
