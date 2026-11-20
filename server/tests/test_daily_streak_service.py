@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base
 from speedfog_racing.services.daily_streak_service import (
     FREEZE_CAP,
+    FREEZE_CAP_BEFORE,
+    FREEZE_CAP_SINCE,
     FREEZE_GRANT_PERIOD,
     StreakState,
     apply_close_day,
@@ -66,9 +68,32 @@ def test_qualification_grants_freeze_at_multiple_of_seven() -> None:
 def test_qualification_freeze_cap() -> None:
     # Already at the cap and qualifying for a multiple of 7.
     day = FREEZE_GRANT_PERIOD * (FREEZE_CAP + 1)
-    prev = s(current=day - 1, best=day - 1, freezes=FREEZE_CAP, last=date(2026, 5, 11))
-    new = apply_qualification(prev, qualified_for=date(2026, 5, 12))
-    assert new == s(current=day, best=day, freezes=FREEZE_CAP, last=date(2026, 5, 12))
+    last = FREEZE_CAP_SINCE
+    today = last + timedelta(days=1)
+    prev = s(current=day - 1, best=day - 1, freezes=FREEZE_CAP, last=last)
+    new = apply_qualification(prev, qualified_for=today)
+    assert new == s(current=day, best=day, freezes=FREEZE_CAP, last=today)
+
+
+def test_qualification_before_the_cap_change_grants_up_to_the_old_cap() -> None:
+    last = FREEZE_CAP_SINCE - timedelta(days=2)
+    eve = FREEZE_CAP_SINCE - timedelta(days=1)
+    prev = s(current=6, best=6, freezes=FREEZE_CAP_BEFORE - 1, last=last)
+    assert apply_qualification(prev, qualified_for=eve).freeze_count == FREEZE_CAP_BEFORE
+
+    capped = s(current=6, best=6, freezes=FREEZE_CAP_BEFORE, last=last)
+    assert apply_qualification(capped, qualified_for=eve).freeze_count == FREEZE_CAP_BEFORE
+
+
+def test_freezes_banked_over_the_cap_are_kept_but_earn_nothing() -> None:
+    # A count from the old cap survives the change; grants resume only once
+    # it has dropped below the new cap.
+    eve = FREEZE_CAP_SINCE - timedelta(days=1)
+    over = s(current=6, best=6, freezes=FREEZE_CAP + 1, last=eve)
+    assert apply_qualification(over, qualified_for=FREEZE_CAP_SINCE).freeze_count == FREEZE_CAP + 1
+
+    under = s(current=6, best=6, freezes=FREEZE_CAP - 1, last=eve)
+    assert apply_qualification(under, qualified_for=FREEZE_CAP_SINCE).freeze_count == FREEZE_CAP
 
 
 def test_qualification_does_not_decrease_best() -> None:
@@ -116,7 +141,7 @@ def test_walk_capped_freezes_absorb_misses_then_break() -> None:
     # the cap, then the last multiple grants nothing. Then miss one day more
     # than the banked freezes.
     played = FREEZE_GRANT_PERIOD * (FREEZE_CAP + 1)
-    start = date(2026, 1, 1)
+    start = FREEZE_CAP_SINCE
     for i in range(played):
         state = apply_qualification(state, qualified_for=start + timedelta(days=i))
     assert state.current_streak == played
@@ -132,6 +157,28 @@ def test_walk_capped_freezes_absorb_misses_then_break() -> None:
 
 
 # Forward-walk helper --------------------------------------------------------
+
+
+def test_walk_history_across_the_cap_change_keeps_what_the_old_cap_gave() -> None:
+    # The replay behind a reroll or a disqualification must not take back
+    # freezes, or a streak they saved, earned before the cap went down.
+    # Banks FREEZE_CAP + 2 freezes, which the old cap has to allow.
+    assert FREEZE_CAP + 2 <= FREEZE_CAP_BEFORE
+    before = FREEZE_GRANT_PERIOD * (FREEZE_CAP + 2)
+    start = FREEZE_CAP_SINCE - timedelta(days=before)
+    history = [(start + timedelta(days=i), True) for i in range(before)]
+    # From the change on: two more grant periods played, nothing earned.
+    after = FREEZE_GRANT_PERIOD * 2
+    history += [(FREEZE_CAP_SINCE + timedelta(days=i), True) for i in range(after)]
+    # Then every banked freeze still absorbs a miss.
+    resume = FREEZE_CAP_SINCE + timedelta(days=after)
+    misses = [resume + timedelta(days=i) for i in range(FREEZE_CAP + 2)]
+    history += [(d, False) for d in misses]
+
+    state, frozen = walk_history(history)
+    assert state.current_streak == before + after
+    assert state.freeze_count == 0
+    assert frozen == misses
 
 
 def test_walk_history_empty_returns_zero_state() -> None:

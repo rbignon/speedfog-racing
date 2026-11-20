@@ -25,8 +25,25 @@ from sqlalchemy.sql.elements import ColumnElement
 if TYPE_CHECKING:
     from speedfog_racing.models import Participant, Race, User
 
-FREEZE_CAP = 7
+FREEZE_CAP = 3
+# The cap was lowered without taking anything back: a daily dated before
+# ``FREEZE_CAP_SINCE`` grants up to ``FREEZE_CAP_BEFORE``, and a count banked
+# under that cap is kept, it just earns nothing until it drops below
+# ``FREEZE_CAP``. ``FREEZE_CAP_BEFORE`` is therefore also the highest count a
+# user can hold (``ck_users_daily_freeze_count_range``).
+FREEZE_CAP_BEFORE = 7
+FREEZE_CAP_SINCE = date(2026, 11, 21)
 FREEZE_GRANT_PERIOD = 7
+
+
+def freeze_cap_for(daily_date: date) -> int:
+    """Freeze cap in force for the daily dated ``daily_date``.
+
+    Keyed on the daily's date rather than on the wall clock so that a replay
+    of a whole history (``walk_history``) grants what the live path granted
+    on each day.
+    """
+    return FREEZE_CAP if daily_date >= FREEZE_CAP_SINCE else FREEZE_CAP_BEFORE
 
 
 def qualifies_for_streak(zone_history: Sequence[Any] | None) -> bool:
@@ -117,7 +134,7 @@ def apply_qualification(state: StreakState, *, qualified_for: date) -> StreakSta
     new_current = state.current_streak + 1
     new_best = max(state.best_streak, new_current)
     new_freezes = state.freeze_count
-    if new_current % FREEZE_GRANT_PERIOD == 0 and new_freezes < FREEZE_CAP:
+    if new_current % FREEZE_GRANT_PERIOD == 0 and new_freezes < freeze_cap_for(qualified_for):
         new_freezes += 1
 
     return replace(

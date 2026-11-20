@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from speedfog_racing.database import Base
 from speedfog_racing.models import DailyStreakFreeze, User
-from speedfog_racing.services.daily_streak_service import FREEZE_CAP
+from speedfog_racing.services.daily_streak_service import FREEZE_CAP_BEFORE
 
 
 @pytest.fixture
@@ -32,12 +32,12 @@ async def streak_async_session(streak_async_engine):
 
 
 @pytest.mark.asyncio
-async def test_user_freeze_count_check_constraint_matches_cap(streak_async_session) -> None:
+async def test_user_freeze_count_check_constraint_matches_highest_cap(streak_async_session) -> None:
     async with streak_async_session() as db:
-        db.add(User(twitch_id="t0", twitch_username="t0", daily_freeze_count=FREEZE_CAP))
+        db.add(User(twitch_id="t0", twitch_username="t0", daily_freeze_count=FREEZE_CAP_BEFORE))
         await db.commit()
 
-        db.add(User(twitch_id="t1", twitch_username="t1", daily_freeze_count=FREEZE_CAP + 1))
+        db.add(User(twitch_id="t1", twitch_username="t1", daily_freeze_count=FREEZE_CAP_BEFORE + 1))
         with pytest.raises(IntegrityError):
             await db.commit()
 
