@@ -8,7 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Race items: each tier (front, middle, back) maps its base item keys to a draw
 # weight (an item can sit in several tiers; 0 or absent = not drawn).
 DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
-    "front": {"rune_pouch": 1, "banana": 1, "mushroom": 1},
+    "front": {"rune_pouch": 1, "banana": 1, "mushroom": 1, "giant": 1},
     "middle": {
         "shield": 1,
         "mushroom": 1,
@@ -20,6 +20,8 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "giant": 1,
         "camera": 1,
         "talisman_thief": 1,
+        "toxic_blossom": 1,
+        "junk_weapon": 1,
     },
     "back": {
         "red_shell": 1,
@@ -33,7 +35,7 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "slow_mo": 1,
         "camera": 1,
         "talisman_thief": 1,
-        "junk_weapon": 1,
+        "hammer": 1,
         "hunter": 1,
     },
 }

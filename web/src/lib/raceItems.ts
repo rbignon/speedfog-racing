@@ -35,15 +35,15 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["front", "middle"],
   },
   {
+    key: "giant",
+    name: "Giant",
+    effect: "Everyone else grows huge for 15 s.",
+    tiers: ["front", "middle"],
+  },
+  {
     key: "shield",
     name: "Shield",
     effect: "Held, not used: blocks the next item aimed at you.",
-    tiers: ["middle"],
-  },
-  {
-    key: "hammer",
-    name: "Hammer",
-    effect: "Everyone else fat-rolls for 15 s.",
     tiers: ["middle"],
   },
   {
@@ -53,15 +53,22 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["middle"],
   },
   {
-    key: "giant",
-    name: "Giant",
-    effect: "Everyone else grows huge for 15 s.",
+    key: "junk_weapon",
+    name: "Junk Weapon",
+    effect:
+      "Forces a junk weapon into the right hand of the runner just ahead of you.",
     tiers: ["middle"],
   },
   {
     key: "red_shell",
     name: "Red Shell",
     effect: "Damages the runner just ahead of you, heavily. Never kills.",
+    tiers: ["middle", "back"],
+  },
+  {
+    key: "hammer",
+    name: "Hammer",
+    effect: "Everyone else fat-rolls for 15 s.",
     tiers: ["middle", "back"],
   },
   {
@@ -89,6 +96,12 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["middle", "back"],
   },
   {
+    key: "toxic_blossom",
+    name: "Toxic Blossom",
+    effect: "Poisons everyone else.",
+    tiers: ["middle", "back"],
+  },
+  {
     key: "blue_shell",
     name: "Blue Shell",
     effect: "Halves the leader's max HP for 15 s, even if that is you.",
@@ -107,12 +120,6 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["back"],
   },
   {
-    key: "toxic_blossom",
-    name: "Toxic Blossom",
-    effect: "Poisons everyone else.",
-    tiers: ["back"],
-  },
-  {
     key: "star",
     name: "Star",
     effect: "Invincible for 15 s, and items aimed at you are blocked.",
@@ -125,16 +132,9 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["back"],
   },
   {
-    key: "junk_weapon",
-    name: "Junk Weapon",
-    effect:
-      "Forces a junk weapon into the right hand of the runner just ahead of you.",
-    tiers: ["back"],
-  },
-  {
     key: "hunter",
     name: "Hunter",
-    effect: "Sends Margit after the leader for 30 s, even if that is you.",
+    effect: "Sends Margit after the leader for 15 s, even if that is you.",
     tiers: ["back"],
   },
 ];

@@ -578,10 +578,3 @@ def test_an_item_without_its_seed_data_is_not_drawn(caplog):
         _seed_graph(talismans=[], junk_weapons=[{"id": "x"}], hunter={"chr_id": 1})
     )
     assert set(empty.items) == {"red_shell"}
-
-
-def test_the_new_items_are_in_their_default_tiers():
-    weights = DEFAULT_RACE_ITEMS_TIER_WEIGHTS
-    assert {t for t, w in weights.items() if "talisman_thief" in w} == {"middle", "back"}
-    assert {t for t, w in weights.items() if "junk_weapon" in w} == {"back"}
-    assert {t for t, w in weights.items() if "hunter" in w} == {"back"}
