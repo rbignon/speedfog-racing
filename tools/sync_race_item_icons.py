@@ -8,9 +8,9 @@
 The icon names come from the `[icons]` table of speedfog's
 data/plugins/race_items.toml; each one must exist as
 data/plugins/race_items_icon_<icon>.png, be a PNG and be a square of at least
-160x160 (the art is delivered at 1024x1024). Every file is checked first: any
-problem lists all the bad files and nothing is copied. Each icon is written at
-160x160, downscaled when larger: the banner draws it at 7.5% of the screen
+160x160 (the art is larger, 768x768 or 1024x1024). Every file is checked
+first: any problem lists all the bad files and nothing is copied. Each icon is
+written at 160x160, downscaled when larger: the banner draws it at 7.5% of the screen
 width (144 px at 1080p), and the full-size art would weigh megabytes in the
 DLL. The final art lands by replacing the PNGs in speedfog, running this tool
 and releasing the mod. `unknown.png` (the fallback icon) is not in the catalog
