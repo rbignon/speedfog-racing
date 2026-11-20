@@ -23,6 +23,7 @@ from speedfog_racing.schemas import (
     RelayTeamChoice,
 )
 from speedfog_racing.services.calendar_sync import add_calendar_participant
+from speedfog_racing.services.relay import leaderboard_entries
 from speedfog_racing.websocket import broadcast_race_state_update
 from speedfog_racing.websocket.race.manager import manager
 
@@ -164,7 +165,7 @@ async def accept_invite(
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
         invite.race_id,
-        race.participants,
+        leaderboard_entries(race, graph_json),
         graph_json=graph_json,
         project_ghosts=race.projects_ghosts,
     )

@@ -34,7 +34,7 @@ from speedfog_racing.schemas import (
     UpdateRelayTeamRequest,
 )
 from speedfog_racing.services.calendar_sync import add_calendar_participant
-from speedfog_racing.services.relay import default_team_name
+from speedfog_racing.services.relay import default_team_name, leaderboard_entries
 from speedfog_racing.websocket import broadcast_race_state_update
 from speedfog_racing.websocket.race.manager import manager
 from speedfog_racing.websocket.schemas import persist_system_chat
@@ -209,7 +209,10 @@ async def _finish(db: AsyncSession, race: Race, user: User) -> RaceDetailRespons
     )
     graph_json = race.seed.graph_json if race.seed else None
     await manager.broadcast_leaderboard(
-        race.id, race.participants, graph_json=graph_json, project_ghosts=race.projects_ghosts
+        race.id,
+        leaderboard_entries(race, graph_json),
+        graph_json=graph_json,
+        project_ghosts=race.projects_ghosts,
     )
     await broadcast_race_state_update(race.id, race)
     return races_api._race_detail_response(race, user)

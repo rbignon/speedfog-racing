@@ -4,11 +4,11 @@ import asyncio
 import itertools
 import logging
 import uuid
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from time import monotonic, time_ns
-from typing import Any
+from typing import Any, cast
 
 from fastapi import WebSocket
 
@@ -21,6 +21,7 @@ from speedfog_racing.services.chat_access import (
 from speedfog_racing.services.debug_flags import can_see_debug_flags
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.race_items import PendingReport
+from speedfog_racing.services.relay import RelayTeamRow
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.handler import close_evicted
 from speedfog_racing.websocket.race.projection import (
@@ -35,11 +36,16 @@ from speedfog_racing.websocket.schemas import (
     ParticipantInfo,
     PlayerUpdateMessage,
     RaceStatusChangeMessage,
+    RelayMember,
     SpectatorCountMessage,
     ZoneHistoryMessage,
 )
 
 logger = logging.getLogger(__name__)
+
+# What a leaderboard row stands for: a runner, a ghost projected to a viewer's
+# IGT, or (relay races) a whole team.
+LeaderboardEntry = Participant | ProjectedParticipant | RelayTeamRow
 
 SEND_TIMEOUT = 5.0  # seconds before a send is considered failed
 
@@ -506,7 +512,7 @@ class ConnectionManager:
     async def broadcast_leaderboard(
         self,
         race_id: uuid.UUID,
-        participants: list[Participant],
+        participants: Sequence[LeaderboardEntry],
         *,
         graph_json: dict[str, Any] | None = None,
         project_ghosts: bool = False,
@@ -538,7 +544,12 @@ class ConnectionManager:
             return
 
         # Async race: spectators see real state; each mod gets its own view.
-        by_id = {p.id: p for p in participants}
+        # Never reached on a relay race (no ghost projection there): the rows
+        # are runners.
+        runners = cast(
+            list[Participant], [p for p in participants if not isinstance(p, RelayTeamRow)]
+        )
+        by_id = {p.id: p for p in runners}
 
         async def _send_to_mod(participant_id: uuid.UUID) -> None:
             viewer = by_id.get(participant_id)
@@ -547,7 +558,7 @@ class ConnectionManager:
                 return
             projected_payload = _build_projected_payload_for_viewer(
                 viewer=viewer,
-                participants=participants,
+                participants=runners,
                 connected_ids=connected_ids,
                 graph_json=graph_json,
             )
@@ -665,7 +676,7 @@ class ConnectionManager:
     async def broadcast_player_update(
         self,
         race_id: uuid.UUID,
-        participant: Participant,
+        participant: Participant | RelayTeamRow,
         *,
         graph_json: dict[str, Any] | None = None,
         project_ghosts: bool = False,
@@ -874,8 +885,85 @@ def compute_gap_ms(
     return entry_delta + (time_in_layer - leader_time_in_layer)
 
 
+def _relay_ready_ids(row: RelayTeamRow) -> Collection[uuid.UUID]:
+    """The members of ``row`` whose last ``relay_ready`` was true.
+
+    The single place the member ``ready`` flag comes from: nothing tracks it
+    yet, so every member reads as not ready.
+    """
+    return ()
+
+
+def relay_team_to_info(
+    row: RelayTeamRow,
+    *,
+    connected_ids: set[uuid.UUID] | None = None,
+    graph_json: dict[str, Any] | None = None,
+    gap_ms: int | None = None,
+    layer_entry_igt: int | None = None,
+    layer_entry_igts: dict[str, int] | None = None,
+    include_zone_history: bool = False,
+    daily_points: int | None = None,
+    weapons: list[int] | None = None,
+) -> ParticipantInfo:
+    """A relay team as a participant-shaped leaderboard row.
+
+    The progress fields come from the team; ``mod_connected``, ``is_live`` and
+    ``stream_url`` follow the holder. No badge and no name template.
+    """
+    team = row.team
+    connected = connected_ids or set()
+    ready_ids = _relay_ready_ids(row)
+    tier: int | None = None
+    if graph_json and team.current_zone:
+        tier = get_tier_for_node(team.current_zone, graph_json)
+    holder = row.holder
+    holder_username = holder.user.twitch_username if holder else None
+    members = [
+        RelayMember(
+            participant_id=str(m.id),
+            name=m.user.twitch_display_name or m.user.twitch_username,
+            zones=m.relay_zones,
+            status=m.status.value,
+            online=m.id in connected,
+            ready=m.id in connected and m.id in ready_ids,
+            validated=m.relay_validated,
+        )
+        for m in row.members
+    ]
+    return ParticipantInfo(
+        id=str(team.id),
+        twitch_username=f"team-{str(team.id)[:8]}",
+        twitch_display_name=team.name,
+        status=team.status.value,
+        current_zone=team.current_zone,
+        current_layer=team.current_layer,
+        current_layer_tier=tier,
+        igt_ms=team.igt_ms,
+        death_count=team.death_count,
+        color_index=team.color_index,
+        mod_connected=team.holder_id is not None and team.holder_id in connected,
+        zone_history=team.zone_history if include_zone_history else None,
+        gap_ms=gap_ms,
+        layer_entry_igt=layer_entry_igt,
+        layer_entry_igts={int(k): v for k, v in layer_entry_igts.items()}
+        if layer_entry_igts is not None
+        else None,
+        is_live=twitch_live_service.is_live(holder_username) if holder_username else False,
+        stream_url=twitch_live_service.stream_url(holder_username) if holder_username else None,
+        daily_points=daily_points,
+        weapons=weapons,
+        relay_holder=(holder.user.twitch_display_name or holder.user.twitch_username)
+        if holder
+        else None,
+        relay_holder_id=str(holder.id) if holder else None,
+        relay_cap=row.cap,
+        relay_members=members,
+    )
+
+
 def participant_to_info(
-    participant: Participant | ProjectedParticipant,
+    participant: LeaderboardEntry,
     *,
     connected_ids: set[uuid.UUID] | None = None,
     graph_json: dict[str, Any] | None = None,
@@ -894,6 +982,18 @@ def participant_to_info(
     broadcasts (leaderboard_update, player_update) rely on
     ZoneHistoryMessage snapshots instead.
     """
+    if isinstance(participant, RelayTeamRow):
+        return relay_team_to_info(
+            participant,
+            connected_ids=connected_ids,
+            graph_json=graph_json,
+            gap_ms=gap_ms,
+            layer_entry_igt=layer_entry_igt,
+            layer_entry_igts=layer_entry_igts,
+            include_zone_history=include_zone_history,
+            daily_points=daily_points,
+            weapons=weapons,
+        )
     # Compute tier on the fly from current_zone + graph_json
     tier: int | None = None
     if graph_json and participant.current_zone:
@@ -942,10 +1042,10 @@ def participant_to_info(
 
 
 def sort_leaderboard(
-    participants: Sequence[Participant | ProjectedParticipant],
+    participants: Sequence[LeaderboardEntry],
     *,
     graph_json: dict[str, Any] | None = None,
-) -> tuple[list[Participant | ProjectedParticipant], dict[uuid.UUID, int | None]]:
+) -> tuple[list[LeaderboardEntry], dict[uuid.UUID, int | None]]:
     """Sort participants for leaderboard display.
 
     Returns (sorted_participants, entry_igts) where entry_igts maps each
@@ -981,7 +1081,7 @@ def sort_leaderboard(
             entry = get_layer_entry_igt(p.zone_history, p.current_layer, graph_json)
         entry_igts[p.id] = entry
 
-    def sort_key(p: Participant | ProjectedParticipant) -> tuple[int, int, int]:
+    def sort_key(p: LeaderboardEntry) -> tuple[int, int, int]:
         status = p.status.value
         priority = status_priority.get(status, 99)
 
@@ -1000,7 +1100,7 @@ def sort_leaderboard(
 
 
 def _build_leader_context(
-    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    sorted_participants: Sequence[LeaderboardEntry],
     graph_json: dict[str, Any] | None,
 ) -> tuple[dict[int, int], int, bool]:
     """Compute leader splits + leader IGT for gap timing.
@@ -1027,7 +1127,7 @@ def _build_leader_context(
 
 
 def leaderboard_gaps(
-    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    sorted_participants: Sequence[LeaderboardEntry],
     entry_igts: dict[uuid.UUID, int | None],
     graph_json: dict[str, Any] | None,
 ) -> dict[uuid.UUID, int | None]:
@@ -1058,7 +1158,7 @@ def leaderboard_gaps(
 
 def _participant_gap(
     index: int,
-    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    sorted_participants: Sequence[LeaderboardEntry],
     entry_igts: dict[uuid.UUID, int | None],
     *,
     graph_json: dict[str, Any] | None,
@@ -1084,7 +1184,7 @@ def _participant_gap(
 
 
 def _build_leaderboard_payload(
-    sorted_participants: Sequence[Participant | ProjectedParticipant],
+    sorted_participants: Sequence[LeaderboardEntry],
     entry_igts: dict[uuid.UUID, int | None],
     *,
     connected_ids: set[uuid.UUID],
@@ -1121,7 +1221,7 @@ def _build_leaderboard_payload(
 
 
 def build_leaderboard_payload(
-    participants: Sequence[Participant],
+    participants: Sequence[LeaderboardEntry],
     *,
     connected_ids: set[uuid.UUID],
     graph_json: dict[str, Any] | None,

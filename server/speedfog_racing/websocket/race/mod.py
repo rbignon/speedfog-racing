@@ -5,7 +5,7 @@ import json
 import logging
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -48,6 +48,7 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.services.race_items import extract_race_item_catalog, seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
+from speedfog_racing.services.relay import leaderboard_entries, leaderboard_entry
 from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
@@ -68,6 +69,7 @@ from speedfog_racing.websocket.race.items import (
     resolve_item_use,
 )
 from speedfog_racing.websocket.race.manager import (
+    LeaderboardEntry,
     manager,
     participant_to_info,
     sort_leaderboard,
@@ -220,8 +222,8 @@ async def _load_participant_no_seed(
     return result.scalar_one_or_none()
 
 
-def aggregate_death_counts(participants: list[Participant]) -> dict[str, int]:
-    """Aggregate deaths per node_id across all participants' zone_history."""
+def aggregate_death_counts(participants: Sequence[LeaderboardEntry]) -> dict[str, int]:
+    """Aggregate deaths per node_id across the leaderboard rows' zone_history."""
     counts: dict[str, int] = {}
     for p in participants:
         for entry in p.zone_history or []:
@@ -360,7 +362,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 # Send current death counts on reconnect. Event races
                 # (qualifiers, playoff stages, showcases) hide bloodstains:
                 # another runner's deaths would point to the costly zones.
-                counts = aggregate_death_counts(race.participants)
+                counts = aggregate_death_counts(leaderboard_entries(race, seed.graph_json))
                 if counts and race.event_slot is None:
                     await self.websocket.send_text(
                         DeathCountsMessage(counts=counts).model_dump_json()
@@ -414,7 +416,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         room = manager.get_room(race.id)
         connected_ids = set(room.mods.keys()) if room else set()
         graph = seed.graph_json if seed else None
-        sorted_participants, _ = sort_leaderboard(race.participants, graph_json=graph)
+        sorted_participants, _ = sort_leaderboard(
+            leaderboard_entries(race, graph), graph_json=graph
+        )
         # The local runner's own arrivals seed its LiveSplit run. Nobody
         # else's: on an async race every later leaderboard is projected.
         participant_infos: list[ParticipantInfo] = [
@@ -486,7 +490,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             if participant:
                 await manager.broadcast_leaderboard(
                     self._race_id,
-                    participant.race.participants,
+                    leaderboard_entries(participant.race, self._cached_graph_json),
                     graph_json=self._cached_graph_json,
                     project_ghosts=participant.race.projects_ghosts,
                 )
@@ -626,7 +630,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 if race and race.participants:
                     await manager.broadcast_leaderboard(
                         self._race_id,
-                        list(race.participants),
+                        leaderboard_entries(race, self._cached_graph_json),
                         graph_json=self._cached_graph_json,
                         project_ghosts=race.projects_ghosts,
                     )
@@ -846,7 +850,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             await asyncio.gather(
                 manager.broadcast_player_update(
                     entity.race_id,
-                    entity,
+                    leaderboard_entry(entity.race, entity, self._cached_graph_json),
                     graph_json=self._cached_graph_json,
                     project_ghosts=entity.race.projects_ghosts,
                     weapons=weapons,
@@ -865,14 +869,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             if became_active:
                 await manager.broadcast_leaderboard(
                     entity.race_id,
-                    entity.race.participants,
+                    leaderboard_entries(entity.race, _get_graph_json(entity)),
                     graph_json=_get_graph_json(entity),
                     project_ghosts=entity.race.projects_ghosts,
                 )
             else:
                 await manager.broadcast_player_update(
                     entity.race_id,
-                    entity,
+                    leaderboard_entry(entity.race, entity, _get_graph_json(entity)),
                     graph_json=_get_graph_json(entity),
                     project_ghosts=entity.race.projects_ghosts,
                     weapons=weapons,
@@ -884,7 +888,9 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             )
 
         if death_delta > 0 and entity.race.event_slot is None:
-            counts = aggregate_death_counts(entity.race.participants)
+            counts = aggregate_death_counts(
+                leaderboard_entries(entity.race, _get_graph_json(entity))
+            )
             logger.info(
                 "Broadcasting death_counts: race=%s, counts=%s",
                 entity.race_id,
@@ -941,14 +947,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         if is_first_visit:
             await manager.broadcast_leaderboard(
                 entity.race_id,
-                entity.race.participants,
+                leaderboard_entries(entity.race, seed_graph),
                 graph_json=seed_graph,
                 project_ghosts=entity.race.projects_ghosts,
             )
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
-                entity,
+                leaderboard_entry(entity.race, entity, seed_graph),
                 graph_json=seed_graph,
                 project_ghosts=entity.race.projects_ghosts,
             )
@@ -997,14 +1003,14 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         if is_first_visit:
             await manager.broadcast_leaderboard(
                 entity.race_id,
-                entity.race.participants,
+                leaderboard_entries(entity.race, _get_graph_json(entity)),
                 graph_json=_get_graph_json(entity),
                 project_ghosts=entity.race.projects_ghosts,
             )
         else:
             await manager.broadcast_player_update(
                 entity.race_id,
-                entity,
+                leaderboard_entry(entity.race, entity, _get_graph_json(entity)),
                 graph_json=_get_graph_json(entity),
                 project_ghosts=entity.race.projects_ghosts,
             )
@@ -1037,7 +1043,7 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
 
         await manager.broadcast_leaderboard(
             participant.race_id,
-            participant.race.participants,
+            leaderboard_entries(participant.race, _get_graph_json(participant)),
             graph_json=_get_graph_json(participant),
             project_ghosts=participant.race.projects_ghosts,
         )
@@ -1169,7 +1175,7 @@ async def _eliminate(
 
     await manager.broadcast_leaderboard(
         participant.race_id,
-        participant.race.participants,
+        leaderboard_entries(participant.race, _get_graph_json(participant)),
         graph_json=_get_graph_json(participant),
         project_ghosts=participant.race.projects_ghosts,
     )
@@ -1334,7 +1340,7 @@ async def handle_finished(
 
     await manager.broadcast_leaderboard(
         participant.race_id,
-        participant.race.participants,
+        leaderboard_entries(participant.race, _get_graph_json(participant)),
         graph_json=_get_graph_json(participant),
         project_ghosts=participant.race.projects_ghosts,
     )

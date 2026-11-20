@@ -1229,6 +1229,19 @@ Shared schema across all WebSocket messages:
 
 The mod parses the hex strings to RGBA on receipt and caches the resolved colors per participant; the per-frame leaderboard render reads from that cache. The `default` template is intentionally serialized as `null` (rather than a solid white payload) so the mod and web fall back to the surrounding status color, preserving the functional readability of the leaderboard.
 
+#### Relay rows
+
+On a relay race `race_state`, `leaderboard_update` and `player_update` carry one `ParticipantInfo` per team instead of one per runner (`auth_ok.participants` too). The row is participant-shaped: `id` is the team id, `twitch_display_name` the team name, `twitch_username` is `team-<first 8 characters of the id>`, the progress fields (`status`, zone, layer, `igt_ms`, `death_count`, `zone_history`, `layer_entry_igts`) come from the team, `color_index` is the team's, `mod_connected` is whether the holder's mod is connected, `is_live` and `stream_url` are the holder's, and there is no badge and no name template. Teams rank exactly like runners (`sort_leaderboard`). Four optional fields ride every message that carries the row, and are `null` on every other race:
+
+| Field             | Type            | Description                                                                                  |
+| ----------------- | --------------- | -------------------------------------------------------------------------------------------- |
+| `relay_holder`    | `string?`       | Display name of the member holding the baton                                                 |
+| `relay_holder_id` | `string?`       | The holder's participant id (tells the holder from the waiting members)                      |
+| `relay_cap`       | `int?`          | The team's current cap in zones per runner (it moves when a member abandons)                 |
+| `relay_members`   | `RelayMember[]` | The members: `{ participant_id, name, zones, status, online, ready, validated }` (see below) |
+
+`RelayMember.status` is any participant status value (`registered` in setup, `finished` or `disqualified` at the end). `online` is whether the member's mod is connected; `ready` is the member's last `relay_ready` and is `false` when offline. Entries of a team's `zone_history` carry a `runner_id` (the participant id of the holder when the entry was written) once the progress handlers write them. The mod reads none of these fields.
+
 **Note:** The mod's Rust `ParticipantInfo` struct only declares a subset of these fields (`id`, `twitch_username`, `twitch_display_name`, `status`, `current_zone`, `current_layer`, `current_layer_tier`, `igt_ms`, `death_count`, `gap_ms`, `layer_entry_igt`, `layer_entry_igts`, `name_template`). Extra fields like `color_index`, `mod_connected`, `zone_history`, `equipped_badge_id`, and `equipped_name_template_id` are present on the wire but silently ignored by serde.
 
 ### RaceInfo

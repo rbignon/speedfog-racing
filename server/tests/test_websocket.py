@@ -123,6 +123,7 @@ class MockRace:
         self.status = status
         self.seed = seed or MockSeed()
         self.participants = participants or []
+        self.is_relay = False
 
 
 # --- Schema Tests ---
