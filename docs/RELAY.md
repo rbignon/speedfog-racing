@@ -124,6 +124,16 @@ for an unknown user carries none, the invitee picks on the invite page.
 
 ## Start
 
+`POST /races/{id}/start` on a relay race replaces the participant minimum by `relay_start_error` (400 with its text), for every role, admins included: late join is excluded from relay races, and a lone tester uses the bot.
+
+- A team counts when it has at least one member; teams without member are ignored.
+- At least 2 teams that count, otherwise `At least 2 teams are required to start a relay race`.
+- Each such team needs at least 2 READY members, otherwise `<team name> needs at least 2 ready runners`.
+
+`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`.
+
+A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the left-out members return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
+
 ## Baton
 
 ## Cap

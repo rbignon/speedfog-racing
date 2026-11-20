@@ -97,7 +97,12 @@ from speedfog_racing.services.event_service import leaderboard_points, update_pl
 from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
-from speedfog_racing.services.relay import relay_cap
+from speedfog_racing.services.relay import (
+    prepare_relay_start,
+    relay_cap,
+    relay_start_error,
+    reset_relay_race,
+)
 from speedfog_racing.services.sanctions_service import (
     cancel_disqualification,
     disqualify,
@@ -1839,8 +1844,15 @@ async def start_race(
 
     # Two participants make a race. A trusted organizer may start alone when a
     # late-join window lets the field join the running race; an admin, with anyone.
+    # A relay race has its own rule, for every role: late join is excluded from it.
     trusted = user.role.at_least(UserRole.TRUSTED)
-    if user.role.at_least(UserRole.ADMIN):
+    if race.is_relay:
+        min_participants = 0
+        relay_error = relay_start_error(race)
+        if relay_error is not None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=relay_error)
+        prepare_relay_start(race)
+    elif user.role.at_least(UserRole.ADMIN):
         min_participants = 0
     elif trusted and race.late_join_window_minutes is not None:
         min_participants = 1
@@ -2064,6 +2076,10 @@ async def apply_seed_reroll(
 
         await rollback_streak_for_reroll(db, race)
 
+    if race.is_relay:
+        # A relay race never is a daily; a reroll in setup finds fresh teams, kept so.
+        reset_relay_race(race)
+
     # Reroll always announces in the participants chat. The daily page
     # surfaces that channel to anyone with a participant row, so affected
     # players see the message even though spectators never read it.
@@ -2195,6 +2211,9 @@ async def reset_race(
             # restart until the race staff cancel it.
             continue
         reset_participant_progress(p)
+
+    if race.is_relay:
+        reset_relay_race(race)
 
     # The IGT cutoff came from the run's finishes: the replay's first finisher
     # sets a fresh one.
