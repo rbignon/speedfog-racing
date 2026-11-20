@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 from starlette.responses import StreamingResponse
 
+from speedfog_racing.api import relay_teams as relay_teams_api
 from speedfog_racing.api.helpers import (
     caster_response,
     late_join_window_open,
@@ -72,6 +73,7 @@ from speedfog_racing.schemas import (
     RaceDetailResponse,
     RaceListResponse,
     RaceResponse,
+    RelayTeamChoice,
     RerollSeedRequest,
     UpdateRaceRequest,
     as_aware_utc,
@@ -1023,6 +1025,13 @@ async def add_participant(
             color_index=next_color,
         )
         db.add(participant)
+        await relay_teams_api.place_in_team(
+            db,
+            race,
+            participant,
+            RelayTeamChoice(**request.model_dump(include={"relay_team_id", "create_team"})),
+            by_organizer=True,
+        )
         try:
             await db.commit()
         except IntegrityError:
@@ -1032,6 +1041,7 @@ async def add_participant(
                 detail="User is already a participant in this race",
             )
         await db.refresh(participant)
+        db.expire(race, ["relay_teams"])
 
         logger.info("Participant added: race=%s, user=%s", race_id, target_user.twitch_username)
 
@@ -1150,11 +1160,13 @@ async def remove_participation(db: AsyncSession, race: Race, participant: Partic
     participant_id = participant.id
     display = participant.user.twitch_display_name or participant.user.twitch_username
     removed_username = participant.user.twitch_username
+    await relay_teams_api.vacate_team(db, race, participant)
     await db.delete(participant)
     sys_json = await persist_system_chat(
         db, race_id, ChatChannel.PARTICIPANTS, f"{display} has been removed from the race"
     )
     await db.commit()
+    db.expire(race, ["relay_teams"])
     logger.info("Participant removed: race=%s, participant=%s", race_id, participant_id)
 
     # Fire-and-forget: mirror the removal to the malenia participant list
@@ -1500,20 +1512,13 @@ async def remove_caster(
 # =============================================================================
 
 
-@router.post(
-    "/{race_id}/join",
-    response_model=ParticipantResponse,
-    status_code=status.HTTP_200_OK,
-)
-async def join_race(
-    race_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(require_not_banned),
-    _sentry: None = Depends(sentry_race_context),
-) -> ParticipantResponse:
-    """Self-register as a participant in an open-registration race."""
-    race = await _get_race_or_404(db, race_id, load_participants=True)
+async def check_self_registration(db: AsyncSession, race: Race, user: User) -> None:
+    """Raise unless ``user`` may register themselves on ``race`` now.
 
+    The checks of ``join_race``: race status, open registration, capacity (in
+    runners, never in teams), not already a participant, not a caster, and a
+    non-participating organizer stays out. ``race.participants`` must be loaded.
+    """
     now = datetime.now(UTC)
     is_late_join_open = late_join_window_open(race, now)
 
@@ -1576,6 +1581,27 @@ async def join_race(
                 detail="Non-participating organizer cannot join as participant",
             )
 
+
+@router.post(
+    "/{race_id}/join",
+    response_model=ParticipantResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def join_race(
+    race_id: UUID,
+    choice: RelayTeamChoice | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_not_banned),
+    _sentry: None = Depends(sentry_race_context),
+) -> ParticipantResponse:
+    """Self-register as a participant in an open-registration race.
+
+    On a relay race the body names the team to join (``relay_team_id``) or asks
+    for a new one (``create_team``).
+    """
+    race = await _get_race_or_404(db, race_id, load_participants=True)
+    await check_self_registration(db, race, user)
+
     # Compute next color_index
     max_result = await db.execute(
         select(func.max(Participant.color_index)).where(Participant.race_id == race.id)
@@ -1591,6 +1617,9 @@ async def join_race(
         color_index=next_color,
     )
     db.add(participant)
+    await relay_teams_api.place_in_team(
+        db, race, participant, choice or RelayTeamChoice(), by_organizer=False
+    )
     display = user.twitch_display_name or user.twitch_username
     join_msg = (
         f"{display} started the daily seed"
@@ -1607,6 +1636,7 @@ async def join_race(
             detail="You are already a participant in this race",
         )
     await db.refresh(participant)
+    db.expire(race, ["relay_teams"])
 
     room = manager.get_room(race_id)
     if room:
@@ -1673,11 +1703,13 @@ async def leave_race(
         )
 
     display = user.twitch_display_name or user.twitch_username
+    await relay_teams_api.vacate_team(db, race, participant)
     await db.delete(participant)
     sys_json = await persist_system_chat(
         db, race_id, ChatChannel.PARTICIPANTS, f"{display} has left the race"
     )
     await db.commit()
+    db.expire(race, ["relay_teams"])
 
     # Fire-and-forget: mirror the leave to the malenia participant list
     if race.is_public and race.scheduled_at:
