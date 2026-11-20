@@ -48,7 +48,12 @@ from speedfog_racing.services.layer_service import (
 )
 from speedfog_racing.services.race_items import extract_race_item_catalog, seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.services.relay import RelayTeamRow, leaderboard_entries, load_relay_row
+from speedfog_racing.services.relay import (
+    RelayTeamRow,
+    leaderboard_entries,
+    load_relay_row,
+    relay_flags,
+)
 from speedfog_racing.services.speedrun_service import seed_category
 from speedfog_racing.versioning import protocol_at_least
 from speedfog_racing.websocket.handler import (
@@ -70,10 +75,12 @@ from speedfog_racing.websocket.race.items import (
 )
 from speedfog_racing.websocket.race.manager import (
     LeaderboardEntry,
+    RaceRoom,
     manager,
     participant_to_info,
     sort_leaderboard,
 )
+from speedfog_racing.websocket.race.relay import build_relay_info
 from speedfog_racing.websocket.race.spectator import (
     broadcast_race_info_update,
     broadcast_race_state_update,
@@ -82,6 +89,8 @@ from speedfog_racing.websocket.schemas import (
     CONDITION_MESSAGES,
     RACE_ITEMS_MIN_PROTOCOL,
     RACE_ITEMS_OLD_MOD_MESSAGE,
+    RELAY_MIN_PROTOCOL,
+    RELAY_OLD_MOD_MESSAGE,
     AuthOkMessage,
     DeathCountsMessage,
     ErrorCode,
@@ -91,6 +100,7 @@ from speedfog_racing.websocket.schemas import (
     RaceItemGoodsWire,
     RaceItemWire,
     RaceStartMessage,
+    RelayInfo,
     SeedInfo,
     build_race_info,
     extract_phantom_skins,
@@ -309,6 +319,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
                 await self._send_auth_error(BAN_MESSAGE)
                 return False
 
+            # A relay race needs a mod that speaks the relay messages.
+            if race.is_relay and not protocol_at_least(
+                self.mod_protocol_version, RELAY_MIN_PROTOCOL
+            ):
+                logger.info(
+                    "Mod rejected (relay race needs protocol %s): race=%s, protocol=%s",
+                    RELAY_MIN_PROTOCOL,
+                    self.entity_id,
+                    self.mod_protocol_version or "absent",
+                )
+                await self._send_auth_error(RELAY_OLD_MOD_MESSAGE)
+                return False
+
             # A race with items needs a mod that reads the catalog and applies
             # item effects; other races take any mod the protocol check passed.
             if race.race_items and not protocol_at_least(
@@ -466,8 +489,36 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             participants=participant_infos,
             phantom_skin=phantom_skin,
             held_item=held_item,
+            relay=self._relay_info(participant, connected_ids, room),
         )
         await self.websocket.send_text(message.model_dump_json())
+
+    @staticmethod
+    def _relay_info(
+        participant: Participant, connected_ids: set[uuid.UUID], room: RaceRoom | None
+    ) -> RelayInfo | None:
+        """The runner's team and role on a relay race, None on any other race."""
+        race = participant.race
+        graph = race.seed.graph_json if race.seed else None
+        flags = relay_flags(graph) if graph else None
+        team = next((t for t in race.relay_teams if t.id == participant.relay_team_id), None)
+        if not race.is_relay or team is None or flags is None or graph is None:
+            return None
+        members = sorted(
+            (p for p in race.participants if p.relay_team_id == team.id),
+            key=lambda p: p.created_at,
+        )
+        return build_relay_info(
+            team,
+            members,
+            participant,
+            total_layers=int(graph.get("total_layers") or 0),
+            flags=flags,
+            connected=connected_ids,
+            ready=room.relay_ready if room else (),
+            now=datetime.now(UTC),
+            graph_json=graph,
+        )
 
     # ------------------------------------------------------------------
     # Lifecycle hooks

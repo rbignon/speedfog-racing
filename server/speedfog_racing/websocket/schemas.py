@@ -22,7 +22,7 @@ from speedfog_racing.rewards.service import RewardsService
 # breaking change -> major + 1 (minor resets to 0); backward-compatible
 # addition worth signalling -> minor + 1; otherwise unchanged. Keep in sync
 # with PROTOCOL_VERSION in mod/src/core/protocol.rs and docs/PROTOCOL.md.
-PROTOCOL_VERSION = "1.18"
+PROTOCOL_VERSION = "1.19"
 
 # Oldest protocol a ranked solo session (Speedrun, Set Seed mode) accepts at
 # auth: from 1.9 the mod reads and reports debug flags in a solo session
@@ -44,6 +44,16 @@ RACE_ITEMS_MIN_PROTOCOL = "1.18"
 RACE_ITEMS_OLD_MOD_MESSAGE = (
     "This race has items and needs a newer mod. "
     "Download the race's pack again: it carries the current mod."
+)
+
+# Oldest protocol a relay race accepts at auth: from 1.19 the mod speaks the
+# relay messages (`relay_*`) and reads `auth_ok.relay`.
+RELAY_MIN_PROTOCOL = "1.19"
+
+# auth_error for a mod too old for a relay race. The race's pack carries the
+# current mod, so downloading it again is the fix.
+RELAY_OLD_MOD_MESSAGE = (
+    "This relay race needs a newer mod. Download the race's pack again: it carries the current mod."
 )
 
 # --- Client -> Server Messages (Mod) ---
@@ -173,6 +183,53 @@ class RelayMember(BaseModel):
     # The member's last relay_ready (false when offline).
     ready: bool
     validated: bool
+
+
+class CharacterState(BaseModel):
+    """What a relay handoff carries of a character, in the order the game stores it."""
+
+    # Vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane.
+    attributes: list[int] = Field(min_length=8, max_length=8)
+    level: int
+    runes: int
+    # Raw item ids with their category nibble, only the transferable ones, each once.
+    items: list[int] = Field(default_factory=list, max_length=4000)
+    # Event flags of the lit graces.
+    grace_flags: list[int] = Field(default_factory=list, max_length=1000)
+
+
+class RelayFlags(BaseModel):
+    """The seed's relay block minus ``warp_flag_count``."""
+
+    lock_flag: int
+    chapel_warp_flag: int
+    warp_flag_base: int
+    zone_flag_base: int
+
+
+class RelayInfo(BaseModel):
+    """What a mod is told about its relay team and its own role."""
+
+    team_id: str
+    team_name: str
+    # The team's ParticipantStatus: finished, abandoned or disqualified tells
+    # the mod its race is over, so it lowers its lock.
+    team_status: str
+    cap: int
+    # Null when the team has no holder.
+    holder_id: str | None
+    holder_online: bool
+    # Display name of the zone a taker would restart, null when unknown.
+    zone_name: str | None
+    # Null while the holder is online; otherwise seconds before the baton can
+    # be taken, 0 when it is free.
+    baton_free_in_s: int | None
+    # "holder" only for the team's holder while the baton is not free.
+    role: Literal["holder", "waiting"]
+    # True for a holder at or over their cap.
+    gates_locked: bool
+    members: list[RelayMember]
+    flags: RelayFlags
 
 
 class ParticipantInfo(BaseModel):
@@ -411,6 +468,8 @@ class AuthOkMessage(BaseModel):
     # Race items: the item the runner holds, confirmed or not, so a restarted
     # mod restores its goods' icon and the held row (null without items).
     held_item: str | None = None
+    # Relay races: the runner's team and role (null on any other race).
+    relay: RelayInfo | None = None
 
 
 class AuthErrorMessage(BaseModel):
@@ -759,6 +818,82 @@ class ItemReportMessage(BaseModel):
     report_id: int
     landed: bool
     talisman_id: int | None = None
+
+
+class RelayUpdateMessage(BaseModel):
+    """Server to mod: something in the team's RelayInfo changed."""
+
+    type: Literal["relay_update"] = "relay_update"
+    relay: RelayInfo
+
+
+class RelayReleaseMessage(BaseModel):
+    """Server to mod (the holder): send your state, lock, go to the Chapel."""
+
+    type: Literal["relay_release"] = "relay_release"
+    handoff_id: str
+    to_name: str
+
+
+class RelayTakeMessage(BaseModel):
+    """Server to mod (the new holder): the state to apply. ``state`` is null when
+    none is known yet; ``warp_flag`` is null before the team's first gate."""
+
+    type: Literal["relay_take"] = "relay_take"
+    handoff_id: str
+    state: CharacterState | None
+    igt_ms: int
+    defeat_flags: list[int] = Field(default_factory=list)
+    warp_flag: int | None
+    zone_name: str | None
+
+
+class RelayRefusedMessage(BaseModel):
+    """Server to mod: a relay request was refused. Codes: ``not_holder``,
+    ``target_unavailable``, ``target_at_cap``, ``at_cap``, ``holder_online``,
+    ``not_ready``, ``not_validated``, ``busy``."""
+
+    type: Literal["relay_refused"] = "relay_refused"
+    code: str
+    message: str
+
+
+class RelayReadyMessage(BaseModel):
+    """Mod to server: a waiting runner is (or stops being) loaded at the Chapel
+    with its lock raised."""
+
+    type: Literal["relay_ready"] = "relay_ready"
+    ready: bool
+
+
+class RelayHandoffRequestMessage(BaseModel):
+    """Mod to server: the holder confirmed a teammate in the menu."""
+
+    type: Literal["relay_handoff_request"] = "relay_handoff_request"
+    to_participant_id: str
+
+
+class RelayTakeRequestMessage(BaseModel):
+    """Mod to server: a waiting runner holds F8 on a free baton."""
+
+    type: Literal["relay_take_request"] = "relay_take_request"
+
+
+class RelayStateMessage(BaseModel):
+    """Mod to server: a checkpoint at a zone entry (``handoff_id`` null) or the
+    answer to a ``relay_release``."""
+
+    type: Literal["relay_state"] = "relay_state"
+    handoff_id: str | None = None
+    state: CharacterState
+    igt_ms: int
+
+
+class RelayTakenMessage(BaseModel):
+    """Mod to server: the new holder applied everything and raised its warp flag."""
+
+    type: Literal["relay_taken"] = "relay_taken"
+    handoff_id: str
 
 
 class ZoneQueryAckMessage(BaseModel):
