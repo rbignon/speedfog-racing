@@ -62,6 +62,7 @@ Pool configs live at `tools/pools/<pool>.toml`. Each TOML file contains:
 - `[item_randomizer]`: item rando settings (difficulty, nerf_gargoyles, etc.)
 - `[starting_items]`: items given at start (keys, runes, tears, etc.)
 - `[enemy]`: enemy randomization settings
+- `[plugin.*]`: generator plugins. `_base.toml` enables `[plugin.relay]` (relay races: a flag-driven lock and warps, inert in game while no flag is raised) and `[plugin.race_items]`; a pool's own `[plugin.*]` tables are merged key by key over the base ones (`deep_merge` in `generate_pool.py`), so a pool can override single keys.
 
 ### Parallelism
 
