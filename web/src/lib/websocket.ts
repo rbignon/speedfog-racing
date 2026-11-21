@@ -9,6 +9,19 @@ import type { ZoneHistoryEntry } from "$lib/zone-history";
 // Types (matching backend WebSocket schemas)
 // =============================================================================
 
+/** One member of a relay team, as the unfolded team row lists them. */
+export interface RelayMember {
+  participant_id: string;
+  name: string;
+  zones: number;
+  /** Any participant status (registered in setup, finished or disqualified at the end). */
+  status: string;
+  online: boolean;
+  /** The member's last relay_ready (false when offline). */
+  ready: boolean;
+  validated: boolean;
+}
+
 export interface WsParticipant {
   id: string;
   twitch_username: string;
@@ -42,6 +55,11 @@ export interface WsParticipant {
   // weapon: null means "no new observation", never "unarmed" (see the race
   // store's currentWeapons).
   weapons?: number[] | null;
+  // Relay races: the row is a team. Absent on every other race.
+  relay_holder?: string | null;
+  relay_holder_id?: string | null;
+  relay_cap?: number | null;
+  relay_members?: RelayMember[] | null;
 }
 
 export interface WsRaceInfo {
@@ -64,6 +82,8 @@ export interface WsRaceInfo {
   race_items?: boolean;
   custom_rules?: string | null;
   countdown_seconds?: number;
+  relay_team_size?: number | null;
+  relay_runners_create_teams?: boolean;
   // Current seed id, mirrored from the wire RaceInfo for completeness; the web
   // reads the active seed from race_state, so this field is unused here.
   seed_id?: string | null;

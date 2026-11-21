@@ -53,6 +53,8 @@ function pool(
   seen = 0,
   speedrunFloor = 0,
   raceItemsAvailable = 0,
+  relayAvailable = 0,
+  layersCount: number | null = null,
 ): PoolInfo {
   return {
     available,
@@ -61,8 +63,13 @@ function pool(
     consumed: 0,
     discarded: 0,
     played_by_user: null,
-    pool_config: { name, sort_order: sortOrder } as PoolConfig,
+    pool_config: {
+      name,
+      sort_order: sortOrder,
+      layers_count: layersCount,
+    } as PoolConfig,
     race_items_available: raceItemsAvailable,
+    relay_available: relayAvailable,
   };
 }
 
@@ -274,6 +281,109 @@ describe("/race/new: the Elden Drift (items) format", () => {
 
     await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
     expect(postedBody()).toMatchObject({ mode: "speedrun", race_items: false });
+  });
+});
+
+describe("/race/new: the Relay format", () => {
+  const relayPools = () =>
+    vi.mocked(fetchPoolStats).mockResolvedValue({
+      standard: pool("Standard", 1, 6),
+      sprint: pool("Sprint", 2, 4, 0, 0, 0, 2, 30),
+    });
+
+  it("only offers the pools holding relay seeds, and counts those", async () => {
+    relayPools();
+    await openPage("");
+    const standard = screen.getByRole("tab", {
+      name: /Standard/,
+    }) as HTMLButtonElement;
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+
+    await fireEvent.click(formatOption(/^Relay/)!);
+
+    expect(standard.disabled).toBe(true);
+    expect(create.disabled).toBe(true);
+    expect(screen.getByText("No relay seed in this pool yet")).toBeTruthy();
+
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+
+    expect(screen.getByText(/2 seeds available/)).toBeTruthy();
+    expect(create.disabled).toBe(false);
+  });
+
+  it("writes the cap for the selected pool and team size", async () => {
+    relayPools();
+    await openPage("");
+    await fireEvent.click(formatOption(/^Relay/)!);
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+
+    expect(
+      screen.getByText("30 zones, teams of 3: 11 zones max per runner."),
+    ).toBeTruthy();
+
+    await fireEvent.input(screen.getByLabelText("Teams of"), {
+      target: { value: "5" },
+    });
+    expect(
+      screen.getByText("30 zones, teams of 5: 7 zones max per runner."),
+    ).toBeTruthy();
+  });
+
+  it("sends its team size and none of the options relay excludes", async () => {
+    relayPools();
+    await openPage("");
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Advanced options/ }),
+    );
+    // Late joiners are on by default and deathless is one click away.
+    await fireEvent.click(screen.getByLabelText(/Eliminate players/));
+    await fireEvent.click(formatOption(/^Relay/)!);
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+    await fireEvent.input(screen.getByLabelText("Teams of"), {
+      target: { value: "4" },
+    });
+    await submitPrivate("Baton");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({
+      mode: "normal",
+      race_items: false,
+      deathless: false,
+      late_join_window_minutes: null,
+      relay_team_size: 4,
+    });
+  });
+
+  it("hides the excluded options and says so", async () => {
+    relayPools();
+    await openPage("");
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Advanced options/ }),
+    );
+    expect(screen.queryByText("Deathless")).toBeTruthy();
+
+    await fireEvent.click(formatOption(/^Relay/)!);
+
+    expect(screen.queryByText("Deathless")).toBeNull();
+    expect(screen.queryByText("Late joiners")).toBeNull();
+    expect(
+      screen.getByText(
+        "Late joiners and deathless are not available on a relay race.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("sends no team size once another format replaces it", async () => {
+    relayPools();
+    await openPage("");
+    await fireEvent.click(formatOption(/^Relay/)!);
+    await fireEvent.click(formatOption(/^Classic/)!);
+    await submitPrivate("Plain");
+
+    await waitFor(() => expect(goto).toHaveBeenCalledWith("/race/r9"));
+    expect(postedBody()).toMatchObject({ relay_team_size: null });
   });
 });
 

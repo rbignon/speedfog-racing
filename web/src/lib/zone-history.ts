@@ -20,6 +20,8 @@ export interface ZoneHistoryEntry {
   weapons?: WeaponCombo[];
   /** IGT of a boss kill on this visit of the node; the first kill is kept. */
   boss_kill_igt_ms?: number;
+  /** Relay team history: the participant who held the baton for this entry. */
+  runner_id?: string;
 }
 
 /**

@@ -17,6 +17,7 @@
   import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
   import { formatPoolName } from "$lib/utils/format";
   import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
+  import { relayCapSentence } from "$lib/relay";
   import {
     parseRaceNewParams,
     seedPageHref,
@@ -25,7 +26,7 @@
 
   // The race formats, one per race: each changes what the race is, and no
   // two combine. A Set Seed race has none to pick, its seed decides.
-  type RaceFormat = "classic" | "items" | "speedrun";
+  type RaceFormat = "classic" | "items" | "speedrun" | "relay";
   const FORMATS: {
     key: RaceFormat;
     label: string;
@@ -40,6 +41,12 @@
       isNew: true,
     },
     { key: "speedrun", label: "Speedrun", tagline: "Counts on the boards" },
+    {
+      key: "relay",
+      label: "Relay",
+      tagline: "Teams pass the baton",
+      isNew: true,
+    },
   ];
 
   // `?seed=<n>` makes a Set Seed race on that seed, `?mode=speedrun` picks
@@ -70,6 +77,9 @@
   );
   let speedrun = $derived(format === "speedrun");
   let items = $derived(setSeed === null && format === "items");
+  let relay = $derived(setSeed === null && format === "relay");
+  // Runners per team on a relay race (the server accepts 2 to 6).
+  let relayTeamSize = $state(3);
   // A Set Seed race's seed, as the server knows it; the lookup's error text
   // ("Unknown seed", "Ambiguous seed ID") otherwise.
   let seedSummary = $state<SpeedrunSeedSummary | null>(null);
@@ -96,9 +106,11 @@
   // Seeds this race could draw: a normal race also takes SEEN seeds (seeds
   // put aside before their race started), a speedrun race never does, and
   // leaves the pool's speedrun floor in reserve; an items race only takes
-  // the seeds carrying the items.
+  // the seeds carrying the items, a relay race the seeds carrying the relay
+  // block.
   function drawable(info: PoolInfo): number {
     if (items) return info.race_items_available;
+    if (relay) return info.relay_available;
     return speedrun
       ? Math.max(0, info.available - info.speedrun_floor)
       : info.available + info.seen;
@@ -127,10 +139,11 @@
   );
   // At or under its floor, a pool gives a normal race a SEEN seed first,
   // which counts on no Speedrun board: say so before the race exists. An
-  // items race counts on none anyway.
+  // items or relay race counts on none anyway.
   let drawsSeenSeed = $derived(
     !speedrun &&
       !items &&
+      !relay &&
       pools[poolName] !== undefined &&
       pools[poolName].seen > 0 &&
       pools[poolName].available <= pools[poolName].speedrun_floor,
@@ -162,13 +175,18 @@
   // Advanced-options state grid shown inside the trigger: one entry per
   // option, checked when the option is active for this race (actual
   // state, not deviation from defaults, so "late joiners" starts checked).
+  // A relay race rules out late joiners and deathless: they leave the grid.
   let advancedOptions = $derived([
-    { label: "late joiners", active: lateJoinEnabled },
+    ...(relay ? [] : [{ label: "late joiners", active: lateJoinEnabled }]),
     { label: "auto-end", active: autoEndEnabled },
-    { label: "deathless", active: deathless },
+    ...(relay ? [] : [{ label: "deathless", active: deathless }]),
     { label: "private map", active: privateDag },
     { label: "custom rules", active: customRules.trim() !== "" },
   ]);
+  // The pool's layer count is the zone count the cap sentence works on.
+  let relayCapText = $derived(
+    relayCapSentence(selectedConfig?.layers_count, relayTeamSize),
+  );
 
   $effect(() => {
     if (auth.initialized && !authChecked) {
@@ -256,14 +274,15 @@
         isPublic,
         openRegistration,
         openRegistration ? maxParticipants : null,
-        lateJoinEnabled ? lateJoinWindowMinutes : null,
+        lateJoinEnabled && !relay ? lateJoinWindowMinutes : null,
         autoEndEnabled ? raceDurationMinutes : null,
         privateDag,
         customRules.trim() || null,
-        deathless,
+        deathless && !relay,
         seedSummary ? "set_seed" : speedrun ? "speedrun" : "normal",
         seedSummary?.seed_number ?? null,
         items,
+        relay ? relayTeamSize : null,
       );
       goto(`/race/${race.id}`);
     } catch (e) {
@@ -286,7 +305,9 @@
           ? "Create Speedrun Race"
           : items
             ? "Create Elden Drift Race"
-            : "Create Race"}
+            : relay
+              ? "Create Relay Race"
+              : "Create Race"}
     </h1>
     {#if setSeed !== null}
       {#if seedSummary}
@@ -382,6 +403,24 @@
                   community stats. Late joiners get 5 minutes by default (see
                   the advanced options).
                 </p>
+              {:else if format === "relay"}
+                <label class="inline-max">
+                  Teams of
+                  <input
+                    type="number"
+                    bind:value={relayTeamSize}
+                    min="2"
+                    max="6"
+                    disabled={creating}
+                  />
+                </label>
+                <p class="hint">
+                  One runner per team plays at a time and hands the baton to a
+                  teammate, who continues with the same build.
+                </p>
+                {#if relayCapText}
+                  <p class="hint">{relayCapText}</p>
+                {/if}
               {:else if format === "speedrun"}
                 <p class="hint">
                   Race for a place on the Speedrun boards: a fresh seed nobody
@@ -457,6 +496,8 @@
                     No fresh seed right now
                   {:else if items && selectedAvailable === 0}
                     No seed with race items here yet
+                  {:else if relay && selectedAvailable === 0}
+                    No relay seed in this pool yet
                   {:else}
                     {selectedAvailable} seed{selectedAvailable !== 1 ? "s" : ""} available
                   {/if}
@@ -477,6 +518,8 @@
                 No fresh seed right now in any game mode.
               {:else if items}
                 No seed with race items in any game mode yet.
+              {:else if relay}
+                No relay seed in any game mode yet.
               {:else}
                 No seeds available in any game mode. New seeds need to be
                 generated.
@@ -599,7 +642,7 @@
           </label>
           {#if openRegistration}
             <label class="inline-max">
-              max
+              {relay ? "max runners" : "max"}
               <input
                 type="number"
                 bind:value={maxParticipants}
@@ -611,7 +654,13 @@
           {/if}
         </div>
         <p class="hint">
-          Open registration lets any logged-in player join the race themselves.
+          {#if relay}
+            Open registration lets any logged-in player join the race and pick a
+            team.
+          {:else}
+            Open registration lets any logged-in player join the race
+            themselves.
+          {/if}
         </p>
       </div>
 
@@ -639,36 +688,43 @@
             {/each}
           </span>
         </button>
+        {#if relay}
+          <p class="hint">
+            Late joiners and deathless are not available on a relay race.
+          </p>
+        {/if}
 
         {#if showAdvanced}
           <div id="advanced-panel" class="advanced-panel">
-            <div class="form-group">
-              <span>Late joiners</span>
-              <label class="radio-label">
-                <input
-                  type="checkbox"
-                  bind:checked={lateJoinEnabled}
-                  disabled={creating}
-                />
-                Allow joining up to
-                {#if lateJoinEnabled}
+            {#if !relay}
+              <div class="form-group">
+                <span>Late joiners</span>
+                <label class="radio-label">
                   <input
-                    type="number"
-                    bind:value={lateJoinWindowMinutes}
-                    oninput={() => (lateJoinWindowEdited = true)}
-                    min="1"
-                    max={autoEndEnabled ? raceDurationMinutes : undefined}
+                    type="checkbox"
+                    bind:checked={lateJoinEnabled}
                     disabled={creating}
-                    class="inline-duration"
                   />
-                  min after start
-                {/if}
-              </label>
-              <p class="hint">
-                Counted from the actual start time. The map stays hidden from
-                non-participants until the window closes.
-              </p>
-            </div>
+                  Allow joining up to
+                  {#if lateJoinEnabled}
+                    <input
+                      type="number"
+                      bind:value={lateJoinWindowMinutes}
+                      oninput={() => (lateJoinWindowEdited = true)}
+                      min="1"
+                      max={autoEndEnabled ? raceDurationMinutes : undefined}
+                      disabled={creating}
+                      class="inline-duration"
+                    />
+                    min after start
+                  {/if}
+                </label>
+                <p class="hint">
+                  Counted from the actual start time. The map stays hidden from
+                  non-participants until the window closes.
+                </p>
+              </div>
+            {/if}
 
             <div class="form-group">
               <span>Auto-end</span>
@@ -696,20 +752,22 @@
               </p>
             </div>
 
-            <div class="form-group">
-              <span>Deathless</span>
-              <label class="radio-label">
-                <input
-                  type="checkbox"
-                  bind:checked={deathless}
-                  disabled={creating}
-                />
-                Eliminate players on their first death
-              </label>
-              <p class="hint">
-                A player who dies is automatically marked as abandoned.
-              </p>
-            </div>
+            {#if !relay}
+              <div class="form-group">
+                <span>Deathless</span>
+                <label class="radio-label">
+                  <input
+                    type="checkbox"
+                    bind:checked={deathless}
+                    disabled={creating}
+                  />
+                  Eliminate players on their first death
+                </label>
+                <p class="hint">
+                  A player who dies is automatically marked as abandoned.
+                </p>
+              </div>
+            {/if}
 
             <div class="form-group">
               <span>Spoiler protection</span>

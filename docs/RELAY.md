@@ -487,6 +487,8 @@ Pages that read participants (the finished-race page, race cards, profiles, the 
 
 ## Web
 
+Race creation (`/race/new`): Relay is a fourth tile of the Format field, next to Classic, Elden Drift and Speedrun (formats exclude each other, so relay needs no handling of race items or speedrun). Its panel holds "Teams of [n]" (2 to 6, default 3) and the cap sentence of `relayCapSentence` in `web/src/lib/relay.ts`, which applies the server's formula (`ceil(total_layers / team_size) + 1`) to the selected pool's `layers_count` ("30 zones, teams of 3: 11 zones max per runner."). A pool's seeds may differ in layer count (the category key `<pool>@<layers>` exists for that), so the sentence is the pool's nominal count, and the race's own `relay_cap` is the figure that binds. The sentence is omitted when the pool has no `layers_count`. The game mode tabs count `PoolInfo.relay_available` (AVAILABLE plus SEEN seeds carrying the relay block). With relay on, the late joiners and deathless options leave the advanced options (the request sends `late_join_window_minutes: null` and `deathless: false`), a line under the trigger says so, the registration hint says players pick a team, and the open registration maximum is labelled "max runners". `createRace` takes the team size as its last parameter (`relay_team_size`).
+
 ## Bot
 
 `tools/relay_bot.py` plays fake relay runners over the mod WebSocket, so the server and the web can be exercised without the game. From `server/`, against a local database only (it refuses any other unless `--force`), while the dev server runs:

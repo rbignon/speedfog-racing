@@ -129,6 +129,8 @@ export type DebugFlags = Record<string, DebugFlagObservation>;
 
 export interface Participant {
   id: string;
+  /** Relay race: the team this runner belongs to (null on every other race). */
+  relay_team_id: string | null;
   user: User;
   status: ParticipantStatus;
   current_layer: number;
@@ -185,7 +187,23 @@ export interface PendingInvite {
 }
 
 /** Why a race counts on no Speedrun board (the server's race_unranked_code). */
-export type UnrankedCode = "race_items" | "seen_seed" | "reset" | "rerolled";
+export type UnrankedCode =
+  | "relay"
+  | "race_items"
+  | "seen_seed"
+  | "reset"
+  | "rerolled";
+
+/** A team of a relay race as the race page lists it. */
+export interface RelayTeam {
+  id: string;
+  name: string;
+  color_index: number;
+  placeholder: boolean;
+  /** The runner chosen to start; null means the first member registered. */
+  first_runner_id: string | null;
+  member_ids: string[];
+}
 
 export interface RaceDetail extends Race {
   /** The category key (`<pool>` or `<pool>@<layers>`), null before a seed. */
@@ -206,6 +224,13 @@ export interface RaceDetail extends Race {
   /** The slug of the event the race is attached to (`event_id`): clients
    * address events by slug, and no public endpoint resolves an event id. */
   event_slug: string | null;
+  /** Runners per team on a relay race, null on every other race. */
+  relay_team_size: number | null;
+  /** Relay race: whether runners may start a team of their own when they join. */
+  relay_runners_create_teams: boolean;
+  /** Zones one runner may play on a full team (null on a solo race). */
+  relay_cap: number | null;
+  relay_teams: RelayTeam[];
 }
 
 export interface PoolInfo {
@@ -221,6 +246,8 @@ export interface PoolInfo {
   pool_config: PoolConfig | null;
   /** Seeds of the pool carrying the race items plugin. */
   race_items_available: number;
+  /** AVAILABLE plus SEEN seeds carrying the relay block: what a relay race draws. */
+  relay_available: number;
 }
 
 export type PoolStats = Record<string, PoolInfo>;
@@ -1002,6 +1029,8 @@ export async function createRace(
   mode: RunMode = "normal",
   seed: string | null = null,
   raceItems: boolean = false,
+  // Runners per team (2 to 6) makes a relay race; null is a solo race.
+  relayTeamSize: number | null = null,
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races`, {
     method: "POST",
@@ -1026,6 +1055,7 @@ export async function createRace(
       mode,
       seed,
       race_items: raceItems,
+      relay_team_size: relayTeamSize,
     }),
   });
   return handleResponse<Race>(response);
