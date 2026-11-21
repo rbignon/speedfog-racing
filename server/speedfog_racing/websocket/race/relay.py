@@ -487,7 +487,8 @@ async def _flip(
 ) -> _Flip:
     """Give ``target`` the baton and commit. A target whose mod is no longer
     connected gets a free baton at once (``baton_free``), and no take is
-    awaited from them.
+    awaited from them. The team's IGT stamp restarts: the inactivity monitor
+    gives the new holder the whole timeout.
 
     The awaited take is in the room, with its timer running, before the
     commit: no progress message of the receiver is heard between the two
@@ -498,6 +499,8 @@ async def _flip(
     team.holder_id = target.id
     team.holder_offline_since = None
     team.baton_free = not connected
+    # A new holder gets the whole inactivity timeout to make their first report.
+    team.last_igt_change_at = datetime.now(UTC)
     pending = None
     if connected:
         pending = PendingHandoff(
@@ -959,8 +962,9 @@ class RelayOut:
     team_out: bool
 
 
-# Decides on the locked team: the member moved out with whether the team went
-# out, ``(None, True)`` for a team put out on its own, or None to change nothing.
+# Decides on the locked team: the member moved out with whether the team, still
+# in the race until then, went out (``apply_member_out``), ``(None, True)`` for a
+# team put out on its own, or None to change nothing.
 OutChange = Callable[[RelayTeam], "tuple[Participant | None, bool] | None"]
 
 
@@ -980,8 +984,9 @@ async def member_out(
 
     ``change`` decides (see ``OutChange``). The chat lines go in the same
     commit: ``member_line`` (a channel and a text whose ``{name}`` is the
-    member's display name) and, for a team gone out, ``{team name} is out.`` on
-    the public channel. After the commit, ``after_member_out``, then the lines
+    member's display name) and, for a team that was still in the race and
+    went out while the race runs, ``{team name} is out.`` on the public
+    channel. After the commit, ``after_member_out``, then the lines
     are broadcast. Every member row it writes is written once the team row is
     locked, the order of the progress commits and of ``finish_team``. None when
     nothing changed.
@@ -1002,7 +1007,7 @@ async def member_out(
                 name = member.user.twitch_display_name or member.user.twitch_username
                 message = await persist_system_chat(db, race_id, channel, text.format(name=name))
                 lines.append((channel, message))
-            if team_out:
+            if team_out and team.race.status == RaceStatus.RUNNING:
                 message = await persist_system_chat(
                     db, race_id, ChatChannel.PUBLIC, f"{team.name} is out."
                 )

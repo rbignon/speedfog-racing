@@ -50,6 +50,7 @@ from .relay_fixtures import (
 from .relay_fixtures import live_take_timers as _live_take_timers
 from .relay_fixtures import make_receiver as _make_receiver
 from .relay_fixtures import member_view as _me
+from .relay_fixtures import pass_gate as _gate
 from .relay_fixtures import set_ready as _set_ready
 from .relay_fixtures import validate as _validate
 from .relay_fixtures import wait_for_timers as _wait_for_timers
@@ -68,7 +69,6 @@ OTHER_STATE = {**STATE, "level": 70, "runes": 0}
 CAP = relay_cap(PROGRESS_TOTAL_LAYERS, 2)
 # The warp flag of the first gate's connection.
 WARP = RELAY_BLOCK["warp_flag_base"] + (FOG_FLAG - RELAY_BLOCK["zone_flag_base"])
-EVENT_MAP = progress_graph()["event_map"]
 
 
 @pytest.fixture
@@ -93,11 +93,6 @@ def trio_mods(integration_client, trio_race):
 
 def _pid(relay_race, team: int, member: int) -> str:
     return relay_race["teams"][team]["members"][member]["participant_id"]
-
-
-def _gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> None:
-    mod.send_event_flag(flag, igt_ms=igt_ms, message_id=message_id)
-    mod.receive_until("zone_update", lambda m: m["node_id"] == EVENT_MAP[str(flag)])
 
 
 def _kill(mod: RelayModClient, igt_ms: int, message_id: int) -> None:

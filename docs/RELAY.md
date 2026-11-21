@@ -257,10 +257,26 @@ it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only the memb
 team id, without a lock. The committing loads of the progress messages take the same
 row lock ("Progress and guards"), so a flip and a progress write of one team are
 ordered by the database. The lock order is always `relay_lock`, then the team row.
-A transaction that writes a team and its members' rows (they reference each other)
-locks the team row before it writes a member: the progress commits, the baton
-operations, `finish_team`, every way out of "Lifecycle", the forced end and the
-restart all do, so two of them never wait on each other in opposite orders.
+Teams and participants reference each other, and the ORM flushes a participant's
+UPDATE before a team's, so a transaction that writes rows of both tables locks its
+team rows explicitly first (`SELECT ... FOR UPDATE`), before it changes any member:
+
+- one team through `team_for_update` or its twin `RelayModHandler._team_select`: the
+  progress commits, `member_connection_changed`, `member_out` (every way out of
+  "Lifecycle"), and `finish_team`'s committing load;
+- a race's teams in ascending id through `lock_race_teams` (`services/relay.py`): the
+  start (`prepare_relay_start`), a reset and a reroll (`reset_relay_race`), the forced
+  end (`finalize_race`);
+- the teams a placement touches, in ascending id (`_lock_teams` in
+  `api/relay_teams.py`: joins, moves, leaving, team deletion);
+- the restart (`stamp_offline_runners`) updates the teams in a statement before the one
+  that updates the members.
+
+Two such transactions therefore never wait on each other in opposite orders. A write to
+one table only needs no order: a flip, a checkpoint and the take timer write the team, a
+member's fresh-save validation and a cancelled disqualification write the member (the
+validation as an UPDATE guarded on the status it read, so it never brings back a member
+who went out meanwhile).
 
 ## Cap
 
@@ -365,12 +381,17 @@ left in it. There is no automatic reassignment of the baton, ever.
 | `POST /races/{id}/abandon`                            | the member       | REGISTERED, READY or PLAYING to ABANDONED                                                                       | `{name} has abandoned the race.`                               |
 | `DELETE /races/{id}/participants/{pid}`, race RUNNING | organizer, admin | the same, the row kept in its team (400 `Cannot remove: current status is '<status>'` for a member already out) | `{name} has been removed from the race` (participants channel) |
 | `POST /races/{id}/participants/{pid}/disqualify`      | organizer, admin | DISQUALIFIED as on a solo race; the team is out                                                                 | none                                                           |
+| `POST /admin/users/{id}/ban`, race RUNNING            | admin            | the same disqualification ("Account banned"), unless already out by then; the mod is closed                     | none                                                           |
 | Inactivity monitor, offline 30 minutes                | server           | PLAYING to ABANDONED                                                                                            | `{name} has abandoned the race due to inactivity.`             |
-| Inactivity monitor, no-show                           | server           | REGISTERED or READY (never validated) 30 minutes into the race to ABANDONED                                     | the same                                                       |
+| Inactivity monitor, no-show                           | server           | REGISTERED or READY (never validated) 30 minutes into a race without `race_duration_minutes` to ABANDONED       | the same                                                       |
 | Inactivity monitor, team IGT stale 30 minutes         | server           | the holder to ABANDONED                                                                                         | the same                                                       |
 
 What a member going out does (`apply_member_out`, `services/relay.py`):
 
+- Their row takes a snapshot of the team's progress at that moment: its IGT, deaths and
+  layer (their own status kept, no finish time, never `zone_history`). Every member's row
+  thus tells how far the team was when that runner's race ended; the members still in at
+  the team's end get its final result instead (below).
 - A baton they held is free at once: no holder, `baton_free`, no 60 s wait. The team's
   `last_igt_change_at` restarts, so the free baton gets the whole 30 minutes before the
   team is out for inactivity.
@@ -380,7 +401,9 @@ What a member going out does (`apply_member_out`, `services/relay.py`):
   at once (DISQUALIFIED), finished or not: what a cheater obtained reached the team.
 - A team out gets `copy_team_result`: its members still in take its status, IGT, finish
   time, deaths and layer (a disqualified team leaves them ABANDONED; a member already out
-  keeps their own row), and the public line `{team name} is out.`.
+  keeps their own snapshot). A team that was still in the race and goes out while the
+  race runs gets the public line `{team name} is out.` (never twice, nor after the race
+  finished).
 
 Cancelling a disqualification restores the member's own row and never the team: their
 saved status comes back, but a run still going in a team that is out ends ABANDONED, as at
@@ -395,11 +418,15 @@ Inactivity (`services/inactivity_monitor.py`, `INACTIVITY_TIMEOUT`, every minute
   validated. A connected waiting runner has no stamp and is never inactive: they wait by
   design.
 - `abandon_stale_relay_teams` watches the team's IGT instead of the waiting runners': a
-  PLAYING team whose `last_igt_change_at` is older than 30 minutes has its holder
+  team in the race (PLAYING, or READY with a stamp: its first holder never reported and
+  went out) whose `last_igt_change_at` is older than 30 minutes has its holder
   abandoned, and a team with no holder (a free baton nobody took in 30 minutes) is out
-  itself.
+  itself. A take restarts the stamp too (the flip), so a runner who takes the baton late
+  in that window gets the whole 30 minutes for their first report.
 - Each runner the monitor takes out is judged again under the locks (their mod may have
-  come back), and its lines are posted there, the team's after the member's.
+  come back), and its lines are posted there, the team's after the member's. Each relay
+  operation runs on its own: one failing (a deadlock abort) is logged and the pass goes
+  on, the solo abandons already committed included.
 
 The operations are `member_out` and `take_member_out` (`websocket/race/relay.py`), for a
 REST route or the monitor, which have no mod handler. `relay_section` holds the race

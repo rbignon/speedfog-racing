@@ -37,6 +37,9 @@ POLL_INTERVAL = 60  # seconds
 # Public chat line of a runner abandoned for inactivity ({name}: their display name).
 INACTIVITY_LINE = "{name} has abandoned the race due to inactivity."
 
+# A relay team still in the race (READY until its first holder's report).
+_TEAM_IN_RACE = (ParticipantStatus.READY, ParticipantStatus.PLAYING)
+
 
 def _utc(moment: datetime | None) -> datetime | None:
     """``moment`` read as UTC (SQLite returns naive datetimes)."""
@@ -140,15 +143,21 @@ async def abandon_inactive_participants(
         if abandoned_participant_ids:
             await db.commit()
 
-    # Once the session above is closed: each runs in a session of its own.
+    # Once the session above is closed: each runs in a session of its own, and
+    # one failing (a deadlock abort) neither stops the others nor loses the
+    # abandons committed above.
     for race_id, participant_id in relay_members:
-        out = await take_member_out(
-            session_maker,
-            race_id,
-            participant_id,
-            _still_inactive(cutoff),
-            member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
-        )
+        try:
+            out = await take_member_out(
+                session_maker,
+                race_id,
+                participant_id,
+                _still_inactive(cutoff),
+                member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
+            )
+        except Exception:
+            logger.exception("Relay member inactivity failed: %s", participant_id)
+            continue
         if out is None:
             continue
         logger.info("Auto-abandoning relay member %s (offline or no-show)", participant_id)
@@ -182,13 +191,15 @@ async def abandon_stale_relay_teams(
 ) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
     """Relay teams whose IGT went stale, the relay form of the PLAYING branch.
 
-    A PLAYING team whose ``last_igt_change_at`` is older than
+    A team in the race (PLAYING, or READY with a stamp: its first holder never
+    reported, then went out) whose ``last_igt_change_at`` is older than
     ``INACTIVITY_TIMEOUT`` has its holder abandoned (through ``member_out``:
     the baton freed, the cap recomputed, the team out when nobody is left),
     and its stamp restarts, so a free baton gets 30 minutes of its own (as one
     freed by any holder going out). A team without holder (a free baton nobody
     took in that time) is out itself. Waiting runners are idle by design: only
-    the team's IGT is watched. The chat lines are posted there.
+    the team's IGT is watched. The chat lines are posted there. A team whose
+    operation fails is logged and skipped: the others still go.
 
     Returns (race_ids touched, holders just abandoned). Caller is responsible
     for the auto-finish check and broadcasts.
@@ -203,7 +214,7 @@ async def abandon_stale_relay_teams(
                 .join(Race, Race.id == RelayTeam.race_id)
                 .where(
                     Race.status == RaceStatus.RUNNING,
-                    RelayTeam.status == ParticipantStatus.PLAYING,
+                    RelayTeam.status.in_(_TEAM_IN_RACE),
                     RelayTeam.last_igt_change_at.isnot(None),
                     RelayTeam.last_igt_change_at < cutoff,
                 )
@@ -213,13 +224,17 @@ async def abandon_stale_relay_teams(
     affected_race_ids: list[uuid.UUID] = []
     abandoned_holder_ids: set[uuid.UUID] = set()
     for race_id, team_id in rows:
-        out = await member_out(
-            session_maker,
-            race_id,
-            _stale_team_out(cutoff),
-            team_id=team_id,
-            member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
-        )
+        try:
+            out = await member_out(
+                session_maker,
+                race_id,
+                _stale_team_out(cutoff),
+                team_id=team_id,
+                member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
+            )
+        except Exception:
+            logger.exception("Relay team inactivity failed: %s", team_id)
+            continue
         if out is None:
             continue
         logger.info("Relay team %s inactive: holder %s out", team_id, out.member_id)
@@ -241,7 +256,7 @@ def _stale_team_out(
         since = _utc(team.last_igt_change_at)
         if (
             team.race.status != RaceStatus.RUNNING
-            or team.status != ParticipantStatus.PLAYING
+            or team.status not in _TEAM_IN_RACE
             or since is None
             or since >= cutoff
         ):
@@ -287,7 +302,12 @@ async def inactivity_monitor_loop(
             logger.exception("Speedrun session expiry error")
         try:
             affected, abandoned_ids = await abandon_inactive_participants(session_maker)
-            stale_races, stale_holders = await abandon_stale_relay_teams(session_maker)
+            try:
+                stale_races, stale_holders = await abandon_stale_relay_teams(session_maker)
+            except Exception:
+                # The abandons above are committed: their follow-up still runs.
+                logger.exception("Relay stale-team check failed")
+                stale_races, stale_holders = [], set()
             affected += [race_id for race_id in stale_races if race_id not in affected]
             abandoned_ids |= stale_holders
             if affected:
