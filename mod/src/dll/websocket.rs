@@ -507,6 +507,7 @@ fn connect_and_auth(
                     phantom_skin,
                     latest_mod_version,
                     held_item,
+                    relay: _,
                 } => {
                     let _ = incoming_tx.send(MachineMessage::AuthOk {
                         participant_id,
