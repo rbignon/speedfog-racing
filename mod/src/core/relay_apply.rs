@@ -922,7 +922,8 @@ mod tests {
             })
         };
         assert_eq!(at(&mut run, 16), None);
-        // Frames inside the interval write nothing.
+        // 50 and 115 are inside the interval of the write at 16 and write
+        // nothing; 120 is past it and writes.
         assert_eq!(at(&mut run, 50), None);
         assert_eq!(at(&mut run, 115), None);
         assert_eq!(at(&mut run, 120), None);
