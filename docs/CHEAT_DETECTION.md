@@ -107,7 +107,8 @@ it finishes, and the same people can cancel it from the same dialog.
   transient weekly daily badges only move for the latest closed week), and
   the race traits are recomputed. Rewards the disqualified runner already got
   are not taken back automatically: admins revoke them by hand.
-- A race reset or a daily reroll keeps the disqualification. Cancelling it
+- A race reset or a daily reroll keeps the disqualification. On a relay race
+  it is final and cannot be cancelled (see `RELAY.md`). Elsewhere, cancelling it
   restores the previous status and the run, or, if the race restarted in the
   meantime, lets the runner start over like everyone else. In a race that
   finished in the meantime, a run that was still going comes back abandoned.
