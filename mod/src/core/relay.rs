@@ -39,6 +39,14 @@ pub const RELEASE_CAPTURE_TIMEOUT: Duration = Duration::from_secs(12);
 /// is not that handoff.
 pub const RELEASE_WINDOW: Duration = Duration::from_secs(15);
 
+/// A capture in flight that has not been answered by then is abandoned by
+/// the machine (a worker that never answers must not wedge it); its late
+/// answer is dropped. The same bound as the release's give-up.
+pub const CAPTURE_ABANDON: Duration = RELEASE_CAPTURE_TIMEOUT;
+/// After a capture failed, none is asked before this has passed: each one
+/// walks the inventory on the worker thread.
+pub const CAPTURE_RETRY: Duration = Duration::from_millis(500);
+
 /// A `relay_release` whose answer has not been sent.
 #[derive(Debug)]
 pub struct PendingRelease {
@@ -54,6 +62,11 @@ pub struct PendingRelease {
 pub struct CaptureInFlight {
     /// The release it answers; `None` for a zone checkpoint.
     pub handoff_id: Option<String>,
+    /// Identity of the capture, echoed by its answer: an answer is accepted
+    /// only for the capture currently in flight.
+    pub generation: u64,
+    /// When it was asked.
+    pub asked_at: Instant,
     /// The socket dropped since it was asked: its answer is stale.
     pub link_lost: bool,
 }
