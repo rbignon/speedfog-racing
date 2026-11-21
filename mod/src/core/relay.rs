@@ -26,6 +26,10 @@ pub const GATE_WINDOW: Duration = Duration::from_secs(5);
 pub const WARP_RETRY: Duration = Duration::from_secs(5);
 /// Raises of the warp flag before the warp is given up.
 pub const WARP_ATTEMPTS: u32 = 3;
+/// Warps whose load ended away from the Chapel, in one locked stretch,
+/// before the return is given up for good (a loading exit does not reset
+/// the count: a wrong Chapel map id would otherwise loop forever).
+pub const WARP_LANDINGS_MAX: u32 = 2;
 /// A lowered warp flag stays down this long before it is raised again.
 const WARP_RELOWER: Duration = Duration::from_millis(100);
 
@@ -69,12 +73,13 @@ impl FlagWarp {
         if self.done {
             return None;
         }
+        if !loaded && self.raises > 0 {
+            // A raise started the load (also one that starts between a
+            // lower and the next raise): the seed takes it from here.
+            self.done = true;
+            return None;
+        }
         if let Some(raised_at) = self.raised_at {
-            if !loaded {
-                // The raise started the load: the seed takes it from here.
-                self.done = true;
-                return None;
-            }
             if now.saturating_duration_since(raised_at) < WARP_RETRY {
                 return None;
             }
@@ -160,6 +165,17 @@ mod tests {
         assert_eq!(w.tick(false, t0 + ms(16)), None);
         assert!(w.is_done());
         assert_eq!(w.tick(true, t0 + WARP_RETRY * 2), None);
+    }
+
+    #[test]
+    fn a_load_between_a_lower_and_the_next_raise_ends_the_warp() {
+        let t0 = Instant::now();
+        let mut w = FlagWarp::new(7);
+        w.tick(true, t0);
+        assert_eq!(w.tick(true, t0 + WARP_RETRY), Some(WarpStep::Lower(7)));
+        assert_eq!(w.tick(false, t0 + WARP_RETRY + ms(50)), None);
+        assert!(w.is_done());
+        assert_eq!(w.tick(true, t0 + WARP_RETRY + ms(200)), None, "no raise");
     }
 
     #[test]

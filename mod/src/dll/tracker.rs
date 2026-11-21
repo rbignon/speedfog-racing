@@ -579,11 +579,7 @@ impl RaceTracker {
                     .flatten(),
                 position_readable: map_id.is_some(),
                 map_id,
-                hp: needs
-                    .hp
-                    .then(race_items::read_hp)
-                    .flatten()
-                    .map(|(hp, _)| hp),
+                hp: needs.hp.then(|| self.game_state.read_hp()).flatten(),
                 loading_screen: needs
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())

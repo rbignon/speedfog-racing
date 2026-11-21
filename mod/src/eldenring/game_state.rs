@@ -174,6 +174,16 @@ impl GameState {
         self.death_count_ptr.read()
     }
 
+    /// The player's current HP, through the pointers this state already
+    /// caches (nothing is allocated); `None` while the player is not loaded.
+    pub fn read_hp(&self) -> Option<i32> {
+        profile_span!("read_hp");
+        self.pointers
+            .character_points
+            .read()
+            .map(|points| points.hp)
+    }
+
     /// Read the watched debug-flag bytes (cheat detection).
     pub fn read_debug_flags(&self) -> Option<[u8; DEBUG_FLAGS_LEN]> {
         profile_span!("read_debug_flags");
