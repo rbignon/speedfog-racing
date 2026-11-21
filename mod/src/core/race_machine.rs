@@ -764,6 +764,18 @@ pub struct RaceMachine {
     /// that reads otherwise (`relay::TAKEN_CONFIRM`); `None` once the server
     /// has spoken or the time is up.
     relay_confirm_until: Option<Instant>,
+    /// A `relay_taken` went out and no `relay_update` has confirmed it yet:
+    /// it may have died with a socket the mod did not know was dead, the
+    /// server then still awaiting it and dropping what it hears first. A
+    /// reconnection meanwhile holds its replays (`relay_replay_held`).
+    relay_taken_unconfirmed: bool,
+    /// The replays of a reconnection, held while the take acknowledged
+    /// before it is unconfirmed, until this time at the latest
+    /// (`relay::TAKEN_CONFIRM` after the reconnection).
+    relay_replay_held: Option<Instant>,
+    /// The held replays go on the next connected frame (which reads the
+    /// flags for their rescan), and why.
+    relay_replay_go: Option<&'static str>,
     /// The warp to the exit of the gate a take restarts from.
     relay_zone_warp: Option<FlagWarp>,
     /// When the current `RelayInfo` was received: the baton's countdown
@@ -981,6 +993,9 @@ impl RaceMachine {
             relay_taken_id: None,
             relay_taken_due: false,
             relay_confirm_until: None,
+            relay_taken_unconfirmed: false,
+            relay_replay_held: None,
+            relay_replay_go: None,
             relay_zone_warp: None,
             relay_received_at: None,
             relay_rows: Vec::new(),
@@ -1663,12 +1678,15 @@ impl RaceMachine {
     /// not yet asked is dropped (the next zone sends the latest), and an
     /// acknowledgement due again is dropped (the server sends its take
     /// again after the next `auth_ok` while it awaits it). A take in
-    /// progress goes on.
+    /// progress goes on. Replays held for a reconnection are decided again
+    /// at the next one (they stay buffered).
     fn relay_link_lost(&mut self) {
         self.relay_request = None;
         self.relay_release = None;
         self.relay_checkpoint_due = false;
         self.relay_taken_due = false;
+        self.relay_replay_held = None;
+        self.relay_replay_go = None;
         if let Some(capture) = self.relay_capture.as_mut() {
             capture.link_lost = true;
         }
@@ -1750,6 +1768,33 @@ impl RaceMachine {
         }
         if !named_me {
             self.relay_give_up_take(reason);
+        }
+        // A `relay_taken` not confirmed yet: an update naming the runner
+        // holder, its own role `holder`, with no take in progress nor
+        // answered again, confirms it. Another holder or none, no relay or a
+        // relay over ends the wait too. An `auth_ok` confirms nothing: after
+        // a reconnection it reads the runner holder while the server may
+        // still await that `relay_taken` (it then sends the take again).
+        if self.relay_taken_unconfirmed {
+            let confirmed = !from_auth
+                && named_me
+                && self
+                    .relay
+                    .as_ref()
+                    .is_some_and(|r| r.role == RelayRole::Holder)
+                && self.relay_take.is_none()
+                && !self.relay_taken_due;
+            if confirmed || !named_me || self.relay_over() {
+                self.relay_taken_unconfirmed = false;
+                info!(confirmed, "[RELAY] Take acknowledgement settled");
+                if self.relay_replay_held.is_some() {
+                    self.relay_replay_go = Some(if confirmed {
+                        "confirmed"
+                    } else {
+                        "no longer the holder"
+                    });
+                }
+            }
         }
         // A role that changed or a relay that ended answers any request in
         // flight: it is no longer the one the key made.
@@ -2932,6 +2977,11 @@ impl RaceMachine {
                     self.zone_stall_warned = false;
                     self.relay_confirm_until = None;
                     self.relay_taken_due = false;
+                    // A previous take's acknowledgement no longer matters:
+                    // what its replays would carry was just dropped.
+                    self.relay_taken_unconfirmed = false;
+                    self.relay_replay_held = None;
+                    self.relay_replay_go = None;
                     if self.relay_ready_sent == Some(true) {
                         self.relay_ready_sent = Some(false);
                         info!(ready = false, "[RELAY] Ready sent");
@@ -3108,7 +3158,8 @@ impl RaceMachine {
     }
 
     /// Whether the shell must read the event flags this frame: 10Hz poll
-    /// cadence, loading-screen exit scan, or the reconnect safety-net rescan.
+    /// cadence, loading-screen exit scan, or the reconnect safety-net rescan
+    /// (on the reconnection frame, or on the frame its held replays go).
     /// Never while progress is held (`progress_held`): those scans would
     /// capture nothing.
     pub fn wants_flag_reads(
@@ -3122,7 +3173,7 @@ impl RaceMachine {
         }
         needs.poll_flags
             || (position_readable && !self.was_position_readable)
-            || (connected && !self.ready_sent)
+            || (connected && (!self.ready_sent || self.relay_replay_go.is_some()))
     }
 
     /// The boss defeat flags the shell reads after `event_ids`: while the run
@@ -3839,6 +3890,13 @@ impl RaceMachine {
 
         // Send ready on (re)connection (skip in training mode since server auto-starts)
         let reconnect_frame = !self.ready_sent;
+        // Held progress replays nothing: the take's receipt dropped what the
+        // waiting save had in flight.
+        let replay_live = self.is_race_running()
+            && !self.am_i_finished()
+            && !self.is_countdown_active(now)
+            && !held;
+        let mut replay = false;
         if !self.ready_sent {
             if !self.training {
                 effects.push(Effect::SendReady);
@@ -3846,80 +3904,98 @@ impl RaceMachine {
                 info!("[RACE] Sent ready signal");
             }
             self.ready_sent = true;
+            replay = replay_live;
+            // A `relay_taken` not confirmed yet may have died with the old
+            // socket: the server, still awaiting it, would acknowledge and
+            // drop progress heard before it. The replays wait for the
+            // server's confirmation or the answer to the take it sends
+            // again, `relay::TAKEN_CONFIRM` at most.
+            if replay && self.relay_taken_unconfirmed {
+                replay = false;
+                self.relay_replay_held = Some(now + relay::TAKEN_CONFIRM);
+                info!("[RELAY] Reconnection replays held until the take is confirmed");
+            }
+        } else if let Some(until) = self.relay_replay_held {
+            if let Some(reason) = self.relay_replay_go.take() {
+                self.relay_replay_held = None;
+                replay = replay_live;
+                info!(
+                    reason,
+                    sent = replay,
+                    "[RELAY] Reconnection replays released"
+                );
+            } else if now >= until {
+                // On the next frame, which reads the flags for the rescan.
+                warn!("[RELAY] Take not confirmed in time, reconnection replays go anyway");
+                self.relay_replay_go = Some("not confirmed in time");
+            }
+        }
+        if replay {
+            self.flush_restored = false;
 
-            // Held progress replays nothing: the take's receipt dropped what
-            // the waiting save had in flight.
-            if self.is_race_running()
-                && !self.am_i_finished()
-                && !self.is_countdown_active(now)
-                && !held
-            {
-                self.flush_restored = false;
+            // Replay in-flight event flags (sent but not ACKed before disconnect)
+            // with their original message_id for server-side dedup.
+            self.replay_in_flight_event_flags(&mut effects);
 
-                // Replay in-flight event flags (sent but not ACKed before disconnect)
-                // with their original message_id for server-side dedup.
-                self.replay_in_flight_event_flags(&mut effects);
+            // Replay in-flight zone queries (sent but not ACKed before disconnect)
+            self.replay_in_flight_zone_queries(&mut effects);
 
-                // Replay in-flight zone queries (sent but not ACKed before disconnect)
-                self.replay_in_flight_zone_queries(&mut effects);
+            // Drain event flags buffered during disconnection (never sent)
+            self.send_pending_event_flags(&mut effects);
 
-                // Drain event flags buffered during disconnection (never sent)
-                self.send_pending_event_flags(&mut effects);
-
-                // Safety-net rescan: catch any flags still set in memory that polling missed
-                if let Some(ref reads) = input.flag_reads {
-                    for &(flag_id, is_set) in reads {
-                        if !is_set || cleared.contains(&flag_id) {
-                            continue;
-                        }
-                        if self.boss_flags.binary_search(&flag_id).is_ok() {
-                            // The held IGT, as the other scans: a reload's
-                            // transient 0 would lose the kill (the server
-                            // ignores a kill at IGT 0).
-                            let kill_igt_ms = self.effective_igt_ms();
-                            self.capture_boss_kill(
-                                flag_id,
-                                kill_igt_ms,
-                                input.connected,
-                                now,
-                                &mut effects,
-                            );
-                            continue;
-                        }
-                        if self.item_use_flags.binary_search(&flag_id).is_ok() {
-                            // The held IGT too, for the same reason.
-                            let use_igt_ms = self.effective_igt_ms();
-                            self.capture_item_use(
-                                flag_id,
-                                use_igt_ms,
-                                input.connected,
-                                now,
-                                &mut cleared,
-                                &mut effects,
-                            );
-                            continue;
-                        }
-                        if self.finish_event == Some(flag_id) {
-                            if !self.triggered_flags.contains(&flag_id) {
-                                self.triggered_flags.insert(flag_id);
-                                self.record_capture(flag_id, igt_ms, now);
-                                effects.push(self.queue_event_flag(flag_id, igt_ms));
-                                self.last_sent_debug =
-                                    Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                                info!(flag_id, "[RACE] Finish event re-sent after reconnect");
-                            }
-                        } else {
-                            effects.push(Effect::SetGameFlag {
-                                flag_id,
-                                value: false,
-                            });
-                            cleared.insert(flag_id);
+            // Safety-net rescan: catch any flags still set in memory that polling missed
+            if let Some(ref reads) = input.flag_reads {
+                for &(flag_id, is_set) in reads {
+                    if !is_set || cleared.contains(&flag_id) {
+                        continue;
+                    }
+                    if self.boss_flags.binary_search(&flag_id).is_ok() {
+                        // The held IGT, as the other scans: a reload's
+                        // transient 0 would lose the kill (the server
+                        // ignores a kill at IGT 0).
+                        let kill_igt_ms = self.effective_igt_ms();
+                        self.capture_boss_kill(
+                            flag_id,
+                            kill_igt_ms,
+                            input.connected,
+                            now,
+                            &mut effects,
+                        );
+                        continue;
+                    }
+                    if self.item_use_flags.binary_search(&flag_id).is_ok() {
+                        // The held IGT too, for the same reason.
+                        let use_igt_ms = self.effective_igt_ms();
+                        self.capture_item_use(
+                            flag_id,
+                            use_igt_ms,
+                            input.connected,
+                            now,
+                            &mut cleared,
+                            &mut effects,
+                        );
+                        continue;
+                    }
+                    if self.finish_event == Some(flag_id) {
+                        if !self.triggered_flags.contains(&flag_id) {
+                            self.triggered_flags.insert(flag_id);
                             self.record_capture(flag_id, igt_ms, now);
                             effects.push(self.queue_event_flag(flag_id, igt_ms));
                             self.last_sent_debug =
                                 Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
-                            info!(flag_id, "[RACE] Event flag re-sent after reconnect");
+                            info!(flag_id, "[RACE] Finish event re-sent after reconnect");
                         }
+                    } else {
+                        effects.push(Effect::SetGameFlag {
+                            flag_id,
+                            value: false,
+                        });
+                        cleared.insert(flag_id);
+                        self.record_capture(flag_id, igt_ms, now);
+                        effects.push(self.queue_event_flag(flag_id, igt_ms));
+                        self.last_sent_debug =
+                            Some(format!("event_flag({}, igt={})", flag_id, igt_ms));
+                        info!(flag_id, "[RACE] Event flag re-sent after reconnect");
                     }
                 }
             }
@@ -4876,13 +4952,18 @@ impl RaceMachine {
         }
 
         // A take acknowledged already and sent again: answered again,
-        // nothing written, the confirmation window opened again.
+        // nothing written, the confirmation window opened again. Replays a
+        // reconnection held go on the next frame, behind this answer.
         if connected && self.relay_taken_due {
             self.relay_taken_due = false;
             if let Some(handoff_id) = self.relay_taken_id.clone() {
                 info!(handoff_id = %handoff_id, "[RELAY] Take acknowledged again");
                 effects.push(Effect::SendRelayTaken { handoff_id });
                 self.relay_confirm_until = Some(now + relay::TAKEN_CONFIRM);
+                self.relay_taken_unconfirmed = true;
+                if self.relay_replay_held.is_some() {
+                    self.relay_replay_go = Some("acknowledged again");
+                }
             }
         }
 
@@ -5098,6 +5179,7 @@ impl RaceMachine {
         self.relay_taken_id = Some(take.handoff_id);
         self.relay_taken_due = false;
         self.relay_confirm_until = Some(now + relay::TAKEN_CONFIRM);
+        self.relay_taken_unconfirmed = true;
         self.item_feed.push_banner(
             FeedBanner {
                 icon: String::new(),
@@ -15719,6 +15801,138 @@ mod tests {
         assert!(
             matches!(applies[..], [Effect::ApplyRelayItems { handoff_id, .. }] if handoff_id == "h2"),
             "{fx:?}"
+        );
+    }
+
+    /// After a take acknowledged at 1_200, its socket died without the mod
+    /// knowing: the warp's zone flag, captured at 1_300, goes out at the
+    /// warp's loading exit (1_500) into the void, where it stays in flight.
+    /// Then the mod learns of the drop and reconnects: its `auth_ok` names it
+    /// holder (the server, which never got that `relay_taken`, still awaits
+    /// it), the socket up again at 1_700. Returns the zone flag's message id.
+    fn taken_on_a_dead_socket(m: &mut RaceMachine, t0: Instant) -> u64 {
+        let reads = Some(vec![(ZONE_FLAG, true)]);
+        let fx = rx_frame(m, t0, 1_300, chapel(), TEAM_IGT + 200, 100, reads);
+        assert!(fx.contains(&Effect::SetGameFlag {
+            flag_id: ZONE_FLAG,
+            value: false
+        }));
+        team(m, t0, 1_400, None, 1_100);
+        let fx = rx_frame(
+            m,
+            t0,
+            1_500,
+            Some(IN_ZONE),
+            TEAM_IGT + 400,
+            100,
+            Some(vec![]),
+        );
+        let sent = sent_flag_details(&fx);
+        assert_eq!(sent.len(), 1, "{fx:?}");
+        assert_eq!(sent[0].0, ZONE_FLAG);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(1_600),
+        );
+        m.handle_message(relay_auth("running", Some(flip_info())), t0 + ms(1_700));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(1_700),
+        );
+        sent[0].2
+    }
+
+    /// Frames in the zone every 100 ms over `[from, to]`, reading the IGT
+    /// of the take written at 1_100 and no set flag; the effects in order.
+    fn zone_frames(m: &mut RaceMachine, t0: Instant, from: u64, to: u64) -> Vec<Effect> {
+        let mut fx = Vec::new();
+        let mut at = from;
+        while at <= to {
+            let igt = TEAM_IGT + (at - 1_100) as u32;
+            fx.extend(rx_frame(m, t0, at, Some(IN_ZONE), igt, 100, Some(vec![])));
+            at += 100;
+        }
+        fx
+    }
+
+    /// Where the replay of the zone flag `id` is in `fx`, and how many there are.
+    fn replays_of(fx: &[Effect], id: u64) -> (Option<usize>, usize) {
+        let replayed = |e: &Effect| {
+            matches!(e, Effect::SendEventFlag { flag_id, message_id, .. }
+                if *flag_id == ZONE_FLAG && *message_id == id)
+        };
+        (
+            fx.iter().position(replayed),
+            fx.iter().filter(|e| replayed(e)).count(),
+        )
+    }
+
+    #[test]
+    fn a_reconnect_after_a_lost_relay_taken_replays_after_the_second_one() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let id = taken_on_a_dead_socket(&mut m, t0);
+        // The reconnection frame: ready goes, the flag in flight is held.
+        let mut fx = zone_frames(&mut m, t0, 1_800, 1_800);
+        assert!(fx.contains(&Effect::SendReady), "{fx:?}");
+        assert_eq!(replays_of(&fx, id).1, 0, "{fx:?}");
+        // The server sends the take again, then the team's update, which
+        // names the runner holder before it has heard the acknowledgement.
+        assert!(m.handle_message(take("h1"), t0 + ms(1_850)).is_empty());
+        update(&mut m, flip_info(), t0, 1_850);
+        fx.extend(zone_frames(&mut m, t0, 1_900, 1_900));
+        assert!(fx.contains(&taken("h1")), "acknowledged again: {fx:?}");
+        assert_eq!(replays_of(&fx, id).1, 0, "not with the answer: {fx:?}");
+        // The next frame reads the flags for the rescan and replays.
+        assert!(m.wants_flag_reads(FrameNeeds::default(), true, true));
+        fx.extend(zone_frames(&mut m, t0, 2_000, 4_000));
+        let taken_at = fx.iter().position(|e| *e == taken("h1"));
+        let (replayed_at, count) = replays_of(&fx, id);
+        assert_eq!(count, 1, "{fx:?}");
+        assert!(replayed_at > taken_at, "{fx:?}");
+    }
+
+    #[test]
+    fn a_reconnect_replays_once_the_server_confirms_the_take() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let id = taken_on_a_dead_socket(&mut m, t0);
+        let fx = zone_frames(&mut m, t0, 1_800, 1_800);
+        assert_eq!(replays_of(&fx, id).1, 0, "{fx:?}");
+        // The server had heard the acknowledgement: no take again, only the
+        // update of the reconnection, which confirms it.
+        update(&mut m, flip_info(), t0, 1_850);
+        let fx = zone_frames(&mut m, t0, 1_900, 1_900);
+        assert_eq!(replays_of(&fx, id), (Some(0), 1), "{fx:?}");
+        assert!(!fx.contains(&taken("h1")));
+    }
+
+    #[test]
+    fn a_reconnect_replays_anyway_when_the_take_is_never_confirmed() {
+        let confirm = crate::core::relay::TAKEN_CONFIRM.as_millis() as u64;
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        let id = taken_on_a_dead_socket(&mut m, t0);
+        let fx = zone_frames(&mut m, t0, 1_800, 1_800 + confirm);
+        assert_eq!(replays_of(&fx, id).1, 0, "held for the window: {fx:?}");
+        // Past the window: the next frame reads the flags and replays.
+        let fx = zone_frames(&mut m, t0, 1_900 + confirm, 2_000 + confirm);
+        assert_eq!(replays_of(&fx, id), (Some(0), 1), "{fx:?}");
+    }
+
+    #[test]
+    fn a_reconnect_after_a_confirmed_take_replays_at_once() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        // The server confirms the acknowledgement.
+        update(&mut m, flip_info(), t0, 1_250);
+        let id = taken_on_a_dead_socket(&mut m, t0);
+        let fx = zone_frames(&mut m, t0, 1_800, 1_800);
+        assert!(fx.contains(&Effect::SendReady), "{fx:?}");
+        assert_eq!(
+            replays_of(&fx, id).1,
+            1,
+            "on the reconnection frame: {fx:?}"
         );
     }
 
