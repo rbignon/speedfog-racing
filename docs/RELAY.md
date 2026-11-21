@@ -13,8 +13,10 @@ run, and only one of them holds the baton (plays) at a time.
 - A `relay_take` request must be acknowledged within 30 seconds.
 - A `relay_release` request must be answered within 15 seconds.
 - A team with no activity for 30 minutes is considered inactive.
-- The save a teammate takes the baton with must be fresh: its IGT must not
-  exceed 60 seconds (`MAX_FRESH_IGT_MS`).
+- Every member's save must be fresh: at their first report after the start, the
+  team's first holder and each waiting teammate alike, its IGT must not exceed 60
+  seconds (`MAX_FRESH_IGT_MS`). A runner who takes the baton later plays on the
+  team's IGT, which the take gives their game.
 - The relay wire contract starts at protocol 1.19 (`RELAY_MIN_PROTOCOL`).
 
 Relay races are off unless the server setting `RELAY_RACES_ENABLED` is true
@@ -557,4 +559,18 @@ Console commands:
 
 A walk needs the race to run and the bot to hold the baton. A race needs a relay seed (`Seed.relay`), so a local database whose pools were never regenerated with the relay plugin cannot start one.
 
+## Not proven yet
+
+- The row-lock discipline ("Ordering": `SELECT ... FOR UPDATE` on the team rows, in one order) has only run on SQLite, which ignores `FOR UPDATE`. The tests check the statements PostgreSQL receives, never two transactions contending for a team on PostgreSQL. (The migrations were run up, down and up again on PostgreSQL 17, and `alembic check` finds no drift on the relay tables and columns.)
+- The relay bot has never been run end to end against a server ("Bot"): only its pure decisions are tested.
+
 ## In-game checklist
+
+The mod lot writes the full list. Known to be owed from the server side:
+
+- A receiver applies `relay_take` (state, `igt_ms`, `defeat_flags`, `warp_flag`) and lands at the entrance `zone_name` names, a boss its team killed staying dead.
+- A giver locks and goes to the Chapel only on `role: waiting`; a cancelled or refused handoff leaves it unlocked.
+- Each member's first report from a new save validates them; an old save shows `fresh_save_required`.
+- A receiver whose game dies before `relay_taken` gets the same `relay_take` again after reconnecting and applies it once.
+- A holder at the cap finds its gates locked (`gates_locked`); a member out, or a team finished or out, lowers its lock.
+- The two points of "Not proven yet", through the bot first, then with real games.
