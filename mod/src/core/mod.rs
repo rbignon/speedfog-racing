@@ -17,6 +17,7 @@ pub mod item_damage;
 pub mod item_feed;
 pub mod item_inventory;
 pub mod job_queue;
+pub mod key_names;
 pub mod livesplit;
 pub mod map_utils;
 pub mod memory_effects;

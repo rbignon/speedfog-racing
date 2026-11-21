@@ -541,9 +541,13 @@ impl RaceTracker {
             machine.restore_unacked(saved);
         }
         let unacked_store = dll_dir.map(UnackedStore::spawn);
-        if let Some(hotkey) = config.keybindings.relay.as_ref() {
-            machine.set_relay_key_label(hotkey.label());
-        }
+        machine.set_relay_key(
+            config
+                .keybindings
+                .relay
+                .as_ref()
+                .map(|hotkey| hotkey.label()),
+        );
 
         info!("RaceTracker initialized");
 
@@ -780,11 +784,11 @@ impl RaceTracker {
 
         let loaded = snapshot.position_readable;
         // The baton key's level; not even read outside a relay race.
-        let relay_key_down = match self.config.keybindings.relay.as_ref() {
+        let (relay_key_down, relay_key_cancel) = match self.config.keybindings.relay.as_ref() {
             Some(hotkey) if self.machine.relay().is_some() => {
-                hotkey.is_down(ui, &mut self.relay_key_stale)
+                hotkey.read_level(ui, &mut self.relay_key_stale)
             }
-            _ => false,
+            _ => (false, false),
         };
         let input = TickInput {
             snapshot,
@@ -795,6 +799,7 @@ impl RaceTracker {
             weapons,
             flag_reader_ok,
             relay_key_down,
+            relay_key_cancel,
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);

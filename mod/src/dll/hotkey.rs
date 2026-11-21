@@ -4,100 +4,80 @@
 //! so edge detection is reliable and hotkeys are inert when the game window
 //! does not have focus.
 
+use crate::core::key_names::{key_to_name, name_to_key, KeyCode};
 use hudhook::imgui::{Key, Ui};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use windows::Win32::System::Threading::GetCurrentProcessId;
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
-/// Key name <-> imgui key table, used for both parsing and serialization.
-/// When several names map to the same key ("escape"/"esc"), the first entry
-/// is the canonical name used when serializing.
-const KEY_MAPPINGS: &[(&str, Key)] = &[
-    // Function keys (most common for hotkeys)
-    ("f1", Key::F1),
-    ("f2", Key::F2),
-    ("f3", Key::F3),
-    ("f4", Key::F4),
-    ("f5", Key::F5),
-    ("f6", Key::F6),
-    ("f7", Key::F7),
-    ("f8", Key::F8),
-    ("f9", Key::F9),
-    ("f10", Key::F10),
-    ("f11", Key::F11),
-    ("f12", Key::F12),
-    // Letters
-    ("a", Key::A),
-    ("b", Key::B),
-    ("c", Key::C),
-    ("d", Key::D),
-    ("e", Key::E),
-    ("f", Key::F),
-    ("g", Key::G),
-    ("h", Key::H),
-    ("i", Key::I),
-    ("j", Key::J),
-    ("k", Key::K),
-    ("l", Key::L),
-    ("m", Key::M),
-    ("n", Key::N),
-    ("o", Key::O),
-    ("p", Key::P),
-    ("q", Key::Q),
-    ("r", Key::R),
-    ("s", Key::S),
-    ("t", Key::T),
-    ("u", Key::U),
-    ("v", Key::V),
-    ("w", Key::W),
-    ("x", Key::X),
-    ("y", Key::Y),
-    ("z", Key::Z),
-    // Numbers
-    ("0", Key::Alpha0),
-    ("1", Key::Alpha1),
-    ("2", Key::Alpha2),
-    ("3", Key::Alpha3),
-    ("4", Key::Alpha4),
-    ("5", Key::Alpha5),
-    ("6", Key::Alpha6),
-    ("7", Key::Alpha7),
-    ("8", Key::Alpha8),
-    ("9", Key::Alpha9),
-    // Special keys
-    ("escape", Key::Escape),
-    ("esc", Key::Escape),
-    ("space", Key::Space),
-    ("enter", Key::Enter),
-    ("tab", Key::Tab),
-    ("insert", Key::Insert),
-    ("delete", Key::Delete),
-    ("home", Key::Home),
-    ("end", Key::End),
-    ("pageup", Key::PageUp),
-    ("pagedown", Key::PageDown),
-];
-
-fn name_to_key(name: &str) -> Option<Key> {
-    let name_lower = name.to_lowercase();
-    KEY_MAPPINGS
-        .iter()
-        .find(|(n, _)| *n == name_lower)
-        .map(|(_, key)| *key)
-}
-
-fn key_to_name(key: Key) -> &'static str {
-    KEY_MAPPINGS
-        .iter()
-        .find(|(_, k)| *k == key)
-        .map(|(name, _)| *name)
-        .unwrap_or("unknown")
+/// The ImGui key of a core key code.
+fn imgui_key(code: KeyCode) -> Key {
+    match code {
+        KeyCode::F1 => Key::F1,
+        KeyCode::F2 => Key::F2,
+        KeyCode::F3 => Key::F3,
+        KeyCode::F4 => Key::F4,
+        KeyCode::F5 => Key::F5,
+        KeyCode::F6 => Key::F6,
+        KeyCode::F7 => Key::F7,
+        KeyCode::F8 => Key::F8,
+        KeyCode::F9 => Key::F9,
+        KeyCode::F10 => Key::F10,
+        KeyCode::F11 => Key::F11,
+        KeyCode::F12 => Key::F12,
+        KeyCode::A => Key::A,
+        KeyCode::B => Key::B,
+        KeyCode::C => Key::C,
+        KeyCode::D => Key::D,
+        KeyCode::E => Key::E,
+        KeyCode::F => Key::F,
+        KeyCode::G => Key::G,
+        KeyCode::H => Key::H,
+        KeyCode::I => Key::I,
+        KeyCode::J => Key::J,
+        KeyCode::K => Key::K,
+        KeyCode::L => Key::L,
+        KeyCode::M => Key::M,
+        KeyCode::N => Key::N,
+        KeyCode::O => Key::O,
+        KeyCode::P => Key::P,
+        KeyCode::Q => Key::Q,
+        KeyCode::R => Key::R,
+        KeyCode::S => Key::S,
+        KeyCode::T => Key::T,
+        KeyCode::U => Key::U,
+        KeyCode::V => Key::V,
+        KeyCode::W => Key::W,
+        KeyCode::X => Key::X,
+        KeyCode::Y => Key::Y,
+        KeyCode::Z => Key::Z,
+        KeyCode::Alpha0 => Key::Alpha0,
+        KeyCode::Alpha1 => Key::Alpha1,
+        KeyCode::Alpha2 => Key::Alpha2,
+        KeyCode::Alpha3 => Key::Alpha3,
+        KeyCode::Alpha4 => Key::Alpha4,
+        KeyCode::Alpha5 => Key::Alpha5,
+        KeyCode::Alpha6 => Key::Alpha6,
+        KeyCode::Alpha7 => Key::Alpha7,
+        KeyCode::Alpha8 => Key::Alpha8,
+        KeyCode::Alpha9 => Key::Alpha9,
+        KeyCode::Escape => Key::Escape,
+        KeyCode::Space => Key::Space,
+        KeyCode::Enter => Key::Enter,
+        KeyCode::Tab => Key::Tab,
+        KeyCode::Insert => Key::Insert,
+        KeyCode::Delete => Key::Delete,
+        KeyCode::Home => Key::Home,
+        KeyCode::End => Key::End,
+        KeyCode::PageUp => Key::PageUp,
+        KeyCode::PageDown => Key::PageDown,
+    }
 }
 
 /// A simple hotkey (single key, no modifiers)
 #[derive(Debug, Clone, Copy)]
 pub struct Hotkey {
-    pub key: Key,
+    pub key: KeyCode,
 }
 
 impl Hotkey {
@@ -108,29 +88,31 @@ impl Hotkey {
 
     /// Check if this hotkey was just pressed this frame
     pub fn is_just_pressed(&self, ui: &Ui) -> bool {
-        ui.is_key_pressed_no_repeat(self.key)
+        ui.is_key_pressed_no_repeat(imgui_key(self.key))
     }
 
-    /// The key's level: held down now, in the game's window. ImGui only
-    /// learns of a release through the game's own window messages, so a key
-    /// released while another window has the focus would read down for good:
-    /// the level drops as soon as the game is not the foreground window, and
-    /// `stale` keeps it down until ImGui reports the key up, so returning to
+    /// The key's level: held down now, in the game's window; and whether the
+    /// press in progress is cancelled this frame. ImGui only learns of a
+    /// release through the game's own window messages, so a key released
+    /// while another window had the focus would read down for good: the level
+    /// drops as soon as the game is not the foreground window, that frame
+    /// reads as a cancel (the press was cut short, not released), and `stale`
+    /// keeps the level down until ImGui reports the key up, so returning to
     /// the game with the key already released cannot read as a hold. The
     /// foreground check runs only while the key reads down.
-    pub fn is_down(&self, ui: &Ui, stale: &mut bool) -> bool {
-        if !ui.is_key_down(self.key) {
+    pub fn read_level(&self, ui: &Ui, stale: &mut bool) -> (bool, bool) {
+        if !ui.is_key_down(imgui_key(self.key)) {
             *stale = false;
-            return false;
+            return (false, false);
         }
         if *stale {
-            return false;
+            return (false, false);
         }
         if !game_has_focus() {
             *stale = true;
-            return false;
+            return (false, true);
         }
-        true
+        (true, false)
     }
 
     /// The key's name in upper case ("F8"), as the overlay's hints write it.
@@ -201,6 +183,6 @@ where
 
 impl Default for Hotkey {
     fn default() -> Self {
-        Hotkey { key: Key::F9 }
+        Hotkey { key: KeyCode::F9 }
     }
 }

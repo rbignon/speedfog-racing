@@ -186,6 +186,15 @@ impl HandoffMenu {
         self.selected = index;
     }
 
+    /// The press in progress is dropped as if it never was: no tap, no
+    /// confirm, and the auto-close keeps counting from the last real input.
+    /// For a key the shell cut short (the game lost the focus) rather than
+    /// saw released.
+    pub fn cancel_press(&mut self) {
+        self.pressed_at = None;
+        self.spent = false;
+    }
+
     /// The press in progress, if any, can no longer tap or confirm: it was
     /// aimed at a highlight that is gone.
     pub fn spend_press(&mut self) {
