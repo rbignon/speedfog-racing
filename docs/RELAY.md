@@ -83,8 +83,12 @@ The leaderboard ranks teams. `relay_rows` turns the teams and the participants
 into `RelayTeamRow`s, shaped like a participant (`id`, `status`, `current_zone`,
 `current_layer`, `igt_ms`, `death_count`, `color_index`, `zone_history`,
 `layer_entry_igts`, all read from the team) with the `members`, the `cap` and the
-`holder`. An empty team is a row only in setup. `leaderboard_entries` returns the
-participants of a solo race and the team rows of a relay race.
+`holder`. An empty team is a row only in setup. In setup the row's `status` reads
+READY once the team's first runner is READY (the team can start), REGISTERED before;
+the team's own status, which `RelayInfo.team_status` carries, stays REGISTERED until
+the start, so a mod's leaderboard reads `ready` while nothing relay-specific is live
+yet. `leaderboard_entries` returns the participants of a solo race and the team rows
+of a relay race.
 `reset_relay_team` puts a team back to a fresh one (progress, baton and state
 cleared, status registered; name, color, placeholder and `first_runner_id` kept).
 
@@ -107,9 +111,13 @@ for an unknown user carries none, the invitee picks on the invite page.
   teams; the organizer may still create teams and move runners.
 - With open registration, `max_participants` counts runners, not teams: a runner
   creating a team on a full race is refused with 409 `Race is full`.
-- A leaving member who was `first_runner_id` clears it (null means the first member
-  registered). A new team takes the next color of the palette (highest plus one) and
-  its members take the team color.
+- A team has a first runner (`first_runner_id`) exactly when it has a member: the
+  runner who creates a team, or enters a team that has none (a placeholder), is its
+  first runner, and a first runner who leaves (or moves) hands it to the earliest
+  remaining member by `created_at` (none when the team is left empty). Choosing a
+  first runner takes the team's row lock, as placement does, and reads the chosen
+  member again under it. A new team takes the next color of the palette (highest plus
+  one) and its members take the team color.
 - Members and the organizer rename a team and choose its first runner; the first
   runner must be a member.
 - Placement locks the team rows it decides on (`SELECT ... FOR UPDATE`, ascending id,
@@ -143,11 +151,11 @@ for an unknown user carries none, the invitee picks on the invite page.
 
 - A team counts when it has at least one member; teams without member are ignored.
 - At least 2 teams that count, otherwise `At least 2 teams are required to start a relay race`.
-- Each such team needs at least 2 READY members, otherwise `<team name> needs at least 2 ready runners`.
+- Each such team needs its first runner READY, the runner its run starts with, otherwise `<team name>'s first runner is not ready` (`<team name> has no first runner` for a team whose first runner is missing, which only data older than the rule of "Who may do what" can show). Its other members need not be ready: a first runner alone may start their team's run.
 
-`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown. After the start broadcasts, every connected member's mod gets a `relay_update` (`send_row_relay_updates`, team by team): its `holder_id`, its own `role`, `team_status` READY, and for a member left out its own `members[].status` abandoned. The open race page of a member left out is past the spoiler wall at once: the start marks every participant connection playing, then gives the ones already out their own status back (on any race: a runner disqualified before a reset too).
+`prepare_relay_start` then fixes the teams: each started team becomes READY and its baton goes to `first_runner_id`. The members who are not READY keep their status (REGISTERED, or DISQUALIFIED after a reset): a REGISTERED member is still in the race, as a solo runner who has not connected yet, and may connect and join the run later (their first report validates their save; "Cap"); the no-show rule takes them out 30 minutes into the race otherwise ("Lifecycle"). A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown. After the start broadcasts, every connected member's mod gets a `relay_update` (`send_row_relay_updates`, team by team): its `holder_id`, its own `role`, `team_status` READY. The start marks every participant connection playing (a REGISTERED member's page stays behind the spoiler wall), then gives the ones already out their own status back (a runner disqualified before a reset).
 
-A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the left-out members return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
+A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the members out return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
 
 ## Baton
 
@@ -182,7 +190,9 @@ then goes back to them.
   `RaceRoom.relay_pending`), and `relay_release {handoff_id, to_name}` to the holder.
 - **`relay_state` with that `handoff_id`**, in time, from the giver who still holds the
   baton: the state is stored (below), then the baton flips to the target, unless the
-  target is out by then.
+  target is out by then, or at or over the cap, which may have dropped since the
+  request (a teammate's save validated, "Cap"): the giver then gets `relay_refused`
+  `target_at_cap` and a `relay_update`, and keeps the baton.
 - **`relay_state` with `handoff_id` null** from the holder: a checkpoint, stored the
   same way, no flip, no answer. The mod sends one at each zone entry, so a takeover
   after a crash has something recent.
@@ -323,9 +333,18 @@ runner's own death counter (an UPDATE that leaves a member who is out alone).
 ## Cap
 
 A runner may play `ceil(total_layers / active_members) + 1` zones (`relay_cap`),
-`total_layers` being the seed's. `active_members` counts the team's members whose
-status is neither abandoned nor disqualified (`is_active_member`); `team_cap` never
-divides by zero (at least one member) and is recomputed when a member leaves.
+`total_layers` being the seed's. `active_members` counts the team's members who play:
+PLAYING (their save passed the fresh-save gate, at their first report) or FINISHED
+(`shares_cap`). A member who never connected (REGISTERED), or who is connected
+without a validated save yet (READY: at the title screen, creating their character),
+takes no share: they cannot take the baton, so a runner playing alone is not held to
+a cap made for them. In setup and before the first reports, the cap therefore reads
+as if the runner were alone. `team_cap` never divides by zero (at least one member)
+and moves when a member's save is validated (the cap drops; the validation's
+`relay_update` carries it) or a member goes out (the cap rises). A holder already
+past a dropped cap reads `gates_locked: true` at once and must hand off to a teammate
+under it; a release already asked flips only if its target is still under the cap
+("Operations").
 
 Each zone counts for one runner, in `Participant.relay_zones`:
 
@@ -406,15 +425,16 @@ carry every team's history. No progress load reads `character_state` (deferred).
 - **Reconnection.** A reconnecting holder gets the `zone_update` of the team's zone,
   a waiting runner none.
 - **`relay_update`** goes to the team's connected mods whenever `RelayInfo` changes
-  here: a member passes the fresh-save gate, the team's first report, each fog gate
-  (`zone_name`, maybe a count), each counted kill (`members[].zones`,
-  `gates_locked`), the finish (`team_status`); the baton operations send their own
-  (Baton, "Operations").
+  here: a member passes the fresh-save gate (`validated`, `cap`, the holder's
+  `gates_locked`), the team's first report, each fog gate (`zone_name`, maybe a
+  count), each counted kill (`members[].zones`, `gates_locked`), the finish
+  (`team_status`); the baton operations send their own (Baton, "Operations").
 - **Finish.** The holder's final boss flag runs `finish_team`, `handle_finished` on
   the team: FINISHED, `finished_at`, the layer set to the seed's total, the final
   boss counted for the holder, `copy_team_result` (status, IGT, finish time, deaths
-  and layer onto the members still in, a disqualified team leaving them abandoned;
-  never `zone_history`), the public line `{team name} has finished the race!`, then
+  and layer onto the members still in, a disqualified team leaving them abandoned, a
+  member never validated going out instead; never `zone_history`), the public line
+  `{team name} has finished the race!`, then
   auto-finish and the same broadcasts, and a `relay_update` telling the team's mods
   their race is over. Once every team is finished or out, every participant row is
   terminal and the race finishes.
@@ -445,15 +465,18 @@ What a member going out does (`apply_member_out`, `services/relay.py`):
 - A baton they held is free at once: no holder, `baton_free`, no 60 s wait. The team's
   `last_igt_change_at` restarts, so the free baton gets the whole 30 minutes before the
   team is out for inactivity.
-- The cap is recomputed on the members still in (`team_cap`): every member's `cap` and
-  the holder's `gates_locked` can move.
+- The cap is recomputed on the members who share it (`team_cap`, "Cap"): every
+  member's `cap` and the holder's `gates_locked` can move.
 - The team is out (ABANDONED) once no member is left in. A disqualification puts it out
   at once (DISQUALIFIED), finished or not: what a cheater obtained reached the team.
 - A team out gets `copy_team_result`: its members still in take its status, IGT, finish
   time, deaths and layer (a disqualified team leaves them ABANDONED; a member already out
-  keeps their own snapshot). A team that was still in the race and goes out while the
-  race runs gets the public line `{team name} is out.` (never twice, nor after the race
-  finished).
+  keeps their own snapshot). So does a team that finishes, except for a member who never
+  played (`relay_validated` false: never connected, or never reported since the start),
+  who goes out with the team instead, as a member going out then: ABANDONED with the
+  snapshot and no finish time, never credited with a finish they had no part in. A team
+  that was still in the race and goes out while the race runs gets the public line
+  `{team name} is out.` (never twice, nor after the race finished).
 
 Cancelling a disqualification (`DELETE /races/{id}/participants/{pid}/disqualify`) is
 refused on a relay race, 400 `A disqualification on a relay race cannot be cancelled`: the
@@ -469,9 +492,10 @@ Inactivity (`services/inactivity_monitor.py`, `INACTIVITY_TIMEOUT`, every minute
   thus abandons a member offline for 30 minutes, and its no-show branch a member who never
   validated. On a relay race that branch runs whether the race has a `race_duration_minutes`
   or not (a solo race with one leaves its no-shows to the hard close): nobody takes the
-  baton from a connected holder, so a first holder who never plays would keep it, and any
-  other no-show would keep their share of the cap, until the forced end. A connected
-  waiting runner who validated has no stamp and is never inactive: they wait by design.
+  baton from a connected holder, so a first holder who never plays would keep it until
+  the forced end, and a no-show (who takes no share of the cap, "Cap") would keep their
+  team in the race after its last runner went out. A connected waiting runner who
+  validated has no stamp and is never inactive: they wait by design.
 - `abandon_stale_relay_teams` watches the team's IGT instead of the waiting runners': a
   team in the race (PLAYING, or READY with a stamp: its first holder never reported and
   went out) whose `last_igt_change_at` is older than 30 minutes has its holder
@@ -535,7 +559,7 @@ A relay race (`Race.relay_team_size` set) stays out of everything that assumes o
 Pages that read participants (the finished-race page, race cards, profiles, the Discord notification) keep doing so: when a team finishes or is out, its result is copied onto each member's participant row (see Lifecycle). A member who left early keeps a snapshot of the team's progress at that moment, so member rows of one team can differ. Anything ranked or counted is therefore computed on the team, never by assuming the member rows are equal.
 
 - Placements (`compute_race_stats`): a finished member is ranked by the result of their `RelayTeam` (IGT, then finish time), and teammates share the placement. The number of starters counts a team once (`coalesce(relay_team_id, id)` with IGT above 0), not its runners.
-- A member who went out before the team's end did not finish the race: whatever the team did afterwards, their row has no placement and reads DNF with their own snapshot (IGT, layer). A placement is for the runners who were in the race when their team finished; members still in carry the team's placement.
+- A member who went out before the team's end did not finish the race: whatever the team did afterwards, their row has no placement and reads DNF with their own snapshot (IGT, layer). A placement is for the runners who were in the race when their team finished; members still in carry the team's placement, except a member who never played, who goes out at the team's end ("Lifecycle").
 - Race card previews (`race_response`): finished members are ordered by team result and carry their team's placement; a member who left early is not finished and has none.
 - Discord podium (`build_podium(participants, teams)`): with teams, one entry per finished team, named after the team, with the team's IGT; at most three.
 - Profile activity: `RaceParticipantActivity.relay_team_name` is the team the user played for (`Participant.relay_team`, a read-only relationship loaded with the profile query, heavy team columns deferred). The activity list shows it before the placement as plain text. Counting is unchanged: a relay race counts for nothing outside itself.
@@ -544,7 +568,7 @@ Pages that read participants (the finished-race page, race cards, profiles, the 
 
 Race creation (`/race/new`): Relay is a fourth tile of the Format field, next to Classic, Elden Drift and Speedrun (formats exclude each other, so relay needs no handling of race items or speedrun). Its panel holds "Teams of [n]" (2 to 6, default 3) and the cap sentence of `relayCapSentence` in `web/src/lib/relay.ts`, which applies the server's formula (`ceil(total_layers / team_size) + 1`) to the selected pool's `layers_count` ("30 zones, teams of 3: 11 zones max per runner."). A pool's seeds may differ in layer count (the category key `<pool>@<layers>` exists for that), so the sentence is the pool's nominal count, and the race's own `relay_cap` is the figure that binds. The sentence is omitted when the pool has no `layers_count`. The game mode tabs count `PoolInfo.relay_available` (AVAILABLE plus SEEN seeds carrying the relay block). While relay races are off on the server every count is 0: the Relay tile stays, but no game mode can be picked, the page reads "No relay seed in any game mode yet." and Create stays disabled (the pools carry no reason, so the text cannot tell that case apart). With relay on, the late joiners and deathless options leave the advanced options (the request sends `late_join_window_minutes: null` and `deathless: false`), a line under the trigger says so, the registration hint says players pick a team, and the open registration maximum is labelled "max runners". `createRace` takes the team size as its last parameter (`relay_team_size`).
 
-Setup page (`/race/[id]`): the participant list of the left sidebar becomes `RelayTeamList`, grouped by team in the server's order. A team has a header (color, name, members / size, "Edit" for its members and the organizer, "Delete" for the organizer on an empty team), a "Starts: <runner>" line (the chosen first runner, else the first member; "Change" opens a select of the members) and the usual `ParticipantCard` per member. A team with a free slot ends with a dashed button, "+ Join this team" for a visitor and "Move to this team" for a runner of another team (`teamSlotAction`); "+ Create a team" closes the list (always for the organizer, who adds an empty placeholder team; for a runner or visitor who can register only while "Runners can create teams" is on). That checkbox is the organizer's, and when it is off the header maximum counts the teams' seats (`relayCapacity`) and the race is full when they are. The cross of a card (organizer) opens a menu: "Move to <team>" for each team with a free slot, and "Remove from race". The map slot's join button reads "Pick a team to join" and scrolls to the list. The start button follows `relayStartBlocker` (the server's `relay_start_error` texts), for every role.
+Setup page (`/race/[id]`): the participant list of the left sidebar becomes `RelayTeamList`, grouped by team in the server's order. A team has a header (color, name, members / size, "Edit" for its members and the organizer, "Delete" for the organizer on an empty team), a "Starts: <runner>" line (the team's first runner; "Change" opens a select of the members) and the usual `ParticipantCard` per member. A team with a free slot ends with a dashed button, "+ Join this team" for a visitor and "Move to this team" for a runner of another team (`teamSlotAction`); "+ Create a team" closes the list (always for the organizer, who adds an empty placeholder team; for a runner or visitor who can register only while "Runners can create teams" is on). That checkbox is the organizer's, and when it is off the header maximum counts the teams' seats (`relayCapacity`) and the race is full when they are. The cross of a card (organizer) opens a menu: "Move to <team>" for each team with a free slot, and "Remove from race". The map slot's join button reads "Pick a team to join" and scrolls to the list. The start button follows `relayStartBlocker` (the server's `relay_start_error` texts), for every role.
 
 The team list follows other users' changes by re-fetching the REST race each time `raceStore.participants` is replaced while a relay race is in setup (every team change makes the server broadcast the leaderboard rows; the newest answer wins when fetches overlap); a member's live status comes from the `relay_members` of the team rows. The runner's own changes replace the race with the answer of the REST call (`onChanged`). `joinRace`, `acceptInvite` and `addParticipant` take an optional team choice (`{relay_team_id}` or `{create_team: true}`): the invite page and the organizer's add-participant search show a select of the teams with a free slot plus "New team" (`teamChoiceOptions`; an invite page offers it only while runners may create teams). The five team routes are `createRelayTeam`, `updateRelayTeam`, `deleteRelayTeam`, `joinRelayTeam` and `moveRelayParticipant` in `web/src/lib/api.ts`.
 
@@ -961,7 +985,7 @@ The seed side (the lock, the warp flags, the Chapel warp, the fast travel refusa
 - **Mod build.** On Windows, from this branch: `cd mod && cargo build --lib --release`. Note `git rev-parse --short HEAD`: the first line of the mod log carries the commit (`SpeedFog Racing mod starting...`, with `commit`). Copy `target/release/speedfog_racing.dll` over `tools/assets/speedfog_racing.dll` on the server machine (`MOD_DLL_PATH`): every seed zip the server hands out afterwards carries that DLL. A second build with `--features profile-tracy` is needed for the steps that say Tracy ("docs/MOD_PROFILING.md": Tracy v0.13.1, a profiling DLL is never distributed). Use the plain build for everything else.
 - **Server.** The dev server on :8000 with `RELAY_RACES_ENABLED=true` in `server/.env` (restart it), started without `--reload` (a reload on an edit drops every socket). Its log is the terminal it runs in; the lines this checklist quotes start with `Relay`.
 - **Pool.** A pool regenerated with the relay plugin (graph.json 4.15; `tools/pools/_base.toml` enables it), scanned with `cd server && uv run speedfog-scan-seeds --pool <pool>`. `GET /api/pools` must report `relay_available` above 0 for it. Each race consumes a seed: plan the races below and add copies of a relay seed under new names, scanned again, as the race items protocol does.
-- **Races.** Five, created on `/race/new` with the Relay tile. Race 0, bots only (0.1). Race 1, teams of 2, `Starts: bot1`: sections A and B. Race 2, teams of 2, `Starts: you`: section C. Race 3, teams of 2, `Starts: bot1`: sections D, E (E1 to E9) and F. Race 4, teams of 6, `Starts: you`: E10 to E13 (the cap, the menu with five teammates, the final boss, the banners) and section G, which ends the race in each way. Every race has two teams: Alpha (you and the bots of your team) and Beta (two bots: a team starts only with at least 2 ready runners, and at least 2 teams must count). You are the race's organizer.
+- **Races.** Six, created on `/race/new` with the Relay tile. Race 0, bots only (0.1). Race 0b, teams of 2, `Starts: bot1`: 0.3 (you join Alpha but keep your game closed until the start). Race 1, teams of 2, `Starts: bot1`: sections A and B. Race 2, teams of 2, `Starts: you`: section C. Race 3, teams of 2, `Starts: bot1`: sections D, E (E1 to E9) and F. Race 4, teams of 6, `Starts: you`: E10 to E13 (the cap, the menu with five teammates, the final boss, the banners) and section G, which ends the race in each way. Every race has two teams: Alpha (you and the bots of your team) and Beta (two bots; at least 2 teams must count, each with its first runner ready). You are the race's organizer.
 - **Teammates.** One game instance, so the bot stands in for the teammates: from `server/`, `uv run python ../tools/relay_bot.py <race_id> --team Alpha=bot1 --team Beta=bot2,bot3 [--state FILE]` (race 0: `--team Alpha=bot1,bot4 --team Beta=bot2,bot3`; race 4: `--team Alpha=bot1,bot2,bot3,bot4,bot5 --team Beta=bot6,bot7`). The bots are local users; never name yourself. In setup the tool places them in their teams (a team missing from the race is created); started again later, with other `--state`, it only reconnects bots already in the race. The bot (see "Bot") holds the baton, passes it (`pass`), takes it (`take`), acknowledges a take or ignores it (`mute`), goes offline and comes back, walks, kills a boss, finishes. It cannot carry anything of its own: as a giver it sends the same state for the whole run, `FAKE_STATE` by default (a Vagabond at level 9, no item, no grace) or the file given with `--state`, and it sends no checkpoint. So a take that must carry items, armor, graces or a chosen build uses a `--state` file; the giver side of the mod (capture, release) needs your game as the holder; and a full circle between two real characters needs a second player on a second PC (**two players**: they join your team from their own account, with their own fresh save and the same DLL).
 - **Characters.** Two kinds, different by construction. Character G: stocked through Cheat Engine's item table with 220 or more transferable items (weapons, each of a base no other weapon of G has, armor, talismans, sorceries, incantations, spirit ashes, crystal tears, ashes of war), plus consumables, a key item and a quiver, a few graces lit; it plays race 2 only and is used to produce captured states (section C). The partition of C9 needs at least 192 transferable ids (the `transferable` count of `[RELAY] Character read`); 220 leaves a margin. Character R: a fresh New Game character that holds none of those items, of another starting class than G (the ids of R's starting kit are held from the start: one of them in a file lowers its `missing`), the receiver of sections D to F (a new one for each of races 1, 3 and 4). A take that gives something to G proves nothing: its plan has nothing to give.
 - **State files**, for the bot, from `server/`: a partition of the ids captured from character G, built once in step C9 (its table lists every file, its content, its step and the `missing` that step must show). The example file of "Bot" is a format illustration only: its ids were never checked against the game's tables. Every file carries stats, level and runes: `s1`'s (the attributes `[20, 12, 15, 18, 16, 9, 9, 10]`, level 30, runes 12345) everywhere except `s0.json`, which is `{"attributes": [15, 10, 11, 14, 13, 9, 9, 7], "level": 1, "runes": 0, "items": [], "grace_flags": []}` (level 1 is not the attribute sum minus 79: the bot warns, and a receiver's mod writes no stat, only the IGT). A file is checked by the tool at startup.
@@ -974,7 +998,8 @@ The seed side (the lock, the warp flags, the Chapel warp, the fast travel refusa
 ### 0. Validation
 
 - **0.1. The bots alone, before the game joins** (race 0: two teams of two bots, no game, `--team Alpha=bot1,bot4 --team Beta=bot2,bot3`). **Do:** start the tool, start the race from the web once every bot reports ready, then drive it: `status`, `walk bot1`, `boss bot1`, `pass bot1 bot4`, `offline` the holder of a team and `take` with its mate after 60 s, `mute` a taker and wait 30 s, `online`, `finish` each team. **See:** the console and the web's team rows follow, the race finishes when both teams have. **Log (server):** `Relay baton flipped`, `Relay take acknowledged`, `Relay take not acknowledged, baton free` (the muted taker), `Relay team finished`, `Race finished`. **Failure:** the tool stops in its setup insert or its socket loop (neither ever ran against a server): fix the tool before any game step. **Proves:** the bot's setup, socket loop and console, and the server's baton operations against a real client ("Not proven yet").
-- **0.2. The game joins and every member is validated.** **Do:** in race 1, create Alpha and Beta in the web, join Alpha with your game's account, choose `Starts: bot1` for Alpha, start the bot tool (no `--state`: its bots never give in race 1). Launch the game from your pack with the mod, start a New Game and load into the world (the mod reports ready). Start the race from the web. **See:** nothing is locked in setup: the gates react, fast travel works. Validation is not shown by the bot's `status` nor by the web's team row: it is in the server log. **Log (mod):** `[WS] Race started!`; **(server):** `Relay member validated:` for you and for each bot. **Failure:** a game that loaded an old save instead of a new one shows the blocking banner "Please start a New Game", and the server logs `Rejected stale save (relay member)` instead of `Relay member validated:` for it. Try it once with a used character: a handoff to that runner is answered `not_validated` (bot console: `refused: not_validated: ...`) only if the runner is connected and ready at the Chapel with its lock raised; otherwise the server answers `target_unavailable` first (its checks are in that order). Then start a New Game. **Proves:** the fresh-save gate for a waiting member (server side, seen through the mod).
+- **0.2. The game joins and every member is validated.** **Do:** in race 1, create Alpha and Beta in the web, join Alpha with your game's account, choose `Starts: bot1` for Alpha, start the bot tool (no `--state`: its bots never give in race 1). Launch the game from your pack with the mod: its connection makes you ready on the web from the title screen on, and the mod's leaderboard reads a team `ready` once its first runner is (Alpha's is bot1). Start a New Game and load into the world (past the character creation, in control of your character), then start the race from the web within about 45 s: your first report after the 10 s countdown must read an IGT of at most 60 s. **See:** nothing is locked in setup: the gates react, fast travel works (check it on a character of its own before the New Game of the race: the time it takes would fail the fresh-save gate). Validation is not shown by the bot's `status` nor by the web's team row: it is in the server log. **Log (mod):** `[WS] Race started!`; **(server):** `Relay member validated:` for you and for each bot. **Failure:** a game that loaded an old save instead of a new one shows the blocking banner "Please start a New Game", and the server logs `Rejected stale save (relay member)` instead of `Relay member validated:` for it. Try it once with a used character: a handoff to that runner is answered `not_validated` (bot console: `refused: not_validated: ...`) only if the runner is connected and ready at the Chapel with its lock raised; otherwise the server answers `target_unavailable` first (its checks are in that order). Then start a New Game. **Proves:** the fresh-save gate for a waiting member (server side, seen through the mod).
+- **0.3. A runner who shows up late** (race 0b, the bot tool as in race 1). **Do:** create Alpha and Beta, join Alpha with your game's account, choose `Starts: bot1` for Alpha, start the bot tool, and keep your game closed: launched, its mod would make you ready even from the title screen. Start the race from the web: it starts (each team's first runner is ready), and you stay `registered`, in Alpha. Read the bot console's `status`. Then launch the game, start a New Game and load into the world. **See:** before you launch, Alpha's cap is a lone runner's, `layers + 1` (only bot1 plays); once your mod connects the web shows you ready and the cap does not move; at your first report you are validated (the web reads you playing) and Alpha's cap drops to `ceil(layers / 2) + 1` in `status`. You then wait for the baton with the waiting banner (no take here: the first write into the character is D0). **Log (server):** `Participant ready:` at your connection, then `Relay member validated:` with your IGT. **Failure:** the cap dropping at the connection (it must wait for the validated save), a start refused for you not being ready, or you left `abandoned` at the start. A New Game loaded too long before your first report shows "Please start a New Game" (`Rejected stale save (relay member)`). If you never report, the no-show rule takes you out 30 minutes into the race. **Proves:** a member not ready at the start stays in the race and joins it later; the cap counts only the members whose save is validated.
 
 ### A. The lock and the Chapel (race 1, you wait, bot1 holds)
 

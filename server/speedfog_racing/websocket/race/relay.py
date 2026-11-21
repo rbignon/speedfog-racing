@@ -681,7 +681,9 @@ async def store_state(
     From the holder of a PLAYING team the state is kept (``_store_state``,
     which drops a state on an implausible IGT); when it is kept and answers the
     pending release in time, the baton then flips to its target (still a member
-    in the race). A READY team has not passed its fresh-save gate yet (its
+    in the race, and under the cap, which may have dropped since the request:
+    the giver is refused ``target_at_cap`` otherwise). A READY team has not
+    passed its fresh-save gate yet (its
     first holder never reported), so its holder's save may be an old one:
     nothing of the state is kept and the team IGT stays where it is, but an
     answer to the release still flips, the receiver getting no state. Anything
@@ -691,6 +693,7 @@ async def store_state(
     """
     async with room.relay_lock:
         flip: _Flip | None = None
+        at_cap = False
         async with session_maker() as db:
             loaded = await _locked_team(db, graph_json, participant_id=participant_id)
             if loaded is None:
@@ -741,6 +744,16 @@ async def store_state(
                     ),
                     None,
                 )
+                if target is not None and target.relay_zones >= _cap(team, graph):
+                    # The cap dropped since the request (a teammate's save was
+                    # validated): nobody at or over it receives the baton.
+                    logger.info(
+                        "Relay handoff dropped, target at the cap: team=%s handoff=%s",
+                        team.id,
+                        handoff_id,
+                    )
+                    at_cap = True
+                    target = None
                 if target is not None:
                     assert handoff_id is not None
                     flip = await _flip(
@@ -752,6 +765,8 @@ async def store_state(
         if flip is not None:
             await _after_flip(session_maker, room, flip, graph)
         elif handoff_id is not None or not holder:
+            if at_cap:
+                await _refuse(room, participant_id, RelayRefusal.TARGET_AT_CAP)
             await send_relay_updates(
                 session_maker, race_id, team_id, graph_json=graph, to=(participant_id,)
             )

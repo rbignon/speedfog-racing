@@ -18,7 +18,6 @@ from speedfog_racing.models import (
     User,
     UserRole,
 )
-from speedfog_racing.services.relay import team_cap
 from speedfog_racing.websocket.race.manager import RaceRoom, SpectatorConnection, manager
 from tests.relay_fixtures import make_relay_race, progress_graph
 
@@ -93,7 +92,7 @@ async def _race(session, organizer, teams, statuses, graph=None) -> Race:
         flat = [u for users in teams for u in users]
         for i, (user, status) in enumerate(zip(flat, statuses, strict=True)):
             ordered[user.id].status = status
-            # Distinct join times: the first ready member is picked by created_at.
+            # Distinct join times: members are listed by created_at.
             ordered[user.id].created_at = datetime(2026, 1, 1, tzinfo=UTC) + timedelta(minutes=i)
         await db.commit()
         return race
@@ -120,19 +119,47 @@ def _member(members, user: User) -> Participant:
     return next(m for m in members if m.user_id == user.id)
 
 
-async def test_start_needs_two_teams_of_two_ready_members(
+async def test_start_needs_two_teams_whose_first_runner_is_ready(
     rs_client, rs_session, organizer, players
 ):
     a, b, c, d = players[:4]
-    race = await _race(rs_session, organizer, [[a, b], [c, d]], [READY, READY, READY, REGISTERED])
+    # c, Team 2's first runner, is not ready; d is.
+    waiting = await _race(
+        rs_session, organizer, [[a, b], [c, d]], [READY, READY, REGISTERED, READY]
+    )
     alone = await _race(rs_session, organizer, [[a, b]], [READY, READY])
     async with rs_client as client:
-        short = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))
+        short = await client.post(f"/api/races/{waiting.id}/start", headers=_auth(organizer))
         single = await client.post(f"/api/races/{alone.id}/start", headers=_auth(organizer))
     assert short.status_code == 400
-    assert short.json()["detail"] == "Team 2 needs at least 2 ready runners"
+    assert short.json()["detail"] == "Team 2's first runner is not ready"
     assert single.status_code == 400
     assert single.json()["detail"] == "At least 2 teams are required to start a relay race"
+
+
+async def test_a_first_runner_alone_is_enough_to_start(rs_client, rs_session, organizer, players):
+    a, b, c, d = players[:4]
+    race = await _race(
+        rs_session, organizer, [[a, b], [c, d]], [READY, REGISTERED, READY, REGISTERED]
+    )
+    async with rs_client as client:
+        resp = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))
+    assert resp.status_code == 200, resp.text
+
+
+async def test_a_team_without_a_first_runner_cannot_start(
+    rs_client, rs_session, organizer, players
+):
+    a, b, c, d = players[:4]
+    race = await _race(rs_session, organizer, [[a, b], [c, d]], [READY] * 4)
+    async with rs_session() as db:
+        team = (await db.execute(select(RelayTeam).where(RelayTeam.name == "Team 2"))).scalar_one()
+        team.first_runner_id = None
+        await db.commit()
+    async with rs_client as client:
+        resp = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Team 2 has no first runner"
 
 
 async def test_admin_does_not_start_a_relay_race_short(rs_client, rs_session, players):
@@ -144,7 +171,7 @@ async def test_admin_does_not_start_a_relay_race_short(rs_client, rs_session, pl
     assert resp.status_code == 400
 
 
-async def test_start_leaves_out_members_who_are_not_ready(
+async def test_start_keeps_a_member_who_is_not_ready_in_the_race(
     rs_client, rs_session, organizer, players
 ):
     teams = [players[0:3], players[3:6]]
@@ -154,21 +181,20 @@ async def test_start_leaves_out_members_who_are_not_ready(
     assert resp.status_code == 200
     db_teams, members = await _load(rs_session, race)
     late = _member(members, players[5])
-    assert late.status == ParticipantStatus.ABANDONED
+    # They may still connect and join their team's run (the no-show rule
+    # takes them out 30 minutes into the race otherwise).
+    assert late.status == REGISTERED
     assert late.relay_team_id == db_teams[1].id
-    in_team = lambda team: [m for m in members if m.relay_team_id == team.id]  # noqa: E731
-    assert team_cap(12, in_team(db_teams[1])) == 7
-    assert team_cap(12, in_team(db_teams[0])) == 5
 
 
-async def test_a_member_left_out_at_the_start_is_past_the_spoiler_wall(
+async def test_a_member_not_ready_at_the_start_stays_behind_the_spoiler_wall(
     rs_client, rs_session, organizer, players, monkeypatch
 ):
     teams = [players[0:3], players[3:6]]
     race = await _race(
         rs_session, organizer, teams, [READY] * 5 + [REGISTERED], graph=progress_graph()
     )
-    # The open race pages of a runner who starts and of the one left out.
+    # The open race pages of a runner who starts and of the one not ready.
     room = RaceRoom(race_id=race.id)
     monkeypatch.setitem(manager.rooms, race.id, room)
     pages = {
@@ -182,8 +208,8 @@ async def test_a_member_left_out_at_the_start_is_past_the_spoiler_wall(
         resp = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))
 
     assert resp.status_code == 200
-    # Out of the run: the public chat opens without a reload of the page.
-    assert pages[players[5].id].participant_status == ParticipantStatus.ABANDONED
+    # Still in the race, as a solo runner who has not connected yet.
+    assert pages[players[5].id].participant_status == ParticipantStatus.PLAYING
     assert pages[players[0].id].participant_status == ParticipantStatus.PLAYING
 
 
@@ -191,7 +217,7 @@ async def test_start_ignores_empty_teams_and_picks_the_first_runner(
     rs_client, rs_session, organizer, players
 ):
     teams = [players[0:2], players[2:4], players[4:7], []]
-    race = await _race(rs_session, organizer, teams, [READY] * 4 + [REGISTERED, READY, READY])
+    race = await _race(rs_session, organizer, teams, [READY] * 6 + [REGISTERED])
     async with rs_session() as db:
         db_teams = list(
             (
@@ -205,10 +231,9 @@ async def test_start_ignores_empty_teams_and_picks_the_first_runner(
         members = list(
             (await db.execute(select(Participant).where(Participant.race_id == race.id))).scalars()
         )
-        # Team 1 chose its second member; Team 3 chose its member who is not ready.
+        # Team 1 and Team 3 chose their second member, Team 2 kept its first.
         db_teams[0].first_runner_id = _member(members, players[1]).id
-        db_teams[2].first_runner_id = _member(members, players[4]).id
-        db_teams[1].first_runner_id = None
+        db_teams[2].first_runner_id = _member(members, players[5]).id
         await db.commit()
     async with rs_client as client:
         resp = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))

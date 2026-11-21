@@ -35,6 +35,7 @@ from .relay_fixtures import (
     progress_graph,
     setup_relay_race,
     start_relay,
+    validate,
 )
 
 integration_db = _integration.integration_db
@@ -280,6 +281,7 @@ def test_exit_counts_only_for_a_zone_without_boss(relay_race, mods):
 def test_reaching_the_cap_locks_the_holder_gates(relay_race, mods):
     holder_id, other_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
     holder = mods[holder_id]
+    validate(mods[other_id])  # the teammate plays: two share the cap
     _gate(holder, FOG_FLAG, 20_000, 1)
     patch_member(relay_race, holder_id, relay_zones=CAP - 1)
 
@@ -300,6 +302,8 @@ def test_the_final_boss_is_accepted_at_the_cap_and_finishes_the_team(relay_race,
     for message_id, flag in enumerate((FOG_FLAG, SECOND_FOG_FLAG, THIRD_FOG_FLAG), start=1):
         _gate(holder, flag, 20_000 * message_id, message_id)
     patch_member(relay_race, holder_id, relay_zones=CAP)
+    # The waiting runner reported once (validated): it played for its team.
+    validate(mods[other_id])
     patch_team(relay_race, death_count=4, last_igt_change_at=datetime.now(UTC) - timedelta(hours=1))
 
     holder.send_event_flag(FINISH_FLAG, igt_ms=600_000, message_id=9)
@@ -417,7 +421,7 @@ def test_a_boss_the_server_cannot_track_counts_on_exit():
     assert counts_zone_on_exit(extract_boss_flags(graph), graph, BOSS_NODE) is True
 
 
-def _member(status: ParticipantStatus) -> Participant:
+def _member(status: ParticipantStatus, *, validated: bool = True) -> Participant:
     return Participant(
         id=uuid4(),
         status=status,
@@ -425,6 +429,7 @@ def _member(status: ParticipantStatus) -> Participant:
         death_count=1,
         current_layer=0,
         zone_history=[{"node_id": "own"}],
+        relay_validated=validated,
     )
 
 
@@ -438,15 +443,15 @@ def test_copy_team_result_writes_the_members_still_in():
         current_layer=12,
         zone_history=[{"node_id": "team"}],
     )
-    playing, ready, out = (
+    holder, waiting, out = (
         _member(PLAYING),
-        _member(ParticipantStatus.READY),
+        _member(PLAYING),
         _member(ParticipantStatus.ABANDONED),
     )
 
-    copy_team_result(team, [playing, ready, out])
+    copy_team_result(team, [holder, waiting, out])
 
-    for m in (playing, ready):
+    for m in (holder, waiting):
         assert (m.status, m.igt_ms, m.finished_at, m.death_count, m.current_layer) == (
             FINISHED,
             600_000,
@@ -456,6 +461,32 @@ def test_copy_team_result_writes_the_members_still_in():
         )
         assert m.zone_history == [{"node_id": "own"}]
     assert (out.status, out.igt_ms, out.death_count) == (ParticipantStatus.ABANDONED, 0, 1)
+
+
+def test_a_member_who_never_played_goes_out_with_the_team_instead_of_finishing():
+    finished_at = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
+    team = RelayTeam(
+        status=FINISHED,
+        igt_ms=600_000,
+        finished_at=finished_at,
+        death_count=9,
+        current_layer=12,
+    )
+    # Ready but never validated (no report after the start), and never connected.
+    ready = _member(ParticipantStatus.READY, validated=False)
+    registered = _member(ParticipantStatus.REGISTERED, validated=False)
+
+    copy_team_result(team, [ready, registered])
+
+    for m in (ready, registered):
+        # Out at the team's end, as a member going out then: the snapshot, no finish.
+        assert (m.status, m.igt_ms, m.finished_at, m.death_count, m.current_layer) == (
+            ParticipantStatus.ABANDONED,
+            600_000,
+            None,
+            9,
+            12,
+        )
 
 
 def test_a_disqualified_team_leaves_its_other_members_abandoned():

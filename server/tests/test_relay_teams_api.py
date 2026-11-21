@@ -1,5 +1,7 @@
 """Relay team routes, and the rule that nobody is registered on a relay race without a team."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
@@ -301,21 +303,80 @@ async def test_open_registration_maximum_counts_runners_not_teams(
     assert len(await _teams(rt_session, race)) == 1
 
 
-async def test_leaving_clears_first_runner_and_deletes_a_runner_made_team(
+async def test_leaving_hands_the_first_runner_on_and_deletes_a_runner_made_team(
     rt_client, rt_session, organizer, alice, bob, carol
 ):
     race = await _race(rt_session, organizer, [[alice, bob], [carol]])
     team1, team2 = await _teams(rt_session, race)
+    bob_member = await _member_of(rt_session, race, bob)
     async with rt_client as client:
         left = await client.post(f"/api/races/{race.id}/leave", headers=_auth(alice))
         assert left.status_code == 204
         detail = (await client.get(f"/api/races/{race.id}", headers=_auth(bob))).json()
         by_id = {t["id"]: t for t in detail["relay_teams"]}
-        assert by_id[str(team1.id)]["first_runner_id"] is None
+        # The next member by join time starts now: a team with members always has one.
+        assert by_id[str(team1.id)]["first_runner_id"] == str(bob_member.id)
         gone = await client.post(f"/api/races/{race.id}/leave", headers=_auth(carol))
         assert gone.status_code == 204
         detail = (await client.get(f"/api/races/{race.id}", headers=_auth(bob))).json()
     assert str(team2.id) not in [t["id"] for t in detail["relay_teams"]]
+
+
+async def test_the_first_runner_to_enter_an_empty_team_starts_it(
+    rt_client, rt_session, organizer, alice, bob, carol
+):
+    race = await _race(rt_session, organizer, [[alice], []])
+    _, placeholder = await _teams(rt_session, race)
+    url = f"/api/races/{race.id}/relay-teams/{placeholder.id}/join"
+    async with rt_client as client:
+        assert (await client.post(url, headers=_auth(bob))).status_code == 200
+        # A second runner joins a team that already has its first runner.
+        assert (await client.post(url, headers=_auth(carol))).status_code == 200
+    bob_member = await _member_of(rt_session, race, bob)
+    [team] = [t for t in await _teams(rt_session, race) if t.id == placeholder.id]
+    assert team.first_runner_id == bob_member.id
+
+
+async def test_a_first_runner_leaving_hands_on_to_the_earliest_member_left(
+    rt_client, rt_session, organizer, alice, bob, carol
+):
+    race = await _race(rt_session, organizer, [[alice, bob, carol]])
+    [team] = await _teams(rt_session, race)
+    async with rt_session() as db:
+        rows = (
+            await db.execute(select(Participant).where(Participant.race_id == race.id))
+        ).scalars()
+        by_user = {p.user_id: p for p in rows}
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        for minutes, user in enumerate((alice, bob, carol)):
+            by_user[user.id].created_at = start + timedelta(minutes=minutes)
+        # The team chose bob, who joined second.
+        (await db.get(RelayTeam, team.id)).first_runner_id = by_user[bob.id].id
+        await db.commit()
+    async with rt_client as client:
+        left = await client.post(f"/api/races/{race.id}/leave", headers=_auth(bob))
+        assert left.status_code == 204
+    alice_member = await _member_of(rt_session, race, alice)
+    [team] = await _teams(rt_session, race)
+    assert team.first_runner_id == alice_member.id  # not carol, who joined after bob
+
+
+async def test_a_placeholder_emptied_keeps_no_first_runner(
+    rt_client, rt_session, organizer, alice, bob
+):
+    race = await _race(rt_session, organizer, [[alice], []])
+    team1, placeholder = await _teams(rt_session, race)
+    async with rt_client as client:
+        joined = await client.post(
+            f"/api/races/{race.id}/relay-teams/{placeholder.id}/join", headers=_auth(bob)
+        )
+        assert joined.status_code == 200
+        back = await client.post(
+            f"/api/races/{race.id}/relay-teams/{team1.id}/join", headers=_auth(bob)
+        )
+        assert back.status_code == 200
+    [team] = [t for t in await _teams(rt_session, race) if t.id == placeholder.id]
+    assert team.first_runner_id is None
 
 
 async def test_organizer_removing_a_runner_vacates_the_team(

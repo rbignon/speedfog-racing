@@ -48,8 +48,19 @@ function team(over: Partial<RelayTeam>): RelayTeam {
 }
 
 const teams = [
-  team({ id: "t1", name: "Red", member_ids: ["alice", "bob"] }),
-  team({ id: "t2", name: "Blue", member_ids: ["carol"] }),
+  // Red starts with its second member: a team with members has a first runner.
+  team({
+    id: "t1",
+    name: "Red",
+    member_ids: ["alice", "bob"],
+    first_runner_id: "bob",
+  }),
+  team({
+    id: "t2",
+    name: "Blue",
+    member_ids: ["carol"],
+    first_runner_id: "carol",
+  }),
   team({ id: "t3", name: "Empty", placeholder: true }),
 ];
 const participants = [
@@ -116,9 +127,10 @@ describe("RelayTeamList", () => {
     expect(screen.getAllByText("Delete")).toHaveLength(1);
   });
 
-  it("names the default first runner when the team chose none", () => {
+  it("names the team's first runner, not its first member", () => {
     renderList();
-    expect(screen.getByText("alice", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByText("bob", { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByText("alice", { selector: "strong" })).toBeNull();
   });
 
   it("moves the viewer when they click Move to this team", async () => {

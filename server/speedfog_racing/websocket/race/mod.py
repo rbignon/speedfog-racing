@@ -11,7 +11,7 @@ from typing import Any
 
 import sentry_sdk
 from fastapi import WebSocket
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -1129,7 +1129,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             if participant.status != ParticipantStatus.REGISTERED:
                 return
 
-            participant.status = ParticipantStatus.READY
+            # Guarded on the status read: a runner who went out meanwhile (the
+            # no-show rule, a removal) stays out. The ORM update also moves the
+            # loaded row, which the broadcast below reads.
+            result = await db.execute(
+                update(Participant)
+                .where(
+                    Participant.id == participant.id,
+                    Participant.status == ParticipantStatus.REGISTERED,
+                )
+                .values(status=ParticipantStatus.READY)
+            )
+            if result.rowcount == 0:  # type: ignore[attr-defined]
+                return
             await db.commit()
             logger.info("Participant ready: %s", participant.id)
 

@@ -9,12 +9,13 @@ from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import speedfog_racing.api.races as races_api
 import speedfog_racing.services.inactivity_monitor as monitor
+import speedfog_racing.websocket.race.mod as mod_ws
 import speedfog_racing.websocket.race.relay as relay_ws
 from speedfog_racing.database import Base
 from speedfog_racing.models import (
@@ -50,11 +51,14 @@ from .relay_fixtures import (
     member_view,
     pass_gate,
     patch_member,
+    patch_race,
     patch_team,
     progress_graph,
     run_relay_race,
     setup_relay_race,
+    start_relay,
     started_mods,
+    validate,
 )
 
 integration_db = _integration.integration_db
@@ -143,6 +147,7 @@ def test_holder_abandon_frees_the_baton_at_once(integration_client, trio, trio_m
     holder = _member(trio, 0, 0)
     waiting = trio_mods[_member(trio, 0, 1)["participant_id"]]
     make_receiver(waiting)
+    validate(trio_mods[_member(trio, 0, 2)["participant_id"]])  # plays: shares the cap
 
     _abandon(integration_client, trio, 0, 0)
 
@@ -157,6 +162,8 @@ def test_holder_abandon_frees_the_baton_at_once(integration_client, trio, trio_m
 
 def test_abandon_lifts_the_cap_lock_of_a_remaining_holder(integration_client, trio, trio_mods):
     holder_id = _member(trio, 0, 0)["participant_id"]
+    for index in (1, 2):  # the whole team plays: cap 5
+        validate(trio_mods[_member(trio, 0, index)["participant_id"]])
     patch_member(trio, holder_id, relay_zones=5)  # at the cap of a team of 3
 
     _abandon(integration_client, trio, 0, 2)
@@ -186,8 +193,163 @@ def test_team_is_out_when_its_last_member_abandons_and_the_race_can_end(
     assert (ChatChannel.PUBLIC, "Team 1 is out.") in _chat(relay_race)
 
 
+def test_a_member_who_shows_up_late_joins_the_run_and_the_cap(integration_client, integration_db):
+    trio = setup_relay_race(integration_db, team_size=3, graph=_twelve_layers())
+    late = _member(trio, 0, 2)["participant_id"]
+    holder_id = _member(trio, 0, 0)["participant_id"]
+    patch_member(trio, late, status=ParticipantStatus.REGISTERED)
+    mods: dict[str, RelayModClient] = {}
+    try:
+        for team in trio["teams"]:
+            for member in team["members"]:
+                if member["participant_id"] == late:
+                    continue
+                mod = RelayModClient.connect(
+                    integration_client,
+                    trio["race_id"],
+                    member["mod_token"],
+                    member["participant_id"],
+                )
+                mods[member["participant_id"]] = mod
+                assert mod.auth(protocol_version="1.19")["type"] == "auth_ok"
+        started = integration_client.post(
+            f"/api/races/{trio['race_id']}/start", headers=_auth(trio["organizer"])
+        )
+        assert started.status_code == 200, started.json()
+        holder = mods[holder_id]
+        upd = holder.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "ready")
+        # Still in the race, not out: it may show up later.
+        assert member_view(upd, late)["status"] == "registered"
+        patch_race(trio, started_at=datetime.now(UTC) - timedelta(seconds=1))
+        holder.send_status_update(igt_ms=1_000, death_count=0)
+        holder.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "playing")
+        validate(mods[_member(trio, 0, 1)["participant_id"]])
+        # Two runners play on 12 layers; the absent one takes no share.
+        holder.receive_until("relay_update", lambda m: m["relay"]["cap"] == 7)
+
+        late_mod = RelayModClient.connect(
+            integration_client, trio["race_id"], _member(trio, 0, 2)["mod_token"], late
+        )
+        mods[late] = late_mod
+        assert late_mod.auth(protocol_version="1.19")["type"] == "auth_ok"
+        late_mod.send_ready()
+        barrier(late_mod)
+        barrier(holder)
+        # Connected is not playing: the cap waits for its validated save.
+        caps = {m["relay"]["cap"] for m in holder.skipped if m["type"] == "relay_update"}
+        assert caps <= {7}
+        assert load_member(trio, late).status == ParticipantStatus.READY
+
+        # Its first report validates its fresh save: it plays for its team, and
+        # the holder's mod learns the cap of three runners.
+        late_mod.send_status_update(igt_ms=2_000, death_count=0)
+        late_mod.receive_until("relay_update", lambda m: member_view(m, late)["validated"])
+        assert load_member(trio, late).status == ParticipantStatus.PLAYING
+        holder.receive_until("relay_update", lambda m: m["relay"]["cap"] == 5)
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
+def test_a_ready_read_before_the_member_went_out_leaves_them_out(
+    integration_client, integration_db, monkeypatch
+):
+    # A member still registered while the race runs: their mod's ready is read,
+    # then the no-show rule (or the organizer) takes them out before it is
+    # written. The write must not bring them back.
+    trio = setup_relay_race(integration_db, team_size=3, graph=_twelve_layers())
+    late = _member(trio, 0, 2)["participant_id"]
+    patch_member(trio, late, status=ParticipantStatus.REGISTERED)
+    patch_race(trio, status=RaceStatus.RUNNING, started_at=datetime.now(UTC))
+    real_load = mod_ws._load_participant
+    armed = {"on": False}
+
+    async def load_then_go_out(db, participant_id):
+        participant = await real_load(db, participant_id)
+        if armed["on"] and participant is not None and str(participant.id) == late:
+            armed["on"] = False
+            async with trio["db"]() as other:
+                await other.execute(
+                    update(Participant)
+                    .where(Participant.id == participant.id)
+                    .values(status=ParticipantStatus.ABANDONED)
+                )
+                await other.commit()
+        return participant
+
+    monkeypatch.setattr(mod_ws, "_load_participant", load_then_go_out)
+    late_mod = RelayModClient.connect(
+        integration_client, trio["race_id"], _member(trio, 0, 2)["mod_token"], late
+    )
+    try:
+        assert late_mod.auth(protocol_version="1.19")["type"] == "auth_ok"
+        armed["on"] = True
+        late_mod.send_ready()
+        barrier(late_mod)
+    finally:
+        late_mod.close()
+    assert not armed["on"]  # the ready was read before the write
+    assert load_member(trio, late).status == ParticipantStatus.ABANDONED
+
+
+def test_a_team_stays_in_while_a_member_may_still_show_up(integration_client, integration_db):
+    relay_race = setup_relay_race(integration_db)
+    late = _member(relay_race, 0, 1)["participant_id"]
+    patch_member(relay_race, late, status=ParticipantStatus.REGISTERED)
+    mods = start_relay(integration_client, relay_race)
+    try:
+        _abandon(integration_client, relay_race, 0, 0)
+        # Its only runner is out, but the absent member may still connect and
+        # take the free baton (the no-show rule takes them out otherwise).
+        team = load_team(relay_race)
+        assert (team.status, team.holder_id, team.baton_free) == (
+            ParticipantStatus.PLAYING,
+            None,
+            True,
+        )
+        assert load_member(relay_race, late).status == ParticipantStatus.REGISTERED
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
+def test_a_registered_member_validated_plays_even_without_a_ready(
+    integration_client, integration_db
+):
+    # A report that comes before the mod's ready (or without it) still brings
+    # them in: a member who passed the fresh-save gate is no no-show.
+    trio = setup_relay_race(integration_db, team_size=3, graph=_twelve_layers())
+    late = _member(trio, 0, 2)["participant_id"]
+    patch_member(trio, late, status=ParticipantStatus.REGISTERED)
+    mods: dict[str, RelayModClient] = {}
+    try:
+        for team in trio["teams"]:
+            for member in team["members"]:
+                mod = RelayModClient.connect(
+                    integration_client,
+                    trio["race_id"],
+                    member["mod_token"],
+                    member["participant_id"],
+                )
+                mods[member["participant_id"]] = mod
+                assert mod.auth(protocol_version="1.19")["type"] == "auth_ok"
+        started = integration_client.post(
+            f"/api/races/{trio['race_id']}/start", headers=_auth(trio["organizer"])
+        )
+        assert started.status_code == 200, started.json()
+        patch_race(trio, started_at=datetime.now(UTC) - timedelta(seconds=1))
+        mods[late].send_status_update(igt_ms=2_000, death_count=0)
+        mods[late].receive_until("relay_update", lambda m: member_view(m, late)["validated"])
+        assert load_member(trio, late).status == ParticipantStatus.PLAYING
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
 def test_organizer_removes_a_member_during_the_race(integration_client, trio, trio_mods):
     pid = _member(trio, 0, 1)["participant_id"]
+    for index in (1, 2):  # the whole team plays: cap 5
+        validate(trio_mods[_member(trio, 0, index)["participant_id"]])
 
     response = integration_client.delete(
         f"/api/races/{trio['race_id']}/participants/{pid}", headers=_auth(trio["organizer"])
@@ -292,6 +454,7 @@ def test_a_release_whose_target_goes_out_is_dropped(integration_client, trio, tr
     holder = trio_mods[_member(trio, 0, 0)["participant_id"]]
     target = trio_mods[_member(trio, 0, 1)["participant_id"]]
     make_receiver(target)
+    validate(trio_mods[_member(trio, 0, 2)["participant_id"]])  # plays: cap 5
     holder.send({"type": "relay_handoff_request", "to_participant_id": target.participant_id})
     release = holder.receive_until("relay_release")
 

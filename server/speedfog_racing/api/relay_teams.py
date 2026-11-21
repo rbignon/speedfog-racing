@@ -113,9 +113,10 @@ async def _new_team(
 async def vacate_team(db: AsyncSession, race: Race, participant: Participant) -> None:
     """Take ``participant`` out of its team, before it moves or its row is deleted.
 
-    Clears ``first_runner_id`` when it was them (null means the first member
-    registered), and deletes the team when it empties, unless the organizer made
-    it (a placeholder stays until he deletes it).
+    When they were its first runner, the next member by join time is (none for
+    a team left empty), and the team is deleted when it empties, unless the
+    organizer made it (a placeholder stays until he deletes it). A team has a
+    first runner exactly when it has a member (``place_in_team`` fills it).
     """
     team_id = participant.relay_team_id
     if team_id is None:
@@ -125,7 +126,15 @@ async def vacate_team(db: AsyncSession, race: Race, participant: Participant) ->
     if team is None:
         return
     if team.first_runner_id == participant.id:
-        team.first_runner_id = None
+        await db.flush()
+        team.first_runner_id = (
+            await db.execute(
+                select(Participant.id)
+                .where(Participant.relay_team_id == team_id)
+                .order_by(Participant.created_at, Participant.id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
     await db.flush()
     if not team.placeholder and await _member_count(db, team_id) == 0:
         await db.delete(team)
@@ -194,6 +203,8 @@ async def place_in_team(
     await vacate_team(db, race, participant)
     if team is None:
         team = await _new_team(db, race, name=None, placeholder=False)
+    if team.first_runner_id is None:
+        # The first runner into a team starts it.
         team.first_runner_id = participant.id
     participant.relay_team_id = team.id
     participant.color_index = team.color_index
@@ -321,8 +332,14 @@ async def update_relay_team(
                 detail="Only a member of the team or the organizer can edit it",
             )
     if request.first_runner_id is not None:
-        chosen = next((p for p in race.participants if p.id == request.first_runner_id), None)
-        if chosen is None or chosen.relay_team_id != team.id:
+        # Under the team's lock, as placement and ``vacate_team``: a runner moved
+        # out or gone meanwhile is no member, read again once the lock is held.
+        locked = (await _lock_teams(db, race, [team.id])).get(team.id)
+        if locked is None:
+            raise _team_not_found()
+        team = locked
+        chosen = await db.get(Participant, request.first_runner_id, populate_existing=True)
+        if chosen is None or chosen.race_id != race.id or chosen.relay_team_id != team.id:
             raise _bad_request("The first runner must be a member of the team")
         team.first_runner_id = chosen.id
     if request.name is not None:

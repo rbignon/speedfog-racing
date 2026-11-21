@@ -369,12 +369,14 @@ class RelayModHandler(RaceModHandler):
     ) -> bool:
         """A waiting runner's own fresh-save gate: its first report once the race
         runs validates its save when the IGT is at most ``MAX_FRESH_IGT_MS``,
-        READY becoming PLAYING. Items are a union at a handoff, so a member on
-        an old save would bring its inventory into the team. Its IGT is never
-        judged afterwards. ``member`` comes from the lock-free read, so the
-        write is an UPDATE guarded on the status read: it never brings back a
-        member who went out meanwhile. True when the member just passed (the
-        caller commits)."""
+        the member becoming PLAYING (from READY, or REGISTERED when the report
+        came before its ``ready``: it showed up), which gives them a share of
+        the cap. Items are a union at a handoff, so a member on an old save
+        would bring its inventory into the team. Its IGT is never judged
+        afterwards. ``member`` comes from the lock-free read, so the write is an
+        UPDATE guarded on the status read: it never brings back a member who
+        went out meanwhile. True when the member just passed (the caller
+        commits)."""
         if race.status != RaceStatus.RUNNING:
             await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
@@ -394,7 +396,9 @@ class RelayModHandler(RaceModHandler):
         # Written only if the row still has the status read above, without a
         # lock: a member who went out meanwhile (no-show rule, removal) stays out.
         status = (
-            ParticipantStatus.PLAYING if member.status == ParticipantStatus.READY else member.status
+            ParticipantStatus.PLAYING
+            if member.status in (ParticipantStatus.REGISTERED, ParticipantStatus.READY)
+            else member.status
         )
         result = await db.execute(
             update(Participant)

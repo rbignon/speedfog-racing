@@ -66,8 +66,8 @@ export function relayCapacity(
 }
 
 /** Why a relay race cannot start yet, with the server's texts
- * (`relay_start_error`), or null. Teams with no member are ignored; a runner
- * counts when their status is "ready". */
+ * (`relay_start_error`), or null. Teams with no member are ignored; each other
+ * team needs its first runner "ready" (its other members need not be). */
 export function relayStartBlocker(
   teams: RelayTeam[],
   statusById: Record<string, string>,
@@ -77,23 +77,15 @@ export function relayStartBlocker(
     return "At least 2 teams are required to start a relay race";
   }
   for (const t of counting) {
-    const ready = t.member_ids.filter(
-      (id) => statusById[id] === "ready",
-    ).length;
-    if (ready < RELAY_TEAM_SIZE_MIN) {
-      return `${t.name} needs at least ${RELAY_TEAM_SIZE_MIN} ready runners`;
+    const first = t.first_runner_id;
+    if (first === null || !t.member_ids.includes(first)) {
+      return `${t.name} has no first runner`;
+    }
+    if (statusById[first] !== "ready") {
+      return `${t.name}'s first runner is not ready`;
     }
   }
   return null;
-}
-
-/** The runner who starts: the chosen one while they are still a member, else
- * the first member registered. */
-export function startingRunnerId(team: RelayTeam): string | null {
-  if (team.first_runner_id && team.member_ids.includes(team.first_runner_id)) {
-    return team.first_runner_id;
-  }
-  return team.member_ids[0] ?? null;
 }
 
 /** The participants grouped by team, in team order, each team's members in

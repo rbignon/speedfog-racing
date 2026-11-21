@@ -206,7 +206,7 @@ export interface RelayTeam {
   name: string;
   color_index: number;
   placeholder: boolean;
-  /** The runner chosen to start; null means the first member registered. */
+  /** The runner the team starts with; null exactly when it has no member. */
   first_runner_id: string | null;
   member_ids: string[];
 }

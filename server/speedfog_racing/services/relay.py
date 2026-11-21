@@ -98,9 +98,19 @@ def is_active_member(p: Participant) -> bool:
     return p.status not in (ParticipantStatus.ABANDONED, ParticipantStatus.DISQUALIFIED)
 
 
+def shares_cap(p: Participant) -> bool:
+    """Whether a member counts in the team's cap: one who plays, PLAYING (their
+    save passed the fresh-save gate, at their first report) or FINISHED. A
+    member never connected (REGISTERED), or connected without a validated save
+    yet (READY), cannot take the baton: a teammate playing alone is not held to
+    a cap made for them, and the cap drops once they are validated."""
+    return p.status in (ParticipantStatus.PLAYING, ParticipantStatus.FINISHED)
+
+
 def team_cap(total_layers: int, members: Sequence[Participant]) -> int:
-    """The team's cap on the members still in; never divides by zero."""
-    return relay_cap(total_layers, max(1, sum(1 for m in members if is_active_member(m))))
+    """The team's cap on the members who share it (``shares_cap``); never
+    divides by zero."""
+    return relay_cap(total_layers, max(1, sum(1 for m in members if shares_cap(m))))
 
 
 def holds_baton(team: RelayTeam, participant_id: UUID | None) -> bool:
@@ -132,7 +142,10 @@ def copy_team_result(team: RelayTeam, members: Sequence[Participant]) -> None:
 
     Status, IGT, finish time, deaths and layer, so the pages that read
     participants show the run; a disqualified team leaves its other members
-    abandoned. A member already out keeps their own row, and nobody's
+    abandoned. A member who never played (no fresh save validated: never
+    connected, or no report since the start) goes out with the team instead,
+    as a member going out then: abandoned, the progress snapshot, no finish
+    time. A member already out keeps their own row, and nobody's
     ``zone_history`` is touched (the run's history stays on the team).
     """
     status = (
@@ -143,9 +156,10 @@ def copy_team_result(team: RelayTeam, members: Sequence[Participant]) -> None:
     for member in members:
         if not is_active_member(member):
             continue
-        member.status = status
+        played = bool(member.relay_validated)
+        member.status = status if played else ParticipantStatus.ABANDONED
         member.igt_ms = team.igt_ms
-        member.finished_at = team.finished_at
+        member.finished_at = team.finished_at if played else None
         member.death_count = team.death_count
         member.current_layer = team.current_layer
 
@@ -177,7 +191,7 @@ def apply_member_out(
     no 60 s wait, and nobody gets it automatically. The team's IGT stamp
     restarts then, so the free baton gets the whole inactivity timeout before
     the team is out for it. The cap follows on its own (``team_cap`` counts
-    the members still in). ``disqualified`` puts the team out as DISQUALIFIED,
+    the members who share it). ``disqualified`` puts the team out as DISQUALIFIED,
     finished or not (what a cheater obtained reached the team); otherwise the
     team is out (ABANDONED) once no member is left in. A team put out gets its
     result copied onto its members still in (``copy_team_result``: a
@@ -327,45 +341,45 @@ def _members_by_team(race: Race) -> list[tuple[RelayTeam, list[Participant]]]:
     ]
 
 
+def first_runner(team: RelayTeam, members: Sequence[Participant]) -> Participant | None:
+    """The member ``team.first_runner_id`` names, or None (an empty team)."""
+    return next((m for m in members if m.id == team.first_runner_id), None)
+
+
 def relay_start_error(race: Race) -> str | None:
     """Why a relay race cannot start yet, or None.
 
-    A team with no member is ignored. At least two other teams are needed, each
-    with at least two ready members; a member who is not ready is left out at
-    the start (``prepare_relay_start``) and does not count here.
+    A team with no member is ignored. At least two other teams are needed, and
+    each needs its first runner ready: the runner its run starts with. Its other
+    members need not be (they may still join while the race runs).
     """
     teams = [(t, members) for t, members in _members_by_team(race) if members]
     if len(teams) < 2:
         return "At least 2 teams are required to start a relay race"
     for team, members in teams:
-        if sum(1 for m in members if m.status == ParticipantStatus.READY) < RELAY_TEAM_SIZE_MIN:
-            return f"{team.name} needs at least {RELAY_TEAM_SIZE_MIN} ready runners"
+        first = first_runner(team, members)
+        if first is None:
+            return f"{team.name} has no first runner"
+        if first.status != ParticipantStatus.READY:
+            return f"{team.name}'s first runner is not ready"
     return None
 
 
 def prepare_relay_start(race: Race, *, connected: Collection[UUID], now: datetime) -> None:
-    """Fix the teams at the start of a validated relay race.
+    """Fix the teams at the start of a validated relay race (``relay_start_error``).
 
-    A member who is not ready is set ABANDONED (still attached to the team, so
-    ``team_cap`` ignores them). Each team with a member becomes READY, its baton
-    held by its first runner when ready, else by its first ready member. A
-    holder whose mod is not among ``connected`` is offline from ``now``, the
-    race's ``started_at`` (the countdown's end): the offline wait starts with
-    the race.
+    Each team with a member becomes READY, its baton held by its first runner.
+    The members who are not ready keep their status: they may still connect
+    and join their team's run, and the no-show rule takes them out 30 minutes
+    into the race otherwise. A holder whose mod is not among ``connected`` is
+    offline from ``now``, the race's ``started_at`` (the countdown's end): the
+    offline wait starts with the race.
     """
     for team, members in _members_by_team(race):
-        if not members:
+        first = first_runner(team, members)
+        if first is None:
             continue
-        ready = [m for m in members if m.status == ParticipantStatus.READY]
-        for m in members:
-            if m.status not in (
-                ParticipantStatus.READY,
-                ParticipantStatus.ABANDONED,
-                ParticipantStatus.DISQUALIFIED,
-            ):
-                m.status = ParticipantStatus.ABANDONED
-        first = next((m for m in ready if m.id == team.first_runner_id), None)
-        team.holder_id = (first or ready[0]).id
+        team.holder_id = first.id
         team.holder_offline_since = None if team.holder_id in connected else now
         team.status = ParticipantStatus.READY
 
@@ -394,6 +408,14 @@ class RelayTeamRow:
 
     @property
     def status(self) -> ParticipantStatus:
+        """The team's, except in setup (REGISTERED), where the row reads READY
+        once the first runner is: the team can start. Shown only: the team's
+        own status, which ``RelayInfo`` carries, stays REGISTERED until the
+        start."""
+        if self.team.status == ParticipantStatus.REGISTERED:
+            first = first_runner(self.team, self.members)
+            if first is not None and first.status == ParticipantStatus.READY:
+                return ParticipantStatus.READY
         return self.team.status
 
     @property

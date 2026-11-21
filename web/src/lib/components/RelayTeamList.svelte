@@ -12,7 +12,7 @@
     type RelayTeam,
   } from "$lib/api";
   import { PLAYER_COLORS } from "$lib/dag/constants";
-  import { startingRunnerId, teamSlotAction, teamView } from "$lib/relay";
+  import { teamSlotAction, teamView } from "$lib/relay";
   import ParticipantCard from "./ParticipantCard.svelte";
 
   type MergedParticipant = Participant & {
@@ -178,7 +178,7 @@
 <div class="relay-teams">
   {#each view as { team, members } (team.id)}
     {@const action = teamSlotAction(team, teamSize, slotViewer)}
-    {@const starter = startingRunnerId(team)}
+    {@const starter = team.first_runner_id}
     <h3 class="team-header">
       <span
         class="team-color"

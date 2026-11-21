@@ -47,6 +47,7 @@ from .relay_fixtures import (
     patch_team,
     progress_graph,
     setup_relay_race,
+    start_relay,
     started_mods,
 )
 from .relay_fixtures import live_take_timers as _live_take_timers
@@ -604,6 +605,40 @@ def test_a_release_answered_on_an_implausible_igt_flips_nothing(relay_race, mods
     assert _release(holder, target_id)["to_name"] == "Relay Runner 1"  # the handoff was dropped
 
 
+def test_a_release_whose_target_the_cap_overtook_flips_nothing(integration_client, integration_db):
+    # The cap drops while a release is out (a third teammate's save is
+    # validated): a runner at or over it never receives the baton.
+    graph = progress_graph()
+    graph["total_layers"] = 12
+    trio = setup_relay_race(integration_db, team_size=3, graph=graph)
+    mods = start_relay(integration_client, trio)
+    try:
+        holder_id, target_id, third_id = (_pid(trio, 0, i) for i in range(3))
+        holder, target = mods[holder_id], mods[target_id]
+        _make_receiver(target)  # two play: cap 7
+        patch_member(trio, target_id, relay_zones=5)
+        release = _release(holder, target_id)
+        _validate(mods[third_id])  # three play: cap 5, the target is at it
+
+        holder.send(
+            {
+                "type": "relay_state",
+                "handoff_id": release["handoff_id"],
+                "state": STATE,
+                "igt_ms": 3_000,
+            }
+        )
+
+        assert holder.receive_until("relay_refused")["code"] == "target_at_cap"
+        assert holder.receive_until("relay_update")["relay"]["role"] == "holder"
+        barrier(target)
+        assert not [m for m in target.skipped if m["type"] == "relay_take"]
+        assert load_team(trio).holder_id == UUID(holder_id)
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
 def test_a_playing_team_without_an_igt_stamp_still_refuses_a_jump_ahead(relay_race, mods):
     holder = mods[_pid(relay_race, 0, 0)]
     # No stamp: the race's start (a second ago) is the guard's wall reference.
@@ -642,8 +677,8 @@ def _started_before_any_report(client, relay_race) -> dict[str, RelayModClient]:
 
 
 def test_the_start_tells_each_member_its_role(integration_client, trio_race):
-    left_out = _pid(trio_race, 0, 2)
-    patch_member(trio_race, left_out, status=ParticipantStatus.REGISTERED)  # not ready
+    late = _pid(trio_race, 0, 2)
+    patch_member(trio_race, late, status=ParticipantStatus.REGISTERED)  # not ready
 
     mods = _started_before_any_report(integration_client, trio_race)
     try:
@@ -662,8 +697,8 @@ def test_the_start_tells_each_member_its_role(integration_client, trio_race):
             relay = updates[pid]["relay"]
             assert relay["holder_id"] == holder_id
             assert relay["role"] == ("holder" if pid == holder_id else "waiting")
-    # Left out at the start: its race is over before it began.
-    assert _me(updates[left_out], left_out)["status"] == "abandoned"
+    # Not ready at the start: still in the race, it may join its team's run.
+    assert _me(updates[late], late)["status"] == "registered"
 
 
 def test_a_ready_team_keeps_no_state_from_its_holder(integration_client, relay_race):

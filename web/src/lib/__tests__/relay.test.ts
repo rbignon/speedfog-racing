@@ -17,7 +17,6 @@ import {
   relayMemberState,
   relayRuleLine,
   relayStartBlocker,
-  startingRunnerId,
   teamChoiceOptions,
   teamSlotAction,
   teamView,
@@ -127,13 +126,24 @@ describe("relayCapacity", () => {
 });
 
 describe("relayStartBlocker", () => {
-  const two = team({ id: "a", name: "Red", member_ids: ["a1", "a2"] });
-  const one = team({ id: "b", name: "Blue", member_ids: ["b1", "b2"] });
+  const red = team({
+    id: "a",
+    name: "Red",
+    member_ids: ["a1", "a2"],
+    first_runner_id: "a1",
+  });
+  const blue = team({
+    id: "b",
+    name: "Blue",
+    member_ids: ["b1", "b2"],
+    first_runner_id: "b2",
+  });
+  // Blue's first runner is not ready; its other member is.
   const ready = { a1: "ready", a2: "ready", b1: "ready", b2: "registered" };
 
   it("needs two teams with members, empty placeholders left out", () => {
     const placeholder = team({ id: "c", placeholder: true });
-    expect(relayStartBlocker([two, placeholder], ready)).toBe(
+    expect(relayStartBlocker([red, placeholder], ready)).toBe(
       "At least 2 teams are required to start a relay race",
     );
     expect(relayStartBlocker([], ready)).toBe(
@@ -141,33 +151,33 @@ describe("relayStartBlocker", () => {
     );
   });
 
-  it("names the first team short of two ready runners", () => {
-    expect(relayStartBlocker([two, one], ready)).toBe(
-      "Blue needs at least 2 ready runners",
+  it("names the first team whose first runner is not ready", () => {
+    expect(relayStartBlocker([red, blue], ready)).toBe(
+      "Blue's first runner is not ready",
     );
   });
 
-  it("lets the race start when every team with members has two ready", () => {
+  it("names a team with members and no first runner", () => {
+    const lost = team({ id: "d", name: "Green", member_ids: ["d1"] });
+    expect(relayStartBlocker([red, lost], { ...ready, d1: "ready" })).toBe(
+      "Green has no first runner",
+    );
+    // A first runner who is no longer a member (a stale page) is none either.
+    const gone = team({ ...lost, first_runner_id: "moved" });
+    expect(relayStartBlocker([red, gone], { ...ready, moved: "ready" })).toBe(
+      "Green has no first runner",
+    );
+  });
+
+  it("lets the race start once every first runner is ready, alone or not", () => {
     const placeholder = team({ id: "c", placeholder: true });
     expect(
-      relayStartBlocker([two, one, placeholder], { ...ready, b2: "ready" }),
+      relayStartBlocker([red, blue, placeholder], {
+        ...ready,
+        b1: "registered",
+        b2: "ready",
+      }),
     ).toBeNull();
-  });
-});
-
-describe("startingRunnerId", () => {
-  it("is the chosen runner, else the first member", () => {
-    expect(startingRunnerId(team({ member_ids: ["a", "b"] }))).toBe("a");
-    expect(
-      startingRunnerId(team({ member_ids: ["a", "b"], first_runner_id: "b" })),
-    ).toBe("b");
-  });
-
-  it("ignores a chosen runner who left, and an empty team has none", () => {
-    expect(
-      startingRunnerId(team({ member_ids: ["a"], first_runner_id: "gone" })),
-    ).toBe("a");
-    expect(startingRunnerId(team())).toBeNull();
   });
 });
 

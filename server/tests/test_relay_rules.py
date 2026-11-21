@@ -1,6 +1,7 @@
 """Relay rules: the cap, the team rows and the team model."""
 
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -21,15 +22,20 @@ from speedfog_racing.services.relay import (
     is_active_member,
     leaderboard_entries,
     relay_cap,
+    relay_flags,
     relay_rows,
     reset_relay_team,
     team_cap,
 )
+from speedfog_racing.websocket.race.relay import build_relay_info
 
-from .relay_fixtures import make_relay_race
+from .relay_fixtures import make_relay_race, progress_graph
 
 PLAYING = ParticipantStatus.PLAYING
 ABANDONED = ParticipantStatus.ABANDONED
+FINISHED = ParticipantStatus.FINISHED
+READY = ParticipantStatus.READY
+REGISTERED = ParticipantStatus.REGISTERED
 
 
 def member(status: ParticipantStatus) -> Participant:
@@ -74,6 +80,16 @@ def test_team_cap_is_recomputed_on_the_members_still_in():
     assert team_cap(12, [member(ABANDONED)]) == 13  # never divides by zero
 
 
+def test_only_a_member_who_plays_takes_a_share_of_the_cap():
+    # Never connected, or connected without a validated save yet (READY): a
+    # lone runner is not held to a cap made for teammates who cannot play.
+    assert team_cap(12, [member(PLAYING), member(REGISTERED), member(READY)]) == 13
+    # Validated (PLAYING from its first report), they share it.
+    assert team_cap(12, [member(PLAYING), member(PLAYING), member(READY)]) == 7
+    # A finished team keeps the cap it ended with.
+    assert team_cap(12, [member(FINISHED), member(FINISHED), member(ABANDONED)]) == 7
+
+
 def test_a_disqualified_member_is_not_active():
     assert not is_active_member(member(ParticipantStatus.DISQUALIFIED))
     assert is_active_member(member(ParticipantStatus.FINISHED))
@@ -93,7 +109,37 @@ async def test_rows_group_members_and_hide_empty_teams_once_started(rr_session):
         setup_rows = relay_rows(teams, parts, total_layers=12, setup=True)
         assert [len(r.members) for r in setup_rows] == [2, 2, 0]
         assert len(relay_rows(teams, parts, total_layers=12, setup=False)) == 2
-        assert [r.cap for r in setup_rows][:2] == [7, 7]
+
+
+async def test_a_setup_row_is_ready_once_its_first_runner_is(rr_session):
+    async with rr_session() as db:
+        org, a, b = await _users(db, 3)
+        race = await make_relay_race(db, org, teams=[[a, b]])
+        team = race.relay_teams[0]
+        first = next(p for p in race.participants if p.id == team.first_runner_id)
+        mate = next(p for p in race.participants if p.id != team.first_runner_id)
+
+        def row_status() -> ParticipantStatus:
+            [row] = relay_rows(race.relay_teams, race.participants, total_layers=12, setup=True)
+            return row.status
+
+        mate.status = READY
+        assert row_status() == REGISTERED  # the team waits for its first runner
+        first.status = READY
+        assert row_status() == READY
+        # Shown only: what the mod's relay logic reads stays registered (nothing
+        # relay-specific is live before the start).
+        info = build_relay_info(
+            team,
+            [],
+            first,
+            total_layers=12,
+            flags=relay_flags(progress_graph()) or {},
+            connected=set(),
+            ready=set(),
+            now=datetime.now(UTC),
+        )
+        assert info.team_status == "registered"
 
 
 async def test_a_team_row_reads_the_team_and_names_the_holder(rr_session):
