@@ -1749,6 +1749,9 @@ impl RaceMachine {
             .count();
         self.relay_received_at = Some(now);
         self.relay = relay;
+        // The runner's row is its team's: a move to another team in setup
+        // (a new `team_id`) moves it at once, not at the next leaderboard.
+        self.refresh_my_participant_index();
         if let Some(id) = highlighted {
             // The highlight stays on the same teammate, wherever the list
             // puts it now. When it is gone, the press in progress was aimed
@@ -5358,7 +5361,7 @@ impl RaceMachine {
             } else if now >= pending.deadline {
                 warn!(handoff_id = %pending.handoff_id, "[RELAY] Release not captured in time, dropped");
                 self.relay_release = None;
-                self.set_status("Handoff cancelled: not in game".to_string(), now);
+                self.set_status("Handoff cancelled: character not readable".to_string(), now);
             }
         }
         if let Some(asked) = &self.relay_capture {
@@ -13249,6 +13252,21 @@ mod tests {
     }
 
     #[test]
+    fn a_team_move_in_setup_moves_the_runners_row_at_once() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), now);
+        assert_eq!(m.my_participant().unwrap().id, "t1");
+        // Moved to the other team: its update names the new team before any
+        // leaderboard does.
+        let mut info = setup_relay_info();
+        info.team_id = "t2".to_string();
+        m.handle_message(MachineMessage::RelayUpdate(info), now);
+        assert_eq!(m.my_row_id(), Some("t2"));
+        assert_eq!(m.my_participant().unwrap().id, "t2");
+    }
+
+    #[test]
     fn a_leaderboard_update_of_the_team_row_freezes_the_layer_too() {
         let now = Instant::now();
         let mut m = relay_machine("holder", now);
@@ -14485,7 +14503,7 @@ mod tests {
         assert!(captures(&fx).is_empty());
         assert_eq!(
             m.get_status(t0 + ms(12_000)),
-            Some("Handoff cancelled: not in game")
+            Some("Handoff cancelled: character not readable")
         );
         let fx = go(&mut m, t0, 12_100, Some(IN_ZONE));
         assert!(captures(&fx).is_empty(), "{fx:?}");
@@ -14777,7 +14795,7 @@ mod tests {
         go(&mut m, t0, 12_000, None);
         assert_eq!(
             m.get_status(t0 + ms(12_000)),
-            Some("Handoff cancelled: not in game")
+            Some("Handoff cancelled: character not readable")
         );
     }
 

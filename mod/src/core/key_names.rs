@@ -180,9 +180,29 @@ mod tests {
 
     #[test]
     fn every_key_has_a_name() {
-        // A variant with no table row would serialize as "unknown".
-        for (_, key) in KEY_MAPPINGS {
-            assert_ne!(key_to_name(*key), "unknown");
+        use KeyCode::*;
+        // Every variant, written out: one with no table row would serialize
+        // as "unknown" and parse from no name.
+        const ALL: [KeyCode; 58] = [
+            F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12, A, B, C, D, E, F, G, H, I, J, K, L,
+            M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z, Alpha0, Alpha1, Alpha2, Alpha3, Alpha4,
+            Alpha5, Alpha6, Alpha7, Alpha8, Alpha9, Escape, Space, Enter, Tab, Insert, Delete,
+            Home, End, PageUp, PageDown,
+        ];
+        for (i, key) in ALL.iter().enumerate() {
+            // Exhaustive: a variant added to `KeyCode` stops this test from
+            // compiling until it is listed here and in `ALL`.
+            match key {
+                F1 | F2 | F3 | F4 | F5 | F6 | F7 | F8 | F9 | F10 | F11 | F12 | A | B | C | D
+                | E | F | G | H | I | J | K | L | M | N | O | P | Q | R | S | T | U | V | W | X
+                | Y | Z | Alpha0 | Alpha1 | Alpha2 | Alpha3 | Alpha4 | Alpha5 | Alpha6 | Alpha7
+                | Alpha8 | Alpha9 | Escape | Space | Enter | Tab | Insert | Delete | Home | End
+                | PageUp | PageDown => {}
+            }
+            assert!(!ALL[i + 1..].contains(key), "{key:?} listed twice");
+            let name = key_to_name(*key);
+            assert_ne!(name, "unknown", "{key:?}");
+            assert_eq!(name_to_key(name), Some(*key), "{key:?}");
         }
     }
 }
