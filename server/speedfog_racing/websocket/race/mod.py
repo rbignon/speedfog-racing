@@ -502,7 +502,10 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             participants=participant_infos,
             phantom_skin=phantom_skin,
             held_item=held_item,
-            relay=self._relay_info(participant, connected_ids, room),
+            # Sent before this socket is registered (``_on_authenticated``,
+            # which must follow auth_ok): the runner reads as the registration
+            # leaves them, connected and not ready yet.
+            relay=self._relay_info(participant, connected_ids | {participant.id}, room),
         )
         await self.websocket.send_text(message.model_dump_json())
 
@@ -528,7 +531,8 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             total_layers=int(graph.get("total_layers") or 0),
             flags=flags,
             connected=connected_ids,
-            ready=room.relay_ready if room else (),
+            # A new socket's readiness is its own report, after auth_ok.
+            ready=room.relay_ready - {participant.id} if room else (),
             now=datetime.now(UTC),
             graph_json=graph,
         )

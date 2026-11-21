@@ -662,7 +662,7 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 
 #### Relay messages (relay races)
 
-Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state: it comes with `auth_ok` and again in every `relay_update`.
+Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state: it comes with `auth_ok` and again in every `relay_update`. The `RelayInfo` of `auth_ok` reads the runner itself connected and not ready (it sends `relay_ready` after `auth_ok`); a `relay_update` follows at once and is authoritative.
 
 `CharacterState`: `attributes` (exactly 8 integers: vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane), `level`, `runes`, `items` (at most 4000 raw item ids with their category nibble, only the transferable ones, each once) and `grace_flags` (at most 1000 event flags of the lit graces).
 
@@ -710,6 +710,8 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
 Handoff: `relay_handoff_request` (holder), the server checks, `relay_release` (holder), `relay_state` with the `handoff_id` (holder), the server stores the state, flips the holder, sends `relay_take` (target) and `relay_update` to the team; the giver's mod reads `role: "waiting"` in that update and only then locks and warps to the Chapel (the lock follows the server's word, so a cancelled handoff never strands a holder locked); `relay_taken` (target), then `relay_update` to the team and a leaderboard broadcast.
 
 Takeover: `relay_take_request` (teammate), the server checks, flips the holder and sends `relay_take` with the stored state and the last team IGT; then `relay_taken`.
+
+A mod sends no progress (`status_update`, `event_flag`, `zone_query`, `relay_state`) between `relay_take` and its `relay_taken`; the server would ignore it. A `relay_take` may arrive again after a reconnect, with the same `handoff_id` (the server sends it right after `auth_ok` while it still awaits that `relay_taken`): the mod applies a given `handoff_id` once and answers it with `relay_taken` again.
 
 A `relay_state` carrying an expired or unknown `handoff_id` is answered with a `relay_update` to its sender, so a giver who already locked learns that it still holds the baton; so is any `relay_state` from a runner who does not hold the baton (nothing of it is kept). The holder's `relay_state` with `handoff_id` null is a checkpoint (the mod sends one at each zone entry): it is kept, unanswered, for a later takeover. A `relay_state` whose `igt_ms` the wrong-save guard refuses is never kept: as a checkpoint it is dropped, as the answer to `relay_release` it flips nothing (the handoff is dropped, the holder stays holder and gets a `relay_update`). A team whose `team_status` is still `ready` (its first holder has not reported, so its save is not proven fresh) keeps no `relay_state` at all and its IGT stays 0, but its answer to `relay_release` still hands the baton over: the receiver's `relay_take` carries `state: null` and `igt_ms: 0`. A request made while the race is not running, or during the countdown, is refused with `busy`, and so is a request while a handoff is in flight. A `relay_take` not acknowledged within 30 s sets the baton free; a `relay_release` not answered within 15 s cancels the handoff. A flip to a target whose mod is no longer connected sets the baton free at once; a late `relay_taken` from the current holder clears it.
 
