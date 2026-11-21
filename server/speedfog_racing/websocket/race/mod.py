@@ -29,6 +29,7 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RelayTeam,
     RunMode,
 )
 from speedfog_racing.rewards.service import RewardsService
@@ -50,6 +51,7 @@ from speedfog_racing.services.race_items import extract_race_item_catalog, seed_
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.relay import (
     RelayTeamRow,
+    holds_baton,
     leaderboard_entries,
     load_relay_row,
     relay_flags,
@@ -131,8 +133,9 @@ def _get_graph_json(participant: Participant) -> dict[str, Any] | None:
     return seed.graph_json if seed else None
 
 
-def _set_layer(participant: Participant, new_layer: int, entry_igt: int) -> None:
-    """Set current_layer and record its entry IGT (first-write-wins).
+def _set_layer(participant: Participant | RelayTeam, new_layer: int, entry_igt: int) -> None:
+    """Set current_layer and record its entry IGT (first-write-wins). A relay
+    team carries the same progress fields as a participant.
 
     A fresh dict is assigned so SQLAlchemy picks up the change on JSON
     columns (in-place mutation is not auto-tracked).
@@ -374,13 +377,19 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
             # Send zone_update on reconnect (race already running)
             seed = participant.race.seed
             if participant.race.status == RaceStatus.RUNNING and seed and seed.graph_json:
-                zone = participant.current_zone
-                if zone:
-                    await self._send_zone_update(
-                        zone,
-                        seed.graph_json,
-                        participant.zone_history,
+                zone, history = participant.current_zone, participant.zone_history
+                if race.is_relay:
+                    # The run is the team's: its holder resumes the team's
+                    # zone, a waiting runner has none to resume.
+                    team = next(
+                        (t for t in race.relay_teams if t.id == participant.relay_team_id), None
                     )
+                    if team is not None and holds_baton(team, participant.id):
+                        zone, history = team.current_zone, team.zone_history
+                    else:
+                        zone = None
+                if zone:
+                    await self._send_zone_update(zone, seed.graph_json, history)
 
                 # Send current death counts on reconnect. Event races
                 # (qualifiers, playoff stages, showcases) hide bloodstains:
@@ -848,22 +857,33 @@ class RaceModHandler(BaseModHandler["Participant"]):  # type: ignore[type-var]
         return added
 
     async def _on_debug_flags_recorded(self, entity: Participant, added: list[str]) -> None:
-        flags = entity.debug_flags or {}
+        await self._alert_debug_flags(entity, entity.race, added, self._get_graph_json(entity))
+
+    async def _alert_debug_flags(
+        self,
+        participant: Participant,
+        race: Race,
+        added: list[str],
+        graph_json: dict[str, Any] | None,
+    ) -> None:
+        """Log ``participant``'s newly seen debug flags, push them to the race
+        staff and notify Discord."""
+        flags = participant.debug_flags or {}
         logger.warning(
             "Debug flags detected: race=%s participant=%s flags=%s",
-            entity.race_id,
-            entity.id,
+            participant.race_id,
+            participant.id,
             ",".join(added),
         )
-        await manager.broadcast_debug_flags(entity.race_id, entity.id, flags)
+        await manager.broadcast_debug_flags(participant.race_id, participant.id, flags)
         first = flags[added[0]]
         fire_debug_flags_notification(
-            race_name=entity.race.name,
-            race_id=str(entity.race_id),
-            player_name=entity.user.twitch_display_name or entity.user.twitch_username,
+            race_name=race.name,
+            race_id=str(participant.race_id),
+            player_name=participant.user.twitch_display_name or participant.user.twitch_username,
             flags=added,
             igt_ms=first["igt_ms"],
-            zone_name=get_display_name_for_node(first.get("node_id"), self._get_graph_json(entity)),
+            zone_name=get_display_name_for_node(first.get("node_id"), graph_json),
         )
 
     # ------------------------------------------------------------------
@@ -1492,6 +1512,15 @@ async def handle_mod_websocket(
     race_id: uuid.UUID,
     session_maker: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Handle a mod WebSocket connection."""
-    handler = RaceModHandler(websocket, race_id, session_maker)
+    """Handle a mod WebSocket connection. A relay race gets the relay handler,
+    whose entity is the runner's team (``relay_team_size`` is fixed at creation)."""
+    # Local import: the relay handler builds on this module.
+    from speedfog_racing.websocket.race.relay_mod import RelayModHandler
+
+    async with session_maker() as db:
+        relay_team_size = (
+            await db.execute(select(Race.relay_team_size).where(Race.id == race_id))
+        ).scalar_one_or_none()
+    handler_class = RaceModHandler if relay_team_size is None else RelayModHandler
+    handler = handler_class(websocket, race_id, session_maker)
     await handler.run()
