@@ -135,7 +135,9 @@ impl HandoffMenu {
         match (down, self.pressed_at) {
             (true, None) => {
                 self.pressed_at = Some(now);
-                self.spent = false;
+                // A press that began with nobody highlighted never confirms
+                // someone who became eligible during it.
+                self.spent = eligible == 0;
                 self.last_input = Some(now);
             }
             (true, Some(since)) => {
@@ -497,5 +499,17 @@ mod tests {
         let mut m = member(true, true, true, 0);
         m.status = ParticipantStatus::Unknown;
         assert_eq!(availability(&m, 5), Some(Unavailable::Unknown));
+    }
+
+    #[test]
+    fn a_press_begun_with_nobody_eligible_is_spent() {
+        let t0 = Instant::now();
+        let mut menu = HandoffMenu::default();
+        menu.update(true, 0, t0);
+        menu.update(false, 0, t0 + ms(100));
+        menu.update(true, 0, t0 + ms(200));
+        // Someone turns up during the press.
+        assert_eq!(menu.update(true, 1, t0 + ms(1500)), MenuEvent::None);
+        assert_eq!(menu.update(false, 1, t0 + ms(1600)), MenuEvent::None);
     }
 }

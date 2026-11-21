@@ -74,6 +74,14 @@ pub fn free_in_s(at_receipt: Option<u32>, since: Duration) -> Option<u32> {
     at_receipt.map(|secs| secs.saturating_sub(since.as_secs().min(u32::MAX as u64) as u32))
 }
 
+/// A take's IGT write that did not take is repeated no sooner than this
+/// after the last one (the shell logs every write).
+pub const IGT_WRITE_RETRY: Duration = CAPTURE_RETRY;
+/// The game's IGT after a take's write may read this much above what the
+/// wall time since the first write explains: past it the reading is the
+/// runner's own, not the written one.
+pub const IGT_WRITE_SLACK: Duration = Duration::from_secs(2);
+
 /// Where a received take stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TakePhase {
@@ -99,6 +107,8 @@ pub struct PendingTake {
     /// When its writes were handed to the shell (the receipt until then):
     /// an IGT that does not read right is given up `APPLY_ABANDON` later.
     pub started_at: Instant,
+    /// When `SetIgt` was last emitted for it (the start frame first).
+    pub igt_write_at: Instant,
     pub phase: TakePhase,
 }
 
