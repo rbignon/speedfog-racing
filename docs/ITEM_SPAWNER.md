@@ -1,6 +1,6 @@
 # Item Spawner
 
-How the racing mod injects gem (Ash of War) items into the player's inventory at runtime, and how it avoids re-spawning the same items on reconnect, save reload, or game restart. The same injection gives race item goods, with their own guard (see [Race Item Goods](#race-item-goods)).
+How the racing mod injects gem (Ash of War) items into the player's inventory at runtime, and how it avoids re-spawning the same items on reconnect, save reload, or game restart. The same injection gives race item goods, with their own guard (see [Race Item Goods](#race-item-goods)), and the items a relay take hands over, on the main loop as the race goods are, its guard being the inventory read when the take is applied (see "Game access" in `RELAY.md`).
 
 ## Why a Runtime Spawner
 

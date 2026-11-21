@@ -71,25 +71,33 @@ pub enum TableUnread {
 }
 
 /// The goods param's type by row id, from its rows (`(row id, goods_type)`;
-/// `None`: the table is not indexed). A row id past the bits under an item
-/// id's category nibble names no item and is left out.
+/// `None`: the table is not indexed), as `param_rows` keeps them.
 pub fn goods_type_map(
     rows: Option<impl IntoIterator<Item = (u64, u8)>>,
 ) -> Result<HashMap<u32, u8>, TableUnread> {
-    let types: HashMap<u32, u8> = rows
+    param_rows(rows)
+}
+
+/// An item param table's rows by row id, from `(row id, value)` (`None`: the
+/// table is not indexed). A row id past the bits under an item id's category
+/// nibble names no item and is left out.
+pub fn param_rows<V>(
+    rows: Option<impl IntoIterator<Item = (u64, V)>>,
+) -> Result<HashMap<u32, V>, TableUnread> {
+    let kept: HashMap<u32, V> = rows
         .ok_or(TableUnread::NotIndexed)?
         .into_iter()
-        .filter_map(|(id, ty)| {
+        .filter_map(|(id, value)| {
             u32::try_from(id)
                 .ok()
                 .filter(|&id| id <= PARAM_MASK)
-                .map(|id| (id, ty))
+                .map(|id| (id, value))
         })
         .collect();
-    if types.is_empty() {
+    if kept.is_empty() {
         return Err(TableUnread::NoUsableRow);
     }
-    Ok(types)
+    Ok(kept)
 }
 
 /// The grace flags to scan, from the event flag id of every grace row

@@ -1375,6 +1375,21 @@ impl RaceMachine {
         self.relay_take.is_some()
     }
 
+    /// Whether the shell should go on writing the apply it was asked with
+    /// `generation` (`Effect::ApplyRelayItems`): that apply is in flight and
+    /// its take is still applying, neither given up, replaced by a newer
+    /// take, nor abandoned. The machine still waits for the answer of an
+    /// apply in flight that is no longer wanted: the shell stops its writes
+    /// and answers.
+    pub fn relay_apply_wanted(&self, generation: u64) -> bool {
+        self.relay_apply.as_ref().is_some_and(|asked| {
+            asked.generation == generation
+                && self.relay_take.as_ref().is_some_and(|take| {
+                    take.handoff_id == asked.handoff_id && take.phase == TakePhase::Applying
+                })
+        })
+    }
+
     /// The baton menu is open (the holder's).
     pub fn relay_menu_open(&self) -> bool {
         self.relay_menu.is_open()
@@ -15718,6 +15733,51 @@ mod tests {
         );
         assert_eq!(acks(&fx), 0);
         assert!(times_of(&fx, &lock(true)).is_empty());
+    }
+
+    #[test]
+    fn an_apply_is_wanted_only_while_its_take_applies() {
+        let t0 = Instant::now();
+        // Answered: wanted from the start frame to the answer.
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        let first = m.relay_apply_gen + 1;
+        assert!(!m.relay_apply_wanted(first), "not started yet");
+        local(&mut m, t0, 1_100, chapel());
+        assert!(m.relay_apply_wanted(first));
+        assert!(!m.relay_apply_wanted(first + 1));
+        applied(&mut m, t0, 1_150, "h1");
+        assert!(!m.relay_apply_wanted(first));
+
+        // A newer take replaces its take: no longer wanted, while the
+        // machine still waits for its answer.
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let generation = m.relay_apply.as_ref().unwrap().generation;
+        m.handle_message(take("h2"), t0 + ms(1_150));
+        assert!(!m.relay_apply_wanted(generation));
+        assert!(m.relay_apply.is_some());
+
+        // Given up: another teammate named holder.
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let generation = m.relay_apply.as_ref().unwrap().generation;
+        update(&mut m, relay_info("waiting"), t0, 1_200);
+        assert!(!m.relay_take_pending());
+        assert!(!m.relay_apply_wanted(generation));
+
+        // Abandoned at the machine's bound.
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let generation = m.relay_apply.as_ref().unwrap().generation;
+        let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        team_over(&mut m, t0, 1_200, 1_100 + abandon - 100, chapel(), 1_100);
+        assert!(m.relay_apply_wanted(generation));
+        team(&mut m, t0, 1_100 + abandon, chapel(), 1_100);
+        assert!(!m.relay_apply_wanted(generation));
     }
 
     #[test]
