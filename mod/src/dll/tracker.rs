@@ -1055,8 +1055,25 @@ impl RaceTracker {
                         flag_page = Some(self.event_flag_reader.resolve_category(flag_id));
                     }
                     let page_ref = flag_page.as_ref().and_then(|p| p.as_ref());
-                    self.event_flag_reader
-                        .set_flag_cached(flag_id, value, page_ref);
+                    // A write the reader cannot make (its category not
+                    // found, the flag manager not reachable) changes nothing
+                    // in game. Every flag write is one event (a change, a
+                    // capture, a message), never a per-frame write: this logs
+                    // once per failed write. At warn level while the player is
+                    // loaded, where every write is expected to land (the relay
+                    // flags are written only then); outside the world (the
+                    // title screen) the death marker flags of a message fail
+                    // by the dozen, at debug level.
+                    if !self
+                        .event_flag_reader
+                        .set_flag_cached(flag_id, value, page_ref)
+                    {
+                        if self.machine.frame_snapshot.position_readable {
+                            warn!(flag_id, value, "[RACE] Game flag not written");
+                        } else {
+                            debug!(flag_id, value, "[RACE] Game flag not written");
+                        }
+                    }
                 }
                 Effect::ApplyIgtPenalty { ms } => match self.game_state.add_igt_penalty(ms) {
                     Some(new_igt) => {
