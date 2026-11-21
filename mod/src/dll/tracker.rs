@@ -26,7 +26,7 @@ use crate::core::protocol::{
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
-use crate::core::relay_apply::{ApplyEnd, ApplyPlan, ApplyRun};
+use crate::core::relay_apply::{self, ApplyEnd, ApplyPlan, ApplyRun};
 use crate::core::talisman_thief::pick_talisman;
 use crate::core::timed_effects::timed_apply;
 use crate::eldenring::equip_change;
@@ -380,6 +380,9 @@ pub struct RaceTracker {
     // The relay worker's jobs: the one running and those waiting, one at a
     // time so the character is never read by two jobs at once.
     relay_jobs: JobQueue<RelayJob>,
+    /// Test aid, read once at start: the interval between two writes of a
+    /// relay apply (none: off, the normal batches).
+    relay_slow_apply: Option<Duration>,
     // The thread of the running relay job, drained by `poll_relay_job` on
     // the frame thread.
     relay_thread: Option<JoinHandle<RelayJobDone>>,
@@ -574,6 +577,18 @@ impl RaceTracker {
             flags_diagnosed: false,
             spawner_thread: None,
             relay_jobs: JobQueue::default(),
+            relay_slow_apply: {
+                let interval = relay_apply::slow_apply_interval(
+                    std::env::var(relay_apply::SLOW_APPLY_ENV).ok().as_deref(),
+                );
+                if let Some(interval) = interval {
+                    warn!(
+                        interval_ms = interval.as_millis() as u64,
+                        "[RELAY] Slow apply is on (test aid): one write per interval"
+                    );
+                }
+                interval
+            },
             relay_thread: None,
             items_spawned: Arc::new(AtomicBool::new(false)),
             phantom_skin_thread: None,
@@ -975,12 +990,13 @@ impl RaceTracker {
                 } => {
                     // The map of this frame, the take's start frame: the
                     // apply writes only while every frame reads it.
-                    let run = ApplyRun::new(
+                    let mut run = ApplyRun::new(
                         handoff_id,
                         generation,
                         self.machine.frame_snapshot.map_id,
                         Instant::now(),
                     );
+                    run.set_min_interval(self.relay_slow_apply);
                     self.request_relay_job(RelayJob::Apply {
                         run,
                         request: ApplyRequest {

@@ -339,7 +339,7 @@ pub enum Effect {
         ready: bool,
     },
     /// Capture the character's state on the shell's worker thread. Contract
-    /// with the shell: the result is delivered on the game thread, as an
+    /// with the shell: the result is delivered on the tracker's frame thread, as an
     /// input of the machine (`RaceMachine::relay_state_captured`), never by
     /// calling into the machine from the worker thread, and it carries this
     /// `generation`. A shell that never answers is tolerated: the machine
@@ -2932,6 +2932,7 @@ impl RaceMachine {
                     self.relay_taken_due = false;
                     if self.relay_ready_sent == Some(true) {
                         self.relay_ready_sent = Some(false);
+                        info!(ready = false, "[RELAY] Ready sent");
                         effects.push(Effect::SendRelayReady { ready: false });
                     }
                     self.relay_request = None;
@@ -4891,6 +4892,7 @@ impl RaceMachine {
                 && self.frame_snapshot.map_id == Some(relay::CHAPEL_MAP_ID);
             if self.relay_ready_sent != Some(ready) {
                 self.relay_ready_sent = Some(ready);
+                info!(ready, "[RELAY] Ready sent");
                 effects.push(Effect::SendRelayReady { ready });
             }
         }
@@ -5093,7 +5095,7 @@ impl RaceMachine {
     }
 
     /// The shell's answer to `Effect::ApplyRelayItems`, delivered on the
-    /// game thread with the `generation` the effect carried: the apply is
+    /// frame thread with the `generation` the effect carried: the apply is
     /// over, whatever part of it could not be done (the shell logs that).
     /// An answer for any other apply than the one in flight, an abandoned
     /// one included, is ignored. The answer clears the apply in flight: its
@@ -5277,7 +5279,7 @@ impl RaceMachine {
     }
 
     /// The shell's answer to `Effect::CaptureRelayState`, delivered on the
-    /// game thread with the `generation` the effect carried (an answer for
+    /// frame thread with the `generation` the effect carried (an answer for
     /// any other capture than the one in flight, an abandoned one included,
     /// is dropped; a shell that never answers is tolerated). After a failed
     /// capture none is asked for `relay::CAPTURE_RETRY`. The answer: the captured state,

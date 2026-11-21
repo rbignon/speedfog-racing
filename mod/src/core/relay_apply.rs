@@ -34,6 +34,17 @@ pub const APPLY_WRITES_PER_FRAME: usize = 16;
 /// cut by `APPLY_DEADLINE`. Provisional until measured in game.
 pub const APPLY_FRAME_BUDGET: Duration = Duration::from_micros(1500);
 
+/// Name of the environment variable that turns the test-only slow apply on.
+pub const SLOW_APPLY_ENV: &str = "SPEEDFOG_RELAY_SLOW_APPLY";
+
+/// The slow apply's interval between two writes, from the value of
+/// `SLOW_APPLY_ENV`: a number of milliseconds above 0. Absent, unparsable
+/// or 0 means off.
+pub fn slow_apply_interval(value: Option<&str>) -> Option<Duration> {
+    let ms: u64 = value?.trim().parse().ok()?;
+    (ms > 0).then(|| Duration::from_millis(ms))
+}
+
 /// Offset of the level from the first attribute (vigor) in the stats the
 /// shell writes (libeldenring `CharacterStats`: eight `i32` attributes,
 /// twelve bytes the game uses otherwise, then the level, the runes held and
@@ -354,6 +365,11 @@ pub struct ApplyRun {
     /// write never returned (a panic the shell's frame caught).
     trying: Option<ApplyStep>,
     ended: Option<ApplyEnd>,
+    /// Test aid: the least time between two writes (none: batches as
+    /// `APPLY_WRITES_PER_FRAME` and `APPLY_FRAME_BUDGET` say).
+    min_interval: Option<Duration>,
+    /// When the last write was made, while `min_interval` is set.
+    last_write: Option<Instant>,
 }
 
 impl std::fmt::Debug for ApplyRun {
@@ -385,7 +401,16 @@ impl ApplyRun {
             failed: Vec::new(),
             trying: None,
             ended: None,
+            min_interval: None,
+            last_write: None,
         }
+    }
+
+    /// Paces the writes: at most one write per `interval`, so an apply can
+    /// be made long enough to be interrupted by hand in game. The stop rules
+    /// and the deadline are unchanged. `None` (the default): no pacing.
+    pub fn set_min_interval(&mut self, interval: Option<Duration>) {
+        self.min_interval = interval;
     }
 
     pub fn handoff_id(&self) -> &str {
@@ -453,7 +478,23 @@ impl ApplyRun {
             None
         };
         if stop.is_none() {
-            let batch_end = steps.len().min(self.next + APPLY_WRITES_PER_FRAME);
+            let paced_out = self.min_interval.is_some_and(|interval| {
+                self.last_write
+                    .is_some_and(|at| now.saturating_duration_since(at) < interval)
+            });
+            let per_frame = if self.min_interval.is_some() {
+                1
+            } else {
+                APPLY_WRITES_PER_FRAME
+            };
+            let batch_end = if paced_out {
+                self.next
+            } else {
+                steps.len().min(self.next + per_frame)
+            };
+            if self.min_interval.is_some() && self.next < batch_end {
+                self.last_write = Some(now);
+            }
             while self.next < batch_end {
                 let step = steps[self.next];
                 self.next += 1;
@@ -850,6 +891,65 @@ mod tests {
         );
         assert_eq!(run.written().graces, 40);
         assert_eq!(run.left(), 0);
+    }
+
+    #[test]
+    fn the_slow_apply_reads_a_positive_number_of_milliseconds_only() {
+        assert_eq!(slow_apply_interval(Some("250")), Some(ms(250)));
+        assert_eq!(slow_apply_interval(Some(" 40 ")), Some(ms(40)));
+        for off in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("fast"),
+            Some("-5"),
+            Some("1.5"),
+        ] {
+            assert_eq!(slow_apply_interval(off), None, "{off:?}");
+        }
+    }
+
+    #[test]
+    fn a_paced_apply_makes_one_write_per_interval_and_completes() {
+        let t0 = Instant::now();
+        let mut run = run_of(3, t0);
+        run.set_min_interval(Some(ms(100)));
+        let mut writes = 0;
+        let mut at = |run: &mut ApplyRun, t: u64| {
+            run.write_frame(true, t0 + ms(t), quick, |_| {
+                writes += 1;
+                true
+            })
+        };
+        assert_eq!(at(&mut run, 16), None);
+        // Frames inside the interval write nothing.
+        assert_eq!(at(&mut run, 50), None);
+        assert_eq!(at(&mut run, 115), None);
+        assert_eq!(at(&mut run, 120), None);
+        assert_eq!(at(&mut run, 220), Some(ApplyEnd::Complete));
+        assert_eq!(writes, 3);
+        assert_eq!(run.left(), 0);
+    }
+
+    #[test]
+    fn a_paced_apply_still_ends_on_its_deadline_with_the_count_left() {
+        let t0 = Instant::now();
+        let mut run = run_of(1000, t0);
+        run.set_min_interval(Some(ms(1000)));
+        let mut writes = 0;
+        let mut end = None;
+        for frame in 0..=20u64 {
+            end = run.write_frame(true, t0 + ms(1000 * frame + 16), quick, |_| {
+                writes += 1;
+                true
+            });
+            if end.is_some() {
+                break;
+            }
+        }
+        assert_eq!(end, Some(ApplyEnd::Deadline));
+        assert_eq!(writes, 15);
+        assert_eq!(run.left(), 985);
     }
 
     #[test]
