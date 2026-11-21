@@ -5,18 +5,23 @@ Run from tools/: cd tools && uv run --project ../server pytest test_relay_bot.py
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 import pytest
 from relay_bot import (
+    FAKE_STATE,
     FRESH_IGT_MS,
     Bot,
     finish_warning,
+    load_state,
     next_action,
     next_gate,
     parse_team,
     request_pass,
     request_take,
+    stats_plausible,
     tick,
 )
 
@@ -95,7 +100,7 @@ def running(bot: Bot, relay: dict[str, Any], igt_ms: int = 0) -> None:
     del out
 
 
-TAKE = {
+TAKE: dict[str, Any] = {
     "type": "relay_take",
     "handoff_id": "h2",
     "state": None,
@@ -289,3 +294,71 @@ def test_parse_team_rejects_what_a_run_cannot_use() -> None:
 def test_finish_warns_unless_the_team_is_at_the_final_boss() -> None:
     assert finish_warning(GRAPH, "a") is not None
     assert finish_warning(GRAPH, "final") is None
+
+
+# A level 30 character: attributes summing to 109.
+STATE: dict[str, Any] = {
+    "attributes": [20, 12, 15, 18, 16, 9, 9, 10],
+    "level": 30,
+    "runes": 12_345,
+    "items": [2_000_005, 0x1000_0000 | 40_000, 0x4000_0000 | 4_000],
+    "grace_flags": [71_190, 76_101],
+}
+
+
+def test_the_default_state_is_one_the_receivers_mod_writes() -> None:
+    from speedfog_racing.websocket.schemas import CharacterState
+
+    CharacterState.model_validate(FAKE_STATE)
+    assert stats_plausible(FAKE_STATE)
+
+
+def test_stats_plausible_is_the_mods_stat_rule() -> None:
+    assert stats_plausible(STATE)
+    # The level is the attribute sum minus 79: Vagabond's attributes at level
+    # 1 are no character's.
+    assert not stats_plausible({**FAKE_STATE, "level": 1})
+    assert not stats_plausible({**STATE, "attributes": [0] * 8, "level": 0})
+    assert not stats_plausible({**STATE, "attributes": [100] + [10] * 7, "level": 91})
+    assert not stats_plausible({**STATE, "runes": 1_000_000_000})
+    assert stats_plausible({**STATE, "runes": 999_999_999})
+
+
+def test_bot_answers_a_release_with_the_state_it_was_given(bot: Bot) -> None:
+    bot.state = STATE
+    running(bot, info("holder"))
+    out = next_action(
+        bot, {"type": "relay_release", "handoff_id": "h1", "to_name": "x"}
+    )
+    assert out is not None and out["state"] == STATE
+
+
+def test_load_state_reads_a_valid_file(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    path.write_text(json.dumps(STATE), encoding="utf-8")
+    assert load_state(path) == STATE
+    # The lists may be left out: the server's model gives them empty.
+    bare = {k: STATE[k] for k in ("attributes", "level", "runes")}
+    path.write_text(json.dumps(bare), encoding="utf-8")
+    assert load_state(path) == {**bare, "items": [], "grace_flags": []}
+
+
+def test_load_state_names_a_missing_file(tmp_path: Path) -> None:
+    missing = tmp_path / "nope.json"
+    with pytest.raises(ValueError, match="cannot read") as caught:
+        load_state(missing)
+    assert str(missing) in str(caught.value)
+
+
+def test_load_state_refuses_what_the_server_would_drop(tmp_path: Path) -> None:
+    path = tmp_path / "state.json"
+    for bad in (
+        "not json",
+        json.dumps({**STATE, "attributes": [10, 10, 10]}),
+        json.dumps({**STATE, "runes": -1}),
+        json.dumps({**STATE, "items": list(range(4001))}),
+        json.dumps({k: STATE[k] for k in ("attributes", "level")}),
+    ):
+        path.write_text(bad, encoding="utf-8")
+        with pytest.raises(ValueError, match="not a valid CharacterState"):
+            load_state(path)

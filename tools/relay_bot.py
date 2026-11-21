@@ -9,9 +9,11 @@ mod does (the contract is the "Baton", "Gate" and "Lifecycle" sections of
 docs/RELAY.md): it reports ready, passes the fresh-save gate with its first
 report once the race runs, tells the server it waits at the Chapel
 (`relay_ready`, again after every reconnection), answers a `relay_release` with
-a fixed fake character state, answers a `relay_take` with `relay_taken` and only
-then reports the team's progress, starting from the team IGT it was given. Its
-role and its end (a member out, a finished team) come from the server.
+a character state (a plausible default, or the file --state names, checked
+against the server's model at startup), answers a `relay_take` with
+`relay_taken` and only then reports the team's progress, starting from the team
+IGT it was given. Its role and its end (a member out, a finished team) come from
+the server.
 
 A console drives the bots:
 
@@ -48,7 +50,7 @@ a server reload) connects again.
 
 Usage:
     cd server && uv run python ../tools/relay_bot.py <race_id> \\
-        --team Alpha=bot1,bot2 --team Beta=bot3,bot4
+        --team Alpha=bot1,bot2 --team Beta=bot3,bot4 [--state state.json]
 """
 
 from __future__ import annotations
@@ -77,14 +79,51 @@ FRESH_IGT_MS = 5_000
 OUT_TEAM_STATUSES = ("finished", "abandoned", "disqualified")
 OUT_MEMBER_STATUSES = ("abandoned", "disqualified")
 
-# What a handoff carries of the character: attributes in the game's order.
+# What a handoff carries of the character when --state names no file:
+# attributes in the game's order, a Vagabond at its starting level (the level
+# is the attribute sum minus 79, or the receiver's mod does not write it).
 FAKE_STATE: dict[str, Any] = {
     "attributes": [15, 10, 11, 14, 13, 9, 9, 7],
-    "level": 1,
+    "level": 9,
     "runes": 0,
     "items": [],
     "grace_flags": [],
 }
+
+
+def stats_plausible(state: dict[str, Any]) -> bool:
+    """The receiver's mod rule for writing a state's stats: every attribute in
+    1 to 99, the level in 1 to 713 and equal to the attribute sum minus 79,
+    the runes at most 999999999 (mod/src/core/relay_items.rs)."""
+    attributes = state["attributes"]
+    level = state["level"]
+    return (
+        all(1 <= a <= 99 for a in attributes)
+        and 1 <= level <= 713
+        and sum(attributes) == level + 79
+        and state["runes"] <= 999_999_999
+    )
+
+
+def load_state(path: Path) -> dict[str, Any]:
+    """The character state in the JSON file ``path`` (attributes, level, runes,
+    items, grace_flags), checked against the server's own model
+    (``CharacterState``) and as that model gives it (absent lists empty).
+    ValueError naming the file and the problem when it cannot be read or is
+    not a state the server would accept."""
+    from pydantic import ValidationError
+
+    from speedfog_racing.websocket.schemas import CharacterState
+
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise ValueError(f"--state {path}: cannot read it ({e.strerror or e})") from e
+    try:
+        state = CharacterState.model_validate_json(raw)
+    except ValidationError as e:
+        raise ValueError(f"--state {path}: not a valid CharacterState: {e}") from e
+    return state.model_dump()
 
 
 def log(*parts: object) -> None:
@@ -102,6 +141,8 @@ class Bot:
     team_name: str
     ws: Any = None
     clock: Callable[[], float] = time.monotonic
+    # The character it hands over at a release.
+    state: dict[str, Any] = field(default_factory=lambda: FAKE_STATE)
     last_error: str = ""
     # What the server last told this mod (RelayInfo).
     team_id: str = ""
@@ -191,7 +232,7 @@ def next_action(bot: Bot, message: dict[str, Any]) -> dict[str, Any] | None:
         return {
             "type": "relay_state",
             "handoff_id": message["handoff_id"],
-            "state": FAKE_STATE,
+            "state": bot.state,
             "igt_ms": bot.igt_now(),
         }
     if kind == "relay_take":
@@ -300,11 +341,16 @@ def parse_team(spec: str) -> tuple[str, list[str]]:
 
 class Console:
     def __init__(
-        self, race_id: str, ws_url: str, teams: list[tuple[str, list[str]]]
+        self,
+        race_id: str,
+        ws_url: str,
+        teams: list[tuple[str, list[str]]],
+        state: dict[str, Any],
     ) -> None:
         self.race_id = race_id
         self.ws_url = ws_url
         self.teams = teams
+        self.state = state
         self.bots: dict[str, Bot] = {}
         self.graph: dict[str, Any] = {}
         self.finish_flag: int | None = None
@@ -428,6 +474,7 @@ class Console:
                         participant_id=str(p.id),
                         mod_token=p.mod_token,
                         team_name=team_name,
+                        state=self.state,
                     )
 
     async def connect(self) -> None:
@@ -756,9 +803,15 @@ async def main_async(args: argparse.Namespace) -> None:
         check_local_database()
     try:
         teams = [parse_team(t) for t in args.team]
+        state = FAKE_STATE if args.state is None else load_state(args.state)
     except ValueError as e:
         raise SystemExit(str(e)) from e
-    console = Console(args.race_id, args.ws, teams)
+    if not stats_plausible(state):
+        log(
+            "warning: the state's level is not its attribute sum minus 79, or a "
+            "value is out of range: the receiver's mod will not write its stats"
+        )
+    console = Console(args.race_id, args.ws, teams, state)
     await console.load()
     await console.connect()
     await console.run()
@@ -775,6 +828,12 @@ def main() -> None:
     )
     parser.add_argument(
         "--ws", default="ws://localhost:8000", help="the server's WebSocket"
+    )
+    parser.add_argument(
+        "--state",
+        type=Path,
+        help="a CharacterState JSON file (attributes, level, runes, items, "
+        "grace_flags) the bots hand over at a release instead of the default",
     )
     parser.add_argument(
         "--force", action="store_true", help="allow a non-local database"
