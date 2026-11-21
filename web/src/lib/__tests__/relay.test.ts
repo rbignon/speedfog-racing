@@ -424,13 +424,13 @@ describe("relayMemberLabel", () => {
 describe("relayRuleLine", () => {
   it("writes the rule from the zone count, team size and cap", () => {
     expect(relayRuleLine(30, 3, 11)).toBe(
-      "Relay: 30 zones, teams of 3, 11 zones max per runner.",
+      "Relay: 30 zones, teams of 3, 11 zones max per runner on a full team (higher on a smaller one).",
     );
   });
 
   it("drops what the race does not give", () => {
     expect(relayRuleLine(null, 3, 11)).toBe(
-      "Relay: teams of 3, 11 zones max per runner.",
+      "Relay: teams of 3, 11 zones max per runner on a full team (higher on a smaller one).",
     );
     expect(relayRuleLine(30, 3, null)).toBe("Relay: 30 zones, teams of 3.");
   });

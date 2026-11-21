@@ -400,9 +400,13 @@
                   )}
                   <li class="team-member">
                     {#if memberUsers[member.participant_id]}
-                      <span class="member-name"
+                      <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+                      <span
+                        class="member-name"
+                        onclick={(e) => e.stopPropagation()}
                         ><UserLink
                           user={memberUsers[member.participant_id]}
+                          newTab
                         /></span
                       >
                     {:else}
@@ -613,6 +617,11 @@
     font: inherit;
     color: inherit;
     cursor: pointer;
+  }
+
+  .team-toggle:focus-visible {
+    outline: 2px solid var(--color-purple);
+    outline-offset: 2px;
   }
 
   .team-toggle:hover {
