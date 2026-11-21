@@ -4,6 +4,7 @@
 
 import type { RelayTeam } from "$lib/api";
 import type { RelayMember, WsParticipant } from "$lib/websocket";
+import type { ZoneHistoryEntry } from "$lib/zone-history";
 
 export const RELAY_TEAM_SIZE_MIN = 2;
 export const RELAY_TEAM_SIZE_MAX = 6;
@@ -269,4 +270,24 @@ export function relayRuleLine(
     );
   }
   return `Relay: ${parts.join(", ")}.`;
+}
+
+/** The name of the runner who played a zone: the `runner_id` of the node's
+ * last entry that is not a backtrack (a backtrack goes back to a zone already
+ * played, so it says nothing about who played it). Null when the entry has no
+ * runner or the runner is not among the members. */
+export function relayRunnerAt(
+  history: ZoneHistoryEntry[],
+  nodeId: string,
+  members: RelayMember[],
+): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const entry = history[i];
+    if (entry.node_id !== nodeId || entry.type === "backtrack") continue;
+    if (!entry.runner_id) return null;
+    return (
+      members.find((m) => m.participant_id === entry.runner_id)?.name ?? null
+    );
+  }
+  return null;
 }

@@ -8,6 +8,7 @@ import { PLAYER_COLORS } from "./constants";
 import { computeOutcome, type ZoneOutcome } from "$lib/highlights";
 import type { WeaponCombo } from "$lib/zone-history";
 import { aggregateZoneCombos } from "$lib/weapons";
+import { relayRunnerAt } from "$lib/relay";
 
 // =============================================================================
 // Types
@@ -45,6 +46,7 @@ export interface PopupVisitor {
   outcome: VisitOutcome;
   weapons?: WeaponCombo[];
   isMe?: boolean; // the viewer's own participant
+  runner?: string; // relay team row: who played the zone, when known
 }
 
 export interface NodePopupData {
@@ -273,6 +275,10 @@ export function computeVisitors(
 
     const weaponsForZone = aggregateZoneCombos(p.zone_history, nodeId);
 
+    const runner = p.relay_members
+      ? relayRunnerAt(p.zone_history, nodeId, p.relay_members)
+      : null;
+
     visitors.push({
       displayName: p.twitch_display_name || p.twitch_username,
       color: PLAYER_COLORS[p.color_index % PLAYER_COLORS.length],
@@ -282,6 +288,7 @@ export function computeVisitors(
       outcome,
       weapons: weaponsForZone.length > 0 ? weaponsForZone : undefined,
       isMe: myParticipantId != null && p.id === myParticipantId,
+      runner: runner ?? undefined,
     });
   }
   // Cleared first (by time asc), then others

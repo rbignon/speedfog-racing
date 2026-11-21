@@ -7,6 +7,8 @@ import {
   parseExitTexts,
   parseEntranceTexts,
 } from "../popupData";
+import { relayRunnerAt } from "$lib/relay";
+import type { RelayMember } from "$lib/websocket";
 import type { DagEdge, DagNode } from "../types";
 
 // Minimal node factory
@@ -918,5 +920,71 @@ describe("computeConnections with entranceTexts", () => {
     expect(liurnia?.text).toBe("through the gate");
     const raya = conns.exits.find((e) => e.nodeId === "raya");
     expect(raya?.text).toBe("via the side path");
+  });
+});
+
+describe("relay runner on the popup", () => {
+  const member = (participant_id: string, name: string): RelayMember => ({
+    participant_id,
+    name,
+    zones: 0,
+    status: "playing",
+    online: true,
+    ready: true,
+    validated: false,
+  });
+  const members = [member("a", "Linlin_Tv"), member("b", "Kahleeya")];
+  const history = [
+    { node_id: "start", igt_ms: 0, type: "spawn", runner_id: "a" },
+    { node_id: "stormveil", igt_ms: 60000, type: "fog", runner_id: "a" },
+    { node_id: "stormveil", igt_ms: 200000, type: "fog", runner_id: "b" },
+    { node_id: "start", igt_ms: 210000, type: "backtrack", runner_id: "b" },
+  ];
+
+  it("names the runner of the last entry that is not a backtrack", () => {
+    expect(relayRunnerAt(history, "stormveil", members)).toBe("Kahleeya");
+    expect(relayRunnerAt(history, "start", members)).toBe("Linlin_Tv");
+    expect(relayRunnerAt(history, "elsewhere", members)).toBeNull();
+  });
+
+  it("is null when the entry has no runner or the runner is not a member", () => {
+    expect(
+      relayRunnerAt([{ node_id: "x", igt_ms: 0 }], "x", members),
+    ).toBeNull();
+    expect(
+      relayRunnerAt(
+        [{ node_id: "x", igt_ms: 0, runner_id: "gone" }],
+        "x",
+        members,
+      ),
+    ).toBeNull();
+  });
+
+  const row = (extra: Record<string, unknown>) =>
+    ({
+      id: "t1",
+      twitch_display_name: "Blue Team",
+      twitch_username: "team-12345678",
+      status: "playing",
+      current_zone: "stormveil",
+      color_index: 0,
+      igt_ms: 300000,
+      death_count: 0,
+      current_layer: 1,
+      mod_connected: true,
+      zone_history: history,
+      ...extra,
+    }) as never;
+
+  it("a team visitor carries its runner, a solo visitor none", () => {
+    const team = computeVisitors("stormveil", [
+      row({ relay_members: members }),
+    ]);
+    expect(team[0]).toMatchObject({
+      displayName: "Blue Team",
+      runner: "Kahleeya",
+    });
+    const solo = computeVisitors("stormveil", [row({ relay_members: null })]);
+    expect(solo[0].runner).toBeUndefined();
   });
 });
