@@ -1399,10 +1399,18 @@ async def cancel_participant_disqualification(
     user: User = Depends(get_current_user),
     _sentry: None = Depends(sentry_race_context),
 ) -> RaceDetailResponse:
-    """Cancel a disqualification (race organizer or admin)."""
+    """Cancel a disqualification (race organizer or admin; never on a relay race)."""
     race = await _get_race_or_404(db, race_id)
     _require_organizer(race, user)
     participant = await _load_participant_in_race(db, race_id, participant_id)
+    if race.is_relay:
+        # The disqualification put the member's team out and their teammates
+        # still in abandoned: neither the team nor those rows can be restored
+        # consistently, so it is final.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A disqualification on a relay race cannot be cancelled",
+        )
     disqualified_at = participant.disqualified_at
     # A reset sends the race back to SETUP and moves started_at on the next
     # start; a daily reroll keeps it running and releases the new seed.
@@ -1413,15 +1421,11 @@ async def cancel_participant_disqualification(
             for moment in (race.started_at, race.seeds_released_at)
         )
     )
-    # A relay member's own row comes back, never their team: a run still going
-    # in a team that is out ends abandoned, as at the race's finish.
-    team = next((t for t in race.relay_teams if t.id == participant.relay_team_id), None)
-    team_out = team is not None and team.status in TERMINAL_PARTICIPANT_STATUSES
     try:
         cancel_disqualification(
             participant,
             race_restarted=race_restarted,
-            race_finished=race.status == RaceStatus.FINISHED or team_out,
+            race_finished=race.status == RaceStatus.FINISHED,
         )
     except ValueError:
         raise HTTPException(

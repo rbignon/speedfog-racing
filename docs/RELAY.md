@@ -290,9 +290,8 @@ team rows explicitly first (`SELECT ... FOR UPDATE`), before it changes any memb
 
 Two such transactions therefore never wait on each other in opposite orders. A write to
 one table only needs no order: a flip, a checkpoint and the take timer write the team, a
-member's fresh-save validation and a cancelled disqualification write the member (the
-validation as an UPDATE guarded on the status it read, so it never brings back a member
-who went out meanwhile).
+member's fresh-save validation writes the member (as an UPDATE guarded on the status it
+read, so it never brings back a member who went out meanwhile).
 
 ## Cap
 
@@ -364,7 +363,8 @@ carry every team's history. No progress load reads `character_state` (deferred).
   last raw count their mod reported as holder, stored in the commit that applies
   the report; the team's count moves by what the holder's counter moved
   (`team.death_count + reported - member.death_count`), so it carries on across a
-  change of holder.
+  change of holder. When the member goes out, or the team ends, their row takes the
+  team's count instead ("Lifecycle").
 - **History.** Every entry the team's history gains carries `runner_id`, the
   holder's participant id. A fog gate stores its flag in `entry_flag_id`, the zone a
   handoff restarts (`RelayInfo.zone_name`); a backtrack seen through `zone_query`
@@ -407,7 +407,9 @@ What a member going out does (`apply_member_out`, `services/relay.py`):
 - Their row takes a snapshot of the team's progress at that moment: its IGT, deaths and
   layer (their own status kept, no finish time, never `zone_history`). Every member's row
   thus tells how far the team was when that runner's race ended; the members still in at
-  the team's end get its final result instead (below).
+  the team's end get its final result instead (below). A member disqualified after they
+  went out (an abandon, then a cheat found) keeps the snapshot of when they left: only a
+  member who was still in takes one (`take_member_out` passes `snapshot`).
 - A baton they held is free at once: no holder, `baton_free`, no 60 s wait. The team's
   `last_igt_change_at` restarts, so the free baton gets the whole 30 minutes before the
   team is out for inactivity.
@@ -421,9 +423,11 @@ What a member going out does (`apply_member_out`, `services/relay.py`):
   race runs gets the public line `{team name} is out.` (never twice, nor after the race
   finished).
 
-Cancelling a disqualification restores the member's own row and never the team: their
-saved status comes back, but a run still going in a team that is out ends ABANDONED, as at
-the race's finish.
+Cancelling a disqualification (`DELETE /races/{id}/participants/{pid}/disqualify`) is
+refused on a relay race, 400 `A disqualification on a relay race cannot be cancelled`: the
+disqualification put the member's team out and their teammates still in ABANDONED, and
+neither the team nor those rows can be restored consistently. A disqualification on a
+relay race is final, even after a reset.
 
 Inactivity (`services/inactivity_monitor.py`, `INACTIVITY_TIMEOUT`, every minute):
 

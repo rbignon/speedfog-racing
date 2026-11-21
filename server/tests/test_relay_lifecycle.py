@@ -242,19 +242,21 @@ def test_disqualifying_a_member_puts_the_team_out(integration_client, trio, trio
         spectator.close()
 
 
-def test_cancelling_a_disqualification_restores_the_member_never_the_team(
-    integration_client, trio, trio_mods
-):
+def test_a_relay_disqualification_cannot_be_cancelled(integration_client, trio, trio_mods):
     cheater = _member(trio, 0, 1)["participant_id"]
     path = f"/api/races/{trio['race_id']}/participants/{cheater}/disqualify"
     headers = _auth(trio["organizer"])
     assert integration_client.post(path, json={"reason": "x"}, headers=headers).status_code == 200
 
-    assert integration_client.delete(path, headers=headers).status_code == 200
+    response = integration_client.delete(path, headers=headers)
 
+    # The team went out with them and their teammates ended abandoned.
+    assert response.status_code == 400
+    assert response.json()["detail"] == "A disqualification on a relay race cannot be cancelled"
     assert load_team(trio).status == ParticipantStatus.DISQUALIFIED
-    # Their run was going on, but their team is out: it ends abandoned.
-    assert set(_statuses(load_members(trio)).values()) == {ParticipantStatus.ABANDONED}
+    statuses = _statuses(load_members(trio))
+    assert statuses.pop(cheater) == ParticipantStatus.DISQUALIFIED
+    assert set(statuses.values()) == {ParticipantStatus.ABANDONED}
 
 
 def test_a_pending_take_whose_receiver_goes_out_frees_the_baton(
@@ -801,6 +803,36 @@ async def test_a_validation_never_brings_back_a_member_who_went_out(session_make
 
     member = await _get(session_maker, Participant, pid)
     assert (member.status, member.relay_validated) == (ParticipantStatus.ABANDONED, False)
+
+
+async def test_disqualifying_a_member_already_out_keeps_their_snapshot(session_maker):
+    relay = await _relay(session_maker)
+    race_id, team_id, leaver = relay["race_id"], relay["teams"][0], relay["members"][0][1]
+
+    def abandon(team: RelayTeam, member: Participant) -> bool:
+        member.status = ParticipantStatus.ABANDONED
+        return True
+
+    def cheat(team: RelayTeam, member: Participant) -> bool:
+        disqualify(member, by_id=relay["organizer"], reason="Cheating", now=datetime.now(UTC))
+        return True
+
+    await relay_ws.take_member_out(session_maker, race_id, leaver, abandon)
+    # The team plays on, then the leaver is found to have cheated.
+    await _patch(session_maker, RelayTeam, team_id, igt_ms=300_000, death_count=4, current_layer=3)
+    await relay_ws.take_member_out(session_maker, race_id, leaver, cheat)
+
+    member = await _get(session_maker, Participant, leaver)
+    # How far the team was when they left: 60 s in (run_relay_race), no death, layer 0.
+    assert (member.status, member.igt_ms, member.death_count, member.current_layer) == (
+        ParticipantStatus.DISQUALIFIED,
+        60_000,
+        0,
+        0,
+    )
+    assert (await _get(session_maker, RelayTeam, team_id)).status == (
+        ParticipantStatus.DISQUALIFIED
+    )
 
 
 async def test_a_team_is_announced_out_once_and_only_while_the_race_runs(session_maker):
