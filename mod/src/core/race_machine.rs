@@ -4682,10 +4682,11 @@ impl RaceMachine {
     /// comparisons while nothing changes. Every flag write waits until the
     /// player is loaded and `relay::SETTLE` has passed since the last
     /// loading exit, on the race save: a flag written during a load can be
-    /// missed by the seed's events. A write the shell cannot make is
-    /// silent: the value asked for is believed until the next loading exit
-    /// asserts it again. `held`: progress was held when the frame started
-    /// (no capture is asked). No-op without a relay.
+    /// missed by the seed's events. A write the shell cannot make is logged
+    /// by the shell (at warn level on a loaded frame, as relay writes are)
+    /// and changes nothing here: the value asked for is believed until the
+    /// next loading exit asserts it again. `held`: progress was held when
+    /// the frame started (no capture is asked). No-op without a relay.
     fn maintain_relay(
         &mut self,
         connected: bool,
@@ -4999,7 +5000,11 @@ impl RaceMachine {
     /// quit-out, and the bosses written are marked reported. The take keeps
     /// its state and flags: a start a load cut is made again from them
     /// (`relay_state_applied`), the acknowledgement's IGT window then
-    /// measured from the last start.
+    /// measured from the last start. The stats are written at the first
+    /// start only: the attributes and the level survive a death and a
+    /// quit-out, and the runes a death at the Chapel dropped lie in the
+    /// bloodstain where the runner respawns, so writing them again would
+    /// double them. The IGT and the apply go at every start.
     fn relay_start_take(&mut self, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_mut() else {
             return;
@@ -5015,6 +5020,7 @@ impl RaceMachine {
         let state = take.state.clone();
         let defeat_flags = take.defeat_flags.clone();
         match &state {
+            Some(_) if start > 1 => {}
             Some(state) if relay_items::stats_plausible(state) => {
                 effects.push(Effect::WriteCharacterStats {
                     attributes: state.attributes,
@@ -5205,12 +5211,12 @@ impl RaceMachine {
     /// frame, unless a load ended the writes (`ApplyEnd::MapChanged`: a death
     /// or a quit-out at the Chapel) before the take's `relay::TAKE_STARTS_MAX`
     /// starts: the take is then put back to be started again on the next
-    /// loaded, settled frame at the Chapel (stats and IGT written again, an
-    /// apply that gives only what is still lacking), the lock still raised
-    /// and progress still held. The last start's apply is acknowledged however
-    /// it ended, with the status "Baton taken: items may be missing" after a
-    /// load. A take replaced or given up since changes nothing (a newer take
-    /// waiting for the shell starts).
+    /// loaded, settled frame at the Chapel (the IGT written again, not the
+    /// stats, and an apply that gives only what is still lacking), the lock
+    /// still raised and progress still held. The last start's apply is
+    /// acknowledged however it ended, with the status "Baton taken: items
+    /// may be missing" after a load. A take replaced or given up since
+    /// changes nothing (a newer take waiting for the shell starts).
     pub fn relay_state_applied(
         &mut self,
         handoff_id: &str,
@@ -16119,8 +16125,13 @@ mod tests {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         receive(&mut m, t0, take("h1"));
-        local(&mut m, t0, 1_100, chapel());
+        let fx = local(&mut m, t0, 1_100, chapel());
         let first = m.relay_apply.as_ref().unwrap().generation;
+        // The first start writes the plausible state's stats.
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h1", first).iter().collect::<Vec<_>>()
+        );
         let mut fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
         let (restart, cut) = cut_by_a_load(&mut m, t0, 2_100, 1_100, 1_000);
         fx.extend(cut);
@@ -16141,11 +16152,18 @@ mod tests {
         );
         assert!(!m.wrong_save && m.triggered_flags.contains(&BOSS));
         // Started again on the first settled frame at the Chapel: the same
-        // take, written whole again, under a new generation.
+        // take, its IGT and a new apply under a new generation, but not its
+        // stats (the runes a death dropped lie in the bloodstain: written
+        // again they would be doubled).
         assert_eq!(restart, 3_200 + settle_ms(), "{fx:?}");
         assert_eq!(
             start_fx(&fx, restart),
-            full_apply("h1", first + 1).iter().collect::<Vec<_>>()
+            full_apply("h1", first + 1)[1..].iter().collect::<Vec<_>>()
+        );
+        assert!(
+            !fx.iter()
+                .any(|(_, e)| matches!(e, Effect::WriteCharacterStats { .. })),
+            "{fx:?}"
         );
         applied(&mut m, t0, restart + 50, "h1");
         let fx = team_over(
@@ -16178,7 +16196,9 @@ mod tests {
             assert_eq!(acks(&fx), 0, "{start}: {fx:?}");
             assert_eq!(
                 start_fx(&fx, restart),
-                full_apply("h1", first + start).iter().collect::<Vec<_>>(),
+                full_apply("h1", first + start)[1..]
+                    .iter()
+                    .collect::<Vec<_>>(),
                 "{start}"
             );
             written = restart;
