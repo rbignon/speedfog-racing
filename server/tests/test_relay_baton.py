@@ -620,6 +620,31 @@ def _started_before_any_report(client, relay_race) -> dict[str, RelayModClient]:
     return mods
 
 
+def test_the_start_tells_each_member_its_role(integration_client, trio_race):
+    left_out = _pid(trio_race, 0, 2)
+    patch_member(trio_race, left_out, status=ParticipantStatus.REGISTERED)  # not ready
+
+    mods = _started_before_any_report(integration_client, trio_race)
+    try:
+        updates = {
+            pid: mod.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "ready")
+            for pid, mod in mods.items()
+        }
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+    for team in range(2):
+        holder_id = _pid(trio_race, team, 0)
+        for index in range(3):
+            pid = _pid(trio_race, team, index)
+            relay = updates[pid]["relay"]
+            assert relay["holder_id"] == holder_id
+            assert relay["role"] == ("holder" if pid == holder_id else "waiting")
+    # Left out at the start: its race is over before it began.
+    assert _me(updates[left_out], left_out)["status"] == "abandoned"
+
+
 def test_a_ready_team_keeps_no_state_from_its_holder(integration_client, relay_race):
     mods = _started_before_any_report(integration_client, relay_race)
     try:
