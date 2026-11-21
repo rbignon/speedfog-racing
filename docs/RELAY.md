@@ -176,11 +176,17 @@ then goes back to them.
 - **Stored**: `character_state` (the parsed `CharacterState`) and
   `character_state_igt_ms`, the team IGT once raised to the reported IGT. A state
   whose IGT the wrong-save guard refuses (`is_igt_plausible` against the team's
-  `igt_ms` and `last_igt_change_at`, the holder's `status_update` judgment) is never
-  kept, and does not raise the team IGT: it may come from another save, and the next
-  receiver would get it. As a checkpoint it is dropped (the previous one stays); as
-  the answer to a release it flips nothing: the handoff is dropped, the holder stays
-  holder and gets a `relay_update`.
+  `igt_ms` and `last_igt_change_at`, or the race's `started_at` while the team has no
+  such stamp, so the forward check is never off; the holder's `status_update`
+  judgment) is never kept, and does not raise the team IGT: it may come from another
+  save, and the next receiver would get it. As a checkpoint it is dropped (the
+  previous one stays); as the answer to a release it flips nothing: the handoff is
+  dropped, the holder stays holder and gets a `relay_update`.
+- **Only from a PLAYING team**: a team still READY (the race runs, its first holder
+  has not reported yet) has not passed its fresh-save gate, so its holder may sit on
+  an old save. Nothing of its `relay_state` is kept and the team IGT stays 0, but its
+  answer to a release still flips the baton: the receiver gets `state: null` and
+  `igt_ms: 0`, so its first report passes the team's gate and the team plays.
 - **Take accepted**: the baton flips to the asker with the stored state (null before
   any checkpoint) and the team's `igt_ms`, the last IGT received.
 - **An absent holder with no stamp**: a take request that finds the holder's mod not

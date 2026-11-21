@@ -583,6 +583,91 @@ def test_a_release_answered_on_an_implausible_igt_flips_nothing(relay_race, mods
     assert _release(holder, target_id)["to_name"] == "Relay Runner 1"  # the handoff was dropped
 
 
+def test_a_playing_team_without_an_igt_stamp_still_refuses_a_jump_ahead(relay_race, mods):
+    holder = mods[_pid(relay_race, 0, 0)]
+    # No stamp: the race's start (a second ago) is the guard's wall reference.
+    patch_team(relay_race, last_igt_change_at=None)
+
+    holder.send({"type": "relay_state", "handoff_id": None, "state": STATE, "igt_ms": 900_000})
+    barrier(holder)
+
+    team = load_team(relay_race)
+    assert (team.character_state, team.igt_ms) == (None, 1_000)
+
+
+def _started_before_any_report(client, relay_race) -> dict[str, RelayModClient]:
+    """Every member connected and the race started past its countdown, but no
+    holder has reported yet: every team is still READY. The caller closes the
+    mods."""
+    race_id = relay_race["race_id"]
+    mods: dict[str, RelayModClient] = {}
+    try:
+        for team in relay_race["teams"]:
+            for member in team["members"]:
+                pid = member["participant_id"]
+                mods[pid] = RelayModClient.connect(client, race_id, member["mod_token"], pid)
+                assert mods[pid].auth(protocol_version="1.19")["type"] == "auth_ok"
+        response = client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {relay_race['organizer'].api_token}"},
+        )
+        assert response.status_code == 200, response.json()
+        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(seconds=1))
+    except BaseException:
+        for mod in mods.values():
+            mod.close()
+        raise
+    return mods
+
+
+def test_a_ready_team_keeps_no_state_from_its_holder(integration_client, relay_race):
+    mods = _started_before_any_report(integration_client, relay_race)
+    try:
+        holder = mods[_pid(relay_race, 0, 0)]
+        # The first runner sits on an old save: its first report would fail
+        # the team's fresh-save gate, so nothing it sends is kept.
+        holder.send(
+            {"type": "relay_state", "handoff_id": None, "state": STATE, "igt_ms": 3_600_000}
+        )
+        barrier(holder)
+
+        team = load_team(relay_race)
+        assert team.status == ParticipantStatus.READY
+        assert (team.igt_ms, team.character_state) == (0, None)
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
+def test_a_ready_team_hands_off_with_no_state_and_the_receiver_plays(
+    integration_client, relay_race
+):
+    mods = _started_before_any_report(integration_client, relay_race)
+    try:
+        holder, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+        _make_receiver(target)
+
+        take = _hand_off(holder, target, igt_ms=3_600_000)
+
+        assert (take["state"], take["igt_ms"]) == (None, 0)
+        team = load_team(relay_race)
+        assert (team.holder_id, team.igt_ms, team.character_state) == (
+            UUID(target.participant_id),
+            0,
+            None,
+        )
+        _taken(target, take)
+        # The receiver's game takes the team's IGT: its first report passes the
+        # team's fresh-save gate, and the team plays.
+        target.send_status_update(igt_ms=take["igt_ms"] + 2_000, death_count=0)
+        target.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "playing")
+        team = load_team(relay_race)
+        assert (team.status, team.igt_ms) == (ParticipantStatus.PLAYING, 2_000)
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
 def test_the_receiver_is_not_listened_to_before_relay_taken(relay_race, mods):
     holder, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
     _make_receiver(target)

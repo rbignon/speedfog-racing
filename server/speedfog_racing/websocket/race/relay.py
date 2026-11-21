@@ -446,9 +446,12 @@ def _store_state(team: RelayTeam, state: CharacterState, igt_ms: int) -> bool:
     """Keep ``state`` as the team's last character state, the team's IGT raised
     first to ``igt_ms``. False, and nothing kept, when the wrong-save guard
     refuses ``igt_ms`` (as it would the holder's ``status_update``): the state
-    may come from another save, and the next receiver would get it."""
+    may come from another save, and the next receiver would get it. The
+    guard's wall reference is the team's last IGT change, else the race's
+    start: the forward check is never off."""
     now = datetime.now(UTC)
-    if not is_igt_plausible(team.igt_ms, team.last_igt_change_at, igt_ms, now):
+    since = team.last_igt_change_at or team.race.started_at
+    if not is_igt_plausible(team.igt_ms, since, igt_ms, now):
         logger.warning(
             "Dropped relay_state on implausible IGT (wrong save?): team=%s reported=%d recorded=%d",
             team.id,
@@ -664,13 +667,16 @@ async def store_state(
     """A ``relay_state``: a checkpoint (``handoff_id`` null) or the answer to a
     ``relay_release``.
 
-    From the holder of a running team the state is kept (``_store_state``,
+    From the holder of a PLAYING team the state is kept (``_store_state``,
     which drops a state on an implausible IGT); when it is kept and answers the
     pending release in time, the baton then flips to its target (still a member
-    in the race). Anything else flips nothing (the release it answers is
-    dropped), and the sender of any ``relay_state`` but a plain checkpoint gets
-    a ``relay_update``: a giver who already locked learns it still holds the
-    baton.
+    in the race). A READY team has not passed its fresh-save gate yet (its
+    first holder never reported), so its holder's save may be an old one:
+    nothing of the state is kept and the team IGT stays where it is, but an
+    answer to the release still flips, the receiver getting no state. Anything
+    else flips nothing (the release it answers is dropped), and the sender of
+    any ``relay_state`` but a plain checkpoint gets a ``relay_update``: a giver
+    who already locked learns it still holds the baton.
     """
     async with room.relay_lock:
         flip: _Flip | None = None
@@ -703,7 +709,17 @@ async def store_state(
                 and not awaiting_take(room, team.id, participant_id)
                 and _baton_moves(team)
             )
-            if holder and _store_state(team, state, igt_ms):
+            # A READY team's holder has not passed the team's fresh-save gate:
+            # its state is never kept, but its answer to a release still flips.
+            ready_team = team.status == ParticipantStatus.READY
+            if holder and ready_team:
+                logger.info(
+                    "Relay state not kept, team not playing yet: team=%s handoff=%s",
+                    team.id,
+                    handoff_id,
+                )
+            kept = holder and not ready_team and _store_state(team, state, igt_ms)
+            if holder and (kept or ready_team):
                 target = next(
                     (
                         m
@@ -719,7 +735,7 @@ async def store_state(
                     flip = await _flip(
                         session_maker, db, room, team, target, handoff_id=handoff_id, graph=graph
                     )
-                else:
+                elif kept:
                     await db.commit()
             race_id, team_id = team.race_id, team.id
         if flip is not None:
