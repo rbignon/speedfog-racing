@@ -137,3 +137,67 @@ export function relayChoiceFor(value: string): {
 } {
   return value === NEW_TEAM ? { create_team: true } : { relay_team_id: value };
 }
+
+/** A live row as the leaderboard delivers it: a runner on a solo race, a team
+ * (id = team id, `relay_members` set) on a relay race. */
+interface LiveRow {
+  id: string;
+  twitch_username: string;
+  status: string;
+  relay_members?: { participant_id: string; status: string }[] | null;
+}
+
+/** The viewer's own live row: on a relay race the row of the team listing
+ * their participant id, else the row with their username (a solo race). */
+export function ownLiveRow<R extends LiveRow>(
+  rows: R[],
+  participantId: string,
+  username: string,
+): R | null {
+  const team = rows.find((r) =>
+    r.relay_members?.some((m) => m.participant_id === participantId),
+  );
+  return team ?? rows.find((r) => r.twitch_username === username) ?? null;
+}
+
+/** The status that says whether the viewer's run is on: a relay member who is
+ * out (abandoned, disqualified) while their team plays on is out; otherwise
+ * the row's own status. */
+export function ownRunStatus(
+  row: LiveRow | null,
+  participantId: string,
+): string | undefined {
+  const own = row?.relay_members?.find(
+    (m) => m.participant_id === participantId,
+  );
+  if (own && (own.status === "abandoned" || own.status === "disqualified")) {
+    return own.status;
+  }
+  return row?.status;
+}
+
+/** Whether a replacement of the live rows needs the REST race re-fetched.
+ * A solo race: when the runner ids differ from the REST ones. A relay race in
+ * setup: always (every team change is broadcast, and the rows hold teams, not
+ * the team list). A relay race otherwise: when the members the teams list
+ * differ from the REST participants. Nothing before the race has loaded. */
+export function needsRaceRefetch(input: {
+  isRelay: boolean;
+  raceStatus: string;
+  loaded: boolean;
+  rows: { id: string; relay_members?: { participant_id: string }[] | null }[];
+  restIds: string[];
+}): boolean {
+  const { isRelay, raceStatus, loaded, rows, restIds } = input;
+  if (isRelay && raceStatus === "setup") return loaded;
+  if (rows.length === 0) return false;
+  const liveIds = new Set(
+    isRelay
+      ? rows.flatMap((r) =>
+          (r.relay_members ?? []).map((m) => m.participant_id),
+        )
+      : rows.map((r) => r.id),
+  );
+  const rest = new Set(restIds);
+  return liveIds.size !== rest.size || [...liveIds].some((id) => !rest.has(id));
+}

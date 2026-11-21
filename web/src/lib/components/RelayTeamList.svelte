@@ -71,14 +71,26 @@
   let changingId = $state<string | null>(null);
   let menuFor = $state<string | null>(null);
 
-  async function run(action: () => Promise<RaceDetail | void>) {
+  /** Runs a REST action; true when it succeeded. A refusal broadcasts
+   * nothing, so the list could be stale (a full or deleted team): re-read the
+   * race and keep the server's message on screen. */
+  async function run(
+    action: () => Promise<RaceDetail | void>,
+  ): Promise<boolean> {
     busy = true;
     error = null;
     try {
       const race = await action();
       if (race) onChanged(race);
+      return true;
     } catch (e) {
       error = e instanceof Error ? e.message : "Something went wrong";
+      try {
+        onChanged(await fetchRace(raceId));
+      } catch {
+        // The refusal message stays; the next broadcast refreshes the list.
+      }
+      return false;
     } finally {
       busy = false;
     }
@@ -100,15 +112,16 @@
       renamingId = null;
       return;
     }
-    await run(() => updateRelayTeam(raceId, team.id, { name }));
-    if (!error) renamingId = null;
+    if (await run(() => updateRelayTeam(raceId, team.id, { name }))) {
+      renamingId = null;
+    }
   }
 
   async function chooseFirstRunner(team: RelayTeam, participantId: string) {
-    await run(() =>
+    const ok = await run(() =>
       updateRelayTeam(raceId, team.id, { first_runner_id: participantId }),
     );
-    if (!error) changingId = null;
+    if (ok) changingId = null;
   }
 
   function takeSeat(team: RelayTeam) {
@@ -136,17 +149,31 @@
     return run(() => createRelayTeam(raceId, null));
   }
 
-  function setRunnersCreateTeams(allowed: boolean) {
-    return run(async () => {
+  let toggleEl = $state<HTMLInputElement | undefined>();
+
+  async function setRunnersCreateTeams(allowed: boolean) {
+    const ok = await run(async () => {
       await updateRace(raceId, { relay_runners_create_teams: allowed });
       return fetchRace(raceId);
     });
+    // The box is one-way: after a refusal drive it back to the server's state.
+    if (!ok && toggleEl) toggleEl.checked = runnersCreateTeams;
   }
 
   function nameOf(id: string | null): string {
     return participants.find((p) => p.id === id)?.user.twitch_username ?? "";
   }
 </script>
+
+<svelte:window
+  onclick={(e) => {
+    if (menuFor && !(e.target as HTMLElement).closest(".member"))
+      menuFor = null;
+  }}
+  onkeydown={(e) => {
+    if (e.key === "Escape") menuFor = null;
+  }}
+/>
 
 <div class="relay-teams">
   {#each view as { team, members } (team.id)}
@@ -239,6 +266,7 @@
           isLive={mp.isLive}
           streamUrl={mp.streamUrl}
           canRemove={viewer.isOrganizer && mp.user.id !== organizerUserId}
+          removeTitle="Move or remove"
           onRemove={() => (menuFor = menuFor === mp.id ? null : mp.id)}
         />
         {#if menuFor === mp.id}
@@ -279,6 +307,7 @@
     <label class="create-toggle">
       <input
         type="checkbox"
+        bind:this={toggleEl}
         checked={runnersCreateTeams}
         onchange={(e) => setRunnersCreateTeams(e.currentTarget.checked)}
         disabled={busy}

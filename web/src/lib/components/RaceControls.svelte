@@ -43,8 +43,9 @@
   // A relay race has its own rule, for every role: two teams, each with two
   // ready runners (the server's relay_start_error).
   let isRelay = $derived(race.relay_team_size != null);
+  // Only in setup, where the start button lives: no work per live tick later.
   let relayBlocker = $derived(
-    isRelay
+    isRelay && raceStatus === "setup"
       ? relayStartBlocker(
           race.relay_teams,
           liveStatusById ??

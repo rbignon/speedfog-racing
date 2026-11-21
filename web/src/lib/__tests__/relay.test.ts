@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import type { RelayTeam } from "$lib/api";
 import {
   isValidRelayTeamSize,
+  needsRaceRefetch,
+  ownLiveRow,
+  ownRunStatus,
   relayCap,
   relayCapSentence,
   relayCapacity,
@@ -200,5 +203,99 @@ describe("teamChoiceOptions", () => {
   it("turns a value into the request body", () => {
     expect(relayChoiceFor("a")).toEqual({ relay_team_id: "a" });
     expect(relayChoiceFor("new")).toEqual({ create_team: true });
+  });
+});
+
+describe("ownLiveRow", () => {
+  const row = (id: string, username: string, ids: string[] | null) => ({
+    id,
+    twitch_username: username,
+    status: "playing",
+    relay_members: ids?.map((participant_id) => ({
+      participant_id,
+      status: "playing",
+    })),
+  });
+  const rows = [
+    row("team-a", "team-a1", ["p1", "p2"]),
+    row("team-b", "team-b1", ["p3"]),
+    row("team-c", "team-c1", []),
+  ];
+
+  it("finds the team listing the participant", () => {
+    expect(ownLiveRow(rows, "p3", "bob")?.id).toBe("team-b");
+  });
+
+  it("is null for a viewer no team lists, and a team with no members matches nobody", () => {
+    expect(ownLiveRow(rows, "p9", "bob")).toBeNull();
+  });
+
+  it("falls back to the username on a solo race", () => {
+    const solo = [row("s1", "alice", null), row("s2", "bob", null)];
+    expect(ownLiveRow(solo, "p2", "bob")?.id).toBe("s2");
+  });
+});
+
+describe("ownRunStatus", () => {
+  const team = (own: string) => ({
+    id: "t",
+    twitch_username: "team-t",
+    status: "playing",
+    relay_members: [{ participant_id: "p1", status: own }],
+  });
+
+  it("is the member's own status once they are out, else the row's", () => {
+    expect(ownRunStatus(team("abandoned"), "p1")).toBe("abandoned");
+    expect(ownRunStatus(team("disqualified"), "p1")).toBe("disqualified");
+    expect(ownRunStatus(team("ready"), "p1")).toBe("playing");
+    expect(ownRunStatus(team("abandoned"), "other")).toBe("playing");
+    expect(ownRunStatus(null, "p1")).toBeUndefined();
+  });
+});
+
+describe("needsRaceRefetch", () => {
+  const solo = [{ id: "a" }, { id: "b" }];
+  const teams = [
+    {
+      id: "t1",
+      relay_members: [{ participant_id: "a" }, { participant_id: "b" }],
+    },
+    { id: "t2", relay_members: [{ participant_id: "c" }] },
+  ];
+
+  it("compares runner ids on a solo race", () => {
+    const base = { isRelay: false, raceStatus: "running", loaded: true };
+    expect(needsRaceRefetch({ ...base, rows: solo, restIds: ["b", "a"] })).toBe(
+      false,
+    );
+    expect(needsRaceRefetch({ ...base, rows: solo, restIds: ["a"] })).toBe(
+      true,
+    );
+    expect(needsRaceRefetch({ ...base, rows: [], restIds: ["a"] })).toBe(false);
+  });
+
+  it("re-fetches on every replacement of a relay race in setup, once loaded", () => {
+    const base = {
+      isRelay: true,
+      raceStatus: "setup",
+      rows: teams,
+      restIds: ["a", "b", "c"],
+    };
+    expect(needsRaceRefetch({ ...base, loaded: true })).toBe(true);
+    expect(needsRaceRefetch({ ...base, loaded: false })).toBe(false);
+  });
+
+  it("re-fetches a running relay race only when its members changed", () => {
+    const base = {
+      isRelay: true,
+      raceStatus: "running",
+      loaded: true,
+      rows: teams,
+    };
+    expect(needsRaceRefetch({ ...base, restIds: ["c", "a", "b"] })).toBe(false);
+    expect(needsRaceRefetch({ ...base, restIds: ["a", "b", "c", "d"] })).toBe(
+      true,
+    );
+    expect(needsRaceRefetch({ ...base, restIds: ["a", "b"] })).toBe(true);
   });
 });

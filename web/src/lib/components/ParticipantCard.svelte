@@ -12,6 +12,8 @@
     streamUrl?: string | null;
     canRemove?: boolean;
     onRemove?: () => void;
+    /** Tooltip of the cross (a relay race's cross opens a move menu). */
+    removeTitle?: string;
   }
 
   let {
@@ -23,6 +25,7 @@
     streamUrl = null,
     canRemove = false,
     onRemove,
+    removeTitle = "Remove participant",
   }: Props = $props();
 
   let effectiveStatus = $derived(liveStatus ?? participant.status);
@@ -105,7 +108,7 @@
     <span class="organizer-badge">Org</span>
   {/if}
   {#if canRemove}
-    <button class="remove-btn" onclick={onRemove} title="Remove participant"
+    <button class="remove-btn" onclick={onRemove} title={removeTitle}
       >&times;</button
     >
   {/if}
