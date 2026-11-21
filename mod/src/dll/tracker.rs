@@ -1784,7 +1784,8 @@ impl RaceTracker {
     /// never got its plan (`None`: its thread panicked or never started, and
     /// nothing was written), on the frame thread, with one log line: the
     /// writes made by kind, those that failed, those left and why, the time
-    /// since the ask. Nothing of it is written after this.
+    /// since the ask. The machine gets `end` too (a load that cut the writes
+    /// starts the take again). Nothing of this apply is written after this.
     fn finish_relay_apply(&mut self, run: ApplyRun, end: Option<ApplyEnd>) {
         let now = Instant::now();
         let handoff_id = run.handoff_id();
@@ -1815,7 +1816,7 @@ impl RaceTracker {
             ),
         }
         self.machine
-            .relay_state_applied(handoff_id, generation, now);
+            .relay_state_applied(handoff_id, generation, end, now);
     }
 
     /// Hand the relay job whose thread ended to the machine, with the
