@@ -292,7 +292,7 @@ mod tests {
             // Narrow text still gets the menu's width.
             let b = relay_block_bounds(&l, display, 4, RelayBlockWidths::default());
             assert!((b[2] - b[0] - l.menu_width).abs() < 0.01);
-            assert!((b[0] + b[2]) * 0.5 - l.center_x < 0.01);
+            assert!(((b[0] + b[2]) * 0.5 - l.center_x).abs() < 0.01);
         }
     }
 }

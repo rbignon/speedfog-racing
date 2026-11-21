@@ -1467,40 +1467,67 @@ impl RaceMachine {
         self.relay_menu.is_open() && !self.is_countdown_active(now)
     }
 
+    /// The panel reads the team's numbers (its IGT and deaths, the zone the
+    /// server names) rather than the local game's: the runner waits for the
+    /// baton in a relay being played. A take received counts as holder.
+    pub fn relay_panel_is_team(&self) -> bool {
+        self.relay_waiting_live()
+    }
+
+    /// The zone the team's holder is in, as the server names it; `None`
+    /// when it names none.
+    pub fn relay_zone_name(&self) -> Option<&str> {
+        self.relay
+            .as_ref()?
+            .zone_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|zone| !zone.is_empty())
+    }
+
     /// The waiting banner's last line: the view's, except that a take
     /// request in flight reads `REQUEST_TEXT` and a runner not yet ready to
     /// take (not at the Chapel with the lock asserted) reads `NOT_READY_TEXT`
     /// instead of a hold prompt that would do nothing.
     pub fn relay_wait_detail(&self) -> &str {
+        self.relay_wait_prompt().0
+    }
+
+    /// The waiting banner's last line and whether it is the hold prompt
+    /// itself (the hold bar goes under it), decided together.
+    fn relay_wait_prompt(&self) -> (&str, bool) {
         let Some(wait) = self.relay_view.as_ref().and_then(|v| v.wait.as_ref()) else {
-            return "";
+            return ("", false);
         };
         if wait.hold_bar {
             if self.relay_request.is_some() {
-                return relay_view::REQUEST_TEXT;
+                return (relay_view::REQUEST_TEXT, false);
             }
             if self.relay_ready_sent != Some(true) {
-                return relay_view::NOT_READY_TEXT;
+                return (relay_view::NOT_READY_TEXT, false);
             }
         }
-        &wait.detail
+        (&wait.detail, wait.hold_bar)
     }
 
     /// Whether the hold bar is drawn under the waiting banner: the prompt is
     /// the hold prompt and nothing else stands in its place.
     pub fn relay_wait_hold_bar(&self) -> bool {
-        self.relay_view
-            .as_ref()
-            .and_then(|v| v.wait.as_ref())
-            .is_some_and(|wait| wait.hold_bar)
-            && self.relay_wait_detail() == self.relay_view_detail()
+        self.relay_wait_prompt().1
     }
 
-    fn relay_view_detail(&self) -> &str {
-        self.relay_view
-            .as_ref()
-            .and_then(|v| v.wait.as_ref())
-            .map_or("", |wait| wait.detail.as_str())
+    /// The key hint at the end of the BATON line: the view's, except that
+    /// the take hint is shown only while the take is offered (not while the
+    /// banner says "Not ready yet" or "Waiting for the server").
+    pub fn relay_baton_hint(&self, now: Instant) -> &str {
+        let Some(view) = self.relay_view.as_ref() else {
+            return "";
+        };
+        let take_hint = view.wait.as_ref().is_some_and(|wait| wait.hold_bar);
+        if take_hint && !self.relay_take_offered(now) {
+            return "";
+        }
+        &view.baton_hint
     }
 
     /// The menu's key hints: the view's, or `REQUEST_TEXT` while a handoff
@@ -17043,6 +17070,44 @@ mod tests {
         assert_eq!(h.relay_menu_hint(), hint);
         h.relay_request = Some(t0);
         assert_eq!(h.relay_menu_hint(), REQUEST_TEXT);
+    }
+
+    #[test]
+    fn the_take_hint_shows_only_while_the_take_is_offered() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, offline_holder_info(0), t0, 0);
+        // The view carries the hint, the prompt says "Not ready yet".
+        assert_eq!(m.relay_view().unwrap().baton_hint, "F8 take");
+        assert_eq!(m.relay_baton_hint(t0), "");
+        m.relay_ready_sent = Some(true);
+        assert_eq!(m.relay_baton_hint(t0), "F8 take");
+        m.relay_request = Some(t0);
+        assert_eq!(m.relay_baton_hint(t0), "");
+        // A holder's hint is the view's.
+        let h = relay_machine("holder", t0);
+        assert_eq!(h.relay_baton_hint(t0), "F8 pass");
+    }
+
+    #[test]
+    fn a_waiting_runner_reads_the_team_panel_and_a_holder_does_not() {
+        let t0 = Instant::now();
+        let w = relay_machine("waiting", t0);
+        assert!(w.relay_panel_is_team());
+        assert_eq!(w.relay_zone_name(), Some("Stormveil Castle"));
+        let h = relay_machine("holder", t0);
+        assert!(!h.relay_panel_is_team());
+        // Setup: nothing is played, the local reads stand.
+        let mut s = RaceMachine::new(1, String::new(), false, t0);
+        s.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
+        assert!(!s.relay_panel_is_team());
+        assert_eq!(s.relay_zone_name(), None);
+        // A blank zone is none.
+        let mut info = relay_info("waiting");
+        info.zone_name = Some("  ".to_string());
+        let mut b = relay_machine("waiting", t0);
+        update(&mut b, info, t0, 0);
+        assert_eq!(b.relay_zone_name(), None);
     }
 
     #[test]

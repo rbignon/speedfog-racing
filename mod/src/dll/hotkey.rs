@@ -6,6 +6,8 @@
 
 use hudhook::imgui::{Key, Ui};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use windows::Win32::System::Threading::GetCurrentProcessId;
+use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
 
 /// Key name <-> imgui key table, used for both parsing and serialization.
 /// When several names map to the same key ("escape"/"esc"), the first entry
@@ -107,6 +109,44 @@ impl Hotkey {
     /// Check if this hotkey was just pressed this frame
     pub fn is_just_pressed(&self, ui: &Ui) -> bool {
         ui.is_key_pressed_no_repeat(self.key)
+    }
+
+    /// The key's level: held down now, in the game's window. ImGui only
+    /// learns of a release through the game's own window messages, so a key
+    /// released while another window has the focus would read down for good:
+    /// the level drops as soon as the game is not the foreground window, and
+    /// `stale` keeps it down until ImGui reports the key up, so returning to
+    /// the game with the key already released cannot read as a hold. The
+    /// foreground check runs only while the key reads down.
+    pub fn is_down(&self, ui: &Ui, stale: &mut bool) -> bool {
+        if !ui.is_key_down(self.key) {
+            *stale = false;
+            return false;
+        }
+        if *stale {
+            return false;
+        }
+        if !game_has_focus() {
+            *stale = true;
+            return false;
+        }
+        true
+    }
+
+    /// The key's name in upper case ("F8"), as the overlay's hints write it.
+    pub fn label(&self) -> String {
+        key_to_name(self.key).to_uppercase()
+    }
+}
+
+/// The foreground window belongs to this process.
+fn game_has_focus() -> bool {
+    let mut pid = 0u32;
+    // SAFETY: plain queries; a null foreground window gives pid 0.
+    unsafe {
+        let hwnd = GetForegroundWindow();
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        pid != 0 && pid == GetCurrentProcessId()
     }
 }
 

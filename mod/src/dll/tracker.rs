@@ -42,6 +42,7 @@ use super::config::RaceConfig;
 use super::death_icon::DeathIcon;
 use super::livesplit::LiveSplitClient;
 use super::race_item_icons::RaceItemIcons;
+use super::ui::CutCache;
 use super::unacked_store::UnackedStore;
 use super::websocket::RaceWebSocketClient;
 
@@ -71,6 +72,10 @@ pub(crate) struct RenderBuffers {
     pub countdown_label: String,
     /// Seconds left of the reminder row being drawn.
     pub reminder_secs: String,
+    /// The texts of the relay block (waiting banner or menu), cut to width.
+    pub relay_block_cuts: CutCache,
+    /// The texts of the panel's BATON line, cut to width.
+    pub relay_line_cuts: CutCache,
 }
 
 impl Default for RenderBuffers {
@@ -87,6 +92,8 @@ impl Default for RenderBuffers {
             banner_text: String::new(),
             countdown_label: String::new(),
             reminder_secs: String::new(),
+            relay_block_cuts: CutCache::default(),
+            relay_line_cuts: CutCache::default(),
         }
     }
 }
@@ -353,6 +360,9 @@ pub struct RaceTracker {
     #[cfg(debug_assertions)]
     pub(crate) show_debug: bool,
     pub(crate) leaderboard_view: LeaderboardView,
+    /// The baton key read down while the game had lost the focus: the level
+    /// stays down until ImGui reports the key up (see `Hotkey::is_down`).
+    relay_key_stale: bool,
     /// Hard latch: a durably-broken update loop; rendering and updates stop
     /// for the session (set after MAX_CONSECUTIVE_UPDATE_PANICS).
     pub(crate) tracking_disabled: bool,
@@ -531,6 +541,9 @@ impl RaceTracker {
             machine.restore_unacked(saved);
         }
         let unacked_store = dll_dir.map(UnackedStore::spawn);
+        if let Some(hotkey) = config.keybindings.relay.as_ref() {
+            machine.set_relay_key_label(hotkey.label());
+        }
 
         info!("RaceTracker initialized");
 
@@ -550,6 +563,7 @@ impl RaceTracker {
             #[cfg(debug_assertions)]
             show_debug: false,
             leaderboard_view: LeaderboardView::Shown(leaderboard_mode),
+            relay_key_stale: false,
             tracking_disabled: false,
             overlay_panicked: false,
             consecutive_update_panics: 0,
@@ -765,6 +779,13 @@ impl RaceTracker {
         };
 
         let loaded = snapshot.position_readable;
+        // The baton key's level; not even read outside a relay race.
+        let relay_key_down = match self.config.keybindings.relay.as_ref() {
+            Some(hotkey) if self.machine.relay().is_some() => {
+                hotkey.is_down(ui, &mut self.relay_key_stale)
+            }
+            _ => false,
+        };
         let input = TickInput {
             snapshot,
             connected,
@@ -773,8 +794,7 @@ impl RaceTracker {
             flag_reads,
             weapons,
             flag_reader_ok,
-            // The key binding comes with the overlay lot.
-            relay_key_down: false,
+            relay_key_down,
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);

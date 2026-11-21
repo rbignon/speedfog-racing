@@ -213,6 +213,15 @@ pub struct KeyBindings {
         serialize_with = "serialize_optional_hotkey"
     )]
     pub toggle_leaderboard: Option<Hotkey>,
+    /// The baton key of a relay race: the holder's menu and a waiting
+    /// runner's take; inert on any other race (default: F8, "none" to
+    /// disable)
+    #[serde(
+        default = "default_relay",
+        deserialize_with = "deserialize_optional_hotkey",
+        serialize_with = "serialize_optional_hotkey"
+    )]
+    pub relay: Option<Hotkey>,
 }
 
 fn default_toggle_ui() -> Option<Hotkey> {
@@ -228,6 +237,10 @@ fn default_toggle_leaderboard() -> Option<Hotkey> {
     Some(Hotkey { key: Key::F10 })
 }
 
+fn default_relay() -> Option<Hotkey> {
+    Some(Hotkey { key: Key::F8 })
+}
+
 impl Default for KeyBindings {
     fn default() -> Self {
         Self {
@@ -235,6 +248,7 @@ impl Default for KeyBindings {
             #[cfg(debug_assertions)]
             toggle_debug: default_toggle_debug(),
             toggle_leaderboard: default_toggle_leaderboard(),
+            relay: default_relay(),
         }
     }
 }
