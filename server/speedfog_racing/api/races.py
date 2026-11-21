@@ -99,6 +99,7 @@ from speedfog_racing.services.pool_service import format_pool_display_name
 from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.relay import (
+    RelayTeamRow,
     leaderboard_entries,
     lock_race_teams,
     prepare_relay_start,
@@ -134,7 +135,7 @@ from speedfog_racing.websocket import (
     broadcast_race_state_update,
 )
 from speedfog_racing.websocket.race.manager import manager
-from speedfog_racing.websocket.race.relay import take_member_out
+from speedfog_racing.websocket.race.relay import send_row_relay_updates, take_member_out
 from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)
@@ -2066,6 +2067,14 @@ async def start_race(
         room.mark_participants_playing()
         await room.broadcast_chat_participants(start_participants_json)
         await room.broadcast_chat_public(start_public_json, race)
+        if race.is_relay and race.seed is not None:
+            # The start gave each team its holder and status and left out the
+            # members not ready: every connected member's mod learns its own
+            # role now, not at the holder's first report.
+            graph = race.seed.graph_json
+            for row in leaderboard_entries(race, graph):
+                if isinstance(row, RelayTeamRow):
+                    await send_row_relay_updates(room, row, graph)
 
     # Fire-and-forget Discord notification (public races only). Speedrun and Set
     # Seed races are announced at creation only.
