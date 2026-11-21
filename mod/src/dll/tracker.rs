@@ -828,6 +828,48 @@ impl RaceTracker {
                     );
                     self.execute_effects(answer);
                 }
+                Effect::WriteCharacterStats {
+                    attributes,
+                    level,
+                    runes,
+                } => {
+                    // The stat write arrives with the shell's game access
+                    // for applying a state.
+                    info!(
+                        ?attributes,
+                        level, runes, "[RELAY] Stat write not implemented yet"
+                    );
+                }
+                Effect::SetIgt { ms } => {
+                    if self.game_state.write_igt(ms).is_some() {
+                        info!(ms, "[RELAY] IGT written");
+                    } else {
+                        warn!(ms, "[RELAY] IGT not written (IGT unwritable)");
+                    }
+                }
+                Effect::ApplyRelayItems {
+                    handoff_id,
+                    generation,
+                    items,
+                    flags,
+                    grace_flags,
+                } => {
+                    // The apply arrives with the worker thread that gives
+                    // items and raises flags: until then it is over at once,
+                    // nothing given.
+                    info!(
+                        handoff_id = %handoff_id,
+                        items = items.len(),
+                        flags = flags.len(),
+                        graces = grace_flags.len(),
+                        "[RELAY] State apply not implemented yet"
+                    );
+                    self.machine
+                        .relay_state_applied(&handoff_id, generation, Instant::now());
+                }
+                Effect::SendRelayTaken { handoff_id } => {
+                    self.ws_client.send_relay_taken(handoff_id);
+                }
                 Effect::SendStatusUpdate {
                     igt_ms,
                     death_count,

@@ -26,7 +26,10 @@ use crate::core::protocol::{
     ItemReminder, ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods,
     RaceStatus, RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
 };
-use crate::core::relay::{self, CaptureInFlight, FlagWarp, PendingRelease, WarpStep};
+use crate::core::relay::{
+    self, ApplyInFlight, CaptureInFlight, FlagWarp, PendingRelease, PendingTake, TakePhase,
+    WarpStep,
+};
 use crate::core::relay_items;
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
@@ -165,6 +168,18 @@ pub enum MachineMessage {
     RelayRelease {
         handoff_id: String,
         to_name: String,
+    },
+    /// The server gives this runner the baton: the state to apply (`None`
+    /// when none is known yet), the team's IGT, the bosses the team killed,
+    /// and the gate whose exit it restarts from with that zone's name
+    /// (`None` before the team's first gate: it starts from the Chapel).
+    RelayTake {
+        handoff_id: String,
+        state: Option<CharacterState>,
+        igt_ms: u32,
+        defeat_flags: Vec<u32>,
+        warp_flag: Option<u32>,
+        zone_name: Option<String>,
     },
     /// The server refused a relay request: `message` is shown, `code` logged.
     RelayRefused {
@@ -331,6 +346,38 @@ pub enum Effect {
         handoff_id: Option<String>,
         state: CharacterState,
         igt_ms: u32,
+    },
+    /// Write the character's attributes (vigor to arcane, in the game's
+    /// order), level and runes in place of the game's.
+    WriteCharacterStats {
+        attributes: [u32; 8],
+        level: u32,
+        runes: u32,
+    },
+    /// Overwrite the in-game timer (see `GameState::write_igt`).
+    SetIgt {
+        ms: u32,
+    },
+    /// Apply a take's world on the shell's worker thread: give the `items`
+    /// the character lacks (`relay_items::missing_items`, each id checked
+    /// against its param table first), raise the boss defeat `flags` and
+    /// the `grace_flags` that are graces of this game. Contract with the
+    /// shell, as for `CaptureRelayState`: the outcome is delivered on the
+    /// game thread, as an input of the machine
+    /// (`RaceMachine::relay_state_applied`) carrying this `generation`,
+    /// whatever part of it could not be done (the shell logs that). A shell
+    /// that never answers is tolerated: the machine abandons the apply after
+    /// `relay::APPLY_ABANDON` and ignores a late answer.
+    ApplyRelayItems {
+        handoff_id: String,
+        generation: u64,
+        items: Vec<u32>,
+        flags: Vec<u32>,
+        grace_flags: Vec<u32>,
+    },
+    /// Send `relay_taken`: the take is applied and its warp flag raised.
+    SendRelayTaken {
+        handoff_id: String,
     },
     SendStatusUpdate {
         igt_ms: u32,
@@ -674,6 +721,26 @@ pub struct RaceMachine {
     /// The recipient of the last answered release and when it was answered:
     /// the banner waits for the server's flip.
     relay_passed: Option<(String, Instant)>,
+    /// The `relay_take` received and not yet acknowledged; given up when
+    /// the server names another holder or none, the runner's relay ends or
+    /// the race stops. There is no local take timeout.
+    relay_take: Option<PendingTake>,
+    /// The apply asked of the shell and not yet answered (one at a time).
+    relay_apply: Option<ApplyInFlight>,
+    /// Generation of the last apply asked.
+    relay_apply_gen: u64,
+    /// The last take this process acknowledged: the server sends it again
+    /// while it has not heard that `relay_taken`.
+    relay_taken_id: Option<String>,
+    /// That take came again: its `relay_taken` goes out on the next
+    /// connected frame.
+    relay_taken_due: bool,
+    /// Until when the holder role a `relay_taken` gave outlives an update
+    /// that reads otherwise (`relay::TAKEN_CONFIRM`); `None` once the server
+    /// has spoken or the time is up.
+    relay_confirm_until: Option<Instant>,
+    /// The warp to the exit of the gate a take restarts from.
+    relay_zone_warp: Option<FlagWarp>,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
     /// The text of the reminder row his `Found` added: the row goes when he
@@ -858,6 +925,13 @@ impl RaceMachine {
             relay_retry_at: None,
             relay_checkpoint_due: false,
             relay_passed: None,
+            relay_take: None,
+            relay_apply: None,
+            relay_apply_gen: 0,
+            relay_taken_id: None,
+            relay_taken_due: false,
+            relay_confirm_until: None,
+            relay_zone_warp: None,
             hunter: Hunter::default(),
             hunter_row: None,
             last_loading_exit: None,
@@ -1232,11 +1306,31 @@ impl RaceMachine {
         self.relay_lock
     }
 
-    /// The runner's relay role: the cached one the server named. It may be
+    /// The runner's relay role: the one the server named, except that a
+    /// take received reads `Holder` until it is acknowledged or given up,
+    /// and so does the confirmation window after its `relay_taken`
+    /// (`relay::TAKEN_CONFIRM`), whatever the cached info reads. It may be
     /// `Some(RelayRole::Unknown)`: callers match `Holder` and `Waiting`
     /// explicitly, never `!= Waiting` or `!= Holder`.
     pub fn relay_role(&self) -> Option<RelayRole> {
-        self.relay.as_ref().map(|r| r.role)
+        let relay = self.relay.as_ref()?;
+        if self.relay_take.is_some() || self.relay_confirm_until.is_some() {
+            return Some(RelayRole::Holder);
+        }
+        Some(relay.role)
+    }
+
+    /// A take was received and is neither acknowledged nor given up.
+    pub fn relay_take_pending(&self) -> bool {
+        self.relay_take.is_some()
+    }
+
+    /// Progress is held: from a take's receipt until its `relay_taken`,
+    /// nothing the server would judge against the team goes out (status
+    /// updates, event flags, zone queries, relay states) and the flag scans
+    /// capture nothing. The gate every progress send checks.
+    pub fn progress_held(&self) -> bool {
+        self.relay_take.is_some()
     }
 
     /// The runner's own entry in its team. Its `status`, `zones` and
@@ -1284,31 +1378,46 @@ impl RaceMachine {
             && !self.relay_over()
     }
 
-    /// The runner holds the baton of a relay being played: the only state in
-    /// which its state is asked for or sent. An unknown role is no holder.
+    /// The runner holds the baton of a relay being played, with no take in
+    /// progress: the only state in which its state is asked for or sent. An
+    /// unknown role is no holder.
     fn relay_holder_live(&self) -> bool {
-        self.relay_role() == Some(RelayRole::Holder) && self.relay_live()
+        self.relay_take.is_none()
+            && self.relay_role() == Some(RelayRole::Holder)
+            && self.relay_live()
     }
 
     /// The socket is down: what was waiting on it is stale. A release the
     /// server will have cancelled is forgotten (a reconnection does not
-    /// repeat it), a capture in flight will answer for nothing, and a
-    /// checkpoint not yet asked is dropped (the next zone sends the latest).
+    /// repeat it), a capture in flight will answer for nothing, a checkpoint
+    /// not yet asked is dropped (the next zone sends the latest), and an
+    /// acknowledgement due again is dropped (the server sends its take
+    /// again after the next `auth_ok` while it awaits it). A take in
+    /// progress goes on.
     fn relay_link_lost(&mut self) {
         self.relay_release = None;
         self.relay_checkpoint_due = false;
+        self.relay_taken_due = false;
         if let Some(capture) = self.relay_capture.as_mut() {
             capture.link_lost = true;
         }
     }
 
-    /// Replace the relay info whole. A role turning `Waiting` drops the zone
-    /// just left (a waiting runner is not in the world its team is playing:
-    /// its exits must not stay on the panel); an unknown role changes
-    /// nothing.
-    fn set_relay(&mut self, relay: Option<RelayInfo>) {
-        let turns_waiting = relay.as_ref().is_some_and(|r| r.role == RelayRole::Waiting)
-            && self.relay_role() != Some(RelayRole::Waiting);
+    /// Replace the relay info whole, then read it against a take in
+    /// progress and the confirmation window after a `relay_taken`. The take
+    /// is given up when the info names another holder or none, or there is
+    /// no relay any more. The window ends when the info confirms the runner
+    /// as holder, names another holder or none, reads it waiting with the
+    /// baton not free, or comes with an `auth_ok` (`from_auth`); it holds
+    /// through the update of the server's take timer (the runner named,
+    /// waiting, the baton free) and through an unknown role. A role turning
+    /// `Waiting` drops the zone just left; an unknown role changes nothing.
+    /// Returns whether the role turned `Waiting`.
+    fn set_relay(&mut self, relay: Option<RelayInfo>, from_auth: bool, now: Instant) -> bool {
+        let before = self.relay_role();
+        if self.relay_confirm_until.is_some_and(|until| now >= until) {
+            self.relay_confirm_until = None;
+        }
         // `my_participant_id` is set before the relay info, by the same
         // `auth_ok`, so the index is right for the members it indexes.
         self.relay_member = relay.as_ref().and_then(|r| {
@@ -1325,15 +1434,71 @@ impl RaceMachine {
             self.relay_checkpoint_due = false;
             self.relay_passed = None;
         }
+        let named = relay.as_ref().and_then(|r| r.holder_id.as_deref());
+        let named_me = named.is_some() && named == self.my_participant_id.as_deref();
+        let window_holds = !from_auth
+            && named_me
+            && relay.as_ref().is_some_and(|r| match r.role {
+                RelayRole::Holder => false,
+                RelayRole::Waiting => r.baton_free_in_s == Some(0),
+                RelayRole::Unknown => true,
+            });
+        let reason = match (&relay, named) {
+            (None, _) => "no relay",
+            (Some(_), None) => "no holder",
+            (Some(_), Some(_)) => "another holder",
+        };
         self.relay = relay;
-        if turns_waiting
-            && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
+        if !named_me {
+            self.relay_give_up_take(reason);
+        }
+        if self.relay_confirm_until.is_some() && !window_holds {
+            info!(confirmed = named_me, "[RELAY] Holder role window ended");
+            self.relay_confirm_until = None;
+        }
+        self.relay_turned_waiting(before)
+    }
+
+    /// Whether the role turned `Waiting` since `before`: then the zone just
+    /// left is dropped (a waiting runner is not in the world its team is
+    /// playing: its exits must not stay on the panel).
+    fn relay_turned_waiting(&mut self, before: Option<RelayRole>) -> bool {
+        let turned =
+            self.relay_role() == Some(RelayRole::Waiting) && before != Some(RelayRole::Waiting);
+        if turned && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
         {
             self.race_state.current_zone = None;
             self.pending_zone_update = None;
             self.pending_zone_received_at = None;
             self.zone_stall_warned = false;
             self.zone_version = self.zone_version.wrapping_add(1);
+        }
+        turned
+    }
+
+    /// Give up the take in progress, without `relay_taken` ever: the server
+    /// does not answer a `relay_taken` it ignores, so this is how the runner
+    /// learns that the baton went elsewhere. What it already wrote stays (a
+    /// later take overwrites the stats and the IGT, items are a union), an
+    /// apply still in flight answers for nothing, and the lock follows the
+    /// role again.
+    fn relay_give_up_take(&mut self, reason: &'static str) {
+        if let Some(take) = self.relay_take.take() {
+            info!(handoff_id = %take.handoff_id, reason, "[RELAY] Take given up");
+        }
+    }
+
+    /// Give up a take once the runner's relay is over or the race stops
+    /// running. After every message and on every frame: one comparison
+    /// while no take is in progress.
+    fn relay_take_follows_race(&mut self) {
+        if self.relay_take.is_none() {
+            return;
+        }
+        if self.relay_over() {
+            self.relay_give_up_take("relay over");
+        } else if !self.is_race_running() {
+            self.relay_give_up_take("race not running");
         }
     }
 
@@ -1548,6 +1713,9 @@ impl RaceMachine {
     /// returns the side effects for the shell to execute, in order.
     pub fn handle_message(&mut self, msg: MachineMessage, now: Instant) -> Vec<Effect> {
         let mut effects = self.handle_message_inner(msg, now);
+        // A take ends with the runner's relay or the race, whatever message
+        // said so (a relay update, a race status, an auth_ok, a race info).
+        self.relay_take_follows_race();
         // An auth_ok names the participant: restored flags may go now.
         self.release_restored_flags(now);
         // After the release, so the depths it records reach LiveSplit now.
@@ -1661,7 +1829,7 @@ impl RaceMachine {
                 }
                 self.my_participant_id = Some(participant_id);
                 self.relay_ready_sent = None;
-                self.set_relay(relay);
+                self.set_relay(relay, true, now);
                 self.my_participant_index = self
                     .my_row_id()
                     .and_then(|id| participants.iter().position(|p| p.id == id));
@@ -2292,9 +2460,7 @@ impl RaceMachine {
             MachineMessage::RelayUpdate(relay) => {
                 self.last_received_debug = Some(format!("relay_update({:?})", relay.role));
                 debug!(role = ?relay.role, team_status = ?relay.team_status, "[RELAY] Update");
-                let was_waiting = self.relay_role() == Some(RelayRole::Waiting);
-                let turns_waiting = relay.role == RelayRole::Waiting && !was_waiting;
-                self.set_relay(Some(relay));
+                let turns_waiting = self.set_relay(Some(relay), false, now);
                 // The server's flip: only now is the baton passed. An answer
                 // older than the server's own wait for it was another
                 // handoff's (a takeover reads the same).
@@ -2325,6 +2491,7 @@ impl RaceMachine {
                 if !self.relay_holder_live() {
                     warn!(
                         role = ?self.relay_role(),
+                        take = self.relay_take.is_some(),
                         "[RELAY] Release ignored: not the holder of a live relay"
                     );
                 } else if self
@@ -2340,6 +2507,79 @@ impl RaceMachine {
                         handoff_id,
                         to_name,
                         deadline: now + relay::RELEASE_CAPTURE_TIMEOUT,
+                    });
+                }
+            }
+            MachineMessage::RelayTake {
+                handoff_id,
+                state,
+                igt_ms,
+                defeat_flags,
+                warp_flag,
+                zone_name,
+            } => {
+                self.last_received_debug = Some(format!("relay_take({handoff_id})"));
+                if self.relay.is_none() || self.relay_over() || !self.is_race_running() {
+                    warn!(handoff_id = %handoff_id, "[RELAY] Take ignored: no relay being played");
+                } else if self
+                    .relay_take
+                    .as_ref()
+                    .is_some_and(|take| take.handoff_id == handoff_id)
+                {
+                    // The server sends a take again after a reconnection:
+                    // the one in progress goes on, applied once.
+                    info!(handoff_id = %handoff_id, "[RELAY] Take received again, in progress");
+                } else if self.relay_taken_id.as_deref() == Some(handoff_id.as_str()) {
+                    // Applied already: its relay_taken died with the old
+                    // socket. Answered again, nothing written.
+                    info!(handoff_id = %handoff_id, "[RELAY] Take received again, acknowledged again");
+                    self.relay_taken_due = true;
+                } else {
+                    info!(
+                        handoff_id = %handoff_id,
+                        with_state = state.is_some(),
+                        igt_ms,
+                        ?warp_flag,
+                        "[RELAY] Take received"
+                    );
+                    if let Some(old) = self.relay_take.take() {
+                        info!(replaced = %old.handoff_id, "[RELAY] Take replaced by a newer one");
+                    }
+                    // What the waiting save buffered or left in flight: the
+                    // server ignored it from a waiting runner, and replayed
+                    // after relay_taken it would be heard as the team's.
+                    info!(
+                        buffered = self.flag_buffer.iter().count(),
+                        in_flight = self.in_flight_event_flags.len(),
+                        zone_queries = self.in_flight_zone_queries.len(),
+                        restored = self.restored_flags.as_ref().map_or(0, |s| s.flags.len()),
+                        zone = self.pending_zone_update.is_some(),
+                        "[RELAY] Progress of the waiting save dropped"
+                    );
+                    self.flag_buffer.clear_deferred();
+                    self.flag_buffer.clear_pending();
+                    self.in_flight_event_flags.clear();
+                    self.in_flight_zone_queries.clear();
+                    self.restored_flags = None;
+                    self.flush_restored = false;
+                    self.pending_zone_update = None;
+                    self.pending_zone_received_at = None;
+                    self.zone_stall_warned = false;
+                    self.relay_confirm_until = None;
+                    self.relay_taken_due = false;
+                    if self.relay_ready_sent == Some(true) {
+                        self.relay_ready_sent = Some(false);
+                        effects.push(Effect::SendRelayReady { ready: false });
+                    }
+                    self.relay_take = Some(PendingTake {
+                        handoff_id,
+                        state,
+                        igt_ms,
+                        defeat_flags,
+                        warp_flag,
+                        zone_name,
+                        received_at: now,
+                        phase: TakePhase::Received,
                     });
                 }
             }
@@ -2486,6 +2726,7 @@ impl RaceMachine {
             loading: self.pending_zone_update.is_some(),
             blackscreen: self.freeze_gate_open(now) || self.pending_zone_update.is_some(),
             poll_flags: !self.wrong_save
+                && !self.progress_held()
                 && !self.event_ids.is_empty()
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
             debug_flags: self.debug_flags_gate_open(now)
@@ -2496,13 +2737,15 @@ impl RaceMachine {
 
     /// Whether the shell must read the event flags this frame: 10Hz poll
     /// cadence, loading-screen exit scan, or the reconnect safety-net rescan.
+    /// Never while progress is held (`progress_held`): those scans would
+    /// capture nothing.
     pub fn wants_flag_reads(
         &self,
         needs: FrameNeeds,
         position_readable: bool,
         connected: bool,
     ) -> bool {
-        if self.wrong_save || self.event_ids.is_empty() {
+        if self.wrong_save || self.event_ids.is_empty() || self.progress_held() {
             return false;
         }
         needs.poll_flags
@@ -2639,6 +2882,7 @@ impl RaceMachine {
         now.duration_since(self.last_status_update) >= Duration::from_secs(1)
             && igt_ms > 0
             && !self.wrong_save
+            && !self.progress_held()
             && self.is_race_running()
             && !self.am_i_finished()
             && !self.is_countdown_active(now)
@@ -2658,11 +2902,15 @@ impl RaceMachine {
     /// follow every path a frame takes.
     fn tick_frame(&mut self, input: TickInput, now: Instant) -> Vec<Effect> {
         let mut effects = Vec::new();
+        // Progress held as the frame starts holds for the whole frame: the
+        // frame that acknowledges a take sends no progress after it, and
+        // progress resumes with the next one.
+        let held = self.progress_held();
         // The shell read this frame's window of boss flags just before the
         // tick: move the rotation past it now, while `boss_flags_to_read`
         // still names the same window (a kill or a save-reload flush below
-        // would change it).
-        if input.flag_reads.is_some() {
+        // would change it). Held progress reads nothing.
+        if input.flag_reads.is_some() && !held {
             self.advance_boss_reads();
         }
         self.frame_snapshot = input.snapshot;
@@ -2931,8 +3179,9 @@ impl RaceMachine {
             // Force one immediate flag scan to catch flags set during loading
             // (e.g. Erdtree burn, Maliketh warp) that the 10Hz poll couldn't read
             // because is_flag_set() returns None while position is unreadable.
-            // Skipped while frozen: no flag writes into a foreign save.
-            if !self.event_ids.is_empty() && !self.wrong_save {
+            // Skipped while frozen: no flag writes into a foreign save; and
+            // while progress is held: a flag stays as the scan found it.
+            if !self.event_ids.is_empty() && !self.wrong_save && !held {
                 let igt_ms = self.effective_igt_ms();
                 if let Some(ref reads) = input.flag_reads {
                     for &(flag_id, is_set) in reads {
@@ -2993,7 +3242,15 @@ impl RaceMachine {
                 }
             }
 
-            if input.connected
+            if held {
+                // No zone query while progress is held, and nothing deferred
+                // to send (the take's receipt dropped it, the scans capture
+                // nothing). A grace the warp hook caught is spent all the
+                // same.
+                if input.warp_capture.is_some() {
+                    effects.push(Effect::ClearWarpCapture);
+                }
+            } else if input.connected
                 && self.is_race_running()
                 && !self.am_i_finished()
                 && !self.is_countdown_active(now)
@@ -3071,7 +3328,7 @@ impl RaceMachine {
         if let Some(ok) = input.flag_reader_ok {
             self.last_flag_reader_ok = Some(ok);
         }
-        if poll_due && !self.wrong_save {
+        if poll_due && !self.wrong_save && !held {
             if let Some(ref reads) = input.flag_reads {
                 self.last_flag_poll = now;
 
@@ -3187,7 +3444,7 @@ impl RaceMachine {
             self.maintain_memory_effects(loading_exit, now, &mut effects);
             self.maintain_hunter(now, &mut effects);
             self.relay_link_lost();
-            self.maintain_relay(false, loading_exit, now, &mut effects);
+            self.maintain_relay(false, loading_exit, held, now, &mut effects);
             return effects;
         }
 
@@ -3204,7 +3461,13 @@ impl RaceMachine {
             }
             self.ready_sent = true;
 
-            if self.is_race_running() && !self.am_i_finished() && !self.is_countdown_active(now) {
+            // Held progress replays nothing: the take's receipt dropped what
+            // the waiting save had in flight.
+            if self.is_race_running()
+                && !self.am_i_finished()
+                && !self.is_countdown_active(now)
+                && !held
+            {
                 self.flush_restored = false;
 
                 // Replay in-flight event flags (sent but not ACKed before disconnect)
@@ -3290,12 +3553,13 @@ impl RaceMachine {
         );
         self.maintain_memory_effects(loading_exit, now, &mut effects);
         self.maintain_hunter(now, &mut effects);
-        self.maintain_relay(true, loading_exit, now, &mut effects);
+        self.maintain_relay(true, loading_exit, held, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
         // Stop once finished since IGT is frozen at finish time.
         if !quit_out_status_pulled_forward
+            && !held
             && !self.wrong_save
             && self.wants_status_update(now, igt_ms)
         {
@@ -3318,6 +3582,7 @@ impl RaceMachine {
     fn flush_restored_flags(&mut self, connected: bool, now: Instant, effects: &mut Vec<Effect>) {
         if !self.flush_restored
             || !connected
+            || self.progress_held()
             || !self.ready_sent
             || !self.is_race_running()
             || self.am_i_finished()
@@ -3862,18 +4127,24 @@ impl RaceMachine {
         }
     }
 
-    /// What the relay lock should read, from the server's word alone: `None`
-    /// leaves the flag alone (no relay, or a value this build does not
-    /// know: an unknown value is never a decision). Over, or a race that
-    /// does not run, wins over the role. A relay not being played reads
+    /// What the relay lock should read, from the server's word and a take
+    /// in progress: `None` leaves the flag alone (no relay, or a value this
+    /// build does not know: an unknown value is never a decision). Over, or
+    /// a race that does not run, wins over the role. A take in progress
+    /// keeps the runner locked (its game still holds its own save) until
+    /// its acknowledgement lowers the lock. A relay not being played reads
     /// off; a live one locks a waiting runner and a capped holder.
     fn relay_lock_wanted(&self) -> Option<bool> {
         let relay = self.relay.as_ref()?;
         if self.relay_over() || !self.is_race_running() {
             return Some(false);
         }
+        if self.relay_take.is_some() {
+            return Some(true);
+        }
+        let role = self.relay_role().unwrap_or(relay.role);
         if !self.relay_live() {
-            return match (relay.team_status, relay.role) {
+            return match (relay.team_status, role) {
                 // A holder whose gates are open wants no lock whatever the
                 // team status reads: a stale one must not strand it.
                 (ParticipantStatus::Unknown, RelayRole::Holder) if !relay.gates_locked => {
@@ -3883,28 +4154,40 @@ impl RaceMachine {
                 _ => Some(false),
             };
         }
-        match relay.role {
+        match role {
             RelayRole::Waiting => Some(true),
             RelayRole::Holder => Some(relay.gates_locked),
             RelayRole::Unknown => None,
         }
     }
 
-    /// The runner waits for the baton in a relay being played.
+    /// The runner waits for the baton in a relay being played (a take in
+    /// progress reads `Holder`: it is no longer waiting, and not ready).
     fn relay_waiting_live(&self) -> bool {
         self.relay_role() == Some(RelayRole::Waiting) && self.relay_live()
     }
 
-    /// A locked waiting runner away from the Chapel, with no warp running
-    /// or given up, past the gate window: the return to the Chapel may
-    /// start (HP, which it needs, is the one thing left to check).
+    /// The runner belongs at the Chapel, locked: it waits for the baton in a
+    /// relay being played, or a take it received has not started yet (a
+    /// take is written at the Chapel only; once started, no return there
+    /// starts).
+    fn relay_chapel_bound(&self) -> bool {
+        match &self.relay_take {
+            Some(take) => take.phase == TakePhase::Received && self.relay_live(),
+            None => self.relay_waiting_live(),
+        }
+    }
+
+    /// A locked runner bound to the Chapel and away from it, with no warp
+    /// running or given up, past the gate window: the return to the Chapel
+    /// may start (HP, which it needs, is the one thing left to check).
     fn relay_warp_may_start(&self, now: Instant) -> bool {
         self.relay_warp.is_none()
             && !self.relay_warp_given_up
             && self.relay_warp_landings < relay::WARP_LANDINGS_MAX
             && self.relay_lock == Some(true)
             && self.relay_asserted
-            && self.relay_waiting_live()
+            && self.relay_chapel_bound()
             && self
                 .frame_snapshot
                 .map_id
@@ -3915,24 +4198,32 @@ impl RaceMachine {
             })
     }
 
-    /// HP is read only while the return to the Chapel may start.
+    /// HP is read only while the return to the Chapel may start, or while a
+    /// take waits for the frame that writes it or the one that acknowledges
+    /// it (not while the shell applies it).
     fn relay_wants_hp(&self, now: Instant) -> bool {
         self.relay_warp_may_start(now)
+            || self
+                .relay_take
+                .as_ref()
+                .is_some_and(|take| take.phase != TakePhase::Applying)
     }
 
-    /// Run a relay runner's lock, its return to the Chapel and its
-    /// readiness, after `maintain_hunter`. Decided on the server's word and
-    /// the machine's own writes; per frame a few comparisons while nothing
-    /// changes. Every flag write waits until the player is loaded and
-    /// `relay::SETTLE` has passed since the last loading exit, on the race
-    /// save: a flag written during a load can be missed by the seed's
-    /// events. A write the shell cannot make is silent: the value asked for
-    /// is believed until the next loading exit asserts it again. No-op
-    /// without a relay.
+    /// Run a relay runner's lock, its return to the Chapel, a take and its
+    /// warp, and its readiness, after `maintain_hunter`. Decided on the
+    /// server's word and the machine's own writes; per frame a few
+    /// comparisons while nothing changes. Every flag write waits until the
+    /// player is loaded and `relay::SETTLE` has passed since the last
+    /// loading exit, on the race save: a flag written during a load can be
+    /// missed by the seed's events. A write the shell cannot make is
+    /// silent: the value asked for is believed until the next loading exit
+    /// asserts it again. `held`: progress was held when the frame started
+    /// (no capture is asked). No-op without a relay.
     fn maintain_relay(
         &mut self,
         connected: bool,
         loading_exit: bool,
+        held: bool,
         now: Instant,
         effects: &mut Vec<Effect>,
     ) {
@@ -3941,7 +4232,33 @@ impl RaceMachine {
         };
         crate::profile_span!("maintain_relay");
         let flags = relay.flags;
+        self.relay_take_follows_race();
+        if self.relay_confirm_until.is_some_and(|until| now >= until) {
+            info!("[RELAY] Holder role not confirmed in time: the server's word rules again");
+            self.relay_confirm_until = None;
+            self.relay_turned_waiting(Some(RelayRole::Holder));
+        }
+        // An apply the shell never answered: the take goes on to its
+        // acknowledgement with what got written (the IGT at least), so the
+        // runner is not held at the Chapel for ever.
+        if self.relay_apply.as_ref().is_some_and(|asked| {
+            now.saturating_duration_since(asked.asked_at) >= relay::APPLY_ABANDON
+        }) {
+            let asked = self.relay_apply.take().expect("checked above");
+            warn!(
+                handoff_id = %asked.handoff_id,
+                generation = asked.generation,
+                "[RELAY] Apply not answered, abandoned"
+            );
+            if let Some(take) = self.relay_take.as_mut().filter(|take| {
+                take.handoff_id == asked.handoff_id && take.phase == TakePhase::Applying
+            }) {
+                take.phase = TakePhase::Applied;
+                self.set_status("Baton taken: build not confirmed".to_string(), now);
+            }
+        }
         let waiting_live = self.relay_waiting_live();
+        let chapel_bound = self.relay_chapel_bound();
         let readable = self.frame_snapshot.position_readable;
         let map = self.frame_snapshot.map_id;
         if loading_exit {
@@ -3970,12 +4287,29 @@ impl RaceMachine {
             .is_none_or(|at| now.saturating_duration_since(at) >= relay::SETTLE);
         let can_write = readable && !self.wrong_save && settled;
 
-        // A warp ends with the waiting: a holder, a take or an over relay
-        // does not go back. Its flag, still on, would warp the player the
-        // next time the seed reads it.
-        if !waiting_live {
+        // A warp to the Chapel ends when the runner no longer belongs there:
+        // a holder, a take started or an over relay does not go back. Its
+        // flag, still on, would warp the player the next time the seed
+        // reads it.
+        if !chapel_bound {
             self.relay_warp_given_up = false;
             if let Some(mut warp) = self.relay_warp.take() {
+                if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), can_write) {
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: false,
+                    });
+                }
+            }
+        }
+        // A take's warp ends the same way when the runner stops holding the
+        // baton, a newer take included.
+        if self.relay_take.is_some()
+            || self.relay_over()
+            || !self.is_race_running()
+            || self.relay_role() == Some(RelayRole::Waiting)
+        {
+            if let Some(mut warp) = self.relay_zone_warp.take() {
                 if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), can_write) {
                     effects.push(Effect::SetGameFlag {
                         flag_id: flag,
@@ -3989,7 +4323,9 @@ impl RaceMachine {
             if let Some(want) = self.relay_lock_wanted() {
                 if self.relay_lock != Some(want) {
                     let reason = if want {
-                        if self.relay_role() == Some(RelayRole::Waiting) {
+                        if self.relay_take.is_some() {
+                            "take"
+                        } else if self.relay_role() == Some(RelayRole::Waiting) {
                             "waiting"
                         } else {
                             "cap"
@@ -4089,6 +4425,78 @@ impl RaceMachine {
             }
         }
 
+        if let Some(warp) = self.relay_zone_warp.as_mut() {
+            // As the warp to the Chapel: never a write on an unsettled
+            // frame, an unloaded one ends it. It counts no landing.
+            let step = if !readable || can_write {
+                warp.tick(readable, now)
+            } else {
+                None
+            };
+            let (flag, done) = (warp.flag(), warp.is_done());
+            match step {
+                Some(WarpStep::Raise(flag)) => {
+                    info!(flag, "[RELAY] Warp to the zone raised again");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: true,
+                    });
+                }
+                Some(WarpStep::Lower(flag)) => effects.push(Effect::SetGameFlag {
+                    flag_id: flag,
+                    value: false,
+                }),
+                Some(WarpStep::Failed) => {
+                    warn!(flag, "[RELAY] Warp to the zone failed");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: false,
+                    });
+                    self.set_status("Warp failed: travel from the map".to_string(), now);
+                }
+                None => {}
+            }
+            if done {
+                self.relay_zone_warp = None;
+            }
+        }
+
+        // A take: written on a settled frame at the Chapel, locked, alive,
+        // connected, with nothing else asked of the shell; acknowledged on
+        // the first such frame (anywhere) once the shell has answered.
+        if let Some(phase) = self.relay_take.as_ref().map(|take| take.phase) {
+            let alive = self.frame_snapshot.hp.is_some_and(|hp| hp > 0);
+            match phase {
+                TakePhase::Received
+                    if can_write
+                        && connected
+                        && alive
+                        && map == Some(relay::CHAPEL_MAP_ID)
+                        && self.relay_lock == Some(true)
+                        && self.relay_asserted
+                        && self.relay_capture.is_none()
+                        && self.relay_apply.is_none() =>
+                {
+                    self.relay_start_take(now, effects);
+                }
+                TakePhase::Applied if can_write && connected && alive => {
+                    self.relay_complete_take(flags.lock_flag, now, effects);
+                }
+                _ => {}
+            }
+        }
+
+        // A take acknowledged already and sent again: answered again,
+        // nothing written, the confirmation window opened again.
+        if connected && self.relay_taken_due {
+            self.relay_taken_due = false;
+            if let Some(handoff_id) = self.relay_taken_id.clone() {
+                info!(handoff_id = %handoff_id, "[RELAY] Take acknowledged again");
+                effects.push(Effect::SendRelayTaken { handoff_id });
+                self.relay_confirm_until = Some(now + relay::TAKEN_CONFIRM);
+            }
+        }
+
         if connected {
             let ready = waiting_live
                 && self.relay_lock == Some(true)
@@ -4103,17 +4511,194 @@ impl RaceMachine {
             }
         }
 
-        self.maintain_relay_capture(connected, now, effects);
+        self.maintain_relay_capture(connected, held, now, effects);
+    }
+
+    /// The frame that writes a take, while the lock holds the runner at the
+    /// Chapel, in this order: the stats (only a plausible state's), the IGT
+    /// (on every take, also without a state: the runner's own IGT would
+    /// fail the team's fresh-save gate or freeze the team's IGT), then the
+    /// apply on the shell's worker thread (the state's items and graces,
+    /// the defeat flags of the seed's bosses). The IGT guards are rebased on
+    /// the IGT written, so its jump reads as no reload, no wrong save and no
+    /// quit-out, and the bosses written are marked reported.
+    fn relay_start_take(&mut self, now: Instant, effects: &mut Vec<Effect>) {
+        let Some(take) = self.relay_take.as_mut() else {
+            return;
+        };
+        crate::profile_span!("relay_take_start");
+        take.phase = TakePhase::Applying;
+        let handoff_id = take.handoff_id.clone();
+        let igt_ms = take.igt_ms;
+        let state = take.state.take();
+        let defeat_flags = std::mem::take(&mut take.defeat_flags);
+        match &state {
+            Some(state) if relay_items::stats_plausible(state) => {
+                effects.push(Effect::WriteCharacterStats {
+                    attributes: state.attributes,
+                    level: state.level,
+                    runes: state.runes,
+                });
+            }
+            Some(state) => warn!(
+                attributes = ?state.attributes,
+                level = state.level,
+                runes = state.runes,
+                "[RELAY] Stats not plausible, not written"
+            ),
+            None => {}
+        }
+        effects.push(Effect::SetIgt { ms: igt_ms });
+        let flags: Vec<u32> = defeat_flags
+            .into_iter()
+            .filter(|flag| self.boss_flags.binary_search(flag).is_ok())
+            .collect();
+        let (items, grace_flags) = state
+            .map(|state| (state.items, state.grace_flags))
+            .unwrap_or_default();
+        self.relay_apply_gen = self.relay_apply_gen.wrapping_add(1);
+        let generation = self.relay_apply_gen;
+        info!(
+            handoff_id = %handoff_id,
+            igt_ms,
+            items = items.len(),
+            graces = grace_flags.len(),
+            bosses = flags.len(),
+            "[RELAY] Take started"
+        );
+        self.relay_apply = Some(ApplyInFlight {
+            handoff_id: handoff_id.clone(),
+            generation,
+            asked_at: now,
+        });
+        self.triggered_flags.extend(flags.iter().copied());
+        effects.push(Effect::ApplyRelayItems {
+            handoff_id,
+            generation,
+            items,
+            flags,
+            grace_flags,
+        });
+        // The machine reads 0 as no reading: a team still `ready` starts
+        // from no reference, as after a race start.
+        let rebased = Some(igt_ms).filter(|&igt| igt > 0);
+        self.last_good_igt = rebased;
+        self.last_observed_igt = rebased;
+        self.last_good_at = rebased.map(|_| now);
+        self.freeze_last_igt = None;
+        self.pending_quit_out = false;
+    }
+
+    /// The frame after a take was applied: the lock lowered, then the warp
+    /// to the zone the take restarts raised (none before the team's first
+    /// gate: the runner starts from the Chapel), then `relay_taken`, with
+    /// the banner. The holder role the take gave then holds for
+    /// `relay::TAKEN_CONFIRM` whatever the cached info reads.
+    fn relay_complete_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
+        let Some(take) = self.relay_take.take() else {
+            return;
+        };
+        crate::profile_span!("relay_take_ack");
+        info!(reason = "take", "[RELAY] Lock lowered");
+        effects.push(Effect::SetGameFlag {
+            flag_id: lock_flag,
+            value: false,
+        });
+        self.relay_lock = Some(false);
+        self.relay_asserted = true;
+        self.relay_lock_since = None;
+        self.relay_warp_landings = 0;
+        let line = match take.warp_flag {
+            Some(flag) => {
+                let mut warp = FlagWarp::new(flag);
+                if let Some(WarpStep::Raise(flag)) = warp.tick(true, now) {
+                    info!(flag, "[RELAY] Warp to the zone");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: true,
+                    });
+                }
+                self.relay_zone_warp = Some(warp);
+                match &take.zone_name {
+                    Some(zone) => format!("Restart {zone}"),
+                    None => "Restart the team's zone".to_string(),
+                }
+            }
+            None => "You start from the Chapel".to_string(),
+        };
+        info!(
+            handoff_id = %take.handoff_id,
+            elapsed_ms = now.saturating_duration_since(take.received_at).as_millis() as u64,
+            "[RELAY] Take acknowledged"
+        );
+        self.last_sent_debug = Some(format!("relay_taken({})", take.handoff_id));
+        effects.push(Effect::SendRelayTaken {
+            handoff_id: take.handoff_id.clone(),
+        });
+        self.relay_taken_id = Some(take.handoff_id);
+        self.relay_taken_due = false;
+        self.relay_confirm_until = Some(now + relay::TAKEN_CONFIRM);
+        self.item_feed.push_banner(
+            FeedBanner {
+                icon: String::new(),
+                title: "YOU HAVE THE BATON".to_string(),
+                line,
+                detail: String::new(),
+                tone: FeedTone::Gain,
+            },
+            now,
+        );
+    }
+
+    /// The shell's answer to `Effect::ApplyRelayItems`, delivered on the
+    /// game thread with the `generation` the effect carried: the apply is
+    /// over, whatever part of it could not be done (the shell logs that).
+    /// An answer for any other apply than the one in flight, an abandoned
+    /// one included, is ignored. The answer clears the apply in flight: its
+    /// take is then acknowledged on the next loaded, settled frame; a take
+    /// replaced or given up since changes nothing (a newer take waiting for
+    /// the shell starts).
+    pub fn relay_state_applied(&mut self, handoff_id: &str, generation: u64, now: Instant) {
+        match &self.relay_apply {
+            Some(asked) if asked.generation == generation && asked.handoff_id == handoff_id => {}
+            _ => {
+                debug!(
+                    handoff_id,
+                    generation, "[RELAY] Apply answer not for the apply in flight, ignored"
+                );
+                return;
+            }
+        }
+        let asked = self.relay_apply.take().expect("checked above");
+        let elapsed_ms = now.saturating_duration_since(asked.asked_at).as_millis() as u64;
+        match self.relay_take.as_mut() {
+            Some(take) if take.handoff_id == handoff_id && take.phase == TakePhase::Applying => {
+                take.phase = TakePhase::Applied;
+                info!(handoff_id, elapsed_ms, "[RELAY] Take applied");
+            }
+            _ => info!(
+                handoff_id,
+                elapsed_ms, "[RELAY] Apply answered for a take no longer in progress"
+            ),
+        }
     }
 
     /// Ask the shell for the holder's state when one is wanted: a pending
     /// release first (given up `RELEASE_CAPTURE_TIMEOUT` after its receipt,
     /// or when the runner stops being the holder of a live relay), else the
     /// checkpoint of a zone just revealed. One capture at a time, on a
-    /// connected frame with a readable position on the race save; a
-    /// checkpoint that finds one in flight is dropped. Per frame: a few
+    /// connected frame with a readable position on the race save, progress
+    /// not held (`held`, as the frame started); a checkpoint that finds one
+    /// in flight is dropped, and a release finding a checkpoint's in flight
+    /// abandons it and is asked on the same frame. Per frame: a few
     /// comparisons, and an allocation only when a capture is asked.
-    fn maintain_relay_capture(&mut self, connected: bool, now: Instant, effects: &mut Vec<Effect>) {
+    fn maintain_relay_capture(
+        &mut self,
+        connected: bool,
+        held: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
         let holder = self.relay_holder_live();
         let checkpoint_due = std::mem::take(&mut self.relay_checkpoint_due);
         if let Some(pending) = &self.relay_release {
@@ -4133,9 +4718,19 @@ impl RaceMachine {
                     "[RELAY] Capture not answered, abandoned"
                 );
                 self.relay_capture = None;
+            } else if asked.handoff_id.is_none() && self.relay_release.is_some() {
+                // A release pre-empts a checkpoint: the server keeps a
+                // release's state as the latest checkpoint too, and its
+                // answer must come within the server's 15 s.
+                debug!(
+                    generation = asked.generation,
+                    "[RELAY] Checkpoint capture abandoned for a release"
+                );
+                self.relay_capture = None;
             }
         }
         if !(connected
+            && !held
             && holder
             && self.relay_retry_at.is_none_or(|at| now >= at)
             && self.frame_snapshot.position_readable
@@ -13445,25 +14040,28 @@ mod tests {
     }
 
     #[test]
-    fn a_checkpoint_capture_in_flight_makes_a_release_wait_for_its_answer() {
+    fn a_release_pre_empts_a_checkpoint_capture_in_flight() {
         let t0 = Instant::now();
         let mut m = relay_machine("holder", t0);
         go(&mut m, t0, 0, Some(IN_ZONE));
         m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
         assert_eq!(captures(&go(&mut m, t0, 100, Some(IN_ZONE))), [None]);
+        let checkpoint = m.relay_capture.as_ref().unwrap().generation;
         release(&mut m, t0, 150, "h1");
-        assert!(captures(&go(&mut m, t0, 200, Some(IN_ZONE))).is_empty());
-        // The checkpoint's answer goes out, then the release is asked.
-        let fx = answer(&mut m, t0, 250, None, Some(char_state()));
+        // The release is asked on the next frame, the checkpoint abandoned.
+        let fx = go(&mut m, t0, 200, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        // The checkpoint's late answer sends nothing and ends nothing.
+        let fx = m.relay_state_captured(None, checkpoint, Some(char_state()), t0 + ms(250));
+        assert!(fx.is_empty(), "{fx:?}");
+        let fx = answer(&mut m, t0, 300, Some("h1"), Some(char_state()));
         assert!(matches!(
             sent_states(&fx)[..],
             [Effect::SendRelayState {
-                handoff_id: None,
+                handoff_id: Some(id),
                 ..
-            }]
+            }] if id == "h1"
         ));
-        let fx = go(&mut m, t0, 300, Some(IN_ZONE));
-        assert_eq!(captures(&fx), [Some("h1".to_string())]);
     }
 
     #[test]
@@ -13666,5 +14264,1203 @@ mod tests {
         assert_eq!(state.items.len(), 4_000);
         assert_eq!(state.items[0], 0x4000_0000);
         assert_eq!(state.grace_flags, [71800]);
+    }
+
+    // ------------------------------------------------------------------
+    // Taking the baton
+    // ------------------------------------------------------------------
+
+    const ZONE_WARP: u32 = 1050290517;
+    const ZONE_FLAG: u32 = 1050294007;
+    const BOSS: u32 = 10000800;
+    const LOCAL_IGT: u32 = 2_000_000;
+    const TEAM_IGT: u32 = 2_634_000;
+
+    fn zone_warp(value: bool) -> Effect {
+        Effect::SetGameFlag {
+            flag_id: ZONE_WARP,
+            value,
+        }
+    }
+
+    fn taken(id: &str) -> Effect {
+        Effect::SendRelayTaken {
+            handoff_id: id.to_string(),
+        }
+    }
+
+    /// The protocol tests' state, its level the sum of its attributes
+    /// minus 79 (the game's rule, which `stats_plausible` checks).
+    fn take_state() -> CharacterState {
+        CharacterState {
+            attributes: [40, 20, 25, 30, 14, 9, 9, 7],
+            level: 75,
+            runes: 15230,
+            items: vec![1048576100, 2147493648],
+            grace_flags: vec![71000, 76101],
+        }
+    }
+
+    fn take_msg(
+        id: &str,
+        state: Option<CharacterState>,
+        igt_ms: u32,
+        defeat_flags: &[u32],
+        warp: Option<u32>,
+    ) -> MachineMessage {
+        MachineMessage::RelayTake {
+            handoff_id: id.to_string(),
+            state,
+            igt_ms,
+            defeat_flags: defeat_flags.to_vec(),
+            warp_flag: warp,
+            zone_name: warp.map(|_| "Stormveil Castle".to_string()),
+        }
+    }
+
+    /// A take with the full state, the team's IGT, a boss of the seed and
+    /// one it does not watch, and the warp to Stormveil Castle.
+    fn take(id: &str) -> MachineMessage {
+        take_msg(
+            id,
+            Some(take_state()),
+            TEAM_IGT,
+            &[BOSS, 999],
+            Some(ZONE_WARP),
+        )
+    }
+
+    /// The flip's update: p1 holds the baton.
+    fn flip_info() -> RelayInfo {
+        relay_info("holder")
+    }
+
+    /// The update of the server's take timer: p1 still named, waiting like
+    /// everyone, the baton free.
+    fn timer_info() -> RelayInfo {
+        let mut info = relay_info("waiting");
+        info.holder_id = Some("p1".to_string());
+        info.baton_free_in_s = Some(0);
+        info
+    }
+
+    /// One frame `at` ms after `t0` reading `igt`: loaded on `map` with
+    /// `hp` (a loading screen on `None`), the position given (a loading
+    /// exit's zone query needs it), `reads` as the frame's flag scan.
+    #[allow(clippy::too_many_arguments)]
+    fn rx_frame_on(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        igt: u32,
+        hp: i32,
+        reads: Option<Vec<(u32, bool)>>,
+        connected: bool,
+    ) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(igt),
+            death_count: Some(0),
+            position_readable: map.is_some(),
+            loading_screen: Some(false),
+            map_id: map,
+            hp: map.map(|_| hp),
+            ..FrameSnapshot::default()
+        };
+        let mut input = tick_in(snapshot, connected, reads);
+        input.position = map.map(|id| PlayerPosition::new(id, 1.0, 2.0, 3.0, None));
+        m.tick(input, t0 + ms(at))
+    }
+
+    /// `rx_frame_on`, connected.
+    fn rx_frame(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        igt: u32,
+        hp: i32,
+        reads: Option<Vec<(u32, bool)>>,
+    ) -> Vec<Effect> {
+        rx_frame_on(m, t0, at, map, igt, hp, reads, true)
+    }
+
+    /// A frame of the receiver's own save.
+    fn local(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>) -> Vec<Effect> {
+        rx_frame(m, t0, at, map, LOCAL_IGT + at as u32, 100, None)
+    }
+
+    /// A frame once the take's IGT was written, at `from`.
+    fn team(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>, from: u64) -> Vec<Effect> {
+        rx_frame(m, t0, at, map, TEAM_IGT + (at - from) as u32, 100, None)
+    }
+
+    /// `team` frames every 100 ms over `[from, to]`, tagged with their time.
+    fn team_over(
+        m: &mut RaceMachine,
+        t0: Instant,
+        from: u64,
+        to: u64,
+        map: Option<u32>,
+        written: u64,
+    ) -> Vec<(u64, Effect)> {
+        let mut out = Vec::new();
+        let mut at = from;
+        while at <= to {
+            out.extend(team(m, t0, at, map, written).into_iter().map(|e| (at, e)));
+            at += 100;
+        }
+        out
+    }
+
+    /// A waiting runner locked and ready at the Chapel, on its own save.
+    fn receiver(t0: Instant) -> RaceMachine {
+        let mut m = relay_machine("waiting", t0);
+        let mut fx = Vec::new();
+        for at in (0..=900).step_by(100) {
+            fx.extend(local(&mut m, t0, at, chapel()));
+        }
+        assert!(
+            fx.contains(&lock(true)) && fx.contains(&ready(true)),
+            "{fx:?}"
+        );
+        m
+    }
+
+    /// The take `msg` received at 1_000, the flip's update right after it
+    /// (the server's order); returns what the take's receipt emitted.
+    fn receive(m: &mut RaceMachine, t0: Instant, msg: MachineMessage) -> Vec<Effect> {
+        let fx = m.handle_message(msg, t0 + ms(1_000));
+        update(m, flip_info(), t0, 1_000);
+        fx
+    }
+
+    /// The shell's answer for the apply in flight (generation 0 when none).
+    fn applied(m: &mut RaceMachine, t0: Instant, at: u64, id: &str) {
+        let generation = m.relay_apply.as_ref().map_or(0, |a| a.generation);
+        m.relay_state_applied(id, generation, t0 + ms(at));
+    }
+
+    fn apply_fx(fx: &[Effect]) -> Vec<&Effect> {
+        fx.iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::WriteCharacterStats { .. }
+                        | Effect::SetIgt { .. }
+                        | Effect::ApplyRelayItems { .. }
+                )
+            })
+            .collect()
+    }
+
+    fn tagged_apply(fx: &[(u64, Effect)]) -> bool {
+        fx.iter()
+            .any(|(_, e)| !apply_fx(std::slice::from_ref(e)).is_empty())
+    }
+
+    /// The flag writes and acknowledgements of a frame, in their order.
+    fn flag_fx(fx: &[Effect]) -> Vec<&Effect> {
+        fx.iter()
+            .filter(|e| {
+                matches!(
+                    e,
+                    Effect::SetGameFlag { .. } | Effect::SendRelayTaken { .. }
+                )
+            })
+            .collect()
+    }
+
+    fn acks(fx: &[(u64, Effect)]) -> usize {
+        fx.iter()
+            .filter(|(_, e)| matches!(e, Effect::SendRelayTaken { .. }))
+            .count()
+    }
+
+    fn full_apply(id: &str, generation: u64) -> Vec<Effect> {
+        vec![
+            Effect::WriteCharacterStats {
+                attributes: [40, 20, 25, 30, 14, 9, 9, 7],
+                level: 75,
+                runes: 15230,
+            },
+            Effect::SetIgt { ms: TEAM_IGT },
+            Effect::ApplyRelayItems {
+                handoff_id: id.to_string(),
+                generation,
+                items: vec![1048576100, 2147493648],
+                flags: vec![BOSS],
+                grace_flags: vec![71000, 76101],
+            },
+        ]
+    }
+
+    /// A take acknowledged at the Chapel at 1_200, its warp flag raised.
+    fn acknowledged(t0: Instant) -> RaceMachine {
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+        m
+    }
+
+    #[test]
+    fn a_take_applies_in_order_then_unlocks_warps_and_acknowledges() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        let fx = receive(&mut m, t0, take("h1"));
+        assert_eq!(fx, [ready(false)], "no longer ready from the receipt");
+        assert!(m.relay_take_pending() && m.progress_held());
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h1", 1).iter().collect::<Vec<_>>()
+        );
+        assert!(flag_fx(&fx).is_empty(), "{fx:?}");
+        for at in (1_200..=4_100).step_by(100) {
+            let fx = team(&mut m, t0, at, chapel(), 1_100);
+            assert!(
+                apply_fx(&fx).is_empty() && flag_fx(&fx).is_empty(),
+                "{at}: {fx:?}"
+            );
+        }
+        applied(&mut m, t0, 4_150, "h1");
+        let fx = team(&mut m, t0, 4_200, chapel(), 1_100);
+        assert_eq!(
+            flag_fx(&fx),
+            [&lock(false), &zone_warp(true), &taken("h1")],
+            "{fx:?}"
+        );
+        assert!(!m.relay_take_pending() && !m.progress_held());
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
+        let banner = m.item_banner().unwrap();
+        assert_eq!(banner.title, "YOU HAVE THE BATON");
+        assert_eq!(banner.line, "Restart Stormveil Castle");
+        assert_eq!(banner.tone, FeedTone::Gain);
+        let fx = team_over(&mut m, t0, 4_300, 4_900, chapel(), 1_100);
+        assert_eq!(acks(&fx), 0, "acknowledged once");
+    }
+
+    #[test]
+    fn a_take_without_a_gate_stays_at_the_chapel() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(
+            &mut m,
+            t0,
+            take_msg("h1", Some(take_state()), TEAM_IGT, &[BOSS], None),
+        );
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(apply_fx(&fx).len(), 3);
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &taken("h1")]);
+        assert_eq!(m.item_banner().unwrap().line, "You start from the Chapel");
+        // Unlocked at the Chapel for good: no warp, no lock.
+        let fx = team_over(&mut m, t0, 1_300, 20_000, chapel(), 1_100);
+        assert!(
+            !fx.iter()
+                .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn a_take_whose_zone_has_no_name_still_says_restart() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        let mut msg = take("h1");
+        if let MachineMessage::RelayTake { zone_name, .. } = &mut msg {
+            *zone_name = None;
+        }
+        receive(&mut m, t0, msg);
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        assert_eq!(m.item_banner().unwrap().line, "Restart the team's zone");
+    }
+
+    #[test]
+    fn a_take_without_a_state_keeps_the_runners_own_build() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(
+            &mut m,
+            t0,
+            take_msg("h1", None, TEAM_IGT, &[BOSS, 999], Some(ZONE_WARP)),
+        );
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(
+            apply_fx(&fx),
+            [
+                &Effect::SetIgt { ms: TEAM_IGT },
+                &Effect::ApplyRelayItems {
+                    handoff_id: "h1".to_string(),
+                    generation: 1,
+                    items: vec![],
+                    flags: vec![BOSS],
+                    grace_flags: vec![],
+                }
+            ]
+        );
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+    }
+
+    #[test]
+    fn a_take_of_a_ready_team_still_writes_its_igt() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        update(&mut m, relay_info_with("waiting", "ready"), t0, 950);
+        // A flag the save already reported: a save-reload flush would drop it.
+        m.triggered_flags.insert(BOSS);
+        m.handle_message(take_msg("h1", None, 0, &[], None), t0 + ms(1_000));
+        update(&mut m, relay_info_with("holder", "ready"), t0, 1_000);
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(
+            apply_fx(&fx),
+            [
+                &Effect::SetIgt { ms: 0 },
+                &Effect::ApplyRelayItems {
+                    handoff_id: "h1".to_string(),
+                    generation: 1,
+                    items: vec![],
+                    flags: vec![],
+                    grace_flags: vec![],
+                }
+            ]
+        );
+        // The game's clock runs on from 0.
+        rx_frame(&mut m, t0, 1_150, chapel(), 50, 100, None);
+        rx_frame(&mut m, t0, 2_150, chapel(), 1_050, 100, None);
+        assert!(!m.wrong_save);
+        assert!(m.triggered_flags.contains(&BOSS), "no save-reload flush");
+        applied(&mut m, t0, 2_200, "h1");
+        let fx = rx_frame(&mut m, t0, 2_250, chapel(), 1_150, 100, None);
+        assert_eq!(flag_fx(&fx), [&lock(false), &taken("h1")]);
+        let mut status = None;
+        for (i, at) in (2_300..=4_300).step_by(100).enumerate() {
+            let fx = rx_frame(&mut m, t0, at, chapel(), 1_200 + 100 * i as u32, 100, None);
+            status = fx.iter().find_map(|e| match e {
+                Effect::SendStatusUpdate { igt_ms, .. } => Some(*igt_ms),
+                _ => None,
+            });
+            if status.is_some() {
+                break;
+            }
+        }
+        let igt = status.expect("a status update after the acknowledgement");
+        assert!(igt > 0 && igt <= 60_000, "{igt}");
+
+        // No reference at all, as after a race start: a first reading
+        // across a load, whatever it is, is no wrong save.
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        m.handle_message(take_msg("h1", None, 0, &[], None), t0 + ms(1_000));
+        local(&mut m, t0, 1_100, chapel());
+        rx_frame(&mut m, t0, 1_200, None, 30_000, 100, None);
+        assert!(!m.wrong_save);
+    }
+
+    #[test]
+    fn an_implausible_state_skips_the_stat_write() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        let mut state = take_state();
+        state.level = 0;
+        receive(
+            &mut m,
+            t0,
+            take_msg("h1", Some(state), TEAM_IGT, &[BOSS, 999], Some(ZONE_WARP)),
+        );
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h1", 1)[1..].iter().collect::<Vec<_>>()
+        );
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+    }
+
+    #[test]
+    fn the_igt_jump_of_a_take_is_no_wrong_save_and_no_quit_out() {
+        let local_at_start = LOCAL_IGT + 1_100;
+        for written in [
+            local_at_start + 600_000,
+            local_at_start - 30_000,
+            local_at_start - 120_000,
+        ] {
+            let t0 = Instant::now();
+            let mut m = receiver(t0);
+            receive(
+                &mut m,
+                t0,
+                take_msg("h1", Some(take_state()), written, &[BOSS], Some(ZONE_WARP)),
+            );
+            let fx = local(&mut m, t0, 1_100, chapel());
+            assert_eq!(apply_fx(&fx).len(), 3);
+            // A loading screen at once over the written IGT, then its exit.
+            let mut fx = Vec::new();
+            for at in (1_200..=3_000).step_by(100) {
+                let igt = written + (at - 1_100) as u32;
+                fx.extend(rx_frame(&mut m, t0, at, None, igt, 100, None));
+            }
+            for at in (3_100..=6_000).step_by(100) {
+                let igt = written + (at - 1_100) as u32;
+                fx.extend(rx_frame(&mut m, t0, at, chapel(), igt, 100, None));
+            }
+            assert!(!m.wrong_save, "{written}");
+            assert!(
+                !fx.iter()
+                    .any(|e| matches!(e, Effect::ApplyIgtPenalty { .. })),
+                "{written}"
+            );
+            assert!(m.triggered_flags.contains(&BOSS), "{written}");
+        }
+    }
+
+    #[test]
+    fn the_bosses_of_a_take_are_not_reported_as_kills() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        assert!(
+            m.boss_flags_to_read().next().is_none(),
+            "a boss of the take takes no read slot"
+        );
+        let mut fx = Vec::new();
+        for at in (1_300..=3_000).step_by(100) {
+            let igt = TEAM_IGT + (at - 1_100) as u32;
+            fx.extend(rx_frame(
+                &mut m,
+                t0,
+                at,
+                chapel(),
+                igt,
+                100,
+                Some(vec![(BOSS, true)]),
+            ));
+        }
+        assert!(sent_flags(&fx).is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn no_progress_goes_out_between_a_take_and_its_acknowledgement() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        // What the waiting save left: a flag in flight, one pending, one
+        // deferred, a zone query in flight, a zone to reveal.
+        m.in_flight_event_flags.insert(
+            77,
+            BufferedEventFlag {
+                flag_id: ZONE_FLAG,
+                igt_ms: 1,
+            },
+        );
+        m.flag_buffer.add_pending(ZONE_FLAG, 2);
+        m.flag_buffer.defer(ZONE_FLAG, 3);
+        m.in_flight_zone_queries.insert(
+            78,
+            BufferedZoneQuery {
+                igt_ms: 4,
+                grace_entity_id: None,
+                map_id: None,
+                position: None,
+                play_region_id: None,
+                quit_out: false,
+            },
+        );
+        m.handle_message(zone_update("Limgrave", None), t0 + ms(950));
+        receive(&mut m, t0, take("h1"));
+        assert!(m.pending_zone_update.is_none());
+        assert!(m.flag_buffer.is_empty() && m.in_flight_event_flags.is_empty());
+        assert!(m.in_flight_zone_queries.is_empty());
+        let needs = m.pre_tick(t0 + ms(1_100), true, true);
+        assert!(!needs.poll_flags && !m.wants_flag_reads(needs, false, true));
+        assert!(!m.wants_status_update(t0 + ms(1_100), TEAM_IGT));
+
+        let mut fx = local(&mut m, t0, 1_100, chapel());
+        assert_eq!(apply_fx(&fx).len(), 3, "{fx:?}");
+        // A gate flag read meanwhile is left as the scan found it.
+        let reads = || Some(vec![(ZONE_FLAG, true)]);
+        fx.extend(rx_frame(
+            &mut m,
+            t0,
+            1_200,
+            chapel(),
+            TEAM_IGT + 100,
+            100,
+            reads(),
+        ));
+        // A loading screen and its exit.
+        fx.extend(rx_frame(&mut m, t0, 1_300, None, TEAM_IGT + 200, 100, None));
+        fx.extend(rx_frame(
+            &mut m,
+            t0,
+            1_400,
+            chapel(),
+            TEAM_IGT + 300,
+            100,
+            reads(),
+        ));
+        // A reconnection.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(1_450),
+        );
+        let reconnect = rx_frame(&mut m, t0, 1_500, chapel(), TEAM_IGT + 400, 100, reads());
+        assert!(reconnect.contains(&Effect::SendReady), "{reconnect:?}");
+        fx.extend(reconnect);
+        // A zone revealed.
+        m.handle_message(zone_update("Stormveil Castle", None), t0 + ms(1_550));
+        for at in (1_600..=4_100).step_by(100) {
+            fx.extend(team(&mut m, t0, at, chapel(), 1_100));
+        }
+        assert!(m.race_state.current_zone.is_some(), "revealed");
+        assert!(
+            !fx.iter().any(|e| matches!(
+                e,
+                Effect::SendStatusUpdate { .. }
+                    | Effect::SendEventFlag { .. }
+                    | Effect::SendZoneQuery { .. }
+                    | Effect::CaptureRelayState { .. }
+                    | Effect::SendRelayState { .. }
+            )),
+            "{fx:?}"
+        );
+        assert!(!fx.contains(&Effect::SetGameFlag {
+            flag_id: ZONE_FLAG,
+            value: false
+        }));
+
+        applied(&mut m, t0, 4_150, "h1");
+        let fx = rx_frame(&mut m, t0, 4_200, chapel(), TEAM_IGT + 3_100, 100, reads());
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+        assert!(
+            !fx.iter().any(|e| matches!(
+                e,
+                Effect::SendStatusUpdate { .. }
+                    | Effect::SetGameFlag {
+                        flag_id: ZONE_FLAG,
+                        ..
+                    }
+            )),
+            "progress resumes with the frame after the acknowledgement: {fx:?}"
+        );
+        // The next scan captures the gate flag; a status update goes out.
+        let fx = rx_frame(&mut m, t0, 4_300, chapel(), TEAM_IGT + 3_200, 100, reads());
+        assert!(
+            fx.contains(&Effect::SetGameFlag {
+                flag_id: ZONE_FLAG,
+                value: false
+            }),
+            "{fx:?}"
+        );
+        assert!(fx
+            .iter()
+            .any(|e| matches!(e, Effect::SendStatusUpdate { .. })));
+        // The warp's load: its exit reports the flag, as the team's.
+        rx_frame(&mut m, t0, 4_400, None, TEAM_IGT + 3_300, 100, None);
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            4_500,
+            Some(IN_ZONE),
+            TEAM_IGT + 3_400,
+            100,
+            Some(vec![]),
+        );
+        let sent: Vec<(u32, u32)> = sent_flag_details(&fx)
+            .into_iter()
+            .map(|(flag, igt, _)| (flag, igt))
+            .collect();
+        assert_eq!(sent, [(ZONE_FLAG, TEAM_IGT + 3_200)], "{fx:?}");
+    }
+
+    #[test]
+    fn a_take_waits_for_a_good_frame_at_the_chapel() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let mut fx = Vec::new();
+        for at in (0..=900).step_by(100) {
+            fx.extend(local(&mut m, t0, at, Some(IN_ZONE)));
+        }
+        assert!(fx.contains(&lock(true)));
+        // Away from the Chapel, inside the gate window.
+        receive(&mut m, t0, take("h1"));
+        assert!(
+            m.pre_tick(t0 + ms(1_050), true, true).hp,
+            "the start needs HP"
+        );
+        let mut fx = Vec::new();
+        for at in (1_100..=5_000).step_by(100) {
+            fx.extend(local(&mut m, t0, at, Some(IN_ZONE)));
+        }
+        assert_eq!(
+            fx.iter().filter(|e| **e == warp(true)).count(),
+            1,
+            "sent to the Chapel first: {fx:?}"
+        );
+        assert!(apply_fx(&fx).is_empty());
+        // The warp's load, then the Chapel with the runner dead a long while.
+        let mut fx = Vec::new();
+        for at in (5_100..=6_000).step_by(100) {
+            fx.extend(local(&mut m, t0, at, None));
+        }
+        for at in (6_100..=91_000).step_by(100) {
+            fx.extend(rx_frame(
+                &mut m,
+                t0,
+                at,
+                chapel(),
+                LOCAL_IGT + at as u32,
+                0,
+                None,
+            ));
+        }
+        assert!(apply_fx(&fx).is_empty(), "{fx:?}");
+        assert!(m.relay_take_pending(), "no local timeout");
+        let fx = local(&mut m, t0, 91_100, chapel());
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h1", 1).iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_take_received_during_a_loading_screen_waits_for_the_settle() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        local(&mut m, t0, 950, None);
+        receive(&mut m, t0, take("h1"));
+        for at in (1_100..=2_000).step_by(100) {
+            let fx = local(&mut m, t0, at, None);
+            assert!(apply_fx(&fx).is_empty() && flag_fx(&fx).is_empty(), "{at}");
+        }
+        let exit = 2_100;
+        for at in (exit..exit + settle_ms()).step_by(100) {
+            let fx = local(&mut m, t0, at, chapel());
+            assert!(
+                apply_fx(&fx).is_empty() && flag_fx(&fx).is_empty(),
+                "{at}: {fx:?}"
+            );
+        }
+        // The lock asserted again, then the take written, on the first
+        // settled frame.
+        let fx = local(&mut m, t0, exit + settle_ms(), chapel());
+        assert_eq!(flag_fx(&fx), [&lock(true)]);
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h1", 1).iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_take_is_finished_whatever_role_an_update_shows() {
+        for started in [false, true] {
+            let t0 = Instant::now();
+            let mut m = receiver(t0);
+            receive(&mut m, t0, take("h1"));
+            if started {
+                local(&mut m, t0, 1_100, chapel());
+            }
+            // The server's 30 s: the receiver reads waiting, the baton free.
+            update(&mut m, timer_info(), t0, 1_150);
+            assert_eq!(m.relay_role(), Some(RelayRole::Holder), "{started}");
+            assert!(m.relay_take_pending());
+            let written = if started {
+                1_100
+            } else {
+                let fx = local(&mut m, t0, 1_200, chapel());
+                assert_eq!(apply_fx(&fx).len(), 3, "it starts all the same");
+                1_200
+            };
+            let fx = team_over(&mut m, t0, written + 100, 8_000, chapel(), written);
+            assert!(
+                !fx.iter()
+                    .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. }) || *e == ready(true)),
+                "{started}: {fx:?}"
+            );
+            applied(&mut m, t0, 8_050, "h1");
+            let fx = team(&mut m, t0, 8_100, chapel(), written);
+            assert_eq!(
+                flag_fx(&fx),
+                [&lock(false), &zone_warp(true), &taken("h1")],
+                "{started}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_take_is_given_up_when_another_teammate_holds_the_baton() {
+        type Case = (&'static str, Box<dyn Fn(&mut RaceMachine, Instant)>);
+        let freed = || {
+            let mut info = relay_info("waiting");
+            info.holder_id = None;
+            info.baton_free_in_s = Some(0);
+            info
+        };
+        let cases: Vec<Case> = vec![
+            (
+                "another holder",
+                Box::new(|m, t| update(m, relay_info("waiting"), t, 1_200)),
+            ),
+            (
+                "no holder, the runner out",
+                Box::new(move |m, t| {
+                    let mut info = freed();
+                    set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+                    update(m, info, t, 1_200)
+                }),
+            ),
+            (
+                "no holder",
+                Box::new(move |m, t| update(m, freed(), t, 1_200)),
+            ),
+            (
+                "team abandoned",
+                Box::new(|m, t| update(m, relay_info_with("waiting", "abandoned"), t, 1_200)),
+            ),
+            (
+                "race finished",
+                Box::new(|m, t| {
+                    m.handle_message(
+                        MachineMessage::RaceStatusChange {
+                            status: RaceStatus::Finished,
+                            current_igt: None,
+                        },
+                        t + ms(1_200),
+                    );
+                }),
+            ),
+            (
+                "race reset",
+                Box::new(|m, t| {
+                    m.handle_message(relay_auth("setup", Some(setup_relay_info())), t + ms(1_200));
+                }),
+            ),
+        ];
+        for (name, event) in cases {
+            for started in [false, true] {
+                let t0 = Instant::now();
+                let mut m = receiver(t0);
+                receive(&mut m, t0, take("h1"));
+                if started {
+                    local(&mut m, t0, 1_100, chapel());
+                }
+                event(&mut m, t0);
+                assert!(!m.relay_take_pending(), "{name} {started}");
+                // The late answer of the writes in flight changes nothing.
+                applied(&mut m, t0, 1_250, "h1");
+                let mut fx = Vec::new();
+                for at in (1_300..=10_000).step_by(100) {
+                    let igt = if started {
+                        TEAM_IGT + (at - 1_100) as u32
+                    } else {
+                        LOCAL_IGT + at as u32
+                    };
+                    let frame = rx_frame(&mut m, t0, at, chapel(), igt, 100, None);
+                    fx.extend(frame.into_iter().map(|e| (at, e)));
+                }
+                assert_eq!(acks(&fx), 0, "{name} {started}");
+                assert!(!tagged_apply(&fx), "{name} {started}: {fx:?}");
+                if name == "another holder" || name == "no holder" {
+                    // A waiting runner again: locked, ready at the Chapel.
+                    assert_eq!(m.relay_role(), Some(RelayRole::Waiting), "{name}");
+                    assert!(times_of(&fx, &lock(false)).is_empty(), "{name} {started}");
+                    assert_eq!(times_of(&fx, &ready(true)), [1_300], "{name} {started}");
+                } else {
+                    assert_eq!(times_of(&fx, &lock(false)), [1_300], "{name} {started}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_take_sent_again_is_applied_once() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        // Sent again during the apply: nothing new.
+        assert!(m.handle_message(take("h1"), t0 + ms(1_150)).is_empty());
+        let mut fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        applied(&mut m, t0, 2_050, "h1");
+        fx.extend(team_over(&mut m, t0, 2_100, 2_100, chapel(), 1_100));
+        assert!(!tagged_apply(&fx), "{fx:?}");
+        assert_eq!(times_of(&fx, &taken("h1")), [2_100]);
+        // The warp's load, into the zone; the lock asserted down after it.
+        team(&mut m, t0, 2_200, None, 1_100);
+        team_over(&mut m, t0, 2_300, 6_000, Some(IN_ZONE), 1_100);
+        // The socket dropped with the acknowledgement: the server sends the
+        // take again after auth_ok.
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(6_050),
+        );
+        m.handle_message(relay_auth("running", Some(flip_info())), t0 + ms(6_100));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(6_100),
+        );
+        assert!(m.handle_message(take("h1"), t0 + ms(6_150)).is_empty());
+        assert!(!m.relay_take_pending(), "nothing to apply");
+        let fx = team(&mut m, t0, 6_200, Some(IN_ZONE), 1_100);
+        assert_eq!(flag_fx(&fx), [&taken("h1")], "nothing written: {fx:?}");
+        assert!(apply_fx(&fx).is_empty());
+        assert!(m.item_banner().is_none(), "no second banner");
+        let fx = team_over(&mut m, t0, 6_300, 7_000, Some(IN_ZONE), 1_100);
+        assert_eq!(acks(&fx), 0);
+        // Another take: a new one, applied once back at the Chapel.
+        m.handle_message(take("h2"), t0 + ms(7_050));
+        assert!(m.relay_take_pending());
+        let mut at = 7_100;
+        while !team(&mut m, t0, at, Some(IN_ZONE), 1_100).contains(&warp(true)) {
+            at += 100;
+            assert!(at < 20_000, "sent back to the Chapel");
+        }
+        team(&mut m, t0, at + 100, None, 1_100);
+        let fx = team_over(
+            &mut m,
+            t0,
+            at + 200,
+            at + 200 + settle_ms(),
+            chapel(),
+            1_100,
+        );
+        let applies: Vec<&Effect> = fx
+            .iter()
+            .filter(|(_, e)| matches!(e, Effect::ApplyRelayItems { .. }))
+            .map(|(_, e)| e)
+            .collect();
+        assert!(
+            matches!(applies[..], [Effect::ApplyRelayItems { handoff_id, .. }] if handoff_id == "h2"),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn a_relaunched_receiver_applies_the_take_sent_after_auth() {
+        let t0 = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        m.handle_message(relay_auth("running", Some(flip_info())), t0);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0,
+        );
+        m.handle_message(take("h1"), t0 + ms(10));
+        let fx = local(&mut m, t0, 100, chapel());
+        // The lock its save may not hold is raised first, then the take is
+        // written.
+        let apply = full_apply("h1", 1);
+        let position = |wanted: &Effect| fx.iter().position(|e| e == wanted);
+        assert!(position(&lock(true)) < position(&apply[0]), "{fx:?}");
+        assert_eq!(apply_fx(&fx), apply.iter().collect::<Vec<_>>());
+        assert!(fx.contains(&ready(false)) && !fx.contains(&ready(true)));
+        applied(&mut m, t0, 150, "h1");
+        let fx = team(&mut m, t0, 200, chapel(), 100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+    }
+
+    #[test]
+    fn a_socket_drop_during_the_apply_is_acknowledged_after_the_reconnection() {
+        // The writes answer while the socket is down.
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(1_150),
+        );
+        applied(&mut m, t0, 1_200, "h1");
+        for at in (1_300..=3_000).step_by(100) {
+            let igt = TEAM_IGT + (at - 1_100) as u32;
+            let fx = rx_frame_on(&mut m, t0, at, chapel(), igt, 100, None, false);
+            assert!(flag_fx(&fx).is_empty(), "{at}: {fx:?}");
+        }
+        m.handle_message(relay_auth("running", Some(flip_info())), t0 + ms(3_050));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(3_050),
+        );
+        assert!(m.handle_message(take("h1"), t0 + ms(3_060)).is_empty());
+        update(&mut m, flip_info(), t0, 3_060);
+        let fx = team(&mut m, t0, 3_100, chapel(), 1_100);
+        assert!(apply_fx(&fx).is_empty(), "applied once: {fx:?}");
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+
+        // The take sent again before the writes answered.
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(1_150),
+        );
+        m.handle_message(relay_auth("running", Some(flip_info())), t0 + ms(1_200));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(1_200),
+        );
+        m.handle_message(take("h1"), t0 + ms(1_210));
+        let fx = team_over(&mut m, t0, 1_300, 2_000, chapel(), 1_100);
+        assert!(!tagged_apply(&fx) && acks(&fx) == 0, "{fx:?}");
+        // Readiness goes again after the auth_ok: false, the take holding.
+        assert_eq!(times_of(&fx, &ready(false)), [1_300]);
+        assert!(times_of(&fx, &ready(true)).is_empty());
+        applied(&mut m, t0, 2_050, "h1");
+        let fx = team(&mut m, t0, 2_100, chapel(), 1_100);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+    }
+
+    #[test]
+    fn an_apply_never_answered_is_abandoned_and_the_take_acknowledged() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let stale = m.relay_apply.as_ref().unwrap().generation;
+        let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon - 100, chapel(), 1_100);
+        assert_eq!(acks(&fx), 0);
+        let fx = team_over(
+            &mut m,
+            t0,
+            1_100 + abandon,
+            1_100 + abandon,
+            chapel(),
+            1_100,
+        );
+        assert_eq!(times_of(&fx, &taken("h1")), [1_100 + abandon], "{fx:?}");
+        assert_eq!(times_of(&fx, &lock(false)), [1_100 + abandon]);
+        assert_eq!(
+            m.get_status(t0 + ms(1_100 + abandon)),
+            Some("Baton taken: build not confirmed")
+        );
+        // Its late answer changes nothing.
+        m.relay_state_applied("h1", stale, t0 + ms(1_100 + abandon + 50));
+        let fx = team_over(
+            &mut m,
+            t0,
+            1_100 + abandon + 100,
+            1_100 + abandon + 2_000,
+            chapel(),
+            1_100,
+        );
+        assert_eq!(acks(&fx), 0);
+        assert!(times_of(&fx, &lock(true)).is_empty());
+    }
+
+    #[test]
+    fn a_newer_take_waits_for_the_apply_in_flight() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let first = m.relay_apply.as_ref().unwrap().generation;
+        m.handle_message(take("h2"), t0 + ms(1_150));
+        let fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        assert!(!tagged_apply(&fx) && acks(&fx) == 0, "{fx:?}");
+        // The first take's writes are over: the second goes.
+        m.relay_state_applied("h1", first, t0 + ms(2_050));
+        let fx = team(&mut m, t0, 2_100, chapel(), 1_100);
+        assert_eq!(
+            apply_fx(&fx),
+            full_apply("h2", first + 1).iter().collect::<Vec<_>>()
+        );
+        applied(&mut m, t0, 2_150, "h2");
+        let fx = team_over(&mut m, t0, 2_200, 3_000, chapel(), 2_100);
+        assert_eq!(times_of(&fx, &taken("h2")), [2_200]);
+        assert!(times_of(&fx, &taken("h1")).is_empty());
+    }
+
+    #[test]
+    fn a_late_answer_does_not_end_the_apply_that_replaced_it() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let stale = m.relay_apply.as_ref().unwrap().generation;
+        m.handle_message(take("h2"), t0 + ms(1_150));
+        // The first apply is abandoned; the newer take starts at once.
+        let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        let fx = team_over(&mut m, t0, 1_200, 1_100 + abandon, chapel(), 1_100);
+        let started: Vec<u64> = fx
+            .iter()
+            .filter(|(_, e)| matches!(e, Effect::ApplyRelayItems { handoff_id, .. } if handoff_id == "h2"))
+            .map(|(at, _)| *at)
+            .collect();
+        assert_eq!(started, [1_100 + abandon], "{fx:?}");
+        assert_eq!(acks(&fx), 0, "the abandoned take is not acknowledged");
+        // The abandoned apply answers late: the newer one is still in flight.
+        m.relay_state_applied("h1", stale, t0 + ms(1_150 + abandon));
+        let written = 1_100 + abandon;
+        let fx = team_over(
+            &mut m,
+            t0,
+            written + 100,
+            written + 1_000,
+            chapel(),
+            written,
+        );
+        assert_eq!(acks(&fx), 0, "{fx:?}");
+        applied(&mut m, t0, written + 1_050, "h2");
+        let fx = team_over(
+            &mut m,
+            t0,
+            written + 1_100,
+            written + 1_100,
+            chapel(),
+            written,
+        );
+        assert_eq!(times_of(&fx, &taken("h2")), [written + 1_100]);
+    }
+
+    #[test]
+    fn the_holder_role_holds_through_the_timer_update_crossing_the_ack() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, timer_info(), t0, 1_250);
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
+        let fx = team_over(&mut m, t0, 1_300, 4_000, chapel(), 1_100);
+        assert!(
+            !fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)),
+            "{fx:?}"
+        );
+        // The server read the acknowledgement: confirmed.
+        update(&mut m, flip_info(), t0, 4_050);
+        let fx = team_over(&mut m, t0, 4_100, 15_000, chapel(), 1_100);
+        assert!(!fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)));
+        assert_eq!(m.relay_role(), Some(RelayRole::Holder));
+
+        // Not confirmed: the server's word rules once the window is over.
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, timer_info(), t0, 1_250);
+        let fx = team_over(&mut m, t0, 1_300, 7_000, chapel(), 1_100);
+        let confirm = crate::core::relay::TAKEN_CONFIRM.as_millis() as u64;
+        assert_eq!(times_of(&fx, &lock(true)), [1_200 + confirm], "{fx:?}");
+        assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
+
+        // Another holder named inside the window: locked at once, the
+        // warp flag still raised lowered.
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, relay_info("waiting"), t0, 1_250);
+        assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
+        let fx = team(&mut m, t0, 1_300, chapel(), 1_100);
+        assert!(
+            fx.contains(&lock(true)) && fx.contains(&zone_warp(false)),
+            "{fx:?}"
+        );
+
+        // An auth_ok ends the window too.
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        m.handle_message(relay_auth("running", Some(timer_info())), t0 + ms(1_250));
+        assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
+    }
+
+    #[test]
+    fn a_zone_warp_that_starts_no_load_is_raised_again() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, flip_info(), t0, 1_250);
+        let fx = team_over(&mut m, t0, 1_300, 20_000, chapel(), 1_100);
+        let retry = crate::core::relay::WARP_RETRY.as_millis() as u64;
+        assert_eq!(
+            times_of(&fx, &zone_warp(false)),
+            [1_200 + retry, 1_300 + 2 * retry, 1_400 + 3 * retry]
+        );
+        assert_eq!(
+            times_of(&fx, &zone_warp(true)),
+            [1_300 + retry, 1_400 + 2 * retry]
+        );
+        assert_eq!(
+            m.get_status(t0 + ms(1_400 + 3 * retry)),
+            Some("Warp failed: travel from the map")
+        );
+        // Acknowledged with the first raise, once; the lock stays down.
+        assert_eq!(acks(&fx), 0);
+        assert!(times_of(&fx, &lock(true)).is_empty());
+    }
+
+    #[test]
+    fn the_take_warp_landing_keeps_the_lock_down_and_resumes_tracking() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        update(&mut m, flip_info(), t0, 1_250);
+        // The seed warps: a loading screen, the gate's zone flag raised.
+        let mut fx = Vec::new();
+        for at in (1_300..=2_000).step_by(100) {
+            fx.extend(team(&mut m, t0, at, None, 1_100));
+        }
+        let exit = rx_frame(
+            &mut m,
+            t0,
+            2_100,
+            Some(IN_ZONE),
+            TEAM_IGT + 1_000,
+            100,
+            Some(vec![(ZONE_FLAG, true)]),
+        );
+        assert!(exit.contains(&Effect::SetGameFlag {
+            flag_id: ZONE_FLAG,
+            value: false
+        }));
+        assert_eq!(sent_flags(&exit), [ZONE_FLAG], "the team's: {exit:?}");
+        fx.extend(exit);
+        let after = team_over(&mut m, t0, 2_200, 12_100, Some(IN_ZONE), 1_100);
+        fx.extend(after.into_iter().map(|(_, e)| e));
+        // Asserted down once after the settle, never raised; no return.
+        assert_eq!(fx.iter().filter(|e| **e == lock(false)).count(), 1);
+        assert!(!fx.contains(&lock(true)) && !fx.contains(&warp(true)));
+        assert!(!fx.contains(&zone_warp(true)), "the load ended the warp");
+        assert!(fx
+            .iter()
+            .any(|e| matches!(e, Effect::SendStatusUpdate { .. })));
+    }
+
+    #[test]
+    fn a_release_right_after_a_take_hands_the_baton_on() {
+        let t0 = Instant::now();
+        let mut m = acknowledged(t0);
+        release(&mut m, t0, 1_250, "h9");
+        let fx = team(&mut m, t0, 1_300, chapel(), 1_100);
+        assert_eq!(captures(&fx), [Some("h9".to_string())]);
+        let fx = answer(&mut m, t0, 1_350, Some("h9"), Some(take_state()));
+        assert!(matches!(
+            sent_states(&fx)[..],
+            [Effect::SendRelayState {
+                handoff_id: Some(id),
+                ..
+            }] if id == "h9"
+        ));
+        // The flip: waiting again, the warp flag still raised lowered, locked.
+        update(&mut m, relay_info("waiting"), t0, 1_400);
+        let fx = team(&mut m, t0, 1_500, chapel(), 1_100);
+        assert!(
+            fx.contains(&zone_warp(false)) && fx.contains(&lock(true)),
+            "{fx:?}"
+        );
+    }
+
+    #[test]
+    fn a_take_without_a_relay_being_played_is_ignored() {
+        let t0 = Instant::now();
+        let mut m = running_machine(t0);
+        assert!(m.handle_message(take("h1"), t0).is_empty());
+        assert!(!m.relay_take_pending());
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, relay_info_with("waiting", "finished"), t0, 0);
+        m.handle_message(take("h1"), t0 + ms(10));
+        assert!(!m.relay_take_pending());
     }
 }
