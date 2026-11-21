@@ -1,14 +1,40 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { statusLabel } from "$lib/format";
+  import { relayChoiceFor, teamChoiceOptions } from "$lib/relay";
   import { auth } from "$lib/stores/auth.svelte";
-  import { acceptInvite, getTwitchLoginUrl } from "$lib/api";
+  import {
+    acceptInvite,
+    getTwitchLoginUrl,
+    type RelayTeamChoice,
+  } from "$lib/api";
 
   let { data } = $props();
 
   let invite = $derived(data.invite);
   let accepting = $state(false);
   let errorMessage = $state<string | null>(null);
+
+  // A relay race: the invitee joins a team with a free slot, or starts one.
+  let isRelay = $derived(invite.relay_team_size != null);
+  let teamOptions = $derived(
+    isRelay
+      ? teamChoiceOptions(
+          invite.relay_teams,
+          invite.relay_team_size ?? 0,
+          invite.relay_runners_create_teams,
+        )
+      : [],
+  );
+  let pickedTeam = $state<string | null>(null);
+  let teamValue = $derived(
+    teamOptions.some((o) => o.value === pickedTeam)
+      ? pickedTeam
+      : (teamOptions[0]?.value ?? null),
+  );
+  let teamChoice = $derived<RelayTeamChoice | undefined>(
+    isRelay && teamValue !== null ? relayChoiceFor(teamValue) : undefined,
+  );
 
   let isLoggedIn = $derived(auth.isLoggedIn);
   let isCorrectUser = $derived(
@@ -25,7 +51,7 @@
     accepting = true;
     errorMessage = null;
     try {
-      const result = await acceptInvite(invite.token);
+      const result = await acceptInvite(invite.token, teamChoice);
       goto(`/race/${result.race_id}`);
     } catch (e) {
       errorMessage = e instanceof Error ? e.message : "Failed to accept invite";
@@ -70,6 +96,25 @@
       </p>
     {/if}
 
+    {#if isRelay}
+      <div class="team-pick">
+        {#if teamOptions.length > 0}
+          <label class="label" for="invite-team">Team</label>
+          <select
+            id="invite-team"
+            value={teamValue}
+            onchange={(e) => (pickedTeam = e.currentTarget.value)}
+          >
+            {#each teamOptions as option (option.value)}
+              <option value={option.value}>{option.label}</option>
+            {/each}
+          </select>
+        {:else}
+          <p class="hint">Every team is full: ask the organizer for a place.</p>
+        {/if}
+      </div>
+    {/if}
+
     {#if errorMessage}
       <div class="error">{errorMessage}</div>
     {/if}
@@ -86,7 +131,7 @@
         <button
           class="btn btn-primary"
           onclick={handleAccept}
-          disabled={accepting}
+          disabled={accepting || (isRelay && teamChoice === undefined)}
         >
           {accepting ? "Accepting..." : "Accept Invite"}
         </button>
@@ -149,6 +194,23 @@
 
   .value {
     font-weight: 500;
+  }
+
+  .team-pick {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .team-pick select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-family);
   }
 
   .actions {

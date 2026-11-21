@@ -1,6 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { isValidRelayTeamSize, relayCap, relayCapSentence } from "$lib/relay";
+import type { RelayTeam } from "$lib/api";
+import {
+  isValidRelayTeamSize,
+  relayCap,
+  relayCapSentence,
+  relayCapacity,
+  relayChoiceFor,
+  relayStartBlocker,
+  startingRunnerId,
+  teamChoiceOptions,
+  teamSlotAction,
+  teamView,
+} from "$lib/relay";
+
+function team(over: Partial<RelayTeam> = {}): RelayTeam {
+  return {
+    id: "t1",
+    name: "Team 1",
+    color_index: 0,
+    placeholder: false,
+    first_runner_id: null,
+    member_ids: [],
+    ...over,
+  };
+}
 
 describe("relayCap", () => {
   it("computes ceil(layers / members) + 1 like the server", () => {
@@ -43,5 +67,138 @@ describe("isValidRelayTeamSize", () => {
   it("gives no cap sentence for an invalid size", () => {
     expect(relayCapSentence(30, 1)).toBeNull();
     expect(relayCapSentence(30, null)).toBeNull();
+  });
+});
+
+describe("teamSlotAction", () => {
+  const visitor = { participantTeamId: null, canRegister: true };
+
+  it("offers Join to a visitor and Move to a runner of another team", () => {
+    expect(teamSlotAction(team({ member_ids: ["a"] }), 3, visitor)).toBe(
+      "join",
+    );
+    expect(
+      teamSlotAction(team({ id: "t2", member_ids: ["a"] }), 3, {
+        participantTeamId: "t1",
+        canRegister: true,
+      }),
+    ).toBe("move");
+  });
+
+  it("offers nothing on the viewer's own team, a full team, or to someone who cannot register", () => {
+    expect(
+      teamSlotAction(team({ id: "t1", member_ids: ["a"] }), 3, {
+        participantTeamId: "t1",
+        canRegister: true,
+      }),
+    ).toBeNull();
+    expect(
+      teamSlotAction(team({ member_ids: ["a", "b", "c"] }), 3, visitor),
+    ).toBeNull();
+    expect(
+      teamSlotAction(team(), 3, {
+        participantTeamId: null,
+        canRegister: false,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("relayCapacity", () => {
+  const four = [team(), team(), team(), team()];
+
+  it("counts in teams once runners cannot create them", () => {
+    expect(relayCapacity(four, 3, false, 30)).toBe(12);
+  });
+
+  it("falls back to the open-registration maximum, else null", () => {
+    expect(relayCapacity(four, 3, true, 30)).toBe(30);
+    expect(relayCapacity(four, 3, true, null)).toBeNull();
+  });
+});
+
+describe("relayStartBlocker", () => {
+  const two = team({ id: "a", name: "Red", member_ids: ["a1", "a2"] });
+  const one = team({ id: "b", name: "Blue", member_ids: ["b1", "b2"] });
+  const ready = { a1: "ready", a2: "ready", b1: "ready", b2: "registered" };
+
+  it("needs two teams with members, empty placeholders left out", () => {
+    const placeholder = team({ id: "c", placeholder: true });
+    expect(relayStartBlocker([two, placeholder], ready)).toBe(
+      "At least 2 teams are required to start a relay race",
+    );
+    expect(relayStartBlocker([], ready)).toBe(
+      "At least 2 teams are required to start a relay race",
+    );
+  });
+
+  it("names the first team short of two ready runners", () => {
+    expect(relayStartBlocker([two, one], ready)).toBe(
+      "Blue needs at least 2 ready runners",
+    );
+  });
+
+  it("lets the race start when every team with members has two ready", () => {
+    const placeholder = team({ id: "c", placeholder: true });
+    expect(
+      relayStartBlocker([two, one, placeholder], { ...ready, b2: "ready" }),
+    ).toBeNull();
+  });
+});
+
+describe("startingRunnerId", () => {
+  it("is the chosen runner, else the first member", () => {
+    expect(startingRunnerId(team({ member_ids: ["a", "b"] }))).toBe("a");
+    expect(
+      startingRunnerId(team({ member_ids: ["a", "b"], first_runner_id: "b" })),
+    ).toBe("b");
+  });
+
+  it("ignores a chosen runner who left, and an empty team has none", () => {
+    expect(
+      startingRunnerId(team({ member_ids: ["a"], first_runner_id: "gone" })),
+    ).toBe("a");
+    expect(startingRunnerId(team())).toBeNull();
+  });
+});
+
+describe("teamView", () => {
+  it("groups the participants by team, in team order, members in team order", () => {
+    const view = teamView(
+      [
+        team({ id: "t1", member_ids: ["b", "a"] }),
+        team({ id: "t2", member_ids: [] }),
+      ],
+      [{ id: "a" }, { id: "b" }, { id: "stray" }],
+    );
+    expect(view.map((v) => [v.team.id, v.members.map((m) => m.id)])).toEqual([
+      ["t1", ["b", "a"]],
+      ["t2", []],
+    ]);
+  });
+});
+
+describe("teamChoiceOptions", () => {
+  const teams = [
+    team({ id: "a", name: "Red", member_ids: ["x"] }),
+    team({ id: "b", name: "Blue", member_ids: ["x", "y"] }),
+    team({ id: "c", name: "Empty", placeholder: true }),
+  ];
+
+  it("lists the teams with a free slot, then New team when allowed", () => {
+    expect(teamChoiceOptions(teams, 2, true)).toEqual([
+      { value: "a", label: "Red (1/2)" },
+      { value: "c", label: "Empty (0/2)" },
+      { value: "new", label: "New team" },
+    ]);
+    expect(teamChoiceOptions(teams, 2, false).map((o) => o.value)).toEqual([
+      "a",
+      "c",
+    ]);
+  });
+
+  it("turns a value into the request body", () => {
+    expect(relayChoiceFor("a")).toEqual({ relay_team_id: "a" });
+    expect(relayChoiceFor("new")).toEqual({ create_team: true });
   });
 });

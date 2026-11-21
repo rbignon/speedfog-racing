@@ -1,14 +1,37 @@
 <script lang="ts">
-  import { searchUsers, addParticipant, addCaster, type User } from "$lib/api";
+  import {
+    searchUsers,
+    addParticipant,
+    addCaster,
+    type RelayTeam,
+    type User,
+  } from "$lib/api";
+  import { relayChoiceFor, teamChoiceOptions } from "$lib/relay";
 
   interface Props {
     mode: "participant" | "caster";
     raceId: string;
     onAdded: () => void;
     onCancel?: () => void;
+    /** Relay race: the teams to pick from (the organizer may always start one). */
+    relay?: { teams: RelayTeam[]; teamSize: number } | null;
   }
 
-  let { mode, raceId, onAdded, onCancel }: Props = $props();
+  let { mode, raceId, onAdded, onCancel, relay = null }: Props = $props();
+
+  let teamOptions = $derived(
+    relay ? teamChoiceOptions(relay.teams, relay.teamSize, true) : [],
+  );
+  let pickedTeam = $state<string | null>(null);
+  let teamValue = $derived(
+    teamOptions.some((o) => o.value === pickedTeam)
+      ? pickedTeam
+      : (teamOptions[0]?.value ?? null),
+  );
+  // An invited user who has no account yet is placed when they accept.
+  let teamChoice = $derived(
+    relay && teamValue !== null ? relayChoiceFor(teamValue) : {},
+  );
 
   let query = $state("");
   let results = $state<User[]>([]);
@@ -53,7 +76,7 @@
       if (mode === "caster") {
         await addCaster(raceId, user.twitch_username);
       } else {
-        await addParticipant(raceId, user.twitch_username);
+        await addParticipant(raceId, user.twitch_username, teamChoice);
       }
       query = "";
       results = [];
@@ -80,7 +103,7 @@
     adding = true;
     error = null;
     try {
-      await addParticipant(raceId, query.trim());
+      await addParticipant(raceId, query.trim(), teamChoice);
       query = "";
       results = [];
       onAdded();
@@ -111,6 +134,19 @@
 </script>
 
 <div class="search-container" bind:this={containerEl}>
+  {#if relay}
+    <select
+      class="team-select"
+      aria-label="Team"
+      value={teamValue}
+      onchange={(e) => (pickedTeam = e.currentTarget.value)}
+      disabled={adding}
+    >
+      {#each teamOptions as option (option.value)}
+        <option value={option.value}>{option.label}</option>
+      {/each}
+    </select>
+  {/if}
   <div class="search-input-row">
     <input
       type="text"
@@ -160,6 +196,17 @@
 <style>
   .search-container {
     position: relative;
+  }
+
+  .team-select {
+    width: 100%;
+    margin-bottom: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-family);
   }
 
   .search-input-row {

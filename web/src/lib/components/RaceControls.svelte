@@ -9,6 +9,7 @@
     updateRace,
     type RaceDetail,
   } from "$lib/api";
+  import { relayStartBlocker } from "$lib/relay";
   import { auth } from "$lib/stores/auth.svelte";
   import ConfirmModal from "./ConfirmModal.svelte";
   import DropdownMenu from "./DropdownMenu.svelte";
@@ -19,9 +20,13 @@
     raceStatus: string;
     onRaceUpdated: (race: RaceDetail) => void;
     onDeleteRace: () => void;
+    /** Relay race: participant id -> live status (the REST statuses lag the
+     * ready-ups the WebSocket delivers). */
+    liveStatusById?: Record<string, string>;
   }
 
-  let { race, raceStatus, onRaceUpdated, onDeleteRace }: Props = $props();
+  let { race, raceStatus, onRaceUpdated, onDeleteRace, liveStatusById }: Props =
+    $props();
 
   let loading = $state(false);
   let error = $state<string | null>(null);
@@ -35,15 +40,33 @@
         ? 1
         : 2,
   );
-  let canStart = $derived(race.participants.length >= minParticipants);
+  // A relay race has its own rule, for every role: two teams, each with two
+  // ready runners (the server's relay_start_error).
+  let isRelay = $derived(race.relay_team_size != null);
+  let relayBlocker = $derived(
+    isRelay
+      ? relayStartBlocker(
+          race.relay_teams,
+          liveStatusById ??
+            Object.fromEntries(race.participants.map((p) => [p.id, p.status])),
+        )
+      : null,
+  );
+  let canStart = $derived(
+    isRelay
+      ? relayBlocker === null
+      : race.participants.length >= minParticipants,
+  );
   let startHint = $derived(
     canStart
       ? undefined
-      : minParticipants === 1
-        ? "At least 1 participant required"
-        : auth.isTrusted
-          ? "At least 2 participants required without a late-join window"
-          : "At least 2 participants required",
+      : isRelay
+        ? (relayBlocker ?? undefined)
+        : minParticipants === 1
+          ? "At least 1 participant required"
+          : auth.isTrusted
+            ? "At least 2 participants required without a late-join window"
+            : "At least 2 participants required",
   );
   let isDaily = $derived(race.daily_date !== null);
   // A Set Seed race keeps its seed whatever its status.
