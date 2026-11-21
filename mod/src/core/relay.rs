@@ -1,15 +1,18 @@
-//! Relay races: the pure timing of a runner's lock and of its warp to the
-//! Chapel.
+//! Relay races: the pure timing of a runner's lock and of its warps.
 //!
 //! The seed carries a saved event flag, the lock: while it is on, the fog
 //! gates of the seed do not react and fast travel is refused. A second flag
-//! warps the player to the start zone (the Chapel) when raised; the seed
-//! lowers it itself after the warp. The race machine decides when each is
-//! written (`RaceMachine::maintain_relay`); this module holds the constants
-//! and the retry timing of the warp flag. Pure: every method takes the wall
-//! time (`now`).
+//! warps the player to the start zone (the Chapel) when raised, and each
+//! connection has a warp flag of its own that warps the player to that
+//! gate's exit; the seed lowers a warp flag itself after the warp. The race
+//! machine decides when each is written (`RaceMachine::maintain_relay`);
+//! this module holds the constants, the records of a release, a capture and
+//! a take in progress, and the retry timing of a warp flag. Pure: every
+//! method takes the wall time (`now`).
 
 use std::time::{Duration, Instant};
+
+use crate::core::protocol::CharacterState;
 
 /// Map id of the Chapel, the start zone, as the position read gives it
 /// (area 10, block 1, no sub-block: `m10_01_00_00`).
@@ -46,6 +49,54 @@ pub const CAPTURE_ABANDON: Duration = RELEASE_CAPTURE_TIMEOUT;
 /// After a capture failed, none is asked before this has passed: each one
 /// walks the inventory on the worker thread.
 pub const CAPTURE_RETRY: Duration = Duration::from_millis(500);
+
+/// After its `relay_taken`, the holder role a take gave outlives an update
+/// that reads otherwise this long, unless the server confirms it or names
+/// another holder first: the update of the server's take timer can cross a
+/// late acknowledgement. There is no local take timeout.
+pub const TAKEN_CONFIRM: Duration = Duration::from_secs(5);
+/// An apply the shell has not answered by then is abandoned by the machine
+/// (a worker that never answers must not hold a take for ever) and the take
+/// goes on to its acknowledgement. Under the server's 30 s take timer, so a
+/// take started at once is still acknowledged in time.
+pub const APPLY_ABANDON: Duration = Duration::from_secs(20);
+
+/// Where a received take stands.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TakePhase {
+    /// Waiting for the frame that writes it.
+    Received,
+    /// Its writes handed to the shell, waiting for the answer.
+    Applying,
+    /// Written: waiting for the frame that unlocks, warps and acknowledges.
+    Applied,
+}
+
+/// A `relay_take` received and not yet acknowledged.
+#[derive(Debug)]
+pub struct PendingTake {
+    pub handoff_id: String,
+    pub state: Option<CharacterState>,
+    pub igt_ms: u32,
+    pub defeat_flags: Vec<u32>,
+    pub warp_flag: Option<u32>,
+    pub zone_name: Option<String>,
+    /// When it was received: the acknowledgement logs the time since.
+    pub received_at: Instant,
+    pub phase: TakePhase,
+}
+
+/// An apply the shell was asked for and has not answered.
+#[derive(Debug)]
+pub struct ApplyInFlight {
+    /// The take it writes.
+    pub handoff_id: String,
+    /// Identity of the apply, echoed by its answer: an answer is accepted
+    /// only for the apply currently in flight.
+    pub generation: u64,
+    /// When it was asked.
+    pub asked_at: Instant,
+}
 
 /// A `relay_release` whose answer has not been sent.
 #[derive(Debug)]
@@ -85,9 +136,9 @@ pub enum WarpStep {
     Failed,
 }
 
-/// One warp to the Chapel through a flag the seed's events react to: raised
-/// once the player is loaded, ended by the load it starts, lowered and
-/// raised again when none starts, given up after `WARP_ATTEMPTS` raises.
+/// One warp through a flag the seed's events react to: raised once the
+/// player is loaded, ended by the load it starts, lowered and raised again
+/// when none starts, given up after `WARP_ATTEMPTS` raises.
 #[derive(Debug)]
 pub struct FlagWarp {
     flag: u32,

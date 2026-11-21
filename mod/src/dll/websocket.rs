@@ -70,6 +70,9 @@ pub enum OutgoingMessage {
         state: CharacterState,
         igt_ms: u32,
     },
+    RelayTaken {
+        handoff_id: String,
+    },
     Shutdown,
 }
 
@@ -232,6 +235,14 @@ impl RaceWebSocketClient {
                 state,
                 igt_ms,
             }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_taken(&self, handoff_id: String) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayTaken { handoff_id }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -436,7 +447,8 @@ fn websocket_thread(
                         // does not survive the socket), a relay_release dies
                         // with its socket (the server drops it at the
                         // disconnect), the server sends a take still awaited
-                        // again after auth_ok, and a handoff or take request
+                        // again after auth_ok (a relay_taken lost here is
+                        // answered again then), and a handoff or take request
                         // is the player's to make again.
                         _ => {}
                     }
@@ -748,6 +760,14 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
+            Ok(OutgoingMessage::RelayTaken { handoff_id }) => {
+                info!(handoff_id = %handoff_id, "[WS] Sending: relay_taken");
+                let msg = ClientMessage::RelayTaken { handoff_id };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
             Ok(OutgoingMessage::Shutdown) => return Ok(()),
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return Err("Channel disconnected".to_string()),
@@ -946,6 +966,28 @@ fn message_loop(
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: relay_release dropped");
+                            }
+                        }
+                        ServerMessage::RelayTake {
+                            handoff_id,
+                            state,
+                            igt_ms,
+                            defeat_flags,
+                            warp_flag,
+                            zone_name,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::RelayTake {
+                                    handoff_id,
+                                    state,
+                                    igt_ms,
+                                    defeat_flags,
+                                    warp_flag,
+                                    zone_name,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: relay_take dropped");
                             }
                         }
                         ServerMessage::RelayRefused { code, message } => {
