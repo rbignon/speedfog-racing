@@ -30,6 +30,7 @@ use crate::core::relay::{
     self, ApplyInFlight, CaptureInFlight, FlagWarp, PendingRelease, PendingTake, TakePhase,
     WarpStep,
 };
+use crate::core::relay_apply::ApplyEnd;
 use crate::core::relay_items;
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
 use crate::core::relay_view::{self, RelayView};
@@ -375,8 +376,9 @@ pub enum Effect {
     /// several frames. Contract with the shell, as for `CaptureRelayState`:
     /// the outcome is delivered on that frame thread, as an input of the
     /// machine
-    /// (`RaceMachine::relay_state_applied`) carrying this `generation`,
-    /// whatever part of it could not be done (the shell logs that). A shell
+    /// (`RaceMachine::relay_state_applied`) carrying this `generation` and
+    /// how the writes ended, whatever part of it could not be done (the
+    /// shell logs that). A shell
     /// that never answers is tolerated: the machine abandons the apply after
     /// `relay::APPLY_ABANDON` and ignores a late answer.
     ApplyRelayItems {
@@ -1829,7 +1831,7 @@ impl RaceMachine {
     fn relay_give_up_take(&mut self, reason: &'static str) {
         if let Some(take) = self.relay_take.take() {
             info!(handoff_id = %take.handoff_id, reason, "[RELAY] Take given up");
-            if take.phase != TakePhase::Received {
+            if take.starts > 0 {
                 self.clear_igt_references();
             }
         }
@@ -2904,7 +2906,7 @@ impl RaceMachine {
                     );
                     if let Some(old) = self.relay_take.take() {
                         info!(replaced = %old.handoff_id, "[RELAY] Take replaced by a newer one");
-                        if old.phase != TakePhase::Received {
+                        if old.starts > 0 {
                             self.clear_igt_references();
                         }
                     }
@@ -2946,6 +2948,8 @@ impl RaceMachine {
                         received_at: now,
                         started_at: now,
                         igt_write_at: now,
+                        starts: 0,
+                        apply_cut: false,
                         phase: TakePhase::Received,
                     });
                 }
@@ -3325,14 +3329,13 @@ impl RaceMachine {
         // never 0 when readable, so zero readings carry no information for
         // reload classification: skip them entirely (no flush, no arming,
         // no reference updates, no freeze recovery).
-        // Between a take's start and its acknowledgement the reading is the
-        // runner's own until the written IGT shows: the reload, wrong-save
-        // and quit-out classifications are skipped, their references held at
-        // the take's IGT (the acknowledgement rebases them).
-        let take_writing = self
-            .relay_take
-            .as_ref()
-            .is_some_and(|take| take.phase != TakePhase::Received);
+        // Between a take's first start and its acknowledgement the reading
+        // is the runner's own until the written IGT shows: the reload,
+        // wrong-save and quit-out classifications are skipped, their
+        // references held at the take's IGT (the acknowledgement rebases
+        // them), across a load that puts the take back to be started again
+        // too.
+        let take_writing = self.relay_take.as_ref().is_some_and(|take| take.starts > 0);
         if let Some(current_igt) = self
             .frame_snapshot
             .igt_ms
@@ -4552,9 +4555,10 @@ impl RaceMachine {
     }
 
     /// The runner belongs at the Chapel, locked: it waits for the baton in a
-    /// relay being played, or a take it received has not started yet (a
-    /// take is written at the Chapel only; once started, no return there
-    /// starts).
+    /// relay being played, or a take it received waits for the frame that
+    /// writes it, not started yet or put back by a load that cut its apply
+    /// (a take is written at the Chapel only; while it is written, no return
+    /// there starts).
     fn relay_chapel_bound(&self) -> bool {
         match &self.relay_take {
             Some(take) => take.phase == TakePhase::Received && self.relay_live(),
@@ -4908,7 +4912,10 @@ impl RaceMachine {
     /// bosses), which the shell plans on its worker thread and writes over
     /// the next frames. The IGT guards are rebased on
     /// the IGT written, so its jump reads as no reload, no wrong save and no
-    /// quit-out, and the bosses written are marked reported.
+    /// quit-out, and the bosses written are marked reported. The take keeps
+    /// its state and flags: a start a load cut is made again from them
+    /// (`relay_state_applied`), the acknowledgement's IGT window then
+    /// measured from the last start.
     fn relay_start_take(&mut self, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_mut() else {
             return;
@@ -4917,10 +4924,12 @@ impl RaceMachine {
         take.phase = TakePhase::Applying;
         take.started_at = now;
         take.igt_write_at = now;
+        take.starts += 1;
+        let start = take.starts;
         let handoff_id = take.handoff_id.clone();
         let igt_ms = take.igt_ms;
-        let state = take.state.take();
-        let defeat_flags = std::mem::take(&mut take.defeat_flags);
+        let state = take.state.clone();
+        let defeat_flags = take.defeat_flags.clone();
         match &state {
             Some(state) if relay_items::stats_plausible(state) => {
                 effects.push(Effect::WriteCharacterStats {
@@ -4949,6 +4958,7 @@ impl RaceMachine {
         let generation = self.relay_apply_gen;
         info!(
             handoff_id = %handoff_id,
+            start,
             igt_ms,
             items = items.len(),
             graces = grace_flags.len(),
@@ -4980,39 +4990,45 @@ impl RaceMachine {
 
     /// The frame after a take was applied: acknowledged only on a frame
     /// whose IGT reads in the window only a write that took can produce:
-    /// from the team's IGT up to it plus the wall time since the start frame
-    /// plus `relay::IGT_WRITE_SLACK` (an unreadable IGT is outside it; the
-    /// window applies at a team IGT of 0 too). Below the team's IGT the
+    /// from the team's IGT up to it plus the wall time since the last start
+    /// frame plus `relay::IGT_WRITE_SLACK` (an unreadable IGT is outside it;
+    /// the window applies at a team IGT of 0 too). Below the team's IGT the
     /// write has not taken yet; above the window the reading is the runner's
     /// own IGT still ticking. Until then `SetIgt` is emitted again, no
     /// sooner than `relay::IGT_WRITE_RETRY` after the last write.
-    /// `relay::APPLY_ABANDON` after the start, it is acknowledged all the
-    /// same (the server's own guards judge the reports) with the "time not
-    /// confirmed" status and the guard references cleared; on a frame in the
-    /// window the references are rebased on the reading.
+    /// `relay::APPLY_ABANDON` after the last start, it is acknowledged all
+    /// the same (the server's own guards judge the reports) with the "time
+    /// not confirmed" status and the guard references cleared; on a frame in
+    /// the window the references are rebased on the reading. A take whose
+    /// last apply a load cut is acknowledged with the status "items may be
+    /// missing" (the IGT's status, when both apply, shows instead).
     fn relay_ack_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_ref() else {
             return;
         };
         let (want, started_at, written_at) = (take.igt_ms, take.started_at, take.igt_write_at);
+        let apply_cut = take.apply_cut;
         let read = self.frame_snapshot.igt_ms;
         // Only a write that took reads in this window: at least the team's,
-        // and no more than the wall time since the first write explains
-        // (a higher reading is the runner's own IGT, still ticking).
+        // and no more than the wall time since the last start's write
+        // explains (a higher reading is the runner's own IGT, still ticking).
         let window_high = (want as u64)
             + now.saturating_duration_since(started_at).as_millis() as u64
             + relay::IGT_WRITE_SLACK.as_millis() as u64;
         let right = read.is_some_and(|igt| igt >= want && (igt as u64) <= window_high);
-        if !right {
-            if now.saturating_duration_since(started_at) < relay::APPLY_ABANDON {
-                if now.saturating_duration_since(written_at) >= relay::IGT_WRITE_RETRY {
-                    effects.push(Effect::SetIgt { ms: want });
-                    if let Some(take) = self.relay_take.as_mut() {
-                        take.igt_write_at = now;
-                    }
+        if !right && now.saturating_duration_since(started_at) < relay::APPLY_ABANDON {
+            if now.saturating_duration_since(written_at) >= relay::IGT_WRITE_RETRY {
+                effects.push(Effect::SetIgt { ms: want });
+                if let Some(take) = self.relay_take.as_mut() {
+                    take.igt_write_at = now;
                 }
-                return;
             }
+            return;
+        }
+        if apply_cut {
+            self.set_status("Baton taken: items may be missing".to_string(), now);
+        }
+        if !right {
             warn!(
                 wanted_ms = want,
                 read_ms = ?read,
@@ -5095,14 +5111,28 @@ impl RaceMachine {
     }
 
     /// The shell's answer to `Effect::ApplyRelayItems`, delivered on the
-    /// tracker's frame thread with the `generation` the effect carried: the apply is
-    /// over, whatever part of it could not be done (the shell logs that).
-    /// An answer for any other apply than the one in flight, an abandoned
-    /// one included, is ignored. The answer clears the apply in flight: its
-    /// take is then acknowledged on the next loaded, settled frame; a take
-    /// replaced or given up since changes nothing (a newer take waiting for
-    /// the shell starts).
-    pub fn relay_state_applied(&mut self, handoff_id: &str, generation: u64, now: Instant) {
+    /// tracker's frame thread with the `generation` the effect carried and
+    /// how its writes ended (`None`: its plan never came, nothing written):
+    /// the apply is over, whatever part of it could not be done (the shell
+    /// logs that). An answer for any other apply than the one in flight, an
+    /// abandoned one included, is ignored. The answer clears the apply in
+    /// flight: its take is then acknowledged on the next loaded, settled
+    /// frame, unless a load ended the writes (`ApplyEnd::MapChanged`: a death
+    /// or a quit-out at the Chapel) before the take's `relay::TAKE_STARTS_MAX`
+    /// starts: the take is then put back to be started again on the next
+    /// loaded, settled frame at the Chapel (stats and IGT written again, an
+    /// apply that gives only what is still lacking), the lock still raised
+    /// and progress still held. The last start's apply is acknowledged however
+    /// it ended, with the status "Baton taken: items may be missing" after a
+    /// load. A take replaced or given up since changes nothing (a newer take
+    /// waiting for the shell starts).
+    pub fn relay_state_applied(
+        &mut self,
+        handoff_id: &str,
+        generation: u64,
+        end: Option<ApplyEnd>,
+        now: Instant,
+    ) {
         match &self.relay_apply {
             Some(asked) if asked.generation == generation && asked.handoff_id == handoff_id => {}
             _ => {
@@ -5115,10 +5145,29 @@ impl RaceMachine {
         }
         let asked = self.relay_apply.take().expect("checked above");
         let elapsed_ms = now.saturating_duration_since(asked.asked_at).as_millis() as u64;
+        let cut = end == Some(ApplyEnd::MapChanged);
         match self.relay_take.as_mut() {
             Some(take) if take.handoff_id == handoff_id && take.phase == TakePhase::Applying => {
+                if cut && take.starts < relay::TAKE_STARTS_MAX {
+                    take.phase = TakePhase::Received;
+                    info!(
+                        handoff_id,
+                        elapsed_ms,
+                        start = take.starts,
+                        "[RELAY] Apply cut by a load, the take starts again at the Chapel"
+                    );
+                    return;
+                }
                 take.phase = TakePhase::Applied;
-                info!(handoff_id, elapsed_ms, "[RELAY] Take applied");
+                take.apply_cut = cut;
+                info!(handoff_id, elapsed_ms, ?end, "[RELAY] Take applied");
+                if cut {
+                    warn!(
+                        handoff_id,
+                        starts = take.starts,
+                        "[RELAY] Apply cut by a load at its last start, take acknowledged anyway"
+                    );
+                }
             }
             _ => info!(
                 handoff_id,
@@ -14958,10 +15007,16 @@ mod tests {
         fx
     }
 
-    /// The shell's answer for the apply in flight (generation 0 when none).
+    /// The shell's answer for the apply in flight (generation 0 when none),
+    /// its writes all made.
     fn applied(m: &mut RaceMachine, t0: Instant, at: u64, id: &str) {
+        applied_with(m, t0, at, id, Some(ApplyEnd::Complete));
+    }
+
+    /// The shell's answer for the apply in flight, its writes ended by `end`.
+    fn applied_with(m: &mut RaceMachine, t0: Instant, at: u64, id: &str, end: Option<ApplyEnd>) {
         let generation = m.relay_apply.as_ref().map_or(0, |a| a.generation);
-        m.relay_state_applied(id, generation, t0 + ms(at));
+        m.relay_state_applied(id, generation, end, t0 + ms(at));
     }
 
     fn apply_fx(fx: &[Effect]) -> Vec<&Effect> {
@@ -15768,7 +15823,12 @@ mod tests {
             Some("Baton taken: items may be missing")
         );
         // Its late answer changes nothing.
-        m.relay_state_applied("h1", stale, t0 + ms(1_100 + abandon + 50));
+        m.relay_state_applied(
+            "h1",
+            stale,
+            Some(ApplyEnd::Complete),
+            t0 + ms(1_100 + abandon + 50),
+        );
         let fx = team_over(
             &mut m,
             t0,
@@ -15779,6 +15839,231 @@ mod tests {
         );
         assert_eq!(acks(&fx), 0);
         assert!(times_of(&fx, &lock(true)).is_empty());
+    }
+
+    /// A load cuts the apply in flight at `at` (a death or a quit-out at the
+    /// Chapel): a frame in the load, the shell's `MapChanged` answer, the
+    /// load for `load_ms`, then Chapel frames every 100 ms, all reading the
+    /// IGT written at `written`, until the take starts again. Returns the
+    /// time of that start and every effect since `at`, tagged.
+    fn cut_by_a_load(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        written: u64,
+        load_ms: u64,
+    ) -> (u64, Vec<(u64, Effect)>) {
+        let mut fx: Vec<(u64, Effect)> = team(m, t0, at, None, written)
+            .into_iter()
+            .map(|e| (at, e))
+            .collect();
+        applied_with(m, t0, at + 50, "h1", Some(ApplyEnd::MapChanged));
+        fx.extend(team_over(m, t0, at + 100, at + load_ms, None, written));
+        let mut now = at + load_ms + 100;
+        loop {
+            let frame = team(m, t0, now, chapel(), written);
+            let started = frame
+                .iter()
+                .any(|e| matches!(e, Effect::ApplyRelayItems { .. }));
+            fx.extend(frame.into_iter().map(|e| (now, e)));
+            if started {
+                return (now, fx);
+            }
+            now += 100;
+            assert!(now < at + load_ms + 10_000, "the take never started again");
+        }
+    }
+
+    /// The writes of the frame `at` of `fx` that start a take.
+    fn start_fx(fx: &[(u64, Effect)], at: u64) -> Vec<&Effect> {
+        fx.iter()
+            .filter(|(t, e)| *t == at && !apply_fx(std::slice::from_ref(e)).is_empty())
+            .map(|(_, e)| e)
+            .collect()
+    }
+
+    #[test]
+    fn an_apply_cut_by_a_load_starts_the_take_again_at_the_chapel() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let first = m.relay_apply.as_ref().unwrap().generation;
+        let mut fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
+        let (restart, cut) = cut_by_a_load(&mut m, t0, 2_100, 1_100, 1_000);
+        fx.extend(cut);
+        // Held at the Chapel all along: locked, nothing acknowledged, no
+        // progress, no guard fired across the load.
+        assert!(m.relay_take_pending() && m.progress_held());
+        assert_eq!(acks(&fx), 0, "{fx:?}");
+        assert!(times_of(&fx, &lock(false)).is_empty(), "{fx:?}");
+        assert!(
+            !fx.iter().any(|(_, e)| matches!(
+                e,
+                Effect::SendStatusUpdate { .. }
+                    | Effect::SendEventFlag { .. }
+                    | Effect::SendZoneQuery { .. }
+                    | Effect::ApplyIgtPenalty { .. }
+            )),
+            "{fx:?}"
+        );
+        assert!(!m.wrong_save && m.triggered_flags.contains(&BOSS));
+        // Started again on the first settled frame at the Chapel: the same
+        // take, written whole again, under a new generation.
+        assert_eq!(restart, 3_200 + settle_ms(), "{fx:?}");
+        assert_eq!(
+            start_fx(&fx, restart),
+            full_apply("h1", first + 1).iter().collect::<Vec<_>>()
+        );
+        applied(&mut m, t0, restart + 50, "h1");
+        let fx = team_over(
+            &mut m,
+            t0,
+            restart + 100,
+            restart + 1_000,
+            chapel(),
+            restart,
+        );
+        assert_eq!(times_of(&fx, &taken("h1")), [restart + 100], "{fx:?}");
+        assert!(!tagged_apply(&fx));
+        assert_ne!(
+            m.get_status(t0 + ms(restart + 100)),
+            Some("Baton taken: items may be missing")
+        );
+    }
+
+    #[test]
+    fn three_applies_cut_by_a_load_acknowledge_the_take_with_its_status() {
+        let max = crate::core::relay::TAKE_STARTS_MAX as u64;
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let first = m.relay_apply.as_ref().unwrap().generation;
+        let mut written = 1_100;
+        for start in 1..max {
+            let (restart, fx) = cut_by_a_load(&mut m, t0, written + 200, written, 1_000);
+            assert_eq!(acks(&fx), 0, "{start}: {fx:?}");
+            assert_eq!(
+                start_fx(&fx, restart),
+                full_apply("h1", first + start).iter().collect::<Vec<_>>(),
+                "{start}"
+            );
+            written = restart;
+        }
+        // The last start is cut too: no fourth start, the take acknowledged
+        // on the first good frame after the load, with its status.
+        let at = written + 200;
+        let mut fx: Vec<(u64, Effect)> = team(&mut m, t0, at, None, written)
+            .into_iter()
+            .map(|e| (at, e))
+            .collect();
+        applied_with(&mut m, t0, at + 50, "h1", Some(ApplyEnd::MapChanged));
+        fx.extend(team_over(&mut m, t0, at + 100, at + 1_000, None, written));
+        let exit = at + 1_100;
+        fx.extend(team_over(
+            &mut m,
+            t0,
+            exit,
+            exit + settle_ms() + 1_000,
+            chapel(),
+            written,
+        ));
+        assert!(!tagged_apply(&fx), "{fx:?}");
+        let acked = times_of(&fx, &taken("h1"));
+        assert_eq!(acked, [exit + settle_ms()], "{fx:?}");
+        assert_eq!(
+            m.get_status(t0 + ms(acked[0])),
+            Some("Baton taken: items may be missing")
+        );
+        assert!(!m.relay_take_pending());
+    }
+
+    #[test]
+    fn a_restart_writes_the_igt_again_and_its_window_runs_from_it() {
+        let abandon = crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        // A quit-out longer than the bound of the first start.
+        let (restart, fx) = cut_by_a_load(&mut m, t0, 1_200, 1_100, abandon + 5_000);
+        assert!(
+            start_fx(&fx, restart).contains(&&Effect::SetIgt { ms: TEAM_IGT }),
+            "{fx:?}"
+        );
+        applied(&mut m, t0, restart + 50, "h1");
+        // The game reads the IGT it had before the load: inside the window
+        // of the first start, above the one of the restart. Not
+        // acknowledged, written again.
+        let fx = rx_frame(
+            &mut m,
+            t0,
+            restart + 600,
+            chapel(),
+            TEAM_IGT + 10_000,
+            100,
+            None,
+        );
+        assert!(!fx.contains(&taken("h1")), "{fx:?}");
+        assert!(fx.contains(&Effect::SetIgt { ms: TEAM_IGT }), "{fx:?}");
+        // The write shows: acknowledged, the time confirmed.
+        let fx = team(&mut m, t0, restart + 700, chapel(), restart);
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+        assert_ne!(
+            m.get_status(t0 + ms(restart + 700)),
+            Some("Baton taken: time not confirmed")
+        );
+    }
+
+    #[test]
+    fn an_apply_ended_otherwise_is_acknowledged_as_before() {
+        for end in [
+            Some(ApplyEnd::Complete),
+            Some(ApplyEnd::Deadline),
+            Some(ApplyEnd::NotWanted),
+            None,
+        ] {
+            let t0 = Instant::now();
+            let mut m = receiver(t0);
+            receive(&mut m, t0, take("h1"));
+            local(&mut m, t0, 1_100, chapel());
+            applied_with(&mut m, t0, 1_150, "h1", end);
+            let fx = team_over(&mut m, t0, 1_200, 5_000, chapel(), 1_100);
+            assert_eq!(times_of(&fx, &taken("h1")), [1_200], "{end:?}: {fx:?}");
+            assert!(!tagged_apply(&fx), "{end:?}: started once");
+            assert_ne!(
+                m.get_status(t0 + ms(1_200)),
+                Some("Baton taken: items may be missing"),
+                "{end:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_take_put_back_by_a_load_then_given_up_leaves_no_stale_guard() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        let attempt = m.run_attempt;
+        // The write failed: the game reads the runner's own IGT, far below.
+        let own = |at: u64| 5_000 + at as u32;
+        rx_frame(&mut m, t0, 1_200, None, own(1_200), 100, None);
+        applied_with(&mut m, t0, 1_250, "h1", Some(ApplyEnd::MapChanged));
+        rx_frame(&mut m, t0, 1_300, None, own(1_300), 100, None);
+        igt_frame(&mut m, t0, 1_400, own(1_400));
+        let mut info = relay_info("waiting");
+        info.baton_free_in_s = None;
+        update(&mut m, info, t0, 1_450);
+        assert!(!m.relay_take_pending());
+        let fx = igt_frame(&mut m, t0, 1_500, own(1_500));
+        assert!(m.triggered_flags.contains(&BOSS), "no reload detected");
+        assert_eq!(m.run_attempt, attempt);
+        assert!(!m.wrong_save && !m.pending_quit_out);
+        assert!(!fx
+            .iter()
+            .any(|e| matches!(e, Effect::ApplyIgtPenalty { .. })));
     }
 
     #[test]
@@ -15837,7 +16122,7 @@ mod tests {
         let fx = team_over(&mut m, t0, 1_200, 2_000, chapel(), 1_100);
         assert!(!tagged_apply(&fx) && acks(&fx) == 0, "{fx:?}");
         // The first take's writes are over: the second goes.
-        m.relay_state_applied("h1", first, t0 + ms(2_050));
+        m.relay_state_applied("h1", first, Some(ApplyEnd::Complete), t0 + ms(2_050));
         let fx = team(&mut m, t0, 2_100, chapel(), 1_100);
         assert_eq!(
             apply_fx(&fx),
@@ -15868,7 +16153,12 @@ mod tests {
         assert_eq!(started, [1_100 + abandon], "{fx:?}");
         assert_eq!(acks(&fx), 0, "the abandoned take is not acknowledged");
         // The abandoned apply answers late: the newer one is still in flight.
-        m.relay_state_applied("h1", stale, t0 + ms(1_150 + abandon));
+        m.relay_state_applied(
+            "h1",
+            stale,
+            Some(ApplyEnd::Complete),
+            t0 + ms(1_150 + abandon),
+        );
         let written = 1_100 + abandon;
         let fx = team_over(
             &mut m,

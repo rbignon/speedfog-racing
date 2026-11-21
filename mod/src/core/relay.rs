@@ -60,6 +60,12 @@ pub const TAKEN_CONFIRM: Duration = Duration::from_secs(5);
 /// goes on to its acknowledgement. Under the server's 30 s take timer, so a
 /// take started at once is still acknowledged in time.
 pub const APPLY_ABANDON: Duration = Duration::from_secs(20);
+/// Starts of one take at most: an apply a load cut (a death or a quit-out at
+/// the Chapel) puts its take back to `TakePhase::Received`, to be written
+/// again once loaded and settled at the Chapel, giving only what is still
+/// lacking; the apply that ends the last start is acknowledged however it
+/// ended, so a load at every start cannot hold a take for ever.
+pub const TAKE_STARTS_MAX: u32 = 3;
 
 /// A `relay_handoff_request` or `relay_take_request` the server has not
 /// answered by then (with a `relay_release`, a `relay_take` or a
@@ -85,7 +91,8 @@ pub const IGT_WRITE_SLACK: Duration = Duration::from_secs(2);
 /// Where a received take stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TakePhase {
-    /// Waiting for the frame that writes it.
+    /// Waiting for the frame that writes it (again, after an apply a load
+    /// cut: `PendingTake::starts` above 0).
     Received,
     /// Its writes handed to the shell, waiting for the answer.
     Applying,
@@ -93,7 +100,8 @@ pub enum TakePhase {
     Applied,
 }
 
-/// A `relay_take` received and not yet acknowledged.
+/// A `relay_take` received and not yet acknowledged. Its state and defeat
+/// flags are kept until then: a start a load cut is made again from them.
 #[derive(Debug)]
 pub struct PendingTake {
     pub handoff_id: String,
@@ -104,11 +112,18 @@ pub struct PendingTake {
     pub zone_name: Option<String>,
     /// When it was received: the acknowledgement logs the time since.
     pub received_at: Instant,
-    /// When its writes were handed to the shell (the receipt until then):
+    /// When its writes were last handed to the shell (the receipt until
+    /// then): the IGT window of the acknowledgement is measured from it, and
     /// an IGT that does not read right is given up `APPLY_ABANDON` later.
     pub started_at: Instant,
     /// When `SetIgt` was last emitted for it (the start frame first).
     pub igt_write_at: Instant,
+    /// How many times its writes were handed to the shell (0: not started
+    /// yet), `TAKE_STARTS_MAX` at most.
+    pub starts: u32,
+    /// A load cut the apply of its last start: its acknowledgement says
+    /// items may be missing.
+    pub apply_cut: bool,
     pub phase: TakePhase,
 }
 

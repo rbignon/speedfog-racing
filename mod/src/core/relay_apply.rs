@@ -163,9 +163,10 @@ impl ItemRows {
 /// One write of an apply, in the order they are made: the grace flags, then
 /// the boss defeat flags, then the items, then the armor. Flags are cheap and
 /// go first, so an apply cut short (a load, the deadline) has written them
-/// before the slow gives: a grace or an item not written is lost for the
-/// team, since the next handoff captures this runner's world. The armor is
-/// kept last so a give this mod never made before cannot hold up the rest.
+/// before the slow gives: a grace or an item an apply cut for good leaves
+/// unwritten is lost for the team, since the next handoff captures this
+/// runner's world. The armor is kept last so a give this mod never made
+/// before cannot hold up the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyStep {
     /// Raise this grace flag.
