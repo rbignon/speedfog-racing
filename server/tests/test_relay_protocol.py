@@ -23,7 +23,7 @@ from speedfog_racing.websocket.race.relay import build_relay_info
 from speedfog_racing.websocket.schemas import RELAY_OLD_MOD_MESSAGE
 
 from . import test_integration as _integration
-from .relay_fixtures import RELAY_BLOCK
+from .relay_fixtures import RELAY_BLOCK, RelayModClient
 from .test_integration import ModTestClient
 
 integration_db = _integration.integration_db
@@ -107,10 +107,14 @@ def test_auth_ok_tells_each_member_its_role(
     _relay_race_ws(integration_db, race_with_participants)
     players = race_with_participants["players"]
     race_id = race_with_participants["race_id"]
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-        holder_auth = ModTestClient(ws, players[0]["mod_token"]).auth(protocol_version="1.19")
-    with integration_client.websocket_connect(f"/ws/mod/{race_id}") as ws:
-        waiting_auth = ModTestClient(ws, players[1]["mod_token"]).auth(protocol_version="1.19")
+    auths = []
+    for player in players[:2]:
+        mod = RelayModClient.connect(integration_client, race_id, player["mod_token"], "")
+        try:
+            auths.append(mod.auth(protocol_version="1.19"))
+        finally:
+            mod.close()
+    holder_auth, waiting_auth = auths
     assert holder_auth["relay"]["role"] == "holder"
     assert waiting_auth["relay"]["role"] == "waiting"
     assert holder_auth["relay"]["flags"] == FLAGS

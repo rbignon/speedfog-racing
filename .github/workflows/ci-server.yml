@@ -36,6 +36,9 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    # A test that hangs outside pytest's per-test timeout (a fixture teardown
+    # waiting on the test server) would otherwise hold the job for six hours.
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: server

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import itertools
+import threading
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
@@ -244,6 +245,19 @@ class RelayModClient(ModTestClient):
     """
 
     def __init__(self, session: Any, mod_token: str, participant_id: str) -> None:
+        """Enter ``session`` (a websocket session not opened yet)."""
+        # Set once the server's handler has returned, its disconnect hooks done.
+        self._ended = threading.Event()
+        app = session.app
+
+        async def run(scope: Any, receive: Any, send: Any) -> None:
+            try:
+                await app(scope, receive, send)
+            finally:
+                self._ended.set()
+
+        session.app = run
+        session.__enter__()
         super().__init__(session, mod_token)
         self.participant_id = participant_id
         self.skipped: list[dict[str, Any]] = []
@@ -253,9 +267,7 @@ class RelayModClient(ModTestClient):
     def connect(
         cls, client: TestClient, race_id: str, mod_token: str, participant_id: str
     ) -> RelayModClient:
-        session = client.websocket_connect(f"/ws/mod/{race_id}")
-        session.__enter__()
-        return cls(session, mod_token, participant_id)
+        return cls(client.websocket_connect(f"/ws/mod/{race_id}"), mod_token, participant_id)
 
     def send(self, payload: dict[str, Any]) -> None:
         self.ws.send_json(payload)
@@ -276,15 +288,24 @@ class RelayModClient(ModTestClient):
         raise TimeoutError(f"Did not receive a matching {msg_type}")
 
     def close(self) -> None:
+        """End the session, once the server's handler has returned: leaving a
+        test session cancels the server's task at once, and a disconnect hook
+        cut in its database work leaks an SQLite connection, sometimes with
+        its lock (a later commit then fails with ``database is locked``)."""
         if not self._closed:
             self._closed = True
+            if not self._ended.is_set():
+                self.ws.close(1000)
+                self._ended.wait(timeout=5)
             self.ws.__exit__(None, None, None)
 
     def disconnect(self) -> None:
-        """Close the socket the way a mod does, and let the server's disconnect
-        hooks run: leaving the test session (``close``) cancels the server's
-        task at once, before they finish. ``close()`` still ends the session."""
+        """Close the socket the way a mod does and wait until the server's
+        handler has returned, its disconnect hooks done. ``close()`` still
+        ends the session."""
         self.ws.close(1000)
+        if not self._ended.wait(timeout=5):
+            raise TimeoutError("The server did not end the connection within 5s")
 
 
 _barrier_ids = itertools.count(90_000)
@@ -301,9 +322,9 @@ def barrier(mod: RelayModClient) -> None:
 def connect_spectator(client: TestClient, race_id: str) -> RelayModClient:
     """An anonymous spectator of the race, past its ``race_state`` (the mod
     client's receive helpers serve it too); ``close()`` ends it."""
-    session = client.websocket_connect(f"/ws/race/{race_id}")
-    session.__enter__()
-    spectator = RelayModClient(session, mod_token="", participant_id="")
+    spectator = RelayModClient(
+        client.websocket_connect(f"/ws/race/{race_id}"), mod_token="", participant_id=""
+    )
     try:
         spectator.send({"type": "no_auth"})
         spectator.receive_until("race_state")
@@ -427,8 +448,9 @@ def live_take_timers() -> list[Any]:
     """The relay_take timers still running in the server's rooms."""
     return [
         pending
-        for room in manager.rooms.values()
-        for pending in room.relay_pending.values()
+        # Copies: the server's thread drops a room when its timer ends.
+        for room in list(manager.rooms.values())
+        for pending in list(room.relay_pending.values())
         if pending.timer is not None and not pending.timer.done()
     ]
 
