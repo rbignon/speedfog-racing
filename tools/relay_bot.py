@@ -685,7 +685,7 @@ class Console:
         from sqlalchemy.orm import selectinload
 
         from speedfog_racing.database import async_session_maker
-        from speedfog_racing.models import Race, RelayTeam
+        from speedfog_racing.models import Participant, Race, RelayTeam
         from speedfog_racing.services.relay import team_cap
 
         async with async_session_maker() as db:
@@ -695,7 +695,11 @@ class Console:
                     await db.execute(
                         select(RelayTeam)
                         .where(RelayTeam.race_id == uuid.UUID(self.race_id))
-                        .options(selectinload(RelayTeam.members))
+                        .options(
+                            selectinload(RelayTeam.members).selectinload(
+                                Participant.user
+                            )
+                        )
                         .order_by(RelayTeam.created_at)
                     )
                 )

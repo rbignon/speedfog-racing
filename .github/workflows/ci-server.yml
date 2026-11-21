@@ -12,6 +12,9 @@ on:
       - "tools/audit/**"
       # Checked, and driven by server/tests/test_audit_signatures.py
       - "tools/audit_signatures.py"
+      # Driven by server/tests/test_relay_bot_console.py (relay_bot imports race_items_bot)
+      - "tools/relay_bot.py"
+      - "tools/race_items_bot.py"
       - ".github/workflows/ci-server.yml"
   pull_request:
     branches: [master]
@@ -24,6 +27,9 @@ on:
       - "tools/audit/**"
       # Checked, and driven by server/tests/test_audit_signatures.py
       - "tools/audit_signatures.py"
+      # Driven by server/tests/test_relay_bot_console.py (relay_bot imports race_items_bot)
+      - "tools/relay_bot.py"
+      - "tools/race_items_bot.py"
       - ".github/workflows/ci-server.yml"
   workflow_dispatch:
 
