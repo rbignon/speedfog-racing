@@ -1,5 +1,9 @@
 <script lang="ts">
+  import type { User } from "$lib/api";
   import type { WsParticipant } from "$lib/websocket";
+  import { SvelteSet } from "svelte/reactivity";
+  import UserLink from "./UserLink.svelte";
+  import { relayHolderLine, relayMemberLabel } from "$lib/relay";
   import { PLAYER_COLORS } from "$lib/dag/constants";
   import LiveBadge from "./LiveBadge.svelte";
   import SkullIcon from "./SkullIcon.svelte";
@@ -41,6 +45,9 @@
     // (shared places, rows without one): a null place shows none and dims
     // the row. Without it, rows count 1, 2, 3.
     ranks?: Record<string, number | null>;
+    // Relay races: participant id to user, to link the members of an
+    // unfolded team to their profile (a plain name without it).
+    memberUsers?: Record<string, User>;
     selectedIds?: Set<string>;
     onToggle?: (id: string, ctrlKey: boolean) => void;
     onClearSelection?: () => void;
@@ -58,12 +65,21 @@
     disqualificationReasons = {},
     runKinds = {},
     ranks,
+    memberUsers = {},
     selectedIds,
     onToggle,
     onClearSelection,
   }: Props = $props();
 
   let hasSelection = $derived(selectedIds != null && selectedIds.size > 0);
+
+  // The teams a viewer unfolded, by row id: kept here, outside the row
+  // objects, so it survives their replacement and the re-ordering.
+  const unfolded = new SvelteSet<string>();
+
+  function toggleUnfolded(id: string) {
+    if (!unfolded.delete(id)) unfolded.add(id);
+  }
 
   function zoneName(zone: string | null): string | null {
     if (!zone || !zoneNames) return null;
@@ -154,6 +170,8 @@
         {@const isFinished = participant.status === "finished"}
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
+        {@const isTeam = !!participant.relay_members}
+        {@const isUnfolded = isTeam && unfolded.has(participant.id)}
         {@const isSelected = selectedIds?.has(participant.id) ?? false}
         {@const runKind = runKinds[participant.id]}
         {@const rank = ranks ? ranks[participant.id] : index + 1}
@@ -161,6 +179,7 @@
           isPlaying && showRunDetails
             ? zoneName(participant.current_zone)
             : null}
+        {@const holderLine = isTeam ? relayHolderLine(participant, zone) : null}
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <li
           class="participant"
@@ -194,26 +213,55 @@
           <div class="info">
             <div class="name-row">
               <span class="name name-container">
-                <a
-                  href="/user/{participant.twitch_username}"
-                  target="_blank"
-                  class="name-link"
-                  style={nameStyleFor(participant)}
-                  onclick={(e) => e.stopPropagation()}
-                >
-                  {#if mode === "running" && (isPlaying || isPreRace)}
-                    <span
-                      class="conn-dot"
-                      class:connected={participant.mod_connected}
-                      title={participant.mod_connected
-                        ? "Mod connected"
-                        : "Mod disconnected"}
-                    ></span>
-                  {/if}<span
-                    >{participant.twitch_display_name ||
-                      participant.twitch_username}</span
+                {#if isTeam}
+                  <button
+                    type="button"
+                    class="team-toggle"
+                    aria-expanded={isUnfolded}
+                    title={isUnfolded ? "Fold the team" : "Show the members"}
+                    onclick={(e) => {
+                      e.stopPropagation();
+                      toggleUnfolded(participant.id);
+                    }}
                   >
-                </a>
+                    <span class="chevron" aria-hidden="true"
+                      >{isUnfolded ? "\u25BE" : "\u25B8"}</span
+                    >
+                    {#if mode === "running" && (isPlaying || isPreRace)}
+                      <span
+                        class="conn-dot"
+                        class:connected={participant.mod_connected}
+                        title={participant.mod_connected
+                          ? "Mod connected"
+                          : "Mod disconnected"}
+                      ></span>
+                    {/if}<span
+                      >{participant.twitch_display_name ||
+                        participant.twitch_username}</span
+                    >
+                  </button>
+                {:else}
+                  <a
+                    href="/user/{participant.twitch_username}"
+                    target="_blank"
+                    class="name-link"
+                    style={nameStyleFor(participant)}
+                    onclick={(e) => e.stopPropagation()}
+                  >
+                    {#if mode === "running" && (isPlaying || isPreRace)}
+                      <span
+                        class="conn-dot"
+                        class:connected={participant.mod_connected}
+                        title={participant.mod_connected
+                          ? "Mod connected"
+                          : "Mod disconnected"}
+                      ></span>
+                    {/if}<span
+                      >{participant.twitch_display_name ||
+                        participant.twitch_username}</span
+                    >
+                  </a>
+                {/if}
                 {#if badge}
                   <img
                     src="/badges/{badge.icon_filename}"
@@ -292,6 +340,12 @@
                   >
                 {/if}
               </span>
+            {:else if holderLine}
+              <span
+                class="zone"
+                title={zoneNames?.get(participant.current_zone ?? "") ?? ""}
+                >{holderLine}</span
+              >
             {:else if zone}
               <span
                 class="zone"
@@ -337,6 +391,36 @@
                 <span class="status-text">{participant.status}</span>
               {/if}
             </span>
+            {#if isUnfolded}
+              <ul class="team-members">
+                {#each participant.relay_members ?? [] as member (member.participant_id)}
+                  {@const state = relayMemberLabel(
+                    member,
+                    participant.relay_holder_id,
+                  )}
+                  <li class="team-member">
+                    {#if memberUsers[member.participant_id]}
+                      <span class="member-name"
+                        ><UserLink
+                          user={memberUsers[member.participant_id]}
+                        /></span
+                      >
+                    {:else}
+                      <span class="member-name">{member.name}</span>
+                    {/if}
+                    <span
+                      class="member-state"
+                      class:playing={state.startsWith("playing")}>{state}</span
+                    >
+                    <span class="member-zones" title="Zones counted / cap"
+                      >{member.zones}{participant.relay_cap != null
+                        ? `/${participant.relay_cap}`
+                        : ""}</span
+                    >
+                  </li>
+                {/each}
+              </ul>
+            {/if}
           </div>
         </li>
       {/each}
@@ -518,6 +602,70 @@
 
   .name-link:hover {
     text-decoration: underline;
+  }
+
+  /* A team's name: a button that folds the members, looking like the name. */
+  .team-toggle {
+    display: inline;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .team-toggle:hover {
+    color: var(--color-text-secondary);
+  }
+
+  .chevron {
+    display: inline-block;
+    width: 0.9rem;
+    opacity: 0.6;
+  }
+
+  .team-members {
+    list-style: none;
+    margin: 0.45rem 0 0.1rem;
+    padding: 0.4rem 0 0;
+    border-top: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    font-size: var(--font-size-sm);
+  }
+
+  .team-member {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+  }
+
+  .member-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .member-state {
+    color: var(--color-text-secondary);
+    flex-shrink: 0;
+  }
+
+  .member-state.playing {
+    color: var(--color-success);
+  }
+
+  .member-zones {
+    flex-shrink: 0;
+    min-width: 1.9rem;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    color: var(--color-text-secondary);
   }
 
   .stats {

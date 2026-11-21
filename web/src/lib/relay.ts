@@ -3,6 +3,7 @@
  */
 
 import type { RelayTeam } from "$lib/api";
+import type { RelayMember, WsParticipant } from "$lib/websocket";
 
 export const RELAY_TEAM_SIZE_MIN = 2;
 export const RELAY_TEAM_SIZE_MAX = 6;
@@ -200,4 +201,67 @@ export function needsRaceRefetch(input: {
   );
   const rest = new Set(restIds);
   return liveIds.size !== rest.size || [...liveIds].some((id) => !rest.has(id));
+}
+
+/** The second line of a playing team's row: "<holder>, <zone>" ("<holder>"
+ * without a zone), "<holder> offline" when the holder has no connection,
+ * "Baton free" when nobody holds the baton. Null for a row that is not a team
+ * and for a team that is not playing. */
+export function relayHolderLine(
+  row: WsParticipant,
+  zone: string | null,
+): string | null {
+  if (!row.relay_members || row.status !== "playing") return null;
+  if (!row.relay_holder) return "Baton free";
+  if (!row.mod_connected) return `${row.relay_holder} offline`;
+  return zone ? `${row.relay_holder}, ${zone}` : row.relay_holder;
+}
+
+export type RelayMemberState =
+  | "playing"
+  | "waiting"
+  | "out"
+  | "ready"
+  | "finished";
+
+/** Where a member stands in their team: out (abandoned or disqualified,
+ * whatever the team does), finished, the holder playing, ready (before the
+ * start), else waiting for the baton. */
+export function relayMemberState(
+  member: RelayMember,
+  holderId: string | null | undefined,
+): RelayMemberState {
+  if (member.status === "abandoned" || member.status === "disqualified") {
+    return "out";
+  }
+  if (member.status === "finished") return "finished";
+  if (holderId != null && member.participant_id === holderId) return "playing";
+  if (member.status === "ready") return "ready";
+  return "waiting";
+}
+
+/** The state as the unfolded list writes it; the holder and a waiting member
+ * add ", offline" when they have no connection. */
+export function relayMemberLabel(
+  member: RelayMember,
+  holderId: string | null | undefined,
+): string {
+  const state = relayMemberState(member, holderId);
+  const offline =
+    !member.online && (state === "playing" || state === "waiting");
+  return offline ? `${state}, offline` : state;
+}
+
+/** The rules line of a relay race: zones in the seed, team size, cap per
+ * runner; each part is dropped when the race does not give it. */
+export function relayRuleLine(
+  totalLayers: number | null | undefined,
+  teamSize: number | null | undefined,
+  cap: number | null | undefined,
+): string {
+  const parts: string[] = [];
+  if (totalLayers) parts.push(`${totalLayers} zones`);
+  if (teamSize) parts.push(`teams of ${teamSize}`);
+  if (cap) parts.push(`${cap} zones max per runner`);
+  return `Relay: ${parts.join(", ")}.`;
 }

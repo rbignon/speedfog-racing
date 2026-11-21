@@ -26,6 +26,53 @@ function participant(
   };
 }
 
+describe("reuseIfUnchanged on a relay team row", () => {
+  const members = () => [
+    {
+      participant_id: "m1",
+      name: "Kiofto",
+      zones: 3,
+      status: "playing",
+      online: true,
+      ready: false,
+      validated: false,
+    },
+    {
+      participant_id: "m2",
+      name: "wospince",
+      zones: 5,
+      status: "playing",
+      online: true,
+      ready: false,
+      validated: false,
+    },
+  ];
+  const team = (over: Partial<WsParticipant> = {}) =>
+    participant("t1", {
+      relay_holder: "Kiofto",
+      relay_holder_id: "m1",
+      relay_cap: 5,
+      relay_members: members(),
+      ...over,
+    } as Partial<WsParticipant>);
+
+  it("keeps the object of an unchanged team whose members arrive as a fresh array", () => {
+    const previous = team();
+    expect(reuseIfUnchanged(team(), previous)).toBe(previous);
+  });
+
+  it("takes the new row when the holder changes", () => {
+    const incoming = team({ relay_holder: "wospince", relay_holder_id: "m2" });
+    expect(reuseIfUnchanged(incoming, team())).toBe(incoming);
+  });
+
+  it("takes the new row when one member's count changes", () => {
+    const incoming = team();
+    incoming.relay_members![0].zones = 4;
+    expect(reuseIfUnchanged(incoming, team())).toBe(incoming);
+  });
+});
+
 describe("reuseIfUnchanged", () => {
   // The wire shape: every field present, nested objects re-created by each
   // message's JSON parse.

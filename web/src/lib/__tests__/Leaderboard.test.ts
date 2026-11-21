@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import Leaderboard from "$lib/components/Leaderboard.svelte";
 
@@ -238,5 +238,110 @@ describe("Leaderboard: gap visibility in selection mode", () => {
       },
     });
     expect(withSelection.container.querySelector(".gap")).toBeNull();
+  });
+});
+
+describe("Leaderboard: relay team rows", () => {
+  const members = [
+    {
+      participant_id: "m1",
+      name: "Kiofto",
+      zones: 3,
+      status: "playing",
+      online: true,
+      ready: false,
+      validated: false,
+    },
+    {
+      participant_id: "m2",
+      name: "wospince",
+      zones: 5,
+      status: "playing",
+      online: true,
+      ready: false,
+      validated: false,
+    },
+  ];
+  const teamRow = (over: Record<string, unknown> = {}) =>
+    fakeParticipant({
+      id: "t1",
+      twitch_username: "red_team",
+      twitch_display_name: "Red Team",
+      status: "playing",
+      mod_connected: true,
+      daily_points: null,
+      relay_holder: "Kiofto",
+      relay_holder_id: "m1",
+      relay_cap: 5,
+      relay_members: members,
+      ...over,
+    });
+  const props = (over: Record<string, unknown> = {}) => ({
+    participants: [teamRow()],
+    mode: "running" as const,
+    showRunDetails: true,
+    ...over,
+  });
+
+  it("a team name is not a profile link", () => {
+    const { container } = render(Leaderboard, { props: props() });
+    expect(container.querySelector('a[href^="/user/"]')).toBeNull();
+  });
+
+  it("the chevron and the name unfold the members without selecting the row", async () => {
+    const onToggle = vi.fn();
+    render(Leaderboard, { props: props({ onToggle }) });
+    expect(screen.queryByText("3/5")).toBeNull();
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    );
+    expect(onToggle).not.toHaveBeenCalled();
+    expect(screen.getByText("3/5")).toBeTruthy();
+    expect(screen.getByText("5/5")).toBeTruthy();
+    expect(screen.getByText("waiting")).toBeTruthy();
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: true }),
+    );
+    expect(screen.queryByText("3/5")).toBeNull();
+  });
+
+  it("a click elsewhere on the team row still selects it", async () => {
+    const onToggle = vi.fn();
+    const { container } = render(Leaderboard, { props: props({ onToggle }) });
+    await fireEvent.click(container.querySelector(".stats")!);
+    expect(onToggle).toHaveBeenCalledWith("t1", false);
+  });
+
+  it("an unfolded team stays unfolded when its row object is replaced", async () => {
+    const { rerender } = render(Leaderboard, { props: props() });
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    );
+    await rerender(props({ participants: [teamRow({ igt_ms: 9000 })] }));
+    expect(screen.getByText("3/5")).toBeTruthy();
+  });
+
+  it("an unfolded team stays unfolded when the order changes", async () => {
+    const other = teamRow({ id: "t2", twitch_display_name: "Blue Team" });
+    const { rerender } = render(Leaderboard, {
+      props: props({ participants: [teamRow(), other] }),
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    );
+    await rerender(props({ participants: [other, teamRow()] }));
+    expect(screen.getAllByText("3/5")).toHaveLength(1);
+  });
+
+  it("writes the holder and the zone on the second line", () => {
+    const { container } = render(Leaderboard, {
+      props: props({
+        participants: [teamRow({ current_zone: "z1" })],
+        zoneNames: new Map([["z1", "Leyndell, Royal Capital"]]),
+      }),
+    });
+    const line = container.querySelector(".zone");
+    expect(line?.textContent).toBe("Kiofto, Leyndell, Royal Cap\u2026");
+    expect(line?.getAttribute("title")).toBe("Leyndell, Royal Capital");
   });
 });

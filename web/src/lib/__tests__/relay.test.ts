@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RelayTeam } from "$lib/api";
+import type { RelayMember, WsParticipant } from "$lib/websocket";
 import {
   isValidRelayTeamSize,
   needsRaceRefetch,
@@ -10,6 +11,10 @@ import {
   relayCapSentence,
   relayCapacity,
   relayChoiceFor,
+  relayHolderLine,
+  relayMemberLabel,
+  relayMemberState,
+  relayRuleLine,
   relayStartBlocker,
   startingRunnerId,
   teamChoiceOptions,
@@ -297,5 +302,136 @@ describe("needsRaceRefetch", () => {
       true,
     );
     expect(needsRaceRefetch({ ...base, restIds: ["a", "b"] })).toBe(true);
+  });
+});
+
+function member(over: Partial<RelayMember> = {}): RelayMember {
+  return {
+    participant_id: "a",
+    name: "Kiofto",
+    zones: 3,
+    status: "playing",
+    online: true,
+    ready: false,
+    validated: false,
+    ...over,
+  };
+}
+
+function teamRow(over: Partial<WsParticipant> = {}): WsParticipant {
+  return {
+    id: "t1",
+    twitch_username: "red_team",
+    twitch_display_name: "Red Team",
+    status: "playing",
+    current_zone: null,
+    current_layer: 4,
+    igt_ms: 1000,
+    death_count: 0,
+    color_index: 0,
+    mod_connected: true,
+    zone_history: null,
+    relay_holder: "Kiofto",
+    relay_holder_id: "a",
+    relay_cap: 5,
+    relay_members: [member()],
+    ...over,
+  };
+}
+
+describe("relayHolderLine", () => {
+  it("writes the holder and the zone", () => {
+    expect(relayHolderLine(teamRow(), "Leyndell")).toBe("Kiofto, Leyndell");
+    expect(relayHolderLine(teamRow(), null)).toBe("Kiofto");
+  });
+
+  it("says offline instead of the zone when the holder has no connection", () => {
+    expect(
+      relayHolderLine(
+        teamRow({ relay_holder: "Linlin_Tv", mod_connected: false }),
+        "Raya Lucaria",
+      ),
+    ).toBe("Linlin_Tv offline");
+  });
+
+  it("says the baton is free when a playing team has no holder", () => {
+    expect(
+      relayHolderLine(
+        teamRow({ relay_holder: null, relay_holder_id: null }),
+        "Leyndell",
+      ),
+    ).toBe("Baton free");
+  });
+
+  it("has no line for a team that is not playing or a row that is not a team", () => {
+    expect(relayHolderLine(teamRow({ status: "finished" }), "x")).toBeNull();
+    expect(
+      relayHolderLine(teamRow({ relay_members: undefined }), "x"),
+    ).toBeNull();
+  });
+});
+
+describe("relayMemberState", () => {
+  it("tells the holder from the waiting and the out", () => {
+    expect(relayMemberState(member(), "a")).toBe("playing");
+    expect(relayMemberState(member({ participant_id: "b" }), "a")).toBe(
+      "waiting",
+    );
+    expect(
+      relayMemberState(
+        member({ participant_id: "c", status: "abandoned" }),
+        "a",
+      ),
+    ).toBe("out");
+  });
+
+  it("keeps a disqualified holder out, whatever the team does", () => {
+    expect(relayMemberState(member({ status: "disqualified" }), "a")).toBe(
+      "out",
+    );
+  });
+
+  it("treats everyone as waiting when the baton is free", () => {
+    expect(relayMemberState(member(), null)).toBe("waiting");
+    expect(relayMemberState(member(), undefined)).toBe("waiting");
+  });
+
+  it("reads finished before the holder", () => {
+    expect(relayMemberState(member({ status: "finished" }), "a")).toBe(
+      "finished",
+    );
+  });
+});
+
+describe("relayMemberLabel", () => {
+  it("adds offline to the holder and to a waiting member only", () => {
+    expect(relayMemberLabel(member({ online: false }), "a")).toBe(
+      "playing, offline",
+    );
+    expect(
+      relayMemberLabel(member({ participant_id: "b", online: false }), "a"),
+    ).toBe("waiting, offline");
+    expect(
+      relayMemberLabel(
+        member({ participant_id: "b", status: "abandoned", online: false }),
+        "a",
+      ),
+    ).toBe("out");
+    expect(relayMemberLabel(member(), "a")).toBe("playing");
+  });
+});
+
+describe("relayRuleLine", () => {
+  it("writes the rule from the zone count, team size and cap", () => {
+    expect(relayRuleLine(30, 3, 11)).toBe(
+      "Relay: 30 zones, teams of 3, 11 zones max per runner.",
+    );
+  });
+
+  it("drops what the race does not give", () => {
+    expect(relayRuleLine(null, 3, 11)).toBe(
+      "Relay: teams of 3, 11 zones max per runner.",
+    );
+    expect(relayRuleLine(30, 3, null)).toBe("Relay: 30 zones, teams of 3.");
   });
 });
