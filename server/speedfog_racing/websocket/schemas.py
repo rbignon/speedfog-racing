@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from enum import StrEnum
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,17 +185,25 @@ class RelayMember(BaseModel):
     validated: bool
 
 
+# The wire range of a CharacterState integer: what the mod's integer types hold,
+# so a stored state always deserializes there (a team replays it at every
+# take). Event flags fit an i32 like the other values; an item id keeps its
+# category nibble in the top bits, the u32 of the protocol's other item ids.
+CharacterStateInt = Annotated[int, Field(ge=0, le=2**31 - 1)]
+CharacterStateItem = Annotated[int, Field(ge=0, le=2**32 - 1)]
+
+
 class CharacterState(BaseModel):
     """What a relay handoff carries of a character, in the order the game stores it."""
 
     # Vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane.
-    attributes: list[int] = Field(min_length=8, max_length=8)
-    level: int
-    runes: int
+    attributes: list[CharacterStateInt] = Field(min_length=8, max_length=8)
+    level: CharacterStateInt
+    runes: CharacterStateInt
     # Raw item ids with their category nibble, only the transferable ones, each once.
-    items: list[int] = Field(default_factory=list, max_length=4000)
+    items: list[CharacterStateItem] = Field(default_factory=list, max_length=4000)
     # Event flags of the lit graces.
-    grace_flags: list[int] = Field(default_factory=list, max_length=1000)
+    grace_flags: list[CharacterStateInt] = Field(default_factory=list, max_length=1000)
 
 
 class RelayFlags(BaseModel):

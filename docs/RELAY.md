@@ -158,7 +158,9 @@ What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py
 
 `RelayModHandler` hands the five baton messages to the operations of
 `websocket/race/relay.py`. A payload that does not parse (its pydantic model, the
-`CharacterState` bounds, an IGT out of range) is dropped. A refused request gets a
+`CharacterState` bounds: list lengths, and every integer non-negative, at most
+2^31 - 1, an item id at most 2^32 - 1; an IGT out of range) is dropped, so a stored
+state always fits the mod's types: a team replays it at every take. A refused request gets a
 `relay_refused` to the asker, the first matching row winning (codes in `RelayRefusal`,
 each with its `RELAY_REFUSAL_MESSAGES` text):
 
