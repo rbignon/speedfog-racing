@@ -26,9 +26,12 @@ from speedfog_racing.services.speedrun_service import (
     race_unranked_reason,
 )
 from speedfog_racing.websocket.schemas import build_race_info
+from tests import relay_fixtures as _relay_fixtures
 from tests.relay_fixtures import make_relay_race, make_relay_seed
 
 pytestmark = pytest.mark.asyncio
+
+relay_races_on = _relay_fixtures.relay_races_on
 
 
 @pytest.fixture
@@ -107,7 +110,7 @@ async def _count_races(session) -> int:
         {"relay_team_size": 7},
     ],
 )
-async def test_create_relay_refuses(ro_client, ro_session, organizer, extra):
+async def test_create_relay_refuses(ro_client, ro_session, organizer, extra, relay_races_on):
     async with ro_session() as db:
         await make_relay_seed(db, suffix="refuse")
         await db.commit()
@@ -117,7 +120,9 @@ async def test_create_relay_refuses(ro_client, ro_session, organizer, extra):
     assert await _count_races(ro_session) == 0
 
 
-async def test_create_relay_puts_a_racing_organizer_in_team_1(ro_client, ro_session, organizer):
+async def test_create_relay_puts_a_racing_organizer_in_team_1(
+    ro_client, ro_session, organizer, relay_races_on
+):
     async with ro_session() as db:
         await make_relay_seed(db, suffix="create", total_layers=12)
         await db.commit()
@@ -136,7 +141,9 @@ async def test_create_relay_puts_a_racing_organizer_in_team_1(ro_client, ro_sess
     assert detail["unranked_code"] == "relay"
 
 
-async def test_create_relay_without_an_organizer_makes_no_team(ro_client, ro_session, organizer):
+async def test_create_relay_without_an_organizer_makes_no_team(
+    ro_client, ro_session, organizer, relay_races_on
+):
     async with ro_session() as db:
         await make_relay_seed(db, suffix="noteam")
         await db.commit()
@@ -146,11 +153,29 @@ async def test_create_relay_without_an_organizer_makes_no_team(ro_client, ro_ses
     assert detail["relay_teams"] == []
 
 
-async def test_create_relay_without_a_relay_seed_leaves_no_race(ro_client, ro_session, organizer):
+async def test_create_relay_without_a_relay_seed_leaves_no_race(
+    ro_client, ro_session, organizer, relay_races_on
+):
     async with ro_client as client:
         response = await client.post("/api/races", json=_body(), headers=_auth(organizer))
     assert response.status_code == 400
     assert "No relay seed available" in response.json()["detail"]
+    assert await _count_races(ro_session) == 0
+
+
+async def test_create_relay_is_refused_while_relay_races_are_off(
+    ro_client, ro_session, organizer, monkeypatch
+):
+    from speedfog_racing.config import settings
+
+    monkeypatch.setattr(settings, "relay_races_enabled", False)
+    async with ro_session() as db:
+        await make_relay_seed(db, suffix="off")
+        await db.commit()
+    async with ro_client as client:
+        response = await client.post("/api/races", json=_body(), headers=_auth(organizer))
+    assert response.status_code == 400, response.text
+    assert response.json()["detail"] == "Relay races are not available yet"
     assert await _count_races(ro_session) == 0
 
 

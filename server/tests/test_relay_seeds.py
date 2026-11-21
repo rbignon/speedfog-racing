@@ -13,6 +13,7 @@ from speedfog_racing.main import app
 from speedfog_racing.models import Race, Seed, SeedStatus, User, UserRole
 from speedfog_racing.services.relay import relay_flags, seed_has_relay
 from speedfog_racing.services.seed_service import assign_seed_to_race, get_available_seed
+from tests import relay_fixtures as _relay_fixtures
 
 RELAY_BLOCK = {
     "lock_flag": 1050290500,
@@ -21,6 +22,8 @@ RELAY_BLOCK = {
     "zone_flag_base": 1050294000,
     "warp_flag_count": 490,
 }
+
+relay_races_on = _relay_fixtures.relay_races_on
 
 _MIGRATION = (
     Path(__file__).resolve().parents[1]
@@ -158,7 +161,7 @@ async def test_relay_race_is_assigned_a_relay_seed(rl_session, rl_organizer):
 
 
 @pytest.mark.asyncio
-async def test_pools_endpoint_counts_relay_seeds(rl_client, rl_session):
+async def test_pools_endpoint_counts_relay_seeds(rl_client, rl_session, relay_races_on):
     async with rl_session() as db:
         db.add_all(
             [
@@ -174,6 +177,26 @@ async def test_pools_endpoint_counts_relay_seeds(rl_client, rl_session):
         resp = await client.get("/api/pools?type=race")
     assert resp.status_code == 200, resp.text
     assert resp.json()["standard"]["relay_available"] == 2
+
+
+@pytest.mark.asyncio
+async def test_pools_offer_no_relay_seed_while_relay_races_are_off(
+    rl_client, rl_session, monkeypatch
+):
+    from speedfog_racing.config import settings
+
+    monkeypatch.setattr(settings, "relay_races_enabled", False)
+    async with rl_session() as db:
+        db.add(_seed("a", _relay_graph()))
+        await db.commit()
+
+    async with rl_client as client:
+        resp = await client.get("/api/pools?type=race")
+    assert resp.status_code == 200, resp.text
+    assert (resp.json()["standard"]["available"], resp.json()["standard"]["relay_available"]) == (
+        1,
+        0,
+    )
 
 
 @pytest.mark.asyncio

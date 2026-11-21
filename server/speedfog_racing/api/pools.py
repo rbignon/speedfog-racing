@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.auth import get_current_user_optional
+from speedfog_racing.config import settings
 from speedfog_racing.database import get_db
 from speedfog_racing.models import User
 from speedfog_racing.schemas import PoolConfig
@@ -54,7 +55,8 @@ async def list_pools(
     """
     stats = await get_pool_stats(db)
     race_items_counts = await get_race_items_counts(db)
-    relay_counts = await get_relay_counts(db)
+    # Relay races off (settings): no relay seed to offer, so no relay format.
+    relay_counts = await get_relay_counts(db) if settings.relay_races_enabled else {}
 
     played_counts: dict[str, int] = {}
     if user:

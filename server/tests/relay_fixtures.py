@@ -10,7 +10,8 @@ connected, the race started, each holder's first report sent) or
 ``started_mods`` (the same as a fixture body), ``RelayModClient``, a mod kept
 connected across a test, ``barrier``, ``connect_spectator``, and the member
 steps ``validate``, ``set_ready`` and ``make_receiver``. Tests without a socket
-put a race of ``make_relay_race`` in play with ``run_relay_race``.
+put a race of ``make_relay_race`` in play with ``run_relay_race``. A test that
+creates a relay race through the API uses the ``relay_races_on`` fixture.
 """
 
 from __future__ import annotations
@@ -24,11 +25,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 from starlette.testclient import TestClient
 
+from speedfog_racing.config import settings
 from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
@@ -66,6 +69,14 @@ BOSS_FLAG = 10000800
 FINAL_BOSS_FLAG = 19000800
 FINISH_FLAG = 1050299000
 PROGRESS_TOTAL_LAYERS = 4
+
+
+@pytest.fixture
+def relay_races_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Relay races are off by default (``settings.relay_races_enabled``): a
+    test that creates one through the API, or counts relay seeds in the pools,
+    turns them on. Rows inserted directly need nothing."""
+    monkeypatch.setattr(settings, "relay_races_enabled", True)
 
 
 def relay_graph(graph: dict[str, Any]) -> dict[str, Any]:
