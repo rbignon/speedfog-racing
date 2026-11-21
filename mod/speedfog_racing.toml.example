@@ -36,3 +36,7 @@ toggle_debug = "none"
 # Key to cycle the leaderboard: the starting layout, hidden, then the other
 # layout (set to "none" to disable)
 toggle_leaderboard = "f10"
+# Key of relay races: the holder's menu to pass the baton (tap to move the
+# highlight, hold 1 s to confirm) and a waiting runner's take of a free baton.
+# Inert on any other race (set to "none" to disable)
+relay = "f8"
