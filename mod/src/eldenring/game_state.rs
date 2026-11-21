@@ -302,20 +302,15 @@ impl GameState {
         [left, right]
     }
 
-    /// Check if the player position is readable without allocating a String
-    /// for the map ID. Use this instead of `read_position().is_some()` when
-    /// only a boolean check is needed (e.g., loading screen detection).
-    pub fn is_position_readable(&self) -> bool {
+    /// The map id of the loaded position, `None` while it is unreadable (a
+    /// loading screen, the main menu): the readability check of every frame,
+    /// without allocating a String for the map id.
+    pub fn loaded_map_id(&self) -> Option<u32> {
         profile_span!("is_position_readable");
-        let coords = match self.pointers.global_position.read() {
-            Some(c) => c,
-            None => return false,
-        };
-        let map_id = match self.pointers.global_position.read_map_id() {
-            Some(m) => m,
-            None => return false,
-        };
-        map_id != INVALID_MAP_ID && !(coords[0] == 0.0 && coords[1] == 0.0 && coords[2] == 0.0)
+        let coords = self.pointers.global_position.read()?;
+        let map_id = self.pointers.global_position.read_map_id()?;
+        (map_id != INVALID_MAP_ID && !(coords[0] == 0.0 && coords[1] == 0.0 && coords[2] == 0.0))
+            .then_some(map_id)
     }
 
     /// Add `ms` to the in-game timer (quit-out penalty). Returns the new

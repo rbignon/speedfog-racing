@@ -23,6 +23,7 @@ pub mod play_clock;
 pub mod profile;
 pub mod protocol;
 pub mod race_machine;
+pub mod relay;
 pub mod talisman_thief;
 pub mod timed_effects;
 pub mod types;
