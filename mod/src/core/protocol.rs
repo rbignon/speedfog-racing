@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// backward-compatible addition worth signalling -> minor + 1; otherwise
 /// unchanged. Keep in sync with PROTOCOL_VERSION in
 /// server/speedfog_racing/websocket/schemas.py and docs/PROTOCOL.md.
-pub const PROTOCOL_VERSION: &str = "1.18";
+pub const PROTOCOL_VERSION: &str = "1.19";
 
 // =============================================================================
 // CLIENT -> SERVER MESSAGES
@@ -83,6 +83,22 @@ pub enum ClientMessage {
         landed: bool,
         talisman_id: Option<u32>,
     },
+    /// Relay (1.19): a waiting runner is (or stops being) loaded at the
+    /// Chapel with its lock raised.
+    RelayReady { ready: bool },
+    /// Relay (1.19): the holder confirmed a teammate in the menu.
+    RelayHandoffRequest { to_participant_id: String },
+    /// Relay (1.19): a waiting runner asks for a free baton.
+    RelayTakeRequest,
+    /// Relay (1.19): a checkpoint (`handoff_id` null, always serialized) or
+    /// the answer to a `relay_release`.
+    RelayState {
+        handoff_id: Option<String>,
+        state: CharacterState,
+        igt_ms: u32,
+    },
+    /// Relay (1.19): the new holder applied the take and raised its warp flag.
+    RelayTaken { handoff_id: String },
     /// Heartbeat response
     Pong,
 }
@@ -561,6 +577,74 @@ pub enum CameraVariant {
     Unknown,
 }
 
+/// What a relay handoff carries of a character, in the order the game stores
+/// it: vigor, mind, endurance, strength, dexterity, intelligence, faith,
+/// arcane. The wire caps are 2^31 - 1 for attributes, level, runes and grace
+/// flags and 2^32 - 1 for an item id (raw id with its category nibble).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CharacterState {
+    pub attributes: [u32; 8],
+    pub level: u32,
+    pub runes: u32,
+    pub items: Vec<u32>,
+    pub grace_flags: Vec<u32>,
+}
+
+/// A runner's role in its relay team. Additive like [`RaceStatus`]: a role
+/// this build does not know deserializes as `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayRole {
+    Holder,
+    Waiting,
+    #[serde(other)]
+    Unknown,
+}
+
+/// One member of a relay team. `ready` and `validated` default to false: a
+/// member whose readiness is unknown is never proposed as a handoff target.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayMember {
+    pub participant_id: String,
+    pub name: String,
+    pub zones: u32,
+    pub status: ParticipantStatus,
+    pub online: bool,
+    #[serde(default)]
+    pub ready: bool,
+    #[serde(default)]
+    pub validated: bool,
+}
+
+/// The seed's relay event flags (the server sends them, never constants).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RelayFlags {
+    pub lock_flag: u32,
+    pub chapel_warp_flag: u32,
+    pub warp_flag_base: u32,
+    pub zone_flag_base: u32,
+}
+
+/// What the mod is told about its relay team and its own role. `team_status`
+/// is the team's [`ParticipantStatus`]; `baton_free_in_s` is null while the
+/// holder is online, otherwise the seconds before the baton can be taken.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RelayInfo {
+    pub team_id: String,
+    pub team_name: String,
+    pub team_status: ParticipantStatus,
+    pub cap: u32,
+    pub holder_id: Option<String>,
+    pub holder_online: bool,
+    #[serde(default)]
+    pub zone_name: Option<String>,
+    pub baton_free_in_s: Option<u32>,
+    pub role: RelayRole,
+    pub gates_locked: bool,
+    pub members: Vec<RelayMember>,
+    pub flags: RelayFlags,
+}
+
 /// Exit info in zone_update message
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExitInfo {
@@ -591,6 +675,9 @@ pub enum ServerMessage {
         /// nothing is held, without items, or from an old server).
         #[serde(default)]
         held_item: Option<String>,
+        /// The runner's relay team (1.19); absent or null on any other race.
+        #[serde(default)]
+        relay: Option<Box<RelayInfo>>,
     },
     /// Authentication failed
     AuthError { message: String },
@@ -691,6 +778,24 @@ pub enum ServerMessage {
     },
     /// A banner with nothing applied (1.15): a Star holder's block.
     ItemNotice { banner: ItemBanner },
+    /// Relay (1.19): the team's `RelayInfo` changed; replaces the cached one.
+    RelayUpdate { relay: Box<RelayInfo> },
+    /// Relay (1.19), to the holder: send your state, lock, go to the Chapel.
+    RelayRelease { handoff_id: String, to_name: String },
+    /// Relay (1.19), to the new holder: the state to apply. `state` is null
+    /// when none is known yet; `warp_flag` is null before the team's first gate.
+    RelayTake {
+        handoff_id: String,
+        state: Option<CharacterState>,
+        igt_ms: u32,
+        #[serde(default)]
+        defeat_flags: Vec<u32>,
+        warp_flag: Option<u32>,
+        zone_name: Option<String>,
+    },
+    /// Relay (1.19): a request was refused. The mod shows `message` and logs
+    /// `code`; it branches on no code.
+    RelayRefused { code: String, message: String },
 }
 
 // =============================================================================
@@ -2428,5 +2533,219 @@ mod tests {
             serde_json::to_string(&ClientMessage::ItemReceived { grant_id: 7 }).unwrap(),
             r#"{"type":"item_received","grant_id":7}"#
         );
+    }
+
+    // ---- Relay (protocol 1.19) ----
+
+    const RELAY_INFO: &str = r#"{"team_id":"t1","team_name":"Red Team","team_status":"playing","cap":5,
+      "holder_id":"p2","holder_online":true,"zone_name":"Stormveil Castle","baton_free_in_s":null,
+      "role":"waiting","gates_locked":false,
+      "members":[{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true},
+                 {"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}],
+      "flags":{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000}}"#;
+    const RELAY_STATE: &str = r#"{"attributes":[40,20,25,30,14,9,9,7],"level":68,"runes":15230,"items":[1048576100,2147493648],"grace_flags":[71000,76101]}"#;
+    const AUTH_OK_BASE: &str = r#""type":"auth_ok","participant_id":"abc-123",
+        "race":{"id":"123","name":"Test Race","status":"setup"},
+        "seed":{"total_layers":5},"participants":[]"#;
+
+    #[test]
+    fn relay_update_parses_the_contract_payload() {
+        let msg: ServerMessage = serde_json::from_str(&format!(
+            r#"{{"type":"relay_update","relay":{RELAY_INFO}}}"#
+        ))
+        .unwrap();
+        let ServerMessage::RelayUpdate { relay } = msg else {
+            panic!("{msg:?}")
+        };
+        assert_eq!(
+            (relay.role, relay.team_status),
+            (RelayRole::Waiting, ParticipantStatus::Playing)
+        );
+        assert_eq!(
+            (relay.cap, relay.flags.lock_flag, relay.flags.zone_flag_base),
+            (5, 1050290500, 1050294000)
+        );
+        assert_eq!(relay.members[1].name, "Kahleeya");
+        assert_eq!(relay.zone_name.as_deref(), Some("Stormveil Castle"));
+        assert!(relay.members[0].ready && !relay.members[1].ready);
+        assert!(relay.baton_free_in_s.is_none());
+    }
+
+    #[test]
+    fn relay_take_parses_with_and_without_a_state() {
+        let full: ServerMessage = serde_json::from_str(&format!(
+            r#"{{"type":"relay_take","handoff_id":"h1","state":{RELAY_STATE},"igt_ms":2634000,
+                "defeat_flags":[10000800],"warp_flag":1050290517,"zone_name":"Stormveil Castle"}}"#
+        ))
+        .unwrap();
+        let ServerMessage::RelayTake {
+            state, warp_flag, ..
+        } = full
+        else {
+            panic!()
+        };
+        let state = state.unwrap();
+        assert_eq!(state.attributes, [40, 20, 25, 30, 14, 9, 9, 7]);
+        // An item id keeps its category nibble: above i32::MAX.
+        assert_eq!(state.items, vec![1048576100, 2147493648]);
+        assert_eq!(warp_flag, Some(1050290517));
+        let bare: ServerMessage = serde_json::from_str(
+            r#"{"type":"relay_take","handoff_id":"h1","state":null,"igt_ms":0,"defeat_flags":[],"warp_flag":null,"zone_name":null}"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            bare,
+            ServerMessage::RelayTake {
+                state: None,
+                warp_flag: None,
+                zone_name: None,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn relay_state_accepts_the_wire_maxima() {
+        let json = r#"{"attributes":[2147483647,0,0,0,0,0,0,0],"level":2147483647,"runes":2147483647,"items":[4294967295],"grace_flags":[2147483647]}"#;
+        let st: CharacterState = serde_json::from_str(json).unwrap();
+        assert_eq!(st.items, vec![u32::MAX]);
+        assert_eq!(st.runes, i32::MAX as u32);
+    }
+
+    #[test]
+    fn relay_client_messages_serialize() {
+        let json = |m: &ClientMessage| serde_json::to_string(m).unwrap();
+        assert_eq!(
+            json(&ClientMessage::RelayReady { ready: true }),
+            r#"{"type":"relay_ready","ready":true}"#
+        );
+        assert_eq!(
+            json(&ClientMessage::RelayHandoffRequest {
+                to_participant_id: "p2".into()
+            }),
+            r#"{"type":"relay_handoff_request","to_participant_id":"p2"}"#
+        );
+        assert_eq!(
+            json(&ClientMessage::RelayTakeRequest),
+            r#"{"type":"relay_take_request"}"#
+        );
+        assert_eq!(
+            json(&ClientMessage::RelayTaken {
+                handoff_id: "h1".into()
+            }),
+            r#"{"type":"relay_taken","handoff_id":"h1"}"#
+        );
+        let state: CharacterState = serde_json::from_str(RELAY_STATE).unwrap();
+        let checkpoint = json(&ClientMessage::RelayState {
+            handoff_id: None,
+            state,
+            igt_ms: 7,
+        });
+        assert!(checkpoint.contains(r#""handoff_id":null"#));
+        assert!(checkpoint.contains(r#""attributes":[40,20,25,30,14,9,9,7]"#));
+    }
+
+    #[test]
+    fn relay_release_and_refused_parse() {
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"relay_release","handoff_id":"h1","to_name":"Kahleeya"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            msg,
+            ServerMessage::RelayRelease {
+                handoff_id: "h1".into(),
+                to_name: "Kahleeya".into()
+            }
+        );
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"relay_refused","code":"target_at_cap","message":"This teammate has reached their zone quota"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            msg,
+            ServerMessage::RelayRefused {
+                code: "target_at_cap".into(),
+                message: "This teammate has reached their zone quota".into()
+            }
+        );
+    }
+
+    #[test]
+    fn auth_ok_carries_relay_or_none() {
+        let with: ServerMessage =
+            serde_json::from_str(&format!(r#"{{{AUTH_OK_BASE},"relay":{RELAY_INFO}}}"#)).unwrap();
+        let ServerMessage::AuthOk { relay, .. } = with else {
+            panic!()
+        };
+        assert_eq!(relay.unwrap().team_id, "t1");
+        for extra in [r#","relay":null"#, ""] {
+            let msg: ServerMessage =
+                serde_json::from_str(&format!("{{{AUTH_OK_BASE}{extra}}}")).unwrap();
+            let ServerMessage::AuthOk { relay, .. } = msg else {
+                panic!()
+            };
+            assert!(relay.is_none(), "{extra:?}");
+        }
+    }
+
+    #[test]
+    fn relay_info_of_setup_parses() {
+        let json = RELAY_INFO
+            .replace(
+                r#""team_status":"playing""#,
+                r#""team_status":"registered""#,
+            )
+            .replace(r#""holder_id":"p2""#, r#""holder_id":null"#)
+            .replace(r#""holder_online":true"#, r#""holder_online":false"#)
+            .replace(
+                r#""zone_name":"Stormveil Castle","baton_free_in_s":null"#,
+                r#""zone_name":"Chapel of Anticipation","baton_free_in_s":0"#,
+            );
+        let msg: ServerMessage =
+            serde_json::from_str(&format!(r#"{{"type":"relay_update","relay":{json}}}"#)).unwrap();
+        let ServerMessage::RelayUpdate { relay } = msg else {
+            panic!()
+        };
+        assert_eq!(relay.team_status, ParticipantStatus::Registered);
+        assert!(relay.holder_id.is_none());
+        assert_eq!(relay.baton_free_in_s, Some(0));
+        assert_eq!(relay.zone_name.as_deref(), Some("Chapel of Anticipation"));
+    }
+
+    #[test]
+    fn relay_info_tolerates_unknowns_and_missing_member_flags() {
+        let json = RELAY_INFO
+            .replace(r#""role":"waiting""#, r#""role":"captain","new_field":1"#)
+            .replace(
+                r#""team_status":"playing""#,
+                r#""team_status":"a_future_status""#,
+            )
+            .replace(r#","ready":false,"validated":true"#, "");
+        let msg: ServerMessage =
+            serde_json::from_str(&format!(r#"{{"type":"relay_update","relay":{json}}}"#)).unwrap();
+        let ServerMessage::RelayUpdate { relay } = msg else {
+            panic!()
+        };
+        assert_eq!(relay.role, RelayRole::Unknown);
+        assert_eq!(relay.team_status, ParticipantStatus::Unknown);
+        // A member whose readiness is absent offers nothing.
+        assert!(!relay.members[1].ready && !relay.members[1].validated);
+    }
+
+    #[test]
+    fn relay_leaderboard_rows_parse() {
+        let msg: ServerMessage = serde_json::from_str(
+            r#"{"type":"leaderboard_update","participants":[{"id":"t1","twitch_username":"red",
+                "twitch_display_name":"Red Team","status":"playing","current_zone":"Limgrave",
+                "current_layer":2,"current_layer_tier":3,"igt_ms":60000,"death_count":1,
+                "relay_holder":"Kahleeya","relay_holder_id":"p2","relay_cap":5,
+                "relay_members":[{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true}]}]}"#,
+        )
+        .unwrap();
+        let ServerMessage::LeaderboardUpdate { participants, .. } = msg else {
+            panic!()
+        };
+        assert_eq!(participants[0].id, "t1");
     }
 }
