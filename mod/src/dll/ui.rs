@@ -15,9 +15,13 @@ use crate::core::countdown::{
     DIGIT_INK_CENTER,
 };
 use crate::core::format::{LeaderboardMode, LeaderboardView};
-use crate::core::item_banner::{banner_layout, write_seconds_left, GRADIENT_ALPHA};
+use crate::core::item_banner::{
+    banner_layout, relay_block_bounds, relay_block_layout, write_seconds_left, RelayBlockWidths,
+    GRADIENT_ALPHA,
+};
 use crate::core::item_feed::FeedTone;
 use crate::core::protocol::{ParticipantStatus, RaceStatus};
+use crate::core::relay_view::{BlockTone, MENU_TITLE};
 use crate::core::write_participant_right_text;
 use crate::profile_span;
 
@@ -36,6 +40,10 @@ use super::websocket::ConnectionStatus;
 /// Atlas pixel sizes of the banner faces (about the 1080p banner sizes).
 const BANNER_TITLE_ATLAS_PX: f32 = 64.0;
 const BANNER_BODY_ATLAS_PX: f32 = 32.0;
+/// A relay block's title is drawn with letter spacing, which `truncate_to_width`
+/// does not measure: it is cut to this share of the block's width so the
+/// tracked glyphs still fit it.
+const TITLE_CUT_SHARE: f32 = 0.8;
 /// Stands for the seconds left on a pending ink's row (`render_item_reminders`).
 const INK_PENDING_LABEL: &str = "pending";
 
@@ -137,6 +145,7 @@ impl ImguiRenderLoop for RaceTracker {
         const BANNER_RANGES: &[u32] = &[
             0x0020, 0x007E, // Basic Latin
             0x00A0, 0x00FF, // Latin Supplement
+            0x2026, 0x2026, // … (the cut of a long name, `truncate_to_width`)
             0,
         ];
         let mut add_banner_face = |data: &[u8], size_pixels: f32| {
@@ -328,6 +337,8 @@ impl RaceTracker {
         }
 
         self.render_item_banner(ui);
+        self.render_relay_menu(ui, &mut bufs);
+        self.render_relay_wait(ui, &mut bufs);
 
         {
             profile_span!("imgui_window");
@@ -343,6 +354,7 @@ impl RaceTracker {
                     self.render_disqualified_notice(ui);
                     self.render_waiting_line(ui);
                     self.render_player_status(ui, max_width, &mut bufs);
+                    self.render_relay_line(ui, max_width, &mut bufs);
                     self.render_race_ends_warning(ui, max_width, &mut bufs);
                     self.render_exits(ui, max_width);
                     if let (false, LeaderboardView::Shown(mode)) =
@@ -521,6 +533,10 @@ impl RaceTracker {
         let Some(fonts) = self.overlay_fonts.as_ref() else {
             return;
         };
+        // The holder's menu takes the band while it is open.
+        if self.machine.relay_menu_visible(std::time::Instant::now()) {
+            return;
+        }
 
         // Every colour carries the banner's fade.
         let alpha = self.machine.item_banner_alpha(std::time::Instant::now());
@@ -551,9 +567,11 @@ impl RaceTracker {
             FeedTone::Gain => c.gold,
         });
         let shadow_color = fade([0.0, 0.0, 0.0, 0.9]);
+        // A banner with no icon (the relay's) draws none.
         let icon = self
             .race_item_icons
             .as_ref()
+            .filter(|_| !banner.icon.is_empty())
             .map(|icons| icons.texture(&banner.icon));
 
         let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
@@ -636,6 +654,419 @@ impl RaceTracker {
             });
     }
 
+    /// The holder's baton menu, top-centre: the title in brass, one row per
+    /// teammate (name left, counter or reason in mono right; the highlighted
+    /// row filled and outlined in gold with the hold bar along its bottom),
+    /// then the key hints. Every string was built on receipt (`RelayView`);
+    /// the cuts to width are cached in `bufs` and redone only when a text or
+    /// a size changes.
+    fn render_relay_menu(&self, ui: &hudhook::imgui::Ui, bufs: &mut RenderBuffers) {
+        let now = std::time::Instant::now();
+        if !self.machine.relay_menu_visible(now) {
+            return;
+        }
+        let (Some(view), Some(fonts)) = (self.machine.relay_view(), self.overlay_fonts.as_ref())
+        else {
+            return;
+        };
+
+        profile_span!("relay_menu");
+
+        let c = &self.cached_colors;
+        let [dw, dh] = ui.io().display_size;
+        // Under the rows, the reason there is nobody to pick takes the place
+        // of the one line a team of nobody has.
+        let note = !view.menu_note.is_empty();
+        let rows = view.rows.len();
+        let layout = relay_block_layout([dw, dh], rows + usize::from(note && rows > 0));
+        let hint = self.machine.relay_menu_hint();
+        let selected = self.machine.relay_menu_selected();
+        let progress = self.machine.relay_hold_progress(now).clamp(0.0, 1.0);
+
+        let edge = [c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA];
+        let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
+        ui.get_background_draw_list().add_rect_filled_multicolor(
+            [0.0, 0.0],
+            [dw, layout.gradient_height],
+            edge,
+            edge,
+            clear,
+            clear,
+        );
+
+        let shadow_color = [0.0, 0.0, 0.0, 0.9];
+        let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
+        let flags = WindowFlags::NO_DECORATION
+            | WindowFlags::NO_INPUTS
+            | WindowFlags::NO_BACKGROUND
+            | WindowFlags::NO_SAVED_SETTINGS
+            | WindowFlags::NO_FOCUS_ON_APPEARING
+            | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS;
+
+        let cuts = &mut bufs.relay_block_cuts;
+        ui.window("##speedfog-relay-menu")
+            .position([0.0, 0.0], Condition::Always)
+            .size([dw, dh], Condition::Always)
+            .flags(flags)
+            .build(|| {
+                let mono_scale = fonts_mono_scale(ui, fonts, layout.detail_px);
+                let row_pad = layout.line_px * 0.5;
+                let name_gap = layout.line_px;
+
+                // First pass: cut and measure every text under the face and
+                // size that draw it, then the block's box follows.
+                {
+                    let _font = ui.push_font(fonts.banner_title);
+                    ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
+                    cuts.update(
+                        CUT_TITLE,
+                        ui,
+                        MENU_TITLE,
+                        layout.text_max_width * TITLE_CUT_SHARE,
+                        layout.title_px,
+                    );
+                }
+                let mut rows_width = 0.0f32;
+                for (i, row) in view.rows.iter().enumerate() {
+                    {
+                        let _font = ui.push_font(fonts.mono);
+                        ui.set_window_font_scale(mono_scale);
+                        cuts.update(
+                            CUT_ROWS + 2 * i + 1,
+                            ui,
+                            &row.right,
+                            layout.text_max_width * 0.5,
+                            layout.detail_px,
+                        );
+                    }
+                    let right_width = cuts.width(CUT_ROWS + 2 * i + 1);
+                    let _font = ui.push_font(fonts.banner_body);
+                    ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                    cuts.update(
+                        CUT_ROWS + 2 * i,
+                        ui,
+                        &row.name,
+                        layout.text_max_width - right_width - name_gap - 2.0 * row_pad,
+                        layout.line_px,
+                    );
+                    rows_width = rows_width
+                        .max(cuts.width(CUT_ROWS + 2 * i) + name_gap + right_width + 2.0 * row_pad);
+                }
+                {
+                    let _font = ui.push_font(fonts.banner_body);
+                    ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                    cuts.update(
+                        CUT_LINE,
+                        ui,
+                        &view.menu_note,
+                        layout.text_max_width,
+                        layout.line_px,
+                    );
+                    ui.set_window_font_scale(layout.detail_px / BANNER_BODY_ATLAS_PX);
+                    cuts.update(
+                        CUT_DETAIL,
+                        ui,
+                        hint,
+                        layout.text_max_width,
+                        layout.detail_px,
+                    );
+                }
+                let bounds = relay_block_bounds(
+                    &layout,
+                    [dw, dh],
+                    rows,
+                    RelayBlockWidths {
+                        title: cuts.width(CUT_TITLE),
+                        line: cuts.width(CUT_LINE),
+                        detail: cuts.width(CUT_DETAIL),
+                        rows: rows_width,
+                    },
+                );
+
+                // Second pass: draw.
+                {
+                    let _font = ui.push_font(fonts.banner_title);
+                    ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
+                    draw_tracked_centered(
+                        ui,
+                        cuts.text(CUT_TITLE),
+                        layout.center_x,
+                        layout.title_y,
+                        layout.title_tracking,
+                        layout.shadow,
+                        c.gold,
+                        shadow_color,
+                    );
+                }
+                let draw = ui.get_window_draw_list();
+                for (i, row) in view.rows.iter().enumerate() {
+                    let top = layout.line_y + i as f32 * layout.row_height;
+                    let (x0, x1) = (bounds[0], bounds[2]);
+                    let is_selected = selected == Some(row.participant_id.as_str());
+                    if is_selected {
+                        let [r, g, b, _] = c.gold;
+                        let bottom = top + layout.row_height;
+                        draw.add_rect([x0, top], [x1, bottom], [r, g, b, 0.18])
+                            .filled(true)
+                            .build();
+                        draw.add_rect([x0, top], [x1, bottom], [r, g, b, 0.6])
+                            .build();
+                        let [tr, tg, tb, _] = c.text;
+                        draw.add_rect(
+                            [x0, bottom - layout.bar_height],
+                            [x1, bottom],
+                            [tr, tg, tb, 0.15],
+                        )
+                        .filled(true)
+                        .build();
+                        draw.add_rect(
+                            [x0, bottom - layout.bar_height],
+                            [x0 + (x1 - x0) * progress, bottom],
+                            c.gold,
+                        )
+                        .filled(true)
+                        .build();
+                    }
+                    let color = if row.available {
+                        c.text
+                    } else {
+                        c.text_disabled
+                    };
+                    {
+                        let _font = ui.push_font(fonts.banner_body);
+                        ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                        let y = top + (layout.row_height - ui.text_line_height()) * 0.5;
+                        draw_shadowed(
+                            ui,
+                            cuts.text(CUT_ROWS + 2 * i),
+                            x0 + row_pad,
+                            y,
+                            layout.shadow,
+                            color,
+                            shadow_color,
+                        );
+                    }
+                    let _font = ui.push_font(fonts.mono);
+                    ui.set_window_font_scale(mono_scale);
+                    let y = top + (layout.row_height - ui.text_line_height()) * 0.5;
+                    draw_shadowed(
+                        ui,
+                        cuts.text(CUT_ROWS + 2 * i + 1),
+                        x1 - row_pad - cuts.width(CUT_ROWS + 2 * i + 1),
+                        y,
+                        layout.shadow,
+                        color,
+                        shadow_color,
+                    );
+                }
+                let _font = ui.push_font(fonts.banner_body);
+                if note {
+                    ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                    let y = layout.line_y + rows as f32 * layout.row_height;
+                    draw_shadowed(
+                        ui,
+                        cuts.text(CUT_LINE),
+                        layout.center_x - cuts.width(CUT_LINE) * 0.5,
+                        y,
+                        layout.shadow,
+                        c.text_disabled,
+                        shadow_color,
+                    );
+                }
+                ui.set_window_font_scale(layout.detail_px / BANNER_BODY_ATLAS_PX);
+                draw_shadowed(
+                    ui,
+                    cuts.text(CUT_DETAIL),
+                    layout.center_x - cuts.width(CUT_DETAIL) * 0.5,
+                    layout.detail_y,
+                    layout.shadow,
+                    c.text_disabled,
+                    shadow_color,
+                );
+                ui.set_window_font_scale(1.0);
+            });
+    }
+
+    /// The waiting runner's banner, top-centre for as long as it waits: the
+    /// title in its tone (fog, ember or verdigris), a line, a detail and,
+    /// when the detail is the hold prompt, the hold bar under it. Same
+    /// caching as the menu.
+    fn render_relay_wait(&self, ui: &hudhook::imgui::Ui, bufs: &mut RenderBuffers) {
+        let now = std::time::Instant::now();
+        if !self.machine.relay_wait_visible(now) {
+            return;
+        }
+        let (Some(wait), Some(fonts)) = (
+            self.machine
+                .relay_view()
+                .and_then(|view| view.wait.as_ref()),
+            self.overlay_fonts.as_ref(),
+        ) else {
+            return;
+        };
+
+        profile_span!("relay_wait");
+
+        let c = &self.cached_colors;
+        let [dw, dh] = ui.io().display_size;
+        let layout = relay_block_layout([dw, dh], 0);
+        let detail = self.machine.relay_wait_detail();
+        let hold_bar = self.machine.relay_wait_hold_bar();
+        let progress = self.machine.relay_hold_progress(now).clamp(0.0, 1.0);
+        let title_color = match wait.tone {
+            BlockTone::Fog => c.purple,
+            BlockTone::Brass => c.gold,
+            BlockTone::Ember => c.danger,
+            BlockTone::Verdigris => c.success,
+        };
+
+        let edge = [c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA];
+        let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
+        ui.get_background_draw_list().add_rect_filled_multicolor(
+            [0.0, 0.0],
+            [dw, layout.gradient_height],
+            edge,
+            edge,
+            clear,
+            clear,
+        );
+
+        let shadow_color = [0.0, 0.0, 0.0, 0.9];
+        let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
+        let flags = WindowFlags::NO_DECORATION
+            | WindowFlags::NO_INPUTS
+            | WindowFlags::NO_BACKGROUND
+            | WindowFlags::NO_SAVED_SETTINGS
+            | WindowFlags::NO_FOCUS_ON_APPEARING
+            | WindowFlags::NO_BRING_TO_FRONT_ON_FOCUS;
+
+        let cuts = &mut bufs.relay_block_cuts;
+        ui.window("##speedfog-relay-wait")
+            .position([0.0, 0.0], Condition::Always)
+            .size([dw, dh], Condition::Always)
+            .flags(flags)
+            .build(|| {
+                {
+                    let _font = ui.push_font(fonts.banner_title);
+                    ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
+                    cuts.update(
+                        CUT_TITLE,
+                        ui,
+                        &wait.title,
+                        layout.text_max_width * TITLE_CUT_SHARE,
+                        layout.title_px,
+                    );
+                    draw_tracked_centered(
+                        ui,
+                        cuts.text(CUT_TITLE),
+                        layout.center_x,
+                        layout.title_y,
+                        layout.title_tracking,
+                        layout.shadow,
+                        title_color,
+                        shadow_color,
+                    );
+                }
+                let _font = ui.push_font(fonts.banner_body);
+                ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
+                cuts.update(
+                    CUT_LINE,
+                    ui,
+                    &wait.line,
+                    layout.text_max_width,
+                    layout.line_px,
+                );
+                draw_shadowed(
+                    ui,
+                    cuts.text(CUT_LINE),
+                    layout.center_x - cuts.width(CUT_LINE) * 0.5,
+                    layout.line_y,
+                    layout.shadow,
+                    c.text,
+                    shadow_color,
+                );
+                ui.set_window_font_scale(layout.detail_px / BANNER_BODY_ATLAS_PX);
+                if !detail.is_empty() {
+                    cuts.update(
+                        CUT_DETAIL,
+                        ui,
+                        detail,
+                        layout.text_max_width,
+                        layout.detail_px,
+                    );
+                    draw_shadowed(
+                        ui,
+                        cuts.text(CUT_DETAIL),
+                        layout.center_x - cuts.width(CUT_DETAIL) * 0.5,
+                        layout.detail_y,
+                        layout.shadow,
+                        c.text_disabled,
+                        shadow_color,
+                    );
+                }
+                if hold_bar && !detail.is_empty() {
+                    let draw = ui.get_window_draw_list();
+                    let x0 = layout.center_x - layout.menu_width * 0.5;
+                    let x1 = x0 + layout.menu_width;
+                    let y0 = layout.detail_y + layout.detail_px * 1.25 + layout.detail_px * 0.8;
+                    let y1 = y0 + layout.bar_height;
+                    let [r, g, b, _] = c.text;
+                    draw.add_rect([x0, y0], [x1, y1], [r, g, b, 0.15])
+                        .filled(true)
+                        .build();
+                    draw.add_rect([x0, y0], [x0 + layout.menu_width * progress, y1], c.success)
+                        .filled(true)
+                        .build();
+                }
+                ui.set_window_font_scale(1.0);
+            });
+    }
+
+    /// The panel's BATON line: "BATON" in fog, who holds it, the runner's
+    /// own counter, and the key hint right aligned, all on the mono face.
+    /// Nothing while the view is empty (setup, a runner out, a team over).
+    fn render_relay_line(&self, ui: &hudhook::imgui::Ui, max_width: f32, bufs: &mut RenderBuffers) {
+        let Some(view) = self
+            .machine
+            .relay_view()
+            .filter(|view| !view.baton_who.is_empty())
+        else {
+            return;
+        };
+
+        profile_span!("relay_line");
+
+        let c = &self.cached_colors;
+        let hint = self.machine.relay_baton_hint(std::time::Instant::now());
+        let _mono = self.overlay_fonts.as_ref().map(|f| ui.push_font(f.mono));
+        let gap = ui.calc_text_size(" ")[0];
+        let cuts = &mut bufs.relay_line_cuts;
+        let px = ui.text_line_height();
+        cuts.update(LINE_LABEL, ui, "BATON", max_width, px);
+        cuts.update(LINE_COUNT, ui, &view.baton_count, max_width * 0.5, px);
+        cuts.update(LINE_HINT, ui, hint, max_width * 0.4, px);
+        // The holder's name is the one text whose length is the server's
+        // word: it gets what the others leave.
+        let who_max = max_width
+            - cuts.width(LINE_LABEL)
+            - cuts.width(LINE_COUNT)
+            - cuts.width(LINE_HINT)
+            - 4.0 * gap;
+        cuts.update(LINE_WHO, ui, &view.baton_who, who_max.max(0.0), px);
+
+        ui.text_colored(c.purple, cuts.text(LINE_LABEL));
+        ui.same_line_with_spacing(0.0, gap);
+        ui.text(cuts.text(LINE_WHO));
+        if !view.baton_count.is_empty() {
+            ui.same_line_with_spacing(0.0, gap);
+            ui.text_colored(c.text_disabled, cuts.text(LINE_COUNT));
+        }
+        if !hint.is_empty() {
+            ui.same_line_with_pos(max_width - cuts.width(LINE_HINT));
+            ui.text_colored(c.text_disabled, cuts.text(LINE_HINT));
+        }
+    }
+
     /// Race item rows of the panel: the item held (icon and gold name, no
     /// countdown), then the timed rows: icon, text (danger for an effect
     /// received, gold for the sender's own) and the seconds left, right
@@ -711,6 +1142,14 @@ impl RaceTracker {
             // Abandoned: the server froze this participant's IGT when the
             // abandon landed; the live memory value keeps ticking and no
             // longer counts for the race.
+            if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
+                write_time_u32(buf, me.igt_ms as u32);
+            } else {
+                buf.push_str("--:--:--");
+            }
+        } else if self.machine.relay_panel_is_team() {
+            // A runner waiting for the baton: its own game's time is not the
+            // team's, which the server's row carries.
             if let Some(me) = self.my_participant().filter(|p| p.igt_ms > 0) {
                 write_time_u32(buf, me.igt_ms as u32);
             } else {
@@ -896,7 +1335,7 @@ impl RaceTracker {
 
         // Right side of line 1: state banner during setup/countdown/go, IGT otherwise.
         let race_status = self.race_info().map(|r| r.status);
-        let i_abandoned = self.my_participant().is_some_and(|p| p.status.is_out());
+        let i_abandoned = self.machine.am_i_abandoned();
 
         let right_color = match race_status {
             Some(RaceStatus::Setup) => {
@@ -1053,7 +1492,11 @@ impl RaceTracker {
             ui.calc_text_size(&buf_right)[0]
         };
 
-        if let Some(z) = zone {
+        if self.machine.relay_panel_is_team() {
+            // A waiting runner is not in the world its team plays: the zone
+            // is the one the server names.
+            buf_left.push_str(self.machine.relay_zone_name().unwrap_or(""));
+        } else if let Some(z) = zone {
             buf_left.push_str(&z.display_name);
         }
         let zone_max = max_width - right_width - gap;
@@ -1078,7 +1521,12 @@ impl RaceTracker {
         buf_right.clear();
         buf_left.clear();
 
-        let deaths = self.read_deaths().unwrap_or(0);
+        let deaths = if self.machine.relay_panel_is_team() {
+            // The team's count, not this game's.
+            me.map_or(0, |p| p.death_count.max(0) as u32)
+        } else {
+            self.read_deaths().unwrap_or(0)
+        };
         write!(buf_right, "{}", deaths).ok();
         // The icon reads like a glyph of the mono count next to it:
         // digit-ish height, feet on the text baseline.
@@ -1488,14 +1936,13 @@ impl RaceTracker {
         let participants = &self.machine.race_state.participants;
         let leader_splits = self.machine.race_state.leader_splits.as_ref();
         let local_igt = self.read_igt().map(|v| v as i32);
-        let my_id = self.machine.my_row_id().map(str::to_owned);
 
         // The local player's live IGT while racing, the server's otherwise (a
         // finisher's is final, while the game's keeps ticking).
         let gap_igt = |p: &crate::core::protocol::ParticipantInfo| {
-            if !race_finished
-                && p.status == ParticipantStatus::Playing
-                && my_id.as_deref().is_some_and(|id| id == p.id)
+            if self
+                .machine
+                .gap_uses_local_igt(&p.id, p.status, race_finished)
             {
                 local_igt.unwrap_or(p.igt_ms)
             } else {
@@ -1795,6 +2242,102 @@ fn draw_countdown_glyph(
 
     ui.set_cursor_screen_pos(origin);
     ui.text_colored(color, label);
+}
+
+/// Slots of the relay block's cut texts (`CutCache`): the title, the line
+/// (the waiting banner's, or the menu's note), the detail, then a name and a
+/// counter per menu row.
+const CUT_TITLE: usize = 0;
+const CUT_LINE: usize = 1;
+const CUT_DETAIL: usize = 2;
+const CUT_ROWS: usize = 3;
+/// Slots of the BATON line.
+const LINE_LABEL: usize = 0;
+const LINE_WHO: usize = 1;
+const LINE_COUNT: usize = 2;
+const LINE_HINT: usize = 3;
+
+/// A text cut to a width by `truncate_to_width`, and its measured width,
+/// kept between frames: a name from the server is cut (a linear scan and an
+/// allocation) only when the text, the width limit or the pixel size it was
+/// measured at changes, and a frame in between compares strings and copies a
+/// float.
+#[derive(Default)]
+pub(crate) struct CutText {
+    source: String,
+    cut: String,
+    limit: f32,
+    px: f32,
+    width: f32,
+    was_cut: bool,
+    valid: bool,
+}
+
+/// The cut texts of one block, by slot. The caller measures under the face
+/// and the font scale that draw the text.
+#[derive(Default)]
+pub(crate) struct CutCache {
+    slots: Vec<CutText>,
+}
+
+impl CutCache {
+    /// Bring slot `i` up to date for `text` cut to `limit` pixels at `px`.
+    fn update(&mut self, i: usize, ui: &hudhook::imgui::Ui, text: &str, limit: f32, px: f32) {
+        if self.slots.len() <= i {
+            self.slots.resize_with(i + 1, CutText::default);
+        }
+        let slot = &mut self.slots[i];
+        if slot.valid && slot.limit == limit && slot.px == px && slot.source == text {
+            return;
+        }
+        slot.source.clear();
+        slot.source.push_str(text);
+        let cut = truncate_to_width(ui, text, limit);
+        slot.was_cut = matches!(cut, Cow::Owned(_));
+        slot.cut.clear();
+        slot.cut.push_str(&cut);
+        slot.width = ui.calc_text_size(&cut)[0];
+        slot.limit = limit;
+        slot.px = px;
+        slot.valid = true;
+    }
+
+    /// The text of slot `i` as it draws (empty before its first update).
+    fn text(&self, i: usize) -> &str {
+        match self.slots.get(i) {
+            Some(slot) if slot.was_cut => &slot.cut,
+            Some(slot) => &slot.source,
+            None => "",
+        }
+    }
+
+    fn width(&self, i: usize) -> f32 {
+        self.slots.get(i).map_or(0.0, |slot| slot.width)
+    }
+}
+
+/// The window font scale that draws the mono face at `px` pixels.
+fn fonts_mono_scale(ui: &hudhook::imgui::Ui, fonts: &OverlayFonts, px: f32) -> f32 {
+    ui.fonts()
+        .get_font(fonts.mono)
+        .map_or(1.0, |font| px / font.font_size.max(1.0))
+}
+
+/// Draw `text` with its left edge at `x`, a dark copy offset by `shadow`
+/// under it. The caller pushed the face and set the window font scale.
+fn draw_shadowed(
+    ui: &hudhook::imgui::Ui,
+    text: &str,
+    x: f32,
+    y: f32,
+    shadow: f32,
+    color: [f32; 4],
+    shadow_color: [f32; 4],
+) {
+    ui.set_cursor_screen_pos([x + shadow, y + shadow]);
+    ui.text_colored(shadow_color, text);
+    ui.set_cursor_screen_pos([x, y]);
+    ui.text_colored(color, text);
 }
 
 /// Draw `text` with its middle at `center_x`, a dark copy offset by `shadow`
