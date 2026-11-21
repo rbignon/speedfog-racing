@@ -187,7 +187,10 @@
               class:visitor-abandoned={visitor.outcome === "abandoned" ||
                 (visitor.outcome === "playing" && data.raceFinished)}
               class:visitor-playing={visitor.outcome === "playing" &&
-                !data.raceFinished}>{visitor.displayName}</span
+                !data.raceFinished}
+              >{visitor.displayName}{#if visitor.runner}<span
+                  class="visitor-runner">, {visitor.runner}</span
+                >{/if}</span
             >
             <span class="visitor-outcome"
               >{#if visitor.outcome === "backed"}↩{:else if visitor.outcome === "playing" && !data.raceFinished}⏳{:else if visitor.outcome === "abandoned" || (visitor.outcome === "playing" && data.raceFinished)}✗{/if}</span
@@ -443,6 +446,10 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .visitor-runner {
+    color: var(--color-text-secondary, #9ca3af);
   }
 
   .visitor-backed {
