@@ -344,4 +344,26 @@ describe("Leaderboard: relay team rows", () => {
     expect(line?.textContent).toBe("Kiofto, Leyndell, Royal Cap\u2026");
     expect(line?.getAttribute("title")).toBe("Leyndell, Royal Capital");
   });
+
+  it("a member's profile link opens a new tab and does not select the row", async () => {
+    const onToggle = vi.fn();
+    const user = {
+      id: "u1",
+      twitch_username: "kiofto",
+      twitch_display_name: "Kiofto",
+      twitch_avatar_url: null,
+    };
+    const { container } = render(Leaderboard, {
+      props: props({ onToggle, memberUsers: { m1: user } }),
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    );
+    const link = container.querySelector(
+      '.team-members a[href="/user/kiofto"]',
+    ) as HTMLAnchorElement;
+    expect(link.target).toBe("_blank");
+    await fireEvent.click(link);
+    expect(onToggle).not.toHaveBeenCalled();
+  });
 });

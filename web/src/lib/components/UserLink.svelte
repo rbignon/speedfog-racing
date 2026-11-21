@@ -10,6 +10,8 @@
     /** Where the name leads: the user's profile unless set; a web URL opens in a new tab. */
     href?: string;
     title?: string;
+    /** Open the link in a new tab (an absolute `href` does so already). */
+    newTab?: boolean;
     /** More of the link, after the name and badge: inside the `<a>`, so nothing interactive. */
     children?: Snippet;
   }
@@ -20,10 +22,13 @@
     showBadge = false,
     href,
     title,
+    newTab = false,
     children,
   }: Props = $props();
 
-  let external = $derived(href !== undefined && /^https?:\/\//.test(href));
+  let external = $derived(
+    newTab || (href !== undefined && /^https?:\/\//.test(href)),
+  );
 
   let displayName = $derived(user.twitch_display_name || user.twitch_username);
 

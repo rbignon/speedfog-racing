@@ -252,8 +252,9 @@ export function relayMemberLabel(
   return offline ? `${state}, offline` : state;
 }
 
-/** The rules line of a relay race: zones in the seed, team size, cap per
- * runner; each part is dropped when the race does not give it. */
+/** The rules line of a relay race: zones in the seed, team size, and the cap
+ * of a full team (a smaller team's cap is higher); each part is dropped when
+ * the race does not give it. */
 export function relayRuleLine(
   totalLayers: number | null | undefined,
   teamSize: number | null | undefined,
@@ -262,6 +263,10 @@ export function relayRuleLine(
   const parts: string[] = [];
   if (totalLayers) parts.push(`${totalLayers} zones`);
   if (teamSize) parts.push(`teams of ${teamSize}`);
-  if (cap) parts.push(`${cap} zones max per runner`);
+  if (cap) {
+    parts.push(
+      `${cap} zones max per runner on a full team (higher on a smaller one)`,
+    );
+  }
   return `Relay: ${parts.join(", ")}.`;
 }

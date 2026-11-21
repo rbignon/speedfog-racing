@@ -66,6 +66,20 @@ describe("reuseIfUnchanged on a relay team row", () => {
     expect(reuseIfUnchanged(incoming, team())).toBe(incoming);
   });
 
+  it("takes the new row when a member's connection or status changes", () => {
+    const offline = team();
+    offline.relay_members![1].online = false;
+    expect(reuseIfUnchanged(offline, team())).toBe(offline);
+    const out = team();
+    out.relay_members![1].status = "abandoned";
+    expect(reuseIfUnchanged(out, team())).toBe(out);
+  });
+
+  it("takes the new row when the cap changes", () => {
+    const incoming = team({ relay_cap: 6 });
+    expect(reuseIfUnchanged(incoming, team())).toBe(incoming);
+  });
+
   it("takes the new row when one member's count changes", () => {
     const incoming = team();
     incoming.relay_members![0].zones = 4;
