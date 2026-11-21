@@ -223,8 +223,8 @@ then goes back to them.
   commits, so no message slips in between. The mod sends no progress between
   `relay_take` and `relay_taken`. A receiver whose mod reconnects while its take is
   awaited (its game crashed, its socket dropped) gets the same `relay_take` again
-  (`PendingHandoff.take`, same `handoff_id`, applied once by the mod) right after its
-  `auth_ok`, even once the timer fired: its `relay_taken` then takes the free baton
+  (`PendingHandoff.take`, same `handoff_id`, applied once by the mod) after its
+  `auth_ok`, just before the team's `relay_update`, even once the timer fired: its `relay_taken` then takes the free baton
   back as a late one does. The awaited take lives in the room's memory only: after a
   server restart during a pending take it is lost, with its 30 s timer, so the
   receiver is heard as the holder as soon as it reconnects and its late `relay_taken`
