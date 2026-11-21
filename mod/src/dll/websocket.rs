@@ -60,6 +60,9 @@ pub enum OutgoingMessage {
         landed: bool,
         talisman_id: Option<u32>,
     },
+    RelayReady {
+        ready: bool,
+    },
     Shutdown,
 }
 
@@ -202,6 +205,14 @@ impl RaceWebSocketClient {
     pub fn send_item_inventory(&self, goods: Vec<String>) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::ItemInventory { goods }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_ready(&self, ready: bool) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayReady { ready }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -401,7 +412,13 @@ fn websocket_thread(
                         // Dropped: ready and status updates are stale; an
                         // item_received is answered again when the server
                         // re-sends its grant at auth, and the reconnect
-                        // frame reports the inventory again.
+                        // frame reports the inventory again. A relay_ready
+                        // goes again on the reconnection frame (readiness
+                        // does not survive the socket), a relay_release dies
+                        // with its socket (the server drops it at the
+                        // disconnect), the server sends a take still awaited
+                        // again after auth_ok, and a handoff or take request
+                        // is the player's to make again.
                         _ => {}
                     }
                     drained += 1;
@@ -678,6 +695,14 @@ fn message_loop(
                     landed,
                     talisman_id,
                 };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::RelayReady { ready }) => {
+                info!(ready, "[WS] Sending: relay_ready");
+                let msg = ClientMessage::RelayReady { ready };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))

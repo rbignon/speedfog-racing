@@ -25,6 +25,7 @@ use crate::core::protocol::{
     ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus,
     RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
 };
+use crate::core::relay::{self, FlagWarp, WarpStep};
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -244,6 +245,11 @@ pub struct FrameSnapshot {
     /// Watched debug flags that are on (`core::debug_flags` mask). `None` =
     /// not read this frame or unreadable.
     pub debug_flags: Option<u32>,
+    /// Map id of the loaded position, read with the readability check every
+    /// frame; `None` while the position is unreadable.
+    pub map_id: Option<u32>,
+    /// Current HP (`None` = not read this frame or unreadable).
+    pub hp: Option<i32>,
 }
 
 // =============================================================================
@@ -264,6 +270,8 @@ pub struct FrameNeeds {
     pub poll_flags: bool,
     /// Read the game's debug-flag bytes (cheat detection, 10 Hz while racing).
     pub debug_flags: bool,
+    /// Read the player's HP (only while a relay runner's warp waits on it).
+    pub hp: bool,
 }
 
 /// Inputs to one tick, gathered by the shell.
@@ -294,6 +302,11 @@ pub struct TickInput {
 #[derive(Debug, PartialEq)]
 pub enum Effect {
     SendReady,
+    /// Tell the server whether this relay runner is loaded at the Chapel with
+    /// its lock raised (readiness does not survive the socket).
+    SendRelayReady {
+        ready: bool,
+    },
     SendStatusUpdate {
         igt_ms: u32,
         death_count: u32,
@@ -593,6 +606,28 @@ pub struct RaceMachine {
     memory_written: MemoryState,
     memory_written_at: Instant,
     foes_walked_at: Instant,
+    /// Index of the runner's own entry in `relay.members`, found once per
+    /// `set_relay` so the per-frame predicates do no scan and no compare.
+    relay_member: Option<usize>,
+    /// What this process last wrote to the relay lock flag (`None` before
+    /// any write): the flag is saved, so the machine knows no more than the
+    /// server's word and its own writes.
+    relay_lock: Option<bool>,
+    /// When `relay_lock` last turned on (the start of the locked stretch).
+    relay_lock_since: Option<Instant>,
+    /// The lock was written (or found already right) since the last loading
+    /// exit: a load can bring back a save with another value.
+    relay_asserted: bool,
+    /// The warp to the Chapel being made, if any.
+    relay_warp: Option<FlagWarp>,
+    /// A warp that failed is not made again until a loading exit.
+    relay_warp_given_up: bool,
+    /// The `relay_ready` value last sent on this socket (`None` = none yet:
+    /// readiness does not survive the socket).
+    relay_ready_sent: Option<bool>,
+    /// The holder's gates are locked (the cap), and its banner is due.
+    relay_capped: bool,
+    relay_cap_due: bool,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
     /// The text of the reminder row his `Found` added: the row goes when he
@@ -760,6 +795,15 @@ impl RaceMachine {
             memory_written: MemoryState::default(),
             memory_written_at: now,
             foes_walked_at: now,
+            relay_member: None,
+            relay_lock: None,
+            relay_lock_since: None,
+            relay_asserted: false,
+            relay_warp: None,
+            relay_warp_given_up: false,
+            relay_ready_sent: None,
+            relay_capped: false,
+            relay_cap_due: false,
             hunter: Hunter::default(),
             hunter_row: None,
             last_loading_exit: None,
@@ -1128,7 +1172,15 @@ impl RaceMachine {
         self.relay.as_ref()
     }
 
-    /// The runner's relay role: the cached one the server named.
+    /// What this process last wrote to the relay lock flag; `None` before any
+    /// write.
+    pub fn relay_locked(&self) -> Option<bool> {
+        self.relay_lock
+    }
+
+    /// The runner's relay role: the cached one the server named. It may be
+    /// `Some(RelayRole::Unknown)`: callers match `Holder` and `Waiting`
+    /// explicitly, never `!= Waiting` or `!= Holder`.
     pub fn relay_role(&self) -> Option<RelayRole> {
         self.relay.as_ref().map(|r| r.role)
     }
@@ -1137,12 +1189,7 @@ impl RaceMachine {
     /// `validated` are read; its `ready` and `online` never are (the
     /// `auth_ok` echo of them is not authoritative about the runner).
     pub fn relay_me(&self) -> Option<&RelayMember> {
-        let me = self.my_participant_id.as_deref()?;
-        self.relay
-            .as_ref()?
-            .members
-            .iter()
-            .find(|m| m.participant_id == me)
+        self.relay.as_ref()?.members.get(self.relay_member?)
     }
 
     /// Id of the runner's leaderboard row: the team's on a relay race (rows
@@ -1190,6 +1237,17 @@ impl RaceMachine {
     fn set_relay(&mut self, relay: Option<RelayInfo>) {
         let turns_waiting = relay.as_ref().is_some_and(|r| r.role == RelayRole::Waiting)
             && self.relay_role() != Some(RelayRole::Waiting);
+        // `my_participant_id` is set before the relay info, by the same
+        // `auth_ok`, so the index is right for the members it indexes.
+        self.relay_member = relay.as_ref().and_then(|r| {
+            let me = self.my_participant_id.as_deref()?;
+            r.members.iter().position(|m| m.participant_id == me)
+        });
+        let capped = relay
+            .as_ref()
+            .is_some_and(|r| r.role == RelayRole::Holder && r.gates_locked);
+        self.relay_cap_due = capped && (self.relay_cap_due || !self.relay_capped);
+        self.relay_capped = capped;
         self.relay = relay;
         if turns_waiting
             && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
@@ -1429,6 +1487,7 @@ impl RaceMachine {
                 match status {
                     ConnectionStatus::Connected => {
                         self.ready_sent = false; // Reset for reconnection
+                        self.relay_ready_sent = None;
                         self.set_status("Server connected".to_string(), now);
                     }
                     ConnectionStatus::Reconnecting => {
@@ -1521,6 +1580,7 @@ impl RaceMachine {
                     self.drop_hunter("another participant", &mut effects);
                 }
                 self.my_participant_id = Some(participant_id);
+                self.relay_ready_sent = None;
                 self.set_relay(relay);
                 self.my_participant_index = self
                     .my_row_id()
@@ -2301,6 +2361,7 @@ impl RaceMachine {
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
             debug_flags: self.debug_flags_gate_open(now)
                 && now.duration_since(self.last_debug_flags_poll) >= Duration::from_millis(100),
+            hp: self.relay_wants_hp(),
         }
     }
 
@@ -2991,6 +3052,7 @@ impl RaceMachine {
             self.flush_race_items(false, loading_exit, loading_exit, now, &mut effects);
             self.maintain_memory_effects(loading_exit, now, &mut effects);
             self.maintain_hunter(now, &mut effects);
+            self.maintain_relay(false, loading_exit, now, &mut effects);
             return effects;
         }
 
@@ -3093,6 +3155,7 @@ impl RaceMachine {
         );
         self.maintain_memory_effects(loading_exit, now, &mut effects);
         self.maintain_hunter(now, &mut effects);
+        self.maintain_relay(true, loading_exit, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -3660,6 +3723,201 @@ impl RaceMachine {
                         self.item_feed.push_banner(banner, now);
                     }
                 }
+            }
+        }
+    }
+
+    /// What the relay lock should read, from the server's word alone: `None`
+    /// leaves the flag alone (no relay, or a value this build does not
+    /// know: an unknown value is never a decision). Over, or a race that
+    /// does not run, wins over the role. A relay not being played reads
+    /// off; a live one locks a waiting runner and a capped holder.
+    fn relay_lock_wanted(&self) -> Option<bool> {
+        let relay = self.relay.as_ref()?;
+        if self.relay_over() || !self.is_race_running() {
+            return Some(false);
+        }
+        if !self.relay_live() {
+            return match relay.team_status {
+                ParticipantStatus::Unknown => None,
+                _ => Some(false),
+            };
+        }
+        match relay.role {
+            RelayRole::Waiting => Some(true),
+            RelayRole::Holder => Some(relay.gates_locked),
+            RelayRole::Unknown => None,
+        }
+    }
+
+    /// The runner waits for the baton in a relay being played.
+    fn relay_waiting_live(&self) -> bool {
+        self.relay_role() == Some(RelayRole::Waiting) && self.relay_live()
+    }
+
+    /// HP is read only while a locked waiting runner may be sent back to the
+    /// Chapel: a warp running, or away from it.
+    fn relay_wants_hp(&self) -> bool {
+        self.relay_lock == Some(true)
+            && self.relay_waiting_live()
+            && (self.relay_warp.is_some()
+                || self
+                    .frame_snapshot
+                    .map_id
+                    .is_some_and(|map| map != relay::CHAPEL_MAP_ID))
+    }
+
+    /// Run a relay runner's lock, its return to the Chapel and its
+    /// readiness, after `maintain_hunter`. Decided on the server's word and
+    /// the machine's own writes; per frame a few comparisons while nothing
+    /// changes. Every flag write waits until the player is loaded and
+    /// `relay::SETTLE` has passed since the last loading exit, on the race
+    /// save: a flag written during a load can be missed by the seed's
+    /// events. A write the shell cannot make is silent: the value asked for
+    /// is believed until the next loading exit asserts it again. No-op
+    /// without a relay.
+    fn maintain_relay(
+        &mut self,
+        connected: bool,
+        loading_exit: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
+        let Some(relay) = self.relay.as_ref() else {
+            return;
+        };
+        crate::profile_span!("maintain_relay");
+        let flags = relay.flags;
+        let waiting_live = self.relay_waiting_live();
+        let readable = self.frame_snapshot.position_readable;
+        if loading_exit {
+            self.relay_asserted = false;
+            self.relay_warp_given_up = false;
+        }
+
+        // A warp ends with the waiting: a holder, a take or an over relay
+        // does not go back. Its flag, still on, would warp the player the
+        // next time the seed reads it.
+        if !waiting_live {
+            self.relay_warp_given_up = false;
+            if let Some(mut warp) = self.relay_warp.take() {
+                if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), readable) {
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: false,
+                    });
+                }
+            }
+        }
+
+        let settled = self
+            .last_loading_exit
+            .is_none_or(|at| now.saturating_duration_since(at) >= relay::SETTLE);
+        if readable && !self.wrong_save && settled {
+            if let Some(want) = self.relay_lock_wanted() {
+                if self.relay_lock != Some(want) {
+                    let reason = match (want, self.relay_role()) {
+                        (true, Some(RelayRole::Waiting)) => "waiting",
+                        (true, _) => "cap",
+                        (false, Some(RelayRole::Holder)) if self.relay_live() => "holder",
+                        (false, _) => "relay over",
+                    };
+                    info!(
+                        reason,
+                        "[RELAY] Lock {}",
+                        if want { "raised" } else { "lowered" }
+                    );
+                    self.relay_lock_since = want.then_some(now);
+                }
+                if self.relay_lock != Some(want) || !self.relay_asserted {
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flags.lock_flag,
+                        value: want,
+                    });
+                    self.relay_lock = Some(want);
+                }
+                self.relay_asserted = true;
+            }
+
+            if self.relay_cap_due {
+                self.relay_cap_due = false;
+                if self.relay_live() && self.relay_capped {
+                    self.item_feed.push_banner(
+                        FeedBanner {
+                            icon: String::new(),
+                            title: "QUOTA REACHED: PASS THE BATON".to_string(),
+                            line: "Your gates are locked".to_string(),
+                            detail: String::new(),
+                            tone: FeedTone::Malus,
+                        },
+                        now,
+                    );
+                }
+            }
+
+            // Back to the Chapel once the lock has held the gates long
+            // enough (or a load has come since), unless dead.
+            if waiting_live
+                && self.relay_warp.is_none()
+                && !self.relay_warp_given_up
+                && self.relay_lock == Some(true)
+                && self.relay_asserted
+                && self
+                    .frame_snapshot
+                    .map_id
+                    .is_some_and(|map| map != relay::CHAPEL_MAP_ID)
+                && self.frame_snapshot.hp.is_some_and(|hp| hp > 0)
+                && self.relay_lock_since.is_some_and(|since| {
+                    now.saturating_duration_since(since) >= relay::GATE_WINDOW
+                        || self.last_loading_exit.is_some_and(|exit| exit > since)
+                })
+            {
+                self.relay_warp = Some(FlagWarp::new(flags.chapel_warp_flag));
+            }
+        }
+
+        if let Some(warp) = self.relay_warp.as_mut() {
+            let step = warp.tick(readable, now);
+            let (flag, done) = (warp.flag(), warp.is_done());
+            match step {
+                Some(WarpStep::Raise(flag)) => {
+                    info!("[RELAY] Warp to the Chapel");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: true,
+                    });
+                }
+                Some(WarpStep::Lower(flag)) => effects.push(Effect::SetGameFlag {
+                    flag_id: flag,
+                    value: false,
+                }),
+                Some(WarpStep::Failed) => {
+                    warn!("[RELAY] Warp failed");
+                    effects.push(Effect::SetGameFlag {
+                        flag_id: flag,
+                        value: false,
+                    });
+                    self.relay_warp_given_up = true;
+                    self.set_status("Warp to the Chapel failed".to_string(), now);
+                }
+                None => {}
+            }
+            if done {
+                self.relay_warp = None;
+            }
+        }
+
+        if connected {
+            let ready = waiting_live
+                && self.relay_lock == Some(true)
+                && self.relay_asserted
+                && readable
+                && !self.wrong_save
+                && self.relay_warp.is_none()
+                && self.frame_snapshot.map_id == Some(relay::CHAPEL_MAP_ID);
+            if self.relay_ready_sent != Some(ready) {
+                self.relay_ready_sent = Some(ready);
+                effects.push(Effect::SendRelayReady { ready });
             }
         }
     }
@@ -5448,7 +5706,7 @@ mod tests {
             loading_screen: Some(false),
             screen_in_game: Some(true),
             blackscreen: Some(blackscreen),
-            debug_flags: None,
+            ..FrameSnapshot::default()
         }
     }
 
@@ -11656,5 +11914,639 @@ mod tests {
             now + ms(10_300),
         );
         assert_eq!(status_igts(&fx), [5_000]);
+    }
+
+    // ------------------------------------------------------------------
+    // Relay lock discipline, return to the Chapel, relay_ready
+    // ------------------------------------------------------------------
+
+    const LOCK: u32 = 1050290500;
+    const CHAPEL_WARP: u32 = 1050290501;
+    const IN_ZONE: u32 = 0x3C2C_2400;
+
+    fn lock(value: bool) -> Effect {
+        Effect::SetGameFlag {
+            flag_id: LOCK,
+            value,
+        }
+    }
+
+    fn warp(value: bool) -> Effect {
+        Effect::SetGameFlag {
+            flag_id: CHAPEL_WARP,
+            value,
+        }
+    }
+
+    fn ready(value: bool) -> Effect {
+        Effect::SendRelayReady { ready: value }
+    }
+
+    /// One connected frame `at` ms after `t0`: loaded on `map`, or an
+    /// unreadable position (a loading screen) on `None`. The IGT follows the
+    /// clock, so nothing reads as a reload.
+    fn go(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(5_000 + at as u32),
+            death_count: Some(0),
+            position_readable: map.is_some(),
+            loading_screen: Some(false),
+            map_id: map,
+            hp: map.map(|_| 100),
+            ..FrameSnapshot::default()
+        };
+        m.tick(tick_in(snapshot, true, None), t0 + ms(at))
+    }
+
+    /// Frames every 100 ms over `[from, to]` on `map`, the effects tagged
+    /// with their time.
+    fn go_over(
+        m: &mut RaceMachine,
+        t0: Instant,
+        from: u64,
+        to: u64,
+        map: Option<u32>,
+    ) -> Vec<(u64, Effect)> {
+        let mut out = Vec::new();
+        let mut at = from;
+        while at <= to {
+            out.extend(go(m, t0, at, map).into_iter().map(|e| (at, e)));
+            at += 100;
+        }
+        out
+    }
+
+    /// A loading screen at `at` and the exit 16 ms later; returns the exit's
+    /// time.
+    fn load_in(m: &mut RaceMachine, t0: Instant, at: u64, map: u32) -> u64 {
+        go(m, t0, at, None);
+        go(m, t0, at + 16, Some(map));
+        at + 16
+    }
+
+    fn times_of(fx: &[(u64, Effect)], wanted: &Effect) -> Vec<u64> {
+        fx.iter()
+            .filter(|(_, e)| e == wanted)
+            .map(|(at, _)| *at)
+            .collect()
+    }
+
+    fn any_relay_write(fx: &[Effect]) -> bool {
+        fx.iter().any(|e| {
+            matches!(e, Effect::SetGameFlag { flag_id, .. }
+                if (LOCK..=LOCK + 20).contains(flag_id))
+                || matches!(e, Effect::SendRelayReady { .. })
+        })
+    }
+
+    fn settle_ms() -> u64 {
+        crate::core::relay::SETTLE.as_millis() as u64
+    }
+
+    fn chapel() -> Option<u32> {
+        Some(crate::core::relay::CHAPEL_MAP_ID)
+    }
+
+    fn update(m: &mut RaceMachine, info: RelayInfo, t0: Instant, at: u64) {
+        m.handle_message(MachineMessage::RelayUpdate(info), t0 + ms(at));
+    }
+
+    #[test]
+    fn a_waiting_runner_is_locked_once_loaded_and_settled() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let exit = load_in(&mut m, t0, 100, IN_ZONE);
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 1_000,
+            Some(IN_ZONE),
+        );
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        let at = fx.iter().find(|(_, e)| *e == lock(true)).unwrap().0;
+        assert!(
+            at >= exit + settle_ms() && at < exit + settle_ms() + 100,
+            "{at}"
+        );
+        assert_eq!(m.relay_locked(), Some(true));
+    }
+
+    #[test]
+    fn the_lock_is_never_written_during_a_load() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, None);
+        update(&mut m, relay_info("waiting"), t0, 10);
+        for i in 1..=10 {
+            let fx = go(&mut m, t0, 10 + i * 100, None);
+            assert!(
+                !fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })),
+                "{i}"
+            );
+        }
+        let exit = 1_200;
+        go(&mut m, t0, exit, chapel());
+        let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
+        let at = times_of(&fx, &lock(true));
+        assert_eq!(at.len(), 1);
+        assert!(at[0] >= exit + settle_ms());
+    }
+
+    #[test]
+    fn the_lock_is_asserted_again_after_each_loading_exit() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let e1 = load_in(&mut m, t0, 100, chapel().unwrap());
+        let fx = go_over(&mut m, t0, e1 + 100, e1 + 3_000, chapel());
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        let e2 = load_in(&mut m, t0, 4_000, chapel().unwrap());
+        let fx = go_over(&mut m, t0, e2 + 100, e2 + 3_000, chapel());
+        let at = times_of(&fx, &lock(true));
+        assert_eq!(at.len(), 1);
+        assert!(at[0] >= e2 + settle_ms());
+    }
+
+    #[test]
+    fn a_relaunched_holder_drops_a_stale_lock() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        let fx = go_over(&mut m, t0, 0, 2_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(false)), [0]);
+        assert!(times_of(&fx, &lock(true)).is_empty());
+        assert_eq!(m.relay_locked(), Some(false));
+    }
+
+    #[test]
+    fn a_relaunched_waiting_runner_raises_the_lock_its_save_may_hold() {
+        // The machine cannot know the flag's state: it writes what the
+        // server says, once, whatever the save holds.
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 2_000, chapel());
+        assert_eq!(times_of(&fx, &lock(true)), [0]);
+    }
+
+    #[test]
+    fn a_capped_holder_is_locked_and_told_once() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        let mut capped = relay_info("holder");
+        capped.gates_locked = true;
+        update(&mut m, capped.clone(), t0, 100);
+        let fx = go(&mut m, t0, 200, Some(IN_ZONE));
+        assert!(fx.contains(&lock(true)), "{fx:?}");
+        assert_eq!(
+            m.item_banner().unwrap().title,
+            "QUOTA REACHED: PASS THE BATON"
+        );
+        // Shown and gone: an identical update tells nothing again.
+        let later = t0 + secs(30);
+        m.item_feed.advance(later, Duration::ZERO);
+        assert!(m.item_banner().is_none());
+        m.handle_message(MachineMessage::RelayUpdate(capped), later);
+        go(&mut m, t0, 30_100, Some(IN_ZONE));
+        assert!(m.item_banner().is_none());
+    }
+
+    #[test]
+    fn the_start_locks_only_after_the_relay_update() {
+        for (role, locks) in [("waiting", true), ("holder", false)] {
+            let t0 = Instant::now();
+            let mut m = RaceMachine::new(1, String::new(), false, t0);
+            m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
+            let fx = go_over(&mut m, t0, 0, 1_000, chapel());
+            assert!(!fx
+                .iter()
+                .any(|(_, e)| *e == lock(true) || *e == ready(true)));
+            m.handle_message(MachineMessage::RaceStart(10), t0 + ms(1_000));
+            let fx = go_over(&mut m, t0, 1_100, 4_000, chapel());
+            assert!(
+                !fx.iter()
+                    .any(|(_, e)| *e == lock(true) || *e == ready(true)),
+                "{role}"
+            );
+            let mut start = relay_info_with(role, "ready");
+            if role == "holder" {
+                start.holder_id = Some("p1".into());
+            }
+            update(&mut m, start, t0, 4_050);
+            let fx = go_over(&mut m, t0, 4_100, 6_000, chapel());
+            assert_eq!(
+                times_of(&fx, &lock(true)).len(),
+                usize::from(locks),
+                "{role}"
+            );
+            assert_eq!(
+                times_of(&fx, &ready(true)).len(),
+                usize::from(locks),
+                "{role}"
+            );
+            if locks {
+                assert_eq!(times_of(&fx, &lock(true)), [4_100]);
+            } else {
+                assert!(!fx.iter().any(|(_, e)| *e == ready(true)));
+            }
+        }
+    }
+
+    #[test]
+    fn the_start_update_in_a_loading_screen_waits_for_the_settle() {
+        let t0 = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
+        go(&mut m, t0, 0, chapel());
+        m.handle_message(MachineMessage::RaceStart(10), t0 + ms(100));
+        go(&mut m, t0, 200, None);
+        update(&mut m, relay_info_with("waiting", "ready"), t0, 300);
+        let fx = go_over(&mut m, t0, 300, 1_900, None);
+        assert!(fx.is_empty(), "{fx:?}");
+        let exit = 2_000;
+        go(&mut m, t0, exit, chapel());
+        let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        assert!(times_of(&fx, &lock(true))[0] >= exit + settle_ms());
+    }
+
+    #[test]
+    fn the_lock_follows_the_server_both_ways() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
+        update(&mut m, relay_info("waiting"), t0, 400);
+        let fx = go_over(&mut m, t0, 400, 2_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(true)), [400]);
+        assert!(
+            times_of(&fx, &warp(true)).is_empty(),
+            "inside the gate window"
+        );
+        update(&mut m, relay_info("holder"), t0, 2_050);
+        let fx = go_over(&mut m, t0, 2_100, 12_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(false)), [2_100]);
+        assert!(!fx.iter().any(|(_, e)| *e == warp(true)));
+        assert_eq!(m.relay_locked(), Some(false));
+    }
+
+    /// A machine locked and ready at the Chapel, the window long over.
+    fn locked_at_chapel(t0: Instant) -> RaceMachine {
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 300, chapel());
+        assert!(fx.iter().any(|(_, e)| *e == lock(true)));
+        assert!(fx.iter().any(|(_, e)| *e == ready(true)));
+        m
+    }
+
+    #[test]
+    fn the_lock_is_lowered_when_the_runners_race_is_over() {
+        type Case = (&'static str, Box<dyn Fn(&mut RaceMachine, Instant)>);
+        let cases: Vec<Case> = vec![
+            (
+                "team finished",
+                Box::new(|m, t| update(m, relay_info_with("waiting", "finished"), t, 1_000)),
+            ),
+            (
+                "team abandoned",
+                Box::new(|m, t| update(m, relay_info_with("waiting", "abandoned"), t, 1_000)),
+            ),
+            (
+                "team disqualified",
+                Box::new(|m, t| update(m, relay_info_with("waiting", "disqualified"), t, 1_000)),
+            ),
+            (
+                "member abandoned",
+                Box::new(|m, t| {
+                    let mut i = relay_info("waiting");
+                    set_member_status(&mut i, "p1", ParticipantStatus::Abandoned);
+                    update(m, i, t, 1_000)
+                }),
+            ),
+            (
+                "member disqualified",
+                Box::new(|m, t| {
+                    let mut i = relay_info("waiting");
+                    set_member_status(&mut i, "p1", ParticipantStatus::Disqualified);
+                    update(m, i, t, 1_000)
+                }),
+            ),
+            (
+                "race finished",
+                Box::new(|m, t| {
+                    m.handle_message(
+                        MachineMessage::RaceStatusChange {
+                            status: RaceStatus::Finished,
+                            current_igt: None,
+                        },
+                        t + ms(1_000),
+                    );
+                }),
+            ),
+            (
+                "race reset (auth_ok)",
+                Box::new(|m, t| {
+                    m.handle_message(relay_auth("setup", Some(setup_relay_info())), t + ms(1_000));
+                }),
+            ),
+            (
+                "race back to setup",
+                Box::new(|m, t| {
+                    m.handle_message(
+                        MachineMessage::RaceInfoUpdate(test_race("setup")),
+                        t + ms(1_000),
+                    );
+                }),
+            ),
+        ];
+        for (name, event) in cases {
+            for warping in [false, true] {
+                let t0 = Instant::now();
+                let mut m = locked_at_chapel(t0);
+                if warping {
+                    // Away from the Chapel, past the window: a warp raised.
+                    let fx = go_over(&mut m, t0, 400, 6_000, Some(IN_ZONE));
+                    assert_eq!(times_of(&fx, &warp(true)).len(), 1, "{name}");
+                }
+                event(&mut m, t0);
+                // At the Chapel, ready until the end tells it otherwise; away
+                // from it, with a warp on its way, already not ready.
+                let map = if warping { Some(IN_ZONE) } else { chapel() };
+                let fx = go_over(&mut m, t0, 6_100, 12_000, map);
+                assert_eq!(times_of(&fx, &lock(false)), [6_100], "{name} {warping}");
+                assert!(!fx.iter().any(|(_, e)| *e == warp(true)), "{name}");
+                assert!(!fx.iter().any(|(_, e)| *e == ready(true)), "{name}");
+                // An auth_ok sends the value again whatever it was.
+                let again = !warping || name.contains("auth_ok");
+                let not_ready: &[u64] = if again { &[6_100] } else { &[] };
+                assert_eq!(times_of(&fx, &ready(false)), not_ready, "{name}");
+                assert_eq!(m.relay_locked(), Some(false), "{name}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_warp_flag_still_raised_is_lowered_when_the_relay_ends() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let fx = go_over(&mut m, t0, 400, 5_600, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &warp(true)).len(), 1);
+        update(&mut m, relay_info("holder"), t0, 5_650);
+        let fx = go(&mut m, t0, 5_700, Some(IN_ZONE));
+        assert!(fx.contains(&warp(false)), "{fx:?}");
+        assert!(fx.contains(&lock(false)));
+        let fx = go_over(&mut m, t0, 5_800, 20_000, Some(IN_ZONE));
+        assert!(!fx.iter().any(|(_, e)| *e == warp(true)));
+    }
+
+    #[test]
+    fn a_waiting_runner_away_from_the_chapel_is_sent_back_after_the_gate_window() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
+        update(&mut m, relay_info("waiting"), t0, 400);
+        let fx = go_over(&mut m, t0, 400, 9_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(true)), [400]);
+        assert_eq!(times_of(&fx, &warp(true)), [5_400]);
+        // Not locked in setup of the window: no warp before it.
+        assert!(times_of(&fx, &ready(true)).is_empty());
+    }
+
+    #[test]
+    fn a_loading_exit_after_the_lock_closes_the_gate_window() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
+        update(&mut m, relay_info("waiting"), t0, 400);
+        go_over(&mut m, t0, 400, 1_000, Some(IN_ZONE));
+        let exit = load_in(&mut m, t0, 1_100, IN_ZONE);
+        let fx = go_over(&mut m, t0, exit + 100, exit + 4_000, Some(IN_ZONE));
+        let at = times_of(&fx, &warp(true));
+        assert_eq!(at.len(), 1, "{fx:?}");
+        assert!(
+            at[0] >= exit + settle_ms() && at[0] < exit + settle_ms() + 100,
+            "{at:?}"
+        );
+    }
+
+    #[test]
+    fn a_dead_runner_is_not_warped() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
+        update(&mut m, relay_info("waiting"), t0, 400);
+        let frame = |m: &mut RaceMachine, at: u64, hp: i32| {
+            let snapshot = FrameSnapshot {
+                igt_ms: Some(5_000 + at as u32),
+                death_count: Some(0),
+                position_readable: true,
+                loading_screen: Some(false),
+                map_id: Some(IN_ZONE),
+                hp: Some(hp),
+                ..FrameSnapshot::default()
+            };
+            m.tick(tick_in(snapshot, true, None), t0 + ms(at))
+        };
+        for at in (400..=7_000).step_by(100) {
+            let fx = frame(&mut m, at, 0);
+            assert!(!fx.contains(&warp(true)), "{at}");
+        }
+        assert!(frame(&mut m, 7_100, 1).contains(&warp(true)));
+    }
+
+    #[test]
+    fn hp_is_asked_only_while_a_return_to_the_chapel_may_wait() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
+        assert!(!m.pre_tick(t0 + ms(400), true, true).hp);
+        update(&mut m, relay_info("waiting"), t0, 400);
+        go_over(&mut m, t0, 400, 600, Some(IN_ZONE));
+        assert!(m.pre_tick(t0 + ms(700), true, true).hp);
+        let mut m = locked_at_chapel(Instant::now());
+        assert!(!m.pre_tick(Instant::now(), true, true).hp, "at the Chapel");
+        let _ = &mut m;
+    }
+
+    #[test]
+    fn a_warp_that_never_loads_gives_up_with_a_status() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let fx = go_over(&mut m, t0, 400, 30_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &warp(true)).len(), 3);
+        assert!(!times_of(&fx, &warp(false)).is_empty());
+        let end = *times_of(&fx, &warp(true)).last().unwrap();
+        assert!(fx.last().is_some());
+        let failed_at = t0 + ms(end + 5_000);
+        assert_eq!(m.get_status(failed_at), Some("Warp to the Chapel failed"));
+        // Given up: nothing more until a loading exit reopens the question.
+        assert_eq!(times_of(&fx, &warp(true)).len(), 3);
+    }
+
+    #[test]
+    fn relay_ready_follows_the_chapel_and_the_lock() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 500, chapel());
+        assert_eq!(times_of(&fx, &ready(true)), [0]);
+        // A loading screen: not loaded, not ready.
+        let fx = go(&mut m, t0, 600, None);
+        assert_eq!(fx, vec![ready(false)]);
+        assert!(go(&mut m, t0, 700, None).is_empty());
+        // Back: ready once the lock is asserted again.
+        let exit = 800;
+        go(&mut m, t0, exit, chapel());
+        let fx = go_over(&mut m, t0, exit + 100, exit + 3_000, chapel());
+        let at = times_of(&fx, &ready(true));
+        assert_eq!(at.len(), 1);
+        assert!(at[0] >= exit + settle_ms());
+        // Reconnection while at the Chapel: the current value again, once.
+        m.handle_message(
+            relay_auth("running", Some(relay_info("waiting"))),
+            t0 + secs(5),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + secs(5),
+        );
+        let fx = go_over(&mut m, t0, 5_100, 5_500, chapel());
+        assert_eq!(times_of(&fx, &ready(true)), [5_100]);
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })));
+        // Away from the Chapel: false, and false again after a reconnection.
+        let fx = go_over(&mut m, t0, 5_600, 5_800, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &ready(false)), [5_600]);
+        m.handle_message(
+            relay_auth("running", Some(relay_info("waiting"))),
+            t0 + secs(6),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + secs(6),
+        );
+        let fx = go_over(&mut m, t0, 6_100, 6_500, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &ready(false)), [6_100]);
+        assert!(times_of(&fx, &ready(true)).is_empty());
+    }
+
+    #[test]
+    fn a_holder_never_sends_ready_true() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        let fx = go_over(&mut m, t0, 0, 5_000, chapel());
+        assert!(times_of(&fx, &ready(true)).is_empty());
+        assert_eq!(times_of(&fx, &ready(false)), [0]);
+    }
+
+    #[test]
+    fn a_socket_reconnect_while_locked_keeps_the_lock() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        // The auth_ok info reads the runner not ready; the update follows.
+        let mut info = relay_info("waiting");
+        info.members[0].ready = false;
+        m.handle_message(relay_auth("running", Some(info)), t0 + secs(2));
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + secs(2),
+        );
+        update(&mut m, relay_info("waiting"), t0, 2_050);
+        let fx = go_over(&mut m, t0, 2_100, 3_000, chapel());
+        assert!(
+            !fx.iter()
+                .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })),
+            "{fx:?}"
+        );
+        assert_eq!(times_of(&fx, &ready(true)), [2_100]);
+        assert_eq!(m.relay_locked(), Some(true));
+    }
+
+    #[test]
+    fn an_unknown_role_or_team_status_keeps_the_lock_state_and_offers_nothing() {
+        for locked in [true, false] {
+            for what in ["role", "team"] {
+                let t0 = Instant::now();
+                let mut m = relay_machine(if locked { "waiting" } else { "holder" }, t0);
+                go_over(&mut m, t0, 0, 400, chapel());
+                let before = m.relay_locked();
+                let mut info = relay_info(if locked { "waiting" } else { "holder" });
+                if what == "role" {
+                    info.role = RelayRole::Unknown;
+                } else {
+                    info.team_status = ParticipantStatus::Unknown;
+                }
+                update(&mut m, info, t0, 450);
+                // Past the window, away from the Chapel, after a load.
+                let exit = load_in(&mut m, t0, 500, IN_ZONE);
+                let fx = go_over(&mut m, t0, exit + 100, exit + 9_000, Some(IN_ZONE));
+                assert!(
+                    !fx.iter()
+                        .any(|(_, e)| matches!(e, Effect::SetGameFlag { flag_id, .. }
+                        if *flag_id == CHAPEL_WARP)),
+                    "{what} {locked}"
+                );
+                assert!(
+                    !fx.iter().any(|(_, e)| *e == lock(!before.unwrap())),
+                    "{what} {locked}"
+                );
+                assert!(
+                    !fx.iter().any(|(_, e)| *e == ready(true)),
+                    "{what} {locked}"
+                );
+                assert_eq!(m.relay_locked(), before);
+            }
+        }
+    }
+
+    #[test]
+    fn an_unknown_role_does_not_outweigh_a_finished_team() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let mut info = relay_info_with("waiting", "finished");
+        info.role = RelayRole::Unknown;
+        update(&mut m, info, t0, 400);
+        let fx = go_over(&mut m, t0, 500, 800, chapel());
+        assert_eq!(times_of(&fx, &lock(false)), [500]);
+    }
+
+    #[test]
+    fn a_wrong_save_writes_no_relay_flag() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        m.wrong_save = true;
+        let fx = go_over(&mut m, t0, 0, 5_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })));
+        assert!(!fx.iter().any(|(_, e)| *e == ready(true)));
+    }
+
+    #[test]
+    fn a_race_without_relay_writes_no_relay_flag() {
+        let t0 = Instant::now();
+        let mut m = running_machine(t0);
+        for at in (0..=5_000).step_by(100) {
+            let fx = go(&mut m, t0, at, Some(IN_ZONE));
+            assert!(!any_relay_write(&fx), "{at}");
+        }
+        assert!(!m.pre_tick(t0 + ms(5_100), true, true).hp);
+        assert_eq!(m.relay_locked(), None);
+    }
+
+    #[test]
+    fn the_runner_absent_from_its_team_is_neither_out_nor_over() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let mut info = relay_info("waiting");
+        info.members.retain(|member| member.participant_id != "p1");
+        set_member_status(&mut info, "p2", ParticipantStatus::Abandoned);
+        update(&mut m, info, t0, 100);
+        assert!(m.relay_me().is_none());
+        assert!(!m.am_i_abandoned() && !m.relay_over());
+        assert!(m.relay_live());
+        // And a later update naming it again is read.
+        let mut back = relay_info("waiting");
+        set_member_status(&mut back, "p1", ParticipantStatus::Abandoned);
+        update(&mut m, back, t0, 200);
+        assert!(m.am_i_abandoned() && m.relay_over() && !m.relay_live());
     }
 }

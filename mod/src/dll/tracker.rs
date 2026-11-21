@@ -561,6 +561,8 @@ impl RaceTracker {
 
         let snapshot = {
             profile_span!("frame_snapshot");
+            // One readability read gives both the flag and the map id.
+            let map_id = self.game_state.loaded_map_id();
             // Screen-state and blackscreen share one pointer-chain read
             // (`is_blackscreen_active` depends on `is_screen_in_game`);
             // read both through the combined accessor so the chain is
@@ -575,7 +577,13 @@ impl RaceTracker {
                     .deaths
                     .then(|| self.game_state.read_deaths())
                     .flatten(),
-                position_readable: self.game_state.is_position_readable(),
+                position_readable: map_id.is_some(),
+                map_id,
+                hp: needs
+                    .hp
+                    .then(race_items::read_hp)
+                    .flatten()
+                    .map(|(hp, _)| hp),
                 loading_screen: needs
                     .loading
                     .then(|| self.game_state.is_world_clock_stopped())
@@ -797,6 +805,9 @@ impl RaceTracker {
             match effect {
                 Effect::SendReady => {
                     self.ws_client.send_ready();
+                }
+                Effect::SendRelayReady { ready } => {
+                    self.ws_client.send_relay_ready(ready);
                 }
                 Effect::SendStatusUpdate {
                     igt_ms,
