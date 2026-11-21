@@ -209,6 +209,7 @@ The ticket endpoints run the same gating as the download endpoints, including ch
    [keybindings]
    toggle_ui = "f9"
    toggle_leaderboard = "f10"
+   relay = "f8"
    ```
 
 5. **Inject config and the current DLL**: appends a stored (uncompressed) `<top_dir>/lib/speedfog_racing.toml` entry right after the surviving local records, then the server's current DLL as a stored `<top_dir>/lib/speedfog_racing.dll`, followed by the rewritten central directory and a new EOCD. The DLL comes from `MOD_DLL_PATH` (default `/opt/speedfog-racing/mod/speedfog_racing.dll`, installed by `deploy/deploy-mod.sh`): `load_mod_dll` reads it once and keeps it in memory until the file changes, so concurrent downloads share one copy, and a pack streams the build it started with even if a deploy replaces the file meanwhile. Every pack therefore carries the current mod, whatever its seed's generation date; a player who keeps an older pack keeps its older DLL. When the file is missing, the ticket and download endpoints answer 503 (not the 410 of a purged seed zip).

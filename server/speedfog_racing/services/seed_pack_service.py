@@ -579,6 +579,7 @@ border_color = "#253550"
 [keybindings]
 toggle_ui = "f9"
 toggle_leaderboard = "f10"
+relay = "f8"
 """
 
 

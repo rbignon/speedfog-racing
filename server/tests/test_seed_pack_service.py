@@ -201,6 +201,8 @@ def test_player_and_training_configs_set_up_the_overlay_alike(mock_participant, 
     training = tomllib.loads(generate_training_config(session))
 
     assert player["overlay"] == training["overlay"]
+    # The baton key is the race config's alone: a training session has no relay.
+    assert player["keybindings"].pop("relay") == "f8"
     assert player["keybindings"] == training["keybindings"]
 
 
