@@ -68,6 +68,9 @@
             <!-- item.status is the RACE status: a finished run inside a
                  still-running race (every daily for 24h) already carries its
                  placement, so the placement always wins over the state. -->
+            {#if item.type === "race_participant" && item.relay_team_name}
+              <span>{item.relay_team_name}</span>
+            {/if}
             {#if item.placement}
               <span class="place" class:first={item.placement === 1}
                 >{placeLabel(item.placement)}/{item.total_starters}</span

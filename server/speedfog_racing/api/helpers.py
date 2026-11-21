@@ -156,12 +156,28 @@ def caster_response(caster: Caster) -> CasterResponse:
 def race_response(race: Race, user: User | None = None) -> RaceResponse:
     """Convert Race model to RaceResponse."""
     if race.status == RaceStatus.FINISHED:
+        # Teammates of a relay race share the placement of their team, ranked by
+        # the team's result (an early leaver's row holds a snapshot, not the result).
+        team_igt = {t.id: t.igt_ms for t in race.relay_teams}
+
+        def preview_key(p: Participant) -> tuple[int, str]:
+            igt = team_igt.get(p.relay_team_id, p.igt_ms) if p.relay_team_id else p.igt_ms
+            return igt, str(p.relay_team_id or "")
+
         finished = sorted(
             [p for p in race.participants if p.status == ParticipantStatus.FINISHED],
-            key=lambda p: p.igt_ms,
+            key=preview_key,
         )
+        placement_of: dict[uuid.UUID, int] = {}
+        rank = 0
+        previous_team: uuid.UUID | None = None
+        for p in finished:
+            if p.relay_team_id is None or p.relay_team_id != previous_team:
+                rank += 1
+            previous_team = p.relay_team_id
+            placement_of[p.id] = rank
         non_finished = [p for p in race.participants if p.status != ParticipantStatus.FINISHED]
-        all_previews = [participant_preview(p, placement=i + 1) for i, p in enumerate(finished)] + [
+        all_previews = [participant_preview(p, placement=placement_of[p.id]) for p in finished] + [
             participant_preview(p) for p in non_finished
         ]
         previews = all_previews[:5]
@@ -276,7 +292,10 @@ async def compute_race_stats(
         select(
             Participant.race_id,
             func.count().label("total"),
-            func.count().filter(Participant.igt_ms > 0).label("starters"),
+            # A relay team is one starter, however many members carry its progress.
+            func.count(func.distinct(func.coalesce(Participant.relay_team_id, Participant.id)))
+            .filter(Participant.igt_ms > 0)
+            .label("starters"),
         )
         .where(Participant.race_id.in_(race_ids))
         .group_by(Participant.race_id)
@@ -287,22 +306,35 @@ async def compute_race_stats(
         total_by_race[count_row.race_id] = count_row.total
         starters_by_race[count_row.race_id] = count_row.starters
 
+    # A relay team is ranked by its own result, not by its member rows: an early
+    # leaver's row holds a snapshot, so a member still in at the end is the one
+    # who carries the final result, and teammates share a placement.
     finished_q = await db.execute(
-        select(Participant.race_id, Participant.id)
+        select(Participant.race_id, Participant.id, Participant.relay_team_id)
+        .outerjoin(RelayTeam, RelayTeam.id == Participant.relay_team_id)
         .where(
             Participant.race_id.in_(race_ids),
             Participant.status == ParticipantStatus.FINISHED,
         )
-        .order_by(Participant.race_id, Participant.igt_ms, Participant.finished_at)
+        .order_by(
+            Participant.race_id,
+            func.coalesce(RelayTeam.igt_ms, Participant.igt_ms),
+            func.coalesce(RelayTeam.finished_at, Participant.finished_at),
+            Participant.relay_team_id,
+        )
     )
     placements: dict[tuple[uuid.UUID, uuid.UUID], int] = {}
     current_race_id: uuid.UUID | None = None
+    previous_team_id: uuid.UUID | None = None
     rank = 0
     for row in finished_q:
         if row.race_id != current_race_id:
             current_race_id = row.race_id
             rank = 0
-        rank += 1
+            previous_team_id = None
+        if row.relay_team_id is None or row.relay_team_id != previous_team_id:
+            rank += 1
+        previous_team_id = row.relay_team_id
         placements[(row.race_id, row.id)] = rank
 
     return total_by_race, starters_by_race, placements

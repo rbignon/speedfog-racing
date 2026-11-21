@@ -21,7 +21,7 @@ from speedfog_racing.services.twitch_live import twitch_live_service
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from speedfog_racing.models import Participant, Pool, Race, User
+    from speedfog_racing.models import Participant, Pool, Race, RelayTeam, User
     from speedfog_racing.services.speedrun_records import RecordChange
 
 logger = logging.getLogger(__name__)
@@ -397,10 +397,21 @@ def _format_igt(igt_ms: int) -> str:
     return f"{minutes}:{seconds:02d}"
 
 
-def build_podium(participants: Sequence[Participant]) -> list[dict[str, str]]:
-    """Build podium data from participants (top 3 finishers by IGT)."""
+def build_podium(
+    participants: Sequence[Participant], teams: Sequence[RelayTeam] = ()
+) -> list[dict[str, str]]:
+    """Build podium data (top 3 finishers by IGT).
+
+    A relay race has one entry per finished team, named after the team and
+    carrying the team's IGT; the member rows are not read.
+    """
     from speedfog_racing.models import ParticipantStatus
 
+    if teams:
+        finished_teams = sorted(
+            (t for t in teams if t.status == ParticipantStatus.FINISHED), key=lambda t: t.igt_ms
+        )
+        return [{"name": t.name, "igt": _format_igt(t.igt_ms)} for t in finished_teams[:3]]
     finished = [p for p in participants if p.status == ParticipantStatus.FINISHED]
     finished.sort(key=lambda p: p.igt_ms)
     return [
@@ -558,7 +569,7 @@ def fire_race_finished_notifications(race: Race, *, forced: bool = False) -> Non
                 race_id=str(race.id),
                 pool=race.seed.pool if race.seed else None,
                 participant_count=len(race.participants),
-                podium=build_podium(race.participants),
+                podium=build_podium(race.participants, race.relay_teams),
             )
         )
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
