@@ -9,6 +9,7 @@ from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +17,15 @@ from sqlalchemy import ColumnElement, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from speedfog_racing.models import Participant, ParticipantStatus, Race, RaceStatus, RelayTeam, Seed
+from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
+    Participant,
+    ParticipantStatus,
+    Race,
+    RaceStatus,
+    RelayTeam,
+    Seed,
+)
 
 RELAY_PLUGIN = "relay"
 
@@ -26,6 +35,36 @@ RELAY_TEAM_NAME_MAX = 40
 
 # Seconds an offline holder keeps the baton before a teammate may take it.
 RELAY_OFFLINE_WAIT_S = 60
+# Seconds a holder has to answer a relay_release with its state.
+RELAY_RELEASE_TIMEOUT_S = 15.0
+# Seconds a new holder has to acknowledge a relay_take; then the baton is free.
+RELAY_TAKE_TIMEOUT_S = 30.0
+
+
+class RelayRefusal(StrEnum):
+    """Why a relay request was refused: the ``code`` of ``relay_refused``."""
+
+    NOT_HOLDER = "not_holder"
+    TARGET_UNAVAILABLE = "target_unavailable"
+    TARGET_AT_CAP = "target_at_cap"
+    AT_CAP = "at_cap"
+    HOLDER_ONLINE = "holder_online"
+    NOT_READY = "not_ready"
+    NOT_VALIDATED = "not_validated"
+    BUSY = "busy"
+
+
+# The message carried with each code (wire text, see docs/PROTOCOL.md).
+RELAY_REFUSAL_MESSAGES: dict[RelayRefusal, str] = {
+    RelayRefusal.NOT_HOLDER: "You do not hold the baton",
+    RelayRefusal.TARGET_UNAVAILABLE: "This runner cannot take the baton now",
+    RelayRefusal.TARGET_AT_CAP: "This teammate has reached their zone quota",
+    RelayRefusal.AT_CAP: "You have reached your zone quota",
+    RelayRefusal.HOLDER_ONLINE: "The baton cannot be taken yet",
+    RelayRefusal.NOT_READY: "Wait at the Chapel first",
+    RelayRefusal.NOT_VALIDATED: "No fresh save was validated for this runner",
+    RelayRefusal.BUSY: "The baton cannot move right now",
+}
 
 
 def seed_has_relay(graph_json: Mapping[str, Any]) -> bool:
@@ -139,6 +178,65 @@ def reset_relay_team(team: RelayTeam) -> None:
     team.holder_id = None
     team.holder_offline_since = None
     team.baton_free = False
+
+
+def relay_warp_flag(flags: Mapping[str, int], entry_flag_id: int | None) -> int | None:
+    """The flag that warps a receiver to the entrance of the connection whose
+    zone-tracking flag is ``entry_flag_id`` (``relay_flags``' bases); None
+    before the team's first gate."""
+    if entry_flag_id is None:
+        return None
+    return flags["warp_flag_base"] + (entry_flag_id - flags["zone_flag_base"])
+
+
+def team_defeat_flags(
+    graph_json: Mapping[str, Any], zone_history: Sequence[Mapping[str, Any]] | None
+) -> list[int]:
+    """The defeat flag of every node the team's history marks killed
+    (``boss_kill_igt_ms``), sorted, each once: what a receiver's game must
+    hold dead, the current zone's boss included."""
+    nodes = graph_json.get("nodes")
+    if not isinstance(nodes, dict):
+        return []
+    flags: set[int] = set()
+    for entry in zone_history or []:
+        if "boss_kill_igt_ms" not in entry:
+            continue
+        node = nodes.get(entry.get("node_id"))
+        flag = node.get("defeat_flag") if isinstance(node, dict) else None
+        if isinstance(flag, int) and not isinstance(flag, bool) and flag > 0:
+            flags.add(flag)
+    return sorted(flags)
+
+
+def receive_refusal(
+    member: Participant, *, cap: int, connected: bool, ready: bool, asking: bool
+) -> str | None:
+    """Why ``member`` cannot receive the team's baton now, as a ``relay_refused``
+    code, or None. ``asking``: they ask for it (a take) rather than being named
+    by the holder (a handoff), which changes the codes and their order.
+
+    A member who is out is never available. A handoff target must be connected
+    and ready at the Chapel, then validated; an asker must be validated, then
+    ready. Nobody at or over the cap receives the baton, final zone included.
+    """
+    if member.status in TERMINAL_PARTICIPANT_STATUSES:
+        return RelayRefusal.TARGET_UNAVAILABLE
+    waiting_at_chapel = connected and ready
+    if not asking and not waiting_at_chapel:
+        return RelayRefusal.TARGET_UNAVAILABLE
+    if not member.relay_validated:
+        return RelayRefusal.NOT_VALIDATED
+    if not waiting_at_chapel:
+        return RelayRefusal.NOT_READY
+    if member.relay_zones >= cap:
+        return RelayRefusal.AT_CAP if asking else RelayRefusal.TARGET_AT_CAP
+    return None
+
+
+def baton_is_free(team: RelayTeam, *, holder_connected: bool, now: datetime) -> bool:
+    """Whether a teammate may take the baton now (``baton_free_in_s`` is 0)."""
+    return baton_free_in_s(team, holder_connected=holder_connected, now=now) == 0
 
 
 def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -> int | None:

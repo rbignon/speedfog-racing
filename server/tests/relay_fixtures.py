@@ -6,13 +6,15 @@ depend on the routes that build teams.
 
 The socket tests use ``setup_relay_race`` (a race ready to start, on the
 integration database of ``test_integration.py``), ``start_relay`` (every member
-connected, the race started, each holder's first report sent) and
-``RelayModClient``, a mod kept connected across a test.
+connected, the race started, each holder's first report sent),
+``RelayModClient``, a mod kept connected across a test, ``barrier`` and
+``connect_spectator``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
@@ -242,6 +244,38 @@ class RelayModClient(ModTestClient):
         if not self._closed:
             self._closed = True
             self.ws.__exit__(None, None, None)
+
+    def disconnect(self) -> None:
+        """Close the socket the way a mod does, and let the server's disconnect
+        hooks run: leaving the test session (``close``) cancels the server's
+        task at once, before they finish. ``close()`` still ends the session."""
+        self.ws.close(1000)
+
+
+_barrier_ids = itertools.count(90_000)
+
+
+def barrier(mod: RelayModClient) -> None:
+    """Wait until the server handled everything ``mod`` sent so far: an unknown
+    flag is acknowledged after the messages before it (one loop per socket)."""
+    message_id = next(_barrier_ids)
+    mod.send_event_flag(1, igt_ms=0, message_id=message_id)
+    mod.receive_until("event_flag_ack", lambda m: m["message_id"] == message_id)
+
+
+def connect_spectator(client: TestClient, race_id: str) -> RelayModClient:
+    """An anonymous spectator of the race, past its ``race_state`` (the mod
+    client's receive helpers serve it too); ``close()`` ends it."""
+    session = client.websocket_connect(f"/ws/race/{race_id}")
+    session.__enter__()
+    spectator = RelayModClient(session, mod_token="", participant_id="")
+    try:
+        spectator.send({"type": "no_auth"})
+        spectator.receive_until("race_state")
+    except BaseException:
+        spectator.close()
+        raise
+    return spectator
 
 
 def setup_relay_race(

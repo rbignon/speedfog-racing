@@ -1,13 +1,23 @@
-"""Relay races on the mod socket: what a mod is told about its team and its role."""
+"""Relay races on the mod socket: what a mod is told about its team and its
+role, and the baton operations.
 
+The operations (``request_handoff``, ``store_state``, ``request_take``,
+``confirm_taken``, ``set_ready``, ``holder_connection_changed``, and the take
+timer) each take ``RaceRoom.relay_lock``, so they run one at a time per race,
+and read the team through ``team_for_update``, whose row lock orders a flip
+and a progress write of the same team. See ``docs/RELAY.md`` ("Baton").
+"""
+
+import asyncio
 import logging
+import time
 import uuid
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -25,30 +35,63 @@ from speedfog_racing.models import (
 from speedfog_racing.services.layer_service import get_start_node
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
 from speedfog_racing.services.relay import (
+    RELAY_REFUSAL_MESSAGES,
+    RELAY_RELEASE_TIMEOUT_S,
+    RELAY_TAKE_TIMEOUT_S,
+    RelayRefusal,
     baton_free_in_s,
+    baton_is_free,
     copy_team_result,
     holds_baton,
     leaderboard_entries,
     load_relay_row,
+    receive_refusal,
     relay_flags,
+    relay_warp_flag,
     team_cap,
+    team_defeat_flags,
 )
+from speedfog_racing.websocket.handler import is_igt_plausible
 from speedfog_racing.websocket.schemas import (
+    CharacterState,
     RelayFlags,
     RelayInfo,
     RelayMember,
+    RelayRefusedMessage,
+    RelayReleaseMessage,
+    RelayTakeMessage,
     RelayUpdateMessage,
     persist_system_chat,
 )
+
+if TYPE_CHECKING:
+    from speedfog_racing.websocket.race.manager import RaceRoom
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class PendingHandoff:
-    """A handoff awaiting its answer or its acknowledgement, kept per team on
-    ``RaceRoom.relay_pending``. The handlers of the baton operations give it
-    its fields."""
+    """A handoff in flight, kept per team on ``RaceRoom.relay_pending``.
+
+    Phase ``release``: the holder was asked for its state (``relay_release``),
+    which must come back before ``expires_at``. Phase ``take``: the baton went
+    to ``target_id`` (``relay_take``), whose ``relay_taken`` is awaited; its
+    ``timer`` frees the baton at ``expires_at``. A take whose timer fired stays
+    here, so its late ``relay_taken`` is still recognised. ``expires_at`` is
+    on ``time.monotonic()``; an expired handoff blocks no request.
+    """
+
+    handoff_id: str
+    team_id: uuid.UUID
+    giver_id: uuid.UUID | None
+    target_id: uuid.UUID
+    phase: Literal["release", "take"]
+    expires_at: float
+    timer: asyncio.Task[None] | None = None
+
+    def expired(self, now: float) -> bool:
+        return now >= self.expires_at
 
 
 def relay_member_wire(
@@ -127,8 +170,10 @@ async def send_relay_updates(
     team_id: uuid.UUID,
     *,
     graph_json: Mapping[str, Any] | None = None,
+    to: Collection[uuid.UUID] | None = None,
 ) -> None:
-    """Send each connected mod of the team a ``relay_update`` with its own role.
+    """Send each connected mod of the team a ``relay_update`` with its own role
+    (only the members in ``to`` when given).
 
     ``graph_json`` is the race's seed graph when the caller holds it (a mod
     handler caches it): the seed is then not loaded again.
@@ -149,7 +194,7 @@ async def send_relay_updates(
     connected = set(room.mods.keys())
     now = datetime.now(UTC)
     for member in row.members:
-        if member.id not in connected:
+        if member.id not in connected or (to is not None and member.id not in to):
             continue
         info = build_relay_info(
             row.team,
@@ -274,3 +319,516 @@ async def _race_graph(db: AsyncSession, race_id: uuid.UUID) -> dict[str, Any] | 
     )
     race = result.scalar_one_or_none()
     return race.seed.graph_json if race and race.seed else None
+
+
+# ---------------------------------------------------------------------------
+# Baton operations
+# ---------------------------------------------------------------------------
+def team_for_update(
+    *, participant_id: uuid.UUID | None = None, team_id: uuid.UUID | None = None
+) -> Select[tuple[RelayTeam]]:
+    """A team row-locked (``FOR UPDATE``, a no-op on SQLite), found through one
+    of its members or by id, with its members and their users, and its race
+    (without the race's teams). The progress handlers' committing loads take
+    the same lock (``RelayModHandler._team_select``): a flip and a progress
+    write of one team are ordered by the database."""
+    statement = select(RelayTeam)
+    if participant_id is not None:
+        statement = statement.join(Participant, Participant.relay_team_id == RelayTeam.id).where(
+            Participant.id == participant_id
+        )
+    else:
+        statement = statement.where(RelayTeam.id == team_id)
+    return statement.options(
+        selectinload(RelayTeam.members).selectinload(Participant.user),
+        selectinload(RelayTeam.race).raiseload(Race.relay_teams),
+    ).with_for_update(of=RelayTeam)
+
+
+async def _locked_team(
+    db: AsyncSession,
+    graph_json: dict[str, Any] | None,
+    *,
+    participant_id: uuid.UUID | None = None,
+    team_id: uuid.UUID | None = None,
+) -> tuple[RelayTeam, dict[str, Any]] | None:
+    """``team_for_update``'s team and the race's seed graph (``graph_json``
+    when the caller holds it), or None."""
+    statement = team_for_update(participant_id=participant_id, team_id=team_id)
+    if graph_json is None:
+        statement = statement.options(selectinload(RelayTeam.race).selectinload(Race.seed))
+    team = (await db.execute(statement)).scalar_one_or_none()
+    if team is None:
+        return None
+    graph = graph_json
+    if graph is None and team.race.seed is not None:
+        graph = team.race.seed.graph_json
+    if graph is None:
+        return None
+    return team, graph
+
+
+def _baton_moves(team: RelayTeam) -> bool:
+    """Whether the team's baton may move now: its race runs, past the
+    countdown, and the team is still in it."""
+    # Local import: mod.py imports this module.
+    from speedfog_racing.websocket.race.mod import _is_countdown_active
+
+    return (
+        team.race.status == RaceStatus.RUNNING
+        and not _is_countdown_active(team.race)
+        and team.status in (ParticipantStatus.READY, ParticipantStatus.PLAYING)
+    )
+
+
+def _in_flight(room: "RaceRoom", team_id: uuid.UUID) -> bool:
+    pending = room.relay_pending.get(team_id)
+    return pending is not None and not pending.expired(time.monotonic())
+
+
+def _set_pending(room: "RaceRoom", team_id: uuid.UUID, pending: PendingHandoff | None) -> None:
+    """Replace (or with None drop) the team's handoff, stopping its timer."""
+    old = room.relay_pending.pop(team_id, None)
+    if old is not None and old.timer is not None and not old.timer.done():
+        old.timer.cancel()
+    if pending is not None:
+        room.relay_pending[team_id] = pending
+
+
+def _cap(team: RelayTeam, graph: Mapping[str, Any]) -> int:
+    return team_cap(int(graph.get("total_layers") or 0), team.members)
+
+
+async def _refuse(room: "RaceRoom", participant_id: uuid.UUID, code: str) -> None:
+    logger.info("Relay request refused: participant=%s code=%s", participant_id, code)
+    message = RelayRefusedMessage(code=code, message=RELAY_REFUSAL_MESSAGES[RelayRefusal(code)])
+    await room.send_to_mod(participant_id, message.model_dump_json())
+
+
+def _store_state(team: RelayTeam, state: CharacterState, igt_ms: int) -> None:
+    """Keep ``state`` as the team's last character state with the team's IGT,
+    raised first to ``igt_ms`` when the wrong-save guard finds it plausible."""
+    now = datetime.now(UTC)
+    if igt_ms > team.igt_ms and is_igt_plausible(team.igt_ms, team.last_igt_change_at, igt_ms, now):
+        team.igt_ms = igt_ms
+        team.last_igt_change_at = now
+    team.character_state = state.model_dump()
+    team.character_state_igt_ms = team.igt_ms
+
+
+@dataclass
+class _Flip:
+    """A committed flip, for what follows the session."""
+
+    race_id: uuid.UUID
+    team_id: uuid.UUID
+    target_id: uuid.UUID
+    pending: PendingHandoff | None
+    take: RelayTakeMessage
+
+
+async def _flip(
+    db: AsyncSession,
+    room: "RaceRoom",
+    team: RelayTeam,
+    target: Participant,
+    *,
+    handoff_id: str,
+    graph: dict[str, Any],
+) -> _Flip:
+    """Give ``target`` the baton and commit. A target whose mod is no longer
+    connected gets a free baton at once (``baton_free``), and no take is
+    awaited from them."""
+    connected = target.id in room.mods
+    giver_id = team.holder_id
+    team.holder_id = target.id
+    team.holder_offline_since = None
+    team.baton_free = not connected
+    await db.commit()
+    flags = relay_flags(graph) or {}
+    take = RelayTakeMessage(
+        handoff_id=handoff_id,
+        state=CharacterState.model_validate(team.character_state)
+        if team.character_state is not None
+        else None,
+        igt_ms=team.igt_ms,
+        defeat_flags=team_defeat_flags(graph, team.zone_history),
+        warp_flag=relay_warp_flag(flags, team.entry_flag_id) if flags else None,
+        zone_name=relay_zone_name(team, graph) if team.entry_flag_id is not None else None,
+    )
+    pending = None
+    if connected:
+        pending = PendingHandoff(
+            handoff_id=handoff_id,
+            team_id=team.id,
+            giver_id=giver_id,
+            target_id=target.id,
+            phase="take",
+            expires_at=time.monotonic() + RELAY_TAKE_TIMEOUT_S,
+        )
+    logger.info(
+        "Relay baton flipped: team=%s from=%s to=%s handoff=%s connected=%s",
+        team.id,
+        giver_id,
+        target.id,
+        handoff_id,
+        connected,
+    )
+    return _Flip(team.race_id, team.id, target.id, pending, take)
+
+
+async def _after_flip(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    flip: _Flip,
+    graph: dict[str, Any],
+) -> None:
+    """Await the take (timer), send it to the receiver and tell the team."""
+    _set_pending(room, flip.team_id, flip.pending)
+    if flip.pending is not None:
+        flip.pending.timer = asyncio.create_task(
+            _take_timeout(session_maker, room, flip.pending, graph)
+        )
+        await room.send_to_mod(flip.target_id, flip.take.model_dump_json())
+    # The giver's mod locks and goes to the Chapel on the role this tells it.
+    await send_relay_updates(session_maker, flip.race_id, flip.team_id, graph_json=graph)
+
+
+async def _take_timeout(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    pending: PendingHandoff,
+    graph: dict[str, Any],
+) -> None:
+    """A take nobody acknowledged in time frees the baton: any teammate under
+    their cap, the giver and the nominal holder included, may take it."""
+    await asyncio.sleep(RELAY_TAKE_TIMEOUT_S)
+    try:
+        async with room.relay_lock:
+            if room.relay_pending.get(pending.team_id) is not pending:
+                return
+            async with session_maker() as db:
+                loaded = await _locked_team(db, graph, team_id=pending.team_id)
+                if loaded is None:
+                    return
+                team, _ = loaded
+                if team.holder_id != pending.target_id or team.baton_free:
+                    return
+                team.baton_free = True
+                race_id = team.race_id
+                await db.commit()
+            logger.info(
+                "Relay take not acknowledged, baton free: team=%s handoff=%s",
+                pending.team_id,
+                pending.handoff_id,
+            )
+            await send_relay_updates(session_maker, race_id, pending.team_id, graph_json=graph)
+    except Exception:
+        logger.exception("Relay take timeout failed: team=%s", pending.team_id)
+
+
+async def request_handoff(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    to_participant_id: str,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """The holder asks to hand the baton to a teammate: ``relay_release`` back
+    when every check passes (a release awaits its state for 15 s), else
+    ``relay_refused``. See ``docs/RELAY.md`` ("Baton") for the checks' order."""
+    async with room.relay_lock:
+        async with session_maker() as db:
+            loaded = await _locked_team(db, graph_json, participant_id=participant_id)
+            if loaded is None:
+                return
+            team, graph = loaded
+        try:
+            wanted: uuid.UUID | None = uuid.UUID(to_participant_id)
+        except ValueError:
+            wanted = None
+        target = next((m for m in team.members if m.id == wanted and m.id != participant_id), None)
+        refusal: str | None
+        if not _baton_moves(team) or _in_flight(room, team.id):
+            refusal = RelayRefusal.BUSY
+        elif not holds_baton(team, participant_id):
+            refusal = RelayRefusal.NOT_HOLDER
+        elif target is None:
+            refusal = RelayRefusal.TARGET_UNAVAILABLE
+        else:
+            refusal = receive_refusal(
+                target,
+                cap=_cap(team, graph),
+                connected=target.id in room.mods,
+                ready=target.id in room.relay_ready,
+                asking=False,
+            )
+        if refusal is not None or target is None:
+            await _refuse(room, participant_id, refusal or RelayRefusal.TARGET_UNAVAILABLE)
+            return
+        pending = PendingHandoff(
+            handoff_id=uuid.uuid4().hex,
+            team_id=team.id,
+            giver_id=participant_id,
+            target_id=target.id,
+            phase="release",
+            expires_at=time.monotonic() + RELAY_RELEASE_TIMEOUT_S,
+        )
+        _set_pending(room, team.id, pending)
+        logger.info(
+            "Relay release asked: team=%s from=%s to=%s handoff=%s",
+            team.id,
+            participant_id,
+            target.id,
+            pending.handoff_id,
+        )
+        release = RelayReleaseMessage(
+            handoff_id=pending.handoff_id,
+            to_name=target.user.twitch_display_name or target.user.twitch_username,
+        )
+        await room.send_to_mod(participant_id, release.model_dump_json())
+
+
+async def store_state(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    handoff_id: str | None,
+    state: CharacterState,
+    igt_ms: int,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """A ``relay_state``: a checkpoint (``handoff_id`` null) or the answer to a
+    ``relay_release``.
+
+    From the holder of a running team the state is kept (``_store_state``);
+    when it answers the pending release in time, the baton then flips to its
+    target (still a member in the race). Anything else flips nothing, and the
+    sender of any ``relay_state`` but a plain checkpoint gets a
+    ``relay_update``: a giver who already locked learns it still holds the
+    baton.
+    """
+    async with room.relay_lock:
+        flip: _Flip | None = None
+        async with session_maker() as db:
+            loaded = await _locked_team(db, graph_json, participant_id=participant_id)
+            if loaded is None:
+                return
+            team, graph = loaded
+            pending = room.relay_pending.get(team.id)
+            answered = (
+                pending
+                if pending is not None
+                and handoff_id is not None
+                and pending.phase == "release"
+                and pending.handoff_id == handoff_id
+                and pending.giver_id == participant_id
+                and not pending.expired(time.monotonic())
+                else None
+            )
+            if (
+                pending is not None
+                and pending.phase == "release"
+                and (answered is not None or pending.expired(time.monotonic()))
+            ):
+                _set_pending(room, team.id, None)
+            holder = holds_baton(team, participant_id) and _baton_moves(team)
+            if holder:
+                _store_state(team, state, igt_ms)
+                target = next(
+                    (
+                        m
+                        for m in team.members
+                        if answered is not None
+                        and m.id == answered.target_id
+                        and m.status not in TERMINAL_PARTICIPANT_STATUSES
+                    ),
+                    None,
+                )
+                if target is not None:
+                    assert handoff_id is not None
+                    flip = await _flip(db, room, team, target, handoff_id=handoff_id, graph=graph)
+                else:
+                    await db.commit()
+            race_id, team_id = team.race_id, team.id
+        if flip is not None:
+            await _after_flip(session_maker, room, flip, graph)
+        elif handoff_id is not None or not holder:
+            await send_relay_updates(
+                session_maker, race_id, team_id, graph_json=graph, to=(participant_id,)
+            )
+
+
+async def request_take(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """A teammate asks to take a free baton: ``relay_take`` with the last
+    stored state and the team's IGT when every check passes, else
+    ``relay_refused``. The nominal holder of a free baton may ask too."""
+    async with room.relay_lock:
+        flip: _Flip | None = None
+        async with session_maker() as db:
+            loaded = await _locked_team(db, graph_json, participant_id=participant_id)
+            if loaded is None:
+                return
+            team, graph = loaded
+            me = next(m for m in team.members if m.id == participant_id)
+            holder_connected = team.holder_id is not None and team.holder_id in room.mods
+            refusal: str | None
+            if not _baton_moves(team) or _in_flight(room, team.id):
+                refusal = RelayRefusal.BUSY
+            elif not baton_is_free(team, holder_connected=holder_connected, now=datetime.now(UTC)):
+                refusal = RelayRefusal.HOLDER_ONLINE
+            else:
+                refusal = receive_refusal(
+                    me,
+                    cap=_cap(team, graph),
+                    connected=True,
+                    ready=participant_id in room.relay_ready,
+                    asking=True,
+                )
+            if refusal is None:
+                flip = await _flip(db, room, team, me, handoff_id=uuid.uuid4().hex, graph=graph)
+        if flip is None:
+            await _refuse(room, participant_id, refusal or RelayRefusal.BUSY)
+            return
+        await _after_flip(session_maker, room, flip, graph)
+
+
+async def confirm_taken(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    handoff_id: str,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """The receiver acknowledges the pending take: the handoff is over, the
+    team is told and the leaderboard broadcast. Late (the timer had freed the
+    baton and nobody took it since), it clears ``baton_free``: the receiver
+    plays on."""
+    async with room.relay_lock:
+        async with session_maker() as db:
+            loaded = await _locked_team(db, graph_json, participant_id=participant_id)
+            if loaded is None:
+                return
+            team, graph = loaded
+            pending = room.relay_pending.get(team.id)
+            if (
+                pending is None
+                or pending.phase != "take"
+                or pending.handoff_id != handoff_id
+                or pending.target_id != participant_id
+            ):
+                logger.info(
+                    "Ignored relay_taken: participant=%s handoff=%s", participant_id, handoff_id
+                )
+                return
+            _set_pending(room, team.id, None)
+            if team.holder_id == participant_id and team.baton_free:
+                team.baton_free = False
+                await db.commit()
+            race_id, team_id = team.race_id, team.id
+        logger.info("Relay take acknowledged: team=%s handoff=%s", team_id, handoff_id)
+        await send_relay_updates(session_maker, race_id, team_id, graph_json=graph)
+        await _broadcast_leaderboard(session_maker, race_id, graph)
+
+
+async def set_ready(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    ready: bool,
+    *,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """A member's ``relay_ready``: whether its mod waits at the Chapel with its
+    lock raised (``RaceRoom.relay_ready``, read by ``members[].ready`` and by
+    the handoff and take checks). The team is told when it changes."""
+    async with room.relay_lock:
+        if ready == (participant_id in room.relay_ready):
+            return
+        if ready:
+            if participant_id not in room.mods:
+                return
+            room.relay_ready.add(participant_id)
+        else:
+            room.relay_ready.discard(participant_id)
+        async with session_maker() as db:
+            row = (
+                await db.execute(
+                    select(Participant.race_id, Participant.relay_team_id).where(
+                        Participant.id == participant_id
+                    )
+                )
+            ).one_or_none()
+        if row is None or row.relay_team_id is None:
+            return
+        await send_relay_updates(
+            session_maker, row.race_id, row.relay_team_id, graph_json=graph_json
+        )
+
+
+async def holder_connection_changed(
+    session_maker: async_sessionmaker[AsyncSession],
+    room: "RaceRoom",
+    participant_id: uuid.UUID,
+    *,
+    connected: bool,
+    graph_json: dict[str, Any] | None = None,
+) -> None:
+    """A member's mod connected or disconnected.
+
+    For the holder of a team still in the race, ``holder_offline_since`` is
+    cleared, or set to now (the mods count the 60 s down from
+    ``baton_free_in_s``) and their pending release dropped. The team's mods are
+    told either way (``online``, ``holder_online``). The disconnect of a socket
+    a newer one replaced changes nothing.
+    """
+    async with room.relay_lock:
+        if connected != (participant_id in room.mods):
+            return
+        async with session_maker() as db:
+            loaded = await _locked_team(db, graph_json, participant_id=participant_id)
+            if loaded is None:
+                return
+            team, graph = loaded
+            if (
+                team.holder_id == participant_id
+                and team.status not in TERMINAL_PARTICIPANT_STATUSES
+            ):
+                team.holder_offline_since = None if connected else datetime.now(UTC)
+                await db.commit()
+            race_id, team_id = team.race_id, team.id
+        pending = room.relay_pending.get(team_id)
+        if (
+            not connected
+            and pending is not None
+            and pending.phase == "release"
+            and pending.giver_id == participant_id
+        ):
+            _set_pending(room, team_id, None)
+        await send_relay_updates(session_maker, race_id, team_id, graph_json=graph)
+
+
+async def _broadcast_leaderboard(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    graph: dict[str, Any],
+) -> None:
+    # Local imports: these modules import this one.
+    from speedfog_racing.websocket.race.manager import manager
+    from speedfog_racing.websocket.race.mod import _load_race_with_participants
+
+    async with session_maker() as db:
+        race = await _load_race_with_participants(db, race_id)
+    if race is not None:
+        await manager.broadcast_leaderboard(
+            race_id, leaderboard_entries(race, graph), graph_json=graph
+        )

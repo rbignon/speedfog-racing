@@ -993,6 +993,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                 if kill_history is not None:
                     self._on_igt_change(entity, igt)
                     entity.zone_history = kill_history
+                    self._on_boss_kill_recorded(entity, boss_node, igt)
                     await db.commit()
                 logger.info(
                     "event_flag: flag_id=%d boss_kill node_id=%s igt_ms=%d "
@@ -1447,6 +1448,12 @@ class BaseModHandler(BaseHandler, Generic[T]):
         is the last one and the entity still has the layer the gate left.
         Override to track the gate itself (relay)."""
 
+    def _on_boss_kill_recorded(self, entity: T, node_id: str, igt_ms: int) -> None:
+        """Hook called when a new boss kill is stamped on ``node_id``'s visit,
+        inside the session, before the commit that records it: what it changes
+        commits with the kill (a replay of the flag is a duplicate and never
+        comes back here). Override to count the kill (relay)."""
+
     def _on_zone_entered(
         self, entity: T, node_id: str, graph_json: dict[str, Any], igt: int
     ) -> None:
@@ -1468,7 +1475,8 @@ class BaseModHandler(BaseHandler, Generic[T]):
     async def _on_boss_killed(self, entity: T, node_id: str, igt_ms: int) -> None:
         """Called once per new boss kill, after the commit and the broadcast,
         outside the DB session. Override for features that react to a kill; a
-        re-report or a replay never calls it. ``entity`` comes from
+        re-report or a replay never calls it, so what must not be lost belongs
+        in ``_on_boss_kill_recorded`` instead. ``entity`` comes from
         ``_load_entity_for_event_flag``, a light load on races (no field, seed
         or casters): load anything else in a session of your own."""
 
