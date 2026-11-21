@@ -150,7 +150,7 @@ the role and past results stay as they are, and nothing public shows it.
   (admin)" in `EVENTS.md`.
 - Lifting the ban restores the access only: removed entries and
   disqualifications stay (a disqualification is cancelled from its race
-  page).
+  page, except on a relay race, where it is final).
 
 Every disqualification, cancellation, ban and unban is posted to the admin
 Discord channel.

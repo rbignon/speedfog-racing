@@ -162,6 +162,7 @@ def apply_member_out(
     participant: Participant,
     *,
     disqualified: bool = False,
+    snapshot: bool = True,
 ) -> bool:
     """What a member going out does to their team; True when the team, still
     in the race until then, went out.
@@ -169,7 +170,9 @@ def apply_member_out(
     ``participant`` (one of ``members``) is already ABANDONED or DISQUALIFIED.
     Their row takes a snapshot of the team's progress (IGT, deaths, layer;
     their own status kept, never a finish time or ``zone_history``), so it
-    tells how far the team was when their race ended. While the team is in
+    tells how far the team was when their race ended; ``snapshot`` False for
+    a member who was out already before this change (disqualified after
+    abandoning), whose row keeps the snapshot of then. While the team is in
     the race, a baton they held is free at once (no holder, ``baton_free``):
     no 60 s wait, and nobody gets it automatically. The team's IGT stamp
     restarts then, so the free baton gets the whole inactivity timeout before
@@ -180,9 +183,10 @@ def apply_member_out(
     result copied onto its members still in (``copy_team_result``: a
     disqualified team leaves them abandoned).
     """
-    participant.igt_ms = team.igt_ms
-    participant.death_count = team.death_count
-    participant.current_layer = team.current_layer
+    if snapshot:
+        participant.igt_ms = team.igt_ms
+        participant.death_count = team.death_count
+        participant.current_layer = team.current_layer
     in_race = team.status not in TERMINAL_PARTICIPANT_STATUSES
     if in_race and team.holder_id == participant.id:
         team.holder_id = None

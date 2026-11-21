@@ -1060,14 +1060,20 @@ async def take_member_out(
     """``member_out`` for one member: ``out`` moves them, read under the locks,
     to ABANDONED or DISQUALIFIED (False: it declines, nothing is written), then
     ``apply_member_out`` frees the baton they held and puts the team out when
-    it must."""
+    it must. A member already out before (a disqualification after an
+    abandon) keeps the snapshot of their row taken when they went out."""
 
     def change(team: RelayTeam) -> tuple[Participant | None, bool] | None:
         member = next((m for m in team.members if m.id == participant_id), None)
-        if member is None or not out(team, member):
+        if member is None:
+            return None
+        was_active = is_active_member(member)
+        if not out(team, member):
             return None
         disqualified = member.status == ParticipantStatus.DISQUALIFIED
-        return member, apply_member_out(team, team.members, member, disqualified=disqualified)
+        return member, apply_member_out(
+            team, team.members, member, disqualified=disqualified, snapshot=was_active
+        )
 
     return await member_out(
         session_maker, race_id, change, participant_id=participant_id, member_line=member_line
