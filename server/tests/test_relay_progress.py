@@ -175,6 +175,37 @@ def test_team_deaths_continue_across_a_change_of_holder(relay_race, mods):
     assert load_member(relay_race, first).death_count == 5
 
 
+def test_deaths_made_while_waiting_never_join_the_team_count(relay_race, mods):
+    other = _pid(relay_race, 0, 1)
+    waiting = mods[other]
+    # Two deaths on the waiting runner's own save (a fall at the Chapel, a
+    # giver dying before its return there).
+    waiting.send_status_update(igt_ms=2_000, death_count=2)
+    barrier(waiting)
+    assert load_member(relay_race, other).death_count == 2
+    assert load_team(relay_race).death_count == 0
+
+    patch_team(relay_race, holder_id=UUID(other))
+    waiting.send_status_update(igt_ms=3_000, death_count=2)
+    waiting.receive_until("player_update", lambda m: m["player"]["igt_ms"] == 3_000)
+    assert load_team(relay_race).death_count == 0
+
+    waiting.send_status_update(igt_ms=4_000, death_count=3)
+    waiting.receive_until("player_update", lambda m: m["player"]["death_count"] == 1)
+    assert load_team(relay_race).death_count == 1
+
+
+def test_a_member_out_keeps_the_team_deaths_on_its_row(relay_race, mods):
+    other = _pid(relay_race, 0, 1)
+    # Out with the team's count at that moment; its mod keeps reporting.
+    patch_member(relay_race, other, status=ParticipantStatus.ABANDONED, death_count=7)
+
+    mods[other].send_status_update(igt_ms=2_000, death_count=1)
+    barrier(mods[other])
+
+    assert load_member(relay_race, other).death_count == 7
+
+
 def test_a_boss_kill_counts_for_the_holder_once(relay_race, mods):
     holder_id, other_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
     holder = mods[holder_id]

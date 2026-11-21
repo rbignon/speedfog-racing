@@ -1,6 +1,7 @@
 """Relay start rules and what a reset does to the teams."""
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -18,7 +19,8 @@ from speedfog_racing.models import (
     UserRole,
 )
 from speedfog_racing.services.relay import team_cap
-from tests.relay_fixtures import make_relay_race
+from speedfog_racing.websocket.race.manager import RaceRoom, SpectatorConnection, manager
+from tests.relay_fixtures import make_relay_race, progress_graph
 
 pytestmark = pytest.mark.asyncio
 
@@ -75,11 +77,12 @@ def _auth(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {user.api_token}"}
 
 
-async def _race(session, organizer, teams, statuses) -> Race:
+async def _race(session, organizer, teams, statuses, graph=None) -> Race:
     """A relay race in SETUP with seeds released; ``statuses`` gives each member's
-    status, in the order of the members of ``teams``."""
+    status, in the order of the members of ``teams``. ``graph`` replaces the
+    seed's default graph (a start broadcast to a room needs real nodes)."""
     async with session() as db:
-        race = await make_relay_race(db, organizer, team_size=3, teams=teams)
+        race = await make_relay_race(db, organizer, team_size=3, teams=teams, graph=graph)
         race.seeds_released_at = datetime.now(UTC)
         members = await db.execute(
             select(Participant)
@@ -156,6 +159,32 @@ async def test_start_leaves_out_members_who_are_not_ready(
     in_team = lambda team: [m for m in members if m.relay_team_id == team.id]  # noqa: E731
     assert team_cap(12, in_team(db_teams[1])) == 7
     assert team_cap(12, in_team(db_teams[0])) == 5
+
+
+async def test_a_member_left_out_at_the_start_is_past_the_spoiler_wall(
+    rs_client, rs_session, organizer, players, monkeypatch
+):
+    teams = [players[0:3], players[3:6]]
+    race = await _race(
+        rs_session, organizer, teams, [READY] * 5 + [REGISTERED], graph=progress_graph()
+    )
+    # The open race pages of a runner who starts and of the one left out.
+    room = RaceRoom(race_id=race.id)
+    monkeypatch.setitem(manager.rooms, race.id, room)
+    pages = {
+        user.id: SpectatorConnection(websocket=AsyncMock(), user_id=user.id, role="participant")
+        for user in (players[0], players[5])
+    }
+    for page in pages.values():
+        room.spectators[page.connection_id] = page
+
+    async with rs_client as client:
+        resp = await client.post(f"/api/races/{race.id}/start", headers=_auth(organizer))
+
+    assert resp.status_code == 200
+    # Out of the run: the public chat opens without a reload of the page.
+    assert pages[players[5].id].participant_status == ParticipantStatus.ABANDONED
+    assert pages[players[0].id].participant_status == ParticipantStatus.PLAYING
 
 
 async def test_start_ignores_empty_teams_and_picks_the_first_runner(

@@ -131,6 +131,18 @@ async def test_team_row_follows_the_holder_connection(relay_race):
     assert [m.online for m in info.relay_members or []] == [False, True]
 
 
+async def test_team_row_names_no_holder_while_the_baton_is_free(relay_race):
+    graph = relay_race.seed.graph_json
+    team = _team(relay_race, "Team 1")
+    # A take nobody acknowledged: the nominal holder waits like the others.
+    team.baton_free = True
+    row = next(r for r in leaderboard_entries(relay_race, graph) if r.id == team.id)
+
+    info = participant_to_info(row, connected_ids={team.holder_id}, graph_json=graph)
+
+    assert (info.relay_holder, info.relay_holder_id, info.mod_connected) == (None, None, False)
+
+
 async def test_teams_rank_like_runners(rr_session):
     async with rr_session() as db:
         users = await _users(db, 7)

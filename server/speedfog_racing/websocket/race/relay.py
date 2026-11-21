@@ -500,6 +500,9 @@ async def _flip(
     commit: no progress message of the receiver is heard between the two
     (``awaiting_take``), and whatever fails after the commit, the take still
     expires and frees the baton."""
+    # Local import: manager.py imports this module.
+    from speedfog_racing.websocket.race.manager import manager
+
     connected = target.id in room.mods
     giver_id = team.holder_id
     team.holder_id = target.id
@@ -518,6 +521,9 @@ async def _flip(
             expires_at=time.monotonic() + RELAY_TAKE_TIMEOUT_S,
         )
         pending.timer = asyncio.create_task(_take_timeout(session_maker, room, pending, graph))
+        # The room outlives its last connection while this take is awaited:
+        # the timer's end (fired, or stopped with its handoff) lets it go.
+        pending.timer.add_done_callback(lambda _: manager.drop_room_if_idle(room.race_id))
     _set_pending(room, team.id, pending)
     try:
         await db.commit()

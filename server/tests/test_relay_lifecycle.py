@@ -581,6 +581,29 @@ async def test_member_offline_for_30_minutes_is_abandoned(session_maker, index):
     ]
 
 
+@pytest.mark.parametrize("index", [0, 1], ids=["holder", "waiting"])
+async def test_a_no_show_is_abandoned_on_a_relay_race_with_a_duration(session_maker, index):
+    # A solo race with a duration leaves its no-shows to the hard close. A
+    # relay team cannot wait that long: a holder who never plays keeps the
+    # baton, and any other no-show keeps their share of the cap.
+    relay = await _relay(session_maker)
+    await _patch(session_maker, Race, relay["race_id"], race_duration_minutes=240)
+    no_show = relay["members"][0][index]
+    await _patch(
+        session_maker,
+        Participant,
+        no_show,
+        status=ParticipantStatus.READY,
+        relay_validated=False,
+        created_at=_ago(120),
+    )
+
+    _, abandoned = await monitor.abandon_inactive_participants(session_maker)
+
+    assert abandoned == {no_show}
+    assert (await _get(session_maker, Participant, no_show)).status == ParticipantStatus.ABANDONED
+
+
 async def test_a_baton_freed_for_inactivity_gets_30_minutes_before_the_team_is_out(
     session_maker,
 ):

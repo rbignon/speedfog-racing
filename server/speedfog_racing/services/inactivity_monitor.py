@@ -73,10 +73,12 @@ async def abandon_inactive_participants(
 
     A relay race member is judged the same way, ``last_igt_change_at``
     holding there since when their mod is offline (a waiting runner is idle by
-    design, so a connected one is never inactive), but goes out through the
-    baton's locks (``take_member_out``): a baton they held is freed, the cap
-    recomputed, the team put out when nobody is left, and the chat lines
-    (theirs, the team's) are posted there.
+    design, so a connected one is never inactive), except that a no-show is
+    abandoned whether the race has a duration or not: a holder who never plays
+    keeps the baton, and any other no-show keeps their share of the cap. A
+    member goes out through the baton's locks (``take_member_out``): a baton
+    they held is freed, the cap recomputed, the team put out when nobody is
+    left, and the chat lines (theirs, the team's) are posted there.
 
     Returns (race_ids with abandonments, participant_ids that were just
     abandoned). Caller is responsible for the auto-finish check and
@@ -105,9 +107,10 @@ async def abandon_inactive_participants(
                     # Never connected (still REGISTERED/READY after race started).
                     # Skipped when race_duration_minutes is set: hard_close_loop
                     # will move non-terminal participants to ABANDONED at the
-                    # deadline via finalize_race.
+                    # deadline via finalize_race. Never skipped on a relay
+                    # race, where a no-show holds their team back until then.
                     Participant.status.in_([ParticipantStatus.REGISTERED, ParticipantStatus.READY])
-                    & Race.race_duration_minutes.is_(None)
+                    & (Race.race_duration_minutes.is_(None) | Race.relay_team_size.is_not(None))
                     & Race.started_at.isnot(None)
                     & (Race.started_at < cutoff)
                     & (Participant.created_at < cutoff),

@@ -12,6 +12,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from speedfog_racing.api import races as races_api
@@ -131,6 +132,19 @@ async def vacate_team(db: AsyncSession, race: Race, participant: Participant) ->
         await db.flush()
 
 
+async def _insert_new_runner(db: AsyncSession) -> None:
+    """Insert the row of a runner new to the race, ahead of the caller's
+    commit: of two requests registering one user at once, the second fails
+    here, with the 409 a solo race answers at its commit."""
+    try:
+        await db.flush()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Already a participant in this race"
+        )
+
+
 async def place_in_team(
     db: AsyncSession,
     race: Race,
@@ -152,6 +166,8 @@ async def place_in_team(
         return None
     if choice.create_team == (choice.relay_team_id is not None):
         raise _bad_request("Pick a team to join a relay race")
+    if participant in db.new:
+        await _insert_new_runner(db)
     team: RelayTeam | None = None
     if choice.create_team:
         if not by_organizer and not race.relay_runners_create_teams:
@@ -175,7 +191,6 @@ async def place_in_team(
         assert race.relay_team_size is not None
         if await _member_count(db, team.id) >= race.relay_team_size:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Team is full")
-    await db.flush()  # the participant needs its id
     await vacate_team(db, race, participant)
     if team is None:
         team = await _new_team(db, race, name=None, placeholder=False)
@@ -218,19 +233,21 @@ async def _finish(db: AsyncSession, race: Race, user: User) -> RaceDetailRespons
     return races_api._race_detail_response(race, user)
 
 
-async def _register_self(db: AsyncSession, race: Race, user: User) -> Participant:
+async def _register_self(db: AsyncSession, race: Race, user: User) -> tuple[Participant, str]:
     """Register ``user`` on the race as ``join_race`` does (checks, row, chat line).
 
-    The caller places the row in a team before committing.
+    The caller places the row in a team before committing, then broadcasts the
+    chat line returned with it (``_after_join``).
     """
     await races_api.check_self_registration(db, race, user)
     participant = Participant(race_id=race.id, user_id=user.id, color_index=0)
     db.add(participant)
+    await _insert_new_runner(db)
     display = user.twitch_display_name or user.twitch_username
-    await persist_system_chat(
+    line = await persist_system_chat(
         db, race.id, ChatChannel.PARTICIPANTS, f"{display} has joined the race"
     )
-    return participant
+    return participant, line
 
 
 async def _own_participant(db: AsyncSession, race: Race, user: User) -> Participant | None:
@@ -240,7 +257,12 @@ async def _own_participant(db: AsyncSession, race: Race, user: User) -> Particip
     return result.scalar_one_or_none()
 
 
-def _mirror_join(race: Race, user: User) -> None:
+async def _after_join(race: Race, user: User, line: str) -> None:
+    """What follows a runner's own registration once committed, as in
+    ``join_race``: its chat line to the room, the calendar mirror."""
+    room = manager.get_room(race.id)
+    if room:
+        await room.broadcast_chat_participants(line)
     if race.is_public and race.scheduled_at:
         task = asyncio.create_task(add_calendar_participant(race.id, user.twitch_username))
         task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
@@ -264,9 +286,9 @@ async def create_relay_team(
             detail="Runners cannot create teams on this race",
         )
     participant = await _own_participant(db, race, user)
-    joined = participant is None
+    join_line: str | None = None
     if participant is None:
-        participant = await _register_self(db, race, user)
+        participant, join_line = await _register_self(db, race, user)
     await place_in_team(
         db, race, participant, RelayTeamChoice(create_team=True), by_organizer=False
     )
@@ -275,8 +297,8 @@ async def create_relay_team(
         assert team is not None
         team.name = request.name
     detail = await _finish(db, race, user)
-    if joined:
-        _mirror_join(race, user)
+    if join_line is not None:
+        await _after_join(race, user, join_line)
     return detail
 
 
@@ -337,15 +359,15 @@ async def join_relay_team(
     """Join the race into this team, or move there from another team."""
     race = await _load_relay_race(db, race_id)
     participant = await _own_participant(db, race, user)
-    joined = participant is None
+    join_line: str | None = None
     if participant is None:
-        participant = await _register_self(db, race, user)
+        participant, join_line = await _register_self(db, race, user)
     await place_in_team(
         db, race, participant, RelayTeamChoice(relay_team_id=team_id), by_organizer=False
     )
     detail = await _finish(db, race, user)
-    if joined:
-        _mirror_join(race, user)
+    if join_line is not None:
+        await _after_join(race, user, join_line)
     return detail
 
 

@@ -484,6 +484,64 @@ async def test_team_change_broadcasts_race_state(
     assert calls == ["leaderboard", "state"]
 
 
+async def test_registering_through_a_team_route_tells_the_chat(
+    rt_client, rt_session, organizer, alice, bob, carol, monkeypatch
+):
+    race = await _race(rt_session, organizer, [[bob]])
+    team = (await _teams(rt_session, race))[0]
+    from speedfog_racing.websocket.race.manager import RaceRoom, manager
+
+    async def quiet(*args, **kwargs):
+        return None
+
+    lines: list[str] = []
+
+    async def chat(message: str) -> None:
+        lines.append(message)
+
+    room = RaceRoom(race_id=race.id)
+    monkeypatch.setitem(manager.rooms, race.id, room)
+    monkeypatch.setattr(room, "broadcast_chat_participants", chat)
+    monkeypatch.setattr(manager, "broadcast_leaderboard", quiet)
+    monkeypatch.setattr(api.relay_teams, "broadcast_race_state_update", quiet)
+    async with rt_client as client:
+        url = f"/api/races/{race.id}/relay-teams"
+        joined = await client.post(f"{url}/{team.id}/join", headers=_auth(alice))
+        created = await client.post(url, json={}, headers=_auth(carol))
+        new_team = next(t for t in await _teams(rt_session, race) if t.id != team.id)
+        # A move registers nobody: no line.
+        moved = await client.post(f"{url}/{new_team.id}/join", headers=_auth(alice))
+
+    assert [r.status_code for r in (joined, created, moved)] == [200, 200, 200]
+    assert len(lines) == 2
+    assert "alice has joined the race" in lines[0]
+    assert "carol has joined the race" in lines[1]
+
+
+async def test_a_registration_racing_itself_answers_409(
+    rt_client, rt_session, organizer, alice, bob, monkeypatch
+):
+    # Two requests of one user at once both pass the checks: the second insert loses.
+    race = await _race(rt_session, organizer, [[bob], [alice]])
+    team = (await _teams(rt_session, race))[0]
+
+    async def unseen(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(api.relay_teams, "_own_participant", unseen)
+    monkeypatch.setattr(api.races, "check_self_registration", unseen)
+    async with rt_client as client:
+        url = f"/api/races/{race.id}"
+        by_team = await client.post(f"{url}/relay-teams/{team.id}/join", headers=_auth(alice))
+        by_join = await client.post(
+            f"{url}/join", json={"relay_team_id": str(team.id)}, headers=_auth(alice)
+        )
+        by_create = await client.post(f"{url}/relay-teams", json={}, headers=_auth(alice))
+
+    assert [r.status_code for r in (by_team, by_join, by_create)] == [409, 409, 409]
+    assert len(await _participants(rt_session, race)) == 2
+
+
 async def test_placement_counts_members_under_the_team_lock(
     rt_session, organizer, alice, bob, carol, monkeypatch
 ):

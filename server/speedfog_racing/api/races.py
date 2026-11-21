@@ -2075,6 +2075,12 @@ async def start_race(
     room = manager.get_room(race_id)
     if room:
         room.mark_participants_playing()
+        # But not the ones the start finds out of the run (a relay member left
+        # out for not being ready, a runner disqualified before a reset): their
+        # page is past the spoiler wall, as it is after a reload.
+        for p in race.participants:
+            if p.status in TERMINAL_PARTICIPANT_STATUSES:
+                room.set_participant_status(p.user_id, p.status)
         await room.broadcast_chat_participants(start_participants_json)
         await room.broadcast_chat_public(start_public_json, race)
         if race.is_relay and race.seed is not None:

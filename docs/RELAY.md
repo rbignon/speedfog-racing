@@ -117,7 +117,9 @@ for an unknown user carries none, the invitee picks on the invite page.
   after the lock: two runners cannot both take the last slot, and a team deleted
   while someone joins it answers 404 instead of leaving them without a team. Team
   deletion and `vacate_team` take the same lock.
-- Every change ends like `join_race`: the leaderboard and the race state are broadcast.
+- Every change ends like `join_race`: the leaderboard and the race state are broadcast,
+  and a runner who registers through a team route gets the same line in the
+  participants chat, `{name} has joined the race`.
 
 | Case                                                          | Answer                                          |
 | ------------------------------------------------------------- | ----------------------------------------------- |
@@ -133,6 +135,7 @@ for an unknown user carries none, the invitee picks on the invite page.
 | Delete of a team with members                                 | 409 `Team has members`                          |
 | Organizer-only route by someone else                          | 403                                             |
 | Blank name, or longer than 40 characters                      | 422                                             |
+| One user registering twice at once (the second insert loses)  | 409 `Already a participant in this race`        |
 
 ## Start
 
@@ -142,7 +145,7 @@ for an unknown user carries none, the invitee picks on the invite page.
 - At least 2 teams that count, otherwise `At least 2 teams are required to start a relay race`.
 - Each such team needs at least 2 READY members, otherwise `<team name> needs at least 2 ready runners`.
 
-`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown. After the start broadcasts, every connected member's mod gets a `relay_update` (`send_row_relay_updates`, team by team): its `holder_id`, its own `role`, `team_status` READY, and for a member left out its own `members[].status` abandoned.
+`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown. After the start broadcasts, every connected member's mod gets a `relay_update` (`send_row_relay_updates`, team by team): its `holder_id`, its own `role`, `team_status` READY, and for a member left out its own `members[].status` abandoned. The open race page of a member left out is past the spoiler wall at once: the start marks every participant connection playing, then gives the ones already out their own status back (on any race: a runner disqualified before a reset too).
 
 A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the left-out members return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
 
@@ -225,7 +228,11 @@ then goes back to them.
   awaited (its game crashed, its socket dropped) gets the same `relay_take` again
   (`PendingHandoff.take`, same `handoff_id`, applied once by the mod) after its
   `auth_ok`, just before the team's `relay_update`, even once the timer fired: its `relay_taken` then takes the free baton
-  back as a late one does. The awaited take lives in the room's memory only: after a
+  back as a late one does. The room is kept while a take is
+  awaited, even with nobody connected (`ConnectionManager.drop_room_if_idle`; the
+  timer's end, fired or stopped, lets an empty room go): a receiver who reconnects
+  after every socket of the race dropped still gets its take again, and no timer
+  outlives its room. The awaited take lives in the room's memory only: after a
   server restart during a pending take it is lost, with its 30 s timer, so the
   receiver is heard as the holder as soon as it reconnects and its late `relay_taken`
   is ignored.
@@ -310,7 +317,8 @@ team rows explicitly first (`SELECT ... FOR UPDATE`), before it changes any memb
 Two such transactions therefore never wait on each other in opposite orders. A write to
 one table only needs no order: a flip, a checkpoint and the take timer write the team, a
 member's fresh-save validation writes the member (as an UPDATE guarded on the status it
-read, so it never brings back a member who went out meanwhile).
+read, so it never brings back a member who went out meanwhile), and so does a waiting
+runner's own death counter (an UPDATE that leaves a member who is out alone).
 
 ## Cap
 
@@ -367,8 +375,9 @@ carry every team's history. No progress load reads `character_state` (deferred).
   unacknowledged is heard as a waiting runner (`awaiting_take`, read from the room's
   memory, so the pre-read stays lock-free; Baton, "Before `relay_taken`"). Anyone
   else's `event_flag` and `zone_query` are acknowledged (the mod replays them until
-  then) and recorded nowhere; their `status_update` only runs their own fresh-save
-  gate, and no row is broadcast for it. The legacy `finished` message is ignored.
+  then) and recorded nowhere; their `status_update` only runs their own fresh-save gate and keeps
+  their own death counter ("Deaths" below), and no row is broadcast for it.
+  The legacy `finished` message is ignored.
 - **Fresh save for every member.** The team's first report, its first holder's,
   passes the team's gate (IGT at most 60 s, `MAX_FRESH_IGT_MS`): the team becomes
   PLAYING and that holder is validated. Any other member's first report once the
@@ -379,8 +388,12 @@ carry every team's history. No progress load reads `character_state` (deferred).
 - **Wrong save.** `is_igt_plausible` judges the holder's IGT against the team's
   `igt_ms` and `last_igt_change_at`.
 - **Deaths.** Each save counts its own deaths. A member's `death_count` holds the
-  last raw count their mod reported as holder, stored in the commit that applies
-  the report; the team's count moves by what the holder's counter moved
+  last raw count their mod reported: as holder, stored in the commit that applies
+  the report; without the baton, stored when it changes (`_store_own_deaths`, an
+  UPDATE of the member alone, never of a member who is out), so a death made while
+  waiting (a fall at the Chapel, a giver dying before its return there) is not
+  taken for one made as holder at the next take. The team's count moves by what
+  the holder's counter moved
   (`team.death_count + reported - member.death_count`), so it carries on across a
   change of holder. When the member goes out, or the team ends, their row takes the
   team's count instead ("Lifecycle").
@@ -411,15 +424,15 @@ carry every team's history. No progress load reads `character_state` (deferred).
 A member goes out alone: the team plays on without them, and is out only when nobody is
 left in it. There is no automatic reassignment of the baton, ever.
 
-| Way out                                               | Who              | The member                                                                                                      | Chat line (public unless noted)                                |
-| ----------------------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| `POST /races/{id}/abandon`                            | the member       | REGISTERED, READY or PLAYING to ABANDONED                                                                       | `{name} has abandoned the race.`                               |
-| `DELETE /races/{id}/participants/{pid}`, race RUNNING | organizer, admin | the same, the row kept in its team (400 `Cannot remove: current status is '<status>'` for a member already out) | `{name} has been removed from the race` (participants channel) |
-| `POST /races/{id}/participants/{pid}/disqualify`      | organizer, admin | DISQUALIFIED as on a solo race; the team is out                                                                 | none                                                           |
-| `POST /admin/users/{id}/ban`, race RUNNING            | admin            | the same disqualification ("Account banned"), unless already out by then; the mod is closed                     | none                                                           |
-| Inactivity monitor, offline 30 minutes                | server           | PLAYING to ABANDONED                                                                                            | `{name} has abandoned the race due to inactivity.`             |
-| Inactivity monitor, no-show                           | server           | REGISTERED or READY (never validated) 30 minutes into a race without `race_duration_minutes` to ABANDONED       | the same                                                       |
-| Inactivity monitor, team IGT stale 30 minutes         | server           | the holder to ABANDONED                                                                                         | the same                                                       |
+| Way out                                               | Who              | The member                                                                                                                    | Chat line (public unless noted)                                |
+| ----------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `POST /races/{id}/abandon`                            | the member       | REGISTERED, READY or PLAYING to ABANDONED                                                                                     | `{name} has abandoned the race.`                               |
+| `DELETE /races/{id}/participants/{pid}`, race RUNNING | organizer, admin | the same, the row kept in its team (400 `Cannot remove: current status is '<status>'` for a member already out)               | `{name} has been removed from the race` (participants channel) |
+| `POST /races/{id}/participants/{pid}/disqualify`      | organizer, admin | DISQUALIFIED as on a solo race; the team is out                                                                               | none                                                           |
+| `POST /admin/users/{id}/ban`, race RUNNING            | admin            | the same disqualification ("Account banned"), unless already out by then; the mod is closed                                   | none                                                           |
+| Inactivity monitor, offline 30 minutes                | server           | PLAYING to ABANDONED                                                                                                          | `{name} has abandoned the race due to inactivity.`             |
+| Inactivity monitor, no-show                           | server           | REGISTERED or READY (never validated) 30 minutes into the race, whether it has a `race_duration_minutes` or not, to ABANDONED | the same                                                       |
+| Inactivity monitor, team IGT stale 30 minutes         | server           | the holder to ABANDONED                                                                                                       | the same                                                       |
 
 What a member going out does (`apply_member_out`, `services/relay.py`):
 
@@ -454,8 +467,11 @@ Inactivity (`services/inactivity_monitor.py`, `INACTIVITY_TIMEOUT`, every minute
   mod is offline: set at its disconnect, cleared at its connect
   (`member_connection_changed`). The PLAYING branch of `abandon_inactive_participants`
   thus abandons a member offline for 30 minutes, and its no-show branch a member who never
-  validated. A connected waiting runner has no stamp and is never inactive: they wait by
-  design.
+  validated. On a relay race that branch runs whether the race has a `race_duration_minutes`
+  or not (a solo race with one leaves its no-shows to the hard close): nobody takes the
+  baton from a connected holder, so a first holder who never plays would keep it, and any
+  other no-show would keep their share of the cap, until the forced end. A connected
+  waiting runner who validated has no stamp and is never inactive: they wait by design.
 - `abandon_stale_relay_teams` watches the team's IGT instead of the waiting runners': a
   team in the race (PLAYING, or READY with a stamp: its first holder never reported and
   went out) whose `last_igt_change_at` is older than 30 minutes has its holder
@@ -532,7 +548,9 @@ Setup page (`/race/[id]`): the participant list of the left sidebar becomes `Rel
 
 The team list follows other users' changes by re-fetching the REST race each time `raceStore.participants` is replaced while a relay race is in setup (every team change makes the server broadcast the leaderboard rows; the newest answer wins when fetches overlap); a member's live status comes from the `relay_members` of the team rows. The runner's own changes replace the race with the answer of the REST call (`onChanged`). `joinRace`, `acceptInvite` and `addParticipant` take an optional team choice (`{relay_team_id}` or `{create_team: true}`): the invite page and the organizer's add-participant search show a select of the teams with a free slot plus "New team" (`teamChoiceOptions`; an invite page offers it only while runners may create teams). The five team routes are `createRelayTeam`, `updateRelayTeam`, `deleteRelayTeam`, `joinRelayTeam` and `moveRelayParticipant` in `web/src/lib/api.ts`.
 
-Live leaderboard (`Leaderboard.svelte`, race page and results): a relay race's rows are its teams (`relay_members` set), through the same component and the same store as a solo race, whose rows render as before. A team row shows the team name in place of the runner's (a button, not a profile link) with the connection dot of the holder, the zone fraction, time, gap and deaths. The second line is `relayHolderLine`: "<holder>, <zone>" (the zone cut like any row's, its full name in the tooltip, dropped while run details are hidden), "<holder> offline" when the holder has no mod connection, "Baton free" when a playing team has no holder (the holder abandoned and nobody has taken the baton). The chevron and the team name unfold the members (a click elsewhere on the row still selects it for the comparison): each with `relayMemberLabel` and "zones/cap" as the server sends them (`relay_members[].zones`, `relay_cap`). States: "playing" (the row's `relay_holder_id`), "waiting", "ready" (before the start), "finished", "out" (abandoned or disqualified, whatever the team does); the holder and a waiting member add ", offline" when `online` is false. A member links to their profile when the REST race knows them (`memberUsers`), else shows the name. The unfolded set is a `SvelteSet` of row ids inside the component, so it survives row replacement and re-ordering. `reuseIfUnchanged` compares deeply, so an unchanged team keeps its row object although `relay_members` is a fresh array in each message, and a holder change or a member's count change yields a new one. The rules card of a relay race starts with `relayRuleLine` ("Relay: 30 zones, teams of 3, 11 zones max per runner on a full team (higher on a smaller one)."; an unfolded team shows its own live cap, which is higher for a team with fewer members and moves after an abandon). A member's profile link opens in a new tab and does not select the row. The OBS leaderboard overlay (`LeaderboardOverlay`, its own component) is unchanged: a team row reads as any row through the same data, with the team name (the row's display name) and the team's fraction, time and gap, and no holder line or member list.
+Live leaderboard (`Leaderboard.svelte`, race page and results): a relay race's rows are its teams (`relay_members` set), through the same component and the same store as a solo race, whose rows render as before. A team row shows the team name in place of the runner's (a button, not a profile link) with the connection dot of the holder, the zone fraction, time, gap and deaths. The second line is `relayHolderLine`: "<holder>, <zone>" (the zone cut like any row's, its full name in the tooltip, dropped while run details are hidden), "<holder> offline" when the holder has no mod connection, "Baton free" when a playing team's row names no holder: the holder abandoned and nobody has taken the baton, or the baton is free under a nominal holder (a take nobody acknowledged, a handoff to a runner who had just disconnected), where the server sends no `relay_holder` since nobody plays. The chevron and the team name unfold the members (a click elsewhere on the row still selects it for the comparison): each with `relayMemberLabel` and "zones/cap" as the server sends them (`relay_members[].zones`, `relay_cap`). States: "playing" (the row's `relay_holder_id`), "waiting", "ready" (before the start), "finished", "out" (abandoned or disqualified, whatever the team does); the holder and a waiting member add ", offline" when `online` is false. A member links to their profile when the REST race knows them (`memberUsers`), else shows the name. The unfolded set is a `SvelteSet` of row ids inside the component, so it survives row replacement and re-ordering. `reuseIfUnchanged` compares deeply, so an unchanged team keeps its row object although `relay_members` is a fresh array in each message, and a holder change or a member's count change yields a new one. The rules card of a relay race starts with `relayRuleLine` ("Relay: 30 zones, teams of 3, 11 zones max per runner on a full team (higher on a smaller one)."; an unfolded team shows its own live cap, which is higher for a team with fewer members and moves after an abandon). A member's profile link opens in a new tab and does not select the row. The OBS leaderboard overlay (`LeaderboardOverlay`, its own component) is unchanged: a team row reads as any row through the same data, with the team name (the row's display name) and the team's fraction, time and gap, and no holder line or member list. What the staff know per runner shows on the row of the runner's team (`byLiveRow` in `web/src/lib/relay.ts`): the "Flagged" chip of a cheat detection, and the reason of a disqualification in the DQ label's tooltip.
+
+Cast Setup is not offered on a relay race, by its button or by `?cast=1`: the cast scenes seat runners, and a relay race's rows are teams.
 
 Map (`/race/[id]`, live, finished and the replay): the map components are fed the team rows unchanged, so a relay race draws one path per team in the team's color with the team's marker at its current zone, and nothing per runner (no handoff marker on the path). The team name is the row's display name (`twitch_username` is `team-<8 chars>` and is never shown on its own), and no map component links a row to a profile. Selection of two teams opens the layer comparison on row ids as for runners. In the zone popup (`NodePopup`, "Visited by") a team's line reads "<team>, <runner>": `relayRunnerAt` (`web/src/lib/relay.ts`) takes the `runner_id` the server writes on each `zone_history` entry (the holder when the entry was written) from the node's last entry that is not a backtrack, and names it from the row's own `relay_members`. A zone restarted after a handoff therefore names the runner who got out of it. No runner is shown (the line is the team name alone) when the entry has no `runner_id` (solo race, or a team's first entry written before a holder existed) or when the runner is not in `relay_members`; members who are out stay listed, so a runner who abandoned is still named. `computeVisitors` reads `relay_members` from the row at click time, so the paths do not depend on it: `pathParticipants` in `MetroDagFull.svelte` compares only the zone history, current zone, color, name, status and IGT, and a member's `online`, `ready` or `zones` change redraws nothing. The replay of a finished relay race replays the teams (one path per team, the team's zone history), and the personal highlights of a runner are their team's.
 

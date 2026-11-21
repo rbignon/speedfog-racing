@@ -21,7 +21,7 @@ from speedfog_racing.services.chat_access import (
 from speedfog_racing.services.debug_flags import can_see_debug_flags
 from speedfog_racing.services.layer_service import get_layer_for_node, get_tier_for_node
 from speedfog_racing.services.race_items import PendingReport
-from speedfog_racing.services.relay import RelayTeamRow
+from speedfog_racing.services.relay import RelayTeamRow, holds_baton
 from speedfog_racing.services.twitch_live import twitch_live_service
 from speedfog_racing.websocket.handler import close_evicted
 from speedfog_racing.websocket.race.projection import (
@@ -386,6 +386,17 @@ class ConnectionManager:
         """Get a room if it exists."""
         return self.rooms.get(race_id)
 
+    def drop_room_if_idle(self, race_id: uuid.UUID) -> None:
+        """Remove a room nobody is connected to, unless a relay take is still
+        awaited there: its receiver must find it again when its mod
+        reconnects, and its timer drops the room when it ends."""
+        room = self.rooms.get(race_id)
+        if room is None or room.mods or room.spectators:
+            return
+        if any(p.timer is not None and not p.timer.done() for p in room.relay_pending.values()):
+            return
+        del self.rooms[race_id]
+
     async def connect_mod(
         self,
         race_id: uuid.UUID,
@@ -452,8 +463,7 @@ class ConnectionManager:
         room.mods.pop(participant_id, None)
         room.relay_ready.discard(participant_id)
         logger.info(f"Mod disconnected: race={race_id}, participant={participant_id}")
-        if not room.mods and not room.spectators:
-            self.rooms.pop(race_id, None)
+        self.drop_room_if_idle(race_id)
 
     async def connect_spectator(self, race_id: uuid.UUID, conn: SpectatorConnection) -> None:
         """Register a spectator connection."""
@@ -489,8 +499,7 @@ class ConnectionManager:
             room.spectators.pop(conn.connection_id, None)
             logger.info(f"Spectator disconnected: race={race_id}")
             await self._broadcast_spectator_count(room)
-            if not room.mods and not room.spectators:
-                self.rooms.pop(race_id, None)
+            self.drop_room_if_idle(race_id)
 
     async def close_room(self, race_id: uuid.UUID, code: int = 1000, reason: str = "") -> None:
         """Close all WebSocket connections in a room and remove it, stopping its
@@ -932,7 +941,9 @@ def relay_team_to_info(
     """A relay team as a participant-shaped leaderboard row.
 
     The progress fields come from the team; ``mod_connected``, ``is_live`` and
-    ``stream_url`` follow the holder. No badge and no name template.
+    ``stream_url`` follow the holder. Nobody plays while the baton is free
+    (its nominal holder waits like the others), so the row then names no
+    holder. No badge and no name template.
     """
     team = row.team
     connected = connected_ids or set()
@@ -940,7 +951,7 @@ def relay_team_to_info(
     tier: int | None = None
     if graph_json and team.current_zone:
         tier = get_tier_for_node(team.current_zone, graph_json)
-    holder = row.holder
+    holder = row.holder if holds_baton(team, team.holder_id) else None
     holder_username = holder.user.twitch_username if holder else None
     members = [relay_member_wire(m, connected=connected, ready=ready_ids) for m in row.members]
     return ParticipantInfo(
@@ -954,7 +965,7 @@ def relay_team_to_info(
         igt_ms=team.igt_ms,
         death_count=team.death_count,
         color_index=team.color_index,
-        mod_connected=team.holder_id is not None and team.holder_id in connected,
+        mod_connected=holder is not None and holder.id in connected,
         zone_history=team.zone_history if include_zone_history else None,
         gap_ms=gap_ms,
         layer_entry_igt=layer_entry_igt,

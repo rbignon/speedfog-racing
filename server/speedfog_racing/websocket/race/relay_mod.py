@@ -9,9 +9,9 @@ before acknowledging a baton just given to them (``_listened``). Every other
 member sends the same messages, since a mod does not know it waits: its
 ``event_flag`` and ``zone_query`` are acknowledged (the mod replays them until
 then) and recorded nowhere, and its ``status_update`` only runs its own
-fresh-save gate. The five baton messages (``relay_*``) go to the operations of
-``websocket/race/relay.py``. See ``docs/RELAY.md`` ("Baton", "Cap", "Progress
-and guards").
+fresh-save gate and keeps its own death counter. The five baton messages
+(``relay_*``) go to the operations of ``websocket/race/relay.py``. See
+``docs/RELAY.md`` ("Baton", "Cap", "Progress and guards").
 """
 
 import logging
@@ -250,7 +250,8 @@ class RelayModHandler(RaceModHandler):
     # ------------------------------------------------------------------
     async def _handle_status_update(self, msg: dict[str, Any]) -> None:
         """The holder's report goes to the team, its death counter turned into
-        the team's; anyone else's only runs that member's fresh-save gate."""
+        the team's; anyone else's only runs that member's fresh-save gate and
+        keeps their own death counter."""
         holder = False
         validated = False
         reported: int | None = None
@@ -269,9 +270,11 @@ class RelayModHandler(RaceModHandler):
                         **msg,
                         "death_count": max(0, team.death_count + reported - member.death_count),
                     }
-            elif await self._validate_member(db, member, race, msg):
-                validated = True
-                await db.commit()
+            else:
+                validated = await self._validate_member(db, member, race, msg)
+                stored = await self._store_own_deaths(db, member, msg)
+                if validated or stored:
+                    await db.commit()
             team_id = team.id
 
         if validated:
@@ -408,6 +411,33 @@ class RelayModHandler(RaceModHandler):
             return False
         logger.info("Relay member validated: %s igt_ms=%d", self.log_ref, igt_ms)
         return True
+
+    async def _store_own_deaths(
+        self, db: AsyncSession, member: Participant, msg: dict[str, Any]
+    ) -> bool:
+        """Keep the raw death counter of a runner who does not hold the baton
+        on its own row, as the holder's reports keep theirs: when it holds the
+        baton, the team's count then moves only by the deaths made as holder.
+        Never on a member who is out, whose row took the team's count. True
+        when the row changed (the caller commits)."""
+        reported = clamp_death_count(msg.get("death_count"))
+        if (
+            reported is None
+            or reported == member.death_count
+            or member.status in TERMINAL_PARTICIPANT_STATUSES
+        ):
+            return False
+        # ``member`` comes from the lock-free read: guarded as the validation is.
+        result = await db.execute(
+            update(Participant)
+            .where(
+                Participant.id == member.id,
+                Participant.status.notin_(TERMINAL_PARTICIPANT_STATUSES),
+            )
+            .values(death_count=reported)
+            .execution_options(synchronize_session=False)
+        )
+        return bool(result.rowcount)  # type: ignore[attr-defined]
 
     async def _validate_for_status_update(self, entity: RelayTeam) -> bool:  # type: ignore[override]
         if not await super()._validate_for_status_update(entity):  # type: ignore[arg-type]

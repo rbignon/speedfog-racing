@@ -875,6 +875,48 @@ def test_a_pending_take_is_sent_again_to_a_reconnecting_receiver(
     back.receive_until("player_update", lambda m: m["player"]["igt_ms"] == 6_000)
 
 
+def test_a_pending_take_survives_every_socket_of_the_race_dropping(
+    integration_client, relay_race, mods
+):
+    giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    member = relay_race["teams"][0]["members"][1]
+    _make_receiver(target)
+    take = _hand_off(giver, target)
+    # A proxy restart: nobody is connected any more, the take is not acknowledged.
+    for mod in mods.values():
+        mod.disconnect()
+    target.close()
+
+    back = mods[member["participant_id"]] = RelayModClient.connect(
+        integration_client, relay_race["race_id"], member["mod_token"], member["participant_id"]
+    )
+    assert back.auth(protocol_version="1.19")["relay"]["role"] == "holder"
+
+    assert back.receive_until("relay_take") == take
+    _taken(back, take)
+    team = load_team(relay_race)
+    assert (team.holder_id, team.baton_free) == (UUID(back.participant_id), False)
+
+
+def test_an_empty_room_goes_when_its_take_timer_ends(monkeypatch, relay_race, mods):
+    # Long enough for the four disconnects below to end before it fires.
+    monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 2.0)
+    giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    race_id = UUID(relay_race["race_id"])
+    _make_receiver(target)
+    _hand_off(giver, target)
+
+    for mod in mods.values():
+        mod.disconnect()
+    assert race_id in manager.rooms  # kept for the take it still awaits
+
+    deadline = time.monotonic() + 6
+    while race_id in manager.rooms and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert race_id not in manager.rooms
+    assert load_team(relay_race).baton_free is True
+
+
 def test_a_take_timer_frees_nothing_once_the_team_is_out(monkeypatch, relay_race, mods):
     monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 0.5)
     giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
