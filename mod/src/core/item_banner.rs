@@ -71,6 +71,31 @@ pub fn banner_layout(display: [f32; 2]) -> BannerLayout {
     }
 }
 
+/// The banner's layout with or without its icon. A banner with no icon (the
+/// relay's transient ones) hangs from the relay block's top and takes its
+/// sizes, so it lands where the waiting banner and the menu are; one with an
+/// icon is `banner_layout`.
+pub fn banner_layout_for(display: [f32; 2], has_icon: bool) -> BannerLayout {
+    if has_icon {
+        return banner_layout(display);
+    }
+    let block = relay_block_layout(display, 0);
+    BannerLayout {
+        center_x: block.center_x,
+        gradient_height: block.gradient_height,
+        icon_size: 0.0,
+        icon_y: block.title_y,
+        title_px: block.title_px,
+        title_y: block.title_y,
+        title_tracking: block.title_tracking,
+        line_px: block.line_px,
+        line_y: block.line_y,
+        detail_px: block.detail_px,
+        detail_y: block.detail_y,
+        shadow: block.shadow,
+    }
+}
+
 /// Menu rows are this many line heights tall.
 const ROW_HEIGHT: f32 = 1.6;
 /// Width of the menu, as a fraction of the sizing width.
@@ -80,6 +105,9 @@ const MENU_WIDTH: f32 = 0.328;
 const TEXT_MAX_WIDTH: f32 = 0.7;
 /// The hold bar's height: a fraction of the display height, at least 3 px.
 const BAR_HEIGHT: f32 = 0.0042;
+/// Gap between the detail's line and the hold bar under it, in detail
+/// heights.
+const BAR_GAP: f32 = 0.8;
 /// The sizing width never exceeds this many widths per height, so an
 /// ultrawide keeps the proportions of a 16:9 screen of its height (the
 /// stack of title, rows and detail would otherwise outgrow the gradient).
@@ -106,7 +134,17 @@ pub struct RelayBlockLayout {
     /// Widest a text of the block may draw; longer is cut to it.
     pub text_max_width: f32,
     pub bar_height: f32,
+    /// Top of the hold bar the waiting banner draws under its detail.
+    pub bar_y: f32,
     pub shadow: f32,
+}
+
+impl RelayBlockLayout {
+    /// Top of menu row `i`; `row_top(rows)` is where a line under the last
+    /// row (the menu's note) starts.
+    pub fn row_top(&self, i: usize) -> f32 {
+        self.line_y + i as f32 * self.row_height
+    }
 }
 
 /// The block's layout with `rows` menu rows (0 for the waiting banner).
@@ -124,6 +162,7 @@ pub fn relay_block_layout(display: [f32; 2], rows: usize) -> RelayBlockLayout {
         rows as f32 * row_height
     };
     let detail_px = DETAIL * unit;
+    let detail_y = line_y + body + DETAIL_GAP * unit;
     RelayBlockLayout {
         center_x: dw * 0.5,
         gradient_height: GRADIENT_REACH * dh,
@@ -133,11 +172,12 @@ pub fn relay_block_layout(display: [f32; 2], rows: usize) -> RelayBlockLayout {
         line_px,
         line_y,
         detail_px,
-        detail_y: line_y + body + DETAIL_GAP * unit,
+        detail_y,
         row_height,
         menu_width: MENU_WIDTH * unit,
         text_max_width: TEXT_MAX_WIDTH * unit,
         bar_height: (BAR_HEIGHT * dh).max(3.0),
+        bar_y: detail_y + detail_px * (BODY_LINE_HEIGHT + BAR_GAP),
         shadow: 1.0,
     }
 }
@@ -293,6 +333,40 @@ mod tests {
             let b = relay_block_bounds(&l, display, 4, RelayBlockWidths::default());
             assert!((b[2] - b[0] - l.menu_width).abs() < 0.01);
             assert!(((b[0] + b[2]) * 0.5 - l.center_x).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn a_banner_without_an_icon_sits_where_the_relay_block_does() {
+        for display in [[1920.0, 1080.0], [1280.0, 720.0], [3440.0, 1440.0]] {
+            let block = relay_block_layout(display, 0);
+            let bare = banner_layout_for(display, false);
+            assert_eq!(bare.title_y, block.title_y);
+            assert_eq!(bare.line_y, block.line_y);
+            assert_eq!(bare.detail_y, block.detail_y);
+            assert_eq!(bare.title_px, block.title_px);
+            // An item banner with its icon is untouched.
+            assert_eq!(banner_layout_for(display, true), banner_layout(display));
+        }
+        // At 1080p the icon's slot is what the bare banner gives back.
+        let with = banner_layout([1920.0, 1080.0]);
+        let bare = banner_layout_for([1920.0, 1080.0], false);
+        assert!(with.title_y - bare.title_y > 100.0);
+    }
+
+    #[test]
+    fn the_blocks_own_rectangles_stack_without_overlap() {
+        for display in [[1280.0, 720.0], [1920.0, 1080.0], [3440.0, 1440.0]] {
+            let wait = relay_block_layout(display, 0);
+            assert!(wait.bar_y > wait.detail_y + wait.detail_px);
+            assert!(wait.bar_y + wait.bar_height < wait.gradient_height);
+            let menu = relay_block_layout(display, 3);
+            assert_eq!(menu.row_top(0), menu.line_y);
+            assert!((menu.row_top(1) - menu.row_top(0) - menu.row_height).abs() < 0.01);
+            // With a note row under three rows, the detail still clears it.
+            let noted = relay_block_layout(display, 4);
+            assert!((noted.row_top(3) - menu.row_top(3)).abs() < 0.01);
+            assert!(noted.detail_y >= noted.row_top(4));
         }
     }
 }

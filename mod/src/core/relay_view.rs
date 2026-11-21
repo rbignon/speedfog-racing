@@ -13,6 +13,9 @@ pub const MENU_TITLE: &str = "PASS THE BATON";
 pub const REQUEST_TEXT: &str = "Waiting for the server";
 /// Replaces the take prompt while the runner is not yet ready to take.
 pub const NOT_READY_TEXT: &str = "Not ready yet: wait at the Chapel.";
+/// Replaces every key hint while the baton key is unbound (`relay = "none"`
+/// in the config): the player is told what to do, no key is named.
+pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";
 /// Stands for a name the server left empty or did not send.
 const UNKNOWN_NAME: &str = "A teammate";
 const UNKNOWN_HOLDER: &str = "The holder";
@@ -102,7 +105,7 @@ fn layer_text(layer: Option<(i32, i32)>) -> Option<String> {
 /// (`Holder` while a take received runs, whatever `info.role` reads),
 /// `me` the runner's participant id, `layer` the displayed layer and the
 /// total, `free_in` the seconds before the baton can be taken, counted
-/// down locally, `key` the label of the baton key. The team not live (setup
+/// down locally, `key` the label of the baton key, `None` when it is unbound. The team not live (setup
 /// included), the runner out and an unknown role give the empty view: an
 /// unknown value is never read as a decision.
 pub fn build(
@@ -111,7 +114,7 @@ pub fn build(
     me: &str,
     layer: Option<(i32, i32)>,
     free_in: Option<u32>,
-    key: &str,
+    key: Option<&str>,
 ) -> RelayView {
     let live = matches!(
         info.team_status,
@@ -128,7 +131,12 @@ pub fn build(
     }
 }
 
-fn holder_view(info: &RelayInfo, me: &str, me_entry: Option<&RelayMember>, key: &str) -> RelayView {
+fn holder_view(
+    info: &RelayInfo,
+    me: &str,
+    me_entry: Option<&RelayMember>,
+    key: Option<&str>,
+) -> RelayView {
     let mut view = RelayView {
         baton_who: "you".to_string(),
         baton_count: me_entry.map(|m| counter(m, info.cap)).unwrap_or_default(),
@@ -139,7 +147,7 @@ fn holder_view(info: &RelayInfo, me: &str, me_entry: Option<&RelayMember>, key: 
     if info.role != RelayRole::Holder {
         return view;
     }
-    view.baton_hint = format!("{key} pass");
+    view.baton_hint = key.map(|key| format!("{key} pass")).unwrap_or_default();
     view.rows = info
         .members
         .iter()
@@ -156,7 +164,10 @@ fn holder_view(info: &RelayInfo, me: &str, me_entry: Option<&RelayMember>, key: 
         .collect();
     let close = format!("closes by itself after {} s", MENU_AUTO_CLOSE.as_secs());
     if view.rows.iter().any(|r| r.available) {
-        view.menu_hint = format!("{key} next   hold {key} to pass   {close}");
+        view.menu_hint = match key {
+            Some(key) => format!("{key} next   hold {key} to pass   {close}"),
+            None => UNBOUND_TEXT.to_string(),
+        };
     } else {
         view.menu_hint = close;
         view.menu_note = if view.rows.is_empty() {
@@ -175,7 +186,7 @@ fn waiting_view(
     me_entry: Option<&RelayMember>,
     layer: Option<(i32, i32)>,
     free_in: Option<u32>,
-    key: &str,
+    key: Option<&str>,
 ) -> RelayView {
     let holder = info
         .holder_id
@@ -215,16 +226,21 @@ fn waiting_view(
                 false,
             ),
             Some(m) if m.zones >= info.cap => ("You are at your cap.".to_string(), false),
-            Some(_) => (
-                match zone {
-                    Some(zone) => format!("Hold {key} to take the baton and restart {zone}."),
-                    None => format!("Hold {key} to take the baton."),
-                },
-                true,
-            ),
+            // No key to hold: the prompt says so, with no bar.
+            Some(_) if key.is_none() => (UNBOUND_TEXT.to_string(), false),
+            Some(_) => {
+                let key = key.unwrap_or_default();
+                (
+                    match zone {
+                        Some(zone) => format!("Hold {key} to take the baton and restart {zone}."),
+                        None => format!("Hold {key} to take the baton."),
+                    },
+                    true,
+                )
+            }
             None => (String::new(), false),
         };
-        if hold_bar {
+        if let (true, Some(key)) = (hold_bar, key) {
             view.baton_hint = format!("{key} take");
         }
         let line = if info.holder_id.is_none() {
@@ -330,7 +346,7 @@ mod tests {
             "p1",
             LAYER,
             None,
-            "F8",
+            Some("F8"),
         );
         let w = v.wait.unwrap();
         assert_eq!(
@@ -357,7 +373,7 @@ mod tests {
             "p1",
             LAYER,
             Some(42),
-            "F8",
+            Some("F8"),
         )
         .wait
         .unwrap();
@@ -376,7 +392,7 @@ mod tests {
             "p1",
             LAYER,
             Some(0),
-            "F8",
+            Some("F8"),
         )
         .wait
         .unwrap();
@@ -395,7 +411,7 @@ mod tests {
             "p4",
             LAYER,
             Some(0),
-            "F8",
+            Some("F8"),
         )
         .wait
         .unwrap();
@@ -413,7 +429,7 @@ mod tests {
             "p2",
             LAYER,
             None,
-            "F7",
+            Some("F7"),
         );
         assert!(v.wait.is_none());
         assert_eq!(
@@ -449,7 +465,7 @@ mod tests {
         let mut i = info("waiting", false, Some(0));
         member(&mut i, "p2").status = ParticipantStatus::Abandoned;
         i.holder_id = None;
-        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), Some("F8"));
         let (tone, title, line, detail, bar) = wait_of(&v);
         assert_eq!(
             (tone, title, line),
@@ -478,13 +494,13 @@ mod tests {
             "p1",
             LAYER,
             Some(0),
-            "F8",
+            Some("F8"),
         );
         assert_eq!(wait_of(&v).2, "The handoff was not completed");
         assert_eq!(v.baton_who, "free");
         let mut i = info("waiting", true, Some(0));
         i.holder_id = Some("p1".to_string());
-        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), Some("F8"));
         assert_eq!(wait_of(&v).2, "The handoff was not completed");
     }
 
@@ -502,7 +518,7 @@ mod tests {
         ] {
             setup.team_status = status;
             for role in [RelayRole::Waiting, RelayRole::Holder] {
-                let v = build(&setup, role, "p1", LAYER, Some(0), "F8");
+                let v = build(&setup, role, "p1", LAYER, Some(0), Some("F8"));
                 assert_eq!(v, RelayView::default(), "{status:?} {role:?}");
             }
         }
@@ -513,7 +529,7 @@ mod tests {
             let mut i = info("waiting", true, None);
             member(&mut i, "p1").status = status;
             assert_eq!(
-                build(&i, RelayRole::Waiting, "p1", LAYER, None, "F8"),
+                build(&i, RelayRole::Waiting, "p1", LAYER, None, Some("F8")),
                 RelayView::default()
             );
         }
@@ -523,7 +539,7 @@ mod tests {
     fn a_take_in_progress_reads_as_the_holder() {
         let mut i = info("waiting", true, Some(0));
         i.holder_id = Some("p1".to_string());
-        let v = build(&i, RelayRole::Holder, "p1", LAYER, Some(0), "F8");
+        let v = build(&i, RelayRole::Holder, "p1", LAYER, Some(0), Some("F8"));
         assert!(v.wait.is_none());
         assert_eq!(
             (v.baton_who.as_str(), v.baton_count.as_str()),
@@ -540,12 +556,12 @@ mod tests {
     fn an_unknown_zone_drops_the_place() {
         let mut i = info("waiting", true, None);
         i.zone_name = None;
-        let v = build(&i, RelayRole::Waiting, "p1", None, None, "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", None, None, Some("F8"));
         assert_eq!(wait_of(&v).2, "Kahleeya holds the baton");
         assert_eq!(wait_of(&v).3, "You: 2/5 zones.");
         let mut i = info("waiting", true, Some(0));
         i.zone_name = Some("  ".to_string());
-        let v = build(&i, RelayRole::Waiting, "p1", None, Some(0), "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", None, Some(0), Some("F8"));
         assert_eq!(wait_of(&v).3, "Hold F8 to take the baton.");
     }
 
@@ -553,7 +569,7 @@ mod tests {
     fn a_member_without_a_fresh_save_reads_its_reason() {
         let mut i = info("holder", true, None);
         member(&mut i, "p3").validated = false;
-        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         let row = v.rows.iter().find(|r| r.participant_id == "p3").unwrap();
         assert_eq!(
             (row.right.as_str(), row.available),
@@ -562,7 +578,7 @@ mod tests {
 
         let mut i = info("waiting", true, Some(0));
         member(&mut i, "p1").validated = false;
-        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", LAYER, Some(0), Some("F8"));
         let (_, _, _, detail, bar) = wait_of(&v);
         assert_eq!(
             (detail, bar),
@@ -576,7 +592,7 @@ mod tests {
         let mut i = info("holder", true, None);
         member(&mut i, "p3").status = ParticipantStatus::Disqualified;
         member(&mut i, "p4").status = ParticipantStatus::Finished;
-        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         let names: Vec<_> = v.rows.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Roger", "Linlin_Tv"]);
     }
@@ -588,14 +604,14 @@ mod tests {
         for id in ["p1", "p3", "p4"] {
             member(&mut i, id).online = false;
         }
-        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         assert!(v.rows.iter().all(|r| !r.available) && !v.rows.is_empty());
         assert_eq!(v.menu_note, "Nobody can take the baton right now");
         assert_eq!(v.menu_hint, "closes by itself after 5 s");
         // A team of one.
         let mut solo = info("holder", true, None);
         solo.members.retain(|m| m.participant_id == "p2");
-        let v = build(&solo, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&solo, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         assert!(v.rows.is_empty());
         assert_eq!(v.menu_note, "No teammate can take the baton");
         assert_eq!(v.menu_hint, "closes by itself after 5 s");
@@ -606,7 +622,7 @@ mod tests {
             "p2",
             LAYER,
             None,
-            "F8",
+            Some("F8"),
         );
         assert_eq!(v.menu_note, "");
     }
@@ -619,12 +635,12 @@ mod tests {
             "p1",
             LAYER,
             Some(0),
-            "F8",
+            Some("F8"),
         );
         assert_eq!(v, RelayView::default());
         let mut i = info("holder", true, None);
         member(&mut i, "p3").status = ParticipantStatus::Unknown;
-        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         let row = v.rows.iter().find(|r| r.participant_id == "p3").unwrap();
         assert!(!row.available);
         assert_eq!(row.right, "status unknown");
@@ -635,7 +651,7 @@ mod tests {
         let mut i = info("holder", true, None);
         member(&mut i, "p2").zones = 6;
         i.gates_locked = true;
-        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, "F8");
+        let v = build(&i, RelayRole::Holder, "p2", LAYER, None, Some("F8"));
         assert_eq!(v.baton_count, "6/5 zones");
     }
 
@@ -643,7 +659,14 @@ mod tests {
     fn a_missing_name_or_layer_never_shows_as_empty() {
         let mut i = info("waiting", true, None);
         member(&mut i, "p2").name = String::new();
-        let v = build(&i, RelayRole::Waiting, "p1", Some((-1, 0)), None, "F8");
+        let v = build(
+            &i,
+            RelayRole::Waiting,
+            "p1",
+            Some((-1, 0)),
+            None,
+            Some("F8"),
+        );
         let (_, _, line, detail, _) = wait_of(&v);
         assert_eq!(line, "A teammate is in Leyndell, Royal Capital");
         assert_eq!(detail, "You: 2/5 zones.");
@@ -651,15 +674,15 @@ mod tests {
         i.holder_id = Some("ghost".to_string());
         i.holder_online = false;
         i.baton_free_in_s = Some(30);
-        let v = build(&i, RelayRole::Waiting, "p1", None, Some(30), "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", None, Some(30), Some("F8"));
         assert_eq!(wait_of(&v).1, "THE HOLDER IS OFFLINE");
         // Holder offline with no countdown known.
         i.baton_free_in_s = None;
-        let v = build(&i, RelayRole::Waiting, "p1", None, None, "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", None, None, Some("F8"));
         assert_eq!(wait_of(&v).2, "The holder is not in the game");
         // Nobody named, baton not free.
         i.holder_id = None;
-        let v = build(&i, RelayRole::Waiting, "p1", None, None, "F8");
+        let v = build(&i, RelayRole::Waiting, "p1", None, None, Some("F8"));
         assert_eq!(wait_of(&v).2, "Nobody holds the baton");
         assert_eq!(v.baton_who, "nobody");
     }
@@ -685,7 +708,7 @@ mod tests {
                 "p1",
                 LAYER,
                 free_in,
-                "F8",
+                Some("F8"),
             ));
         }
         for v in views {
@@ -708,5 +731,71 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn an_unbound_key_names_no_key_and_says_what_to_do() {
+        let texts = |v: &RelayView| {
+            let mut all = vec![
+                v.baton_who.clone(),
+                v.baton_count.clone(),
+                v.baton_hint.clone(),
+                v.menu_hint.clone(),
+                v.menu_note.clone(),
+            ];
+            if let Some(w) = &v.wait {
+                all.extend([w.title.clone(), w.line.clone(), w.detail.clone()]);
+            }
+            all
+        };
+        let free = build(
+            &info("waiting", false, Some(0)),
+            RelayRole::Waiting,
+            "p1",
+            LAYER,
+            Some(0),
+            None,
+        );
+        let holder = build(
+            &info("holder", true, None),
+            RelayRole::Holder,
+            "p2",
+            LAYER,
+            None,
+            None,
+        );
+        for v in [&free, &holder] {
+            assert!(texts(v).iter().all(|t| !t.contains("F8")), "{:?}", texts(v));
+            assert_eq!(v.baton_hint, "");
+        }
+        let wait = free.wait.as_ref().unwrap();
+        assert_eq!(wait.detail, UNBOUND_TEXT);
+        assert!(!wait.hold_bar);
+        assert_eq!(holder.menu_hint, UNBOUND_TEXT);
+    }
+
+    #[test]
+    fn a_rebound_key_is_named_in_every_hint() {
+        let free = build(
+            &info("waiting", false, Some(0)),
+            RelayRole::Waiting,
+            "p1",
+            LAYER,
+            Some(0),
+            Some("G"),
+        );
+        let holder = build(
+            &info("holder", true, None),
+            RelayRole::Holder,
+            "p2",
+            LAYER,
+            None,
+            Some("G"),
+        );
+        assert_eq!(free.baton_hint, "G take");
+        assert!(free.wait.as_ref().unwrap().detail.starts_with("Hold G "));
+        assert_eq!(holder.baton_hint, "G pass");
+        assert!(holder.menu_hint.starts_with("G next   hold G to pass"));
+        assert!(!format!("{free:?}{holder:?}").contains("F8"));
     }
 }

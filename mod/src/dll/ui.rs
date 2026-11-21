@@ -16,8 +16,8 @@ use crate::core::countdown::{
 };
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_banner::{
-    banner_layout, relay_block_bounds, relay_block_layout, write_seconds_left, RelayBlockWidths,
-    GRADIENT_ALPHA,
+    banner_layout_for, relay_block_bounds, relay_block_layout, write_seconds_left,
+    RelayBlockWidths, GRADIENT_ALPHA,
 };
 use crate::core::item_feed::FeedTone;
 use crate::core::protocol::{ParticipantStatus, RaceStatus};
@@ -549,7 +549,7 @@ impl RaceTracker {
 
         let c = &self.cached_colors;
         let [dw, dh] = ui.io().display_size;
-        let layout = banner_layout([dw, dh]);
+        let layout = banner_layout_for([dw, dh], !banner.icon.is_empty());
 
         let edge = fade([c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA]);
         let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
@@ -718,12 +718,13 @@ impl RaceTracker {
                 {
                     let _font = ui.push_font(fonts.banner_title);
                     ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
-                    cuts.update(
+                    cuts.update_tracked(
                         CUT_TITLE,
                         ui,
                         MENU_TITLE,
                         layout.text_max_width * TITLE_CUT_SHARE,
                         layout.title_px,
+                        layout.title_tracking,
                     );
                 }
                 let mut rows_width = 0.0f32;
@@ -787,12 +788,12 @@ impl RaceTracker {
                 {
                     let _font = ui.push_font(fonts.banner_title);
                     ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
-                    draw_tracked_centered(
+                    draw_tracked_cached(
                         ui,
-                        cuts.text(CUT_TITLE),
+                        cuts,
+                        CUT_TITLE,
                         layout.center_x,
                         layout.title_y,
-                        layout.title_tracking,
                         layout.shadow,
                         c.gold,
                         shadow_color,
@@ -800,7 +801,7 @@ impl RaceTracker {
                 }
                 let draw = ui.get_window_draw_list();
                 for (i, row) in view.rows.iter().enumerate() {
-                    let top = layout.line_y + i as f32 * layout.row_height;
+                    let top = layout.row_top(i);
                     let (x0, x1) = (bounds[0], bounds[2]);
                     let is_selected = selected == Some(row.participant_id.as_str());
                     if is_selected {
@@ -862,7 +863,7 @@ impl RaceTracker {
                 let _font = ui.push_font(fonts.banner_body);
                 if note {
                     ui.set_window_font_scale(layout.line_px / BANNER_BODY_ATLAS_PX);
-                    let y = layout.line_y + rows as f32 * layout.row_height;
+                    let y = layout.row_top(rows);
                     draw_shadowed(
                         ui,
                         cuts.text(CUT_LINE),
@@ -949,19 +950,20 @@ impl RaceTracker {
                 {
                     let _font = ui.push_font(fonts.banner_title);
                     ui.set_window_font_scale(layout.title_px / BANNER_TITLE_ATLAS_PX);
-                    cuts.update(
+                    cuts.update_tracked(
                         CUT_TITLE,
                         ui,
                         &wait.title,
                         layout.text_max_width * TITLE_CUT_SHARE,
                         layout.title_px,
+                        layout.title_tracking,
                     );
-                    draw_tracked_centered(
+                    draw_tracked_cached(
                         ui,
-                        cuts.text(CUT_TITLE),
+                        cuts,
+                        CUT_TITLE,
                         layout.center_x,
                         layout.title_y,
-                        layout.title_tracking,
                         layout.shadow,
                         title_color,
                         shadow_color,
@@ -1008,7 +1010,7 @@ impl RaceTracker {
                     let draw = ui.get_window_draw_list();
                     let x0 = layout.center_x - layout.menu_width * 0.5;
                     let x1 = x0 + layout.menu_width;
-                    let y0 = layout.detail_y + layout.detail_px * 1.25 + layout.detail_px * 0.8;
+                    let y0 = layout.bar_y;
                     let y1 = y0 + layout.bar_height;
                     let [r, g, b, _] = c.text;
                     draw.add_rect([x0, y0], [x1, y1], [r, g, b, 0.15])
@@ -2269,6 +2271,12 @@ pub(crate) struct CutText {
     limit: f32,
     px: f32,
     width: f32,
+    /// Letter spacing the text was laid out with, 0 for none.
+    tracking: f32,
+    /// Left edge of each glyph from the text's start, and the whole width,
+    /// when the text is tracked.
+    offsets: Vec<f32>,
+    tracked_width: f32,
     was_cut: bool,
     valid: bool,
 }
@@ -2283,11 +2291,43 @@ pub(crate) struct CutCache {
 impl CutCache {
     /// Bring slot `i` up to date for `text` cut to `limit` pixels at `px`.
     fn update(&mut self, i: usize, ui: &hudhook::imgui::Ui, text: &str, limit: f32, px: f32) {
+        self.refresh(i, ui, text, limit, px, 0.0);
+    }
+
+    /// `update` for a text drawn with `tracking` pixels after every glyph:
+    /// the glyphs' offsets are kept with the cut, so a steady frame measures
+    /// nothing.
+    fn update_tracked(
+        &mut self,
+        i: usize,
+        ui: &hudhook::imgui::Ui,
+        text: &str,
+        limit: f32,
+        px: f32,
+        tracking: f32,
+    ) {
+        self.refresh(i, ui, text, limit, px, tracking);
+    }
+
+    fn refresh(
+        &mut self,
+        i: usize,
+        ui: &hudhook::imgui::Ui,
+        text: &str,
+        limit: f32,
+        px: f32,
+        tracking: f32,
+    ) {
         if self.slots.len() <= i {
             self.slots.resize_with(i + 1, CutText::default);
         }
         let slot = &mut self.slots[i];
-        if slot.valid && slot.limit == limit && slot.px == px && slot.source == text {
+        if slot.valid
+            && slot.limit == limit
+            && slot.px == px
+            && slot.tracking == tracking
+            && slot.source == text
+        {
             return;
         }
         slot.source.clear();
@@ -2297,9 +2337,30 @@ impl CutCache {
         slot.cut.clear();
         slot.cut.push_str(&cut);
         slot.width = ui.calc_text_size(&cut)[0];
+        slot.offsets.clear();
+        slot.tracked_width = 0.0;
+        if tracking > 0.0 {
+            let mut utf8 = [0u8; 4];
+            let mut x = 0.0;
+            for ch in cut.chars() {
+                slot.offsets.push(x);
+                x += ui.calc_text_size(ch.encode_utf8(&mut utf8))[0] + tracking;
+            }
+            // The last glyph carries no trailing space.
+            slot.tracked_width = (x - tracking).max(0.0);
+        }
         slot.limit = limit;
         slot.px = px;
+        slot.tracking = tracking;
         slot.valid = true;
+    }
+
+    /// The glyph offsets and width of a tracked slot (see `update_tracked`).
+    fn tracked(&self, i: usize) -> (&str, &[f32], f32) {
+        match self.slots.get(i) {
+            Some(slot) => (self.text(i), &slot.offsets, slot.tracked_width),
+            None => ("", &[], 0.0),
+        }
     }
 
     /// The text of slot `i` as it draws (empty before its first update).
@@ -2356,6 +2417,34 @@ fn draw_centered(
     ui.text_colored(shadow_color, text);
     ui.set_cursor_screen_pos([x, y]);
     ui.text_colored(color, text);
+}
+
+/// A tracked text of `CutCache` slot `i`, its middle at `center_x`, with a
+/// dark copy offset by `shadow`: the glyphs' places were measured when the
+/// slot was updated, so nothing is measured here. Same result as
+/// `draw_tracked_centered`.
+#[allow(clippy::too_many_arguments)]
+fn draw_tracked_cached(
+    ui: &hudhook::imgui::Ui,
+    cuts: &CutCache,
+    i: usize,
+    center_x: f32,
+    y: f32,
+    shadow: f32,
+    color: [f32; 4],
+    shadow_color: [f32; 4],
+) {
+    let (text, offsets, total) = cuts.tracked(i);
+    let x0 = center_x - total * 0.5;
+    let mut utf8 = [0u8; 4];
+    for (ch, offset) in text.chars().zip(offsets) {
+        let glyph = ch.encode_utf8(&mut utf8);
+        let x = x0 + offset;
+        ui.set_cursor_screen_pos([x + shadow, y + shadow]);
+        ui.text_colored(shadow_color, &*glyph);
+        ui.set_cursor_screen_pos([x, y]);
+        ui.text_colored(color, &*glyph);
+    }
 }
 
 /// Like `draw_centered` with `tracking` pixels added after every glyph

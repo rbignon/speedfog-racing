@@ -2,7 +2,6 @@
 //!
 //! Loads settings from speedfog_racing.toml next to the DLL.
 
-use hudhook::imgui::Key;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -12,6 +11,7 @@ use windows::Win32::System::LibraryLoader::GetModuleFileNameW;
 
 use super::hotkey::{deserialize_optional_hotkey, serialize_optional_hotkey, Hotkey};
 use crate::core::format::LeaderboardMode;
+use crate::core::key_names::KeyCode;
 
 /// Server connection settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,11 +234,11 @@ fn default_toggle_debug() -> Option<Hotkey> {
 }
 
 fn default_toggle_leaderboard() -> Option<Hotkey> {
-    Some(Hotkey { key: Key::F10 })
+    Some(Hotkey { key: KeyCode::F10 })
 }
 
 fn default_relay() -> Option<Hotkey> {
-    Some(Hotkey { key: Key::F8 })
+    Some(Hotkey { key: KeyCode::F8 })
 }
 
 impl Default for KeyBindings {

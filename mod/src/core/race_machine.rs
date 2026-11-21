@@ -323,6 +323,10 @@ pub struct TickInput {
     /// The relay baton key is down this frame (repeated key-down events of
     /// the OS count as down, not as presses).
     pub relay_key_down: bool,
+    /// The shell cancels the press in progress this frame: the key did not
+    /// come up, the game lost the focus. The press neither taps nor
+    /// confirms and the menu's auto-close is not touched.
+    pub relay_key_cancel: bool,
 }
 
 /// Side effects for the shell to execute, in order.
@@ -774,8 +778,9 @@ pub struct RaceMachine {
     /// What `relay_view` was built from besides the `RelayInfo`: the role,
     /// the countdown's displayed second and the displayed layer.
     relay_view_key: Option<RelayViewKey>,
-    /// The baton key's label in the hints ("F8").
-    relay_key_label: String,
+    /// The baton key's label in the hints ("F8"); `None` when the key is
+    /// unbound.
+    relay_key_label: Option<String>,
     /// The holder's menu (its key state; the list is `relay_rows`).
     relay_menu: HandoffMenu,
     /// A waiting runner's hold on the key to take a free baton.
@@ -979,7 +984,7 @@ impl RaceMachine {
             relay_rows: Vec::new(),
             relay_view: None,
             relay_view_key: None,
-            relay_key_label: "F8".to_string(),
+            relay_key_label: Some("F8".to_string()),
             relay_eligible: 0,
             relay_menu: HandoffMenu::default(),
             relay_hold: HoldKey::default(),
@@ -1443,8 +1448,9 @@ impl RaceMachine {
         self.relay_view.as_ref()
     }
 
-    /// Set the baton key's label in the overlay's hints.
-    pub fn set_relay_key_label(&mut self, label: String) {
+    /// Set the baton key's label in the overlay's hints; `None` says the key
+    /// is unbound, and the hints then say so instead of naming a key.
+    pub fn set_relay_key(&mut self, label: Option<String>) {
         self.relay_key_label = label;
         self.refresh_relay_view(Instant::now(), true);
     }
@@ -1781,7 +1787,7 @@ impl RaceMachine {
                 self.my_participant_id.as_deref().unwrap_or(""),
                 key.2,
                 key.1,
-                &self.relay_key_label,
+                self.relay_key_label.as_deref(),
             )
         });
         self.relay_view = view;
@@ -3268,6 +3274,7 @@ impl RaceMachine {
         // progress resumes with the next one.
         let held = self.progress_held();
         let relay_key_down = input.relay_key_down;
+        let relay_key_cancel = input.relay_key_cancel;
         // The shell read this frame's window of boss flags just before the
         // tick: move the rotation past it now, while `boss_flags_to_read`
         // still names the same window (a kill or a save-reload flush below
@@ -3819,7 +3826,7 @@ impl RaceMachine {
             self.maintain_hunter(now, &mut effects);
             self.relay_link_lost();
             self.maintain_relay(false, loading_exit, held, now, &mut effects);
-            self.maintain_relay_key(relay_key_down, false, now, &mut effects);
+            self.maintain_relay_key(relay_key_down, relay_key_cancel, false, now, &mut effects);
             return effects;
         }
 
@@ -3929,7 +3936,7 @@ impl RaceMachine {
         self.maintain_memory_effects(loading_exit, now, &mut effects);
         self.maintain_hunter(now, &mut effects);
         self.maintain_relay(true, loading_exit, held, now, &mut effects);
-        self.maintain_relay_key(relay_key_down, true, now, &mut effects);
+        self.maintain_relay_key(relay_key_down, relay_key_cancel, true, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -5128,6 +5135,7 @@ impl RaceMachine {
     fn maintain_relay_key(
         &mut self,
         key_down: bool,
+        cancel: bool,
         connected: bool,
         now: Instant,
         effects: &mut Vec<Effect>,
@@ -5136,6 +5144,11 @@ impl RaceMachine {
             return;
         }
         crate::profile_span!("relay_key");
+        if cancel {
+            // A press cut short, not released: nothing it was doing counts.
+            self.relay_menu.cancel_press();
+            self.relay_hold.reset();
+        }
         if self
             .relay_request
             .is_some_and(|at| now.saturating_duration_since(at) >= relay::REQUEST_TIMEOUT)
@@ -5709,6 +5722,7 @@ mod tests {
             weapons: [None, None],
             flag_reader_ok: None,
             relay_key_down: false,
+            relay_key_cancel: false,
         }
     }
 
@@ -16048,6 +16062,23 @@ mod tests {
         m.tick(input, t0 + ms(at))
     }
 
+    /// A frame where the shell cancels the press (focus lost): the level is
+    /// down to false and the cancel is flagged.
+    fn key_cancel(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(LOCAL_IGT + at as u32),
+            death_count: Some(0),
+            position_readable: map.is_some(),
+            loading_screen: Some(false),
+            map_id: map,
+            hp: map.map(|_| 100),
+            ..FrameSnapshot::default()
+        };
+        let mut input = tick_in(snapshot, true, None);
+        input.relay_key_cancel = true;
+        m.tick(input, t0 + ms(at))
+    }
+
     /// `key_on` in a zone.
     fn key(m: &mut RaceMachine, t0: Instant, at: u64, down: bool) -> Vec<Effect> {
         key_on(m, t0, at, Some(IN_ZONE), down)
@@ -16196,6 +16227,85 @@ mod tests {
             assert!(fx.is_empty() && !m.relay_menu_open(), "{case}: {fx:?}");
             assert_eq!(m.relay_hold_progress(t0 + ms(2_500)), 0.0, "{case}");
         }
+    }
+
+    #[test]
+    fn a_focus_loss_is_no_tap_and_leaves_the_auto_close_alone() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        key(&mut m, t0, 100, true);
+        key(&mut m, t0, 200, false);
+        let before = m.relay_menu_selected().map(str::to_owned);
+        assert!(before.is_some());
+        // A 200 ms press, cut short by a focus loss: no tap.
+        key(&mut m, t0, 1_000, true);
+        key_cancel(&mut m, t0, 1_200, Some(IN_ZONE));
+        assert_eq!(m.relay_menu_selected().map(str::to_owned), before);
+        // The auto-close counts from the press at 1_000, not from the cut.
+        key_over(&mut m, t0, 1_300, 5_900, Some(IN_ZONE), false);
+        assert!(m.relay_menu_open());
+        key(&mut m, t0, 6_000, false);
+        assert!(!m.relay_menu_open());
+        // The same press released normally is a tap.
+        let mut m = holder_menu(t0);
+        key(&mut m, t0, 100, true);
+        key(&mut m, t0, 200, false);
+        key(&mut m, t0, 1_000, true);
+        key(&mut m, t0, 1_200, false);
+        assert_ne!(m.relay_menu_selected().map(str::to_owned), before);
+    }
+
+    #[test]
+    fn a_hold_cancelled_confirms_nothing_and_a_new_hold_works() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        key(&mut m, t0, 100, true);
+        key(&mut m, t0, 200, false);
+        let held = key_over(&mut m, t0, 1_000, 1_800, Some(IN_ZONE), true);
+        assert!(held.is_empty());
+        key_cancel(&mut m, t0, 1_900, Some(IN_ZONE));
+        // Frames after the cancel: the level stays false.
+        let fx = key_over(&mut m, t0, 2_000, 3_000, Some(IN_ZONE), false);
+        assert!(fx.is_empty(), "{fx:?}");
+        let fx = key_over(&mut m, t0, 3_100, 4_300, Some(IN_ZONE), true);
+        assert_eq!(fx.len(), 1, "{fx:?}");
+    }
+
+    #[test]
+    fn a_take_hold_cancelled_sends_nothing_and_a_new_hold_works() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        update(&mut m, free_info(0), t0, 950);
+        assert!(key_over(&mut m, t0, 1_000, 1_800, chapel(), true).is_empty());
+        key_cancel(&mut m, t0, 1_900, chapel());
+        let fx = key_over(&mut m, t0, 2_000, 2_900, chapel(), false);
+        assert!(fx.is_empty());
+        // The hold the cancel cut does not complete from its old start.
+        assert!(key_over(&mut m, t0, 3_000, 3_900, chapel(), true).is_empty());
+        let fx = key_over(&mut m, t0, 4_000, 4_100, chapel(), true);
+        assert_eq!(fx, [(4_000, Effect::SendRelayTakeRequest)]);
+    }
+
+    #[test]
+    fn an_unbound_key_is_told_to_the_player() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, free_info(0), t0, 0);
+        m.set_relay_key(None);
+        let view = m.relay_view().unwrap();
+        assert_eq!(view.baton_hint, "");
+        assert_eq!(m.relay_baton_hint(t0), "");
+        assert!(!m.relay_wait_hold_bar());
+        assert_eq!(m.relay_wait_detail(), relay_view::UNBOUND_TEXT);
+        m.set_relay_key(Some("G".to_string()));
+        assert!(m
+            .relay_view()
+            .unwrap()
+            .wait
+            .as_ref()
+            .unwrap()
+            .detail
+            .starts_with("Hold G"));
     }
 
     #[test]
@@ -16978,7 +17088,7 @@ mod tests {
         assert_eq!(m.relay_view_key, key);
         assert!(m.relay_view().unwrap().wait.is_some());
         // A key label change rebuilds.
-        m.set_relay_key_label("F9".to_string());
+        m.set_relay_key(Some("F9".to_string()));
         assert_eq!(m.relay_view().unwrap().baton_hint, "");
         update(&mut m, offline_holder_info(0), t0, 300);
         assert_eq!(m.relay_view().unwrap().baton_hint, "F9 take");
