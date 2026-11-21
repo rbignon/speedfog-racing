@@ -17,7 +17,7 @@
   import SpeedrunRules from "$lib/components/stats/speedrun/SpeedrunRules.svelte";
   import { formatPoolName } from "$lib/utils/format";
   import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
-  import { relayCapSentence } from "$lib/relay";
+  import { isValidRelayTeamSize, relayCapSentence } from "$lib/relay";
   import {
     parseRaceNewParams,
     seedPageHref,
@@ -79,7 +79,10 @@
   let items = $derived(setSeed === null && format === "items");
   let relay = $derived(setSeed === null && format === "relay");
   // Runners per team on a relay race (the server accepts 2 to 6).
-  let relayTeamSize = $state(3);
+  let relayTeamSize = $state<number | null>(3);
+  let relaySizeInvalid = $derived(
+    relay && !isValidRelayTeamSize(relayTeamSize),
+  );
   // A Set Seed race's seed, as the server knows it; the lookup's error text
   // ("Unknown seed", "Ambiguous seed ID") otherwise.
   let seedSummary = $state<SpeedrunSeedSummary | null>(null);
@@ -167,9 +170,10 @@
   // Otherwise the selected pool itself must have something to draw (another
   // pool having seeds is not enough once the format narrows what it can draw).
   let canCreate = $derived(
-    setSeed === null
-      ? hasAvailablePool && selectedAvailable > 0
-      : seedSummary?.replayable === true,
+    !relaySizeInvalid &&
+      (setSeed === null
+        ? hasAvailablePool && selectedAvailable > 0
+        : seedSummary?.replayable === true),
   );
 
   // Advanced-options state grid shown inside the trigger: one entry per
@@ -418,7 +422,9 @@
                   One runner per team plays at a time and hands the baton to a
                   teammate, who continues with the same build.
                 </p>
-                {#if relayCapText}
+                {#if relaySizeInvalid}
+                  <p class="hint">The team size must be from 2 to 6.</p>
+                {:else if relayCapText}
                   <p class="hint">{relayCapText}</p>
                 {/if}
               {:else if format === "speedrun"}

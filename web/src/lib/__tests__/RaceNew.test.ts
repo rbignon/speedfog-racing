@@ -375,6 +375,33 @@ describe("/race/new: the Relay format", () => {
     ).toBeTruthy();
   });
 
+  it.each([
+    ["", "cleared"],
+    ["1", "1"],
+    ["7", "7"],
+  ])("sends no request with a team size of %j (%s)", async (value) => {
+    relayPools();
+    await openPage("");
+    await fireEvent.click(formatOption(/^Relay/)!);
+    await fireEvent.click(screen.getByRole("tab", { name: /Sprint/ }));
+    await fireEvent.input(screen.getByLabelText("Teams of"), {
+      target: { value },
+    });
+
+    expect(screen.getByText("The team size must be from 2 to 6.")).toBeTruthy();
+    expect(screen.queryByText(/zones max per runner/)).toBeNull();
+    const create = screen.getByRole("button", {
+      name: "Create Race",
+    }) as HTMLButtonElement;
+    expect(create.disabled).toBe(true);
+    await submitPrivate("Baton");
+    expect(
+      fetchMock.mock.calls.some(
+        ([, init]) => (init as RequestInit | undefined)?.method === "POST",
+      ),
+    ).toBe(false);
+  });
+
   it("sends no team size once another format replaces it", async () => {
     relayPools();
     await openPage("");
