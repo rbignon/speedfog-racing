@@ -562,7 +562,7 @@ Map (`/race/[id]`, live, finished and the replay): the map components are fed th
 uv run python ../tools/relay_bot.py <race_id> --team Alpha=bot1,bot2 --team Beta=bot3,bot4
 ```
 
-Each bot is a local user. In setup the tool places them in the named team through `place_in_team` (a team missing from the race is created and named; never name the organizer). Each bot then connects over `/ws/mod/<race>` with its own mod token and `PROTOCOL_VERSION`, and behaves as the server expects of a mod:
+Each bot is a local user. In setup the tool places them in the named team through `place_in_team` (a team missing from the race is created and named; never name the organizer), one at a time in the order of the `--team` options, each in its own transaction as one join per runner. Teams and members are listed by creation time (on PostgreSQL, the time of the transaction), so the teams it creates and the bots it places are listed in that order, the first bot of a team it creates starting that team's run. A refused placement (a full team) stops the tool with the bots before it left in the race; a second start places the rest. Each bot then connects over `/ws/mod/<race>` with its own mod token and `PROTOCOL_VERSION`, and behaves as the server expects of a mod:
 
 - It sends `ready`, and once the race runs its first `status_update` with an IGT of at most 60 s (the fresh-save gate), then `relay_ready {ready: true}` while it waits (again after every `auth_ok`: readiness does not survive the socket).
 - It answers `relay_release` with a `relay_state` carrying the same `handoff_id`, its `CharacterState` (below) and the team IGT, and `relay_take` with `relay_taken`; only then does it report progress, its first report carrying the IGT given in `relay_take`.
@@ -585,7 +585,7 @@ The state a bot hands over is, by default, a Vagabond at its starting level with
 
 `items` holds up to 4000 ids and `grace_flags` up to 1000 grace event flags (`BonfireWarpParam.eventflag_id`); the lists may be left out.
 
-Two parts are tested. The decisions are the pure `next_action(bot, message)` (the answer to one server message) and `tick(bot)` (what it sends on its own each second), covered by `tools/test_relay_bot.py` (no socket, no database). What the console reads from the database on a running race (the load of bots already in the race, then `status`) is covered by `server/tests/test_relay_bot_console.py`, on SQLite rows. The setup insert, the socket loop and the commands that send have no test: checklist 0.1 is what runs them against a server (that needs a database at head and a pool regenerated with the relay plugin).
+Two parts are tested. The decisions are the pure `next_action(bot, message)` (the answer to one server message) and `tick(bot)` (what it sends on its own each second), covered by `tools/test_relay_bot.py` (no socket, no database). What the console does in the database is covered by `server/tests/test_relay_bot_console.py`, on SQLite rows: the setup insert (the teams created and named, the bots placed, a refused placement keeping the bots before it), and on a running race the load of bots already in it, then `status`. The listing order is not: SQLite's creation times have a resolution of a second. The socket loop and the commands that send have no test: checklist 0.1 is what runs them against a server (that needs a database at head and a pool regenerated with the relay plugin).
 
 Console commands:
 
@@ -920,7 +920,7 @@ Relay races are off behind a server setting. What must be done at launch:
 Server and web:
 
 - The row-lock discipline ("Ordering": `SELECT ... FOR UPDATE` on the team rows, in one order) has only run on SQLite, which ignores `FOR UPDATE`. The tests check the statements PostgreSQL receives, never two transactions contending for a team on PostgreSQL. (The migrations were run up, down and up again on PostgreSQL 17, and `alembic check` finds no drift on the relay tables and columns.)
-- The relay bot has never been run end to end against a server ("Bot"): only its pure decisions and what `load` and `status` read from the database on a running race are tested (checklist 0.1).
+- The relay bot has never been run end to end against a server ("Bot"): only its pure decisions, its setup insert and what `load` and `status` read from the database on a running race are tested (checklist 0.1).
 - The web screens of a relay race have never been seen in a browser: the race creation tile and its cap sentence, the setup team list and its menus, the team rows of the leaderboard with their members, the team map and its popup, the invite page's team select, and the finished-race page ("Web", "Outside the live page"). They are tested through their pure functions only.
 
 Mod: nothing of the Windows code has run in the game. The unit tests cover the pure machine (`cargo test --lib`) and the shell type-checks for Windows; what only the game proves is the facts tables, each step of the in-game checklist naming the ones it settles:

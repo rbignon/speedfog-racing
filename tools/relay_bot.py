@@ -43,7 +43,10 @@ holders, `offline` the holder of a team, wait 60 s and `take` with its mate,
 then `finish` each team.
 
 Local databases only: the bots join by a direct insert while the race is in
-setup (a team named by --team is created when the race has none of that name).
+setup (a team named by --team is created when the race has none of that name),
+one at a time in the order given, so the teams created and the bots placed are
+listed in that order. A refused placement stops the tool, the bots placed
+before it staying in the race: a second start places the rest.
 Never name your own user as a bot: its mod connection would replace yours. Run
 from server/ while the dev server runs. A bot whose socket closes (a race reset,
 a server reload) connects again.
@@ -427,6 +430,7 @@ class Console:
                 unknown = [n for n in missing if n not in found]
                 if unknown:
                     raise SystemExit(f"no local user named {unknown}")
+                added: list[str] = []
                 for team_name, bots in self.teams:
                     for name in bots:
                         if name not in found:
@@ -449,14 +453,20 @@ class Console:
                             )
                         except HTTPException as e:
                             await db.rollback()
+                            before = f" ({added} joined before it)" if added else ""
                             raise SystemExit(
-                                f"cannot place {name} in {team_name!r}: {e.detail}"
+                                f"cannot place {name} in {team_name!r}: {e.detail}{before}"
                             ) from e
                         if placed is not None and team is None:
                             placed.name = team_name
                             race.relay_teams.append(placed)
+                        # One transaction per runner, as one join request each:
+                        # teams and members are listed by their creation time,
+                        # the transaction's time on PostgreSQL, which a single
+                        # transaction would leave tied.
+                        await db.commit()
                         joined[name] = p
-                await db.commit()
+                        added.append(name)
                 log(f"joined {missing} to the race")
             for team_name, bots in self.teams:
                 for name in bots:

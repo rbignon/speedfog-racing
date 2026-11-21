@@ -1,6 +1,7 @@
 """Tests for relay_bot.py's decisions (no database, no server, no socket).
 
-Run from tools/: cd tools && uv run --project ../server pytest test_relay_bot.py
+Run from server/, whose .env holds the settings the state check loads:
+cd server && uv run pytest ../tools/test_relay_bot.py
 """
 
 from __future__ import annotations

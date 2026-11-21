@@ -1,18 +1,21 @@
-"""tools/relay_bot.py: what the console reads from the database, on a relay race's rows."""
+"""tools/relay_bot.py: what the console reads and writes in the database, on relay race rows."""
 
 from __future__ import annotations
 
 import importlib.util
 import sys
+import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing import database as db_module
 from speedfog_racing.database import Base
-from speedfog_racing.models import User
+from speedfog_racing.models import Participant, RelayTeam, User
 from speedfog_racing.services.relay import relay_cap
 from tests.relay_fixtures import (
     PROGRESS_TOTAL_LAYERS,
@@ -46,16 +49,51 @@ async def bot_session(monkeypatch):
     await engine.dispose()
 
 
+async def _users(db, n: int) -> list[User]:
+    users = [
+        User(twitch_id=f"rb{i}", twitch_username=f"rb{i}", api_token=f"rbt{i}") for i in range(n)
+    ]
+    db.add_all(users)
+    await db.flush()
+    return users
+
+
+async def _setup_race(maker) -> str:
+    """A relay race in setup, teams of two, with no team yet; rb0 organizes it."""
+    async with maker() as db:
+        users = await _users(db, 6)
+        race = await make_relay_race(db, users[0], team_size=2, teams=[], graph=progress_graph())
+        return str(race.id)
+
+
+async def _teams(maker, race_id: str) -> dict[str, tuple[set[str], str | None]]:
+    """Each team by name: its members and its first runner."""
+    async with maker() as db:
+        teams = (
+            (
+                await db.execute(
+                    select(RelayTeam)
+                    .where(RelayTeam.race_id == uuid.UUID(race_id))
+                    .options(selectinload(RelayTeam.members).selectinload(Participant.user))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    return {
+        t.name: (
+            {m.user.twitch_username for m in t.members},
+            next((m.user.twitch_username for m in t.members if m.id == t.first_runner_id), None),
+        )
+        for t in teams
+    }
+
+
 async def test_status_names_each_teams_holder_and_members(bot_session, capsys):
     """The console opens its own sessions: nothing it prints may rest on a row
     another session loaded (a lazy load fails under asyncio)."""
     async with bot_session() as db:
-        users = [
-            User(twitch_id=f"rb{i}", twitch_username=f"rb{i}", api_token=f"rbt{i}")
-            for i in range(5)
-        ]
-        db.add_all(users)
-        await db.flush()
+        users = await _users(db, 5)
         race = await make_relay_race(
             db, users[0], team_size=2, teams=[users[1:3], users[3:5]], graph=progress_graph()
         )
@@ -81,3 +119,50 @@ async def test_status_names_each_teams_holder_and_members(bot_session, capsys):
     assert sorted((m[0], m[2], m[-1]) for m in members) == [
         (name, f"0/{CAP}", "offline") for name in ("rb1", "rb2", "rb3", "rb4")
     ]
+
+
+async def test_load_creates_the_named_teams_and_places_the_bots(bot_session):
+    race_id = await _setup_race(bot_session)
+
+    console = rb.Console(
+        race_id,
+        "ws://unused",
+        [("Alpha", ["rb1", "rb2"]), ("Beta", ["rb3", "rb4"])],
+        rb.FAKE_STATE,
+    )
+    await console.load()
+
+    # The first bot placed in a team it creates starts the team's run.
+    assert await _teams(bot_session, race_id) == {
+        "Alpha": ({"rb1", "rb2"}, "rb1"),
+        "Beta": ({"rb3", "rb4"}, "rb3"),
+    }
+    assert {b.name: b.team_name for b in console.bots.values()} == {
+        "rb1": "Alpha",
+        "rb2": "Alpha",
+        "rb3": "Beta",
+        "rb4": "Beta",
+    }
+
+
+async def test_a_refused_placement_keeps_the_bots_placed_before_it(bot_session):
+    race_id = await _setup_race(bot_session)
+
+    too_many = rb.Console(race_id, "ws://unused", [("Alpha", ["rb1", "rb2", "rb3"])], rb.FAKE_STATE)
+    with pytest.raises(SystemExit, match="Team is full"):
+        await too_many.load()
+    assert await _teams(bot_session, race_id) == {"Alpha": ({"rb1", "rb2"}, "rb1")}
+
+    # A second start places the rest and finds the others where they were.
+    again = rb.Console(
+        race_id,
+        "ws://unused",
+        [("Alpha", ["rb1", "rb2"]), ("Beta", ["rb3", "rb4"])],
+        rb.FAKE_STATE,
+    )
+    await again.load()
+    assert await _teams(bot_session, race_id) == {
+        "Alpha": ({"rb1", "rb2"}, "rb1"),
+        "Beta": ({"rb3", "rb4"}, "rb3"),
+    }
+    assert set(again.bots) == {"rb1", "rb2", "rb3", "rb4"}
