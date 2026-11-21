@@ -3,6 +3,12 @@
 //! fitted to the wire. Pure: the one game parameter needed
 //! (`EquipParamGoods.goods_type`) is an input, never read here.
 //!
+//! A weapon id is only checked for its shape (not ammunition, not bare
+//! hands, upgrade level at most 25): this module cannot tell a somber weapon
+//! (at most +10) from a standard one (+25), nor whether the id has a row in
+//! the weapon param table. The shell validates that an id exists in its
+//! param table before injecting it.
+//!
 //! The receiver filters the giver's list again with the same rules, so a
 //! state from a tampered or newer teammate cannot make it inject anything
 //! not recognisably transferable.
@@ -23,21 +29,25 @@ pub const MAX_STATE_INT: u32 = 2_147_483_647;
 const MAX_ATTRIBUTE: u32 = 99;
 const MAX_LEVEL: u32 = 713;
 const MAX_RUNES: u32 = 999_999_999;
+/// A character's level is the sum of its attributes minus this.
+const LEVEL_OFFSET: u64 = 79;
 
 /// Mask of the param id under the category nibble.
 const PARAM_MASK: u32 = 0x0FFF_FFFF;
-/// Weapon ids are a base (multiple of 10000) plus affinity (hundreds) plus
-/// upgrade level (last two digits).
+/// Weapon id layout (base, affinity, upgrade level): see `same_weapon` in
+/// `item_inventory`.
 const WEAPON_BASE_DIV: u32 = 10_000;
 const WEAPON_LEVEL_DIV: u32 = 100;
+/// Highest upgrade level of any weapon (standard ones; somber stop at 10).
+const MAX_WEAPON_LEVEL: u32 = 25;
 /// Ammunition and other stackable weapons: ids in this range.
 const AMMO_RANGE: std::ops::Range<u32> = 50_000_000..54_000_000;
 /// Bare hands, the weapon base `110000` at every affinity and level.
 const BARE_HANDS_BASE: u32 = 11;
 /// The naked protectors the game wears when nothing is equipped.
 const NAKED_ARMOR: [u32; 4] = [10_000, 10_100, 10_200, 10_300];
-/// `EquipParamGoods.goods_type` values that transfer: spirit ashes, crystal
-/// tears and the spell families (sorceries and incantations).
+/// `EquipParamGoods.goods_type` values that transfer: 5 and 17 sorceries,
+/// 16 and 18 incantations, 7 and 8 spirit ashes, 10 crystal tears.
 const GOODS_TYPES: [u8; 7] = [5, 7, 8, 10, 16, 17, 18];
 
 fn is_weapon(item_id: u32) -> bool {
@@ -57,6 +67,7 @@ pub fn is_transferable(item_id: u32, goods_type: Option<u8>) -> bool {
             item_id != 0
                 && !AMMO_RANGE.contains(&item_id)
                 && weapon_base(item_id) != BARE_HANDS_BASE
+                && item_id % WEAPON_LEVEL_DIV <= MAX_WEAPON_LEVEL
         }
         0x1 => !NAKED_ARMOR.contains(&(item_id & PARAM_MASK)),
         0x2 | 0x8 => true,
@@ -131,14 +142,17 @@ pub fn missing_items(
 }
 
 /// Whether the stats of a state are within what a character can have: every
-/// attribute in 1 to 99, level in 1 to 713, runes at most 999999999. A state
-/// outside it is not written (the take still completes).
+/// attribute in 1 to 99, level in 1 to 713 and equal to the sum of the eight
+/// attributes minus 79 (the game's rule: 713 = 8 * 99 - 79), runes at most
+/// 999999999. A state outside it is not written (the take still completes).
 pub fn stats_plausible(state: &CharacterState) -> bool {
     state
         .attributes
         .iter()
         .all(|a| (1..=MAX_ATTRIBUTE).contains(a))
         && (1..=MAX_LEVEL).contains(&state.level)
+        && state.attributes.iter().map(|&a| u64::from(a)).sum::<u64>()
+            == u64::from(state.level) + LEVEL_OFFSET
         && state.runes <= MAX_RUNES
 }
 
@@ -148,6 +162,8 @@ pub fn stats_plausible(state: &CharacterState) -> bool {
 /// many values it dropped or cut (duplicates excluded), for the caller to
 /// warn about. Sorted order makes what is kept independent of memory order
 /// and keeps weapons, armor and talismans ahead of goods and gems.
+/// Precondition: attributes, level and runes are not checked against the
+/// wire maximum; the caller builds them from non-negative `i32` reads.
 pub fn fit_to_wire(state: &mut CharacterState) -> usize {
     let mut dropped = 0;
     let graces_before = state.grace_flags.len();
@@ -184,7 +200,7 @@ mod tests {
     fn state() -> CharacterState {
         CharacterState {
             attributes: [40, 20, 30, 18, 16, 9, 7, 12],
-            level: 90,
+            level: 73,
             runes: 12_345,
             items: vec![2_000_005, TALISMAN | 1000],
             grace_flags: vec![76_100, 76_101],
@@ -324,21 +340,40 @@ mod tests {
         assert!(transferable_items(std::iter::empty(), no_goods).is_empty());
     }
 
+    /// `state()` with these attributes and the level they imply.
+    fn with_attributes(attributes: [u32; 8]) -> CharacterState {
+        let level = attributes.iter().sum::<u32>().saturating_sub(79);
+        CharacterState {
+            attributes,
+            level,
+            ..state()
+        }
+    }
+
     #[test]
     fn stats_plausible_bounds() {
         assert!(stats_plausible(&state()));
         for idx in 0..8 {
             for (value, want) in [(0, false), (1, true), (99, true), (100, false)] {
-                let mut s = state();
-                s.attributes[idx] = value;
-                assert_eq!(stats_plausible(&s), want, "attribute {idx} = {value}");
+                let mut attributes = state().attributes;
+                attributes[idx] = value;
+                assert_eq!(
+                    stats_plausible(&with_attributes(attributes)),
+                    want,
+                    "attribute {idx} = {value}"
+                );
             }
         }
-        for (value, want) in [(0, false), (1, true), (713, true), (714, false)] {
-            let mut s = state();
-            s.level = value;
-            assert_eq!(stats_plausible(&s), want, "level {value}");
-        }
+        // Level bounds, each level consistent with its attributes.
+        assert!(stats_plausible(&with_attributes([99; 8])), "level 713");
+        assert!(
+            stats_plausible(&with_attributes([10, 10, 10, 10, 10, 10, 10, 10])),
+            "level 1"
+        );
+        assert!(
+            !stats_plausible(&with_attributes([10, 10, 10, 10, 10, 10, 10, 9])),
+            "level 0"
+        );
         for (value, want) in [
             (0, true),
             (999_999_999, true),
@@ -349,6 +384,53 @@ mod tests {
             s.runes = value;
             assert_eq!(stats_plausible(&s), want, "runes {value}");
         }
+    }
+
+    #[test]
+    fn the_level_must_match_the_attributes() {
+        let mut s = state();
+        assert_eq!(s.attributes.iter().sum::<u32>() - 79, s.level);
+        assert!(stats_plausible(&s));
+        s.level += 1;
+        assert!(!stats_plausible(&s));
+        s.level -= 2;
+        assert!(!stats_plausible(&s));
+        // Past the maximum level.
+        s.level = 714;
+        assert!(!stats_plausible(&s));
+    }
+
+    #[test]
+    fn a_tampered_weapon_level_is_not_given() {
+        // +99 beside +7 of the same base: the +7 wins, the +99 never counts.
+        assert_eq!(
+            missing_items(&[2_000_099, 2_000_007], &[], no_goods),
+            vec![2_000_007]
+        );
+        assert!(missing_items(&[2_000_026], &[], no_goods).is_empty());
+        assert_eq!(missing_items(&[2_000_025], &[], no_goods), vec![2_000_025]);
+        assert!(!is_transferable(2_000_126, None));
+        assert!(is_transferable(2_000_125, None));
+    }
+
+    #[test]
+    fn a_weapon_held_at_another_affinity_or_level_only_is_not_given() {
+        // Same base, other affinity, same level.
+        assert!(missing_items(&[2_000_005], &[2_000_105], no_goods).is_empty());
+        // Same base, same affinity, other level.
+        assert!(missing_items(&[2_000_105], &[2_000_103], no_goods).is_empty());
+        assert!(missing_items(&[2_000_105], &[2_000_110], no_goods).is_empty());
+    }
+
+    #[test]
+    fn duplicates_are_removed_before_the_cap_is_applied() {
+        // 4001 values of which 2 repeat: 3999 distinct, nothing cut.
+        let mut s = state();
+        s.items = (1..=3999).collect();
+        s.items.extend([1, 2]);
+        assert_eq!(s.items.len(), MAX_STATE_ITEMS + 1);
+        assert_eq!(fit_to_wire(&mut s), 0);
+        assert_eq!(s.items.len(), 3999);
     }
 
     #[test]
@@ -397,6 +479,7 @@ mod tests {
         let ids: Vec<u32> = (0..MAX_STATE_ITEMS as u32 + 50)
             .map(|i| i.wrapping_mul(2_654_435_761))
             .collect();
+        let ids_sorted = ids.clone();
         let mut a = state();
         a.items = ids.clone();
         let mut b = state();
@@ -404,5 +487,9 @@ mod tests {
         assert_eq!(fit_to_wire(&mut a), 50);
         assert_eq!(fit_to_wire(&mut b), 50);
         assert_eq!(a.items, b.items);
+        // What is dropped is the 50 highest ids.
+        let mut sorted = ids_sorted;
+        sorted.sort_unstable();
+        assert_eq!(a.items, sorted[..MAX_STATE_ITEMS]);
     }
 }
