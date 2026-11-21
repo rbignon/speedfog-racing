@@ -6,10 +6,16 @@ vi.mock("$lib/api", async (importOriginal) => ({
   joinRelayTeam: vi.fn(),
   deleteRelayTeam: vi.fn(),
   createRelayTeam: vi.fn(),
+  fetchRace: vi.fn(),
 }));
 
 import RelayTeamList from "$lib/components/RelayTeamList.svelte";
-import { joinRelayTeam, type Participant, type RelayTeam } from "$lib/api";
+import {
+  fetchRace,
+  joinRelayTeam,
+  type Participant,
+  type RelayTeam,
+} from "$lib/api";
 
 function participant(id: string, teamId: string | null): Participant {
   return {
@@ -123,5 +129,15 @@ describe("RelayTeamList", () => {
     await fireEvent.click(screen.getAllByText("Move to this team")[0]);
     await vi.waitFor(() => expect(onChanged).toHaveBeenCalledWith(moved));
     expect(joinRelayTeam).toHaveBeenCalledWith("race1", "t2");
+  });
+
+  it("re-reads the race after a refusal and keeps the message", async () => {
+    const fresh = { id: "race1" } as never;
+    vi.mocked(joinRelayTeam).mockRejectedValue(new Error("Team is full"));
+    vi.mocked(fetchRace).mockResolvedValue(fresh);
+    const { onChanged } = renderList({ viewer: { participantId: "alice" } });
+    await fireEvent.click(screen.getAllByText("Move to this team")[0]);
+    await vi.waitFor(() => expect(onChanged).toHaveBeenCalledWith(fresh));
+    expect(screen.getByText("Team is full")).toBeTruthy();
   });
 });

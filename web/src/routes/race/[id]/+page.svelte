@@ -18,7 +18,12 @@
   import JoinRaceCta from "$lib/components/JoinRaceCta.svelte";
   import RaceControls from "$lib/components/RaceControls.svelte";
   import RelayTeamList from "$lib/components/RelayTeamList.svelte";
-  import { relayCapacity } from "$lib/relay";
+  import {
+    needsRaceRefetch,
+    ownLiveRow,
+    ownRunStatus,
+    relayCapacity,
+  } from "$lib/relay";
   import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
   import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
   import DisqualifyModal from "$lib/components/DisqualifyModal.svelte";
@@ -309,7 +314,15 @@
   let mergedParticipants = $derived.by(() => {
     if (isRelay) {
       // A relay race's live rows are its teams: a member's status rides on
-      // the team row, by participant id.
+      // the team row, by participant id. Only setup lists it (per-tick work).
+      if (raceStatus !== "setup") {
+        return initialRace.participants.map((p) => ({
+          ...p,
+          liveStatus: undefined as string | undefined,
+          isLive: false,
+          streamUrl: null as string | null,
+        }));
+      }
       const members = new Map(
         raceStore.participants
           .flatMap((wp) => wp.relay_members ?? [])
@@ -356,37 +369,24 @@
   // list. The newest answer wins when two fetches overlap.
   let refetchSeq = 0;
   $effect(() => {
-    const wsParticipants = raceStore.participants;
-    if (
-      untrack(
-        () =>
-          initialRace.relay_team_size != null &&
-          raceStatus === "setup" &&
-          raceStore.race !== null,
-      )
-    ) {
-      const seq = ++refetchSeq;
-      const raceId = untrack(() => initialRace.id);
-      fetchRace(raceId).then((r) => {
-        if (seq === refetchSeq) initialRace = r;
-      });
-      return;
-    }
-    if (wsParticipants.length === 0) return;
-
-    const wsIds = new Set(wsParticipants.map((p) => p.id));
-    const restIds = untrack(
-      () => new Set(initialRace.participants.map((p) => p.id)),
+    const rows = raceStore.participants;
+    const need = untrack(() =>
+      needsRaceRefetch({
+        isRelay: initialRace.relay_team_size != null,
+        raceStatus,
+        loaded: raceStore.race !== null,
+        rows,
+        restIds: initialRace.participants.map((p) => p.id),
+      }),
     );
-
-    if (
-      wsIds.size === restIds.size &&
-      [...wsIds].every((id) => restIds.has(id))
-    )
-      return;
-
+    if (!need) return;
+    const seq = ++refetchSeq;
     const raceId = untrack(() => initialRace.id);
-    fetchRace(raceId).then((r) => (initialRace = r));
+    fetchRace(raceId)
+      .then((r) => {
+        if (seq === refetchSeq) initialRace = r;
+      })
+      .catch((e) => console.error("Failed to refresh the race:", e));
   });
 
   // Wall-clock elapsed timer based on server's started_at timestamp.
@@ -505,19 +505,23 @@
       : undefined,
   );
 
+  // The viewer's own live row: their team's on a relay race, else their own.
   let myWsParticipant = $derived.by(() => {
     if (!myParticipant) return null;
-    return (
-      raceStore.participants.find(
-        (p) => p.twitch_username === myParticipant.user.twitch_username,
-      ) ?? null
+    return ownLiveRow(
+      raceStore.participants,
+      myParticipant.id,
+      myParticipant.user.twitch_username,
     );
   });
 
   let myWsParticipantId = $derived(myWsParticipant?.id ?? null);
+  // A relay member who is out while their team plays on is out themselves.
+  let myRunStatus = $derived(
+    myParticipant ? ownRunStatus(myWsParticipant, myParticipant.id) : undefined,
+  );
   let myParticipantFinished = $derived(
-    myWsParticipant?.status === "finished" ||
-      isOutOfRace(myWsParticipant?.status ?? ""),
+    myRunStatus === "finished" || isOutOfRace(myRunStatus ?? ""),
   );
 
   let hasParticipantsAccess = $derived(
@@ -553,7 +557,8 @@
     const ws = myWsParticipant;
     const played =
       ws != null &&
-      (ws.status === "finished" || (isOutOfRace(ws.status) && ws.igt_ms > 0));
+      (myRunStatus === "finished" ||
+        (isOutOfRace(myRunStatus ?? "") && ws.igt_ms > 0));
     if (showFeedback || feedbackShown) return;
     if (!auth.user) return;
     if (auth.user.feedback_prompted_at) return;
@@ -628,7 +633,7 @@
   );
 
   let myParticipantStatus = $derived(
-    (myWsParticipant?.status as ApiParticipantStatus | undefined) ?? null,
+    (myRunStatus as ApiParticipantStatus | undefined) ?? null,
   );
   let publicAccessInputs = $derived({
     raceStatus: raceStatus as ApiRaceStatus,
@@ -861,6 +866,13 @@
       !isCaster &&
       (!!myParticipant || (liveOpenRegistration && !isOrganizer && !raceFull)),
   );
+  let relayLiveStatusById = $derived(
+    isRelay && raceStatus === "setup"
+      ? Object.fromEntries(
+          mergedParticipants.map((p) => [p.id, p.liveStatus ?? p.status]),
+        )
+      : undefined,
+  );
   let relayListEl = $state<HTMLElement | undefined>();
 
   // A team change by the viewer: the race they get back replaces the REST
@@ -909,7 +921,7 @@
         : "Join now",
   );
 
-  let myLiveStatus = $derived(myWsParticipant?.status ?? myParticipant?.status);
+  let myLiveStatus = $derived(myRunStatus ?? myParticipant?.status);
   let canAbandon = $derived(
     raceStatus === "running" &&
       !!myParticipant &&
@@ -1245,8 +1257,8 @@
             </div>
           {/if}
           <div class="participant-list">
-            {#each mergedParticipants as mp (mp.id)}
-              {#if !isRelay}
+            {#if !isRelay}
+              {#each mergedParticipants as mp (mp.id)}
                 <ParticipantCard
                   participant={mp}
                   liveStatus={mp.liveStatus}
@@ -1259,8 +1271,8 @@
                   onRemove={() =>
                     handleRemoveParticipant(mp.id, mp.user.twitch_username)}
                 />
-              {/if}
-            {/each}
+              {/each}
+            {/if}
 
             {#if livePendingInvites.length > 0}
               {#each livePendingInvites as invite (invite.id)}
@@ -1681,11 +1693,7 @@
         <RaceControls
           race={initialRace}
           {raceStatus}
-          liveStatusById={isRelay
-            ? Object.fromEntries(
-                mergedParticipants.map((p) => [p.id, p.liveStatus ?? p.status]),
-              )
-            : undefined}
+          liveStatusById={relayLiveStatusById}
           onRaceUpdated={handleRaceUpdated}
           onDeleteRace={handleDeleteRace}
         />
@@ -1727,8 +1735,8 @@
             <div class="info-item">
               <span class="label">Participants</span>
               <span class="value"
-                >{mergedParticipants.length}{#if liveOpenRegistration && liveMaxParticipants && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
-                  /{liveMaxParticipants}{/if}</span
+                >{mergedParticipants.length}{#if liveCapacity && (raceStatus === "setup" || (raceStatus === "running" && registrationOpenWindow))}
+                  /{liveCapacity}{/if}</span
               >
             </div>
             <div class="info-item">
