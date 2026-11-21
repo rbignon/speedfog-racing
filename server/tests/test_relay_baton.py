@@ -576,17 +576,69 @@ def test_checkpoint_is_stored_with_the_team_igt(relay_race, mods):
         80_000,
         80_000,
     )
-    # An IGT the wrong-save guard refuses does not move the team's.
+    # A state whose IGT the wrong-save guard refuses may come from another
+    # save: dropped, the previous checkpoint kept.
     holder.send(
         {"type": "relay_state", "handoff_id": None, "state": OTHER_STATE, "igt_ms": 900_000}
     )
     barrier(holder)
     team = load_team(relay_race)
     assert (team.character_state, team.character_state_igt_ms, team.igt_ms) == (
-        OTHER_STATE,
+        STATE,
         80_000,
         80_000,
     )
+
+
+def test_a_release_answered_on_an_implausible_igt_flips_nothing(relay_race, mods):
+    holder_id, target_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
+    holder, target = mods[holder_id], mods[target_id]
+    _make_receiver(target)
+    release = _release(holder, target_id)
+
+    holder.send(
+        {
+            "type": "relay_state",
+            "handoff_id": release["handoff_id"],
+            "state": STATE,
+            "igt_ms": 900_000,
+        }
+    )
+
+    # The giver still holds the baton, and is told so.
+    assert holder.receive_until("relay_update")["relay"]["role"] == "holder"
+    barrier(target)
+    assert not [m for m in target.skipped if m["type"] == "relay_take"]
+    team = load_team(relay_race)
+    assert (team.holder_id, team.character_state, team.igt_ms) == (UUID(holder_id), None, 1_000)
+    assert _release(holder, target_id)["to_name"] == "Relay Runner 1"  # the handoff was dropped
+
+
+def test_the_receiver_is_not_listened_to_before_relay_taken(relay_race, mods):
+    holder, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    _make_receiver(target)
+    take = _hand_off(holder, target)
+    before = load_team(relay_race)
+
+    # Its game still carries its own save's IGT and deaths.
+    target.send_status_update(igt_ms=900_000, death_count=7)
+    target.send_event_flag(FOG_FLAG, igt_ms=900_500, message_id=41)
+
+    target.receive_until("event_flag_ack", lambda m: m["message_id"] == 41)
+    assert not [m for m in target.skipped if m["type"] in ("error", "player_update")]
+    team = load_team(relay_race)
+    assert (team.igt_ms, team.death_count, team.current_zone, team.zone_history) == (
+        before.igt_ms,
+        before.death_count,
+        before.current_zone,
+        before.zone_history,
+    )
+    assert team.entry_flag_id is None
+
+    _taken(target, take)
+    target.send_status_update(igt_ms=6_000, death_count=0)
+    target.receive_until("player_update", lambda m: m["player"]["igt_ms"] == 6_000)
+    assert load_team(relay_race).igt_ms == 6_000
 
 
 # --- Connections and readiness ---

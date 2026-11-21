@@ -174,8 +174,13 @@ then goes back to them.
   gets a `relay_update`, which tells a giver who already went back to the Chapel that it
   still holds the baton.
 - **Stored**: `character_state` (the parsed `CharacterState`) and
-  `character_state_igt_ms`, the team IGT once raised to the reported IGT when the
-  wrong-save guard (`is_igt_plausible`) finds it plausible.
+  `character_state_igt_ms`, the team IGT once raised to the reported IGT. A state
+  whose IGT the wrong-save guard refuses (`is_igt_plausible` against the team's
+  `igt_ms` and `last_igt_change_at`, the holder's `status_update` judgment) is never
+  kept, and does not raise the team IGT: it may come from another save, and the next
+  receiver would get it. As a checkpoint it is dropped (the previous one stays); as
+  the answer to a release it flips nothing: the handoff is dropped, the holder stays
+  holder and gets a `relay_update`.
 - **Take accepted**: the baton flips to the asker with the stored state (null before
   any checkpoint) and the team's `igt_ms`, the last IGT received.
 - **Flip**: `holder_id` is the receiver, `holder_offline_since` cleared, `baton_free`
@@ -184,6 +189,15 @@ then goes back to them.
   `relay_update` to the team, whose `role: waiting` is what makes the giver's mod
   lock and go to the Chapel. A receiver whose mod is no longer connected gets a free
   baton at once (`baton_free`), and no take is awaited from them.
+- **Before `relay_taken`**: from the flip until its acknowledgement, the receiver's
+  game still carries its own save's IGT and deaths, so the progress gate hears it as
+  a waiting runner (`awaiting_take`): its `event_flag` and `zone_query` are
+  acknowledged and recorded nowhere, its `status_update` is neither judged nor
+  applied, no row is broadcast. The awaited take is registered before the flip
+  commits, so no message slips in between. It lives in the room's memory only: after
+  a server restart during a pending take it is lost, with its 30 s timer, so the
+  receiver is heard as the holder as soon as it reconnects and its late `relay_taken`
+  is ignored.
 - **`relay_taken`** with the pending id, from its receiver: the handoff is over (its
   timer cancelled), `relay_update` to the team and a leaderboard broadcast. Late (the
   timer fired and nobody took the baton since), it also clears `baton_free`: the
@@ -278,7 +292,9 @@ carry every team's history. No progress load reads `character_state` (deferred).
   row-locks the team (`SELECT ... FOR UPDATE`) and checks the baton again before it
   commits. An `event_flag` or a `zone_query` is checked once, in that locked load. A
   flip takes the same lock (Baton, "Ordering"), so progress from a runner who no
-  longer holds the baton is never applied. Anyone else's `event_flag` and
+  longer holds the baton is never applied. A holder whose `relay_take` is still
+  unacknowledged is heard as a waiting runner (`awaiting_take`, read from the room's
+  memory, so the pre-read stays lock-free; Baton, "Before `relay_taken`"). Anyone else's `event_flag` and
   `zone_query` are acknowledged (the mod replays them until then) and recorded
   nowhere; their `status_update` only runs their own fresh-save gate, and no row is
   broadcast for it. The legacy `finished` message is ignored.

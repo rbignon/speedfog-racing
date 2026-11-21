@@ -4,8 +4,9 @@
 messages (``status_update``, ``event_flag``, ``zone_query``), is the runner's
 ``RelayTeam``: the shared handlers of ``BaseModHandler`` move the team's zone,
 layer, IGT, history and deaths, and their guards (fresh save, wrong save) judge
-the team's IGT. Only the baton holder is listened to (``holds_baton``). Every
-other member sends the same messages, since a mod does not know it waits: its
+the team's IGT. Only the baton holder is listened to (``holds_baton``), and not
+before acknowledging a baton just given to them (``_listened``). Every other
+member sends the same messages, since a mod does not know it waits: its
 ``event_flag`` and ``zone_query`` are acknowledged (the mod replays them until
 then) and recorded nowhere, and its ``status_update`` only runs its own
 fresh-save gate. The five baton messages (``relay_*``) go to the operations of
@@ -52,6 +53,7 @@ from speedfog_racing.websocket.race.mod import (
     aggregate_death_counts,
 )
 from speedfog_racing.websocket.race.relay import (
+    awaiting_take,
     confirm_taken,
     finish_team,
     holder_connection_changed,
@@ -248,7 +250,7 @@ class RelayModHandler(RaceModHandler):
             if gate is None:
                 return
             member, race, team = gate
-            holder = holds_baton(team, member.id)
+            holder = self._listened(team)
             if holder:
                 reported = clamp_death_count(msg.get("death_count"))
                 if reported is not None:
@@ -274,6 +276,18 @@ class RelayModHandler(RaceModHandler):
             await super()._handle_status_update(msg)
         finally:
             self._holder_deaths = None
+
+    def _listened(self, team: RelayTeam) -> bool:
+        """Whether this runner's progress goes to ``team``: they hold its
+        baton (``holds_baton``), and it is not a baton just given to them whose
+        ``relay_taken`` is awaited (``awaiting_take``, in the room's memory: no
+        query, no lock). Until that acknowledgement their game still carries
+        their own save's IGT and deaths, so they are heard as a waiting runner."""
+        return (
+            self._participant_id is not None
+            and holds_baton(team, self._participant_id)
+            and not awaiting_take(manager.get_room(self._race_id), team.id, self._participant_id)
+        )
 
     async def _read_gate(self, db: AsyncSession) -> tuple[Participant, Race, RelayTeam] | None:
         """The runner, its race and the baton of its team, in one light query
@@ -328,14 +342,14 @@ class RelayModHandler(RaceModHandler):
             return False
         # Again in the session that commits, under the team's row lock (see
         # ``_team_select``): the baton may have moved since the pre-read.
-        return holds_baton(entity, self._participant_id)
+        return self._listened(entity)
 
     async def _validate_for_event_flag(  # type: ignore[override]
         self, entity: RelayTeam, message_id: int | None
     ) -> bool:
         if not await super()._validate_for_event_flag(entity, message_id):  # type: ignore[arg-type]
             return False
-        if holds_baton(entity, self._participant_id):
+        if self._listened(entity):
             return True
         logger.info(
             "Ignored event_flag of a waiting runner: %s message_id=%s", self.log_ref, message_id
@@ -349,7 +363,7 @@ class RelayModHandler(RaceModHandler):
     ) -> bool:
         if not await super()._validate_for_zone_query(entity, message_id):  # type: ignore[arg-type]
             return False
-        if holds_baton(entity, self._participant_id):
+        if self._listened(entity):
             return True
         if message_id is not None:
             await self._send_zone_query_ack(message_id)
