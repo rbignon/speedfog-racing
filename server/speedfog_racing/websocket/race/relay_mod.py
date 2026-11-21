@@ -22,7 +22,7 @@ from typing import Any, TypeVar
 
 from fastapi import WebSocket
 from pydantic import BaseModel, ValidationError
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer, load_only, raiseload, selectinload
 
@@ -268,7 +268,7 @@ class RelayModHandler(RaceModHandler):
                         **msg,
                         "death_count": max(0, team.death_count + reported - member.death_count),
                     }
-            elif await self._validate_member(member, race, msg):
+            elif await self._validate_member(db, member, race, msg):
                 validated = True
                 await db.commit()
             team_id = team.id
@@ -355,12 +355,17 @@ class RelayModHandler(RaceModHandler):
         member, race, team = row
         return member, race, team
 
-    async def _validate_member(self, member: Participant, race: Race, msg: dict[str, Any]) -> bool:
+    async def _validate_member(
+        self, db: AsyncSession, member: Participant, race: Race, msg: dict[str, Any]
+    ) -> bool:
         """A waiting runner's own fresh-save gate: its first report once the race
         runs validates its save when the IGT is at most ``MAX_FRESH_IGT_MS``,
         READY becoming PLAYING. Items are a union at a handoff, so a member on
         an old save would bring its inventory into the team. Its IGT is never
-        judged afterwards. True when the member just passed."""
+        judged afterwards. ``member`` comes from the lock-free read, so the
+        write is an UPDATE guarded on the status read: it never brings back a
+        member who went out meanwhile. True when the member just passed (the
+        caller commits)."""
         if race.status != RaceStatus.RUNNING:
             await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
             return False
@@ -377,9 +382,24 @@ class RelayModHandler(RaceModHandler):
             logger.warning("Rejected stale save (relay member): %s igt_ms=%d", self.log_ref, igt_ms)
             await self._send_condition(ErrorCode.FRESH_SAVE_REQUIRED)
             return False
-        member.relay_validated = True
-        if member.status == ParticipantStatus.READY:
-            member.status = ParticipantStatus.PLAYING
+        # Written only if the row still has the status read above, without a
+        # lock: a member who went out meanwhile (no-show rule, removal) stays out.
+        status = (
+            ParticipantStatus.PLAYING if member.status == ParticipantStatus.READY else member.status
+        )
+        result = await db.execute(
+            update(Participant)
+            .where(
+                Participant.id == member.id,
+                Participant.status == member.status,
+                Participant.relay_validated.is_(False),
+            )
+            .values(relay_validated=True, status=status)
+            .execution_options(synchronize_session=False)
+        )
+        if result.rowcount == 0:  # type: ignore[attr-defined]
+            logger.info("Relay member validation skipped, row changed: %s", self.log_ref)
+            return False
         logger.info("Relay member validated: %s igt_ms=%d", self.log_ref, igt_ms)
         return True
 

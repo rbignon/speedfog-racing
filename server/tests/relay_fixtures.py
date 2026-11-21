@@ -463,6 +463,13 @@ def set_ready(mod: RelayModClient) -> None:
     mod.receive_until("relay_update", lambda m: member_view(m, mod.participant_id)["ready"])
 
 
+def pass_gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> None:
+    """The holder takes a fog gate of ``progress_graph`` (its zone_update back)."""
+    node = progress_graph()["event_map"][str(flag)]
+    mod.send_event_flag(flag, igt_ms=igt_ms, message_id=message_id)
+    mod.receive_until("zone_update", lambda m: m["node_id"] == node)
+
+
 def make_receiver(mod: RelayModClient) -> None:
     """The member may receive the baton: validated, then ready at the Chapel."""
     validate(mod)

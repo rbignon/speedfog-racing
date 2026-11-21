@@ -17,14 +17,18 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
-    RelayTeam,
 )
 
 # `rewards.service` imports back into `services.stats_service`; importing it at
 # module top would re-enter `services/__init__.py` mid-load and crash anything
 # that loads `rewards.service` first (e.g. the backfill CLI). We import lazily
 # inside the two call sites instead.
-from speedfog_racing.services.relay import RelayTeamRow, abandon_team, leaderboard_entries
+from speedfog_racing.services.relay import (
+    RelayTeamRow,
+    abandon_team,
+    leaderboard_entries,
+    lock_race_teams,
+)
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 
 logger = logging.getLogger(__name__)
@@ -97,24 +101,12 @@ async def _put_relay_teams_out(db: AsyncSession, race: Race) -> set[uuid.UUID]:
     """A relay race's forced end: every team neither finished nor out is out
     (ABANDONED), its result copied onto its members (``abandon_team``).
 
-    The team rows are locked first (ascending id), then read again with the
-    members, before any member row is written: the order of every relay write
-    to both, and a team that finished since the race was loaded keeps its
-    finish. Returns the teams put out.
+    The team rows are locked first (``lock_race_teams``), then read again with
+    the members, before any member row is written: the order of every relay
+    write to both, and a team that finished since the race was loaded keeps
+    its finish. Returns the teams put out.
     """
-    teams = (
-        (
-            await db.execute(
-                select(RelayTeam)
-                .where(RelayTeam.race_id == race.id)
-                .order_by(RelayTeam.id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    teams = await lock_race_teams(db, race.id)
     await db.execute(
         select(Participant)
         .where(Participant.race_id == race.id)

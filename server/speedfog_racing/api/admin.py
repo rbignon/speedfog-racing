@@ -21,6 +21,7 @@ from speedfog_racing.api.helpers import (
 from speedfog_racing.api.races import (
     after_disqualification_change,
     apply_seed_reroll,
+    disqualify_relay_member,
     remove_participation,
 )
 from speedfog_racing.api.speedrun import resolve_seed_or_404
@@ -763,7 +764,8 @@ async def _apply_ban_side_effects(db: AsyncSession, user: User, *, by: User) -> 
 
     Races not started: the entry is removed, unless it is under review
     (detections or a disqualification), which stays as evidence. Races in
-    progress: the entry is disqualified. Pending invitations, signups to
+    progress: the entry is disqualified (on a relay race, with its whole team,
+    as by the race staff). Pending invitations, signups to
     events still open and active training sessions go; open mod connections
     are closed and open spectator connections lose the chat.
     """
@@ -789,9 +791,24 @@ async def _apply_ban_side_effects(db: AsyncSession, user: User, *, by: User) -> 
             race.status == RaceStatus.RUNNING
             and participant.status not in TERMINAL_PARTICIPANT_STATUSES
         ):
-            disqualify(participant, by_id=by.id, reason="Account banned", now=now)
-            await db.commit()
-            await after_disqualification_change(db, race.id, participant, by=by, cancelled=False)
+            if race.is_relay and participant.relay_team_id is not None:
+                disqualified = await disqualify_relay_member(
+                    db,
+                    race.id,
+                    participant.id,
+                    by_id=by.id,
+                    reason="Account banned",
+                    now=now,
+                    only_in_race=True,
+                )
+            else:
+                disqualify(participant, by_id=by.id, reason="Account banned", now=now)
+                await db.commit()
+                disqualified = True
+            if disqualified:
+                await after_disqualification_change(
+                    db, race.id, participant, by=by, cancelled=False
+                )
             await race_manager.close_mod(race.id, participant.id, code=4003, reason=BAN_MESSAGE)
 
     await db.execute(

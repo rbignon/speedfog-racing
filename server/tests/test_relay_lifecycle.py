@@ -5,12 +5,15 @@ import asyncio
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
+from unittest.mock import AsyncMock
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import speedfog_racing.api.races as races_api
 import speedfog_racing.services.inactivity_monitor as monitor
 import speedfog_racing.websocket.race.relay as relay_ws
 from speedfog_racing.database import Base
@@ -19,16 +22,22 @@ from speedfog_racing.models import (
     ChatMessage,
     Participant,
     ParticipantStatus,
+    Race,
     RaceStatus,
     RelayTeam,
     User,
     UserRole,
 )
-from speedfog_racing.services.relay import baton_free_in_s
+from speedfog_racing.services.relay import baton_free_in_s, race_teams_for_update
+from speedfog_racing.services.sanctions_service import disqualify
 from speedfog_racing.websocket.race.manager import manager
+from speedfog_racing.websocket.race.relay_mod import RelayModHandler
 
 from . import test_integration as _integration
 from .relay_fixtures import (
+    FOG_FLAG,
+    SECOND_FOG_FLAG,
+    THIRD_FOG_FLAG,
     RelayModClient,
     barrier,
     connect_spectator,
@@ -39,6 +48,7 @@ from .relay_fixtures import (
     make_receiver,
     make_relay_race,
     member_view,
+    pass_gate,
     patch_member,
     patch_team,
     progress_graph,
@@ -320,6 +330,92 @@ def test_a_member_offline_stamp_follows_their_mod(integration_client, relay_race
     assert load_member(relay_race, member["participant_id"]).last_igt_change_at is None
 
 
+def test_banning_a_member_puts_their_team_out(integration_client, trio, trio_mods):
+    admin = trio["organizer"]
+
+    async def promote() -> None:
+        async with trio["db"]() as db:
+            user = await db.get(User, admin.id)
+            assert user is not None
+            user.role = UserRole.ADMIN
+            await db.commit()
+
+    asyncio.run(promote())
+    holder = _member(trio, 0, 0)
+
+    response = integration_client.post(
+        f"/api/admin/users/{holder['user'].id}/ban",
+        json={"reason": "Cheating"},
+        headers=_auth(admin),
+    )
+
+    assert response.status_code == 200, response.json()
+    team = load_team(trio)
+    # The banned holder's baton does not wait for their mod's 60 s: the team is out.
+    assert (team.status, team.holder_id) == (ParticipantStatus.DISQUALIFIED, None)
+    statuses = _statuses(load_members(trio))
+    assert statuses.pop(holder["participant_id"]) == ParticipantStatus.DISQUALIFIED
+    assert set(statuses.values()) == {ParticipantStatus.ABANDONED}
+    trio_mods[_member(trio, 0, 1)["participant_id"]].receive_until(
+        "relay_update", lambda m: m["relay"]["team_status"] == "disqualified"
+    )
+    assert (ChatChannel.PUBLIC, "Team 1 is out.") in _chat(trio)
+
+
+def test_a_member_going_out_keeps_how_far_the_team_was(integration_client, trio, trio_mods):
+    holder = trio_mods[_member(trio, 0, 0)["participant_id"]]
+
+    pass_gate(holder, FOG_FLAG, 20_000, 1)  # layer 1
+    _abandon(integration_client, trio, 0, 2)
+    pass_gate(holder, SECOND_FOG_FLAG, 40_000, 2)  # layer 2
+    _abandon(integration_client, trio, 0, 1)
+    pass_gate(holder, THIRD_FOG_FLAG, 60_000, 3)  # layer 3
+    _abandon(integration_client, trio, 0, 0)  # the last one: the team is out
+
+    assert load_team(trio).status == ParticipantStatus.ABANDONED
+    rows = {
+        str(m.id): (m.status, m.current_layer, m.igt_ms, m.finished_at) for m in load_members(trio)
+    }
+    assert rows == {
+        _member(trio, 0, 2)["participant_id"]: (ParticipantStatus.ABANDONED, 1, 20_000, None),
+        _member(trio, 0, 1)["participant_id"]: (ParticipantStatus.ABANDONED, 2, 40_000, None),
+        _member(trio, 0, 0)["participant_id"]: (ParticipantStatus.ABANDONED, 3, 60_000, None),
+    }
+
+
+def test_a_take_restarts_the_team_inactivity_clock(relay_race, mods):
+    waiting = mods[_member(relay_race, 0, 1)["participant_id"]]
+    make_receiver(waiting)
+    patch_team(relay_race, baton_free=True, last_igt_change_at=_ago(29))
+
+    _take(waiting)
+
+    # The new holder gets the whole 30 minutes for their first report.
+    assert _aware(load_team(relay_race).last_igt_change_at) > _ago(1)
+
+
+def test_start_and_reset_lock_the_teams_before_any_member_changes(
+    monkeypatch, integration_client, relay_race
+):
+    seen: list[bool] = []
+    real = races_api.lock_race_teams
+
+    async def spy(db: AsyncSession, race_id: UUID) -> Any:
+        seen.append(any(isinstance(row, Participant) for row in (*db.dirty, *db.new)))
+        return await real(db, race_id)
+
+    monkeypatch.setattr(races_api, "lock_race_teams", spy)
+    headers = _auth(relay_race["organizer"])
+    rid = relay_race["race_id"]
+
+    assert integration_client.post(f"/api/races/{rid}/start", headers=headers).status_code == 200
+    assert integration_client.post(f"/api/races/{rid}/reset", headers=headers).status_code == 200
+
+    assert seen == [False, False]  # called by both, no member changed yet
+    statement = race_teams_for_update(uuid4()).compile(dialect=postgresql.dialect())
+    assert str(statement).endswith("FOR UPDATE OF relay_teams")
+
+
 # --- Forced end ---
 
 
@@ -379,6 +475,7 @@ async def _relay(
         teams = sorted(race.relay_teams, key=lambda t: t.name)
         return {
             "race_id": race.id,
+            "organizer": organizer.id,
             "teams": [t.id for t in teams],
             "members": [[by_user[u.id] for u in users[:3]], [by_user[u.id] for u in users[3:]]],
         }
@@ -525,3 +622,211 @@ async def test_restart_makes_an_absent_holder_takeable(session_maker):
     # Every member's 30 minutes offline start at the restart too.
     for pid in relay["members"][1]:
         assert (await _get(session_maker, Participant, pid)).last_igt_change_at is not None
+
+
+async def test_restart_keeps_the_stamps_already_there(session_maker):
+    relay = await _relay(session_maker)
+    since = _ago(5)
+    await _patch(session_maker, RelayTeam, relay["teams"][0], holder_offline_since=since)
+    await _patch(session_maker, Participant, relay["members"][1][1], last_igt_change_at=since)
+
+    await relay_ws.stamp_offline_runners(session_maker)
+
+    team = await _get(session_maker, RelayTeam, relay["teams"][0])
+    assert _aware(team.holder_offline_since) == since
+    member = await _get(session_maker, Participant, relay["members"][1][1])
+    assert _aware(member.last_igt_change_at) == since
+    other = await _get(session_maker, RelayTeam, relay["teams"][1])
+    assert _aware(other.holder_offline_since) > since  # stamped at the restart
+
+
+@pytest.mark.parametrize(
+    "status,offline_min,race_status,expected",
+    [
+        (ParticipantStatus.PLAYING, 31, RaceStatus.RUNNING, True),
+        (ParticipantStatus.PLAYING, 29, RaceStatus.RUNNING, False),
+        # Their mod came back since the query: no stamp any more.
+        (ParticipantStatus.PLAYING, None, RaceStatus.RUNNING, False),
+        # A no-show: never validated.
+        (ParticipantStatus.READY, None, RaceStatus.RUNNING, True),
+        (ParticipantStatus.REGISTERED, None, RaceStatus.RUNNING, True),
+        (ParticipantStatus.READY, None, RaceStatus.FINISHED, False),
+        (ParticipantStatus.ABANDONED, 31, RaceStatus.RUNNING, False),
+    ],
+)
+def test_a_relay_member_is_judged_inactive_again_under_the_locks(
+    status, offline_min, race_status, expected
+):
+    team = RelayTeam(race=Race(status=race_status))
+    member = Participant(
+        status=status,
+        last_igt_change_at=_ago(offline_min) if offline_min is not None else None,
+    )
+
+    assert monitor._still_inactive(_ago(30))(team, member) is expected
+    if expected:
+        assert member.status == ParticipantStatus.ABANDONED
+
+
+async def test_a_team_whose_first_holder_never_reported_is_out_in_the_end(session_maker):
+    relay = await _relay(session_maker)
+    team_id, (holder, *waiting) = relay["teams"][0], relay["members"][0]
+    await _patch(
+        session_maker, RelayTeam, team_id, status=ParticipantStatus.READY, last_igt_change_at=None
+    )
+    await _patch(
+        session_maker,
+        Participant,
+        holder,
+        status=ParticipantStatus.READY,
+        relay_validated=False,
+        created_at=_ago(120),
+    )
+
+    # The holder is a no-show: the baton is free, and its 30 minutes start.
+    _, abandoned = await monitor.abandon_inactive_participants(session_maker)
+    assert abandoned == {holder}
+    team = await _get(session_maker, RelayTeam, team_id)
+    assert (team.status, team.holder_id, team.baton_free) == (ParticipantStatus.READY, None, True)
+    assert _aware(team.last_igt_change_at) > _ago(1)
+
+    # Nobody took it in 30 minutes.
+    await _patch(session_maker, RelayTeam, team_id, last_igt_change_at=_ago(31))
+    races, _ = await monitor.abandon_stale_relay_teams(session_maker)
+
+    assert races == [relay["race_id"]]
+    assert (await _get(session_maker, RelayTeam, team_id)).status == ParticipantStatus.ABANDONED
+    for pid in waiting:
+        assert (await _get(session_maker, Participant, pid)).status == ParticipantStatus.ABANDONED
+
+
+async def test_one_failing_relay_member_does_not_stop_the_pass(session_maker, monkeypatch):
+    relay = await _relay(session_maker)
+    for pid in (relay["members"][0][1], relay["members"][1][1]):
+        await _patch(session_maker, Participant, pid, last_igt_change_at=_ago(31))
+    real = relay_ws.take_member_out
+    calls: list[UUID] = []
+
+    async def flaky(session_maker: Any, race_id: UUID, pid: UUID, *args: Any, **kw: Any) -> Any:
+        calls.append(pid)
+        if len(calls) == 1:
+            raise RuntimeError("deadlock detected")
+        return await real(session_maker, race_id, pid, *args, **kw)
+
+    monkeypatch.setattr(relay_ws, "take_member_out", flaky)
+
+    _, abandoned = await monitor.abandon_inactive_participants(session_maker)
+
+    assert len(calls) == 2
+    assert abandoned == {calls[1]}
+
+
+async def test_one_failing_stale_team_does_not_stop_the_others(session_maker, monkeypatch):
+    relay = await _relay(session_maker)
+    for team_id in relay["teams"]:
+        await _patch(session_maker, RelayTeam, team_id, last_igt_change_at=_ago(31))
+    real = relay_ws.member_out
+    calls: list[UUID] = []
+
+    async def flaky(session_maker: Any, race_id: UUID, change: Any, **kw: Any) -> Any:
+        calls.append(kw["team_id"])
+        if len(calls) == 1:
+            raise RuntimeError("deadlock detected")
+        return await real(session_maker, race_id, change, **kw)
+
+    monkeypatch.setattr(relay_ws, "member_out", flaky)
+
+    races, abandoned = await monitor.abandon_stale_relay_teams(session_maker)
+
+    holders = {relay["teams"][i]: relay["members"][i][0] for i in (0, 1)}
+    assert (races, abandoned) == ([relay["race_id"]], {holders[calls[1]]})
+
+
+async def test_the_monitor_pass_goes_on_when_the_stale_team_check_fails(session_maker, monkeypatch):
+    relay = await _relay(session_maker)
+    # The other team finished; this one's last member still in, its holder, went
+    # offline 31 minutes ago.
+    await _patch(session_maker, RelayTeam, relay["teams"][1], status=ParticipantStatus.FINISHED)
+    for pid in relay["members"][1]:
+        await _patch(session_maker, Participant, pid, status=ParticipantStatus.FINISHED)
+    for pid in relay["members"][0][1:]:
+        await _patch(session_maker, Participant, pid, status=ParticipantStatus.ABANDONED)
+    await _patch(session_maker, Participant, relay["members"][0][0], last_igt_change_at=_ago(31))
+
+    async def broken(session_maker: Any) -> Any:
+        raise RuntimeError("deadlock detected")
+
+    monkeypatch.setattr(monitor, "abandon_stale_relay_teams", broken)
+    task = asyncio.create_task(monitor.inactivity_monitor_loop(session_maker))
+    try:
+        for _ in range(40):
+            await asyncio.sleep(0.05)
+            if "The race has finished." in await _public_lines(session_maker, relay["race_id"]):
+                break
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    race = await _get(session_maker, Race, relay["race_id"])
+    assert race.status == RaceStatus.FINISHED
+    assert await _public_lines(session_maker, relay["race_id"]) == [
+        "Runner 0 has abandoned the race due to inactivity.",
+        "Team 1 is out.",
+        "The race has finished.",
+    ]
+
+
+async def test_a_validation_never_brings_back_a_member_who_went_out(session_maker, monkeypatch):
+    relay = await _relay(session_maker)
+    pid = relay["members"][0][1]
+    await _patch(
+        session_maker, Participant, pid, status=ParticipantStatus.READY, relay_validated=False
+    )
+    handler = RelayModHandler(AsyncMock(), relay["race_id"], session_maker)
+    handler._participant_id = pid
+    real = RelayModHandler._read_gate
+
+    async def gate_then_removed(self: RelayModHandler, db: AsyncSession) -> Any:
+        gate = await real(self, db)
+        # Between the lock-free read and the write, the member is removed.
+        await _patch(session_maker, Participant, pid, status=ParticipantStatus.ABANDONED)
+        return gate
+
+    monkeypatch.setattr(RelayModHandler, "_read_gate", gate_then_removed)
+
+    await handler._handle_status_update({"type": "status_update", "igt_ms": 2_000})
+
+    member = await _get(session_maker, Participant, pid)
+    assert (member.status, member.relay_validated) == (ParticipantStatus.ABANDONED, False)
+
+
+async def test_a_team_is_announced_out_once_and_only_while_the_race_runs(session_maker):
+    relay = await _relay(session_maker)
+
+    def abandon(team: RelayTeam, member: Participant) -> bool:
+        member.status = ParticipantStatus.ABANDONED
+        return True
+
+    def cheat(team: RelayTeam, member: Participant) -> bool:
+        disqualify(member, by_id=relay["organizer"], reason="Cheating", now=datetime.now(UTC))
+        return True
+
+    race_id = relay["race_id"]
+    for pid in relay["members"][1]:
+        await relay_ws.take_member_out(session_maker, race_id, pid, abandon)
+    # A member of a team already out is disqualified: the team was out already.
+    await relay_ws.take_member_out(session_maker, race_id, relay["members"][1][0], cheat)
+    assert (await _get(session_maker, RelayTeam, relay["teams"][1])).status == (
+        ParticipantStatus.DISQUALIFIED
+    )
+    # A disqualification once the race finished puts its team out, without a line.
+    await _patch(session_maker, Race, race_id, status=RaceStatus.FINISHED)
+    await relay_ws.take_member_out(session_maker, race_id, relay["members"][0][0], cheat)
+    assert (await _get(session_maker, RelayTeam, relay["teams"][0])).status == (
+        ParticipantStatus.DISQUALIFIED
+    )
+
+    assert await _public_lines(session_maker, race_id) == ["Team 2 is out."]

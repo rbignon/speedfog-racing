@@ -13,7 +13,7 @@ from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, select
+from sqlalchemy import ColumnElement, Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -163,31 +163,38 @@ def apply_member_out(
     *,
     disqualified: bool = False,
 ) -> bool:
-    """What a member going out does to their team; True when the team went out.
+    """What a member going out does to their team; True when the team, still
+    in the race until then, went out.
 
     ``participant`` (one of ``members``) is already ABANDONED or DISQUALIFIED.
-    While the team is in the race, a baton they held is free at once (no
-    holder, ``baton_free``): no 60 s wait, and nobody gets it automatically.
-    The team's IGT stamp restarts then, so the free baton gets the whole
-    inactivity timeout before the team is out for it. The cap follows on its
-    own (``team_cap`` counts the members still in). ``disqualified`` puts the
-    team out as DISQUALIFIED, finished or not (what a cheater obtained reached
-    the team); otherwise the team is out (ABANDONED) once no member is left
-    in. A team that goes out gets its result copied onto its members
-    (``copy_team_result``: a disqualified team leaves them abandoned).
+    Their row takes a snapshot of the team's progress (IGT, deaths, layer;
+    their own status kept, never a finish time or ``zone_history``), so it
+    tells how far the team was when their race ended. While the team is in
+    the race, a baton they held is free at once (no holder, ``baton_free``):
+    no 60 s wait, and nobody gets it automatically. The team's IGT stamp
+    restarts then, so the free baton gets the whole inactivity timeout before
+    the team is out for it. The cap follows on its own (``team_cap`` counts
+    the members still in). ``disqualified`` puts the team out as DISQUALIFIED,
+    finished or not (what a cheater obtained reached the team); otherwise the
+    team is out (ABANDONED) once no member is left in. A team put out gets its
+    result copied onto its members still in (``copy_team_result``: a
+    disqualified team leaves them abandoned).
     """
-    if team.status not in TERMINAL_PARTICIPANT_STATUSES and team.holder_id == participant.id:
+    participant.igt_ms = team.igt_ms
+    participant.death_count = team.death_count
+    participant.current_layer = team.current_layer
+    in_race = team.status not in TERMINAL_PARTICIPANT_STATUSES
+    if in_race and team.holder_id == participant.id:
         team.holder_id = None
         team.holder_offline_since = None
         team.baton_free = True
         team.last_igt_change_at = datetime.now(UTC)
     if disqualified:
-        if team.status == ParticipantStatus.DISQUALIFIED:
-            return False
-        team.status = ParticipantStatus.DISQUALIFIED
-        copy_team_result(team, members)
-        return True
-    if team.status in TERMINAL_PARTICIPANT_STATUSES or any(is_active_member(m) for m in members):
+        if team.status != ParticipantStatus.DISQUALIFIED:
+            team.status = ParticipantStatus.DISQUALIFIED
+            copy_team_result(team, members)
+        return in_race
+    if not in_race or any(is_active_member(m) for m in members):
         return False
     abandon_team(team, members)
     return True
@@ -466,6 +473,27 @@ def relay_team_row(
     """``team``'s row, its cap computed on ``members`` and the seed's layers."""
     total_layers = int((graph_json or {}).get("total_layers") or 0)
     return RelayTeamRow(team, tuple(members), team_cap(total_layers, members))
+
+
+def race_teams_for_update(race_id: UUID) -> Select[tuple[RelayTeam]]:
+    """Every team of a race, row-locked (``FOR UPDATE``, a no-op on SQLite) in
+    ascending id order and read again (``populate_existing``)."""
+    return (
+        select(RelayTeam)
+        .where(RelayTeam.race_id == race_id)
+        .order_by(RelayTeam.id)
+        .with_for_update(of=RelayTeam)
+        .execution_options(populate_existing=True)
+    )
+
+
+async def lock_race_teams(db: AsyncSession, race_id: UUID) -> Sequence[RelayTeam]:
+    """Lock a race's teams before a transaction writes them and their members
+    together (the start, a reset, a reroll, the forced end). Every relay write
+    to both tables locks its team rows first, so two of them never wait on
+    each other in opposite orders. Call it before any member row is changed:
+    the query flushes what the session holds."""
+    return (await db.execute(race_teams_for_update(race_id))).scalars().all()
 
 
 async def load_relay_row(

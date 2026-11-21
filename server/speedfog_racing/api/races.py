@@ -100,6 +100,7 @@ from speedfog_racing.services.race_items import seed_has_race_items
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish, finalize_race
 from speedfog_racing.services.relay import (
     leaderboard_entries,
+    lock_race_teams,
     prepare_relay_start,
     relay_cap,
     relay_start_error,
@@ -1289,6 +1290,43 @@ async def _relay_member_out(
     return race
 
 
+async def disqualify_relay_member(
+    db: AsyncSession,
+    race_id: UUID,
+    participant_id: UUID,
+    *,
+    by_id: UUID,
+    reason: str,
+    now: datetime,
+    only_in_race: bool = False,
+) -> bool:
+    """Disqualify a relay member through ``take_member_out``: the whole team is
+    out, since what a cheater obtained reached it (a baton they held is free,
+    their teammates still in end abandoned). The request session then reads
+    the race again, the participant included, for ``after_disqualification_change``.
+
+    400 ``Already disqualified`` for a member disqualified already;
+    ``only_in_race`` (a ban) instead leaves alone a member already out by the
+    time the locks are held. Returns whether the member was disqualified.
+    """
+
+    def disqualify_member(team: RelayTeam, member: Participant) -> bool:
+        if only_in_race and member.status in TERMINAL_PARTICIPANT_STATUSES:
+            return False
+        try:
+            disqualify(member, by_id=by_id, reason=reason, now=now)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
+            ) from None
+        return True
+
+    out = await take_member_out(_sessions_like(db), race_id, participant_id, disqualify_member)
+    # The team and its members moved in that operation's session.
+    await _get_race_or_404(db, race_id, load_participants=True, load_casters=True, fresh=True)
+    return out is not None
+
+
 async def _load_participant_in_race(
     db: AsyncSession, race_id: UUID, participant_id: UUID
 ) -> Participant:
@@ -1326,21 +1364,9 @@ async def disqualify_participant(
     participant = await _load_participant_in_race(db, race_id, participant_id)
     now = datetime.now(UTC)
     if race.is_relay and participant.relay_team_id is not None:
-        # The whole team is out: what a cheater obtained reached it.
-        by_id = user.id
-
-        def disqualify_member(team: RelayTeam, member: Participant) -> bool:
-            try:
-                disqualify(member, by_id=by_id, reason=request.reason, now=now)
-            except ValueError:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
-                ) from None
-            return True
-
-        await take_member_out(_sessions_like(db), race_id, participant_id, disqualify_member)
-        # The team and its members moved in that operation's session.
-        await _get_race_or_404(db, race_id, load_participants=True, load_casters=True, fresh=True)
+        await disqualify_relay_member(
+            db, race_id, participant_id, by_id=user.id, reason=request.reason, now=now
+        )
     else:
         try:
             disqualify(participant, by_id=user.id, reason=request.reason, now=now)
@@ -1984,6 +2010,8 @@ async def start_race(
         if relay_error is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=relay_error)
         room = manager.get_room(race.id)
+        # Teams and members change together: the team rows are locked first.
+        await lock_race_teams(db, race.id)
         # A holder not connected is offline from the race start: the 60 s run
         # from the countdown's end.
         prepare_relay_start(race, connected=room.mods if room else (), now=started_at)
@@ -2206,7 +2234,9 @@ async def apply_seed_reroll(
         await rollback_streak_for_reroll(db, race)
 
     if race.is_relay:
-        # A relay race never is a daily; a reroll in setup finds fresh teams, kept so.
+        # A relay race never is a daily; a reroll in setup finds fresh teams, kept
+        # so. Teams and members change together: the team rows are locked first.
+        await lock_race_teams(db, race.id)
         reset_relay_race(race)
 
     # Reroll always announces in the participants chat. The daily page
@@ -2336,6 +2366,10 @@ async def reset_race(
         started_at=None,
         seed_played=True,
     )
+
+    if race.is_relay:
+        # Teams and members change together: the team rows are locked first.
+        await lock_race_teams(db, race.id)
 
     for p in race.participants:
         if p.status == ParticipantStatus.DISQUALIFIED:
