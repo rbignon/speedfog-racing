@@ -173,6 +173,8 @@ any status, race RUNNING or FINISHED ──→ DISQUALIFIED ──→ status bef
 | ABANDONED    | Left the race (inactivity, no-show, or voluntary abandon) |
 | DISQUALIFIED | Removed from the results by the race staff                |
 
+On a relay race (`Race.relay_team_size`) each team carries a status of the same values (`RelayTeam.status`), and its leaderboard row reads it: REGISTERED in setup, READY at the start, PLAYING from its first holder's report, then FINISHED (its holder killed the final boss), ABANDONED (no member left in it, a free baton nobody took for 30 minutes, or the race's forced end) or DISQUALIFIED (one of its members was disqualified). A member's own status keeps its meaning for membership: they abandon alone (by themselves, by the organizer's removal during the race, or after 30 minutes offline) and the team plays on, its baton freed and its cap recomputed. When a team finishes or is out, its result is copied onto its members still in. See the "Lifecycle" section of `RELAY.md`.
+
 ### Transitions
 
 **REGISTERED → READY**: mod sends `ready` WS message. Broadcasts `leaderboard_update`.
@@ -222,7 +224,7 @@ More broadly, `event_flag` and `zone_query` handlers require `status == PLAYING`
 
 **`zone_history`** is a JSON array of `{"node_id": str, "igt_ms": int, "deaths"?: int, "message_id"?: int}` entries. A new entry is appended on every zone transition, including backtracks (the same `node_id` may appear multiple times). The optional `message_id` is present on `fog` entries created from newer `event_flag` messages and is used for idempotent replay after reconnect. The `deaths` key is added/incremented by `status_update` when the death count increases. Deaths are attributed to the **most recent** entry matching the player's current zone. Frontend consumers (popup, highlights, replay) aggregate time and deaths across all visits to the same node.
 
-**`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change, it just becomes 0.
+**`last_igt_change_at`** is updated on every `status_update` where `igt_ms` differs from the stored value. Used by the inactivity monitor. A quit-out (IGT=0) does not reset it since IGT doesn't change, it just becomes 0. On a relay race the team carries it, and a member's holds since when their mod is offline (set at its disconnect, cleared at its connect).
 
 ---
 
@@ -317,6 +319,8 @@ Arrival order is join order: the `Race.participants` relationship is ordered by 
    - malenia calendar event → no transition (malenia has no active/completed status)
 
 The ordering ensures spectators have full graph data before the status change UI update triggers.
+
+On a relay race the leaderboard rows are teams. Before these broadcasts, `finalize_race` (force-finish, hard close) puts out every team neither finished nor out (ABANDONED, its result copied onto its members), and the leaderboard broadcast is followed by a `relay_update` to those teams' mods, which lower their lock. A team's own finish runs `finish_team`, and a team going out on an abandon, a removal, a disqualification or inactivity runs `member_out` (see `RELAY.md`).
 
 ### Race Reset
 

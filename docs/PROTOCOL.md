@@ -240,13 +240,13 @@ First message after connection. Authenticates the mod. Must arrive within 5 seco
 
 Sent only on a relay race, by a mod of protocol 1.19 or newer. The server answers a refused request with `relay_refused`. See [Relay messages](#relay-messages-relay-races) for the types and the two sequences.
 
-| Message                 | Fields                                                            | When                                                                           |
-| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `relay_ready`           | `ready: bool`                                                     | A waiting runner is (or stops being) loaded at the Chapel with its lock raised |
-| `relay_handoff_request` | `to_participant_id: str`                                          | The holder confirmed a teammate in the menu                                    |
-| `relay_take_request`    | (none)                                                            | A waiting runner holds F8 on a free baton                                      |
-| `relay_state`           | `handoff_id: str \| null`, `state: CharacterState`, `igt_ms: int` | Checkpoint at a zone entry (`handoff_id` null) or answer to `relay_release`    |
-| `relay_taken`           | `handoff_id: str`                                                 | The new holder applied everything and raised its warp flag                     |
+| Message                 | Fields                                                            | When                                                                                                                                                                |
+| ----------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `relay_ready`           | `ready: bool`                                                     | A waiting runner is (or stops being) loaded at the Chapel with its lock raised. Readiness does not survive the socket: the mod sends it again after every `auth_ok` |
+| `relay_handoff_request` | `to_participant_id: str`                                          | The holder confirmed a teammate in the menu                                                                                                                         |
+| `relay_take_request`    | (none)                                                            | A waiting runner holds F8 on a free baton                                                                                                                           |
+| `relay_state`           | `handoff_id: str \| null`, `state: CharacterState`, `igt_ms: int` | Checkpoint at a zone entry (`handoff_id` null) or answer to `relay_release`                                                                                         |
+| `relay_taken`           | `handoff_id: str`                                                 | The new holder applied everything and raised its warp flag                                                                                                          |
 
 #### `item_received`
 
@@ -697,7 +697,7 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
 - `zone_name`: display name of the zone a taker would restart (the zone of the team's last fog gate, or the start zone before any gate), null when unknown.
 - `role`: `holder` only for the team's holder while the baton is not free. Once the baton is free (a take nobody acknowledged), the nominal holder reads `waiting` with `baton_free_in_s: 0`, locks again, and may take the baton back like any teammate.
 - `gates_locked`: true for a holder at or over their cap.
-- `baton_free_in_s`: null while the holder is online; otherwise the seconds before the baton can be taken (the offline wait is 60 s, counted from the holder's disconnect, or from the race start for a holder never connected; the whole 60 until the absence is recorded), 0 when it is free.
+- `baton_free_in_s`: null while the holder is online; otherwise the seconds before the baton can be taken (the offline wait is 60 s, counted from the holder's disconnect, from the race start for a holder not connected then (the countdown's end: 60 through the countdown), or from a server restart; the whole 60 until the absence is recorded; never above 60), 0 when it is free.
 - `flags`: the seed's `relay` block minus `warp_flag_count`.
 
 | Message         | Fields                                                                                                                                       | When                                                                                                                                               |
@@ -712,6 +712,8 @@ Handoff: `relay_handoff_request` (holder), the server checks, `relay_release` (h
 Takeover: `relay_take_request` (teammate), the server checks, flips the holder and sends `relay_take` with the stored state and the last team IGT; then `relay_taken`.
 
 A `relay_state` carrying an expired or unknown `handoff_id` is answered with a `relay_update` to its sender, so a giver who already locked learns that it still holds the baton; so is any `relay_state` from a runner who does not hold the baton (nothing of it is kept). The holder's `relay_state` with `handoff_id` null is a checkpoint (the mod sends one at each zone entry): it is kept, unanswered, for a later takeover. A `relay_state` whose `igt_ms` the wrong-save guard refuses is never kept: as a checkpoint it is dropped, as the answer to `relay_release` it flips nothing (the handoff is dropped, the holder stays holder and gets a `relay_update`). A request made while the race is not running, or during the countdown, is refused with `busy`, and so is a request while a handoff is in flight. A `relay_take` not acknowledged within 30 s sets the baton free; a `relay_release` not answered within 15 s cancels the handoff. A flip to a target whose mod is no longer connected sets the baton free at once; a late `relay_taken` from the current holder clears it.
+
+A member out (their abandon, the organizer's removal, a disqualification, 30 minutes offline) sends the team a `relay_update`: a baton they held is free at once (`holder_id` null, `baton_free_in_s: 0`, nobody gets it automatically), `cap` is recomputed on the members still in (so `gates_locked` may drop), a handoff in flight that names them is dropped, and their own `members[].status` reads `abandoned` or `disqualified`: their race is over. A team with nobody left, or with a member disqualified, is out, and so is a team whose IGT stood still for 30 minutes with no holder; a team finished or out reads it in `team_status`. Server side in `docs/RELAY.md` ("Lifecycle").
 
 `relay_take`: `igt_ms` is the team's IGT; `defeat_flags` holds the defeat flag of every boss the team killed, the current zone's included; `warp_flag` is `warp_flag_base + (n - zone_flag_base)`, n being the connection flag of the last zone the team entered through a fog gate (backtracks never move it), and `zone_name` names that zone; both are null before the team's first gate. A runner at or over their cap never receives the baton (`target_at_cap` for a handoff, `at_cap` for a take), the final zone included. `relay_refused.message` is a short English text per code. The refusal order and the server side are in `docs/RELAY.md` ("Baton").
 

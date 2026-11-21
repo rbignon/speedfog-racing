@@ -38,14 +38,21 @@ from .relay_fixtures import (
     RelayModClient,
     barrier,
     connect_spectator,
+    load_race,
     load_team,
     patch_member,
     patch_race,
     patch_team,
     progress_graph,
     setup_relay_race,
-    start_relay,
+    started_mods,
 )
+from .relay_fixtures import live_take_timers as _live_take_timers
+from .relay_fixtures import make_receiver as _make_receiver
+from .relay_fixtures import member_view as _me
+from .relay_fixtures import set_ready as _set_ready
+from .relay_fixtures import validate as _validate
+from .relay_fixtures import wait_for_timers as _wait_for_timers
 
 integration_db = _integration.integration_db
 integration_client = _integration.integration_client
@@ -64,33 +71,6 @@ WARP = RELAY_BLOCK["warp_flag_base"] + (FOG_FLAG - RELAY_BLOCK["zone_flag_base"]
 EVENT_MAP = progress_graph()["event_map"]
 
 
-def _live_take_timers() -> list[Any]:
-    return [
-        pending
-        for room in manager.rooms.values()
-        for pending in room.relay_pending.values()
-        if pending.timer is not None and not pending.timer.done()
-    ]
-
-
-def _wait_for_timers(seconds: float = 2.0) -> None:
-    """Wait until no take timer is running (each fired or was stopped)."""
-    deadline = time.monotonic() + seconds
-    while _live_take_timers() and time.monotonic() < deadline:
-        time.sleep(0.01)
-
-
-def _started(client, relay_race):
-    mods = start_relay(client, relay_race)
-    yield mods
-    # A relay_take timer runs in the server's loop: a test that starts one
-    # acknowledges the take or waits for the timer to fire.
-    left = _live_take_timers()
-    for mod in mods.values():
-        mod.close()
-    assert not left, "a relay_take timer outlived its test"
-
-
 @pytest.fixture
 def relay_race(integration_db, integration_client):
     return setup_relay_race(integration_db)
@@ -98,7 +78,7 @@ def relay_race(integration_db, integration_client):
 
 @pytest.fixture
 def mods(integration_client, relay_race):
-    yield from _started(integration_client, relay_race)
+    yield from started_mods(integration_client, relay_race)
 
 
 @pytest.fixture
@@ -108,32 +88,11 @@ def trio_race(integration_db, integration_client):
 
 @pytest.fixture
 def trio_mods(integration_client, trio_race):
-    yield from _started(integration_client, trio_race)
+    yield from started_mods(integration_client, trio_race)
 
 
 def _pid(relay_race, team: int, member: int) -> str:
     return relay_race["teams"][team]["members"][member]["participant_id"]
-
-
-def _me(update: dict[str, Any], participant_id: str) -> dict[str, Any]:
-    return next(m for m in update["relay"]["members"] if m["participant_id"] == participant_id)
-
-
-def _validate(mod: RelayModClient) -> None:
-    """The member's first report under 60 s passes its fresh-save gate."""
-    mod.send_status_update(igt_ms=2_000, death_count=0)
-    mod.receive_until("relay_update", lambda m: _me(m, mod.participant_id)["validated"])
-
-
-def _set_ready(mod: RelayModClient) -> None:
-    """The member is loaded at the Chapel with its lock raised."""
-    mod.send({"type": "relay_ready", "ready": True})
-    mod.receive_until("relay_update", lambda m: _me(m, mod.participant_id)["ready"])
-
-
-def _make_receiver(mod: RelayModClient) -> None:
-    _validate(mod)
-    _set_ready(mod)
 
 
 def _gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> None:
@@ -676,11 +635,12 @@ def test_a_first_runner_absent_at_the_start_waits_60_seconds(integration_client,
             headers={"Authorization": f"Bearer {relay_race['organizer'].api_token}"},
         )
         assert response.status_code == 200, response.json()
-        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(seconds=1))
-        waiting = mods[_pid(relay_race, 0, 1)]
         team = load_team(relay_race)
         assert team.holder_id == UUID(absent["participant_id"])
-        assert team.holder_offline_since is not None  # absent from the start
+        # Absent from the race start: the countdown's end, not the request.
+        assert team.holder_offline_since == load_race(relay_race).started_at
+        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(seconds=1))
+        waiting = mods[_pid(relay_race, 0, 1)]
 
         waiting.send_status_update(igt_ms=2_000, death_count=0)
         update = waiting.receive_until(
@@ -705,7 +665,7 @@ def test_a_first_runner_absent_at_the_start_waits_60_seconds(integration_client,
             mod.close()
 
 
-def test_a_take_between_the_holder_socket_pop_and_its_stamp_waits(relay_race):
+def test_a_take_between_the_holder_socket_pop_and_its_stamp_waits(monkeypatch, relay_race):
     holder_id, asker_id = UUID(_pid(relay_race, 0, 0)), UUID(_pid(relay_race, 0, 1))
     patch_race(
         relay_race, status=RaceStatus.RUNNING, started_at=datetime.now(UTC) - timedelta(minutes=1)
@@ -714,6 +674,7 @@ def test_a_take_between_the_holder_socket_pop_and_its_stamp_waits(relay_race):
     patch_member(relay_race, str(asker_id), status=ParticipantStatus.PLAYING, relay_validated=True)
     # The holder's socket left the room; its disconnect hook has not stamped yet.
     room = RaceRoom(race_id=UUID(relay_race["race_id"]))
+    monkeypatch.setitem(manager.rooms, room.race_id, room)
     socket = AsyncMock()
     room.mods[asker_id] = ModConnection(websocket=socket, participant_id=asker_id, user_id=uuid4())
     room.relay_ready.add(asker_id)
@@ -723,7 +684,10 @@ def test_a_take_between_the_holder_socket_pop_and_its_stamp_waits(relay_race):
     )
 
     sent = [json.loads(call.args[0]) for call in socket.send_text.call_args_list]
-    assert [(m["type"], m["code"]) for m in sent] == [("relay_refused", "holder_online")]
+    # The team learns the wait started (its countdown runs), the asker is refused.
+    assert [m["type"] for m in sent] == ["relay_update", "relay_refused"]
+    assert sent[0]["relay"]["baton_free_in_s"] == 60
+    assert sent[1]["code"] == "holder_online"
     team = load_team(relay_race)
     assert (team.holder_id, team.baton_free) == (holder_id, False)
     assert team.holder_offline_since is not None  # offline since now: the wait starts

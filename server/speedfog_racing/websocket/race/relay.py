@@ -1,24 +1,27 @@
 """Relay races on the mod socket: what a mod is told about its team and its
-role, and the baton operations.
+role, the baton operations, and a member or a team going out.
 
 The operations (``request_handoff``, ``store_state``, ``request_take``,
-``confirm_taken``, ``set_ready``, ``holder_connection_changed``, and the take
+``confirm_taken``, ``set_ready``, ``member_connection_changed``, and the take
 timer) each take ``RaceRoom.relay_lock``, so they run one at a time per race.
 All but ``set_ready`` read the team through ``team_for_update``, whose row lock
 orders a flip and a progress write of the same team; ``set_ready`` reads only
-the member's team id, without a lock. See ``docs/RELAY.md`` ("Baton").
+the member's team id, without a lock. ``member_out`` (a REST route or a
+background loop taking a member or a team out) keeps the same discipline
+through ``relay_section``. See ``docs/RELAY.md`` ("Baton", "Lifecycle").
 """
 
 import asyncio
 import logging
 import time
 import uuid
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
@@ -40,10 +43,13 @@ from speedfog_racing.services.relay import (
     RELAY_RELEASE_TIMEOUT_S,
     RELAY_TAKE_TIMEOUT_S,
     RelayRefusal,
+    RelayTeamRow,
+    apply_member_out,
     baton_free_in_s,
     baton_is_free,
     copy_team_result,
     holds_baton,
+    is_active_member,
     leaderboard_entries,
     load_relay_row,
     receive_refusal,
@@ -189,6 +195,18 @@ async def send_relay_updates(
         row = await load_relay_row(db, team_id, graph)
     if row is None or graph is None:
         return
+    await send_row_relay_updates(room, row, graph, to=to)
+
+
+async def send_row_relay_updates(
+    room: "RaceRoom",
+    row: RelayTeamRow,
+    graph: Mapping[str, Any],
+    *,
+    to: Collection[uuid.UUID] | None = None,
+) -> None:
+    """``send_relay_updates`` for a team row the caller already holds (its
+    members' users loaded)."""
     flags = relay_flags(graph)
     if flags is None:
         return
@@ -225,6 +243,9 @@ async def finish_team(
     never refuses it), the public chat line, auto-finish, then the same
     broadcasts, plus a ``relay_update`` that tells the team's mods their race
     is over. A relay race has no deathless rule, IGT cutoff or projection.
+
+    The commit writes the team and its members: the team row is locked first,
+    as in every relay write to both (a member going out, a progress commit).
     """
     # Local imports: these modules import this one.
     from speedfog_racing.websocket.race.manager import manager
@@ -233,7 +254,7 @@ async def finish_team(
 
     race_transitioned = False
     async with session_maker() as db:
-        team = await _load_finishing_team(db, team_id)
+        team = await _load_finishing_team(db, team_id, lock=True)
         if team is None:
             return
         race = team.race
@@ -294,13 +315,15 @@ async def finish_team(
             await room.broadcast_chat_public(race_finished_json, race)
 
 
-async def _load_finishing_team(db: AsyncSession, team_id: uuid.UUID) -> RelayTeam | None:
+async def _load_finishing_team(
+    db: AsyncSession, team_id: uuid.UUID, *, lock: bool = False
+) -> RelayTeam | None:
     """A team with its members and its race as ``handle_finished`` loads a
     runner's: seed, field with users and teams, casters (the race's teams are
     named: reached through ``RelayTeam.race``, their default selectin is not
-    followed)."""
+    followed). ``lock``: the team row is locked (``FOR UPDATE``) for a commit."""
     race = selectinload(RelayTeam.race)
-    result = await db.execute(
+    statement = (
         select(RelayTeam)
         .where(RelayTeam.id == team_id)
         .options(
@@ -311,6 +334,9 @@ async def _load_finishing_team(db: AsyncSession, team_id: uuid.UUID) -> RelayTea
             race.selectinload(Race.casters).selectinload(Caster.user),
         )
     )
+    if lock:
+        statement = statement.with_for_update(of=RelayTeam)
+    result = await db.execute(statement)
     return result.scalar_one_or_none()
 
 
@@ -713,6 +739,7 @@ async def request_take(
     ``relay_refused``. The nominal holder of a free baton may ask too."""
     async with room.relay_lock:
         flip: _Flip | None = None
+        stamped = False
         async with session_maker() as db:
             loaded = await _locked_team(db, graph_json, participant_id=participant_id)
             if loaded is None:
@@ -731,6 +758,7 @@ async def request_take(
                 # never connected): offline since now, the whole wait ahead.
                 team.holder_offline_since = datetime.now(UTC)
                 await db.commit()
+                stamped = True
             refusal: str | None
             if not _baton_moves(team) or _in_flight(room, team.id):
                 refusal = RelayRefusal.BUSY
@@ -748,7 +776,11 @@ async def request_take(
                 flip = await _flip(
                     session_maker, db, room, team, me, handoff_id=uuid.uuid4().hex, graph=graph
                 )
+            race_id, team_id = team.race_id, team.id
         if flip is None:
+            if stamped:
+                # The wait starts now: the team's mods count it down.
+                await send_relay_updates(session_maker, race_id, team_id, graph_json=graph)
             await _refuse(room, participant_id, refusal or RelayRefusal.BUSY)
             return
         await _after_flip(session_maker, room, flip, graph)
@@ -828,7 +860,7 @@ async def set_ready(
         )
 
 
-async def holder_connection_changed(
+async def member_connection_changed(
     session_maker: async_sessionmaker[AsyncSession],
     room: "RaceRoom",
     participant_id: uuid.UUID,
@@ -838,11 +870,15 @@ async def holder_connection_changed(
 ) -> None:
     """A member's mod connected or disconnected.
 
-    For the holder of a team still in the race, ``holder_offline_since`` is
-    cleared, or set to now (the mods count the 60 s down from
-    ``baton_free_in_s``) and their pending release dropped. The team's mods are
-    told either way (``online``, ``holder_online``). The disconnect of a socket
-    a newer one replaced changes nothing.
+    A member still in the race is offline since now, or no longer:
+    ``Participant.last_igt_change_at`` holds that stamp on a relay race, for
+    the 30 minute inactivity rule. For the holder of a team still in the race,
+    ``holder_offline_since`` too (the mods count the 60 s down from
+    ``baton_free_in_s``), and a disconnect drops their pending release. The
+    team's mods are told either way (``online``, ``holder_online``). The
+    disconnect of a socket a newer one replaced changes nothing. The team row
+    is locked before the member's row is written, as in every relay write to
+    both.
     """
     async with room.relay_lock:
         if connected != (participant_id in room.mods):
@@ -852,12 +888,16 @@ async def holder_connection_changed(
             if loaded is None:
                 return
             team, graph = loaded
+            offline_since = None if connected else datetime.now(UTC)
+            member = next((m for m in team.members if m.id == participant_id), None)
+            if member is not None and member.status not in TERMINAL_PARTICIPANT_STATUSES:
+                member.last_igt_change_at = offline_since
             if (
                 team.holder_id == participant_id
                 and team.status not in TERMINAL_PARTICIPANT_STATUSES
             ):
-                team.holder_offline_since = None if connected else datetime.now(UTC)
-                await db.commit()
+                team.holder_offline_since = offline_since
+            await db.commit()
             race_id, team_id = team.race_id, team.id
         pending = room.relay_pending.get(team_id)
         if (
@@ -884,4 +924,212 @@ async def _broadcast_leaderboard(
     if race is not None:
         await manager.broadcast_leaderboard(
             race_id, leaderboard_entries(race, graph), graph_json=graph
+        )
+
+
+# ---------------------------------------------------------------------------
+# Lifecycle: a member or a team going out
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def relay_section(race_id: uuid.UUID) -> AsyncIterator[None]:
+    """The baton discipline for a caller without a mod handler (a REST route, a
+    background loop): hold the race room's ``relay_lock`` when the race has a
+    room. Without a room nobody is connected: no handoff is in flight (they
+    live in the room) and there is nobody to tell, so the team row lock alone
+    orders the write; a mod connecting meanwhile waits on that row lock in its
+    own operations. No room is created: nothing would drop it."""
+    from speedfog_racing.websocket.race.manager import manager
+
+    room = manager.get_room(race_id)
+    if room is None:
+        yield
+        return
+    async with room.relay_lock:
+        yield
+
+
+@dataclass(frozen=True)
+class RelayOut:
+    """What ``member_out`` committed: ``member_id`` went out of ``team_id``
+    (None: the team went out with nobody leaving it), and whether the team is
+    out now."""
+
+    team_id: uuid.UUID
+    member_id: uuid.UUID | None
+    team_out: bool
+
+
+# Decides on the locked team: the member moved out with whether the team went
+# out, ``(None, True)`` for a team put out on its own, or None to change nothing.
+OutChange = Callable[[RelayTeam], "tuple[Participant | None, bool] | None"]
+
+
+async def member_out(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    change: OutChange,
+    *,
+    participant_id: uuid.UUID | None = None,
+    team_id: uuid.UUID | None = None,
+    member_line: tuple[ChatChannel, str] | None = None,
+) -> RelayOut | None:
+    """Take a member, or a team, out of a relay race, with the baton
+    discipline: ``relay_section``, then the team row lock (``team_for_update``,
+    the team found through ``participant_id`` or by ``team_id``), the decision
+    in that one session on rows read under the locks, the sends after it.
+
+    ``change`` decides (see ``OutChange``). The chat lines go in the same
+    commit: ``member_line`` (a channel and a text whose ``{name}`` is the
+    member's display name) and, for a team gone out, ``{team name} is out.`` on
+    the public channel. After the commit, ``after_member_out``, then the lines
+    are broadcast. Every member row it writes is written once the team row is
+    locked, the order of the progress commits and of ``finish_team``. None when
+    nothing changed.
+    """
+    from speedfog_racing.websocket.race.manager import manager
+
+    async with relay_section(race_id):
+        lines: list[tuple[ChatChannel, str]] = []
+        async with session_maker() as db:
+            statement = team_for_update(participant_id=participant_id, team_id=team_id)
+            team = (await db.execute(statement)).scalar_one_or_none()
+            decided = change(team) if team is not None else None
+            if team is None or decided is None:
+                return None
+            member, team_out = decided
+            if member is not None and member_line is not None:
+                channel, text = member_line
+                name = member.user.twitch_display_name or member.user.twitch_username
+                message = await persist_system_chat(db, race_id, channel, text.format(name=name))
+                lines.append((channel, message))
+            if team_out:
+                message = await persist_system_chat(
+                    db, race_id, ChatChannel.PUBLIC, f"{team.name} is out."
+                )
+                lines.append((ChatChannel.PUBLIC, message))
+            race = team.race
+            out = RelayOut(team.id, member.id if member is not None else None, team_out)
+            await db.commit()
+        logger.info(
+            "Relay member out: race=%s team=%s member=%s team_out=%s",
+            race_id,
+            out.team_id,
+            out.member_id,
+            out.team_out,
+        )
+        await after_member_out(session_maker, race_id, out.team_id)
+        room = manager.get_room(race_id)
+        if room is not None:
+            for channel, message in lines:
+                if channel == ChatChannel.PARTICIPANTS:
+                    await room.broadcast_chat_participants(message)
+                else:
+                    await room.broadcast_chat_public(message, race)
+    return out
+
+
+async def take_member_out(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    participant_id: uuid.UUID,
+    out: Callable[[RelayTeam, Participant], bool],
+    *,
+    member_line: tuple[ChatChannel, str] | None = None,
+) -> RelayOut | None:
+    """``member_out`` for one member: ``out`` moves them, read under the locks,
+    to ABANDONED or DISQUALIFIED (False: it declines, nothing is written), then
+    ``apply_member_out`` frees the baton they held and puts the team out when
+    it must."""
+
+    def change(team: RelayTeam) -> tuple[Participant | None, bool] | None:
+        member = next((m for m in team.members if m.id == participant_id), None)
+        if member is None or not out(team, member):
+            return None
+        disqualified = member.status == ParticipantStatus.DISQUALIFIED
+        return member, apply_member_out(team, team.members, member, disqualified=disqualified)
+
+    return await member_out(
+        session_maker, race_id, change, participant_id=participant_id, member_line=member_line
+    )
+
+
+async def after_member_out(
+    session_maker: async_sessionmaker[AsyncSession],
+    race_id: uuid.UUID,
+    team_id: uuid.UUID,
+) -> None:
+    """What follows a member (or their team) going out, once committed, still
+    under ``relay_section``.
+
+    A handoff in flight that names someone out is dropped: a release whose
+    giver or target is out, a take whose receiver is out (its timer
+    cancelled; the baton they held is already free), any handoff of a team
+    that is out. The team's members who are out get the public chat
+    (``set_participant_status``), and its mods a ``relay_update``: cap,
+    ``gates_locked``, holder, ``team_status``. Nothing to do without a room.
+    """
+    from speedfog_racing.websocket.race.manager import manager
+
+    room = manager.get_room(race_id)
+    if room is None:
+        return
+    async with session_maker() as db:
+        graph = await _race_graph(db, race_id)
+        row = await load_relay_row(db, team_id, graph)
+    if row is None or graph is None:
+        return
+    out = {m.id for m in row.members if not is_active_member(m)}
+    pending = room.relay_pending.get(team_id)
+    if pending is not None and (
+        row.team.status in TERMINAL_PARTICIPANT_STATUSES
+        or pending.target_id in out
+        or (pending.phase == "release" and pending.giver_id in out)
+    ):
+        logger.info("Relay handoff dropped: team=%s handoff=%s", team_id, pending.handoff_id)
+        _set_pending(room, team_id, None)
+    for member in row.members:
+        if member.status in TERMINAL_PARTICIPANT_STATUSES:
+            room.set_participant_status(member.user_id, member.status)
+    await send_row_relay_updates(room, row, graph)
+
+
+async def stamp_offline_runners(session_maker: async_sessionmaker[AsyncSession]) -> None:
+    """At server start no mod is connected: on every running relay race, the
+    holder of a team still in the race with no offline stamp is offline from
+    now (the 60 s wait starts; an absent holder would otherwise keep the baton
+    for good), and so is every PLAYING member with no stamp (the 30 minute
+    inactivity rule). Teams before members, in one transaction."""
+    now = datetime.now(UTC)
+    running = select(Race.id).where(
+        Race.status == RaceStatus.RUNNING, Race.relay_team_size.is_not(None)
+    )
+    async with session_maker() as db:
+        teams = await db.execute(
+            update(RelayTeam)
+            .where(
+                RelayTeam.race_id.in_(running),
+                RelayTeam.status.in_((ParticipantStatus.READY, ParticipantStatus.PLAYING)),
+                RelayTeam.holder_id.is_not(None),
+                RelayTeam.holder_offline_since.is_(None),
+            )
+            .values(holder_offline_since=now)
+            .execution_options(synchronize_session=False)
+        )
+        members = await db.execute(
+            update(Participant)
+            .where(
+                Participant.race_id.in_(running),
+                Participant.status == ParticipantStatus.PLAYING,
+                Participant.last_igt_change_at.is_(None),
+            )
+            .values(last_igt_change_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+    holders, runners = teams.rowcount, members.rowcount  # type: ignore[attr-defined]
+    if holders or runners:
+        logger.info(
+            "Relay runners offline since the server start: holders=%d members=%d",
+            holders,
+            runners,
         )
