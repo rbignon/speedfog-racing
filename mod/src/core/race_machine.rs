@@ -4772,9 +4772,9 @@ impl RaceMachine {
 
     /// The frame after a take was applied: acknowledged only on a frame
     /// whose IGT reads in the window only a write that took can produce:
-    /// from 0 up to the team's IGT plus the wall time since the start frame
-    /// plus `relay::IGT_WRITE_SLACK` (an unreadable IGT is outside it, the
-    /// IGT 0 of a team still `ready` included). Below the team's IGT the
+    /// from the team's IGT up to it plus the wall time since the start frame
+    /// plus `relay::IGT_WRITE_SLACK` (an unreadable IGT is outside it; the
+    /// window applies at a team IGT of 0 too). Below the team's IGT the
     /// write has not taken yet; above the window the reading is the runner's
     /// own IGT still ticking. Until then `SetIgt` is emitted again, no
     /// sooner than `relay::IGT_WRITE_RETRY` after the last write.
