@@ -29,8 +29,10 @@ A console drives the bots:
     online BOT            connect BOT again
     mute BOT on|off       on: BOT ignores a `relay_take`, which exercises the
                           30 s acknowledgement timeout
-    finish BOT            the holder sends the seed's finish event: its team
-                          finishes
+    finish BOT            the holder sends the seed's finish event from wherever
+                          it is (the server credits the final boss): its team
+                          finishes even before the final layer, so it proves
+                          nothing about the walk
     quit
 
 Typical run: two teams of two bots (or one team and yourself), start the race
@@ -271,6 +273,17 @@ def next_gate(graph: dict[str, Any], node: str) -> tuple[str, int] | str:
     return path[0], flags[path[0]]
 
 
+def finish_warning(graph: dict[str, Any], node: str) -> str | None:
+    """A line to print when ``node`` is not the final boss's zone: the finish
+    event is accepted from anywhere, so the finish it brings proves no walk."""
+    if graph["nodes"].get(node, {}).get("type") == "final_boss":
+        return None
+    return (
+        f"the team is at {node}, not at the final boss: the server accepts the "
+        "finish event from anywhere, this finish does not prove the walk"
+    )
+
+
 def parse_team(spec: str) -> tuple[str, list[str]]:
     """``NAME=BOT,BOT`` into the team name and its bots (2 or more, distinct)."""
     name, sep, rest = spec.partition("=")
@@ -302,6 +315,7 @@ class Console:
     # --- setup ---
 
     async def load(self) -> None:
+        from fastapi import HTTPException
         from sqlalchemy import select
         from sqlalchemy.orm import selectinload
 
@@ -383,9 +397,15 @@ class Console:
                             if team is not None
                             else RelayTeamChoice(create_team=True)
                         )
-                        placed = await place_in_team(
-                            db, race, p, choice, by_organizer=True
-                        )
+                        try:
+                            placed = await place_in_team(
+                                db, race, p, choice, by_organizer=True
+                            )
+                        except HTTPException as e:
+                            await db.rollback()
+                            raise SystemExit(
+                                f"cannot place {name} in {team_name!r}: {e.detail}"
+                            ) from e
                         if placed is not None and team is None:
                             placed.name = team_name
                             race.relay_teams.append(placed)
@@ -606,6 +626,10 @@ class Console:
             log(refusal)
             return
         assert self.finish_flag is not None
+        node, _ = await self.team_progress(bot)
+        warning = finish_warning(self.graph, node)
+        if warning is not None:
+            log(f"[{bot.name}] warning: {warning}")
         if await self.flag(bot, self.finish_flag):
             log(f"[{bot.name}] sent the finish event")
 

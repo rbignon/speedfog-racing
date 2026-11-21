@@ -501,21 +501,21 @@ Each bot is a local user. In setup the tool places them in the named team throug
 - It answers `relay_release` with a `relay_state` carrying the same `handoff_id`, a fixed fake `CharacterState` and the team IGT, and `relay_take` with `relay_taken`; only then does it report progress, its first report carrying the IGT given in `relay_take`.
 - Its role comes from `RelayInfo.role` (`auth_ok`, `relay_update`). It stops once its own member is `abandoned` or `disqualified`, or its team is finished, abandoned or disqualified.
 
-The decisions are the pure `next_action(bot, message)` (the answer to one server message) and `tick(bot)` (what it sends on its own each second), covered by `tools/test_relay_bot.py` (no socket, no database).
+Only the pure decisions are validated: the setup insert, the socket loop, the console commands and `status` have never been run against a server (that needs a database at head and a pool regenerated with the relay plugin). The decisions are the pure `next_action(bot, message)` (the answer to one server message) and `tick(bot)` (what it sends on its own each second), covered by `tools/test_relay_bot.py` (no socket, no database).
 
 Console commands:
 
-| Command                     | Effect                                                                                                                          |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `status`                    | Teams (status, holder, zone, IGT) and each member's zones over the cap                                                          |
-| `walk BOT`                  | The holder takes the next gate of the forward path (refused while its gates are locked)                                         |
-| `boss BOT`                  | The holder kills the boss of its zone (its defeat flag): a zone counts for whoever kills its boss, or exits it when it has none |
-| `pass BOT TO`               | The holder asks to hand the baton to the teammate named `TO`                                                                    |
-| `take BOT`                  | A waiting bot asks for the baton, once `baton_free_in_s` is 0                                                                   |
-| `offline BOT`, `online BOT` | Close the bot's socket and stay away, then connect it again                                                                     |
-| `mute BOT on\|off`          | A muted bot ignores `relay_take`, which exercises the 30 s acknowledgement timeout                                              |
-| `finish BOT`                | The holder sends the seed's finish event: its team finishes                                                                     |
-| `quit`                      | Leave                                                                                                                           |
+| Command                     | Effect                                                                                                                                                                                                              |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`                    | Teams (status, holder, zone, IGT) and each member's zones over the cap                                                                                                                                              |
+| `walk BOT`                  | The holder takes the next gate of the forward path (refused while its gates are locked)                                                                                                                             |
+| `boss BOT`                  | The holder kills the boss of its zone (its defeat flag): a zone counts for whoever kills its boss, or exits it when it has none                                                                                     |
+| `pass BOT TO`               | The holder asks to hand the baton to the teammate named `TO`                                                                                                                                                        |
+| `take BOT`                  | A waiting bot asks for the baton, once `baton_free_in_s` is 0                                                                                                                                                       |
+| `offline BOT`, `online BOT` | Close the bot's socket and stay away, then connect it again                                                                                                                                                         |
+| `mute BOT on\|off`          | A muted bot ignores `relay_take`, which exercises the 30 s acknowledgement timeout                                                                                                                                  |
+| `finish BOT`                | The holder sends the seed's finish event from any zone (the server credits the final boss): its team finishes, and the console warns when it is not at the final boss, as that finish proves nothing about the walk |
+| `quit`                      | Leave                                                                                                                                                                                                               |
 
 A walk needs the race to run and the bot to hold the baton. A race needs a relay seed (`Seed.relay`), so a local database whose pools were never regenerated with the relay plugin cannot start one.
 
