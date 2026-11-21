@@ -32,6 +32,7 @@ use crate::core::relay::{
 };
 use crate::core::relay_items;
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
+use crate::core::relay_view::{self, RelayView};
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -612,6 +613,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::core::flag_buffer::{FlagBuffer, UnackedFlag, UnackedFlags, SAVE_RELOAD_IGT_DROP_MS};
 
+/// The inputs of a relay view besides the `RelayInfo`: role, displayed
+/// countdown second, displayed layer and total.
+type RelayViewKey = (Option<RelayRole>, Option<u32>, Option<(i32, i32)>);
+
 /// Pure race state machine. Owns every piece of plain-data race state and
 /// makes every decision; performs no IO. Fields are `pub` so the Windows
 /// shell and renderer can read them directly (writes go through
@@ -760,6 +765,15 @@ pub struct RaceMachine {
     relay_rows: Vec<MenuRow>,
     /// How many of `relay_rows` can receive the baton.
     relay_eligible: usize,
+    /// What the overlay says about the baton, built on receipt and once per
+    /// displayed second of an offline holder's countdown; `None` without
+    /// relay.
+    relay_view: Option<RelayView>,
+    /// What `relay_view` was built from besides the `RelayInfo`: the role,
+    /// the countdown's displayed second and the displayed layer.
+    relay_view_key: Option<RelayViewKey>,
+    /// The baton key's label in the hints ("F8").
+    relay_key_label: String,
     /// The holder's menu (its key state; the list is `relay_rows`).
     relay_menu: HandoffMenu,
     /// A waiting runner's hold on the key to take a free baton.
@@ -961,6 +975,9 @@ impl RaceMachine {
             relay_zone_warp: None,
             relay_received_at: None,
             relay_rows: Vec::new(),
+            relay_view: None,
+            relay_view_key: None,
+            relay_key_label: "F8".to_string(),
             relay_eligible: 0,
             relay_menu: HandoffMenu::default(),
             relay_hold: HoldKey::default(),
@@ -1403,6 +1420,100 @@ impl RaceMachine {
         )
     }
 
+    /// What the overlay says about the baton; `None` without relay. Every
+    /// string is built on receipt: the drawing only reads it.
+    pub fn relay_view(&self) -> Option<&RelayView> {
+        self.relay_view.as_ref()
+    }
+
+    /// Set the baton key's label in the overlay's hints.
+    pub fn set_relay_key_label(&mut self, label: String) {
+        self.relay_key_label = label;
+        self.refresh_relay_view(Instant::now(), true);
+    }
+
+    /// The waiting banner is on screen: the runner waits, no menu, no item
+    /// banner and no countdown (the fullscreen countdown's ring and the item
+    /// banner hang from the same top-centre band, so the banner yields).
+    pub fn relay_wait_visible(&self, now: Instant) -> bool {
+        self.relay_view
+            .as_ref()
+            .is_some_and(|view| view.wait.is_some())
+            && !self.relay_menu.is_open()
+            && self.item_banner().is_none()
+            && !self.is_countdown_active(now)
+    }
+
+    /// The holder's menu is on screen: it wins over the item banner (the
+    /// drawing skips that banner meanwhile) and yields to the countdown.
+    pub fn relay_menu_visible(&self, now: Instant) -> bool {
+        self.relay_menu.is_open() && !self.is_countdown_active(now)
+    }
+
+    /// The waiting banner's last line: the view's, except that a take
+    /// request in flight reads `REQUEST_TEXT` and a runner not yet ready to
+    /// take (not at the Chapel with the lock asserted) reads `NOT_READY_TEXT`
+    /// instead of a hold prompt that would do nothing.
+    pub fn relay_wait_detail(&self) -> &str {
+        let Some(wait) = self.relay_view.as_ref().and_then(|v| v.wait.as_ref()) else {
+            return "";
+        };
+        if wait.hold_bar {
+            if self.relay_request.is_some() {
+                return relay_view::REQUEST_TEXT;
+            }
+            if self.relay_ready_sent != Some(true) {
+                return relay_view::NOT_READY_TEXT;
+            }
+        }
+        &wait.detail
+    }
+
+    /// Whether the hold bar is drawn under the waiting banner: the prompt is
+    /// the hold prompt and nothing else stands in its place.
+    pub fn relay_wait_hold_bar(&self) -> bool {
+        self.relay_view
+            .as_ref()
+            .and_then(|v| v.wait.as_ref())
+            .is_some_and(|wait| wait.hold_bar)
+            && self.relay_wait_detail() == self.relay_view_detail()
+    }
+
+    fn relay_view_detail(&self) -> &str {
+        self.relay_view
+            .as_ref()
+            .and_then(|v| v.wait.as_ref())
+            .map_or("", |wait| wait.detail.as_str())
+    }
+
+    /// The menu's key hints: the view's, or `REQUEST_TEXT` while a handoff
+    /// request is in flight.
+    pub fn relay_menu_hint(&self) -> &str {
+        if self.relay_request.is_some() {
+            return relay_view::REQUEST_TEXT;
+        }
+        self.relay_view
+            .as_ref()
+            .map_or("", |view| view.menu_hint.as_str())
+    }
+
+    /// The gap of a leaderboard row is computed with the runner's local IGT
+    /// rather than the server's: its own row, playing, the race not
+    /// finished, and on a relay race only for the live holder (a waiting
+    /// runner's own IGT is not its team's; a take in progress has not
+    /// written the team's yet).
+    pub fn gap_uses_local_igt(
+        &self,
+        row_id: &str,
+        status: ParticipantStatus,
+        race_finished: bool,
+    ) -> bool {
+        !race_finished
+            && status == ParticipantStatus::Playing
+            && self.my_row_id() == Some(row_id)
+            && (self.relay.is_none() || self.relay_holder_live())
+    }
+
     /// The runner may pass the baton with the menu: it holds it in a relay
     /// being played, past the countdown (the server answers `busy` during
     /// it), with no release waiting, no take in progress or just made, and
@@ -1597,7 +1708,49 @@ impl RaceMachine {
             info!(confirmed = named_me, "[RELAY] Holder role window ended");
             self.relay_confirm_until = None;
         }
+        self.refresh_relay_view(now, true);
         self.relay_turned_waiting(before)
+    }
+
+    /// Rebuild the cached view when the `RelayInfo` was replaced (`force`)
+    /// or when the role, the countdown's displayed second or the displayed
+    /// layer changed since it was built: one comparison per tick otherwise.
+    fn refresh_relay_view(&mut self, now: Instant, force: bool) {
+        let Some(relay) = self.relay.as_ref() else {
+            self.relay_view = None;
+            self.relay_view_key = None;
+            return;
+        };
+        let key = (
+            self.relay_role(),
+            self.relay_free_in_s(now),
+            self.relay_layer(),
+        );
+        if !force && self.relay_view.is_some() && self.relay_view_key == Some(key) {
+            return;
+        }
+        crate::profile_span!("relay_view");
+        let view = key.0.map(|role| {
+            relay_view::build(
+                relay,
+                role,
+                self.my_participant_id.as_deref().unwrap_or(""),
+                key.2,
+                key.1,
+                &self.relay_key_label,
+            )
+        });
+        self.relay_view = view;
+        self.relay_view_key = Some(key);
+    }
+
+    /// The displayed layer and the seed's total, as the panel's fraction.
+    fn relay_layer(&self) -> Option<(i32, i32)> {
+        let total = self.race_state.seed.as_ref()?.total_layers;
+        let layer = self
+            .pre_reveal_layer
+            .or_else(|| self.my_participant().map(|p| p.current_layer))?;
+        Some(((layer + 1).min(total), total))
     }
 
     /// Whether the role turned `Waiting` since `before`: then the zone just
@@ -4412,6 +4565,7 @@ impl RaceMachine {
         crate::profile_span!("maintain_relay");
         let flags = relay.flags;
         self.relay_take_follows_race();
+        self.refresh_relay_view(now, false);
         if self.relay_confirm_until.is_some_and(|until| now >= until) {
             info!("[RELAY] Holder role not confirmed in time: the server's word rules again");
             self.relay_confirm_until = None;
@@ -5336,6 +5490,7 @@ impl RaceMachine {
 mod tests {
     use super::*;
     use crate::core::relay_menu::Unavailable;
+    use crate::core::relay_view::{NOT_READY_TEXT, REQUEST_TEXT};
 
     // ------------------------------------------------------------------
     // Harness
@@ -16690,5 +16845,176 @@ mod tests {
         );
         key(&mut m, t0, 2_300, false);
         assert!(m.relay_request.is_none(), "race stopped");
+    }
+
+    fn offline_holder_info(free_in: u32) -> RelayInfo {
+        let mut info = relay_info("waiting");
+        info.holder_online = false;
+        info.baton_free_in_s = Some(free_in);
+        info
+    }
+
+    #[test]
+    fn the_view_follows_the_local_countdown() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, offline_holder_info(60), t0, 0);
+        assert_eq!(
+            m.relay_view().unwrap().wait.as_ref().unwrap().line,
+            "The baton can be taken in 60 s"
+        );
+        go(&mut m, t0, 18_200, None);
+        let wait = m.relay_view().unwrap().wait.as_ref().unwrap();
+        assert_eq!(wait.line, "The baton can be taken in 42 s");
+        go(&mut m, t0, 59_900, None);
+        assert_eq!(
+            m.relay_view().unwrap().wait.as_ref().unwrap().line,
+            "The baton can be taken in 1 s"
+        );
+        go(&mut m, t0, 60_000, None);
+        assert_eq!(
+            m.relay_view().unwrap().wait.as_ref().unwrap().title,
+            "THE BATON IS FREE"
+        );
+    }
+
+    #[test]
+    fn the_view_is_rebuilt_only_when_what_it_reads_changes() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        go(&mut m, t0, 100, None);
+        let key = m.relay_view_key;
+        go(&mut m, t0, 200, None);
+        assert_eq!(m.relay_view_key, key);
+        assert!(m.relay_view().unwrap().wait.is_some());
+        // A key label change rebuilds.
+        m.set_relay_key_label("F9".to_string());
+        assert_eq!(m.relay_view().unwrap().baton_hint, "");
+        update(&mut m, offline_holder_info(0), t0, 300);
+        assert_eq!(m.relay_view().unwrap().baton_hint, "F9 take");
+    }
+
+    #[test]
+    fn a_take_received_turns_the_view_to_the_holders() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        assert!(m.relay_view().unwrap().wait.is_some());
+        receive(&mut m, t0, take("h1"));
+        go(&mut m, t0, 1_050, None);
+        let view = m.relay_view().unwrap();
+        assert!(view.wait.is_none());
+        assert_eq!(view.baton_who, "you");
+    }
+
+    #[test]
+    fn there_is_no_view_without_a_relay_and_a_setup_shows_nothing() {
+        let t0 = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        m.handle_message(auth_ok("running", &[], None), t0);
+        assert!(m.relay_view().is_none());
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
+        assert_eq!(m.relay_view(), Some(&RelayView::default()));
+        assert!(!m.relay_wait_visible(t0));
+    }
+
+    #[test]
+    fn the_waiting_banner_yields_to_the_countdown_and_the_item_banner() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        assert!(m.relay_wait_visible(t0));
+        m.race_state.countdown_end = Some(t0 + secs(10));
+        assert!(!m.relay_wait_visible(t0 + secs(1)));
+        assert!(m.relay_wait_visible(t0 + secs(11)));
+        m.race_state.countdown_end = None;
+        m.item_feed.push_banner(
+            FeedBanner {
+                icon: String::new(),
+                title: "YOU HAVE THE BATON".to_string(),
+                line: String::new(),
+                detail: String::new(),
+                tone: FeedTone::Gain,
+            },
+            t0,
+        );
+        assert!(!m.relay_wait_visible(t0));
+    }
+
+    #[test]
+    fn the_menu_shows_for_a_holder_and_wins_over_the_banner() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        assert!(!m.relay_menu_visible(t0));
+        m.relay_menu.update(true, 1, t0);
+        assert!(m.relay_menu_visible(t0));
+        m.race_state.countdown_end = Some(t0 + secs(10));
+        assert!(!m.relay_menu_visible(t0 + secs(1)));
+    }
+
+    #[test]
+    fn the_take_prompt_waits_for_the_runner_and_the_server() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, offline_holder_info(0), t0, 0);
+        let prompt = m
+            .relay_view()
+            .unwrap()
+            .wait
+            .as_ref()
+            .unwrap()
+            .detail
+            .clone();
+        assert!(prompt.starts_with("Hold F8"), "{prompt}");
+        // Not at the Chapel with the lock yet: the prompt is not offered.
+        assert_eq!(m.relay_wait_detail(), NOT_READY_TEXT);
+        assert!(!m.relay_wait_hold_bar());
+        m.relay_ready_sent = Some(true);
+        assert_eq!(m.relay_wait_detail(), prompt);
+        assert!(m.relay_wait_hold_bar());
+        m.relay_request = Some(t0);
+        assert_eq!(m.relay_wait_detail(), REQUEST_TEXT);
+        assert!(!m.relay_wait_hold_bar());
+        // The holder's menu hint likewise.
+        let mut h = relay_machine("holder", t0);
+        let hint = h.relay_view().unwrap().menu_hint.clone();
+        assert_eq!(h.relay_menu_hint(), hint);
+        h.relay_request = Some(t0);
+        assert_eq!(h.relay_menu_hint(), REQUEST_TEXT);
+    }
+
+    #[test]
+    fn a_member_out_while_the_team_plays_reads_as_out() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        assert!(!m.am_i_abandoned());
+        let mut info = relay_info("waiting");
+        set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+        update(&mut m, info, t0, 100);
+        assert!(m.am_i_abandoned());
+        assert_eq!(m.relay_view(), Some(&RelayView::default()));
+    }
+
+    #[test]
+    fn the_gap_uses_the_local_igt_only_for_a_live_holder() {
+        let t0 = Instant::now();
+        let playing = ParticipantStatus::Playing;
+        // A waiting runner: its own IGT is not the team's.
+        let waiting = relay_machine("waiting", t0);
+        assert!(!waiting.gap_uses_local_igt("t1", playing, false));
+        let holder = relay_machine("holder", t0);
+        assert!(holder.gap_uses_local_igt("t1", playing, false));
+        // Not the team row, not playing, race finished.
+        assert!(!holder.gap_uses_local_igt("t2", playing, false));
+        assert!(!holder.gap_uses_local_igt("t1", ParticipantStatus::Finished, false));
+        assert!(!holder.gap_uses_local_igt("t1", playing, true));
+        // A take in progress has not written the team's IGT yet.
+        let mut taking = receiver(t0);
+        receive(&mut taking, t0, take("h1"));
+        assert!(!taking.gap_uses_local_igt("t1", playing, false));
+        // Without relay the runner's own row.
+        let mut plain = RaceMachine::new(1, String::new(), false, t0);
+        plain.handle_message(auth_ok("running", &[], None), t0);
+        assert!(plain.gap_uses_local_igt("p1", playing, false));
+        assert!(!plain.gap_uses_local_igt("p2", playing, false));
     }
 }

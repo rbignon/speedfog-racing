@@ -694,6 +694,22 @@ One request at a time. After a handoff or take request nothing more is sent, and
 
 Per frame, the key costs two timers and a few comparisons; the row strings are built on receipt and cached.
 
+### Overlay
+
+What a relay runner reads is data built once, in `mod/src/core/relay_view.rs` (`RelayView`), and cached on the machine (`relay_view()`): the strings are rebuilt on `auth_ok`, on each `relay_update`, when the machine's role changes (a take received, given up, acknowledged, its confirmation window over), when the displayed layer changes, when the key's label is set, and once per displayed second of an offline holder's countdown (the machine counts down from the seconds in the `RelayInfo` as received and compares the displayed second once per tick). Nothing is formatted per frame; the hold progress is a number (`relay_hold_progress`). Geometry is pure (`mod/src/core/item_banner.rs`, `relay_block_layout`, `relay_block_bounds`): the title hangs from the same height as the item banner's icon, rows are 1.6 line heights, sizes follow the screen's width (its height times 16/9 on an ultrawide); the drawing measures the texts, cuts every name and zone to `text_max_width` with its truncation helper, and the bounds stay inside the display.
+
+Nothing relay-specific is shown while the team is not live (setup, finished, abandoned, disqualified), when the runner is out while the team plays on, or on an unknown role or team status. The BATON line of the panel reads the holder ("Kahleeya"), "you" for the holder, "free" when the baton can be taken, "nobody" when none is named and it is not free, then the runner's own counter against the cap as given ("you 2/5 zones", "3/5 zones" as holder, "6/5 zones" past the cap) and the key hint ("F8 pass" for the holder, "F8 take" when it can take).
+
+The waiting banner, top centre, for a runner who waits:
+
+- Holder online: "WAITING FOR THE BATON", "<holder> is in <zone>" ("<holder> holds the baton" without a zone), "Zone 9 of 12. You: 2/5 zones.".
+- Holder offline, wait running: "<HOLDER> IS OFFLINE", "The baton can be taken in 42 s", "It goes back to <holder> if they return before then.".
+- Baton free: "THE BATON IS FREE" and one of "<holder> has been offline for over a minute", "The holder left the race" (nobody is named), "The handoff was not completed" (holder online, or the runner itself). Its last line is "Hold F8 to take the baton and restart <zone>." with the hold bar, or "No fresh save: you cannot take the baton." (not validated), or "You are at your cap.", checked in the server's order. Until the runner is at the Chapel with the lock asserted the prompt reads "Not ready yet: wait at the Chapel.", and "Waiting for the server" while its request is in flight.
+
+The holder's menu, opened by the key: "PASS THE BATON", one row per teammate not out (name, then the counter or the reason as in "The baton key"), the highlight, the hold bar, and "F8 next hold F8 to pass closes by itself after 5 s" (with no one eligible only the last part, and "Nobody can take the baton right now" or, with no teammate left, "No teammate can take the baton"). The transient banners ("YOU HAVE THE BATON", "BATON PASSED TO <runner>", "QUOTA REACHED: PASS THE BATON") use the 4 s race item banner.
+
+Which block is on screen: the waiting banner and the item banner hang from the same band, and the fullscreen countdown's ring crosses it, so the waiting banner shows only with no menu open, no item banner and no countdown (`relay_wait_visible`); the open menu shows over an item banner and yields to the countdown (`relay_menu_visible`). `gap_uses_local_igt` says when a leaderboard gap takes the runner's local IGT: its own row, playing, and on a relay race only the live holder (a waiting runner's own IGT is not its team's), and `am_i_abandoned` reads a relay member out while its team plays on as out.
+
 ## Not proven yet
 
 - The row-lock discipline ("Ordering": `SELECT ... FOR UPDATE` on the team rows, in one order) has only run on SQLite, which ignores `FOR UPDATE`. The tests check the statements PostgreSQL receives, never two transactions contending for a team on PostgreSQL. (The migrations were run up, down and up again on PostgreSQL 17, and `alembic check` finds no drift on the relay tables and columns.)
