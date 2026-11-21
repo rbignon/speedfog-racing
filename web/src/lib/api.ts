@@ -194,6 +194,12 @@ export type UnrankedCode =
   | "reset"
   | "rerolled";
 
+/** The team a runner enters on a relay race: an existing one, or a new one. */
+export interface RelayTeamChoice {
+  relay_team_id?: string;
+  create_team?: boolean;
+}
+
 /** A team of a relay race as the race page lists it. */
 export interface RelayTeam {
   id: string;
@@ -365,6 +371,17 @@ async function handleResponse<T>(response: Response): Promise<T> {
     throw new Error(formatApiErrorDetail(error.detail));
   }
   return response.json();
+}
+
+/** `fetch` options for a POST that sends `body` as JSON when there is one
+ * (the relay team choice is optional on the join routes). */
+function jsonBodyInit(body?: object): RequestInit {
+  return body
+    ? {
+        headers: { ...getAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    : { headers: getAuthHeaders() };
 }
 
 // =============================================================================
@@ -1078,6 +1095,8 @@ export async function updateRace(
     deathless?: boolean;
     race_items?: boolean;
     custom_rules?: string | null;
+    /** Relay race in setup: whether runners may start teams of their own. */
+    relay_runners_create_teams?: boolean;
   },
 ): Promise<Race> {
   const response = await fetch(`${API_BASE}/races/${raceId}`, {
@@ -1097,6 +1116,7 @@ export async function updateRace(
 export async function addParticipant(
   raceId: string,
   twitchUsername: string,
+  choice: RelayTeamChoice = {},
 ): Promise<AddParticipantResponse> {
   const response = await fetch(`${API_BASE}/races/${raceId}/participants`, {
     method: "POST",
@@ -1104,7 +1124,7 @@ export async function addParticipant(
       ...getAuthHeaders(),
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ twitch_username: twitchUsername }),
+    body: JSON.stringify({ twitch_username: twitchUsername, ...choice }),
   });
   return handleResponse<AddParticipantResponse>(response);
 }
@@ -1134,10 +1154,13 @@ export async function removeParticipant(
 /**
  * Self-register as a participant in an open-registration race.
  */
-export async function joinRace(raceId: string): Promise<Participant> {
+export async function joinRace(
+  raceId: string,
+  choice?: RelayTeamChoice,
+): Promise<Participant> {
   const response = await fetch(`${API_BASE}/races/${raceId}/join`, {
     method: "POST",
-    headers: getAuthHeaders(),
+    ...jsonBodyInit(choice),
   });
   return handleResponse<Participant>(response);
 }
@@ -1291,6 +1314,75 @@ export async function abandonRace(raceId: string): Promise<Race> {
   return handleResponse<Race>(response);
 }
 
+// Relay teams (setup only). Each route answers with the race, except delete.
+
+/** Add a team: the organizer's is an empty placeholder, a runner's is one they join. */
+export async function createRelayTeam(
+  raceId: string,
+  name: string | null,
+): Promise<RaceDetail> {
+  const response = await fetch(`${API_BASE}/races/${raceId}/relay-teams`, {
+    method: "POST",
+    ...jsonBodyInit({ name }),
+  });
+  return handleResponse<RaceDetail>(response);
+}
+
+/** Rename a team or choose its first runner (its members and the organizer). */
+export async function updateRelayTeam(
+  raceId: string,
+  teamId: string,
+  patch: { name?: string; first_runner_id?: string },
+): Promise<RaceDetail> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/relay-teams/${teamId}`,
+    { method: "PATCH", ...jsonBodyInit(patch) },
+  );
+  return handleResponse<RaceDetail>(response);
+}
+
+/** Delete an empty team (organizer). */
+export async function deleteRelayTeam(
+  raceId: string,
+  teamId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/relay-teams/${teamId}`,
+    { method: "DELETE", headers: getAuthHeaders() },
+  );
+  if (!response.ok) {
+    const error: ApiError = await response
+      .json()
+      .catch(() => ({ detail: "Unknown error" }));
+    throw new Error(formatApiErrorDetail(error.detail));
+  }
+}
+
+/** Join the race into this team, or move there from another team. */
+export async function joinRelayTeam(
+  raceId: string,
+  teamId: string,
+): Promise<RaceDetail> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/relay-teams/${teamId}/join`,
+    { method: "POST", headers: getAuthHeaders() },
+  );
+  return handleResponse<RaceDetail>(response);
+}
+
+/** Move a runner to another team (organizer). */
+export async function moveRelayParticipant(
+  raceId: string,
+  participantId: string,
+  teamId: string,
+): Promise<RaceDetail> {
+  const response = await fetch(
+    `${API_BASE}/races/${raceId}/participants/${participantId}/relay-team`,
+    { method: "POST", ...jsonBodyInit({ team_id: teamId }) },
+  );
+  return handleResponse<RaceDetail>(response);
+}
+
 /**
  * Delete a race and all associated data.
  */
@@ -1318,6 +1410,12 @@ export interface InviteInfo {
   race_status: RaceStatus;
   race_mode: RunMode;
   twitch_username: string;
+  race_id: string;
+  /** Relay race: runners per team (null on every other race) and the teams
+   * the invitee picks from. */
+  relay_team_size: number | null;
+  relay_runners_create_teams: boolean;
+  relay_teams: RelayTeam[];
 }
 
 export interface AcceptInviteResponse {
@@ -1341,10 +1439,11 @@ export async function getInvite(
  */
 export async function acceptInvite(
   token: string,
+  choice?: RelayTeamChoice,
 ): Promise<AcceptInviteResponse> {
   const response = await fetch(`${API_BASE}/invite/${token}/accept`, {
     method: "POST",
-    headers: getAuthHeaders(),
+    ...jsonBodyInit(choice),
   });
   return handleResponse<AcceptInviteResponse>(response);
 }
