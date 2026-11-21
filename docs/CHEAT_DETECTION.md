@@ -69,7 +69,8 @@ wire names and carry the same human-readable labels.
    seed, IGT, reason) to the same admin channel (see "Finish rule" in
    `SPEEDRUN.md`).
    Normal practice sessions skip all of it.
-4. **Web.** The race page shows a "Flagged" chip in the leaderboard and a
+4. **Web.** The race page shows a "Flagged" chip in the leaderboard (on a
+   relay race, on the row of the runner's team) and a
    "Cheat detections" panel, to the organizer and admins only. /admin lists
    every detection in the Cheat tab (`GET /api/admin/cheat-detections`),
    race participants and ranked solo runs together, most recent first: a

@@ -19,6 +19,7 @@
   import RaceControls from "$lib/components/RaceControls.svelte";
   import RelayTeamList from "$lib/components/RelayTeamList.svelte";
   import {
+    byLiveRow,
     needsRaceRefetch,
     ownLiveRow,
     ownRunStatus,
@@ -481,14 +482,20 @@
       ? mergeDebugFlags(initialRace.participants, raceStore.debugFlags)
       : {},
   );
-  let flaggedIds = $derived(Object.keys(debugFlags));
+  // Both below are keyed by leaderboard row: a relay race's rows are teams.
+  let flaggedIds = $derived(
+    Object.keys(byLiveRow(debugFlags, initialRace.participants)),
+  );
   // Disqualification reasons this viewer may see (the REST response only
   // carries them for the runner, the organizer and admins).
   let disqualificationReasons = $derived(
-    Object.fromEntries(
-      initialRace.participants
-        .filter((p) => p.disqualification_reason)
-        .map((p) => [p.id, p.disqualification_reason as string]),
+    byLiveRow(
+      Object.fromEntries(
+        initialRace.participants
+          .filter((p) => p.disqualification_reason)
+          .map((p) => [p.id, p.disqualification_reason as string]),
+      ),
+      initialRace.participants,
     ),
   );
   let disqualifyTarget = $state<{ id: string; reason: string } | null>(null);
@@ -617,9 +624,10 @@
   // `?cast=1` opens the panel directly, so a caster can bookmark their own
   // setup rather than clicking through from the sidebar every time. The
   // panel is the casters' own: an organizer who does not cast has no scene
-  // to build.
+  // to build. A relay race has none: the scenes seat runners, and its rows
+  // are teams.
   $effect(() => {
-    if (page.url.searchParams.get("cast") === "1" && isCaster) {
+    if (page.url.searchParams.get("cast") === "1" && isCaster && !isRelay) {
       showCastSetup = true;
     }
   });
@@ -1423,7 +1431,7 @@
         >
       {/if}
 
-      {#if isCaster}
+      {#if isCaster && !isRelay}
         <button
           class="btn btn-outline cast-setup-btn"
           onclick={() => (showCastSetup = true)}>Cast Setup</button

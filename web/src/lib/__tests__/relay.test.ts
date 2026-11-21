@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { RelayTeam } from "$lib/api";
 import type { RelayMember, WsParticipant } from "$lib/websocket";
 import {
+  byLiveRow,
   isValidRelayTeamSize,
   needsRaceRefetch,
   ownLiveRow,
@@ -433,5 +434,41 @@ describe("relayRuleLine", () => {
       "Relay: teams of 3, 11 zones max per runner on a full team (higher on a smaller one).",
     );
     expect(relayRuleLine(30, 3, null)).toBe("Relay: 30 zones, teams of 3.");
+  });
+});
+
+describe("byLiveRow", () => {
+  it("leaves a solo race keyed by runner", () => {
+    const runners = [
+      { id: "a", relay_team_id: null },
+      { id: "b", relay_team_id: null },
+    ];
+    expect(byLiveRow({ a: "one_shot" }, runners)).toEqual({ a: "one_shot" });
+  });
+
+  it("puts what is known of a relay runner on the row of their team", () => {
+    const runners = [
+      { id: "a", relay_team_id: "t1" },
+      { id: "b", relay_team_id: "t1" },
+      { id: "c", relay_team_id: "t2" },
+    ];
+    expect(byLiveRow({ b: "cheat", c: "other" }, runners)).toEqual({
+      t1: "cheat",
+      t2: "other",
+    });
+  });
+
+  it("keeps the first entry when two teammates share a row", () => {
+    const runners = [
+      { id: "a", relay_team_id: "t1" },
+      { id: "b", relay_team_id: "t1" },
+    ];
+    expect(byLiveRow({ a: "first", b: "second" }, runners)).toEqual({
+      t1: "first",
+    });
+  });
+
+  it("keeps the key of a runner the race does not list", () => {
+    expect(byLiveRow({ z: "live" }, [])).toEqual({ z: "live" });
   });
 });

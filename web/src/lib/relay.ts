@@ -178,6 +178,23 @@ export function ownRunStatus(
   return row?.status;
 }
 
+/** What is known per runner (a cheat detection, a disqualification reason),
+ * keyed by the id of the live row that shows it: the runner's team on a relay
+ * race, whose rows are teams, the runner otherwise. Teammates share a row: the
+ * first entry wins. A runner the race does not list keeps their own key. */
+export function byLiveRow<T>(
+  byParticipant: Record<string, T>,
+  participants: { id: string; relay_team_id?: string | null }[],
+): Record<string, T> {
+  const rowOf = new Map(participants.map((p) => [p.id, p.relay_team_id]));
+  const byRow: Record<string, T> = {};
+  for (const [id, value] of Object.entries(byParticipant)) {
+    const row = rowOf.get(id) ?? id;
+    if (!(row in byRow)) byRow[row] = value;
+  }
+  return byRow;
+}
+
 /** Whether a replacement of the live rows needs the REST race re-fetched.
  * A solo race: when the runner ids differ from the REST ones. A relay race in
  * setup: always (every team change is broadcast, and the rows hold teams, not

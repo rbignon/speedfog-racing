@@ -735,7 +735,8 @@ the page in its hole: that is the caster's own browser, live (see Browser).
 the "Cast Setup" button, or automatically by adding `?cast=1` to the race
 page's own URL. Only the race's casters see the button, and `?cast=1` opens
 the panel only for them: the race's organizer does not, unless they cast it
-too.
+too. A relay race offers neither: the scenes seat runners, and a relay
+race's rows are teams.
 
 It gives a caster, without hand-editing a URL:
 
