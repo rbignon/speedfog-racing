@@ -395,6 +395,16 @@ def _set_pending(room: "RaceRoom", team_id: uuid.UUID, pending: PendingHandoff |
         room.relay_pending[team_id] = pending
 
 
+def awaiting_take(room: "RaceRoom | None", team_id: uuid.UUID, participant_id: uuid.UUID) -> bool:
+    """Whether the team's baton went to ``participant_id`` and their
+    ``relay_taken`` is still awaited (a take whose timer fired too, the baton
+    being free then). Until it comes, their game still carries their own
+    save's IGT and deaths: the progress gate hears them as a waiting runner.
+    In memory only, so a server restart forgets it."""
+    pending = room.relay_pending.get(team_id) if room is not None else None
+    return pending is not None and pending.phase == "take" and pending.target_id == participant_id
+
+
 def _cap(team: RelayTeam, graph: Mapping[str, Any]) -> int:
     return team_cap(int(graph.get("total_layers") or 0), team.members)
 
@@ -405,15 +415,26 @@ async def _refuse(room: "RaceRoom", participant_id: uuid.UUID, code: str) -> Non
     await room.send_to_mod(participant_id, message.model_dump_json())
 
 
-def _store_state(team: RelayTeam, state: CharacterState, igt_ms: int) -> None:
-    """Keep ``state`` as the team's last character state with the team's IGT,
-    raised first to ``igt_ms`` when the wrong-save guard finds it plausible."""
+def _store_state(team: RelayTeam, state: CharacterState, igt_ms: int) -> bool:
+    """Keep ``state`` as the team's last character state, the team's IGT raised
+    first to ``igt_ms``. False, and nothing kept, when the wrong-save guard
+    refuses ``igt_ms`` (as it would the holder's ``status_update``): the state
+    may come from another save, and the next receiver would get it."""
     now = datetime.now(UTC)
-    if igt_ms > team.igt_ms and is_igt_plausible(team.igt_ms, team.last_igt_change_at, igt_ms, now):
+    if not is_igt_plausible(team.igt_ms, team.last_igt_change_at, igt_ms, now):
+        logger.warning(
+            "Dropped relay_state on implausible IGT (wrong save?): team=%s reported=%d recorded=%d",
+            team.id,
+            igt_ms,
+            team.igt_ms,
+        )
+        return False
+    if igt_ms > team.igt_ms:
         team.igt_ms = igt_ms
         team.last_igt_change_at = now
     team.character_state = state.model_dump()
     team.character_state_igt_ms = team.igt_ms
+    return True
 
 
 @dataclass
@@ -438,13 +459,31 @@ async def _flip(
 ) -> _Flip:
     """Give ``target`` the baton and commit. A target whose mod is no longer
     connected gets a free baton at once (``baton_free``), and no take is
-    awaited from them."""
+    awaited from them.
+
+    The awaited take is in the room before the commit, so no progress message
+    of the receiver is heard between the two (``awaiting_take``)."""
     connected = target.id in room.mods
     giver_id = team.holder_id
     team.holder_id = target.id
     team.holder_offline_since = None
     team.baton_free = not connected
-    await db.commit()
+    pending = None
+    if connected:
+        pending = PendingHandoff(
+            handoff_id=handoff_id,
+            team_id=team.id,
+            giver_id=giver_id,
+            target_id=target.id,
+            phase="take",
+            expires_at=time.monotonic() + RELAY_TAKE_TIMEOUT_S,
+        )
+    _set_pending(room, team.id, pending)
+    try:
+        await db.commit()
+    except BaseException:
+        _set_pending(room, team.id, None)
+        raise
     flags = relay_flags(graph) or {}
     take = RelayTakeMessage(
         handoff_id=handoff_id,
@@ -456,16 +495,6 @@ async def _flip(
         warp_flag=relay_warp_flag(flags, team.entry_flag_id) if flags else None,
         zone_name=relay_zone_name(team, graph) if team.entry_flag_id is not None else None,
     )
-    pending = None
-    if connected:
-        pending = PendingHandoff(
-            handoff_id=handoff_id,
-            team_id=team.id,
-            giver_id=giver_id,
-            target_id=target.id,
-            phase="take",
-            expires_at=time.monotonic() + RELAY_TAKE_TIMEOUT_S,
-        )
     logger.info(
         "Relay baton flipped: team=%s from=%s to=%s handoff=%s connected=%s",
         team.id,
@@ -483,8 +512,7 @@ async def _after_flip(
     flip: _Flip,
     graph: dict[str, Any],
 ) -> None:
-    """Await the take (timer), send it to the receiver and tell the team."""
-    _set_pending(room, flip.team_id, flip.pending)
+    """Start the take's timer, send it to the receiver and tell the team."""
     if flip.pending is not None:
         flip.pending.timer = asyncio.create_task(
             _take_timeout(session_maker, room, flip.pending, graph)
@@ -603,11 +631,12 @@ async def store_state(
     """A ``relay_state``: a checkpoint (``handoff_id`` null) or the answer to a
     ``relay_release``.
 
-    From the holder of a running team the state is kept (``_store_state``);
-    when it answers the pending release in time, the baton then flips to its
-    target (still a member in the race). Anything else flips nothing, and the
-    sender of any ``relay_state`` but a plain checkpoint gets a
-    ``relay_update``: a giver who already locked learns it still holds the
+    From the holder of a running team the state is kept (``_store_state``,
+    which drops a state on an implausible IGT); when it is kept and answers the
+    pending release in time, the baton then flips to its target (still a member
+    in the race). Anything else flips nothing (the release it answers is
+    dropped), and the sender of any ``relay_state`` but a plain checkpoint gets
+    a ``relay_update``: a giver who already locked learns it still holds the
     baton.
     """
     async with room.relay_lock:
@@ -635,8 +664,7 @@ async def store_state(
             ):
                 _set_pending(room, team.id, None)
             holder = holds_baton(team, participant_id) and _baton_moves(team)
-            if holder:
-                _store_state(team, state, igt_ms)
+            if holder and _store_state(team, state, igt_ms):
                 target = next(
                     (
                         m
