@@ -24,6 +24,7 @@ pub mod profile;
 pub mod protocol;
 pub mod race_machine;
 pub mod relay;
+pub mod relay_capture;
 pub mod relay_items;
 pub mod relay_menu;
 pub mod relay_view;

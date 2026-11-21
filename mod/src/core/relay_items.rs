@@ -33,7 +33,7 @@ const MAX_RUNES: u32 = 999_999_999;
 const LEVEL_OFFSET: u64 = 79;
 
 /// Mask of the param id under the category nibble.
-const PARAM_MASK: u32 = 0x0FFF_FFFF;
+pub const PARAM_MASK: u32 = 0x0FFF_FFFF;
 /// Weapon id layout (base, affinity, upgrade level): see `same_weapon` in
 /// `item_inventory`.
 const WEAPON_BASE_DIV: u32 = 10_000;

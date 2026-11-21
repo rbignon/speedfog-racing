@@ -16,6 +16,7 @@ pub mod memory_effects;
 #[cfg(debug_assertions)]
 pub mod quitout;
 pub mod race_items;
+pub mod relay;
 mod scan;
 pub mod sp_effect_apply;
 pub mod sp_effect_runner;

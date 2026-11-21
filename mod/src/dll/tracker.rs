@@ -19,7 +19,9 @@ use crate::core::foes::FoesRecord;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
 use crate::core::memory_effects::{CameraRow, MemoryState};
-use crate::core::protocol::{CameraVariant, ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag};
+use crate::core::protocol::{
+    CameraVariant, CharacterState, ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag,
+};
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
@@ -29,6 +31,7 @@ use crate::eldenring::equip_change;
 use crate::eldenring::hunter::{self, HunterWatch};
 use crate::eldenring::memory_effects;
 use crate::eldenring::race_items;
+use crate::eldenring::relay;
 use crate::eldenring::sp_effect_apply;
 use crate::eldenring::{EventFlagReader, FlagReaderStatus, GameState};
 use crate::profile_span;
@@ -244,12 +247,35 @@ unsafe impl Send for OverlayFonts {}
 unsafe impl Sync for OverlayFonts {}
 
 // =============================================================================
+// RELAY WORKER
+// =============================================================================
+
+/// A job of the relay worker thread, as the machine asked it. Kept beside
+/// the thread's handle, so the answer carries the request's identity even
+/// from a thread that panicked.
+#[derive(Debug)]
+enum RelayJob {
+    /// `Effect::CaptureRelayState`, answered by
+    /// `RaceMachine::relay_state_captured`.
+    Capture {
+        handoff_id: Option<String>,
+        generation: u64,
+    },
+}
+
+/// What a relay worker thread returns, one variant per job.
+enum RelayJobDone {
+    Captured(Option<CharacterState>),
+}
+
+// =============================================================================
 // RACE TRACKER
 // =============================================================================
 
 pub struct RaceTracker {
-    // Game reader
-    game_state: GameState,
+    // Game reader (shared with the relay worker thread, which reads the
+    // loaded map through it)
+    game_state: Arc<GameState>,
 
     // Event flag reader
     event_flag_reader: EventFlagReader,
@@ -297,6 +323,14 @@ pub struct RaceTracker {
 
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
+
+    // The relay job running on its worker thread, one at a time so the
+    // character is never read by two jobs at once; drained by
+    // `poll_relay_job` on the game thread.
+    relay_job: Option<(RelayJob, JoinHandle<RelayJobDone>)>,
+    // The job asked while one runs, started when it is drained; a newer
+    // request replaces it (the machine has abandoned the older one).
+    relay_job_queued: Option<RelayJob>,
 
     // Items actually spawned this session (in-process guard for reconnects).
     // Set by the spawner thread AFTER items are given to the player, so a stale
@@ -459,7 +493,7 @@ impl RaceTracker {
         info!("RaceTracker initialized");
 
         Some(Self {
-            game_state,
+            game_state: Arc::new(game_state),
             event_flag_reader,
             ws_client,
             livesplit,
@@ -479,6 +513,8 @@ impl RaceTracker {
             consecutive_update_panics: 0,
             flags_diagnosed: false,
             spawner_thread: None,
+            relay_job: None,
+            relay_job_queued: None,
             items_spawned: Arc::new(AtomicBool::new(false)),
             phantom_skin_thread: None,
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
@@ -552,6 +588,8 @@ impl RaceTracker {
                 self.handle_ws_message(msg);
             }
         }
+
+        self.poll_relay_job();
 
         // Gather tick inputs: the machine decides what to read, the shell
         // performs the game-memory reads, the machine consumes them.
@@ -817,19 +855,10 @@ impl RaceTracker {
                 Effect::CaptureRelayState {
                     handoff_id,
                     generation,
-                } => {
-                    // The capture itself arrives with the worker thread that
-                    // reads stats, inventory and graces: until then every
-                    // capture reads as unreadable.
-                    debug!(?handoff_id, "[RELAY] State capture not implemented yet");
-                    let answer = self.machine.relay_state_captured(
-                        handoff_id,
-                        generation,
-                        None,
-                        Instant::now(),
-                    );
-                    self.execute_effects(answer);
-                }
+                } => self.request_relay_job(RelayJob::Capture {
+                    handoff_id,
+                    generation,
+                }),
                 Effect::WriteCharacterStats {
                     attributes,
                     level,
@@ -1481,6 +1510,115 @@ impl RaceTracker {
             speffects,
             Arc::clone(&self.phantom_skin_stop),
         ));
+    }
+
+    /// Run `job` on the relay worker thread, or queue it while another job
+    /// runs. A job queued replaces the one queued before it: the machine asks
+    /// again only once it has given up its previous request.
+    fn request_relay_job(&mut self, job: RelayJob) {
+        if let Some((running, _)) = &self.relay_job {
+            info!(
+                ?running,
+                queued = ?job,
+                replaced = ?self.relay_job_queued,
+                "[RELAY] Worker job queued behind the running one"
+            );
+            self.relay_job_queued = Some(job);
+            return;
+        }
+        self.start_relay_job(job);
+    }
+
+    /// Start `job` on a thread of its own (the `spawner_thread` pattern). A
+    /// thread the OS does not start fails the job at once: its answer is
+    /// given now, on the game thread.
+    fn start_relay_job(&mut self, job: RelayJob) {
+        let spawned = match &job {
+            RelayJob::Capture { generation, .. } => {
+                let generation = *generation;
+                let reader = self.event_flag_reader.clone();
+                let game = Arc::clone(&self.game_state);
+                std::thread::Builder::new()
+                    .name("relay-worker".to_string())
+                    .spawn(move || {
+                        RelayJobDone::Captured(relay::capture(&reader, &game, generation))
+                    })
+            }
+        };
+        match spawned {
+            Ok(handle) => {
+                info!(?job, "[RELAY] Worker job started");
+                self.relay_job = Some((job, handle));
+            }
+            Err(error) => {
+                warn!(%error, ?job, "[RELAY] Worker thread not started, job failed");
+                match job {
+                    RelayJob::Capture {
+                        handoff_id,
+                        generation,
+                    } => {
+                        let effects = self.machine.relay_state_captured(
+                            handoff_id,
+                            generation,
+                            None,
+                            Instant::now(),
+                        );
+                        self.execute_effects(effects);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Hand the relay job that finished to the machine, on the game thread,
+    /// with the identity it was asked with (a thread that panicked answers
+    /// as a failed job), then start the job queued behind it. Per frame with
+    /// no job finished: an `Option` check and an atomic load, nothing
+    /// allocated, no lock taken.
+    fn poll_relay_job(&mut self) {
+        if !self
+            .relay_job
+            .as_ref()
+            .is_some_and(|(_, handle)| handle.is_finished())
+        {
+            return;
+        }
+        profile_span!("relay_job_poll");
+        let Some((job, handle)) = self.relay_job.take() else {
+            return;
+        };
+        let done = handle.join();
+        match job {
+            RelayJob::Capture {
+                handoff_id,
+                generation,
+            } => {
+                let state = match done {
+                    Ok(RelayJobDone::Captured(state)) => state,
+                    Err(panic) => {
+                        error!(
+                            ?handoff_id,
+                            generation,
+                            panic = crate::panic_message(panic.as_ref()),
+                            "[RELAY] Worker thread panicked, job failed"
+                        );
+                        None
+                    }
+                };
+                let effects = self.machine.relay_state_captured(
+                    handoff_id,
+                    generation,
+                    state,
+                    Instant::now(),
+                );
+                self.execute_effects(effects);
+            }
+        }
+        if self.relay_job.is_none() {
+            if let Some(next) = self.relay_job_queued.take() {
+                self.start_relay_job(next);
+            }
+        }
     }
 
     // Public getters for UI
