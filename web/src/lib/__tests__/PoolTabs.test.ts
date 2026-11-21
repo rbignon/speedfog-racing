@@ -13,6 +13,7 @@ function poolInfo(available: number): PoolInfo {
     played_by_user: null,
     pool_config: null,
     race_items_available: 0,
+    relay_available: 0,
   };
 }
 
