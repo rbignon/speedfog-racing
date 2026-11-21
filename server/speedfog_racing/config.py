@@ -127,6 +127,10 @@ class Settings(BaseSettings):
     # Reject mods whose release version is older than this (emergency gate for
     # non-protocol issues, e.g. a crashing build). None disables the gate.
     min_mod_version: str | None = None
+    # Relay races (docs/RELAY.md): off until the shipped mod speaks the relay
+    # protocol. While off, creating one is refused and the pools report no
+    # relay seed, which keeps the web's Relay format closed.
+    relay_races_enabled: bool = False
 
     # Set Seed (docs/SPEEDRUN.md). Seeds added (scanned) before this instant
     # are not replayable (raised once per game patch); None disables the cutoff.

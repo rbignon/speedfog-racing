@@ -17,6 +17,13 @@ run, and only one of them holds the baton (plays) at a time.
   exceed 60 seconds (`MAX_FRESH_IGT_MS`).
 - The relay wire contract starts at protocol 1.19 (`RELAY_MIN_PROTOCOL`).
 
+Relay races are off unless the server setting `RELAY_RACES_ENABLED` is true
+(`settings.relay_races_enabled`, false by default, listed in both `.env.example`
+files): until the shipped mod speaks protocol 1.19, nobody could join one. While off,
+`POST /api/races` refuses a `relay_team_size` (400 `Relay races are not available
+yet`) and `GET /api/pools` reports `relay_available` 0 for every pool. Races already
+created stay as they are.
+
 ## Seeds
 
 A relay seed carries a top-level `relay` object in its `graph.json` (generator
@@ -44,8 +51,9 @@ the pool has none, the draw fails with `No relay seed available in pool '<pool>'
 on the first draw and on a reroll alike.
 
 `GET /api/pools` reports `relay_available` per pool: its AVAILABLE and SEEN relay
-seeds, the ones a relay race can draw. Seeds generated before the plugin was
-enabled carry no block and never count; regenerate a pool to get relay seeds.
+seeds, the ones a relay race can draw (0 everywhere while relay races are off, see
+"Rules"). Seeds generated before the plugin was enabled carry no block and never
+count; regenerate a pool to get relay seeds.
 
 ## Teams
 
@@ -495,7 +503,7 @@ Pages that read participants (the finished-race page, race cards, profiles, the 
 
 ## Web
 
-Race creation (`/race/new`): Relay is a fourth tile of the Format field, next to Classic, Elden Drift and Speedrun (formats exclude each other, so relay needs no handling of race items or speedrun). Its panel holds "Teams of [n]" (2 to 6, default 3) and the cap sentence of `relayCapSentence` in `web/src/lib/relay.ts`, which applies the server's formula (`ceil(total_layers / team_size) + 1`) to the selected pool's `layers_count` ("30 zones, teams of 3: 11 zones max per runner."). A pool's seeds may differ in layer count (the category key `<pool>@<layers>` exists for that), so the sentence is the pool's nominal count, and the race's own `relay_cap` is the figure that binds. The sentence is omitted when the pool has no `layers_count`. The game mode tabs count `PoolInfo.relay_available` (AVAILABLE plus SEEN seeds carrying the relay block). With relay on, the late joiners and deathless options leave the advanced options (the request sends `late_join_window_minutes: null` and `deathless: false`), a line under the trigger says so, the registration hint says players pick a team, and the open registration maximum is labelled "max runners". `createRace` takes the team size as its last parameter (`relay_team_size`).
+Race creation (`/race/new`): Relay is a fourth tile of the Format field, next to Classic, Elden Drift and Speedrun (formats exclude each other, so relay needs no handling of race items or speedrun). Its panel holds "Teams of [n]" (2 to 6, default 3) and the cap sentence of `relayCapSentence` in `web/src/lib/relay.ts`, which applies the server's formula (`ceil(total_layers / team_size) + 1`) to the selected pool's `layers_count` ("30 zones, teams of 3: 11 zones max per runner."). A pool's seeds may differ in layer count (the category key `<pool>@<layers>` exists for that), so the sentence is the pool's nominal count, and the race's own `relay_cap` is the figure that binds. The sentence is omitted when the pool has no `layers_count`. The game mode tabs count `PoolInfo.relay_available` (AVAILABLE plus SEEN seeds carrying the relay block). While relay races are off on the server every count is 0: the Relay tile stays, but no game mode can be picked, the page reads "No relay seed in any game mode yet." and Create stays disabled (the pools carry no reason, so the text cannot tell that case apart). With relay on, the late joiners and deathless options leave the advanced options (the request sends `late_join_window_minutes: null` and `deathless: false`), a line under the trigger says so, the registration hint says players pick a team, and the open registration maximum is labelled "max runners". `createRace` takes the team size as its last parameter (`relay_team_size`).
 
 Setup page (`/race/[id]`): the participant list of the left sidebar becomes `RelayTeamList`, grouped by team in the server's order. A team has a header (color, name, members / size, "Edit" for its members and the organizer, "Delete" for the organizer on an empty team), a "Starts: <runner>" line (the chosen first runner, else the first member; "Change" opens a select of the members) and the usual `ParticipantCard` per member. A team with a free slot ends with a dashed button, "+ Join this team" for a visitor and "Move to this team" for a runner of another team (`teamSlotAction`); "+ Create a team" closes the list (always for the organizer, who adds an empty placeholder team; for a runner or visitor who can register only while "Runners can create teams" is on). That checkbox is the organizer's, and when it is off the header maximum counts the teams' seats (`relayCapacity`) and the race is full when they are. The cross of a card (organizer) opens a menu: "Move to <team>" for each team with a free slot, and "Remove from race". The map slot's join button reads "Pick a team to join" and scrolls to the list. The start button follows `relayStartBlocker` (the server's `relay_start_error` texts), for every role.
 

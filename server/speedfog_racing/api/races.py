@@ -370,6 +370,12 @@ async def create_race(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You do not have permission to create races",
         )
+    if request.relay_team_size is not None and not settings.relay_races_enabled:
+        # No released mod speaks the relay protocol yet: nobody could join.
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Relay races are not available yet",
+        )
 
     # Normalize naive datetimes to UTC so the value stored in TIMESTAMPTZ
     # columns doesn't get re-interpreted through the session timezone.
