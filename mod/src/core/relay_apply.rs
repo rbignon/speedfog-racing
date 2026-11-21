@@ -160,18 +160,21 @@ impl ItemRows {
     }
 }
 
-/// One write of an apply, in the order they are made: the items, then the
-/// boss defeat flags, then the grace flags, then the armor, kept last so a
-/// give this mod never made before cannot hold up the rest.
+/// One write of an apply, in the order they are made: the grace flags, then
+/// the boss defeat flags, then the items, then the armor. Flags are cheap and
+/// go first, so an apply cut short (a load, the deadline) has written them
+/// before the slow gives: a grace or an item not written is lost for the
+/// team, since the next handoff captures this runner's world. The armor is
+/// kept last so a give this mod never made before cannot hold up the rest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyStep {
+    /// Raise this grace flag.
+    Grace(u32),
+    /// Raise this boss defeat flag.
+    Defeat(u32),
     /// Give one of this item (id with its nibble): a weapon, a talisman, a
     /// goods or an ash of war.
     Item(u32),
-    /// Raise this boss defeat flag.
-    Defeat(u32),
-    /// Raise this grace flag.
-    Grace(u32),
     /// Give one of this armor piece (id with its nibble).
     Armor(u32),
 }
@@ -180,9 +183,9 @@ impl ApplyStep {
     /// The item id or flag the step writes.
     pub fn target(self) -> u32 {
         match self {
-            ApplyStep::Item(id)
+            ApplyStep::Grace(id)
             | ApplyStep::Defeat(id)
-            | ApplyStep::Grace(id)
+            | ApplyStep::Item(id)
             | ApplyStep::Armor(id) => id,
         }
     }
@@ -257,15 +260,33 @@ pub fn plan(
         inventory_read: held.is_some(),
         ..PlanCounts::default()
     };
+    let mut state_graces = grace_flags.to_vec();
+    state_graces.sort_unstable();
+    state_graces.dedup();
+    let (lit, not_graces): (Vec<u32>, Vec<u32>) = state_graces
+        .into_iter()
+        .partition(|flag| graces.binary_search(flag).is_ok());
+    counts.graces = lit.len();
+    counts.not_grace = not_graces.len();
+    let mut steps: Vec<ApplyStep> = lit.into_iter().map(ApplyStep::Grace).collect();
+
+    let mut defeats = defeat_flags.to_vec();
+    defeats.sort_unstable();
+    defeats.dedup();
+    counts.defeats = defeats.len();
+    steps.extend(defeats.into_iter().map(ApplyStep::Defeat));
+
     let missing = held.map_or_else(Vec::new, |held| missing_items(items, held, goods_type));
     counts.missing = missing.len();
-    let mut steps = Vec::new();
     let mut armor = Vec::new();
     let mut unlisted = Vec::new();
     for id in missing {
         match rows.check(id, goods) {
             RowCheck::Listed if category_nibble(id) == 0x1 => armor.push(ApplyStep::Armor(id)),
-            RowCheck::Listed => steps.push(ApplyStep::Item(id)),
+            RowCheck::Listed => {
+                counts.items += 1;
+                steps.push(ApplyStep::Item(id));
+            }
             RowCheck::NoRow => {
                 counts.no_row += 1;
                 unlisted.push(id);
@@ -276,25 +297,7 @@ pub fn plan(
             }
         }
     }
-    counts.items = steps.len();
     counts.armor = armor.len();
-
-    let mut defeats = defeat_flags.to_vec();
-    defeats.sort_unstable();
-    defeats.dedup();
-    counts.defeats = defeats.len();
-    steps.extend(defeats.into_iter().map(ApplyStep::Defeat));
-
-    let mut state_graces = grace_flags.to_vec();
-    state_graces.sort_unstable();
-    state_graces.dedup();
-    let (lit, not_graces): (Vec<u32>, Vec<u32>) = state_graces
-        .into_iter()
-        .partition(|flag| graces.binary_search(flag).is_ok());
-    counts.graces = lit.len();
-    counts.not_grace = not_graces.len();
-    steps.extend(lit.into_iter().map(ApplyStep::Grace));
-
     steps.extend(armor);
     ApplyPlan {
         steps,
@@ -679,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn the_writes_come_items_then_bosses_then_graces_then_armor() {
+    fn the_writes_come_graces_then_bosses_then_items_then_armor() {
         let items = [
             GEM | 10_000,
             ARMOR | 40_100,
@@ -701,15 +704,16 @@ mod tests {
         assert_eq!(
             plan.steps,
             [
+                // The flags first: an apply cut short has written them.
+                ApplyStep::Grace(71_190),
+                ApplyStep::Grace(76_101),
+                ApplyStep::Defeat(BOSS),
+                ApplyStep::Defeat(10_010_800),
                 // Heavy +7 and plain +3: given bare at +7.
                 ApplyStep::Item(LONGSWORD + 7),
                 ApplyStep::Item(TALISMAN | 1000),
                 ApplyStep::Item(GOODS | 4000),
                 ApplyStep::Item(GEM | 10_000),
-                ApplyStep::Defeat(BOSS),
-                ApplyStep::Defeat(10_010_800),
-                ApplyStep::Grace(71_190),
-                ApplyStep::Grace(76_101),
                 ApplyStep::Armor(ARMOR | 40_000),
                 ApplyStep::Armor(ARMOR | 40_100),
             ]
@@ -800,7 +804,7 @@ mod tests {
         );
         assert_eq!(
             again.steps,
-            [ApplyStep::Defeat(BOSS), ApplyStep::Grace(71_190)],
+            [ApplyStep::Grace(71_190), ApplyStep::Defeat(BOSS)],
             "flags raised again are harmless"
         );
         assert_eq!(again.counts.missing, 0);
@@ -819,7 +823,7 @@ mod tests {
         );
         assert_eq!(
             plan.steps,
-            [ApplyStep::Defeat(BOSS), ApplyStep::Grace(71_190)]
+            [ApplyStep::Grace(71_190), ApplyStep::Defeat(BOSS)]
         );
         assert!(!plan.counts.inventory_read);
         assert_eq!((plan.counts.offered, plan.counts.missing), (2, 0));
