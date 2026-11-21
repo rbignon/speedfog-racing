@@ -392,6 +392,8 @@ class RaceParticipantActivity(ActivityItemBase):
     mod_version: str | None = None
     is_organizer: bool = False
     mode: RunMode
+    # Relay races: the team the runner played for; placement and IGT are the team's.
+    relay_team_name: str | None = None
 
 
 class DailyParticipantActivity(ActivityItemBase):

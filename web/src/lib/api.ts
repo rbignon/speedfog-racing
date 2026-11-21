@@ -1635,6 +1635,8 @@ export interface RaceParticipantActivity extends ActivityItemBase {
   mod_version?: string | null;
   is_organizer: boolean;
   mode: RunMode;
+  /** Relay races: the team the runner played for (placement and time are the team's). */
+  relay_team_name?: string | null;
 }
 
 export interface DailyParticipantActivity extends ActivityItemBase {

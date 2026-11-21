@@ -329,6 +329,9 @@ async def get_user_activity(
         .where(Participant.user_id == user_id)
         .options(
             defer(Participant.zone_history),
+            selectinload(Participant.relay_team).options(
+                defer(RelayTeam.zone_history), defer(RelayTeam.character_state)
+            ),
             selectinload(Participant.race).selectinload(Race.seed).defer(Seed.graph_json),
             selectinload(Participant.race)
             .selectinload(Race.relay_teams)
@@ -389,6 +392,7 @@ async def get_user_activity(
                     death_count=p.death_count,
                     is_organizer=race.organizer_id == user_id,
                     mode=race.mode,
+                    relay_team_name=p.relay_team.name if p.relay_team else None,
                 )
             )
 

@@ -631,6 +631,10 @@ class Participant(Base):
     # Relationships
     race: Mapped["Race"] = relationship(back_populates="participants")
     user: Mapped["User"] = relationship(back_populates="participations", foreign_keys=[user_id])
+    # Read only, and only through an explicit ``selectinload(Participant.relay_team)``.
+    relay_team: Mapped["RelayTeam | None"] = relationship(
+        foreign_keys=[relay_team_id], viewonly=True
+    )
 
 
 class RelayTeam(Base):
