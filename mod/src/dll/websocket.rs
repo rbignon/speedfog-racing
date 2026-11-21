@@ -507,7 +507,7 @@ fn connect_and_auth(
                     phantom_skin,
                     latest_mod_version,
                     held_item,
-                    relay: _,
+                    relay,
                 } => {
                     let _ = incoming_tx.send(MachineMessage::AuthOk {
                         participant_id,
@@ -517,6 +517,7 @@ fn connect_and_auth(
                         phantom_skin,
                         latest_mod_version,
                         held_item,
+                        relay: relay.map(|r| *r),
                     });
                     Ok(socket)
                 }
@@ -858,6 +859,22 @@ fn message_loop(
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: item_notice dropped");
+                            }
+                        }
+                        ServerMessage::RelayUpdate { relay } => {
+                            if incoming_tx
+                                .send(MachineMessage::RelayUpdate(*relay))
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: relay_update dropped");
+                            }
+                        }
+                        ServerMessage::RelayRefused { code, message } => {
+                            if incoming_tx
+                                .send(MachineMessage::RelayRefused { code, message })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: relay_refused dropped");
                             }
                         }
                         _ => {}

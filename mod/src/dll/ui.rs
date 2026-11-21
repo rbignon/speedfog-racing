@@ -1488,7 +1488,7 @@ impl RaceTracker {
         let participants = &self.machine.race_state.participants;
         let leader_splits = self.machine.race_state.leader_splits.as_ref();
         let local_igt = self.read_igt().map(|v| v as i32);
-        let my_id = self.my_participant_id().cloned();
+        let my_id = self.machine.my_row_id().map(str::to_owned);
 
         // The local player's live IGT while racing, the server's otherwise (a
         // finisher's is final, while the game's keeps ticking).

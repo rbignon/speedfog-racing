@@ -559,6 +559,30 @@ Console commands:
 
 A walk needs the race to run and the bot to hold the baton. A race needs a relay seed (`Seed.relay`), so a local database whose pools were never regenerated with the relay plugin cannot start one.
 
+## Mod
+
+The mod side of a relay race, one subsection per piece. The race state machine (`mod/src/core/race_machine.rs`) is pure; the shell only feeds it messages and executes its effects.
+
+### Roles
+
+The server names the role: `RelayInfo.role` (`holder` or `waiting`) comes in `auth_ok` and in every `relay_update`, which replaces the team whole. The mod never derives a role from anything else. An unknown role or status (a build older than the server) is never read as a decision: the machine keeps its current lock state and offers nothing.
+
+On a relay race the leaderboard rows are teams: a row's `id` is the team id (`RelayInfo.team_id`), not the runner's participant id. The runner's row is therefore the team row (`my_row_id`), which is what the finish, out, layer and leaderboard logic reads (`am_i_finished`, the layer snapshot before a zone reveal, the gap and the highlighted row of the overlay). On any other race it is the participant's own row, as before. The runner's own participant id stays what saved event flags are keyed on.
+
+A runner's relay is in one of three states:
+
+- Live: the race runs (countdown included) and the team status is `ready` or `playing`. Locks and takes apply only then. In setup every member reads `team_status: "registered"`, `role: "waiting"` and no holder, the first runner included, so a role alone says nothing before the start.
+- Over: the team status is `finished`, `abandoned` or `disqualified` (over for every member), or the runner's own entry in `members` is `abandoned` or `disqualified` while the team plays on (then `am_i_abandoned` is also true).
+- Neither: setup, or a status the mod does not know.
+
+The runner's own `online` and `ready` in `members` are never read: the `RelayInfo` of `auth_ok` reads them `true` and `false` whatever the mod does, and readiness is the value the mod sends. The runner's own `status`, `zones` and `validated` are read, and the `relay_update` that follows `auth_ok` is the authoritative copy.
+
+A role turning `waiting` clears the revealed zone and any pending one, so the exits of the zone just left do not stay on the panel. A `relay_refused` shows the server's `message` in the status line and logs its `code`; the mod branches on no code.
+
+What a waiting runner's mod still sends is unchanged: once the countdown is over it reports `status_update` with its own save's IGT, which is how the server validates the save (`members[].validated`), and it shows `fresh_save_required` through the existing blocking banner. Every member starts a New Game at the start, like the first runner; the mod resets no IGT at a race start.
+
+LiveSplit on a relay race is not addressed: it keeps following the local game (a waiting runner's own save, the team's once a take wrote it) and the arrivals of the team row.
+
 ## Not proven yet
 
 - The row-lock discipline ("Ordering": `SELECT ... FOR UPDATE` on the team rows, in one order) has only run on SQLite, which ignores `FOR UPDATE`. The tests check the statements PostgreSQL receives, never two transactions contending for a team on PostgreSQL. (The migrations were run up, down and up again on PostgreSQL 17, and `alembic check` finds no drift on the relay tables and columns.)
