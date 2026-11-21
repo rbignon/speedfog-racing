@@ -26,6 +26,7 @@ use crate::core::protocol::{
 use crate::core::race_machine::{
     ConnectionStatus, Effect, FrameSnapshot, MachineMessage, RaceMachine, TickInput, ZoneUpdateData,
 };
+use crate::core::relay_apply::{ApplyEnd, ApplyPlan, ApplyRun};
 use crate::core::talisman_thief::pick_talisman;
 use crate::core::timed_effects::timed_apply;
 use crate::eldenring::equip_change;
@@ -262,6 +263,16 @@ enum RelayJob {
         handoff_id: Option<String>,
         generation: u64,
     },
+    /// `Effect::ApplyRelayItems`: its plan read on the worker thread, then
+    /// its writes on the game thread (`run_relay_apply`), answered by
+    /// `RaceMachine::relay_state_applied` once they ended. It stays the
+    /// running job until then, so a job asked meanwhile waits behind the
+    /// writes too (a capture never reads the inventory while it is given
+    /// to).
+    Apply {
+        run: ApplyRun,
+        request: ApplyRequest,
+    },
 }
 
 impl QueuedJob for RelayJob {
@@ -270,13 +281,34 @@ impl QueuedJob for RelayJob {
             // The machine asks a capture again only once it has given up the
             // previous one (abandoned, or pre-empted by a release).
             RelayJob::Capture { .. } => true,
+            // Every apply is answered, exactly once.
+            RelayJob::Apply { .. } => false,
         }
+    }
+}
+
+/// What an apply's plan is made from (the take's state and defeat flags).
+struct ApplyRequest {
+    items: Vec<u32>,
+    flags: Vec<u32>,
+    grace_flags: Vec<u32>,
+}
+
+impl std::fmt::Debug for ApplyRequest {
+    /// The counts only: a state carries up to thousands of ids.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApplyRequest")
+            .field("items", &self.items.len())
+            .field("flags", &self.flags.len())
+            .field("grace_flags", &self.grace_flags.len())
+            .finish()
     }
 }
 
 /// What a relay worker thread returns, one variant per job.
 enum RelayJobDone {
     Captured(Option<CharacterState>),
+    Planned(ApplyPlan),
 }
 
 // =============================================================================
@@ -746,6 +778,7 @@ impl RaceTracker {
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
+        self.run_relay_apply(now);
         self.retry_memory_state(loaded, now);
 
         {
@@ -874,12 +907,32 @@ impl RaceTracker {
                     level,
                     runes,
                 } => {
-                    // The stat write arrives with the shell's game access
-                    // for applying a state.
-                    info!(
-                        ?attributes,
-                        level, runes, "[RELAY] Stat write not implemented yet"
-                    );
+                    // Synchronous, on this frame: the machine reads the next
+                    // frame as written. A failed write fails no take.
+                    let before = relay::read_stats();
+                    if !relay::write_stats(attributes, level, runes) {
+                        warn!(
+                            ?before,
+                            ?attributes,
+                            level,
+                            runes,
+                            "[RELAY] Stats not written (unwritable, or what is there does not read as a character's stats)"
+                        );
+                    } else {
+                        let after = relay::read_stats();
+                        if after == Some((attributes, level, runes)) {
+                            info!(?before, ?attributes, level, runes, "[RELAY] Stats written");
+                        } else {
+                            warn!(
+                                ?before,
+                                ?after,
+                                ?attributes,
+                                level,
+                                runes,
+                                "[RELAY] Stats read back differ from the ones written"
+                            );
+                        }
+                    }
                 }
                 Effect::SetIgt { ms } => {
                     if self.game_state.write_igt(ms).is_some() {
@@ -895,18 +948,22 @@ impl RaceTracker {
                     flags,
                     grace_flags,
                 } => {
-                    // The apply arrives with the worker thread that gives
-                    // items and raises flags: until then it is over at once,
-                    // nothing given.
-                    info!(
-                        handoff_id = %handoff_id,
-                        items = items.len(),
-                        flags = flags.len(),
-                        graces = grace_flags.len(),
-                        "[RELAY] State apply not implemented yet"
+                    // The map of this frame, the take's start frame: the
+                    // apply writes only while every frame reads it.
+                    let run = ApplyRun::new(
+                        handoff_id,
+                        generation,
+                        self.machine.frame_snapshot.map_id,
+                        Instant::now(),
                     );
-                    self.machine
-                        .relay_state_applied(&handoff_id, generation, Instant::now());
+                    self.request_relay_job(RelayJob::Apply {
+                        run,
+                        request: ApplyRequest {
+                            items,
+                            flags,
+                            grace_flags,
+                        },
+                    });
                 }
                 Effect::SendRelayTaken { handoff_id } => {
                     self.ws_client.send_relay_taken(handoff_id);
@@ -1543,7 +1600,8 @@ impl RaceTracker {
     }
 
     /// Start the queue's running job on a thread of its own (the
-    /// `spawner_thread` pattern), unless its thread already runs. A thread
+    /// `spawner_thread` pattern), unless its thread already runs or it is an
+    /// apply already planned (its writes run on the game thread). A thread
     /// the OS does not start fails that job at once (its answer is given now,
     /// on the game thread) and the next job waiting is tried.
     fn start_relay_jobs(&mut self) {
@@ -1561,6 +1619,23 @@ impl RaceTracker {
                         .name("relay-worker".to_string())
                         .spawn(move || {
                             RelayJobDone::Captured(relay::capture(&reader, &game, generation))
+                        })
+                }
+                RelayJob::Apply { run, .. } if run.is_planned() => return,
+                RelayJob::Apply { run, request } => {
+                    let generation = run.generation();
+                    let items = request.items.clone();
+                    let flags = request.flags.clone();
+                    let grace_flags = request.grace_flags.clone();
+                    std::thread::Builder::new()
+                        .name("relay-worker".to_string())
+                        .spawn(move || {
+                            RelayJobDone::Planned(relay::plan_apply(
+                                &items,
+                                &flags,
+                                &grace_flags,
+                                generation,
+                            ))
                         })
                 }
             };
@@ -1581,7 +1656,8 @@ impl RaceTracker {
 
     /// Give the machine a relay job's answer, on the game thread: `done` is
     /// what its thread returned, `None` for a job that failed (its thread
-    /// panicked or never started).
+    /// panicked or never started). An apply comes here only when its plan
+    /// never came (nothing written); one planned ends in `run_relay_apply`.
     fn answer_relay_job(&mut self, job: RelayJob, done: Option<RelayJobDone>) {
         match job {
             RelayJob::Capture {
@@ -1590,7 +1666,7 @@ impl RaceTracker {
             } => {
                 let state = match done {
                     Some(RelayJobDone::Captured(state)) => state,
-                    None => None,
+                    Some(RelayJobDone::Planned(_)) | None => None,
                 };
                 let effects = self.machine.relay_state_captured(
                     handoff_id,
@@ -1600,13 +1676,104 @@ impl RaceTracker {
                 );
                 self.execute_effects(effects);
             }
+            RelayJob::Apply { run, .. } => self.finish_relay_apply(run, None),
         }
+    }
+
+    /// The writes of the running apply, on the game thread, after the
+    /// machine's tick (`frame_snapshot` is this frame's): every apply asked
+    /// watches this frame's loaded map, from its ask on; the running one,
+    /// once planned and its thread joined, writes its next batch
+    /// (`core::relay_apply::ApplyRun`), with the loaded map read again right
+    /// after a batch that wrote. Once its writes ended (all made, a load
+    /// seen, its take no longer applying, the deadline) the machine gets the
+    /// answer and the next job starts. Per frame with no relay job: an
+    /// `Option` check.
+    fn run_relay_apply(&mut self, now: Instant) {
+        if self.relay_jobs.running().is_none() {
+            return;
+        }
+        profile_span!("relay_apply_frame");
+        let map = self.machine.frame_snapshot.map_id;
+        for job in self.relay_jobs.jobs_mut() {
+            if let RelayJob::Apply { run, .. } = job {
+                run.observe(map);
+            }
+        }
+        if self.relay_thread.is_some() {
+            return;
+        }
+        let Some(RelayJob::Apply { run, .. }) = self.relay_jobs.running_mut() else {
+            return;
+        };
+        if !run.is_planned() {
+            return;
+        }
+        let wanted = self.machine.relay_apply_wanted(run.generation());
+        let mut wrote = false;
+        let end = {
+            let mut write = relay::step_writer(&self.event_flag_reader);
+            run.write_frame(wanted, now, |step| {
+                wrote = true;
+                write(step)
+            })
+        };
+        if end.is_none() && wrote {
+            run.observe(self.game_state.loaded_map_id());
+        }
+        if end.is_none() {
+            return;
+        }
+        if let Some(RelayJob::Apply { run, .. }) = self.relay_jobs.finish() {
+            self.finish_relay_apply(run, end);
+        }
+        self.start_relay_jobs();
+    }
+
+    /// Answer the machine for an apply whose writes ended (`end`), or that
+    /// never got its plan (`None`: its thread panicked or never started, and
+    /// nothing was written), on the game thread, with one log line: the
+    /// writes made by kind, those that failed, those left and why, the time
+    /// since the ask. Nothing of it is written after this.
+    fn finish_relay_apply(&mut self, run: ApplyRun, end: Option<ApplyEnd>) {
+        let now = Instant::now();
+        let handoff_id = run.handoff_id();
+        let generation = run.generation();
+        let written = run.written();
+        let elapsed_ms = now.saturating_duration_since(run.asked_at()).as_millis() as u64;
+        match end {
+            Some(ApplyEnd::Complete) if run.failed().is_empty() => info!(
+                handoff_id,
+                generation,
+                ?written,
+                elapsed_ms,
+                "[RELAY] State applied"
+            ),
+            Some(end) => warn!(
+                handoff_id,
+                generation,
+                ?end,
+                ?written,
+                failed = ?run.failed(),
+                left = run.left(),
+                elapsed_ms,
+                "[RELAY] State applied in part"
+            ),
+            None => warn!(
+                handoff_id,
+                generation, elapsed_ms, "[RELAY] State not applied (its plan never came)"
+            ),
+        }
+        self.machine
+            .relay_state_applied(handoff_id, generation, now);
     }
 
     /// Hand the relay job whose thread ended to the machine, with the
     /// identity it was asked with (a thread that panicked answers as a failed
-    /// job), then start the job waiting next. Per frame with no thread ended:
-    /// an `Option` check and an atomic load, nothing allocated, no lock taken.
+    /// job), then start the job waiting next. An apply's plan is kept on its
+    /// job instead, whose writes then run on the game thread
+    /// (`run_relay_apply`). Per frame with no thread ended: an `Option` check
+    /// and an atomic load, nothing allocated, no lock taken.
     fn poll_relay_job(&mut self) {
         if !self
             .relay_thread
@@ -1629,6 +1796,17 @@ impl RaceTracker {
                 );
                 None
             }
+        };
+        let done = match done {
+            Some(RelayJobDone::Planned(plan)) => match self.relay_jobs.running_mut() {
+                Some(RelayJob::Apply { run, .. }) => {
+                    run.set_plan(plan.steps);
+                    return;
+                }
+                // A plan comes only from an apply's thread.
+                _ => None,
+            },
+            done => done,
         };
         if let Some(job) = self.relay_jobs.finish() {
             self.answer_relay_job(job, done);

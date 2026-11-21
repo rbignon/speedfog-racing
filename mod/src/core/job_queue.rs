@@ -72,6 +72,17 @@ impl<J: QueuedJob> JobQueue<J> {
         self.running.as_ref()
     }
 
+    /// The job running, to update what it carries.
+    pub fn running_mut(&mut self) -> Option<&mut J> {
+        self.running.as_mut()
+    }
+
+    /// Every job, the running one first, then those waiting in order: to
+    /// update what each carries while it waits.
+    pub fn jobs_mut(&mut self) -> impl Iterator<Item = &mut J> {
+        self.running.iter_mut().chain(self.waiting.iter_mut())
+    }
+
     /// The running job ended (answered, failed or never started): it is
     /// returned, for its answer, and the oldest waiting job runs next.
     pub fn finish(&mut self) -> Option<J> {
@@ -155,6 +166,25 @@ mod tests {
                 Job::Probe(6)
             ]
         );
+    }
+
+    #[test]
+    fn every_job_can_be_updated_in_place_in_its_order() {
+        let mut queue = JobQueue::default();
+        assert!(queue.running_mut().is_none());
+        assert_eq!(queue.jobs_mut().count(), 0);
+        queue.ask(Job::Apply(1));
+        queue.ask(Job::Capture(2));
+        queue.ask(Job::Apply(3));
+        for job in queue.jobs_mut() {
+            let (Job::Apply(n) | Job::Capture(n) | Job::Probe(n)) = job;
+            *n *= 10;
+        }
+        if let Some(Job::Apply(n)) = queue.running_mut() {
+            *n += 1;
+        }
+        let order: Vec<_> = std::iter::from_fn(|| queue.finish()).collect();
+        assert_eq!(order, [Job::Apply(11), Job::Capture(20), Job::Apply(30)]);
     }
 
     #[test]
