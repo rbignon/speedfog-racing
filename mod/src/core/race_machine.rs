@@ -18,6 +18,7 @@ use std::time::Instant;
 use crate::core::hunter::{self, Hunter, HunterNotice, HunterSpec, HunterStep};
 use crate::core::item_feed::{FeedBanner, FeedHeld, FeedRow, FeedTone, InkStart, ItemFeed};
 use crate::core::livesplit::{RunView, FRESH_RUN_MAX_IGT_MS};
+use crate::core::map_utils::format_map_id;
 use crate::core::memory_effects::{MemoryEffect, MemoryEffects, MemoryState};
 use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
@@ -622,6 +623,13 @@ pub struct RaceMachine {
     relay_warp: Option<FlagWarp>,
     /// A warp that failed is not made again until a loading exit.
     relay_warp_given_up: bool,
+    /// Warps of the current locked stretch whose load ended away from the
+    /// Chapel; `relay::WARP_LANDINGS_MAX` of them end the return for good.
+    /// A loading exit does not reset it: the Chapel reached, or the lock
+    /// going down, does.
+    relay_warp_landings: u32,
+    /// A warp ended by a load: where the next loading exit lands is counted.
+    relay_landing_due: bool,
     /// The `relay_ready` value last sent on this socket (`None` = none yet:
     /// readiness does not survive the socket).
     relay_ready_sent: Option<bool>,
@@ -801,6 +809,8 @@ impl RaceMachine {
             relay_asserted: false,
             relay_warp: None,
             relay_warp_given_up: false,
+            relay_warp_landings: 0,
+            relay_landing_due: false,
             relay_ready_sent: None,
             relay_capped: false,
             relay_cap_due: false,
@@ -2361,7 +2371,7 @@ impl RaceMachine {
                 && now.duration_since(self.last_flag_poll) >= Duration::from_millis(100),
             debug_flags: self.debug_flags_gate_open(now)
                 && now.duration_since(self.last_debug_flags_poll) >= Duration::from_millis(100),
-            hp: self.relay_wants_hp(),
+            hp: self.relay_wants_hp(now),
         }
     }
 
@@ -3738,8 +3748,13 @@ impl RaceMachine {
             return Some(false);
         }
         if !self.relay_live() {
-            return match relay.team_status {
-                ParticipantStatus::Unknown => None,
+            return match (relay.team_status, relay.role) {
+                // A holder whose gates are open wants no lock whatever the
+                // team status reads: a stale one must not strand it.
+                (ParticipantStatus::Unknown, RelayRole::Holder) if !relay.gates_locked => {
+                    Some(false)
+                }
+                (ParticipantStatus::Unknown, _) => None,
                 _ => Some(false),
             };
         }
@@ -3755,16 +3770,29 @@ impl RaceMachine {
         self.relay_role() == Some(RelayRole::Waiting) && self.relay_live()
     }
 
-    /// HP is read only while a locked waiting runner may be sent back to the
-    /// Chapel: a warp running, or away from it.
-    fn relay_wants_hp(&self) -> bool {
-        self.relay_lock == Some(true)
+    /// A locked waiting runner away from the Chapel, with no warp running
+    /// or given up, past the gate window: the return to the Chapel may
+    /// start (HP, which it needs, is the one thing left to check).
+    fn relay_warp_may_start(&self, now: Instant) -> bool {
+        self.relay_warp.is_none()
+            && !self.relay_warp_given_up
+            && self.relay_warp_landings < relay::WARP_LANDINGS_MAX
+            && self.relay_lock == Some(true)
+            && self.relay_asserted
             && self.relay_waiting_live()
-            && (self.relay_warp.is_some()
-                || self
-                    .frame_snapshot
-                    .map_id
-                    .is_some_and(|map| map != relay::CHAPEL_MAP_ID))
+            && self
+                .frame_snapshot
+                .map_id
+                .is_some_and(|map| map != relay::CHAPEL_MAP_ID)
+            && self.relay_lock_since.is_some_and(|since| {
+                now.saturating_duration_since(since) >= relay::GATE_WINDOW
+                    || self.last_loading_exit.is_some_and(|exit| exit > since)
+            })
+    }
+
+    /// HP is read only while the return to the Chapel may start.
+    fn relay_wants_hp(&self, now: Instant) -> bool {
+        self.relay_warp_may_start(now)
     }
 
     /// Run a relay runner's lock, its return to the Chapel and its
@@ -3790,10 +3818,32 @@ impl RaceMachine {
         let flags = relay.flags;
         let waiting_live = self.relay_waiting_live();
         let readable = self.frame_snapshot.position_readable;
+        let map = self.frame_snapshot.map_id;
         if loading_exit {
             self.relay_asserted = false;
             self.relay_warp_given_up = false;
+            // Where the load a warp started ended.
+            if std::mem::take(&mut self.relay_landing_due) {
+                if let Some(landed) = map.filter(|&m| m != relay::CHAPEL_MAP_ID) {
+                    self.relay_warp_landings += 1;
+                    warn!(
+                        map = %format_map_id(landed),
+                        landings = self.relay_warp_landings,
+                        "[RELAY] Warp to the Chapel landed elsewhere"
+                    );
+                    if self.relay_warp_landings >= relay::WARP_LANDINGS_MAX {
+                        self.set_status("Warp to the Chapel failed".to_string(), now);
+                    }
+                }
+            }
         }
+        if map == Some(relay::CHAPEL_MAP_ID) {
+            self.relay_warp_landings = 0;
+        }
+        let settled = self
+            .last_loading_exit
+            .is_none_or(|at| now.saturating_duration_since(at) >= relay::SETTLE);
+        let can_write = readable && !self.wrong_save && settled;
 
         // A warp ends with the waiting: a holder, a take or an over relay
         // does not go back. Its flag, still on, would warp the player the
@@ -3801,7 +3851,7 @@ impl RaceMachine {
         if !waiting_live {
             self.relay_warp_given_up = false;
             if let Some(mut warp) = self.relay_warp.take() {
-                if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), readable) {
+                if let (Some(WarpStep::Lower(flag)), true) = (warp.abort(), can_write) {
                     effects.push(Effect::SetGameFlag {
                         flag_id: flag,
                         value: false,
@@ -3810,18 +3860,27 @@ impl RaceMachine {
             }
         }
 
-        let settled = self
-            .last_loading_exit
-            .is_none_or(|at| now.saturating_duration_since(at) >= relay::SETTLE);
-        if readable && !self.wrong_save && settled {
+        if can_write {
             if let Some(want) = self.relay_lock_wanted() {
                 if self.relay_lock != Some(want) {
-                    let reason = match (want, self.relay_role()) {
-                        (true, Some(RelayRole::Waiting)) => "waiting",
-                        (true, _) => "cap",
-                        (false, Some(RelayRole::Holder)) if self.relay_live() => "holder",
-                        (false, _) => "relay over",
+                    let reason = if want {
+                        if self.relay_role() == Some(RelayRole::Waiting) {
+                            "waiting"
+                        } else {
+                            "cap"
+                        }
+                    } else if self.relay_over() {
+                        "relay over"
+                    } else if !self.is_race_running() {
+                        "race not running"
+                    } else if self.relay_live() {
+                        "holder"
+                    } else {
+                        "relay not started"
                     };
+                    if !want {
+                        self.relay_warp_landings = 0;
+                    }
                     info!(
                         reason,
                         "[RELAY] Lock {}",
@@ -3857,28 +3916,26 @@ impl RaceMachine {
 
             // Back to the Chapel once the lock has held the gates long
             // enough (or a load has come since), unless dead.
-            if waiting_live
-                && self.relay_warp.is_none()
-                && !self.relay_warp_given_up
-                && self.relay_lock == Some(true)
-                && self.relay_asserted
-                && self
-                    .frame_snapshot
-                    .map_id
-                    .is_some_and(|map| map != relay::CHAPEL_MAP_ID)
-                && self.frame_snapshot.hp.is_some_and(|hp| hp > 0)
-                && self.relay_lock_since.is_some_and(|since| {
-                    now.saturating_duration_since(since) >= relay::GATE_WINDOW
-                        || self.last_loading_exit.is_some_and(|exit| exit > since)
-                })
-            {
+            if self.relay_warp_may_start(now) && self.frame_snapshot.hp.is_some_and(|hp| hp > 0) {
                 self.relay_warp = Some(FlagWarp::new(flags.chapel_warp_flag));
             }
         }
 
         if let Some(warp) = self.relay_warp.as_mut() {
-            let step = warp.tick(readable, now);
+            // Never a flag write on an unsettled frame; an unloaded one
+            // still ends the warp. Landed at the Chapel without a load
+            // frame seen: it is over, its flag lowered if still on.
+            let step = if map == Some(relay::CHAPEL_MAP_ID) {
+                warp.abort().filter(|_| can_write)
+            } else if !readable || can_write {
+                warp.tick(readable, now)
+            } else {
+                None
+            };
             let (flag, done) = (warp.flag(), warp.is_done());
+            if done && step != Some(WarpStep::Failed) && map != Some(relay::CHAPEL_MAP_ID) {
+                self.relay_landing_due = true;
+            }
             match step {
                 Some(WarpStep::Raise(flag)) => {
                     info!("[RELAY] Warp to the Chapel");
@@ -11580,9 +11637,10 @@ mod tests {
     /// A relay's `RelayInfo` in the contract's full shape: me `p1`, teammate
     /// `p2` holding the baton, team `t1`, the team playing.
     fn relay_info_with(role: &str, team_status: &str) -> RelayInfo {
+        let holder = if role == "holder" { "p1" } else { "p2" };
         serde_json::from_str(&format!(
             r#"{{"team_id":"t1","team_name":"Red Team","team_status":"{team_status}","cap":5,
-              "holder_id":"p2","holder_online":true,"zone_name":"Stormveil Castle","baton_free_in_s":null,
+              "holder_id":"{holder}","holder_online":true,"zone_name":"Stormveil Castle","baton_free_in_s":null,
               "role":"{role}","gates_locked":false,
               "members":[{{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true}},
                          {{"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}}],
@@ -11979,9 +12037,36 @@ mod tests {
     /// A loading screen at `at` and the exit 16 ms later; returns the exit's
     /// time.
     fn load_in(m: &mut RaceMachine, t0: Instant, at: u64, map: u32) -> u64 {
-        go(m, t0, at, None);
-        go(m, t0, at + 16, Some(map));
+        let fx = go(m, t0, at, None);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })));
+        let fx = go(m, t0, at + 16, Some(map));
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })),
+            "a relay flag written on the unsettled exit frame: {fx:?}"
+        );
         at + 16
+    }
+
+    /// The loading exit frame itself: nothing is written on it.
+    fn go_exit(m: &mut RaceMachine, t0: Instant, at: u64, map: Option<u32>) {
+        let fx = go(m, t0, at, map);
+        assert!(
+            !fx.iter().any(|e| matches!(e, Effect::SetGameFlag { .. })),
+            "a flag written on the unsettled exit frame: {fx:?}"
+        );
+    }
+
+    /// Frames every 100 ms from `from` in the zone until the warp flag is
+    /// raised; returns when.
+    fn run_until_warp(m: &mut RaceMachine, t0: Instant, from: u64) -> u64 {
+        let mut at = from;
+        while at <= from + 20_000 {
+            if go(m, t0, at, Some(IN_ZONE)).contains(&warp(true)) {
+                return at;
+            }
+            at += 100;
+        }
+        panic!("no warp raised");
     }
 
     fn times_of(fx: &[(u64, Effect)], wanted: &Effect) -> Vec<u64> {
@@ -12046,7 +12131,7 @@ mod tests {
             );
         }
         let exit = 1_200;
-        go(&mut m, t0, exit, chapel());
+        go_exit(&mut m, t0, exit, chapel());
         let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
         let at = times_of(&fx, &lock(true));
         assert_eq!(at.len(), 1);
@@ -12127,10 +12212,7 @@ mod tests {
                     .any(|(_, e)| *e == lock(true) || *e == ready(true)),
                 "{role}"
             );
-            let mut start = relay_info_with(role, "ready");
-            if role == "holder" {
-                start.holder_id = Some("p1".into());
-            }
+            let start = relay_info_with(role, "ready");
             update(&mut m, start, t0, 4_050);
             let fx = go_over(&mut m, t0, 4_100, 6_000, chapel());
             assert_eq!(
@@ -12163,7 +12245,7 @@ mod tests {
         let fx = go_over(&mut m, t0, 300, 1_900, None);
         assert!(fx.is_empty(), "{fx:?}");
         let exit = 2_000;
-        go(&mut m, t0, exit, chapel());
+        go_exit(&mut m, t0, exit, chapel());
         let fx = go_over(&mut m, t0, exit + 100, exit + settle_ms() + 200, chapel());
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
         assert!(times_of(&fx, &lock(true))[0] >= exit + settle_ms());
@@ -12306,7 +12388,7 @@ mod tests {
         let fx = go_over(&mut m, t0, 400, 9_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &lock(true)), [400]);
         assert_eq!(times_of(&fx, &warp(true)), [5_400]);
-        // Not locked in setup of the window: no warp before it.
+        // Away from the Chapel it is never ready.
         assert!(times_of(&fx, &ready(true)).is_empty());
     }
 
@@ -12353,17 +12435,26 @@ mod tests {
     }
 
     #[test]
-    fn hp_is_asked_only_while_a_return_to_the_chapel_may_wait() {
+    fn hp_is_asked_only_while_the_return_to_the_chapel_may_start() {
         let t0 = Instant::now();
+        let hp = |m: &RaceMachine, at: u64| m.pre_tick(t0 + ms(at), true, true).hp;
         let mut m = relay_machine("holder", t0);
         go_over(&mut m, t0, 0, 300, Some(IN_ZONE));
-        assert!(!m.pre_tick(t0 + ms(400), true, true).hp);
+        assert!(!hp(&m, 400), "a holder");
         update(&mut m, relay_info("waiting"), t0, 400);
-        go_over(&mut m, t0, 400, 600, Some(IN_ZONE));
-        assert!(m.pre_tick(t0 + ms(700), true, true).hp);
-        let mut m = locked_at_chapel(Instant::now());
+        go_over(&mut m, t0, 400, 5_300, Some(IN_ZONE));
+        assert!(!hp(&m, 5_300), "inside the gate window");
+        assert!(hp(&m, 5_400), "the warp may start");
+        go(&mut m, t0, 5_400, Some(IN_ZONE));
+        assert!(!hp(&m, 5_500), "a warp running does not use it");
+        // Given up after two landings away from the Chapel.
+        let exit = load_in(&mut m, t0, 5_500, IN_ZONE);
+        let at = run_until_warp(&mut m, t0, exit + 100) + 100;
+        let exit = load_in(&mut m, t0, at, IN_ZONE);
+        go_over(&mut m, t0, exit + 100, exit + 6_000, Some(IN_ZONE));
+        assert!(!hp(&m, exit + 6_100), "given up for good");
+        let m = locked_at_chapel(Instant::now());
         assert!(!m.pre_tick(Instant::now(), true, true).hp, "at the Chapel");
-        let _ = &mut m;
     }
 
     #[test]
@@ -12371,14 +12462,182 @@ mod tests {
         let t0 = Instant::now();
         let mut m = locked_at_chapel(t0);
         let fx = go_over(&mut m, t0, 400, 30_000, Some(IN_ZONE));
-        assert_eq!(times_of(&fx, &warp(true)).len(), 3);
-        assert!(!times_of(&fx, &warp(false)).is_empty());
-        let end = *times_of(&fx, &warp(true)).last().unwrap();
-        assert!(fx.last().is_some());
-        let failed_at = t0 + ms(end + 5_000);
-        assert_eq!(m.get_status(failed_at), Some("Warp to the Chapel failed"));
-        // Given up: nothing more until a loading exit reopens the question.
-        assert_eq!(times_of(&fx, &warp(true)).len(), 3);
+        let raises = times_of(&fx, &warp(true));
+        assert_eq!(raises.len(), 3);
+        // The flag is lowered between raises and once more when given up,
+        // five seconds after the last raise, with the status.
+        let failed = raises[2] + 5_000;
+        let lowers = times_of(&fx, &warp(false));
+        assert_eq!(lowers, [raises[0] + 5_000, raises[1] + 5_000, failed]);
+        assert_eq!(
+            m.get_status(t0 + ms(failed)),
+            Some("Warp to the Chapel failed")
+        );
+    }
+
+    #[test]
+    fn the_return_to_the_chapel_end_to_end() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 6_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &warp(true)), [5_000]);
+        // The seed warps: a load, ending at the Chapel.
+        let exit = load_in(&mut m, t0, 5_100, crate::core::relay::CHAPEL_MAP_ID);
+        let fx = go_over(&mut m, t0, exit + 100, exit + 8_000, chapel());
+        assert!(times_of(&fx, &warp(true)).is_empty(), "no second raise");
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        let ready_at = times_of(&fx, &ready(true));
+        assert_eq!(ready_at.len(), 1);
+        assert!(ready_at[0] >= exit + settle_ms());
+    }
+
+    #[test]
+    fn no_relay_flag_is_written_on_the_exit_frame() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        go(&mut m, t0, 500, None);
+        // The server's word changes during the load.
+        update(&mut m, relay_info("holder"), t0, 550);
+        go_exit(&mut m, t0, 600, chapel());
+        let fx = go_over(&mut m, t0, 700, 600 + settle_ms() + 100, chapel());
+        assert_eq!(times_of(&fx, &lock(false)).len(), 1);
+        assert!(times_of(&fx, &lock(false))[0] >= 600 + settle_ms());
+    }
+
+    #[test]
+    fn a_waiting_runner_turning_holder_at_the_chapel_is_no_longer_ready() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        update(&mut m, relay_info("holder"), t0, 400);
+        let fx = go(&mut m, t0, 500, chapel());
+        assert!(fx.contains(&ready(false)), "{fx:?}");
+        assert!(fx.contains(&lock(false)));
+    }
+
+    #[test]
+    fn two_landings_away_from_the_chapel_end_the_return_for_good() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let mut at = 400;
+        let mut exit = 0;
+        for _ in 0..2 {
+            let raise = run_until_warp(&mut m, t0, at);
+            exit = load_in(&mut m, t0, raise + 100, IN_ZONE);
+            at = exit + 100;
+        }
+        assert_eq!(
+            m.get_status(t0 + ms(exit)),
+            Some("Warp to the Chapel failed")
+        );
+        // No third raise, however many loads come.
+        for _ in 0..3 {
+            let fx = go_over(&mut m, t0, at, at + 15_000, Some(IN_ZONE));
+            assert!(times_of(&fx, &warp(true)).is_empty());
+            assert!(times_of(&fx, &ready(true)).is_empty());
+            exit = load_in(&mut m, t0, at + 15_100, IN_ZONE);
+            at = exit + 100;
+        }
+        assert_eq!(m.relay_warp_landings, 2);
+    }
+
+    #[test]
+    fn reaching_the_chapel_resets_the_landing_count() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let raise = run_until_warp(&mut m, t0, 400);
+        let exit = load_in(&mut m, t0, raise + 100, IN_ZONE);
+        go_over(&mut m, t0, exit + 100, exit + 100, Some(IN_ZONE));
+        assert_eq!(m.relay_warp_landings, 1);
+        let exit = load_in(&mut m, t0, exit + 200, crate::core::relay::CHAPEL_MAP_ID);
+        go(&mut m, t0, exit + 100, chapel());
+        assert_eq!(m.relay_warp_landings, 0);
+        // Two more landings are needed again before giving up.
+        let mut at = exit + 200;
+        for n in 1..=2 {
+            let exit = load_in(&mut m, t0, at, IN_ZONE);
+            let raise = run_until_warp(&mut m, t0, exit + 100);
+            let exit = load_in(&mut m, t0, raise + 100, IN_ZONE);
+            go(&mut m, t0, exit + 100, Some(IN_ZONE));
+            assert_eq!(m.relay_warp_landings, n);
+            at = exit + 200;
+        }
+    }
+
+    #[test]
+    fn the_lock_going_down_resets_the_landing_count() {
+        let t0 = Instant::now();
+        let mut m = locked_at_chapel(t0);
+        let mut at = 400;
+        for _ in 0..2 {
+            let raise = run_until_warp(&mut m, t0, at);
+            let exit = load_in(&mut m, t0, raise + 100, IN_ZONE);
+            at = exit + 100;
+        }
+        assert_eq!(m.relay_warp_landings, 2);
+        update(&mut m, relay_info("holder"), t0, at);
+        let fx = go_over(&mut m, t0, at + 100, at + 3_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(false)).len(), 1);
+        assert_eq!(m.relay_warp_landings, 0);
+        // Waiting again: the return works once more.
+        update(&mut m, relay_info("waiting"), t0, at + 3_100);
+        run_until_warp(&mut m, t0, at + 3_100);
+    }
+
+    #[test]
+    fn a_load_in_the_gap_between_a_lower_and_a_raise_never_raises_on_an_unsettled_frame() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 10_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &warp(true)), [5_000]);
+        assert_eq!(times_of(&fx, &warp(false)), [10_000]);
+        // The load starts inside the 100 ms the flag stays down.
+        let exit = load_in(&mut m, t0, 10_050, IN_ZONE);
+        let fx = go_over(
+            &mut m,
+            t0,
+            exit + 100,
+            exit + settle_ms() + 100,
+            Some(IN_ZONE),
+        );
+        let raises = times_of(&fx, &warp(true));
+        assert_eq!(raises.len(), 1, "{fx:?}");
+        assert!(raises[0] >= exit + settle_ms());
+    }
+
+    #[test]
+    fn a_warp_that_lands_at_the_chapel_without_a_load_frame_ends() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("waiting", t0);
+        let fx = go_over(&mut m, t0, 0, 5_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &warp(true)), [5_000]);
+        let fx = go(&mut m, t0, 5_100, chapel());
+        assert!(fx.contains(&warp(false)), "{fx:?}");
+        let fx = go_over(&mut m, t0, 5_200, 15_000, chapel());
+        assert!(times_of(&fx, &warp(true)).is_empty());
+        assert_eq!(m.relay_warp_landings, 0);
+    }
+
+    #[test]
+    fn a_fresh_holder_with_an_unknown_team_status_drops_a_stale_lock() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        let mut info = relay_info("holder");
+        info.team_status = ParticipantStatus::Unknown;
+        update(&mut m, info, t0, 0);
+        let fx = go_over(&mut m, t0, 0, 500, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(false)), [0]);
+        // A capped holder, or any other role, is left alone.
+        for (role, capped) in [("holder", true), ("waiting", false)] {
+            let mut m = relay_machine(role, t0);
+            let mut info = relay_info(role);
+            info.team_status = ParticipantStatus::Unknown;
+            info.gates_locked = capped;
+            update(&mut m, info, t0, 0);
+            let fx = go_over(&mut m, t0, 0, 500, Some(IN_ZONE));
+            assert!(!fx
+                .iter()
+                .any(|(_, e)| matches!(e, Effect::SetGameFlag { .. })));
+        }
     }
 
     #[test]
@@ -12393,7 +12652,7 @@ mod tests {
         assert!(go(&mut m, t0, 700, None).is_empty());
         // Back: ready once the lock is asserted again.
         let exit = 800;
-        go(&mut m, t0, exit, chapel());
+        go_exit(&mut m, t0, exit, chapel());
         let fx = go_over(&mut m, t0, exit + 100, exit + 3_000, chapel());
         let at = times_of(&fx, &ready(true));
         assert_eq!(at.len(), 1);
