@@ -529,7 +529,7 @@ Map (`/race/[id]`, live, finished and the replay): the map components are fed th
 
 ## Bot
 
-`tools/relay_bot.py` plays fake relay runners over the mod WebSocket, so the server and the web can be exercised without the game. From `server/`, against a local database only (it refuses any other unless `--force`), while the dev server runs:
+`tools/relay_bot.py` plays fake relay runners over the mod WebSocket, so the server and the web can be exercised without the game. From `server/`, against a local database only (it refuses any other unless `--force`), while the dev server runs with `RELAY_RACES_ENABLED=true` (needed to create the race the bots join):
 
 ```
 uv run python ../tools/relay_bot.py <race_id> --team Alpha=bot1,bot2 --team Beta=bot3,bot4

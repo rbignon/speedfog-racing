@@ -670,10 +670,10 @@ def test_a_ready_team_keeps_no_state_from_its_holder(integration_client, relay_r
     try:
         holder = mods[_pid(relay_race, 0, 0)]
         # The first runner sits on an old save: its first report would fail
-        # the team's fresh-save gate, so nothing it sends is kept.
-        holder.send(
-            {"type": "relay_state", "handoff_id": None, "state": STATE, "igt_ms": 3_600_000}
-        )
+        # the team's fresh-save gate, so nothing it sends is kept, even an IGT
+        # the race's age makes plausible.
+        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(minutes=10))
+        holder.send({"type": "relay_state", "handoff_id": None, "state": STATE, "igt_ms": 300_000})
         barrier(holder)
 
         team = load_team(relay_race)
@@ -691,8 +691,10 @@ def test_a_ready_team_hands_off_with_no_state_and_the_receiver_plays(
     try:
         holder, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
         _make_receiver(target)
+        # Ten minutes in, the old save's IGT is plausible against the clock.
+        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(minutes=10))
 
-        take = _hand_off(holder, target, igt_ms=3_600_000)
+        take = _hand_off(holder, target, igt_ms=300_000)
 
         assert (take["state"], take["igt_ms"]) == (None, 0)
         team = load_team(relay_race)
