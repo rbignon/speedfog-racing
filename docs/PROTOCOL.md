@@ -697,7 +697,7 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
 - `zone_name`: display name of the zone a taker would restart (the zone of the team's last fog gate, or the start zone before any gate), null when unknown.
 - `role`: `holder` only for the team's holder while the baton is not free. Once the baton is free (a take nobody acknowledged), the nominal holder reads `waiting` with `baton_free_in_s: 0`, locks again, and may take the baton back like any teammate.
 - `gates_locked`: true for a holder at or over their cap.
-- `baton_free_in_s`: null while the holder is online; otherwise the seconds before the baton can be taken (the offline wait is 60 s), 0 when it is free.
+- `baton_free_in_s`: null while the holder is online; otherwise the seconds before the baton can be taken (the offline wait is 60 s, counted from the holder's disconnect, or from the race start for a holder never connected; the whole 60 until the absence is recorded), 0 when it is free.
 - `flags`: the seed's `relay` block minus `warp_flag_count`.
 
 | Message         | Fields                                                                                                                                       | When                                                                                                                                               |

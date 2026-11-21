@@ -44,7 +44,12 @@ from speedfog_racing.services.relay import (
     leaderboard_entries,
     relay_team_row,
 )
-from speedfog_racing.websocket.handler import MAX_FRESH_IGT_MS, clamp_death_count, clamp_igt
+from speedfog_racing.websocket.handler import (
+    MAX_FRESH_IGT_MS,
+    clamp_death_count,
+    clamp_igt,
+    sentry_breadcrumb,
+)
 from speedfog_racing.websocket.race.manager import manager
 from speedfog_racing.websocket.race.mod import (
     RaceModHandler,
@@ -288,6 +293,44 @@ class RelayModHandler(RaceModHandler):
             and holds_baton(team, self._participant_id)
             and not awaiting_take(manager.get_room(self._race_id), team.id, self._participant_id)
         )
+
+    @sentry_breadcrumb
+    async def _handle_event_flag(self, msg: dict[str, Any]) -> None:
+        """A runner the gate does not hear is answered on the lock-free
+        pre-read: acknowledged (with the race's condition, as the shared
+        handler would send it), recorded nowhere, and the team's row never
+        locked, since a slow client would hold it for the acknowledgement's
+        send. The holder's goes on to the shared handler, which checks the
+        gate again under the lock."""
+        raw_message_id = msg.get("message_id")
+        message_id = raw_message_id if isinstance(raw_message_id, int) else None
+        async with self.session_maker() as db:
+            gate = await self._read_gate(db)
+        if gate is None:
+            return
+        _, race, team = gate
+        if not self._listened(team):
+            if message_id is not None:
+                await self._send_event_flag_ack(message_id)
+            if race.status != RaceStatus.RUNNING:
+                await self._send_condition(ErrorCode.RACE_NOT_RUNNING)
+            elif _is_countdown_active(race):
+                await self._send_condition(ErrorCode.COUNTDOWN)
+            return
+        await super()._handle_event_flag(msg)
+
+    @sentry_breadcrumb
+    async def _handle_zone_query(self, msg: dict[str, Any]) -> None:
+        """As ``_handle_event_flag``: a runner the gate does not hear gets its
+        acknowledgement from the lock-free pre-read."""
+        raw_message_id = msg.get("message_id")
+        message_id = raw_message_id if isinstance(raw_message_id, int) else None
+        async with self.session_maker() as db:
+            gate = await self._read_gate(db)
+        if gate is not None and self._listened(gate[2]):
+            await super()._handle_zone_query(msg)
+        elif message_id is not None:
+            await self._send_zone_query_ack(message_id)
 
     async def _read_gate(self, db: AsyncSession) -> tuple[Participant, Race, RelayTeam] | None:
         """The runner, its race and the baton of its team, in one light query

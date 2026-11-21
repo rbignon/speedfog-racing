@@ -130,7 +130,7 @@ for an unknown user carries none, the invitee picks on the invite page.
 - At least 2 teams that count, otherwise `At least 2 teams are required to start a relay race`.
 - Each such team needs at least 2 READY members, otherwise `<team name> needs at least 2 ready runners`.
 
-`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`.
+`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline then (`holder_offline_since`): the 60 s wait starts with the race.
 
 A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the left-out members return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
 
@@ -139,7 +139,7 @@ A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_
 What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py`, wire shapes in `PROTOCOL.md`, protocol 1.19). It is sent in `auth_ok` and again, one message per connected member with its own `role` and `gates_locked`, by `send_relay_updates`. A relay race refuses a mod below `RELAY_MIN_PROTOCOL` (1.19) at auth with `RELAY_OLD_MOD_MESSAGE`; other races still accept a 1.18 mod.
 
 - Role: `holder` only for the team's holder while the baton is not free. When `baton_free` is set the nominal holder reads `waiting` with `baton_free_in_s: 0`, like everyone else.
-- `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, floored at 0 (0 too when the stamp is missing).
+- `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, floored at 0. A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
 - `gates_locked`: a holder whose `relay_zones` reached the team's cap.
 - `zone_name`: the node of `entry_flag_id` in the graph's `event_map`, else the start node.
 - Readiness: `RaceRoom.relay_ready` holds the members loaded at the Chapel with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected); a disconnect drops the member from it.
@@ -183,12 +183,17 @@ then goes back to them.
   holder and gets a `relay_update`.
 - **Take accepted**: the baton flips to the asker with the stored state (null before
   any checkpoint) and the team's `igt_ms`, the last IGT received.
+- **An absent holder with no stamp**: a take request that finds the holder's mod not
+  connected and no `holder_offline_since` (the socket is gone, by a disconnect or an
+  eviction, and its disconnect hook has not run yet) stamps it now, under the locks,
+  and is refused with `holder_online`.
 - **Flip**: `holder_id` is the receiver, `holder_offline_since` cleared, `baton_free`
-  false; a handoff in phase `take` with its timer; `relay_take` (`handoff_id`,
-  `state`, `igt_ms`, `defeat_flags`, `warp_flag`, `zone_name`) to the receiver;
-  `relay_update` to the team, whose `role: waiting` is what makes the giver's mod
-  lock and go to the Chapel. A receiver whose mod is no longer connected gets a free
-  baton at once (`baton_free`), and no take is awaited from them.
+  false; a handoff in phase `take`, its timer started with it before the commit (a
+  failure after the commit still leaves a take that expires); `relay_take`
+  (`handoff_id`, `state`, `igt_ms`, `defeat_flags`, `warp_flag`, `zone_name`) to the
+  receiver; `relay_update` to the team, whose `role: waiting` is what makes the
+  giver's mod lock and go to the Chapel. A receiver whose mod is no longer connected
+  gets a free baton at once (`baton_free`), and no take is awaited from them.
 - **Before `relay_taken`**: from the flip until its acknowledgement, the receiver's
   game still carries its own save's IGT and deaths, so the progress gate hears it as
   a waiting runner (`awaiting_take`): its `event_flag` and `zone_query` are
@@ -204,11 +209,16 @@ then goes back to them.
   receiver plays on.
 - **Timer**: a take still pending after 30 s sets `baton_free` and sends
   `relay_update`: any teammate under their cap, the giver and the receiver included,
-  may take it. A release not answered in 15 s is dropped at the next request or by its
-  own expiry check: the holder simply stays holder.
+  may take it. It does so only while the receiver still holds the baton and the baton
+  can still move (race running, team ready or playing); closing the room (a reset or a
+  deletion) cancels it. A release not answered in 15 s is dropped at the next request
+  or by its own expiry check: the holder simply stays holder.
+- **`relay_state` before `relay_taken`**: a receiver whose take is pending is not heard
+  there either: its state is not kept and the team IGT does not move.
 - **`relay_ready {ready}`** adds the sender to `RaceRoom.relay_ready` (while its mod is
-  connected) or removes it, then `relay_update` when that changed. A disconnect removes
-  them.
+  connected) or removes it, then `relay_update` when that changed. Readiness goes with
+  the member's current socket: a disconnect, an eviction after a failed send, or a
+  replacement by a newer socket removes it, and the mod reports it again.
 - **Connections**: when the holder's mod disconnects, `holder_offline_since` is set to
   now and their pending release dropped (the mods count the 60 s down from
   `baton_free_in_s`); when it reconnects the stamp is cleared. Any member's arrival or
@@ -239,10 +249,11 @@ then goes back to them.
 ### Ordering
 
 `RaceRoom.relay_lock` serializes the operations above (and the take timer) per race, in
-memory. Each reads the team through `team_for_update`, which row-locks it
-(`SELECT ... FOR UPDATE`, a no-op on SQLite). The committing loads of the progress
-messages take the same lock ("Progress and guards"), so a flip and a progress write of
-one team are ordered by the database.
+memory. All but `relay_ready` read the team through `team_for_update`, which row-locks
+it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only the member's
+team id, without a lock. The committing loads of the progress messages take the same
+row lock ("Progress and guards"), so a flip and a progress write of one team are
+ordered by the database. The lock order is always `relay_lock`, then the team row.
 
 ## Cap
 
@@ -290,14 +301,17 @@ carry every team's history. No progress load reads `character_state` (deferred).
   is first judged on a light, lock-free read of the team's baton (every member reports
   about once a second); the holder's then goes through the shared handler, whose load
   row-locks the team (`SELECT ... FOR UPDATE`) and checks the baton again before it
-  commits. An `event_flag` or a `zone_query` is checked once, in that locked load. A
-  flip takes the same lock (Baton, "Ordering"), so progress from a runner who no
-  longer holds the baton is never applied. A holder whose `relay_take` is still
+  commits. An `event_flag` or a `zone_query` is decided the same way: a runner the
+  gate does not hear is acknowledged on the lock-free read (with the race's condition
+  error, as the shared handler sends it), so a slow waiting client never holds its
+  team's row for a send; the holder's is checked again in the locked load. A flip
+  takes the same lock (Baton, "Ordering"), so progress from a runner who no longer
+  holds the baton is never applied. A holder whose `relay_take` is still
   unacknowledged is heard as a waiting runner (`awaiting_take`, read from the room's
-  memory, so the pre-read stays lock-free; Baton, "Before `relay_taken`"). Anyone else's `event_flag` and
-  `zone_query` are acknowledged (the mod replays them until then) and recorded
-  nowhere; their `status_update` only runs their own fresh-save gate, and no row is
-  broadcast for it. The legacy `finished` message is ignored.
+  memory, so the pre-read stays lock-free; Baton, "Before `relay_taken`"). Anyone
+  else's `event_flag` and `zone_query` are acknowledged (the mod replays them until
+  then) and recorded nowhere; their `status_update` only runs their own fresh-save
+  gate, and no row is broadcast for it. The legacy `finished` message is ignored.
 - **Fresh save for every member.** The team's first report, its first holder's,
   passes the team's gate (IGT at most 60 s, `MAX_FRESH_IGT_MS`): the team becomes
   PLAYING and that holder is validated. Any other member's first report once the

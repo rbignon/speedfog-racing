@@ -1,9 +1,11 @@
 """Relay baton: handoff, takeover, checkpoints and the two timeouts."""
 
+import asyncio
+import json
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -12,7 +14,12 @@ from sqlalchemy.dialects import postgresql
 import speedfog_racing.websocket.race.relay as relay_ws
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.services.relay import relay_cap, team_defeat_flags
-from speedfog_racing.websocket.race.manager import manager
+from speedfog_racing.websocket.race.manager import (
+    ConnectionManager,
+    ModConnection,
+    RaceRoom,
+    manager,
+)
 from speedfog_racing.websocket.race.relay_mod import RelayModHandler
 
 from . import test_integration as _integration
@@ -25,6 +32,7 @@ from .relay_fixtures import (
     PROGRESS_TOTAL_LAYERS,
     RELAY_BLOCK,
     SECOND_FOG_FLAG,
+    START_GRACE,
     START_NODE,
     THIRD_FOG_FLAG,
     RelayModClient,
@@ -63,6 +71,13 @@ def _live_take_timers() -> list[Any]:
         for pending in room.relay_pending.values()
         if pending.timer is not None and not pending.timer.done()
     ]
+
+
+def _wait_for_timers(seconds: float = 2.0) -> None:
+    """Wait until no take timer is running (each fired or was stopped)."""
+    deadline = time.monotonic() + seconds
+    while _live_take_timers() and time.monotonic() < deadline:
+        time.sleep(0.01)
 
 
 def _started(client, relay_race):
@@ -620,7 +635,8 @@ def test_the_receiver_is_not_listened_to_before_relay_taken(relay_race, mods):
     take = _hand_off(holder, target)
     before = load_team(relay_race)
 
-    # Its game still carries its own save's IGT and deaths.
+    # Its game still carries its own save's IGT and deaths, and its state.
+    target.send({"type": "relay_state", "handoff_id": None, "state": OTHER_STATE, "igt_ms": 7_000})
     target.send_status_update(igt_ms=900_000, death_count=7)
     target.send_event_flag(FOG_FLAG, igt_ms=900_500, message_id=41)
 
@@ -633,7 +649,7 @@ def test_the_receiver_is_not_listened_to_before_relay_taken(relay_race, mods):
         before.current_zone,
         before.zone_history,
     )
-    assert team.entry_flag_id is None
+    assert (team.entry_flag_id, team.character_state) == (None, STATE)
 
     _taken(target, take)
     target.send_status_update(igt_ms=6_000, death_count=0)
@@ -641,7 +657,178 @@ def test_the_receiver_is_not_listened_to_before_relay_taken(relay_race, mods):
     assert load_team(relay_race).igt_ms == 6_000
 
 
+def test_a_first_runner_absent_at_the_start_waits_60_seconds(integration_client, relay_race):
+    race_id = relay_race["race_id"]
+    absent = relay_race["teams"][0]["members"][0]
+    mods: dict[str, RelayModClient] = {}
+    try:
+        for team in relay_race["teams"]:
+            for member in team["members"]:
+                if member is absent:
+                    continue
+                pid = member["participant_id"]
+                mods[pid] = RelayModClient.connect(
+                    integration_client, race_id, member["mod_token"], pid
+                )
+                assert mods[pid].auth(protocol_version="1.19")["type"] == "auth_ok"
+        response = integration_client.post(
+            f"/api/races/{race_id}/start",
+            headers={"Authorization": f"Bearer {relay_race['organizer'].api_token}"},
+        )
+        assert response.status_code == 200, response.json()
+        patch_race(relay_race, started_at=datetime.now(UTC) - timedelta(seconds=1))
+        waiting = mods[_pid(relay_race, 0, 1)]
+        team = load_team(relay_race)
+        assert team.holder_id == UUID(absent["participant_id"])
+        assert team.holder_offline_since is not None  # absent from the start
+
+        waiting.send_status_update(igt_ms=2_000, death_count=0)
+        update = waiting.receive_until(
+            "relay_update", lambda m: _me(m, waiting.participant_id)["validated"]
+        )
+        assert update["relay"]["baton_free_in_s"] == 60
+        waiting.send({"type": "relay_take_request"})
+        assert _refusal(waiting) == "holder_online"
+
+        patch_team(relay_race, holder_offline_since=datetime.now(UTC) - timedelta(seconds=30))
+        waiting.send({"type": "relay_ready", "ready": True})
+        update = waiting.receive_until(
+            "relay_update", lambda m: _me(m, waiting.participant_id)["ready"]
+        )
+        assert update["relay"]["baton_free_in_s"] in (29, 30)  # counting down
+
+        patch_team(relay_race, holder_offline_since=datetime.now(UTC) - timedelta(seconds=60))
+        waiting.send({"type": "relay_take_request"})
+        _taken(waiting, waiting.receive_until("relay_take"))
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+
+def test_a_take_between_the_holder_socket_pop_and_its_stamp_waits(relay_race):
+    holder_id, asker_id = UUID(_pid(relay_race, 0, 0)), UUID(_pid(relay_race, 0, 1))
+    patch_race(
+        relay_race, status=RaceStatus.RUNNING, started_at=datetime.now(UTC) - timedelta(minutes=1)
+    )
+    patch_team(relay_race, status=ParticipantStatus.PLAYING, holder_id=holder_id)
+    patch_member(relay_race, str(asker_id), status=ParticipantStatus.PLAYING, relay_validated=True)
+    # The holder's socket left the room; its disconnect hook has not stamped yet.
+    room = RaceRoom(race_id=UUID(relay_race["race_id"]))
+    socket = AsyncMock()
+    room.mods[asker_id] = ModConnection(websocket=socket, participant_id=asker_id, user_id=uuid4())
+    room.relay_ready.add(asker_id)
+
+    asyncio.run(
+        relay_ws.request_take(relay_race["db"], room, asker_id, graph_json=progress_graph())
+    )
+
+    sent = [json.loads(call.args[0]) for call in socket.send_text.call_args_list]
+    assert [(m["type"], m["code"]) for m in sent] == [("relay_refused", "holder_online")]
+    team = load_team(relay_race)
+    assert (team.holder_id, team.baton_free) == (holder_id, False)
+    assert team.holder_offline_since is not None  # offline since now: the wait starts
+    assert not room.relay_pending
+
+
+def test_a_failure_after_the_flip_still_frees_the_baton(monkeypatch, relay_race, mods):
+    monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 0.05)
+    holder, waiting = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    _make_receiver(waiting)
+    patch_team(relay_race, baton_free=True)
+
+    def broken(*args: Any, **kwargs: Any) -> list[int]:
+        raise RuntimeError("after the flip's commit")
+
+    monkeypatch.setattr(relay_ws, "team_defeat_flags", broken)
+    waiting.send({"type": "relay_take_request"})
+
+    # No relay_take went out, yet the take still expires.
+    freed = waiting.receive_until(
+        "relay_update",
+        lambda m: (
+            m["relay"]["holder_id"] == waiting.participant_id and m["relay"]["baton_free_in_s"] == 0
+        ),
+    )
+    assert not [m for m in waiting.skipped if m["type"] == "relay_take"]
+    assert freed["relay"]["role"] == "waiting"
+    monkeypatch.setattr(relay_ws, "team_defeat_flags", team_defeat_flags)
+    _set_ready(holder)
+    holder.send({"type": "relay_take_request"})
+    _taken(holder, holder.receive_until("relay_take"))
+
+
+def test_a_take_timer_frees_nothing_once_the_team_is_out(monkeypatch, relay_race, mods):
+    monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 0.5)
+    giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    _make_receiver(target)
+    _hand_off(giver, target)
+
+    patch_team(relay_race, status=ParticipantStatus.FINISHED)
+    _wait_for_timers()
+
+    assert load_team(relay_race).baton_free is False
+
+
+def test_a_race_reset_stops_a_pending_take_timer(integration_client, relay_race, mods):
+    giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    _make_receiver(target)
+    _hand_off(giver, target)
+    [pending] = manager.rooms[UUID(relay_race["race_id"])].relay_pending.values()
+
+    response = integration_client.post(
+        f"/api/races/{relay_race['race_id']}/reset",
+        headers={"Authorization": f"Bearer {relay_race['organizer'].api_token}"},
+    )
+
+    assert response.status_code == 200, response.json()
+    _wait_for_timers()
+    assert pending.timer is not None and pending.timer.cancelled()
+
+
 # --- Connections and readiness ---
+
+
+def test_a_waiting_runner_flag_or_query_takes_no_team_lock(monkeypatch, relay_race, mods):
+    holder, waiting = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    locked: list[UUID | None] = []
+    original = RelayModHandler._team_select
+
+    def spy(self: RelayModHandler) -> Any:
+        locked.append(self._participant_id)
+        return original(self)
+
+    monkeypatch.setattr(RelayModHandler, "_team_select", spy)
+    waiting.send_event_flag(FOG_FLAG, igt_ms=3_000, message_id=51)
+    waiting.receive_until("event_flag_ack", lambda m: m["message_id"] == 51)
+    waiting.send_zone_query(START_GRACE, igt_ms=3_500, message_id=52)
+    waiting.receive_until("zone_query_ack", lambda m: m["message_id"] == 52)
+    barrier(holder)
+
+    # Acknowledged on the lock-free read; only the holder's flag locks the team.
+    assert UUID(waiting.participant_id) not in locked
+    assert UUID(holder.participant_id) in locked
+
+
+async def test_a_member_whose_socket_is_removed_loses_its_readiness():
+    room = RaceRoom(race_id=uuid4())
+    first, second = uuid4(), uuid4()
+    for pid in (first, second):
+        socket = AsyncMock()
+        socket.send_text.side_effect = RuntimeError("gone")
+        room.mods[pid] = ModConnection(websocket=socket, participant_id=pid, user_id=uuid4())
+        room.relay_ready.add(pid)
+
+    assert await room.send_to_mod(first, "{}") is False  # evicted on a failed send
+    await room.broadcast_to_mods("{}")  # evicted on a failed broadcast
+    assert (room.mods, room.relay_ready) == ({}, set())
+
+    rooms = ConnectionManager()
+    race_id, third = uuid4(), uuid4()
+    await rooms.connect_mod(race_id, third, uuid4(), AsyncMock())
+    rooms.rooms[race_id].relay_ready.add(third)
+    await rooms.connect_mod(race_id, third, uuid4(), AsyncMock())  # replaced by a new socket
+    assert rooms.rooms[race_id].relay_ready == set()
+    await asyncio.sleep(0)  # the evicted sockets' background closes
 
 
 def test_relay_ready_reports_a_member_waiting_at_the_chapel(relay_race, mods):
