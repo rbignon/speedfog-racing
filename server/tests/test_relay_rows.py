@@ -296,6 +296,76 @@ async def test_runner_update_goes_out_as_the_team_row_from_a_light_loader(
     assert len(player["relay_members"]) == 2
 
 
+async def test_a_solo_status_update_selects_no_relay_team(rr_session, monkeypatch):
+    """The 1 Hz report of a solo runner runs the queries it ran before relay
+    races existed: the race's teams, selectin-loaded by default, stay out."""
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import AsyncMock
+
+    from sqlalchemy import event
+
+    from speedfog_racing.models import RaceStatus, Seed
+    from speedfog_racing.websocket.race import mod as race_mod
+
+    graph = {"total_layers": 3, "nodes": {"start": {"type": "start", "layer": 0}}}
+    now = datetime.now(UTC)
+    async with rr_session() as db:
+        organizer, runner = await _users(db, 2)
+        seed = Seed(
+            seed_number="solo",
+            pool_name="standard",
+            graph_json=graph,
+            total_layers=3,
+            folder_path="/test/solo",
+        )
+        db.add(seed)
+        await db.flush()
+        race = Race(
+            name="Solo",
+            organizer_id=organizer.id,
+            seed_id=seed.id,
+            status=RaceStatus.RUNNING,
+            started_at=now - timedelta(minutes=1),
+        )
+        db.add(race)
+        await db.flush()
+        participant = Participant(
+            race_id=race.id,
+            user_id=runner.id,
+            status=ParticipantStatus.PLAYING,
+            current_zone="start",
+            zone_history=[{"node_id": "start", "igt_ms": 0, "type": "spawn"}],
+            igt_ms=1_000,
+            last_igt_change_at=now,
+        )
+        db.add(participant)
+        await db.commit()
+        race_id, participant_id = race.id, participant.id
+    monkeypatch.setattr(race_mod, "manager", ConnectionManager())
+    handler = race_mod.RaceModHandler(AsyncMock(), race_id, rr_session)
+    handler._participant_id = participant_id
+    handler._cached_graph_json = graph
+    statements: list[str] = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):  # type: ignore[no-untyped-def]
+        statements.append(statement)
+
+    engine = rr_session.kw["bind"].sync_engine
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        await handler._handle_status_update(
+            {"type": "status_update", "igt_ms": 2_000, "death_count": 0}
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+
+    async with rr_session() as db:
+        assert (await db.get(Participant, participant_id)).igt_ms == 2_000  # the path ran
+    assert not [s for s in statements if "FROM relay_teams" in s]
+    # The runner, its user and its race, as before the relay tables existed.
+    assert len([s for s in statements if s.lstrip().startswith("SELECT")]) == 3
+
+
 async def test_event_flag_and_zone_query_updates_go_out_as_the_team_row(
     rr_session, relay_race, monkeypatch
 ):
