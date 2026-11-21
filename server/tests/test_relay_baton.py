@@ -21,6 +21,7 @@ from speedfog_racing.websocket.race.manager import (
     manager,
 )
 from speedfog_racing.websocket.race.relay_mod import RelayModHandler
+from speedfog_racing.websocket.schemas import CharacterState
 
 from . import test_integration as _integration
 from .relay_fixtures import (
@@ -514,6 +515,12 @@ def test_late_or_foreign_relay_state_flips_nothing(monkeypatch, relay_race, mods
     [
         {"state": {"attributes": [1, 2]}},
         {"state": {**STATE, "items": list(range(4001))}},
+        # Out of the wire range: a stored value would be replayed at every take.
+        {"state": {**STATE, "level": -1}},
+        {"state": {**STATE, "runes": 2**31}},
+        {"state": {**STATE, "attributes": [10] * 7 + [2**31]}},
+        {"state": {**STATE, "grace_flags": [71000, -1]}},
+        {"state": {**STATE, "items": [2**32]}},
         {"state": "nope"},
         {"state": STATE, "igt_ms": -5},
         {"state": STATE, "igt_ms": "late"},
@@ -530,6 +537,19 @@ def test_malformed_relay_state_is_dropped(relay_race, mods, payload):
     holder.send({"type": "relay_state", "handoff_id": None, "state": STATE, "igt_ms": 21_000})
     barrier(holder)
     assert load_team(relay_race).character_state == STATE
+
+
+def test_character_state_takes_the_whole_wire_range():
+    edge = {
+        "attributes": [0] * 7 + [2**31 - 1],
+        "level": 2**31 - 1,
+        "runes": 2**31 - 1,
+        # A gem's id has its category nibble in the top bit: a u32, not an i32.
+        "items": [0, 2**32 - 1],
+        "grace_flags": [2**31 - 1],
+    }
+
+    assert CharacterState.model_validate(edge).model_dump() == edge
 
 
 def test_checkpoint_is_stored_with_the_team_igt(relay_race, mods):

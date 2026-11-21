@@ -664,7 +664,7 @@ Sent only on a race with `race_items` on. The server writes the banner text and 
 
 Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state: it comes with `auth_ok` and again in every `relay_update`. The `RelayInfo` of `auth_ok` reads the runner itself connected and not ready (it sends `relay_ready` after `auth_ok`); a `relay_update` follows at once and is authoritative.
 
-`CharacterState`: `attributes` (exactly 8 integers: vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane), `level`, `runes`, `items` (at most 4000 raw item ids with their category nibble, only the transferable ones, each once) and `grace_flags` (at most 1000 event flags of the lit graces).
+`CharacterState`: `attributes` (exactly 8 integers: vigor, mind, endurance, strength, dexterity, intelligence, faith, arcane), `level`, `runes`, `items` (at most 4000 raw item ids with their category nibble, only the transferable ones, each once) and `grace_flags` (at most 1000 event flags of the lit graces). Every integer is non-negative; `attributes`, `level`, `runes` and `grace_flags` are at most 2^31 - 1 (2147483647), an item id at most 2^32 - 1 (4294967295: a u32, its category nibble in the top bits, as the protocol's other item ids). A `relay_state` out of these bounds is dropped like any malformed message, so a stored state always fits the mod's types.
 
 `RelayMember`: `{participant_id, name, zones, status, online, ready, validated}`. `ready` is the member's last `relay_ready`, false when offline; `status` is any participant status.
 
