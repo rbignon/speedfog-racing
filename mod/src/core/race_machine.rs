@@ -1626,7 +1626,22 @@ impl RaceMachine {
     fn relay_give_up_take(&mut self, reason: &'static str) {
         if let Some(take) = self.relay_take.take() {
             info!(handoff_id = %take.handoff_id, reason, "[RELAY] Take given up");
+            if take.phase != TakePhase::Received {
+                self.clear_igt_references();
+            }
         }
+    }
+
+    /// Forget what the IGT guards compare a reading against, so the next
+    /// live frame seeds them from what the game reads (as the race start
+    /// does). A take held them at its IGT while its write was awaited: when
+    /// it ends without an acknowledged write they are stale.
+    fn clear_igt_references(&mut self) {
+        self.last_good_igt = None;
+        self.last_observed_igt = None;
+        self.last_good_at = None;
+        self.freeze_last_igt = None;
+        self.pending_quit_out = false;
     }
 
     /// Give up a take once the runner's relay is over or the race stops
@@ -2686,6 +2701,9 @@ impl RaceMachine {
                     );
                     if let Some(old) = self.relay_take.take() {
                         info!(replaced = %old.handoff_id, "[RELAY] Take replaced by a newer one");
+                        if old.phase != TakePhase::Received {
+                            self.clear_igt_references();
+                        }
                     }
                     // What the waiting save buffered or left in flight: the
                     // server ignored it from a waiting runner, and replayed
@@ -4753,12 +4771,17 @@ impl RaceMachine {
     }
 
     /// The frame after a take was applied: acknowledged only on a frame
-    /// whose IGT reads at least the team's (any reading counts for an IGT
-    /// of 0), so a write that failed, came late or was undone by a reload is
-    /// never reported as the team's; until then the write is made again on
-    /// each frame. `relay::APPLY_ABANDON` after the take started, it is
-    /// acknowledged all the same (the server's own guards judge the
-    /// reports) with the "not confirmed" status.
+    /// whose IGT reads in the window only a write that took can produce:
+    /// from 0 up to the team's IGT plus the wall time since the start frame
+    /// plus `relay::IGT_WRITE_SLACK` (an unreadable IGT is outside it, the
+    /// IGT 0 of a team still `ready` included). Below the team's IGT the
+    /// write has not taken yet; above the window the reading is the runner's
+    /// own IGT still ticking. Until then `SetIgt` is emitted again, no
+    /// sooner than `relay::IGT_WRITE_RETRY` after the last write.
+    /// `relay::APPLY_ABANDON` after the start, it is acknowledged all the
+    /// same (the server's own guards judge the reports) with the "time not
+    /// confirmed" status and the guard references cleared; on a frame in the
+    /// window the references are rebased on the reading.
     fn relay_ack_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
         let Some(take) = self.relay_take.as_ref() else {
             return;
@@ -4771,7 +4794,7 @@ impl RaceMachine {
         let window_high = (want as u64)
             + now.saturating_duration_since(started_at).as_millis() as u64
             + relay::IGT_WRITE_SLACK.as_millis() as u64;
-        let right = want == 0 || read.is_some_and(|igt| igt >= want && (igt as u64) <= window_high);
+        let right = read.is_some_and(|igt| igt >= want && (igt as u64) <= window_high);
         if !right {
             if now.saturating_duration_since(started_at) < relay::APPLY_ABANDON {
                 if now.saturating_duration_since(written_at) >= relay::IGT_WRITE_RETRY {
@@ -4787,18 +4810,18 @@ impl RaceMachine {
                 read_ms = ?read,
                 "[RELAY] IGT does not read the team's, take acknowledged anyway"
             );
-            self.set_status("Baton taken: items may be missing".to_string(), now);
+            self.set_status("Baton taken: time not confirmed".to_string(), now);
+            self.clear_igt_references();
+        } else {
+            // The guards were held at the take's IGT: rebase them on the
+            // reading that passed (0 is no reading: no reference).
+            let rebased = read.filter(|&igt| igt > 0);
+            self.last_good_igt = rebased;
+            self.last_observed_igt = rebased;
+            self.last_good_at = rebased.map(|_| now);
+            self.freeze_last_igt = None;
+            self.pending_quit_out = false;
         }
-        // The guards were held at the take's IGT: rebase them on what the
-        // game reads now.
-        let rebased = read
-            .filter(|&igt| igt > 0)
-            .or(Some(want).filter(|&w| w > 0));
-        self.last_good_igt = rebased;
-        self.last_observed_igt = rebased;
-        self.last_good_at = rebased.map(|_| now);
-        self.freeze_last_igt = None;
-        self.pending_quit_out = false;
         self.relay_complete_take(lock_flag, now, effects);
     }
 
@@ -16382,10 +16405,12 @@ mod tests {
     }
 
     #[test]
-    fn an_own_igt_above_the_teams_with_a_write_that_takes_is_acknowledged() {
+    fn an_own_igt_above_the_teams_is_acknowledged_once_the_write_takes() {
         let t0 = Instant::now();
         let mut m = started_take(t0);
-        let fx = igt_frame(&mut m, t0, 1_200, TEAM_IGT + 100);
+        let fx = igt_frame(&mut m, t0, 1_200, TEAM_IGT + 500_000);
+        assert!(!fx.contains(&taken("h1")), "{fx:?}");
+        let fx = igt_frame(&mut m, t0, 1_300, TEAM_IGT + 100);
         assert!(fx.contains(&taken("h1")), "{fx:?}");
     }
 
@@ -16428,7 +16453,55 @@ mod tests {
         assert!(fx.contains(&taken("h1")), "{fx:?}");
         assert_eq!(
             m.get_status(t0 + ms(bound)),
-            Some("Baton taken: items may be missing")
+            Some("Baton taken: time not confirmed")
+        );
+        // The references were cleared: the runner's own IGT, far below the
+        // team's, is no save reload on the next frame.
+        let fx = igt_frame(&mut m, t0, bound + 100, LOCAL_IGT + 100);
+        assert!(m.triggered_flags.contains(&BOSS), "{fx:?}");
+    }
+
+    #[test]
+    fn a_take_at_igt_zero_with_a_failed_write_waits_for_the_bound() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(
+            &mut m,
+            t0,
+            take_msg("h1", Some(take_state()), 0, &[], Some(ZONE_WARP)),
+        );
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        let own = 1_200_000; // 20 minutes
+        let bound = 1_100 + crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        let mut writes = 0;
+        for at in (1_200..bound).step_by(100) {
+            let fx = igt_frame(&mut m, t0, at, own + at as u32);
+            writes += fx
+                .iter()
+                .filter(|e| **e == Effect::SetIgt { ms: 0 })
+                .count();
+            assert!(!fx.contains(&taken("h1")), "{at}: {fx:?}");
+        }
+        assert!(writes > 10, "re-sent, paced: {writes}");
+        // An unreadable IGT is no reading in the window either.
+        let mut snapshot = FrameSnapshot {
+            igt_ms: None,
+            death_count: Some(0),
+            position_readable: true,
+            loading_screen: Some(false),
+            map_id: chapel(),
+            hp: Some(100),
+            ..FrameSnapshot::default()
+        };
+        let fx = m.tick(tick_in(snapshot.clone(), true, None), t0 + ms(bound - 50));
+        assert!(!fx.contains(&taken("h1")), "{fx:?}");
+        snapshot.igt_ms = Some(own);
+        let fx = m.tick(tick_in(snapshot, true, None), t0 + ms(bound));
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+        assert_eq!(
+            m.get_status(t0 + ms(bound)),
+            Some("Baton taken: time not confirmed")
         );
     }
 
@@ -16482,5 +16555,140 @@ mod tests {
         // Well inside the request bound: the menu works.
         tap(&mut m, t0, 2_600);
         assert!(m.relay_menu_open());
+    }
+
+    #[test]
+    fn the_guards_are_held_across_a_load_while_a_take_waits() {
+        // Own IGT within 60 s below the team's (a quit-out candidate), and
+        // more than 10 s above it (a wrong-save candidate), across a load.
+        for (case, own) in [
+            (
+                "below",
+                (|at: u64| TEAM_IGT - 30_000 + at as u32) as fn(u64) -> u32,
+            ),
+            ("above", |at| TEAM_IGT + 20_000 + at as u32),
+        ] {
+            let t0 = Instant::now();
+            let mut m = started_take(t0);
+            let attempt = m.run_attempt;
+            let mut fx = Vec::new();
+            // The first frame after the start is a loading screen: the
+            // runner's own IGT meets the held references right there.
+            fx.extend(rx_frame(&mut m, t0, 1_200, None, own(1_200), 100, None));
+            fx.extend(igt_frame(&mut m, t0, 1_300, own(1_300)));
+            fx.extend(igt_frame(&mut m, t0, 1_400, own(1_400)));
+            fx.extend(igt_frame(&mut m, t0, 1_500, own(1_500)));
+            assert!(
+                !m.wrong_save && !m.pending_quit_out,
+                "{case}: a guard fired"
+            );
+            assert!(
+                !fx.iter()
+                    .any(|e| matches!(e, Effect::ApplyIgtPenalty { .. })),
+                "{case}: {fx:?}"
+            );
+            assert!(m.triggered_flags.contains(&BOSS) && m.run_attempt == attempt);
+        }
+    }
+
+    /// A take started at 1_100 whose write failed (the runner's own IGT is
+    /// far below the team's), then `end` happens and a frame at 1_300 reads
+    /// the runner's own IGT: no guard may fire on it.
+    fn given_up_take_leaves_no_stale_guard(end: impl Fn(&mut RaceMachine, Instant)) {
+        let t0 = Instant::now();
+        let mut m = started_take(t0);
+        let attempt = m.run_attempt;
+        let own = |at: u64| 5_000 + at as u32;
+        igt_frame(&mut m, t0, 1_200, own(1_200));
+        end(&mut m, t0);
+        let fx = igt_frame(&mut m, t0, 1_300, own(1_300));
+        assert!(!m.relay_take_pending());
+        assert!(m.triggered_flags.contains(&BOSS), "no reload detected");
+        assert_eq!(m.run_attempt, attempt);
+        assert!(!m.wrong_save && !m.pending_quit_out);
+        assert_eq!(m.get_status(t0 + ms(1_300)), None);
+        assert!(!fx
+            .iter()
+            .any(|e| matches!(e, Effect::ApplyIgtPenalty { .. })));
+    }
+
+    #[test]
+    fn a_take_given_up_after_a_failed_write_leaves_no_stale_guard() {
+        given_up_take_leaves_no_stale_guard(|m, t0| {
+            // Another teammate holds the baton: the take is given up.
+            let mut info = relay_info("waiting");
+            info.baton_free_in_s = None;
+            update(m, info, t0, 1_250);
+            assert!(!m.relay_take_pending());
+        });
+    }
+
+    #[test]
+    fn a_take_replaced_after_it_started_leaves_no_stale_guard() {
+        let t0 = Instant::now();
+        let mut m = started_take(t0);
+        let attempt = m.run_attempt;
+        igt_frame(&mut m, t0, 1_200, 5_000 + 1_200);
+        m.handle_message(take("h2"), t0 + ms(1_250));
+        assert!(m.relay_take_pending());
+        igt_frame(&mut m, t0, 1_300, 5_000 + 1_300);
+        assert!(m.triggered_flags.contains(&BOSS) && m.run_attempt == attempt);
+        assert!(!m.wrong_save && !m.pending_quit_out);
+    }
+
+    #[test]
+    fn a_take_given_up_across_a_load_is_no_wrong_save_and_no_penalty() {
+        let t0 = Instant::now();
+        let mut m = started_take(t0);
+        let own = |at: u64| TEAM_IGT + 20_000 + at as u32;
+        igt_frame(&mut m, t0, 1_200, own(1_200));
+        rx_frame(&mut m, t0, 1_250, None, own(1_250), 100, None);
+        let mut info = relay_info("waiting");
+        info.baton_free_in_s = None;
+        update(&mut m, info, t0, 1_280);
+        assert!(!m.relay_take_pending());
+        let fx = igt_frame(&mut m, t0, 1_300, own(1_300));
+        let fx2 = igt_frame(&mut m, t0, 1_400, own(1_400));
+        assert!(!m.wrong_save && !m.pending_quit_out, "{fx:?} {fx2:?}");
+        assert!(!fx
+            .iter()
+            .chain(&fx2)
+            .any(|e| matches!(e, Effect::ApplyIgtPenalty { .. })));
+    }
+
+    /// The holder with a handoff request in flight.
+    fn pending_request(t0: Instant) -> RaceMachine {
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        let fx = key_over(&mut m, t0, 1_000, 2_100, Some(IN_ZONE), true);
+        assert_eq!(fx.len(), 1);
+        assert!(m.relay_request.is_some());
+        m
+    }
+
+    #[test]
+    fn a_request_is_freed_when_the_relay_ends_or_stops_being_live() {
+        let t0 = Instant::now();
+        let mut m = pending_request(t0);
+        let mut info = menu_info();
+        info.team_status = ParticipantStatus::Finished;
+        update(&mut m, info, t0, 2_200);
+        assert!(m.relay_request.is_none(), "team over");
+        let mut m = pending_request(t0);
+        let mut info = menu_info();
+        set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+        update(&mut m, info, t0, 2_200);
+        assert!(m.relay_request.is_none(), "runner out");
+        // The race stops: no update, the next frame frees it.
+        let mut m = pending_request(t0);
+        m.handle_message(
+            MachineMessage::RaceStatusChange {
+                status: RaceStatus::Finished,
+                current_igt: None,
+            },
+            t0 + ms(2_200),
+        );
+        key(&mut m, t0, 2_300, false);
+        assert!(m.relay_request.is_none(), "race stopped");
     }
 }
