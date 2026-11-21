@@ -85,8 +85,10 @@ class PendingHandoff:
     which must come back before ``expires_at``. Phase ``take``: the baton went
     to ``target_id`` (``relay_take``), whose ``relay_taken`` is awaited; its
     ``timer`` frees the baton at ``expires_at``. A take whose timer fired stays
-    here, so its late ``relay_taken`` is still recognised. ``expires_at`` is
-    on ``time.monotonic()``; an expired handoff blocks no request.
+    here, so its late ``relay_taken`` is still recognised. ``take`` is the
+    message sent, sent again when the receiver's mod reconnects before its
+    ``relay_taken``. ``expires_at`` is on ``time.monotonic()``; an expired
+    handoff blocks no request.
     """
 
     handoff_id: str
@@ -96,6 +98,7 @@ class PendingHandoff:
     phase: Literal["release", "take"]
     expires_at: float
     timer: asyncio.Task[None] | None = None
+    take: RelayTakeMessage | None = None
 
     def expired(self, now: float) -> bool:
         return now >= self.expires_at
@@ -532,6 +535,8 @@ async def _flip(
         warp_flag=relay_warp_flag(flags, team.entry_flag_id) if flags else None,
         zone_name=relay_zone_name(team, graph) if team.entry_flag_id is not None else None,
     )
+    if pending is not None:
+        pending.take = take
     logger.info(
         "Relay baton flipped: team=%s from=%s to=%s handoff=%s connected=%s",
         team.id,
@@ -893,11 +898,14 @@ async def member_connection_changed(
     ``Participant.last_igt_change_at`` holds that stamp on a relay race, for
     the 30 minute inactivity rule. For the holder of a team still in the race,
     ``holder_offline_since`` too (the mods count the 60 s down from
-    ``baton_free_in_s``), and a disconnect drops their pending release. The
-    team's mods are told either way (``online``, ``holder_online``). The
-    disconnect of a socket a newer one replaced changes nothing. The team row
-    is locked before the member's row is written, as in every relay write to
-    both.
+    ``baton_free_in_s``), and a disconnect drops their pending release. A
+    receiver whose mod connects while its take awaits its ``relay_taken``
+    (``awaiting_take``) gets that ``relay_take`` again, same ``handoff_id``:
+    the first one may have died with the old socket, and until it is
+    acknowledged nothing they send is heard. The team's mods are told either
+    way (``online``, ``holder_online``). The disconnect of a socket a newer
+    one replaced changes nothing. The team row is locked before the member's
+    row is written, as in every relay write to both.
     """
     async with room.relay_lock:
         if connected != (participant_id in room.mods):
@@ -926,6 +934,18 @@ async def member_connection_changed(
             and pending.giver_id == participant_id
         ):
             _set_pending(room, team_id, None)
+        if (
+            connected
+            and pending is not None
+            and pending.take is not None
+            and awaiting_take(room, team_id, participant_id)
+        ):
+            logger.info(
+                "Relay take sent again on reconnect: team=%s handoff=%s",
+                team_id,
+                pending.handoff_id,
+            )
+            await room.send_to_mod(participant_id, pending.take.model_dump_json())
         await send_relay_updates(session_maker, race_id, team_id, graph_json=graph)
 
 

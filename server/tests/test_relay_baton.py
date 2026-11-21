@@ -826,6 +826,32 @@ def test_a_failure_after_the_flip_still_frees_the_baton(monkeypatch, relay_race,
     _taken(holder, holder.receive_until("relay_take"))
 
 
+def test_a_pending_take_is_sent_again_to_a_reconnecting_receiver(
+    integration_client, relay_race, mods
+):
+    giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+    member = relay_race["teams"][0]["members"][1]
+    _make_receiver(target)
+    take = _hand_off(giver, target)
+    # Its game crashed before it could acknowledge.
+    target.disconnect()
+    giver.receive_until("relay_update", lambda m: not _me(m, target.participant_id)["online"])
+    target.close()
+
+    back = mods[member["participant_id"]] = RelayModClient.connect(
+        integration_client, relay_race["race_id"], member["mod_token"], member["participant_id"]
+    )
+    assert back.auth(protocol_version="1.19")["relay"]["role"] == "holder"
+
+    again = back.receive_until("relay_take")
+    assert again == take  # the same handoff: the mod applies it once
+    _taken(back, again)
+    team = load_team(relay_race)
+    assert (team.holder_id, team.baton_free) == (UUID(back.participant_id), False)
+    back.send_status_update(igt_ms=6_000, death_count=0)
+    back.receive_until("player_update", lambda m: m["player"]["igt_ms"] == 6_000)
+
+
 def test_a_take_timer_frees_nothing_once_the_team_is_out(monkeypatch, relay_race, mods):
     monkeypatch.setattr(relay_ws, "RELAY_TAKE_TIMEOUT_S", 0.5)
     giver, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
@@ -927,7 +953,10 @@ def test_holder_disconnect_drops_its_release_and_a_reconnect_ends_the_wait(
     holder = mods[holder_id] = RelayModClient.connect(
         integration_client, relay_race["race_id"], member["mod_token"], holder_id
     )
-    assert holder.auth(protocol_version="1.19")["relay"]["role"] == "holder"
+    auth_ok = holder.auth(protocol_version="1.19")
+    # Built before its socket is registered, it still reads the runner connected.
+    assert (auth_ok["relay"]["role"], auth_ok["relay"]["holder_online"]) == ("holder", True)
+    assert (auth_ok["relay"]["baton_free_in_s"], _me(auth_ok, holder_id)["online"]) == (None, True)
     back = waiting.receive_until("relay_update", lambda m: m["relay"]["holder_online"])
     assert back["relay"]["baton_free_in_s"] is None
     assert load_team(relay_race).holder_offline_since is None

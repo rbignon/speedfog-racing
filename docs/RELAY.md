@@ -146,7 +146,7 @@ A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_
 
 ## Baton
 
-What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py`, wire shapes in `PROTOCOL.md`, protocol 1.19). It is sent in `auth_ok` and again, one message per connected member with its own `role` and `gates_locked`, by `send_relay_updates`. A relay race refuses a mod below `RELAY_MIN_PROTOCOL` (1.19) at auth with `RELAY_OLD_MOD_MESSAGE`; other races still accept a 1.18 mod.
+What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py`, wire shapes in `PROTOCOL.md`, protocol 1.19). It is sent in `auth_ok` and again, one message per connected member with its own `role` and `gates_locked`, by `send_relay_updates`. `auth_ok` goes out before the socket is registered, so its `RelayInfo` reads the runner as the registration leaves them: connected (`members[].online`, and `holder_online` for a returning holder) and not ready. A relay race refuses a mod below `RELAY_MIN_PROTOCOL` (1.19) at auth with `RELAY_OLD_MOD_MESSAGE`; other races still accept a 1.18 mod.
 
 - Role: `holder` only for the team's holder while the baton is not free. When `baton_free` is set the nominal holder reads `waiting` with `baton_free_in_s: 0`, like everyone else.
 - `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, kept between 0 and 60 (a stamp at the race start is in the future during the countdown). A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
@@ -216,8 +216,13 @@ then goes back to them.
   a waiting runner (`awaiting_take`): its `event_flag` and `zone_query` are
   acknowledged and recorded nowhere, its `status_update` is neither judged nor
   applied, no row is broadcast. The awaited take is registered before the flip
-  commits, so no message slips in between. It lives in the room's memory only: after
-  a server restart during a pending take it is lost, with its 30 s timer, so the
+  commits, so no message slips in between. The mod sends no progress between
+  `relay_take` and `relay_taken`. A receiver whose mod reconnects while its take is
+  awaited (its game crashed, its socket dropped) gets the same `relay_take` again
+  (`PendingHandoff.take`, same `handoff_id`, applied once by the mod) right after its
+  `auth_ok`, even once the timer fired: its `relay_taken` then takes the free baton
+  back as a late one does. The awaited take lives in the room's memory only: after a
+  server restart during a pending take it is lost, with its 30 s timer, so the
   receiver is heard as the holder as soon as it reconnects and its late `relay_taken`
   is ignored.
 - **`relay_taken`** with the pending id, from its receiver: the handoff is over (its
@@ -241,9 +246,10 @@ then goes back to them.
   count the 60 s down from `baton_free_in_s`); when it reconnects the stamp is
   cleared. Any member still in the race gets the same stamp on their own row
   (`last_igt_change_at`, the 30 minute offline rule of "Lifecycle"). Any member's
-  arrival or departure sends the team a `relay_update` (`online`, `holder_online`). A
-  returning ex-holder authenticates as `waiting`. The disconnect of a socket that a
-  newer one replaced changes nothing.
+  arrival or departure sends the team a `relay_update` (`online`, `holder_online`), and
+  a receiver whose take is awaited gets it again first (above). A returning ex-holder
+  authenticates as `waiting`. The disconnect of a socket that a newer one replaced
+  changes nothing.
 
 | Duration | Constant                  | Meaning                                                        |
 | -------- | ------------------------- | -------------------------------------------------------------- |
