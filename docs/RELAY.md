@@ -283,6 +283,12 @@ it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only the memb
 team id, without a lock. The committing loads of the progress messages take the same
 row lock ("Progress and guards"), so a flip and a progress write of one team are
 ordered by the database. The lock order is always `relay_lock`, then the team row.
+The `relay_update` a progress message triggers (a teammate's first validation, the
+team's first report, a gate, a counted kill) is read and sent under `relay_section`
+too, once the message's own session is closed (so that order holds), as a flip's
+updates are: an update read before a flip's commit can therefore never reach a mod
+after the flip's `relay_take`, where it would name the giver as holder and make the
+receiver's mod give the take up.
 Teams and participants reference each other, and the ORM flushes a participant's
 UPDATE before a team's, so a transaction that writes rows of both tables locks its
 team rows explicitly first (`SELECT ... FOR UPDATE`), before it changes any member:
@@ -895,7 +901,6 @@ Server and web:
 - The row-lock discipline ("Ordering": `SELECT ... FOR UPDATE` on the team rows, in one order) has only run on SQLite, which ignores `FOR UPDATE`. The tests check the statements PostgreSQL receives, never two transactions contending for a team on PostgreSQL. (The migrations were run up, down and up again on PostgreSQL 17, and `alembic check` finds no drift on the relay tables and columns.)
 - The relay bot has never been run end to end against a server ("Bot"): only its pure decisions are tested (checklist 0.1).
 - The web screens of a relay race have never been seen in a browser: the race creation tile and its cap sentence, the setup team list and its menus, the team rows of the leaderboard with their members, the team map and its popup, the invite page's team select, and the finished-race page ("Web", "Outside the live page"). They are tested through their pure functions only.
-- A review recorded, and the server was not changed for it: `send_relay_updates` (`websocket/race/relay.py`) loads the team in a session of its own and sends afterwards, outside `relay_lock`. A `relay_update` read before a flip's commit and delivered after the `relay_take` would name the giver as holder: the receiver's mod then gives the take up and the server ignores the runner until its 30 s timer fires.
 
 Mod: nothing of the Windows code has run in the game. The unit tests cover the pure machine (`cargo test --lib`) and the shell type-checks for Windows; what only the game proves is the facts tables, each step of the in-game checklist naming the ones it settles:
 

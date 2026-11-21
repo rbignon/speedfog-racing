@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 import speedfog_racing.websocket.race.relay as relay_ws
+import speedfog_racing.websocket.race.relay_mod as relay_mod_ws
 from speedfog_racing.models import ParticipantStatus, RaceStatus
 from speedfog_racing.services.relay import relay_cap, team_defeat_flags
 from speedfog_racing.websocket.race.manager import (
@@ -1002,6 +1003,43 @@ def test_team_defeat_flags_name_each_killed_boss_once():
 
     assert team_defeat_flags(graph, history) == [10000700, BOSS_FLAG]
     assert team_defeat_flags(graph, None) == []
+
+
+def test_progress_relay_updates_are_sent_under_the_relay_section(
+    monkeypatch, integration_client, relay_race
+):
+    """The relay_update a progress message triggers (the team's first report,
+    a teammate's validation, a gate, a kill) is read and sent under the race's
+    relay lock, as the baton operations' are: read before a flip's commit and
+    delivered after its relay_take, it would name the giver as holder, and the
+    receiver's mod would give the take up. The interleaving cannot be forced
+    through the test client (the server's loop runs on another thread, and a
+    send cannot be paused between its read and its delivery without stalling
+    that loop), so each send records whether the lock is held."""
+    held: list[bool] = []
+    send = relay_mod_ws.send_relay_updates
+
+    async def spy(session_maker: Any, race_id: UUID, team_id: UUID, **kwargs: Any) -> None:
+        room = manager.get_room(race_id)
+        held.append(room is not None and room.relay_lock.locked())
+        await send(session_maker, race_id, team_id, **kwargs)
+
+    monkeypatch.setattr(relay_mod_ws, "send_relay_updates", spy)
+    mods = _started_before_any_report(integration_client, relay_race)
+    try:
+        holder, waiting = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
+        holder.send_status_update(igt_ms=1_000, death_count=0)
+        holder.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "playing")
+        _validate(waiting)
+        _gate(holder, FOG_FLAG, 20_000, 1)
+        _kill(holder, 40_000, 2)
+        barrier(holder)
+    finally:
+        for mod in mods.values():
+            mod.close()
+
+    # The first report, the validation, the gate and the kill.
+    assert held == [True, True, True, True]
 
 
 def test_flips_and_progress_writes_lock_the_team_row():
