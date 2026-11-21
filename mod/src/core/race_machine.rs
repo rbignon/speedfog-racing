@@ -314,11 +314,16 @@ pub enum Effect {
     SendRelayReady {
         ready: bool,
     },
-    /// Capture the character's state on the shell's worker thread; the
-    /// result comes back through `RaceMachine::relay_state_captured` with the
-    /// same `handoff_id` (`None` for a zone checkpoint).
+    /// Capture the character's state on the shell's worker thread. Contract
+    /// with the shell: the result is delivered on the game thread, as an
+    /// input of the machine (`RaceMachine::relay_state_captured`), never by
+    /// calling into the machine from the worker thread, and it carries this
+    /// `generation`. A shell that never answers is tolerated: the machine
+    /// abandons the capture after `relay::CAPTURE_ABANDON` and drops a late
+    /// answer. `handoff_id` is `None` for a zone checkpoint.
     CaptureRelayState {
         handoff_id: Option<String>,
+        generation: u64,
     },
     /// Send a captured state: the answer to a release (`handoff_id` set) or
     /// a checkpoint (`None`), already fitted to the wire caps.
@@ -659,6 +664,10 @@ pub struct RaceMachine {
     relay_release: Option<PendingRelease>,
     /// The capture asked of the shell and not yet answered (one at a time).
     relay_capture: Option<CaptureInFlight>,
+    /// Generation of the last capture asked.
+    relay_capture_gen: u64,
+    /// No capture is asked before this (after a failed one).
+    relay_retry_at: Option<Instant>,
     /// A zone was revealed to a connected live holder this frame: a
     /// checkpoint capture is wanted if none is in flight.
     relay_checkpoint_due: bool,
@@ -845,6 +854,8 @@ impl RaceMachine {
             relay_cap_due: false,
             relay_release: None,
             relay_capture: None,
+            relay_capture_gen: 0,
+            relay_retry_at: None,
             relay_checkpoint_due: false,
             relay_passed: None,
             hunter: Hunter::default(),
@@ -4115,8 +4126,18 @@ impl RaceMachine {
                 self.set_status("Handoff cancelled: not in game".to_string(), now);
             }
         }
+        if let Some(asked) = &self.relay_capture {
+            if now.saturating_duration_since(asked.asked_at) >= relay::CAPTURE_ABANDON {
+                warn!(
+                    generation = asked.generation,
+                    "[RELAY] Capture not answered, abandoned"
+                );
+                self.relay_capture = None;
+            }
+        }
         if !(connected
             && holder
+            && self.relay_retry_at.is_none_or(|at| now >= at)
             && self.frame_snapshot.position_readable
             && !self.wrong_save
             && self.relay_capture.is_none())
@@ -4129,14 +4150,25 @@ impl RaceMachine {
             None => return,
         };
         crate::profile_span!("relay_capture_ask");
+        self.relay_capture_gen = self.relay_capture_gen.wrapping_add(1);
+        let generation = self.relay_capture_gen;
         self.relay_capture = Some(CaptureInFlight {
             handoff_id: handoff_id.clone(),
+            generation,
+            asked_at: now,
             link_lost: false,
         });
-        effects.push(Effect::CaptureRelayState { handoff_id });
+        effects.push(Effect::CaptureRelayState {
+            handoff_id,
+            generation,
+        });
     }
 
-    /// The shell's answer to `Effect::CaptureRelayState`: the captured state,
+    /// The shell's answer to `Effect::CaptureRelayState`, delivered on the
+    /// game thread with the `generation` the effect carried (an answer for
+    /// any other capture than the one in flight, an abandoned one included,
+    /// is dropped; a shell that never answers is tolerated). After a failed
+    /// capture none is asked for `relay::CAPTURE_RETRY`. The answer: the captured state,
     /// or `None` when the game could not be read (a loading screen, a
     /// character not in the world). Returns the `relay_state` to send, or
     /// nothing: an unreadable release stays pending and is asked again on
@@ -4149,15 +4181,16 @@ impl RaceMachine {
     pub fn relay_state_captured(
         &mut self,
         handoff_id: Option<String>,
+        generation: u64,
         state: Option<CharacterState>,
         now: Instant,
     ) -> Vec<Effect> {
         match &self.relay_capture {
-            Some(asked) if asked.handoff_id == handoff_id => {}
+            Some(asked) if asked.generation == generation && asked.handoff_id == handoff_id => {}
             _ => {
-                warn!(
+                debug!(
                     ?handoff_id,
-                    "[RELAY] Capture answer nobody asked for ignored"
+                    generation, "[RELAY] Capture answer not for the capture in flight, ignored"
                 );
                 return Vec::new();
             }
@@ -4165,8 +4198,10 @@ impl RaceMachine {
         let asked = self.relay_capture.take().expect("checked above");
         let Some(mut state) = state else {
             debug!(?handoff_id, "[RELAY] State not readable");
+            self.relay_retry_at = Some(now + relay::CAPTURE_RETRY);
             return Vec::new();
         };
+        self.relay_retry_at = None;
         if asked.link_lost || !self.relay_holder_live() || self.wrong_save {
             debug!(?handoff_id, "[RELAY] Captured state not sent: stale");
             return Vec::new();
@@ -13038,7 +13073,7 @@ mod tests {
     fn captures(fx: &[Effect]) -> Vec<Option<String>> {
         fx.iter()
             .filter_map(|e| match e {
-                Effect::CaptureRelayState { handoff_id } => Some(handoff_id.clone()),
+                Effect::CaptureRelayState { handoff_id, .. } => Some(handoff_id.clone()),
                 _ => None,
             })
             .collect()
@@ -13096,7 +13131,8 @@ mod tests {
         id: Option<&str>,
         state: Option<CharacterState>,
     ) -> Vec<Effect> {
-        m.relay_state_captured(id.map(str::to_string), state, t0 + ms(at))
+        let generation = m.relay_capture.as_ref().map_or(0, |c| c.generation);
+        m.relay_state_captured(id.map(str::to_string), generation, state, t0 + ms(at))
     }
 
     /// A holder on a loaded frame at 0 (the loading exit), the release
@@ -13215,9 +13251,64 @@ mod tests {
         go(&mut m, t0, 150, None);
         assert!(answer(&mut m, t0, 160, Some("h1"), None).is_empty());
         assert!(captures(&go(&mut m, t0, 200, None)).is_empty());
-        let fx = go(&mut m, t0, 300, Some(IN_ZONE));
+        // Loaded again, but the retry interval has not passed: nothing asked.
+        for at in [300, 400, 500, 600] {
+            let fx = go(&mut m, t0, at, Some(IN_ZONE));
+            assert!(captures(&fx).is_empty(), "{at}");
+        }
+        let fx = go(&mut m, t0, 700, Some(IN_ZONE));
         assert_eq!(captures(&fx), [Some("h1".to_string())]);
-        let fx = answer(&mut m, t0, 350, Some("h1"), Some(char_state()));
+        assert!(captures(&go(&mut m, t0, 800, Some(IN_ZONE))).is_empty());
+        let fx = answer(&mut m, t0, 850, Some("h1"), Some(char_state()));
+        assert_eq!(sent_states(&fx).len(), 1);
+    }
+
+    #[test]
+    fn a_capture_nobody_answers_is_abandoned_and_its_late_answer_dropped() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        assert_eq!(captures(&go(&mut m, t0, 100, Some(IN_ZONE))), [None]);
+        let stale = m.relay_capture.as_ref().unwrap().generation;
+        // Checkpoints meanwhile are skipped (one capture at a time).
+        let fx = go_over(&mut m, t0, 200, 11_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+        // 12 s after it was asked, a release is asked and answered.
+        release(&mut m, t0, 12_150, "h1");
+        let fx = go(&mut m, t0, 12_200, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        let fx = answer(&mut m, t0, 12_250, Some("h1"), Some(char_state()));
+        assert!(matches!(
+            sent_states(&fx)[..],
+            [Effect::SendRelayState {
+                handoff_id: Some(id),
+                ..
+            }] if id == "h1"
+        ));
+        // The abandoned capture finally answers: nothing goes out.
+        let fx = m.relay_state_captured(None, stale, Some(char_state()), t0 + ms(12_300));
+        assert!(fx.is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_late_answer_does_not_end_the_capture_that_replaced_it() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        go(&mut m, t0, 100, Some(IN_ZONE));
+        let stale = m.relay_capture.as_ref().unwrap().generation;
+        go_over(&mut m, t0, 200, 12_000, Some(IN_ZONE));
+        m.handle_message(zone_update("Liurnia", None), t0 + ms(12_050));
+        let fx = go(&mut m, t0, 12_200, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [None], "a second checkpoint, a new capture");
+        // Two captures both carry None: only the generation tells them apart.
+        let fx = m.relay_state_captured(None, stale, Some(char_state()), t0 + ms(12_250));
+        assert!(fx.is_empty());
+        let fx = answer(&mut m, t0, 12_300, None, Some(char_state()));
         assert_eq!(sent_states(&fx).len(), 1);
     }
 

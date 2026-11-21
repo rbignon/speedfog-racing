@@ -812,14 +812,20 @@ impl RaceTracker {
                 } => {
                     self.ws_client.send_relay_state(handoff_id, state, igt_ms);
                 }
-                Effect::CaptureRelayState { handoff_id } => {
+                Effect::CaptureRelayState {
+                    handoff_id,
+                    generation,
+                } => {
                     // The capture itself arrives with the worker thread that
                     // reads stats, inventory and graces: until then every
                     // capture reads as unreadable.
                     debug!(?handoff_id, "[RELAY] State capture not implemented yet");
-                    let answer =
-                        self.machine
-                            .relay_state_captured(handoff_id, None, Instant::now());
+                    let answer = self.machine.relay_state_captured(
+                        handoff_id,
+                        generation,
+                        None,
+                        Instant::now(),
+                    );
                     self.execute_effects(answer);
                 }
                 Effect::SendStatusUpdate {
