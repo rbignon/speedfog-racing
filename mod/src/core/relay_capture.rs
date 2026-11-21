@@ -3,8 +3,10 @@
 //! attributes, level and runes as the game stores them, the held item ids,
 //! the goods param's types, the grace flags and which of them are set, the
 //! loaded map before and after the reads); this module decides whether those
-//! reads are a character worth sending, and builds the state. Pure: nothing
-//! here reads the game or logs.
+//! reads are a character worth sending, and builds the state. A param table
+//! that does not read fails no capture: without the goods types no goods is
+//! transferable, without the grace rows the state carries no grace. Pure:
+//! nothing here reads the game or logs.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -22,9 +24,6 @@ pub const READ_WINDOW_MAX: Duration = Duration::from_secs(1);
 pub enum CaptureFailure {
     /// No map loaded when the reads began (a loading screen, the menu).
     NotLoaded,
-    /// The param tables the items and graces are read against could not be
-    /// read.
-    ParamsUnreadable,
     /// The attributes, level or runes could not be read, or read negative.
     StatsUnreadable,
     /// They read outside what a character can have (`stats_plausible`): a
@@ -62,11 +61,23 @@ pub fn stats_from_game(
     ))
 }
 
-/// The goods param's type by row id, from its rows (`(row id, goods_type)`).
-/// A row id past the bits under an item id's category nibble names no item
-/// and is left out. `None` when no row is left: a table that did not read.
-pub fn goods_type_map(rows: impl IntoIterator<Item = (u64, u8)>) -> Option<HashMap<u32, u8>> {
+/// Why a param table gave the capture nothing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TableUnread {
+    /// The game's param index holds no table of that name.
+    NotIndexed,
+    /// The table holds no usable row.
+    NoUsableRow,
+}
+
+/// The goods param's type by row id, from its rows (`(row id, goods_type)`;
+/// `None`: the table is not indexed). A row id past the bits under an item
+/// id's category nibble names no item and is left out.
+pub fn goods_type_map(
+    rows: Option<impl IntoIterator<Item = (u64, u8)>>,
+) -> Result<HashMap<u32, u8>, TableUnread> {
     let types: HashMap<u32, u8> = rows
+        .ok_or(TableUnread::NotIndexed)?
         .into_iter()
         .filter_map(|(id, ty)| {
             u32::try_from(id)
@@ -75,17 +86,28 @@ pub fn goods_type_map(rows: impl IntoIterator<Item = (u64, u8)>) -> Option<HashM
                 .map(|id| (id, ty))
         })
         .collect();
-    (!types.is_empty()).then_some(types)
+    if types.is_empty() {
+        return Err(TableUnread::NoUsableRow);
+    }
+    Ok(types)
 }
 
-/// The grace flags to scan, from the event flag id of every grace row:
-/// nonzero, sorted, each once. `None` when none is left: a table that did
-/// not read.
-pub fn grace_flag_ids(flags: impl IntoIterator<Item = u32>) -> Option<Vec<u32>> {
-    let mut ids: Vec<u32> = flags.into_iter().filter(|&flag| flag != 0).collect();
+/// The grace flags to scan, from the event flag id of every grace row
+/// (`None`: the table is not indexed): nonzero, sorted, each once.
+pub fn grace_flag_ids(
+    flags: Option<impl IntoIterator<Item = u32>>,
+) -> Result<Vec<u32>, TableUnread> {
+    let mut ids: Vec<u32> = flags
+        .ok_or(TableUnread::NotIndexed)?
+        .into_iter()
+        .filter(|&flag| flag != 0)
+        .collect();
+    if ids.is_empty() {
+        return Err(TableUnread::NoUsableRow);
+    }
     ids.sort_unstable();
     ids.dedup();
-    (!ids.is_empty()).then_some(ids)
+    Ok(ids)
 }
 
 /// The flags of `flags` that `is_set` reads set, in their order, and how
@@ -159,8 +181,10 @@ mod tests {
     use super::*;
     use crate::core::relay_items::MAX_STATE_ITEMS;
 
+    const ARMOR: u32 = 0x1000_0000;
     const TALISMAN: u32 = 0x2000_0000;
     const GOODS: u32 = 0x4000_0000;
+    const GEM: u32 = 0x8000_0000;
 
     /// A level 73 character's attributes, as the game stores them.
     const ATTRIBUTES: [i32; 8] = [40, 20, 30, 18, 16, 9, 7, 12];
@@ -191,25 +215,42 @@ mod tests {
 
     #[test]
     fn a_goods_row_outside_the_item_id_space_is_left_out() {
-        let types = goods_type_map([(130, 1), (4000, 5), (0x1000_0000, 5), (u64::MAX, 5)])
+        let types = goods_type_map(Some([(130, 1), (4000, 5), (0x1000_0000, 5), (u64::MAX, 5)]))
             .expect("rows left");
         assert_eq!(types.len(), 2);
         assert_eq!(types.get(&4000), Some(&5));
         assert_eq!(types.get(&0x0FFF_FFFF), None);
-        assert_eq!(goods_type_map([(0x0FFF_FFFF, 7)]).map(|t| t.len()), Some(1));
-        // No row at all, or none usable: a table that did not read.
-        assert_eq!(goods_type_map([]), None);
-        assert_eq!(goods_type_map([(1 << 40, 5)]), None);
+        assert_eq!(
+            goods_type_map(Some([(0x0FFF_FFFF, 7)])).map(|t| t.len()),
+            Ok(1)
+        );
+    }
+
+    #[test]
+    fn a_goods_table_that_does_not_read_says_why() {
+        assert_eq!(
+            goods_type_map(None::<[(u64, u8); 0]>),
+            Err(TableUnread::NotIndexed)
+        );
+        assert_eq!(goods_type_map(Some([])), Err(TableUnread::NoUsableRow));
+        assert_eq!(
+            goods_type_map(Some([(1 << 40, 5)])),
+            Err(TableUnread::NoUsableRow)
+        );
     }
 
     #[test]
     fn grace_flags_are_nonzero_sorted_and_unique() {
         assert_eq!(
-            grace_flag_ids([76_101, 0, 71_190, 76_101, 0]),
-            Some(vec![71_190, 76_101])
+            grace_flag_ids(Some([76_101, 0, 71_190, 76_101, 0])),
+            Ok(vec![71_190, 76_101])
         );
-        assert_eq!(grace_flag_ids([0, 0]), None);
-        assert_eq!(grace_flag_ids([]), None);
+        assert_eq!(
+            grace_flag_ids(None::<[u32; 0]>),
+            Err(TableUnread::NotIndexed)
+        );
+        assert_eq!(grace_flag_ids(Some([0, 0])), Err(TableUnread::NoUsableRow));
+        assert_eq!(grace_flag_ids(Some([])), Err(TableUnread::NoUsableRow));
     }
 
     #[test]
@@ -292,6 +333,27 @@ mod tests {
         );
         assert_eq!(state.grace_flags, vec![71_190, 76_101]);
         assert_eq!((state.attributes, state.level, state.runes), stats());
+    }
+
+    #[test]
+    fn without_goods_types_the_rest_of_the_build_still_transfers() {
+        // The goods table did not read: no goods id is transferable, every
+        // other category is judged as usual, and no grace row means no grace.
+        let held = [
+            GOODS | 4000,
+            ARMOR | 40_000,
+            2_000_007,
+            TALISMAN | 1000,
+            GEM | 10_000,
+        ];
+        let (state, cut) =
+            build_state(stats(), held.into_iter(), &HashMap::new(), Vec::new()).expect("plausible");
+        assert_eq!(cut, 0);
+        assert_eq!(
+            state.items,
+            vec![2_000_007, ARMOR | 40_000, TALISMAN | 1000, GEM | 10_000]
+        );
+        assert!(state.grace_flags.is_empty());
     }
 
     #[test]

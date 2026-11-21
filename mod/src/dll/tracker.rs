@@ -18,6 +18,7 @@ use crate::core::equip_load::{base_max, load_rate};
 use crate::core::foes::FoesRecord;
 use crate::core::format::{LeaderboardMode, LeaderboardView};
 use crate::core::item_damage::damaged_hp;
+use crate::core::job_queue::{Asked, JobQueue, QueuedJob};
 use crate::core::memory_effects::{CameraRow, MemoryState};
 use crate::core::protocol::{
     CameraVariant, CharacterState, ParticipantInfo, RaceInfo, SeedInfo, TalismanFlag,
@@ -250,9 +251,9 @@ unsafe impl Sync for OverlayFonts {}
 // RELAY WORKER
 // =============================================================================
 
-/// A job of the relay worker thread, as the machine asked it. Kept beside
-/// the thread's handle, so the answer carries the request's identity even
-/// from a thread that panicked.
+/// A job of the relay worker thread, as the machine asked it. Kept in the
+/// queue while its thread runs, so the answer carries the request's identity
+/// even from a thread that panicked.
 #[derive(Debug)]
 enum RelayJob {
     /// `Effect::CaptureRelayState`, answered by
@@ -261,6 +262,16 @@ enum RelayJob {
         handoff_id: Option<String>,
         generation: u64,
     },
+}
+
+impl QueuedJob for RelayJob {
+    fn replaceable(&self) -> bool {
+        match self {
+            // The machine asks a capture again only once it has given up the
+            // previous one (abandoned, or pre-empted by a release).
+            RelayJob::Capture { .. } => true,
+        }
+    }
 }
 
 /// What a relay worker thread returns, one variant per job.
@@ -324,13 +335,12 @@ pub struct RaceTracker {
     // Item spawner thread handle (prevents double-spawn on reconnect)
     spawner_thread: Option<JoinHandle<()>>,
 
-    // The relay job running on its worker thread, one at a time so the
-    // character is never read by two jobs at once; drained by
-    // `poll_relay_job` on the game thread.
-    relay_job: Option<(RelayJob, JoinHandle<RelayJobDone>)>,
-    // The job asked while one runs, started when it is drained; a newer
-    // request replaces it (the machine has abandoned the older one).
-    relay_job_queued: Option<RelayJob>,
+    // The relay worker's jobs: the one running and those waiting, one at a
+    // time so the character is never read by two jobs at once.
+    relay_jobs: JobQueue<RelayJob>,
+    // The thread of the running relay job, drained by `poll_relay_job` on
+    // the game thread.
+    relay_thread: Option<JoinHandle<RelayJobDone>>,
 
     // Items actually spawned this session (in-process guard for reconnects).
     // Set by the spawner thread AFTER items are given to the player, so a stale
@@ -513,8 +523,8 @@ impl RaceTracker {
             consecutive_update_panics: 0,
             flags_diagnosed: false,
             spawner_thread: None,
-            relay_job: None,
-            relay_job_queued: None,
+            relay_jobs: JobQueue::default(),
+            relay_thread: None,
             items_spawned: Arc::new(AtomicBool::new(false)),
             phantom_skin_thread: None,
             phantom_skin_stop: Arc::new(AtomicBool::new(false)),
@@ -1512,98 +1522,75 @@ impl RaceTracker {
         ));
     }
 
-    /// Run `job` on the relay worker thread, or queue it while another job
-    /// runs. A job queued replaces the one queued before it: the machine asks
-    /// again only once it has given up its previous request.
+    /// Hand `job` to the relay worker: it starts now when no job runs, else
+    /// it waits its turn (`core::job_queue`; a capture waiting is replaced by
+    /// a newer one).
     fn request_relay_job(&mut self, job: RelayJob) {
-        if let Some((running, _)) = &self.relay_job {
+        if let Some(running) = self.relay_jobs.running() {
             info!(
                 ?running,
                 queued = ?job,
-                replaced = ?self.relay_job_queued,
                 "[RELAY] Worker job queued behind the running one"
             );
-            self.relay_job_queued = Some(job);
-            return;
         }
-        self.start_relay_job(job);
+        match self.relay_jobs.ask(job) {
+            Asked::Runs => self.start_relay_jobs(),
+            Asked::Queued {
+                replaced: Some(replaced),
+            } => info!(?replaced, "[RELAY] Worker job replaced while it waited"),
+            Asked::Queued { replaced: None } => {}
+        }
     }
 
-    /// Start `job` on a thread of its own (the `spawner_thread` pattern). A
-    /// thread the OS does not start fails the job at once: its answer is
-    /// given now, on the game thread.
-    fn start_relay_job(&mut self, job: RelayJob) {
-        let spawned = match &job {
-            RelayJob::Capture { generation, .. } => {
-                let generation = *generation;
-                let reader = self.event_flag_reader.clone();
-                let game = Arc::clone(&self.game_state);
-                std::thread::Builder::new()
-                    .name("relay-worker".to_string())
-                    .spawn(move || {
-                        RelayJobDone::Captured(relay::capture(&reader, &game, generation))
-                    })
-            }
-        };
-        match spawned {
-            Ok(handle) => {
-                info!(?job, "[RELAY] Worker job started");
-                self.relay_job = Some((job, handle));
-            }
-            Err(error) => {
-                warn!(%error, ?job, "[RELAY] Worker thread not started, job failed");
-                match job {
-                    RelayJob::Capture {
-                        handoff_id,
-                        generation,
-                    } => {
-                        let effects = self.machine.relay_state_captured(
-                            handoff_id,
-                            generation,
-                            None,
-                            Instant::now(),
-                        );
-                        self.execute_effects(effects);
+    /// Start the queue's running job on a thread of its own (the
+    /// `spawner_thread` pattern), unless its thread already runs. A thread
+    /// the OS does not start fails that job at once (its answer is given now,
+    /// on the game thread) and the next job waiting is tried.
+    fn start_relay_jobs(&mut self) {
+        while self.relay_thread.is_none() {
+            let Some(job) = self.relay_jobs.running() else {
+                return;
+            };
+            profile_span!("relay_job_start");
+            let spawned = match job {
+                RelayJob::Capture { generation, .. } => {
+                    let generation = *generation;
+                    let reader = self.event_flag_reader.clone();
+                    let game = Arc::clone(&self.game_state);
+                    std::thread::Builder::new()
+                        .name("relay-worker".to_string())
+                        .spawn(move || {
+                            RelayJobDone::Captured(relay::capture(&reader, &game, generation))
+                        })
+                }
+            };
+            match spawned {
+                Ok(thread) => {
+                    info!(?job, "[RELAY] Worker job started");
+                    self.relay_thread = Some(thread);
+                }
+                Err(error) => {
+                    warn!(%error, ?job, "[RELAY] Worker thread not started, job failed");
+                    if let Some(job) = self.relay_jobs.finish() {
+                        self.answer_relay_job(job, None);
                     }
                 }
             }
         }
     }
 
-    /// Hand the relay job that finished to the machine, on the game thread,
-    /// with the identity it was asked with (a thread that panicked answers
-    /// as a failed job), then start the job queued behind it. Per frame with
-    /// no job finished: an `Option` check and an atomic load, nothing
-    /// allocated, no lock taken.
-    fn poll_relay_job(&mut self) {
-        if !self
-            .relay_job
-            .as_ref()
-            .is_some_and(|(_, handle)| handle.is_finished())
-        {
-            return;
-        }
-        profile_span!("relay_job_poll");
-        let Some((job, handle)) = self.relay_job.take() else {
-            return;
-        };
-        let done = handle.join();
+    /// Give the machine a relay job's answer, on the game thread: `done` is
+    /// what its thread returned, `None` for a job that failed (its thread
+    /// panicked or never started).
+    fn answer_relay_job(&mut self, job: RelayJob, done: Option<RelayJobDone>) {
         match job {
             RelayJob::Capture {
                 handoff_id,
                 generation,
             } => {
                 let state = match done {
-                    Ok(RelayJobDone::Captured(state)) => state,
-                    Err(panic) => {
-                        error!(
-                            ?handoff_id,
-                            generation,
-                            panic = crate::panic_message(panic.as_ref()),
-                            "[RELAY] Worker thread panicked, job failed"
-                        );
-                        None
-                    }
+                    Some(RelayJobDone::Captured(state)) => state,
+                    None => None,
                 };
                 let effects = self.machine.relay_state_captured(
                     handoff_id,
@@ -1614,11 +1601,39 @@ impl RaceTracker {
                 self.execute_effects(effects);
             }
         }
-        if self.relay_job.is_none() {
-            if let Some(next) = self.relay_job_queued.take() {
-                self.start_relay_job(next);
-            }
+    }
+
+    /// Hand the relay job whose thread ended to the machine, with the
+    /// identity it was asked with (a thread that panicked answers as a failed
+    /// job), then start the job waiting next. Per frame with no thread ended:
+    /// an `Option` check and an atomic load, nothing allocated, no lock taken.
+    fn poll_relay_job(&mut self) {
+        if !self
+            .relay_thread
+            .as_ref()
+            .is_some_and(|thread| thread.is_finished())
+        {
+            return;
         }
+        profile_span!("relay_job_poll");
+        let Some(thread) = self.relay_thread.take() else {
+            return;
+        };
+        let done = match thread.join() {
+            Ok(done) => Some(done),
+            Err(panic) => {
+                error!(
+                    job = ?self.relay_jobs.running(),
+                    panic = crate::panic_message(panic.as_ref()),
+                    "[RELAY] Worker thread panicked, job failed"
+                );
+                None
+            }
+        };
+        if let Some(job) = self.relay_jobs.finish() {
+            self.answer_relay_job(job, done);
+        }
+        self.start_relay_jobs();
     }
 
     // Public getters for UI
