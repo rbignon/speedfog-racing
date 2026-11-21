@@ -713,6 +713,8 @@ Takeover: `relay_take_request` (teammate), the server checks, flips the holder a
 
 A `relay_state` carrying an expired or unknown `handoff_id` is answered with a `relay_update` to its sender, so a giver who already locked learns that it still holds the baton. A request made while the race is not running, or during the countdown, is refused with `busy`. A `relay_take` not acknowledged within 30 s sets the baton free; a `relay_release` not answered within 15 s cancels the handoff.
 
+Progress on a relay race: `status_update`, `event_flag` and `zone_query` are applied to the team, and only from the member whose `role` is `holder`. A waiting runner sends them as usual: its `event_flag` and `zone_query` are acknowledged (`event_flag_ack`, `zone_query_ack`) and recorded nowhere, and its `status_update` only runs its own fresh-save gate: its first report once the race runs validates it (`members[].validated`) when the IGT is at most 60 s, else `error` `fresh_save_required`. The holder's reports go through the usual guards on the team's IGT. The legacy `finished` message is ignored; a team finishes on its holder's `finish_event` flag. A reconnecting holder gets the `zone_update` of the team's zone, a waiting runner none.
+
 #### `death_counts`
 
 Aggregated death counts per DAG node across all race participants. Broadcast to all mods when a death is attributed (delta > 0). Also sent as a unicast on reconnect if any deaths have occurred.

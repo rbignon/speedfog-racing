@@ -152,14 +152,80 @@ A runner may play `ceil(total_layers / active_members) + 1` zones (`relay_cap`),
 status is neither abandoned nor disqualified (`is_active_member`); `team_cap` never
 divides by zero (at least one member) and is recomputed when a member leaves.
 
+Each zone counts for one runner, in `Participant.relay_zones`:
+
+- A zone whose boss the server tracks (a defeat flag of `extract_boss_flags`)
+  counts for the runner who kills that boss: each new kill adds one to the holder
+  who reported it (`_on_boss_killed`). A re-report is no new kill and counts
+  nothing, including the defeat flags a handoff set on a receiver's game, which its
+  mod reports again after a restart.
+- The final boss counts for its killer (`finish_team`).
+- Any other zone counts for the runner who exits it: when a fog gate reaches a layer
+  the team never reached and the zone left (the history entry before the gate's)
+  passes `counts_zone_on_exit` (no tracked boss, not the final boss).
+
+When a holder's count reaches the team's cap, the `relay_update` that follows reads
+`gates_locked: true` for them: they must hand off to leave the zone. The server
+still records what a holder at or over the cap does, since it cannot undo a kill or
+a traversal the game allowed: a capped holder who kills a boss ends one over the
+cap, and the final boss is always accepted.
+
 ## Progress and guards
 
 On a relay race the live messages (`race_state`, `leaderboard_update`, `player_update`,
 and `auth_ok.participants`) carry one row per team, built by `relay_team_to_info`
 from the `RelayTeamRow`s of `leaderboard_entries`; every broadcast of the leaderboard
-passes those entries, and a runner's `player_update` goes out as their team's row
-(`load_relay_row`, a query of its own: the entity is loaded without the field). The row shape is in `docs/PROTOCOL.md` ("Relay rows"). A loader
-feeding these rows must not defer `RelayTeam.zone_history`.
+passes those entries. The row shape is in `docs/PROTOCOL.md` ("Relay rows"). A
+loader feeding these rows must not defer `RelayTeam.zone_history`.
+
+`handle_mod_websocket` gives a relay race's mods a `RelayModHandler`
+(`websocket/race/relay_mod.py`). Its entity for `status_update`, `event_flag` and
+`zone_query` is the runner's `RelayTeam`, loaded with its members, so the shared
+handlers move the team's zone, layer, IGT, history and deaths, and a `player_update`
+is the team's row. Its 1 Hz load leaves out the race's teams (`raiseload`): they
+carry every team's history.
+
+- **Gate.** Only the runner who holds the baton is listened to (`holds_baton`: the
+  holder while the baton is not free, the rule of `RelayInfo.role`). Before each of
+  the three messages the handler reads the team's baton, and checks it again in
+  the session that commits. Anyone else's `event_flag` and `zone_query` are
+  acknowledged (the mod replays them until then) and recorded nowhere; their
+  `status_update` only runs their own fresh-save gate, and no row is broadcast for
+  it. The legacy `finished` message is ignored.
+- **Fresh save for every member.** The team's first report, its first holder's,
+  passes the team's gate (IGT at most 60 s, `MAX_FRESH_IGT_MS`): the team becomes
+  PLAYING and that holder is validated. Any other member's first report once the
+  race runs (countdown over) sets `relay_validated` and moves them from READY to
+  PLAYING when its IGT is at most 60 s; above, they get `error` `fresh_save_required`
+  and stay unvalidated. Once validated, a waiting runner's IGT is never judged. The
+  seed check is the mod's (it compares its pack with `RaceInfo.seed_id`).
+- **Wrong save.** `is_igt_plausible` judges the holder's IGT against the team's
+  `igt_ms` and `last_igt_change_at`.
+- **Deaths.** Each save counts its own deaths. A member's `death_count` holds the
+  last raw count their mod reported as holder, stored in the commit that applies
+  the report; the team's count moves by what the holder's counter moved
+  (`team.death_count + reported - member.death_count`), so it carries on across a
+  change of holder.
+- **History.** Every entry the team's history gains carries `runner_id`, the
+  holder's participant id. A fog gate stores its flag in `entry_flag_id`, the zone a
+  handoff restarts (`RelayInfo.zone_name`); a backtrack seen through `zone_query`
+  never changes it.
+- **Per-save data.** The holder's debug flags land on their own row and alert the
+  staff as on a solo race.
+- **Reconnection.** A reconnecting holder gets the `zone_update` of the team's zone,
+  a waiting runner none.
+- **`relay_update`** goes to the team's connected mods whenever `RelayInfo` changes
+  here: a member passes the fresh-save gate, the team's first report, each fog gate
+  (`zone_name`, maybe a count), each counted kill (`members[].zones`,
+  `gates_locked`), the finish (`team_status`).
+- **Finish.** The holder's final boss flag runs `finish_team`, `handle_finished` on
+  the team: FINISHED, `finished_at`, the layer set to the seed's total, the final
+  boss counted for the holder, `copy_team_result` (status, IGT, finish time, deaths
+  and layer onto the members still in, a disqualified team leaving them abandoned;
+  never `zone_history`), the public line `{team name} has finished the race!`, then
+  auto-finish and the same broadcasts, and a `relay_update` telling the team's mods
+  their race is over. Once every team is finished or out, every participant row is
+  terminal and the race finishes.
 
 ## Lifecycle
 

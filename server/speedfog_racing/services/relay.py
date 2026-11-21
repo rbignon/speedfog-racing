@@ -64,6 +64,53 @@ def team_cap(total_layers: int, members: Sequence[Participant]) -> int:
     return relay_cap(total_layers, max(1, sum(1 for m in members if is_active_member(m))))
 
 
+def holds_baton(team: RelayTeam, participant_id: UUID | None) -> bool:
+    """Whether ``participant_id`` plays the team's run now: its holder while the
+    baton is not free (exactly when ``RelayInfo.role`` reads ``holder``). Only
+    this runner's progress messages are applied to the team."""
+    return participant_id is not None and team.holder_id == participant_id and not team.baton_free
+
+
+def counts_zone_on_exit(
+    boss_flags: Mapping[int, str], graph_json: Mapping[str, Any], node_id: str
+) -> bool:
+    """Whether leaving ``node_id`` for a new layer counts a zone for the runner.
+
+    A zone whose boss the server tracks (``boss_flags``, from
+    ``extract_boss_flags``) counts for the runner who kills that boss, so
+    leaving it counts nothing; the final boss's zone is never left. Any other
+    zone counts for the runner who exits it.
+    """
+    if node_id in boss_flags.values():
+        return False
+    nodes = graph_json.get("nodes")
+    node = nodes.get(node_id) if isinstance(nodes, dict) else None
+    return not (isinstance(node, dict) and node.get("type") == "final_boss")
+
+
+def copy_team_result(team: RelayTeam, members: Sequence[Participant]) -> None:
+    """Copy a team's result (finished or out) onto its members still in.
+
+    Status, IGT, finish time, deaths and layer, so the pages that read
+    participants show the run; a disqualified team leaves its other members
+    abandoned. A member already out keeps their own row, and nobody's
+    ``zone_history`` is touched (the run's history stays on the team).
+    """
+    status = (
+        ParticipantStatus.ABANDONED
+        if team.status == ParticipantStatus.DISQUALIFIED
+        else team.status
+    )
+    for member in members:
+        if not is_active_member(member):
+            continue
+        member.status = status
+        member.igt_ms = team.igt_ms
+        member.finished_at = team.finished_at
+        member.death_count = team.death_count
+        member.current_layer = team.current_layer
+
+
 def default_team_name(existing: Collection[str]) -> str:
     """``Team {n}``, the lowest n at or above the team count plus one that is not taken."""
     n = len(existing) + 1
@@ -264,6 +311,14 @@ def leaderboard_entries(
     )
 
 
+def relay_team_row(
+    team: RelayTeam, members: Sequence[Participant], graph_json: Mapping[str, Any] | None
+) -> RelayTeamRow:
+    """``team``'s row, its cap computed on ``members`` and the seed's layers."""
+    total_layers = int((graph_json or {}).get("total_layers") or 0)
+    return RelayTeamRow(team, tuple(members), team_cap(total_layers, members))
+
+
 async def load_relay_row(
     db: AsyncSession, team_id: UUID, graph_json: Mapping[str, Any] | None
 ) -> RelayTeamRow | None:
@@ -279,6 +334,4 @@ async def load_relay_row(
         .options(selectinload(Participant.user))
         .order_by(Participant.created_at)
     )
-    members = list(result.scalars().all())
-    total_layers = int((graph_json or {}).get("total_layers") or 0)
-    return RelayTeamRow(team, tuple(members), team_cap(total_layers, members))
+    return relay_team_row(team, list(result.scalars().all()), graph_json)

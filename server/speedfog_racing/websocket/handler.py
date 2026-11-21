@@ -1108,6 +1108,7 @@ class BaseModHandler(BaseHandler, Generic[T]):
                     self.log_ref,
                 )
 
+                self._on_fog_gate(entity, flag_id, node_id, seed_graph)
                 self._on_zone_entered(entity, node_id, seed_graph, igt)
 
                 await db.commit()
@@ -1437,6 +1438,14 @@ class BaseModHandler(BaseHandler, Generic[T]):
         recorded value holds (no time refund). Override to also track
         last_igt_change_at (race)."""
         entity.igt_ms = max(entity.igt_ms, igt_ms)
+
+    def _on_fog_gate(
+        self, entity: T, flag_id: int, node_id: str, graph_json: dict[str, Any]
+    ) -> None:
+        """Hook called when a fog gate's ``flag_id`` appends ``node_id`` to the
+        history, inside the session, before ``_on_zone_entered``: the new entry
+        is the last one and the entity still has the layer the gate left.
+        Override to track the gate itself (relay)."""
 
     def _on_zone_entered(
         self, entity: T, node_id: str, graph_json: dict[str, Any], igt: int
