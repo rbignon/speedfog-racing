@@ -73,6 +73,10 @@ pub enum OutgoingMessage {
     RelayTaken {
         handoff_id: String,
     },
+    RelayHandoffRequest {
+        to_participant_id: String,
+    },
+    RelayTakeRequest,
     Shutdown,
 }
 
@@ -243,6 +247,23 @@ impl RaceWebSocketClient {
     pub fn send_relay_taken(&self, handoff_id: String) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::RelayTaken { handoff_id }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_handoff_request(&self, to_participant_id: String) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayHandoffRequest { to_participant_id })
+            {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_take_request(&self) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayTakeRequest) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -764,6 +785,22 @@ fn message_loop(
                 info!(handoff_id = %handoff_id, "[WS] Sending: relay_taken");
                 let msg = ClientMessage::RelayTaken { handoff_id };
                 let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::RelayHandoffRequest { to_participant_id }) => {
+                info!(to = %to_participant_id, "[WS] Sending: relay_handoff_request");
+                let msg = ClientMessage::RelayHandoffRequest { to_participant_id };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
+            Ok(OutgoingMessage::RelayTakeRequest) => {
+                info!("[WS] Sending: relay_take_request");
+                let json = serde_json::to_string(&ClientMessage::RelayTakeRequest)
+                    .map_err(|e| e.to_string())?;
                 socket
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;

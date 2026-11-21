@@ -693,6 +693,8 @@ impl RaceTracker {
             flag_reads,
             weapons,
             flag_reader_ok,
+            // The key binding comes with the overlay lot.
+            relay_key_down: false,
         };
         let effects = self.machine.tick(input, now);
         self.execute_effects(effects);
@@ -869,6 +871,12 @@ impl RaceTracker {
                 }
                 Effect::SendRelayTaken { handoff_id } => {
                     self.ws_client.send_relay_taken(handoff_id);
+                }
+                Effect::SendRelayHandoffRequest { to_participant_id } => {
+                    self.ws_client.send_relay_handoff_request(to_participant_id);
+                }
+                Effect::SendRelayTakeRequest => {
+                    self.ws_client.send_relay_take_request();
                 }
                 Effect::SendStatusUpdate {
                     igt_ms,

@@ -61,6 +61,19 @@ pub const TAKEN_CONFIRM: Duration = Duration::from_secs(5);
 /// take started at once is still acknowledged in time.
 pub const APPLY_ABANDON: Duration = Duration::from_secs(20);
 
+/// A `relay_handoff_request` or `relay_take_request` the server has not
+/// answered by then (with a `relay_release`, a `relay_take` or a
+/// `relay_refused`) is forgotten, so a lost answer never blocks the key for
+/// good. The server answers at once; this is only a bound.
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Seconds before the baton can be taken, `since` the `RelayInfo` that said
+/// `at_receipt` was received: the whole seconds elapsed are taken off, down
+/// to 0. `None` (the holder is online) stays `None`.
+pub fn free_in_s(at_receipt: Option<u32>, since: Duration) -> Option<u32> {
+    at_receipt.map(|secs| secs.saturating_sub(since.as_secs().min(u32::MAX as u64) as u32))
+}
+
 /// Where a received take stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TakePhase {
@@ -83,6 +96,9 @@ pub struct PendingTake {
     pub zone_name: Option<String>,
     /// When it was received: the acknowledgement logs the time since.
     pub received_at: Instant,
+    /// When its writes were handed to the shell (the receipt until then):
+    /// an IGT that does not read right is given up `APPLY_ABANDON` later.
+    pub started_at: Instant,
     pub phase: TakePhase,
 }
 
@@ -292,5 +308,13 @@ mod tests {
         w.tick(true, t0);
         w.tick(false, t0 + ms(16));
         assert_eq!(w.abort(), None, "the load took it");
+    }
+
+    #[test]
+    fn the_countdown_runs_from_the_servers_seconds() {
+        assert_eq!(free_in_s(Some(60), Duration::ZERO), Some(60));
+        assert_eq!(free_in_s(Some(60), Duration::from_millis(18_200)), Some(42));
+        assert_eq!(free_in_s(Some(60), Duration::from_secs(75)), Some(0));
+        assert_eq!(free_in_s(None, Duration::from_secs(5)), None);
     }
 }

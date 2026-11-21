@@ -31,6 +31,7 @@ use crate::core::relay::{
     WarpStep,
 };
 use crate::core::relay_items;
+use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -318,6 +319,9 @@ pub struct TickInput {
     pub weapons: [Option<i32>; 2],
     /// Whether the flag reader diagnosed OK (None = flags not read).
     pub flag_reader_ok: Option<bool>,
+    /// The relay baton key is down this frame (repeated key-down events of
+    /// the OS count as down, not as presses).
+    pub relay_key_down: bool,
 }
 
 /// Side effects for the shell to execute, in order.
@@ -379,6 +383,14 @@ pub enum Effect {
     SendRelayTaken {
         handoff_id: String,
     },
+    /// The holder confirmed a teammate in the baton menu: send
+    /// `relay_handoff_request`.
+    SendRelayHandoffRequest {
+        to_participant_id: String,
+    },
+    /// A waiting runner held the key on a free baton: send
+    /// `relay_take_request`.
+    SendRelayTakeRequest,
     SendStatusUpdate {
         igt_ms: u32,
         death_count: u32,
@@ -741,6 +753,21 @@ pub struct RaceMachine {
     relay_confirm_until: Option<Instant>,
     /// The warp to the exit of the gate a take restarts from.
     relay_zone_warp: Option<FlagWarp>,
+    /// When the current `RelayInfo` was received: the baton's countdown
+    /// runs from it (`relay_free_in_s`).
+    relay_received_at: Option<Instant>,
+    /// The teammates of the baton menu, built on each `RelayInfo`.
+    relay_rows: Vec<MenuRow>,
+    /// How many of `relay_rows` can receive the baton.
+    relay_eligible: usize,
+    /// The holder's menu (its key state; the list is `relay_rows`).
+    relay_menu: HandoffMenu,
+    /// A waiting runner's hold on the key to take a free baton.
+    relay_hold: HoldKey,
+    /// When a handoff or take request was sent and is not answered yet (by
+    /// a release, a take or a refusal); forgotten after
+    /// `relay::REQUEST_TIMEOUT`. Blocks a second request meanwhile.
+    relay_request: Option<Instant>,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
     /// The text of the reminder row his `Found` added: the row goes when he
@@ -932,6 +959,12 @@ impl RaceMachine {
             relay_taken_due: false,
             relay_confirm_until: None,
             relay_zone_warp: None,
+            relay_received_at: None,
+            relay_rows: Vec::new(),
+            relay_eligible: 0,
+            relay_menu: HandoffMenu::default(),
+            relay_hold: HoldKey::default(),
+            relay_request: None,
             hunter: Hunter::default(),
             hunter_row: None,
             last_loading_exit: None,
@@ -1325,6 +1358,80 @@ impl RaceMachine {
         self.relay_take.is_some()
     }
 
+    /// The baton menu is open (the holder's).
+    pub fn relay_menu_open(&self) -> bool {
+        self.relay_menu.is_open()
+    }
+
+    /// The teammates of the baton menu with their counter and, when one
+    /// cannot receive, why: strings built once per `RelayInfo`.
+    pub fn relay_menu_rows(&self) -> &[MenuRow] {
+        &self.relay_rows
+    }
+
+    /// Participant id of the highlighted teammate while the menu is open;
+    /// `None` when it is closed or nobody can receive.
+    pub fn relay_menu_selected(&self) -> Option<&str> {
+        if !self.relay_menu.is_open() {
+            return None;
+        }
+        self.relay_rows
+            .iter()
+            .filter(|row| row.unavailable.is_none())
+            .nth(self.relay_menu.selected())
+            .map(|row| row.participant_id.as_str())
+    }
+
+    /// How far the confirming hold of the baton key is, 0 to 1: the menu's
+    /// when it is open, else a waiting runner's on a free baton.
+    pub fn relay_hold_progress(&self, now: Instant) -> f32 {
+        if self.relay_menu.is_open() {
+            self.relay_menu.progress(now)
+        } else {
+            self.relay_hold.progress(now)
+        }
+    }
+
+    /// Seconds before the baton can be taken, counted down from the
+    /// `RelayInfo` as received; `None` while the holder is online.
+    pub fn relay_free_in_s(&self, now: Instant) -> Option<u32> {
+        let relay = self.relay.as_ref()?;
+        let received = self.relay_received_at?;
+        relay::free_in_s(
+            relay.baton_free_in_s,
+            now.saturating_duration_since(received),
+        )
+    }
+
+    /// The runner may pass the baton with the menu: it holds it in a relay
+    /// being played, past the countdown (the server answers `busy` during
+    /// it), with no release waiting, no take in progress or just made, and
+    /// no request unanswered.
+    fn relay_menu_possible(&self, now: Instant) -> bool {
+        self.relay_holder_live()
+            && self.relay_confirm_until.is_none()
+            && self.relay_release.is_none()
+            && self.relay_request.is_none()
+            && !self.is_countdown_active(now)
+    }
+
+    /// A waiting runner may be offered the take: the relay is played past
+    /// the countdown, the baton free now, no take in progress, no request
+    /// unanswered, and the runner itself loaded at the Chapel (its own last
+    /// `relay_ready`, not the echo), validated and under its cap.
+    pub fn relay_take_offered(&self, now: Instant) -> bool {
+        self.relay_waiting_live()
+            && self.relay_take.is_none()
+            && self.relay_request.is_none()
+            && !self.is_countdown_active(now)
+            && self.relay_free_in_s(now) == Some(0)
+            && self.relay_ready_sent == Some(true)
+            && self.relay.as_ref().is_some_and(|relay| {
+                self.relay_me()
+                    .is_some_and(|me| me.validated && me.zones < relay.cap)
+            })
+    }
+
     /// Progress is held: from a take's receipt until its `relay_taken`,
     /// nothing the server would judge against the team goes out (status
     /// updates, event flags, zone queries, relay states) and the flag scans
@@ -1395,6 +1502,7 @@ impl RaceMachine {
     /// again after the next `auth_ok` while it awaits it). A take in
     /// progress goes on.
     fn relay_link_lost(&mut self) {
+        self.relay_request = None;
         self.relay_release = None;
         self.relay_checkpoint_due = false;
         self.relay_taken_due = false;
@@ -1448,7 +1556,35 @@ impl RaceMachine {
             (Some(_), None) => "no holder",
             (Some(_), Some(_)) => "another holder",
         };
+        let highlighted = self.relay_menu_selected().map(str::to_owned);
+        self.relay_rows = relay
+            .as_ref()
+            .map(|r| relay_menu::build_rows(r, self.my_participant_id.as_deref()))
+            .unwrap_or_default();
+        self.relay_eligible = self
+            .relay_rows
+            .iter()
+            .filter(|row| row.unavailable.is_none())
+            .count();
+        self.relay_received_at = Some(now);
         self.relay = relay;
+        if let Some(id) = highlighted {
+            // The highlight stays on the same teammate, wherever the list
+            // puts it now. When it is gone, the press in progress was aimed
+            // at it: it can no longer confirm.
+            let kept = self
+                .relay_rows
+                .iter()
+                .filter(|row| row.unavailable.is_none())
+                .position(|row| row.participant_id == id);
+            match kept {
+                Some(index) => self.relay_menu.select(index),
+                None => {
+                    self.relay_menu.select(0);
+                    self.relay_menu.spend_press();
+                }
+            }
+        }
         if !named_me {
             self.relay_give_up_take(reason);
         }
@@ -2488,6 +2624,7 @@ impl RaceMachine {
                 to_name,
             } => {
                 self.last_received_debug = Some(format!("relay_release({handoff_id})"));
+                self.relay_request = None;
                 if !self.relay_holder_live() {
                     warn!(
                         role = ?self.relay_role(),
@@ -2571,6 +2708,7 @@ impl RaceMachine {
                         self.relay_ready_sent = Some(false);
                         effects.push(Effect::SendRelayReady { ready: false });
                     }
+                    self.relay_request = None;
                     self.relay_take = Some(PendingTake {
                         handoff_id,
                         state,
@@ -2579,6 +2717,7 @@ impl RaceMachine {
                         warp_flag,
                         zone_name,
                         received_at: now,
+                        started_at: now,
                         phase: TakePhase::Received,
                     });
                 }
@@ -2586,6 +2725,7 @@ impl RaceMachine {
             MachineMessage::RelayRefused { code, message } => {
                 self.last_received_debug = Some(format!("relay_refused({code})"));
                 warn!(code = %code, message = %message, "[RELAY] Request refused");
+                self.relay_request = None;
                 self.set_status(message, now);
             }
             MachineMessage::ItemNotice { banner } => {
@@ -2906,6 +3046,7 @@ impl RaceMachine {
         // frame that acknowledges a take sends no progress after it, and
         // progress resumes with the next one.
         let held = self.progress_held();
+        let relay_key_down = input.relay_key_down;
         // The shell read this frame's window of boss flags just before the
         // tick: move the rotation past it now, while `boss_flags_to_read`
         // still names the same window (a kill or a save-reload flush below
@@ -3445,6 +3586,7 @@ impl RaceMachine {
             self.maintain_hunter(now, &mut effects);
             self.relay_link_lost();
             self.maintain_relay(false, loading_exit, held, now, &mut effects);
+            self.maintain_relay_key(relay_key_down, false, now, &mut effects);
             return effects;
         }
 
@@ -3554,6 +3696,7 @@ impl RaceMachine {
         self.maintain_memory_effects(loading_exit, now, &mut effects);
         self.maintain_hunter(now, &mut effects);
         self.maintain_relay(true, loading_exit, held, now, &mut effects);
+        self.maintain_relay_key(relay_key_down, true, now, &mut effects);
 
         // Send periodic status updates (every 1 second, only when IGT is ticking and race running)
         // During quit-outs IGT is 0, skip to avoid erroneous data.
@@ -4254,7 +4397,7 @@ impl RaceMachine {
                 take.handoff_id == asked.handoff_id && take.phase == TakePhase::Applying
             }) {
                 take.phase = TakePhase::Applied;
-                self.set_status("Baton taken: build not confirmed".to_string(), now);
+                self.set_status("Baton taken: items may be missing".to_string(), now);
             }
         }
         let waiting_live = self.relay_waiting_live();
@@ -4480,7 +4623,7 @@ impl RaceMachine {
                     self.relay_start_take(now, effects);
                 }
                 TakePhase::Applied if can_write && connected && alive => {
-                    self.relay_complete_take(flags.lock_flag, now, effects);
+                    self.relay_ack_take(flags.lock_flag, now, effects);
                 }
                 _ => {}
             }
@@ -4528,6 +4671,7 @@ impl RaceMachine {
         };
         crate::profile_span!("relay_take_start");
         take.phase = TakePhase::Applying;
+        take.started_at = now;
         let handoff_id = take.handoff_id.clone();
         let igt_ms = take.igt_ms;
         let state = take.state.take();
@@ -4587,6 +4731,34 @@ impl RaceMachine {
         self.last_good_at = rebased.map(|_| now);
         self.freeze_last_igt = None;
         self.pending_quit_out = false;
+    }
+
+    /// The frame after a take was applied: acknowledged only on a frame
+    /// whose IGT reads at least the team's (any reading counts for an IGT
+    /// of 0), so a write that failed, came late or was undone by a reload is
+    /// never reported as the team's; until then the write is made again on
+    /// each frame. `relay::APPLY_ABANDON` after the take started, it is
+    /// acknowledged all the same (the server's own guards judge the
+    /// reports) with the "not confirmed" status.
+    fn relay_ack_take(&mut self, lock_flag: u32, now: Instant, effects: &mut Vec<Effect>) {
+        let Some(take) = self.relay_take.as_ref() else {
+            return;
+        };
+        let (want, started_at) = (take.igt_ms, take.started_at);
+        let read = self.frame_snapshot.igt_ms;
+        if want > 0 && !read.is_some_and(|igt| igt >= want) {
+            if now.saturating_duration_since(started_at) < relay::APPLY_ABANDON {
+                effects.push(Effect::SetIgt { ms: want });
+                return;
+            }
+            warn!(
+                wanted_ms = want,
+                read_ms = ?read,
+                "[RELAY] IGT does not read the team's, take acknowledged anyway"
+            );
+            self.set_status("Baton taken: items may be missing".to_string(), now);
+        }
+        self.relay_complete_take(lock_flag, now, effects);
     }
 
     /// The frame after a take was applied: the lock lowered, then the warp
@@ -4680,6 +4852,72 @@ impl RaceMachine {
                 handoff_id,
                 elapsed_ms, "[RELAY] Apply answered for a take no longer in progress"
             ),
+        }
+    }
+
+    /// The baton key of this frame: the holder's menu, or a waiting runner's
+    /// hold on a free baton. Both are possible only while `relay_menu_possible`
+    /// / `relay_take_offered` hold and the socket is up; anywhere else the key
+    /// is inert, the menu closed, and a press already down is ignored until
+    /// released (a hold that started before the key meant anything never
+    /// counts). Per frame: two timers and a few comparisons, an allocation
+    /// only when a request goes out.
+    fn maintain_relay_key(
+        &mut self,
+        key_down: bool,
+        connected: bool,
+        now: Instant,
+        effects: &mut Vec<Effect>,
+    ) {
+        if self.relay.is_none() {
+            return;
+        }
+        crate::profile_span!("relay_key");
+        if self
+            .relay_request
+            .is_some_and(|at| now.saturating_duration_since(at) >= relay::REQUEST_TIMEOUT)
+        {
+            warn!("[RELAY] Request not answered, forgotten");
+            self.relay_request = None;
+        }
+        if connected && self.relay_menu_possible(now) {
+            self.relay_hold.suspend(key_down);
+            match self.relay_menu.update(key_down, self.relay_eligible, now) {
+                MenuEvent::Confirmed(index) => {
+                    let target = self
+                        .relay_rows
+                        .iter()
+                        .filter(|row| row.unavailable.is_none())
+                        .nth(index)
+                        .map(|row| row.participant_id.clone());
+                    if let Some(to_participant_id) = target {
+                        info!(to = %to_participant_id, "[RELAY] Handoff requested");
+                        self.last_sent_debug =
+                            Some(format!("relay_handoff_request({to_participant_id})"));
+                        self.relay_request = Some(now);
+                        effects.push(Effect::SendRelayHandoffRequest { to_participant_id });
+                    }
+                }
+                MenuEvent::Opened => debug!(
+                    teammates = self.relay_rows.len(),
+                    eligible = self.relay_eligible,
+                    "[RELAY] Baton menu opened"
+                ),
+                MenuEvent::Closed => debug!("[RELAY] Baton menu closed by itself"),
+                MenuEvent::Next | MenuEvent::None => {}
+            }
+        } else {
+            self.relay_menu.suspend(key_down);
+            if connected && self.relay_take_offered(now) {
+                if self.relay_hold.update(key_down, now) {
+                    info!("[RELAY] Take requested");
+                    self.last_sent_debug = Some("relay_take_request".to_string());
+                    self.relay_request = Some(now);
+                    effects.push(Effect::SendRelayTakeRequest);
+                }
+            } else {
+                self.relay_hold.suspend(key_down);
+            }
         }
     }
 
@@ -5030,6 +5268,7 @@ impl RaceMachine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::relay_menu::Unavailable;
 
     // ------------------------------------------------------------------
     // Harness
@@ -5202,6 +5441,7 @@ mod tests {
             flag_reads: reads,
             weapons: [None, None],
             flag_reader_ok: None,
+            relay_key_down: false,
         }
     }
 
@@ -15242,7 +15482,7 @@ mod tests {
         assert_eq!(times_of(&fx, &lock(false)), [1_100 + abandon]);
         assert_eq!(
             m.get_status(t0 + ms(1_100 + abandon)),
-            Some("Baton taken: build not confirmed")
+            Some("Baton taken: items may be missing")
         );
         // Its late answer changes nothing.
         m.relay_state_applied("h1", stale, t0 + ms(1_100 + abandon + 50));
@@ -15462,5 +15702,643 @@ mod tests {
         update(&mut m, relay_info_with("waiting", "finished"), t0, 0);
         m.handle_message(take("h1"), t0 + ms(10));
         assert!(!m.relay_take_pending());
+    }
+
+    // ------------------------------------------------------------------
+    // The baton key: the holder's menu and the waiting runner's take
+    // ------------------------------------------------------------------
+
+    fn handoff_to(id: &str) -> Effect {
+        Effect::SendRelayHandoffRequest {
+            to_participant_id: id.to_string(),
+        }
+    }
+
+    /// A frame `at` ms after `t0` on `map` with the baton key `down`.
+    fn key_on(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        down: bool,
+    ) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(LOCAL_IGT + at as u32),
+            death_count: Some(0),
+            position_readable: map.is_some(),
+            loading_screen: Some(false),
+            map_id: map,
+            hp: map.map(|_| 100),
+            ..FrameSnapshot::default()
+        };
+        let mut input = tick_in(snapshot, true, None);
+        input.relay_key_down = down;
+        m.tick(input, t0 + ms(at))
+    }
+
+    /// `key_on` in a zone.
+    fn key(m: &mut RaceMachine, t0: Instant, at: u64, down: bool) -> Vec<Effect> {
+        key_on(m, t0, at, Some(IN_ZONE), down)
+    }
+
+    /// Frames every 100 ms over `[from, to]` with the key `down`, the
+    /// requests of the baton key tagged with their time.
+    fn key_over(
+        m: &mut RaceMachine,
+        t0: Instant,
+        from: u64,
+        to: u64,
+        map: Option<u32>,
+        down: bool,
+    ) -> Vec<(u64, Effect)> {
+        let mut out = Vec::new();
+        let mut at = from;
+        while at <= to {
+            out.extend(
+                key_on(m, t0, at, map, down)
+                    .into_iter()
+                    .filter(|e| {
+                        matches!(
+                            e,
+                            Effect::SendRelayHandoffRequest { .. } | Effect::SendRelayTakeRequest
+                        )
+                    })
+                    .map(|e| (at, e)),
+            );
+            at += 100;
+        }
+        out
+    }
+
+    /// A press and its release (the opening of the menu, or a tap).
+    fn tap(m: &mut RaceMachine, t0: Instant, at: u64) {
+        key(m, t0, at, true);
+        key(m, t0, at + 100, false);
+    }
+
+    fn member_of(id: &str, name: &str, zones: u32) -> RelayMember {
+        RelayMember {
+            participant_id: id.to_string(),
+            name: name.to_string(),
+            zones,
+            status: ParticipantStatus::Playing,
+            online: true,
+            ready: true,
+            validated: true,
+        }
+    }
+
+    /// The holder `p1` with `p2` at the cap and `p3`, `p4` able to receive.
+    fn menu_info() -> RelayInfo {
+        let mut info = relay_info("holder");
+        info.baton_free_in_s = None;
+        info.members = vec![
+            member_of("p1", "Roger", 2),
+            member_of("p2", "Kahleeya", 5),
+            member_of("p3", "Mira", 1),
+            member_of("p4", "Dax", 0),
+        ];
+        info
+    }
+
+    fn holder_menu(t0: Instant) -> RaceMachine {
+        let mut m = relay_machine("holder", t0);
+        update(&mut m, menu_info(), t0, 0);
+        m
+    }
+
+    /// The machine as a holder whose key is inert, one way per case.
+    fn inert_holders(t0: Instant) -> Vec<(&'static str, RaceMachine)> {
+        let mut out = Vec::new();
+        let mut m = holder_menu(t0);
+        m.handle_message(MachineMessage::RaceStart(10), t0);
+        out.push(("countdown", m));
+        let mut m = holder_menu(t0);
+        m.handle_message(
+            MachineMessage::RaceStatusChange {
+                status: RaceStatus::Finished,
+                current_igt: None,
+            },
+            t0,
+        );
+        out.push(("race finished", m));
+        let mut m = holder_menu(t0);
+        release(&mut m, t0, 0, "h9");
+        out.push(("release waiting", m));
+        let mut m = holder_menu(t0);
+        m.handle_message(take("h1"), t0);
+        out.push(("take in progress", m));
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.members[1].status = ParticipantStatus::Abandoned;
+        set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+        update(&mut m, info, t0, 0);
+        out.push(("own member abandoned", m));
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.team_status = ParticipantStatus::Finished;
+        update(&mut m, info, t0, 0);
+        out.push(("team finished", m));
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.team_status = ParticipantStatus::Unknown;
+        update(&mut m, info, t0, 0);
+        out.push(("unknown team status", m));
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.role = RelayRole::Unknown;
+        update(&mut m, info, t0, 0);
+        out.push(("unknown role", m));
+        let mut m = relay_machine("waiting", t0);
+        update(&mut m, relay_info("waiting"), t0, 0);
+        out.push(("waiting", m));
+        out
+    }
+
+    #[test]
+    fn the_holder_passes_the_baton_to_the_selected_teammate() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        key(&mut m, t0, 0, true);
+        assert!(m.relay_menu_open());
+        assert_eq!(m.relay_menu_selected(), Some("p3"));
+        key(&mut m, t0, 100, false);
+        assert_eq!(m.relay_menu_selected(), Some("p3"), "the opening press");
+        tap(&mut m, t0, 1_000);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        let fx = key_over(&mut m, t0, 2_000, 2_900, Some(IN_ZONE), true);
+        assert!(fx.is_empty() && m.relay_hold_progress(t0 + ms(2_900)) > 0.8);
+        let fx = key_over(&mut m, t0, 3_000, 4_500, Some(IN_ZONE), true);
+        assert_eq!(fx, [(3_000, handoff_to("p4"))], "once, at the second");
+        assert!(!m.relay_menu_open());
+    }
+
+    #[test]
+    fn the_key_is_inert_outside_a_live_run_and_during_a_release() {
+        let t0 = Instant::now();
+        for (case, mut m) in inert_holders(t0) {
+            let mut fx = key_over(&mut m, t0, 100, 200, Some(IN_ZONE), true);
+            assert!(!m.relay_menu_open(), "{case}");
+            fx.extend(key_over(&mut m, t0, 300, 400, Some(IN_ZONE), false));
+            fx.extend(key_over(&mut m, t0, 500, 2_500, Some(IN_ZONE), true));
+            assert!(fx.is_empty() && !m.relay_menu_open(), "{case}: {fx:?}");
+            assert_eq!(m.relay_hold_progress(t0 + ms(2_500)), 0.0, "{case}");
+        }
+    }
+
+    #[test]
+    fn a_press_held_from_before_the_menu_was_possible_does_not_open_it() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        m.handle_message(MachineMessage::RaceStart(3), t0);
+        // Down through the whole countdown and past its end.
+        let fx = key_over(&mut m, t0, 100, 4_000, Some(IN_ZONE), true);
+        assert!(fx.is_empty() && !m.relay_menu_open());
+        key(&mut m, t0, 4_100, false);
+        key(&mut m, t0, 4_200, true);
+        assert!(m.relay_menu_open());
+    }
+
+    #[test]
+    fn a_waiting_runner_takes_a_free_baton_by_holding_the_key() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        update(&mut m, free_info(0), t0, 950);
+        assert!(key_over(&mut m, t0, 1_000, 1_900, chapel(), true).is_empty());
+        let fx = key_over(&mut m, t0, 2_000, 3_000, chapel(), true);
+        assert_eq!(fx, [(2_000, Effect::SendRelayTakeRequest)]);
+    }
+
+    fn free_info(free_in: u32) -> RelayInfo {
+        let mut info = relay_info("waiting");
+        info.baton_free_in_s = Some(free_in);
+        info
+    }
+
+    #[test]
+    fn a_baton_still_counting_down_is_taken_only_by_a_hold_after_the_wait() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        update(&mut m, free_info(42), t0, 950);
+        assert_eq!(m.relay_free_in_s(t0 + ms(18_950)), Some(24));
+        // Held through the wait: that hold started before the offer.
+        let fx = key_over(&mut m, t0, 1_000, 45_000, chapel(), true);
+        assert!(fx.is_empty(), "{fx:?}");
+        key_on(&mut m, t0, 45_100, chapel(), false);
+        let fx = key_over(&mut m, t0, 45_200, 46_300, chapel(), true);
+        assert_eq!(fx, [(46_200, Effect::SendRelayTakeRequest)]);
+    }
+
+    #[test]
+    fn a_waiting_runner_is_offered_nothing_it_could_not_take() {
+        let t0 = Instant::now();
+        let cases: Vec<(&str, Box<dyn Fn(&mut RelayInfo)>)> = vec![
+            (
+                "at the cap",
+                Box::new(|info| info.members[0].zones = info.cap),
+            ),
+            (
+                "not validated",
+                Box::new(|info| info.members[0].validated = false),
+            ),
+            (
+                "holder online",
+                Box::new(|info| info.baton_free_in_s = None),
+            ),
+            (
+                "team finished",
+                Box::new(|info| info.team_status = ParticipantStatus::Finished),
+            ),
+            (
+                "unknown team status",
+                Box::new(|info| info.team_status = ParticipantStatus::Unknown),
+            ),
+            (
+                "unknown role",
+                Box::new(|info| info.role = RelayRole::Unknown),
+            ),
+            (
+                "out",
+                Box::new(|info| info.members[0].status = ParticipantStatus::Abandoned),
+            ),
+        ];
+        for (case, edit) in cases {
+            let mut m = receiver(t0);
+            let mut info = free_info(0);
+            edit(&mut info);
+            update(&mut m, info, t0, 950);
+            let fx = key_over(&mut m, t0, 1_000, 3_000, chapel(), true);
+            assert!(fx.is_empty(), "{case}: {fx:?}");
+        }
+    }
+
+    #[test]
+    fn nothing_is_offered_in_setup_or_the_countdown() {
+        let t0 = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, t0);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), t0);
+        assert!(key_over(&mut m, t0, 0, 3_000, chapel(), true).is_empty());
+        let mut m = receiver(t0);
+        m.handle_message(MachineMessage::RaceStart(10), t0 + ms(900));
+        let mut info = relay_info_with("waiting", "ready");
+        info.baton_free_in_s = Some(0);
+        update(&mut m, info, t0, 950);
+        assert!(key_over(&mut m, t0, 1_000, 4_000, chapel(), true).is_empty());
+    }
+
+    #[test]
+    fn the_take_hold_works_after_a_reconnection_whose_echo_reads_not_ready() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        let mut info = free_info(0);
+        info.members[0].ready = false;
+        m.handle_message(relay_auth("running", Some(info)), t0 + ms(1_000));
+        let fx = key_on(&mut m, t0, 1_050, chapel(), false);
+        assert!(fx.contains(&ready(true)), "sent again: {fx:?}");
+        key_on(&mut m, t0, 1_100, chapel(), false);
+        let fx = key_over(&mut m, t0, 1_200, 2_300, chapel(), true);
+        assert_eq!(fx, [(2_200, Effect::SendRelayTakeRequest)]);
+    }
+
+    #[test]
+    fn a_take_request_is_not_repeated_until_answered_or_bounded() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        update(&mut m, free_info(0), t0, 950);
+        let fx = key_over(&mut m, t0, 1_000, 2_000, chapel(), true);
+        assert_eq!(fx.len(), 1);
+        key_on(&mut m, t0, 2_100, chapel(), false);
+        let fx = key_over(&mut m, t0, 2_200, 3_500, chapel(), true);
+        assert!(fx.is_empty(), "no answer yet: {fx:?}");
+        // The refusal frees it and is shown.
+        m.handle_message(
+            MachineMessage::RelayRefused {
+                code: "not_ready".to_string(),
+                message: "Wait at the Chapel first".to_string(),
+            },
+            t0 + ms(3_600),
+        );
+        assert_eq!(
+            m.get_status(t0 + ms(3_700)),
+            Some("Wait at the Chapel first")
+        );
+        key_on(&mut m, t0, 3_700, chapel(), false);
+        let fx = key_over(&mut m, t0, 3_800, 4_900, chapel(), true);
+        assert_eq!(fx, [(4_800, Effect::SendRelayTakeRequest)]);
+        // Never answered: bounded.
+        key_on(&mut m, t0, 5_000, chapel(), false);
+        let late = 4_800 + crate::core::relay::REQUEST_TIMEOUT.as_millis() as u64;
+        let fx = key_over(&mut m, t0, late - 1_300, late - 200, chapel(), true);
+        assert!(fx.is_empty());
+        key_on(&mut m, t0, late - 100, chapel(), false);
+        let fx = key_over(&mut m, t0, late, late + 1_100, chapel(), true);
+        assert_eq!(fx, [(late + 1_000, Effect::SendRelayTakeRequest)]);
+    }
+
+    #[test]
+    fn the_menu_follows_a_teammate_who_goes_offline() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        tap(&mut m, t0, 1_000);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        let mut info = menu_info();
+        info.members[3].online = false;
+        update(&mut m, info, t0, 1_300);
+        assert_eq!(m.relay_menu_selected(), Some("p3"));
+        let mut info = menu_info();
+        info.members[2].online = false;
+        tap(&mut m, t0, 1_400);
+        assert_eq!(m.relay_menu_selected(), Some("p3"));
+        update(&mut m, info, t0, 1_600);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+    }
+
+    #[test]
+    fn the_highlight_follows_the_same_teammate_in_a_reordered_list() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        tap(&mut m, t0, 1_000);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        // A new teammate joins ahead of p3 and p4.
+        let mut info = menu_info();
+        info.members.insert(1, member_of("p5", "Eve", 0));
+        update(&mut m, info, t0, 1_300);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        // The menu goes on from there: a tap wraps to the first.
+        tap(&mut m, t0, 1_400);
+        assert_eq!(m.relay_menu_selected(), Some("p5"));
+    }
+
+    #[test]
+    fn a_hold_on_a_teammate_who_becomes_unavailable_confirms_nothing() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        key(&mut m, t0, 1_000, true);
+        let mut info = menu_info();
+        info.members[2].online = false;
+        update(&mut m, info, t0, 1_500);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        let fx = key_over(&mut m, t0, 1_600, 3_500, Some(IN_ZONE), true);
+        assert!(fx.is_empty(), "the hold was for p3: {fx:?}");
+        assert_eq!(m.relay_hold_progress(t0 + ms(3_500)), 0.0);
+        // The release is no tap either; a new hold confirms the new highlight.
+        key(&mut m, t0, 3_600, false);
+        assert_eq!(m.relay_menu_selected(), Some("p4"));
+        let fx = key_over(&mut m, t0, 3_700, 4_800, Some(IN_ZONE), true);
+        assert_eq!(fx, [(4_700, handoff_to("p4"))]);
+    }
+
+    #[test]
+    fn a_team_nobody_can_receive_shows_why_and_confirms_nothing() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.members[2].online = false;
+        info.members[3].status = ParticipantStatus::Abandoned;
+        update(&mut m, info, t0, 0);
+        tap(&mut m, t0, 100);
+        assert!(m.relay_menu_open());
+        assert_eq!(m.relay_menu_selected(), None);
+        let rows: Vec<_> = m
+            .relay_menu_rows()
+            .iter()
+            .map(|r| (r.name.as_str(), r.counter.as_str(), r.unavailable))
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                ("Kahleeya", "5/5 zones", Some(Unavailable::AtCap)),
+                ("Mira", "1/5 zones", Some(Unavailable::NotInGame)),
+                ("Dax", "0/5 zones", Some(Unavailable::Out)),
+            ]
+        );
+        tap(&mut m, t0, 1_000);
+        let fx = key_over(&mut m, t0, 2_000, 4_000, Some(IN_ZONE), true);
+        assert!(fx.is_empty());
+        key(&mut m, t0, 4_100, false);
+        key(&mut m, t0, 9_200, false);
+        assert!(!m.relay_menu_open());
+    }
+
+    #[test]
+    fn a_team_of_one_after_abandons_opens_an_empty_menu() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        let mut info = menu_info();
+        info.members.truncate(1);
+        update(&mut m, info, t0, 0);
+        tap(&mut m, t0, 100);
+        assert!(m.relay_menu_open() && m.relay_menu_rows().is_empty());
+        let fx = key_over(&mut m, t0, 1_000, 3_000, Some(IN_ZONE), true);
+        assert!(fx.is_empty() && m.relay_menu_selected().is_none());
+    }
+
+    #[test]
+    fn the_menu_closes_and_a_hold_sends_nothing_when_the_role_changes() {
+        let t0 = Instant::now();
+        type Edit = Box<dyn Fn(&mut RaceMachine)>;
+        let cases: Vec<(&str, Edit)> = vec![
+            (
+                "waiting",
+                Box::new(move |m| update(m, relay_info("waiting"), t0, 2_500)),
+            ),
+            (
+                "out",
+                Box::new(move |m| {
+                    let mut info = menu_info();
+                    set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+                    update(m, info, t0, 2_500);
+                }),
+            ),
+            (
+                "team finished",
+                Box::new(move |m| {
+                    let mut info = menu_info();
+                    info.team_status = ParticipantStatus::Finished;
+                    update(m, info, t0, 2_500);
+                }),
+            ),
+            (
+                "race stopped",
+                Box::new(move |m| {
+                    m.handle_message(
+                        MachineMessage::RaceStatusChange {
+                            status: RaceStatus::Finished,
+                            current_igt: None,
+                        },
+                        t0 + ms(2_500),
+                    );
+                }),
+            ),
+        ];
+        for (case, edit) in cases {
+            let mut m = holder_menu(t0);
+            tap(&mut m, t0, 0);
+            key(&mut m, t0, 2_000, true);
+            edit(&mut m);
+            let fx = key_over(&mut m, t0, 2_600, 4_000, Some(IN_ZONE), true);
+            assert!(fx.is_empty() && !m.relay_menu_open(), "{case}: {fx:?}");
+            // Idle menu: closed too.
+            let mut m = holder_menu(t0);
+            tap(&mut m, t0, 0);
+            edit(&mut m);
+            key(&mut m, t0, 2_600, false);
+            assert!(!m.relay_menu_open(), "{case}");
+        }
+    }
+
+    #[test]
+    fn a_second_confirm_waits_for_the_answer_or_the_bound() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        let fx = key_over(&mut m, t0, 1_000, 2_100, Some(IN_ZONE), true);
+        assert_eq!(fx, [(2_000, handoff_to("p3"))]);
+        // Nothing answered: no menu, no second request.
+        key(&mut m, t0, 2_200, false);
+        tap(&mut m, t0, 2_300);
+        assert!(!m.relay_menu_open());
+        let fx = key_over(&mut m, t0, 3_000, 4_500, Some(IN_ZONE), true);
+        assert!(fx.is_empty());
+        // The refusal is shown and the menu works again.
+        key(&mut m, t0, 4_600, false);
+        m.handle_message(
+            MachineMessage::RelayRefused {
+                code: "target_unavailable".to_string(),
+                message: "This runner cannot take the baton now".to_string(),
+            },
+            t0 + ms(4_700),
+        );
+        assert_eq!(
+            m.get_status(t0 + ms(4_800)),
+            Some("This runner cannot take the baton now")
+        );
+        tap(&mut m, t0, 4_800);
+        assert!(m.relay_menu_open());
+        let fx = key_over(&mut m, t0, 5_000, 6_100, Some(IN_ZONE), true);
+        assert_eq!(fx, [(6_000, handoff_to("p3"))]);
+        // Never answered: the bound frees it.
+        let bound = 6_000 + crate::core::relay::REQUEST_TIMEOUT.as_millis() as u64;
+        key(&mut m, t0, bound - 100, false);
+        assert!(!m.relay_menu_open());
+        tap(&mut m, t0, bound);
+        assert!(m.relay_menu_open());
+    }
+
+    #[test]
+    fn a_refusal_with_the_menu_open_is_shown_and_the_menu_goes_on() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        m.handle_message(
+            MachineMessage::RelayRefused {
+                code: "busy".to_string(),
+                message: "The baton cannot move right now".to_string(),
+            },
+            t0 + ms(300),
+        );
+        assert_eq!(
+            m.get_status(t0 + ms(400)),
+            Some("The baton cannot move right now")
+        );
+        assert!(m.relay_menu_open());
+        let fx = key_over(&mut m, t0, 1_000, 2_100, Some(IN_ZONE), true);
+        assert_eq!(fx, [(2_000, handoff_to("p3"))]);
+    }
+
+    #[test]
+    fn a_release_answers_the_handoff_request() {
+        let t0 = Instant::now();
+        let mut m = holder_menu(t0);
+        tap(&mut m, t0, 0);
+        key_over(&mut m, t0, 1_000, 2_100, Some(IN_ZONE), true);
+        release(&mut m, t0, 2_200, "h9");
+        // The request is answered: once the release is over, the menu is free.
+        key(&mut m, t0, 2_300, false);
+        update(&mut m, relay_info("waiting"), t0, 2_400);
+        key(&mut m, t0, 2_450, false);
+        update(&mut m, menu_info(), t0, 2_500);
+        tap(&mut m, t0, 2_600);
+        assert!(m.relay_menu_open());
+    }
+
+    // The take's IGT is checked before it is acknowledged.
+
+    /// A frame at `at` reading `igt`, on the Chapel, HP 100.
+    fn igt_frame(m: &mut RaceMachine, t0: Instant, at: u64, igt: u32) -> Vec<Effect> {
+        rx_frame(m, t0, at, chapel(), igt, 100, None)
+    }
+
+    #[test]
+    fn a_take_waits_for_the_game_to_read_the_teams_igt() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        for at in (1_200..=1_600).step_by(100) {
+            let fx = igt_frame(&mut m, t0, at, LOCAL_IGT + at as u32);
+            assert!(
+                fx.contains(&Effect::SetIgt { ms: TEAM_IGT }),
+                "{at}: {fx:?}"
+            );
+            assert!(flag_fx(&fx).is_empty(), "{at}: {fx:?}");
+            assert!(m.relay_take_pending());
+        }
+        let fx = igt_frame(&mut m, t0, 1_700, TEAM_IGT);
+        assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
+        assert!(!fx.iter().any(|e| matches!(e, Effect::SetIgt { .. })));
+    }
+
+    #[test]
+    fn a_write_that_takes_one_frame_late_is_acknowledged_then() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = igt_frame(&mut m, t0, 1_200, LOCAL_IGT);
+        assert!(flag_fx(&fx).is_empty() && fx.contains(&Effect::SetIgt { ms: TEAM_IGT }));
+        let fx = igt_frame(&mut m, t0, 1_300, TEAM_IGT + 16);
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+    }
+
+    #[test]
+    fn a_take_whose_igt_never_reads_right_is_acknowledged_at_the_bound() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(&mut m, t0, take("h1"));
+        local(&mut m, t0, 1_100, chapel());
+        applied(&mut m, t0, 1_150, "h1");
+        let bound = 1_100 + crate::core::relay::APPLY_ABANDON.as_millis() as u64;
+        for at in (1_200..bound).step_by(100) {
+            let fx = igt_frame(&mut m, t0, at, LOCAL_IGT);
+            assert!(!fx.contains(&taken("h1")), "{at}: {fx:?}");
+        }
+        let fx = igt_frame(&mut m, t0, bound, LOCAL_IGT);
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
+        assert_eq!(
+            m.get_status(t0 + ms(bound)),
+            Some("Baton taken: items may be missing")
+        );
+    }
+
+    #[test]
+    fn a_take_at_igt_zero_is_acknowledged_at_once() {
+        let t0 = Instant::now();
+        let mut m = receiver(t0);
+        receive(
+            &mut m,
+            t0,
+            take_msg("h1", Some(take_state()), 0, &[], Some(ZONE_WARP)),
+        );
+        let fx = local(&mut m, t0, 1_100, chapel());
+        assert!(fx.contains(&Effect::SetIgt { ms: 0 }), "{fx:?}");
+        applied(&mut m, t0, 1_150, "h1");
+        let fx = igt_frame(&mut m, t0, 1_200, 0);
+        assert!(fx.contains(&taken("h1")), "{fx:?}");
     }
 }
