@@ -888,9 +888,10 @@ impl RaceTracker {
             });
     }
 
-    /// The waiting runner's banner, top-centre for as long as it waits: the
-    /// title in its tone (fog, ember or verdigris), a line, a detail and,
-    /// when the detail is the hold prompt, the hold bar under it. Same
+    /// The waiting runner's banner, top-centre for as long as it waits (the
+    /// giver's "BATON PASSED" first): the title in its tone (fog, brass,
+    /// ember or verdigris), a line (pulsing on "BATON PASSED"), a detail
+    /// and, when the detail is the hold prompt, the hold bar under it. Same
     /// caching as the menu.
     fn render_relay_wait(&self, ui: &hudhook::imgui::Ui, bufs: &mut RenderBuffers) {
         let now = std::time::Instant::now();
@@ -898,9 +899,7 @@ impl RaceTracker {
             return;
         }
         let (Some(wait), Some(fonts)) = (
-            self.machine
-                .relay_view()
-                .and_then(|view| view.wait.as_ref()),
+            self.machine.relay_wait_banner(),
             self.overlay_fonts.as_ref(),
         ) else {
             return;
@@ -920,6 +919,10 @@ impl RaceTracker {
             BlockTone::Ember => c.danger,
             BlockTone::Verdigris => c.success,
         };
+        // The line pulses on the giver's "BATON PASSED" banner (1.0 otherwise).
+        let line_alpha = self.machine.relay_wait_line_alpha(now);
+        let [r, g, b, a] = c.text;
+        let line_color = [r, g, b, a * line_alpha];
 
         let edge = [c.ground[0], c.ground[1], c.ground[2], GRADIENT_ALPHA];
         let clear = [c.ground[0], c.ground[1], c.ground[2], 0.0];
@@ -933,6 +936,7 @@ impl RaceTracker {
         );
 
         let shadow_color = [0.0, 0.0, 0.0, 0.9];
+        let line_shadow = [0.0, 0.0, 0.0, 0.9 * line_alpha];
         let _pad = ui.push_style_var(StyleVar::WindowPadding([0.0, 0.0]));
         let flags = WindowFlags::NO_DECORATION
             | WindowFlags::NO_INPUTS
@@ -984,8 +988,8 @@ impl RaceTracker {
                     layout.center_x - cuts.width(CUT_LINE) * 0.5,
                     layout.line_y,
                     layout.shadow,
-                    c.text,
-                    shadow_color,
+                    line_color,
+                    line_shadow,
                 );
                 ui.set_window_font_scale(layout.detail_px / BANNER_BODY_ATLAS_PX);
                 if !detail.is_empty() {

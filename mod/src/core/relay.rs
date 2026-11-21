@@ -7,12 +7,15 @@
 //! gate's exit; the seed lowers a warp flag itself after the warp. The race
 //! machine decides when each is written (`RaceMachine::maintain_relay`);
 //! this module holds the constants, the records of a release, a capture and
-//! a take in progress, and the retry timing of a warp flag. Pure: every
-//! method takes the wall time (`now`).
+//! a take in progress, the retry timing of a warp flag, and how long the
+//! giver's "BATON PASSED" banner lasts. Pure: every method takes the wall
+//! time (`now`).
 
 use std::time::{Duration, Instant};
 
+use crate::core::item_feed::ItemFeed;
 use crate::core::protocol::CharacterState;
+use crate::core::relay_view::WaitBanner;
 
 /// Map id of the Chapel, the start zone, as the position read gives it
 /// (area 10, block 1, no sub-block: `m10_01_00_00`).
@@ -161,6 +164,47 @@ pub struct CaptureInFlight {
     pub asked_at: Instant,
     /// The socket dropped since it was asked: its answer is stale.
     pub link_lost: bool,
+}
+
+/// The giver's "BATON PASSED" banner, in place of the waiting banner: shown
+/// from the flip until the player is blocked (a load started, the Chapel
+/// reached, the return given up), and never shorter than a transient banner
+/// (`ItemFeed::BANNER_DURATION`), so a giver warped at once or already at
+/// the Chapel still reads it.
+#[derive(Debug)]
+pub struct PassedBanner {
+    banner: WaitBanner,
+    since: Instant,
+    blocked: bool,
+}
+
+impl PassedBanner {
+    pub fn new(banner: WaitBanner, now: Instant) -> Self {
+        Self {
+            banner,
+            since: now,
+            blocked: false,
+        }
+    }
+
+    pub fn banner(&self) -> &WaitBanner {
+        &self.banner
+    }
+
+    /// When it appeared (the flip): its line pulses from then.
+    pub fn since(&self) -> Instant {
+        self.since
+    }
+
+    /// The player is blocked: the banner goes once its minimum is over.
+    pub fn block(&mut self) {
+        self.blocked = true;
+    }
+
+    /// Whether it has done its time at `now`.
+    pub fn over(&self, now: Instant) -> bool {
+        self.blocked && now.saturating_duration_since(self.since) >= ItemFeed::BANNER_DURATION
+    }
 }
 
 /// A lowered warp flag stays down this long before it is raised again.
@@ -341,5 +385,30 @@ mod tests {
         assert_eq!(free_in_s(Some(60), Duration::from_millis(18_200)), Some(42));
         assert_eq!(free_in_s(Some(60), Duration::from_secs(75)), Some(0));
         assert_eq!(free_in_s(None, Duration::from_secs(5)), None);
+    }
+
+    fn passed() -> PassedBanner {
+        PassedBanner::new(
+            crate::core::relay_view::passed_banner("Kahleeya"),
+            Instant::now(),
+        )
+    }
+
+    #[test]
+    fn the_passed_banner_lasts_its_minimum_even_when_blocked_at_once() {
+        let mut b = passed();
+        let t0 = b.since();
+        b.block();
+        assert!(!b.over(t0 + ms(3_999)));
+        assert!(b.over(t0 + ItemFeed::BANNER_DURATION));
+    }
+
+    #[test]
+    fn the_passed_banner_outlives_its_minimum_until_blocked() {
+        let mut b = passed();
+        let t0 = b.since();
+        assert!(!b.over(t0 + ms(30_000)), "not blocked: still shown");
+        b.block();
+        assert!(b.over(t0 + ms(30_000)));
     }
 }

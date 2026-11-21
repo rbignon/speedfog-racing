@@ -3,6 +3,8 @@
 //! offline holder's countdown) and cached; the drawing only reads them.
 //! Nothing is measured or drawn here.
 
+use std::time::Duration;
+
 use crate::core::protocol::{ParticipantStatus, RelayInfo, RelayMember, RelayRole};
 use crate::core::relay_menu::{availability, MENU_AUTO_CLOSE};
 
@@ -16,6 +18,13 @@ pub const NOT_READY_TEXT: &str = "Not ready yet: wait at the Chapel.";
 /// Replaces every key hint while the baton key is unbound (`relay = "none"`
 /// in the config): the player is told what to do, no key is named.
 pub const UNBOUND_TEXT: &str = "No baton key bound: set `relay` in the config";
+/// The line under "BATON PASSED TO <RUNNER>" while the giver is on its way
+/// back to the Chapel.
+pub const RETURNING_TEXT: &str = "Returning to the Chapel of Anticipation...";
+/// One pulse of a pulsing line: full, down to `PULSE_MIN`, full again.
+pub const PULSE_PERIOD: Duration = Duration::from_millis(1200);
+/// The faintest a pulsing line gets: it never vanishes.
+pub const PULSE_MIN: f32 = 0.35;
 /// Stands for a name the server left empty or did not send.
 const UNKNOWN_NAME: &str = "A teammate";
 const UNKNOWN_HOLDER: &str = "The holder";
@@ -91,6 +100,27 @@ fn name_of(member: &RelayMember) -> &str {
 
 fn counter(member: &RelayMember, cap: u32) -> String {
     format!("{}/{} zones", member.zones, cap)
+}
+
+/// The giver's banner from the flip until it is blocked (`PassedBanner`):
+/// the recipient's name in the title, the return to the Chapel below it.
+pub fn passed_banner(to_name: &str) -> WaitBanner {
+    WaitBanner {
+        tone: BlockTone::Brass,
+        title: format!("BATON PASSED TO {}", to_name.to_uppercase()),
+        line: RETURNING_TEXT.to_string(),
+        detail: String::new(),
+        hold_bar: false,
+    }
+}
+
+/// Opacity of a pulsing line `elapsed` after it appeared: 1 at the start of
+/// every `PULSE_PERIOD`, `PULSE_MIN` halfway through, a smooth cosine in
+/// between.
+pub fn pulse_alpha(elapsed: Duration) -> f32 {
+    let phase = (elapsed.as_secs_f32() / PULSE_PERIOD.as_secs_f32()).fract();
+    let wave = 0.5 + 0.5 * (phase * std::f32::consts::TAU).cos();
+    PULSE_MIN + (1.0 - PULSE_MIN) * wave
 }
 
 /// "9 of 12" from the displayed layer and the total; `None` unless both are
@@ -232,7 +262,9 @@ fn waiting_view(
                 let key = key.unwrap_or_default();
                 (
                     match zone {
-                        Some(zone) => format!("Hold {key} to take the baton and restart {zone}."),
+                        Some(zone) => {
+                            format!("Hold {key} to take the baton at the entrance of {zone}.")
+                        }
                         None => format!("Hold {key} to take the baton."),
                     },
                     true,
@@ -403,7 +435,7 @@ mod tests {
         assert_eq!(w.line, "Kahleeya has been offline for over a minute");
         assert_eq!(
             w.detail,
-            "Hold F8 to take the baton and restart Leyndell, Royal Capital."
+            "Hold F8 to take the baton at the entrance of Leyndell, Royal Capital."
         );
         let capped = build(
             &info("waiting", false, Some(0)),
@@ -478,7 +510,7 @@ mod tests {
         assert_eq!(
             (detail, bar),
             (
-                "Hold F8 to take the baton and restart Leyndell, Royal Capital.",
+                "Hold F8 to take the baton at the entrance of Leyndell, Royal Capital.",
                 true
             )
         );
@@ -797,5 +829,20 @@ mod tests {
         assert_eq!(holder.baton_hint, "G pass");
         assert!(holder.menu_hint.starts_with("G next   hold G to pass"));
         assert!(!format!("{free:?}{holder:?}").contains("F8"));
+    }
+
+    #[test]
+    fn the_pulse_stays_visible_and_peaks_at_each_period() {
+        let period = PULSE_PERIOD.as_secs_f32();
+        assert!((pulse_alpha(Duration::ZERO) - 1.0).abs() < 1e-4);
+        assert!((pulse_alpha(PULSE_PERIOD) - 1.0).abs() < 1e-4);
+        assert!((pulse_alpha(PULSE_PERIOD / 2) - PULSE_MIN).abs() < 1e-4);
+        for step in 0..=200 {
+            let alpha = pulse_alpha(Duration::from_secs_f32(period * 2.0 * step as f32 / 200.0));
+            assert!(
+                (PULSE_MIN - 1e-4..=1.0 + 1e-4).contains(&alpha),
+                "{step}: {alpha}"
+            );
+        }
     }
 }

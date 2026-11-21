@@ -27,13 +27,13 @@ use crate::core::protocol::{
     RaceStatus, RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
 };
 use crate::core::relay::{
-    self, ApplyInFlight, CaptureInFlight, FlagWarp, PendingRelease, PendingTake, TakePhase,
-    WarpStep,
+    self, ApplyInFlight, CaptureInFlight, FlagWarp, PassedBanner, PendingRelease, PendingTake,
+    TakePhase, WarpStep,
 };
 use crate::core::relay_apply::ApplyEnd;
 use crate::core::relay_items;
 use crate::core::relay_menu::{self, HandoffMenu, HoldKey, MenuEvent, MenuRow};
-use crate::core::relay_view::{self, RelayView};
+use crate::core::relay_view::{self, RelayView, WaitBanner};
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -746,6 +746,9 @@ pub struct RaceMachine {
     /// The recipient of the last answered release and when it was answered:
     /// the banner waits for the server's flip.
     relay_passed: Option<(String, Instant)>,
+    /// The giver's "BATON PASSED" banner, in place of the waiting banner
+    /// from the flip until the player is blocked (`PassedBanner`).
+    relay_passed_banner: Option<PassedBanner>,
     /// The `relay_take` received and not yet acknowledged; given up when
     /// the server names another holder or none, the runner's relay ends or
     /// the race stops. There is no local take timeout.
@@ -987,6 +990,7 @@ impl RaceMachine {
             relay_retry_at: None,
             relay_checkpoint_due: false,
             relay_passed: None,
+            relay_passed_banner: None,
             relay_take: None,
             relay_apply: None,
             relay_apply_gen: 0,
@@ -1476,12 +1480,27 @@ impl RaceMachine {
     /// banner and no countdown (the fullscreen countdown's ring and the item
     /// banner hang from the same top-centre band, so the banner yields).
     pub fn relay_wait_visible(&self, now: Instant) -> bool {
-        self.relay_view
-            .as_ref()
-            .is_some_and(|view| view.wait.is_some())
+        self.relay_wait_banner().is_some()
             && !self.relay_menu.is_open()
             && self.item_banner().is_none()
             && !self.is_countdown_active(now)
+    }
+
+    /// The top-centre banner of a waiting runner: the giver's "BATON PASSED"
+    /// banner while it lasts, else the view's waiting banner.
+    pub fn relay_wait_banner(&self) -> Option<&WaitBanner> {
+        match &self.relay_passed_banner {
+            Some(passed) => Some(passed.banner()),
+            None => self.relay_view.as_ref().and_then(|view| view.wait.as_ref()),
+        }
+    }
+
+    /// Opacity of the waiting banner's line at `now`: the "BATON PASSED"
+    /// banner's line pulses, every other line is opaque.
+    pub fn relay_wait_line_alpha(&self, now: Instant) -> f32 {
+        self.relay_passed_banner.as_ref().map_or(1.0, |passed| {
+            relay_view::pulse_alpha(now.saturating_duration_since(passed.since()))
+        })
     }
 
     /// The holder's menu is on screen: it wins over the item banner (the
@@ -1519,7 +1538,7 @@ impl RaceMachine {
     /// The waiting banner's last line and whether it is the hold prompt
     /// itself (the hold bar goes under it), decided together.
     fn relay_wait_prompt(&self) -> (&str, bool) {
-        let Some(wait) = self.relay_view.as_ref().and_then(|v| v.wait.as_ref()) else {
+        let Some(wait) = self.relay_wait_banner() else {
             return ("", false);
         };
         if wait.hold_bar {
@@ -1722,6 +1741,7 @@ impl RaceMachine {
             self.relay_release = None;
             self.relay_checkpoint_due = false;
             self.relay_passed = None;
+            self.relay_passed_banner = None;
         }
         let named = relay.as_ref().and_then(|r| r.holder_id.as_deref());
         let named_me = named.is_some() && named == self.my_participant_id.as_deref();
@@ -2878,16 +2898,8 @@ impl RaceMachine {
                         if now.saturating_duration_since(answered_at) < relay::RELEASE_WINDOW
                             && !self.relay_over()
                         {
-                            self.item_feed.push_banner(
-                                FeedBanner {
-                                    icon: String::new(),
-                                    title: format!("BATON PASSED TO {}", to_name.to_uppercase()),
-                                    line: String::new(),
-                                    detail: String::new(),
-                                    tone: FeedTone::Gain,
-                                },
-                                now,
-                            );
+                            self.relay_passed_banner =
+                                Some(PassedBanner::new(relay_view::passed_banner(&to_name), now));
                         }
                     }
                 }
@@ -4894,6 +4906,27 @@ impl RaceMachine {
             }
         }
 
+        // The giver's "BATON PASSED" banner lasts until the player is
+        // blocked (any load, the warp's or a death's; the Chapel; a return
+        // given up), its minimum done, and never past the runner's wait.
+        let blocked = !readable
+            || map == Some(relay::CHAPEL_MAP_ID)
+            || self.relay_warp_given_up
+            || self.relay_warp_landings >= relay::WARP_LANDINGS_MAX;
+        let still_waiting = self.relay_waiting_live();
+        if let Some(passed) = self.relay_passed_banner.as_mut() {
+            if blocked {
+                passed.block();
+            }
+        }
+        if self
+            .relay_passed_banner
+            .as_ref()
+            .is_some_and(|passed| !still_waiting || passed.over(now))
+        {
+            self.relay_passed_banner = None;
+        }
+
         if let Some(warp) = self.relay_zone_warp.as_mut() {
             // As the warp to the Chapel: never a write on an unsettled
             // frame, an unloaded one ends it. It counts no landing.
@@ -5170,8 +5203,8 @@ impl RaceMachine {
                 }
                 self.relay_zone_warp = Some(warp);
                 match &take.zone_name {
-                    Some(zone) => format!("Restart {zone}"),
-                    None => "Restart the team's zone".to_string(),
+                    Some(zone) => format!("You start at the entrance of {zone}"),
+                    None => "You start at the entrance of the team's zone".to_string(),
                 }
             }
             None => "You start from the Chapel".to_string(),
@@ -5690,7 +5723,7 @@ impl RaceMachine {
 mod tests {
     use super::*;
     use crate::core::relay_menu::Unavailable;
-    use crate::core::relay_view::{NOT_READY_TEXT, REQUEST_TEXT};
+    use crate::core::relay_view::{NOT_READY_TEXT, PULSE_PERIOD, REQUEST_TEXT, RETURNING_TEXT};
 
     // ------------------------------------------------------------------
     // Harness
@@ -14457,8 +14490,7 @@ mod tests {
         assert!(m.item_banner().is_none());
 
         update(&mut m, relay_info("waiting"), t0, 6_050);
-        assert_eq!(m.item_banner().unwrap().title, "BATON PASSED TO KAHLEEYA");
-        assert_eq!(m.item_banner().unwrap().line, "");
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
         let fx = go_over(&mut m, t0, 6_100, 14_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
         let lock_at = times_of(&fx, &lock(true))[0];
@@ -14481,7 +14513,11 @@ mod tests {
         assert!(m.item_banner().is_none());
         // 16 s after the answer a takeover turns the runner waiting.
         update(&mut m, relay_info("waiting"), t0, 16_200);
-        assert!(m.item_banner().is_none(), "no BATON PASSED for a takeover");
+        assert_eq!(
+            wait_title(&m),
+            "WAITING FOR THE BATON",
+            "no BATON PASSED for a takeover"
+        );
         let fx = go_over(&mut m, t0, 16_300, 17_000, Some(IN_ZONE));
         assert_eq!(times_of(&fx, &lock(true)).len(), 1);
     }
@@ -14493,7 +14529,119 @@ mod tests {
         // An update that reads holder in between does not forget the release.
         update(&mut m, relay_info("holder"), t0, 1_000);
         update(&mut m, relay_info("waiting"), t0, 14_000);
-        assert_eq!(m.item_banner().unwrap().title, "BATON PASSED TO KAHLEEYA");
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+    }
+
+    /// The title of the top-centre banner a waiting runner reads, or "".
+    fn wait_title(m: &RaceMachine) -> &str {
+        m.relay_wait_banner().map_or("", |b| b.title.as_str())
+    }
+
+    /// A holder on `map` (a loading exit at 0) answers a release at 150;
+    /// the server flips at `flip`.
+    fn passed_at(map: Option<u32>, flip: u64) -> (RaceMachine, Instant) {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, map);
+        release(&mut m, t0, 50, "h1");
+        let fx = go(&mut m, t0, 100, map);
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        answer(&mut m, t0, 150, Some("h1"), Some(char_state()));
+        update(&mut m, relay_info("waiting"), t0, flip);
+        (m, t0)
+    }
+
+    #[test]
+    fn the_passed_banner_holds_until_the_warp_loads() {
+        let (mut m, t0) = passed_at(Some(IN_ZONE), 200);
+        assert!(m.item_banner().is_none(), "not a transient banner");
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+        assert_eq!(m.relay_wait_banner().unwrap().line, RETURNING_TEXT);
+        assert_eq!(m.relay_wait_detail(), "");
+        let warp_at = run_until_warp(&mut m, t0, 300);
+        assert!(warp_at >= 200 + 4_500, "past the minimum: {warp_at}");
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+        go(&mut m, t0, warp_at + 16, None);
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+    }
+
+    #[test]
+    fn the_passed_banner_lasts_four_seconds_at_the_chapel() {
+        let (mut m, t0) = passed_at(chapel(), 200);
+        go_over(&mut m, t0, 300, 4_100, chapel());
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+        go(&mut m, t0, 4_200, chapel());
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+    }
+
+    #[test]
+    fn a_capped_giver_keeps_the_passed_banner_over_its_load_for_four_seconds() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        let mut capped = relay_info("holder");
+        capped.gates_locked = true;
+        update(&mut m, capped, t0, 100);
+        go_over(&mut m, t0, 200, 8_000, Some(IN_ZONE));
+        release(&mut m, t0, 8_050, "h1");
+        let fx = go(&mut m, t0, 8_100, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        answer(&mut m, t0, 8_150, Some("h1"), Some(char_state()));
+        update(&mut m, relay_info("waiting"), t0, 8_200);
+        let fx = go(&mut m, t0, 8_300, Some(IN_ZONE));
+        assert!(fx.contains(&warp(true)), "warped at once: {fx:?}");
+        go_over(&mut m, t0, 8_400, 12_100, None);
+        assert_eq!(wait_title(&m), "BATON PASSED TO KAHLEEYA");
+        go(&mut m, t0, 12_200, None);
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+    }
+
+    #[test]
+    fn the_passed_banner_ends_when_the_return_is_given_up() {
+        let (mut m, t0) = passed_at(Some(IN_ZONE), 200);
+        go_over(&mut m, t0, 300, 15_000, Some(IN_ZONE));
+        assert_eq!(
+            wait_title(&m),
+            "BATON PASSED TO KAHLEEYA",
+            "the warp is still retried"
+        );
+        go_over(&mut m, t0, 15_100, 40_000, Some(IN_ZONE));
+        assert!(m.relay_warp_given_up);
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+    }
+
+    #[test]
+    fn the_passed_banner_ends_when_the_runner_holds_again() {
+        let (mut m, t0) = passed_at(Some(IN_ZONE), 200);
+        update(&mut m, relay_info("holder"), t0, 1_000);
+        go(&mut m, t0, 1_100, Some(IN_ZONE));
+        assert!(
+            m.relay_wait_banner().is_none(),
+            "{:?}",
+            m.relay_wait_banner()
+        );
+    }
+
+    #[test]
+    fn the_passed_banner_goes_with_the_relay() {
+        let (mut m, t0) = passed_at(Some(IN_ZONE), 200);
+        m.handle_message(relay_auth("running", None), t0 + ms(1_000));
+        go(&mut m, t0, 1_100, Some(IN_ZONE));
+        assert!(
+            m.relay_wait_banner().is_none(),
+            "{:?}",
+            m.relay_wait_banner()
+        );
+    }
+
+    #[test]
+    fn the_returning_line_pulses_only_while_the_passed_banner_shows() {
+        let (mut m, t0) = passed_at(chapel(), 200);
+        let half = |at: u64| t0 + ms(at) + PULSE_PERIOD / 2;
+        assert!(m.relay_wait_line_alpha(half(200)) < 0.5);
+        go_over(&mut m, t0, 300, 4_200, chapel());
+        assert_eq!(wait_title(&m), "WAITING FOR THE BATON");
+        assert_eq!(m.relay_wait_line_alpha(half(4_200)), 1.0);
     }
 
     #[test]
@@ -15222,7 +15370,7 @@ mod tests {
         assert_eq!(m.relay_role(), Some(RelayRole::Holder));
         let banner = m.item_banner().unwrap();
         assert_eq!(banner.title, "YOU HAVE THE BATON");
-        assert_eq!(banner.line, "Restart Stormveil Castle");
+        assert_eq!(banner.line, "You start at the entrance of Stormveil Castle");
         assert_eq!(banner.tone, FeedTone::Gain);
         let fx = team_over(&mut m, t0, 4_300, 4_900, chapel(), 1_100);
         assert_eq!(acks(&fx), 0, "acknowledged once");
@@ -15253,7 +15401,7 @@ mod tests {
     }
 
     #[test]
-    fn a_take_whose_zone_has_no_name_still_says_restart() {
+    fn a_take_whose_zone_has_no_name_still_names_the_entrance() {
         let t0 = Instant::now();
         let mut m = receiver(t0);
         let mut msg = take("h1");
@@ -15265,7 +15413,10 @@ mod tests {
         applied(&mut m, t0, 1_150, "h1");
         let fx = team(&mut m, t0, 1_200, chapel(), 1_100);
         assert_eq!(flag_fx(&fx), [&lock(false), &zone_warp(true), &taken("h1")]);
-        assert_eq!(m.item_banner().unwrap().line, "Restart the team's zone");
+        assert_eq!(
+            m.item_banner().unwrap().line,
+            "You start at the entrance of the team's zone"
+        );
     }
 
     #[test]
