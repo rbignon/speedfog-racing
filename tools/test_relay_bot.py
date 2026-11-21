@@ -11,6 +11,7 @@ import pytest
 from relay_bot import (
     FRESH_IGT_MS,
     Bot,
+    finish_warning,
     next_action,
     next_gate,
     parse_team,
@@ -283,3 +284,8 @@ def test_parse_team_rejects_what_a_run_cannot_use() -> None:
     for bad in ("Alpha", "=a,b", "Alpha=a", "Alpha=a,a", "Alpha=a,"):
         with pytest.raises(ValueError):
             parse_team(bad)
+
+
+def test_finish_warns_unless_the_team_is_at_the_final_boss() -> None:
+    assert finish_warning(GRAPH, "a") is not None
+    assert finish_warning(GRAPH, "final") is None
