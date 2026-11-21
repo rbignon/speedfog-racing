@@ -13,7 +13,9 @@ use tungstenite::stream::MaybeTlsStream;
 use tungstenite::{connect, Message, WebSocket};
 
 use super::config::ServerSettings;
-use crate::core::protocol::{is_permanent_close, ClientMessage, ServerMessage, PROTOCOL_VERSION};
+use crate::core::protocol::{
+    is_permanent_close, CharacterState, ClientMessage, ServerMessage, PROTOCOL_VERSION,
+};
 use crate::profile_span;
 
 // =============================================================================
@@ -62,6 +64,11 @@ pub enum OutgoingMessage {
     },
     RelayReady {
         ready: bool,
+    },
+    RelayState {
+        handoff_id: Option<String>,
+        state: CharacterState,
+        igt_ms: u32,
     },
     Shutdown,
 }
@@ -213,6 +220,18 @@ impl RaceWebSocketClient {
     pub fn send_relay_ready(&self, ready: bool) {
         if let Some(tx) = &self.tx {
             if let Err(e) = tx.try_send(OutgoingMessage::RelayReady { ready }) {
+                warn!("[WS] Failed to queue message: {}", e);
+            }
+        }
+    }
+
+    pub fn send_relay_state(&self, handoff_id: Option<String>, state: CharacterState, igt_ms: u32) {
+        if let Some(tx) = &self.tx {
+            if let Err(e) = tx.try_send(OutgoingMessage::RelayState {
+                handoff_id,
+                state,
+                igt_ms,
+            }) {
                 warn!("[WS] Failed to queue message: {}", e);
             }
         }
@@ -708,6 +727,27 @@ fn message_loop(
                     .send(Message::Text(json))
                     .map_err(|e| e.to_string())?;
             }
+            Ok(OutgoingMessage::RelayState {
+                handoff_id,
+                state,
+                igt_ms,
+            }) => {
+                info!(
+                    ?handoff_id,
+                    igt_ms,
+                    items = state.items.len(),
+                    "[WS] Sending: relay_state"
+                );
+                let msg = ClientMessage::RelayState {
+                    handoff_id,
+                    state,
+                    igt_ms,
+                };
+                let json = serde_json::to_string(&msg).map_err(|e| e.to_string())?;
+                socket
+                    .send(Message::Text(json))
+                    .map_err(|e| e.to_string())?;
+            }
             Ok(OutgoingMessage::Shutdown) => return Ok(()),
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => return Err("Channel disconnected".to_string()),
@@ -892,6 +932,20 @@ fn message_loop(
                                 .is_err()
                             {
                                 warn!("[WS] Incoming channel full/closed: relay_update dropped");
+                            }
+                        }
+                        ServerMessage::RelayRelease {
+                            handoff_id,
+                            to_name,
+                        } => {
+                            if incoming_tx
+                                .send(MachineMessage::RelayRelease {
+                                    handoff_id,
+                                    to_name,
+                                })
+                                .is_err()
+                            {
+                                warn!("[WS] Incoming channel full/closed: relay_release dropped");
                             }
                         }
                         ServerMessage::RelayRefused { code, message } => {

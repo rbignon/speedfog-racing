@@ -22,11 +22,12 @@ use crate::core::map_utils::format_map_id;
 use crate::core::memory_effects::{MemoryEffect, MemoryEffects, MemoryState};
 use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
-    CameraVariant, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder,
-    ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus,
-    RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
+    CameraVariant, CharacterState, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload,
+    ItemReminder, ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods,
+    RaceStatus, RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
 };
-use crate::core::relay::{self, FlagWarp, WarpStep};
+use crate::core::relay::{self, CaptureInFlight, FlagWarp, PendingRelease, WarpStep};
+use crate::core::relay_items;
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
 
@@ -160,6 +161,11 @@ pub enum MachineMessage {
     },
     /// The relay team's state, replaced whole.
     RelayUpdate(RelayInfo),
+    /// The server asks the holder for its state: a handoff to `to_name`.
+    RelayRelease {
+        handoff_id: String,
+        to_name: String,
+    },
     /// The server refused a relay request: `message` is shown, `code` logged.
     RelayRefused {
         code: String,
@@ -307,6 +313,19 @@ pub enum Effect {
     /// its lock raised (readiness does not survive the socket).
     SendRelayReady {
         ready: bool,
+    },
+    /// Capture the character's state on the shell's worker thread; the
+    /// result comes back through `RaceMachine::relay_state_captured` with the
+    /// same `handoff_id` (`None` for a zone checkpoint).
+    CaptureRelayState {
+        handoff_id: Option<String>,
+    },
+    /// Send a captured state: the answer to a release (`handoff_id` set) or
+    /// a checkpoint (`None`), already fitted to the wire caps.
+    SendRelayState {
+        handoff_id: Option<String>,
+        state: CharacterState,
+        igt_ms: u32,
     },
     SendStatusUpdate {
         igt_ms: u32,
@@ -636,6 +655,16 @@ pub struct RaceMachine {
     /// The holder's gates are locked (the cap), and its banner is due.
     relay_capped: bool,
     relay_cap_due: bool,
+    /// A `relay_release` waiting for its capture and its answer.
+    relay_release: Option<PendingRelease>,
+    /// The capture asked of the shell and not yet answered (one at a time).
+    relay_capture: Option<CaptureInFlight>,
+    /// A zone was revealed to a connected live holder this frame: a
+    /// checkpoint capture is wanted if none is in flight.
+    relay_checkpoint_due: bool,
+    /// The recipient of the last answered release and when it was answered:
+    /// the banner waits for the server's flip.
+    relay_passed: Option<(String, Instant)>,
     /// The Hunter sent after this runner (`maintain_hunter`).
     hunter: Hunter,
     /// The text of the reminder row his `Found` added: the row goes when he
@@ -814,6 +843,10 @@ impl RaceMachine {
             relay_ready_sent: None,
             relay_capped: false,
             relay_cap_due: false,
+            relay_release: None,
+            relay_capture: None,
+            relay_checkpoint_due: false,
+            relay_passed: None,
             hunter: Hunter::default(),
             hunter_row: None,
             last_loading_exit: None,
@@ -1240,6 +1273,24 @@ impl RaceMachine {
             && !self.relay_over()
     }
 
+    /// The runner holds the baton of a relay being played: the only state in
+    /// which its state is asked for or sent. An unknown role is no holder.
+    fn relay_holder_live(&self) -> bool {
+        self.relay_role() == Some(RelayRole::Holder) && self.relay_live()
+    }
+
+    /// The socket is down: what was waiting on it is stale. A release the
+    /// server will have cancelled is forgotten (a reconnection does not
+    /// repeat it), a capture in flight will answer for nothing, and a
+    /// checkpoint not yet asked is dropped (the next zone sends the latest).
+    fn relay_link_lost(&mut self) {
+        self.relay_release = None;
+        self.relay_checkpoint_due = false;
+        if let Some(capture) = self.relay_capture.as_mut() {
+            capture.link_lost = true;
+        }
+    }
+
     /// Replace the relay info whole. A role turning `Waiting` drops the zone
     /// just left (a waiting runner is not in the world its team is playing:
     /// its exits must not stay on the panel); an unknown role changes
@@ -1258,6 +1309,11 @@ impl RaceMachine {
             .is_some_and(|r| r.role == RelayRole::Holder && r.gates_locked);
         self.relay_cap_due = capped && (self.relay_cap_due || !self.relay_capped);
         self.relay_capped = capped;
+        if relay.is_none() {
+            self.relay_release = None;
+            self.relay_checkpoint_due = false;
+            self.relay_passed = None;
+        }
         self.relay = relay;
         if turns_waiting
             && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
@@ -1501,10 +1557,12 @@ impl RaceMachine {
                         self.set_status("Server connected".to_string(), now);
                     }
                     ConnectionStatus::Reconnecting => {
+                        self.relay_link_lost();
                         self.flag_buffer.park_deferred();
                         self.set_status("Reconnecting to server...".to_string(), now);
                     }
                     ConnectionStatus::Error => {
+                        self.relay_link_lost();
                         // The permanent red banner already shows this
                         // failure; no gold flash on top of it.
                         if self.permanent_error.is_none() {
@@ -1516,6 +1574,7 @@ impl RaceMachine {
                         }
                     }
                     ConnectionStatus::Disconnected => {
+                        self.relay_link_lost();
                         self.set_status("Disconnected".to_string(), now);
                     }
                     ConnectionStatus::Connecting => {
@@ -2222,7 +2281,56 @@ impl RaceMachine {
             MachineMessage::RelayUpdate(relay) => {
                 self.last_received_debug = Some(format!("relay_update({:?})", relay.role));
                 debug!(role = ?relay.role, team_status = ?relay.team_status, "[RELAY] Update");
+                let was_waiting = self.relay_role() == Some(RelayRole::Waiting);
+                let turns_waiting = relay.role == RelayRole::Waiting && !was_waiting;
                 self.set_relay(Some(relay));
+                // The server's flip: only now is the baton passed. An answer
+                // older than the server's own wait for it was another
+                // handoff's (a takeover reads the same).
+                if turns_waiting {
+                    if let Some((to_name, answered_at)) = self.relay_passed.take() {
+                        if now.saturating_duration_since(answered_at) < relay::RELEASE_WINDOW
+                            && !self.relay_over()
+                        {
+                            self.item_feed.push_banner(
+                                FeedBanner {
+                                    icon: String::new(),
+                                    title: format!("BATON PASSED TO {}", to_name.to_uppercase()),
+                                    line: String::new(),
+                                    detail: String::new(),
+                                    tone: FeedTone::Gain,
+                                },
+                                now,
+                            );
+                        }
+                    }
+                }
+            }
+            MachineMessage::RelayRelease {
+                handoff_id,
+                to_name,
+            } => {
+                self.last_received_debug = Some(format!("relay_release({handoff_id})"));
+                if !self.relay_holder_live() {
+                    warn!(
+                        role = ?self.relay_role(),
+                        "[RELAY] Release ignored: not the holder of a live relay"
+                    );
+                } else if self
+                    .relay_release
+                    .as_ref()
+                    .is_some_and(|pending| pending.handoff_id == handoff_id)
+                {
+                    debug!(handoff_id = %handoff_id, "[RELAY] Release repeated");
+                } else {
+                    info!(handoff_id = %handoff_id, to = %to_name, "[RELAY] Release received");
+                    self.relay_passed = None;
+                    self.relay_release = Some(PendingRelease {
+                        handoff_id,
+                        to_name,
+                        deadline: now + relay::RELEASE_CAPTURE_TIMEOUT,
+                    });
+                }
             }
             MachineMessage::RelayRefused { code, message } => {
                 self.last_received_debug = Some(format!("relay_refused({code})"));
@@ -2735,6 +2843,11 @@ impl RaceMachine {
                 self.pre_reveal_layer = None;
                 self.pending_zone_received_at = None;
                 self.zone_stall_warned = false;
+                // A zone entry is a checkpoint of a live holder's state (dropped
+                // below when the socket is down).
+                if self.relay_holder_live() {
+                    self.relay_checkpoint_due = true;
+                }
             } else if !self.zone_stall_warned
                 && pending_for.is_some_and(|d| d >= ZONE_REVEAL_STALL_WARN)
             {
@@ -3062,6 +3175,7 @@ impl RaceMachine {
             self.flush_race_items(false, loading_exit, loading_exit, now, &mut effects);
             self.maintain_memory_effects(loading_exit, now, &mut effects);
             self.maintain_hunter(now, &mut effects);
+            self.relay_link_lost();
             self.maintain_relay(false, loading_exit, now, &mut effects);
             return effects;
         }
@@ -3977,6 +4091,114 @@ impl RaceMachine {
                 effects.push(Effect::SendRelayReady { ready });
             }
         }
+
+        self.maintain_relay_capture(connected, now, effects);
+    }
+
+    /// Ask the shell for the holder's state when one is wanted: a pending
+    /// release first (given up `RELEASE_CAPTURE_TIMEOUT` after its receipt,
+    /// or when the runner stops being the holder of a live relay), else the
+    /// checkpoint of a zone just revealed. One capture at a time, on a
+    /// connected frame with a readable position on the race save; a
+    /// checkpoint that finds one in flight is dropped. Per frame: a few
+    /// comparisons, and an allocation only when a capture is asked.
+    fn maintain_relay_capture(&mut self, connected: bool, now: Instant, effects: &mut Vec<Effect>) {
+        let holder = self.relay_holder_live();
+        let checkpoint_due = std::mem::take(&mut self.relay_checkpoint_due);
+        if let Some(pending) = &self.relay_release {
+            if !holder {
+                debug!(handoff_id = %pending.handoff_id, "[RELAY] Release dropped: no longer the holder");
+                self.relay_release = None;
+            } else if now >= pending.deadline {
+                warn!(handoff_id = %pending.handoff_id, "[RELAY] Release not captured in time, dropped");
+                self.relay_release = None;
+                self.set_status("Handoff cancelled: not in game".to_string(), now);
+            }
+        }
+        if !(connected
+            && holder
+            && self.frame_snapshot.position_readable
+            && !self.wrong_save
+            && self.relay_capture.is_none())
+        {
+            return;
+        }
+        let handoff_id = match &self.relay_release {
+            Some(pending) => Some(pending.handoff_id.clone()),
+            None if checkpoint_due => None,
+            None => return,
+        };
+        crate::profile_span!("relay_capture_ask");
+        self.relay_capture = Some(CaptureInFlight {
+            handoff_id: handoff_id.clone(),
+            link_lost: false,
+        });
+        effects.push(Effect::CaptureRelayState { handoff_id });
+    }
+
+    /// The shell's answer to `Effect::CaptureRelayState`: the captured state,
+    /// or `None` when the game could not be read (a loading screen, a
+    /// character not in the world). Returns the `relay_state` to send, or
+    /// nothing: an unreadable release stays pending and is asked again on
+    /// the next loaded frame until its time is up, an unreadable checkpoint
+    /// is dropped, and a state is never sent stale (the socket dropped since
+    /// the capture was asked, the runner no longer holds a live relay, the
+    /// save is wrong, the release was replaced or timed out). Nothing is
+    /// locked and no banner shows here: the server flips the role, and its
+    /// `relay_update` decides.
+    pub fn relay_state_captured(
+        &mut self,
+        handoff_id: Option<String>,
+        state: Option<CharacterState>,
+        now: Instant,
+    ) -> Vec<Effect> {
+        match &self.relay_capture {
+            Some(asked) if asked.handoff_id == handoff_id => {}
+            _ => {
+                warn!(
+                    ?handoff_id,
+                    "[RELAY] Capture answer nobody asked for ignored"
+                );
+                return Vec::new();
+            }
+        }
+        let asked = self.relay_capture.take().expect("checked above");
+        let Some(mut state) = state else {
+            debug!(?handoff_id, "[RELAY] State not readable");
+            return Vec::new();
+        };
+        if asked.link_lost || !self.relay_holder_live() || self.wrong_save {
+            debug!(?handoff_id, "[RELAY] Captured state not sent: stale");
+            return Vec::new();
+        }
+        if let Some(id) = &handoff_id {
+            match &self.relay_release {
+                Some(pending) if pending.handoff_id == *id && now < pending.deadline => {}
+                _ => {
+                    debug!(handoff_id = %id, "[RELAY] Captured state not sent: release gone");
+                    return Vec::new();
+                }
+            }
+        }
+        let cut = relay_items::fit_to_wire(&mut state);
+        if cut > 0 {
+            warn!(cut, "[RELAY] State over the wire caps, values cut");
+        }
+        info!(
+            ?handoff_id,
+            items = state.items.len(),
+            graces = state.grace_flags.len(),
+            "[RELAY] State captured"
+        );
+        if let Some(pending) = handoff_id.as_ref().and_then(|_| self.relay_release.take()) {
+            self.relay_passed = Some((pending.to_name, now));
+        }
+        self.last_sent_debug = Some(format!("relay_state({handoff_id:?})"));
+        vec![Effect::SendRelayState {
+            handoff_id,
+            state,
+            igt_ms: self.effective_igt_ms(),
+        }]
     }
 
     /// Send the pending event flags (never sent) with fresh message ids.
@@ -12807,5 +13029,551 @@ mod tests {
         set_member_status(&mut back, "p1", ParticipantStatus::Abandoned);
         update(&mut m, back, t0, 200);
         assert!(m.am_i_abandoned() && m.relay_over() && !m.relay_live());
+    }
+
+    // ------------------------------------------------------------------
+    // Giving the baton: the release capture and the zone checkpoints
+    // ------------------------------------------------------------------
+
+    fn captures(fx: &[Effect]) -> Vec<Option<String>> {
+        fx.iter()
+            .filter_map(|e| match e {
+                Effect::CaptureRelayState { handoff_id } => Some(handoff_id.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn sent_states(fx: &[Effect]) -> Vec<&Effect> {
+        fx.iter()
+            .filter(|e| matches!(e, Effect::SendRelayState { .. }))
+            .collect()
+    }
+
+    fn char_state() -> CharacterState {
+        CharacterState {
+            attributes: [20, 15, 18, 16, 14, 9, 8, 7],
+            level: 30,
+            runes: 1234,
+            items: vec![2_000_005, 0x4000_0001],
+            grace_flags: vec![71800],
+        }
+    }
+
+    fn release(m: &mut RaceMachine, t0: Instant, at: u64, id: &str) {
+        m.handle_message(
+            MachineMessage::RelayRelease {
+                handoff_id: id.to_string(),
+                to_name: "Kahleeya".to_string(),
+            },
+            t0 + ms(at),
+        );
+    }
+
+    fn frame(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        map: Option<u32>,
+        connected: bool,
+    ) -> Vec<Effect> {
+        let snapshot = FrameSnapshot {
+            igt_ms: Some(5_000 + at as u32),
+            death_count: Some(0),
+            position_readable: map.is_some(),
+            loading_screen: Some(false),
+            map_id: map,
+            hp: map.map(|_| 100),
+            ..FrameSnapshot::default()
+        };
+        m.tick(tick_in(snapshot, connected, None), t0 + ms(at))
+    }
+
+    fn answer(
+        m: &mut RaceMachine,
+        t0: Instant,
+        at: u64,
+        id: Option<&str>,
+        state: Option<CharacterState>,
+    ) -> Vec<Effect> {
+        m.relay_state_captured(id.map(str::to_string), state, t0 + ms(at))
+    }
+
+    /// A holder on a loaded frame at 0 (the loading exit), the release
+    /// asked and its capture in flight at 100.
+    fn holder_with_capture_in_flight() -> (RaceMachine, Instant) {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        release(&mut m, t0, 50, "h1");
+        let fx = go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        (m, t0)
+    }
+
+    #[test]
+    fn a_release_captures_on_a_loaded_frame_and_answers_with_the_state() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, None);
+        release(&mut m, t0, 50, "h1");
+        for at in [100, 200, 300] {
+            assert!(captures(&go(&mut m, t0, at, None)).is_empty(), "{at}");
+        }
+        let fx = go(&mut m, t0, 400, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        for at in [500, 600] {
+            let fx = go(&mut m, t0, at, Some(IN_ZONE));
+            assert!(captures(&fx).is_empty(), "one capture at a time: {at}");
+        }
+        let fx = answer(&mut m, t0, 700, Some("h1"), Some(char_state()));
+        assert_eq!(
+            fx,
+            [Effect::SendRelayState {
+                handoff_id: Some("h1".to_string()),
+                state: char_state(),
+                igt_ms: 5_000 + 600,
+            }]
+        );
+        assert!(m.item_banner().is_none());
+        assert_ne!(m.relay_locked(), Some(true));
+    }
+
+    #[test]
+    fn the_giver_is_locked_only_once_the_server_flips_the_role() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        answer(&mut m, t0, 150, Some("h1"), Some(char_state()));
+        let fx = go_over(&mut m, t0, 200, 6_000, Some(IN_ZONE));
+        assert!(!fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)));
+        assert!(m.item_banner().is_none());
+
+        update(&mut m, relay_info("waiting"), t0, 6_050);
+        assert_eq!(m.item_banner().unwrap().title, "BATON PASSED TO KAHLEEYA");
+        assert_eq!(m.item_banner().unwrap().line, "");
+        let fx = go_over(&mut m, t0, 6_100, 14_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+        let lock_at = times_of(&fx, &lock(true))[0];
+        let warp_at = times_of(&fx, &warp(true));
+        assert_eq!(warp_at.len(), 1);
+        assert!(
+            warp_at[0] >= lock_at + crate::core::relay::GATE_WINDOW.as_millis() as u64,
+            "{lock_at} {warp_at:?}"
+        );
+    }
+
+    #[test]
+    fn a_release_the_server_drops_changes_nothing() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        answer(&mut m, t0, 150, Some("h1"), Some(char_state()));
+        // The server's answer to an expired handoff: still the holder.
+        update(&mut m, relay_info("holder"), t0, 1_000);
+        let fx = go_over(&mut m, t0, 1_100, 12_000, Some(IN_ZONE));
+        assert!(!fx.iter().any(|(_, e)| *e == lock(true) || *e == warp(true)));
+        assert!(m.item_banner().is_none());
+        // 16 s after the answer a takeover turns the runner waiting.
+        update(&mut m, relay_info("waiting"), t0, 16_200);
+        assert!(m.item_banner().is_none(), "no BATON PASSED for a takeover");
+        let fx = go_over(&mut m, t0, 16_300, 17_000, Some(IN_ZONE));
+        assert_eq!(times_of(&fx, &lock(true)).len(), 1);
+    }
+
+    #[test]
+    fn a_flip_inside_the_release_window_shows_the_banner() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        answer(&mut m, t0, 150, Some("h1"), Some(char_state()));
+        // An update that reads holder in between does not forget the release.
+        update(&mut m, relay_info("holder"), t0, 1_000);
+        update(&mut m, relay_info("waiting"), t0, 14_000);
+        assert_eq!(m.item_banner().unwrap().title, "BATON PASSED TO KAHLEEYA");
+    }
+
+    #[test]
+    fn a_release_that_cannot_capture_in_time_is_dropped() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, None);
+        release(&mut m, t0, 0, "h1");
+        for at in (100..12_000).step_by(100) {
+            assert!(captures(&go(&mut m, t0, at, None)).is_empty());
+        }
+        let fx = go(&mut m, t0, 12_000, None);
+        assert!(captures(&fx).is_empty());
+        assert_eq!(
+            m.get_status(t0 + ms(12_000)),
+            Some("Handoff cancelled: not in game")
+        );
+        let fx = go(&mut m, t0, 12_100, Some(IN_ZONE));
+        assert!(captures(&fx).is_empty(), "{fx:?}");
+        let fx = go(&mut m, t0, 12_200, Some(IN_ZONE));
+        assert!(captures(&fx).is_empty());
+    }
+
+    #[test]
+    fn an_unreadable_capture_is_asked_again_on_the_next_loaded_frame() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        // A loading screen swallowed the capture.
+        go(&mut m, t0, 150, None);
+        assert!(answer(&mut m, t0, 160, Some("h1"), None).is_empty());
+        assert!(captures(&go(&mut m, t0, 200, None)).is_empty());
+        let fx = go(&mut m, t0, 300, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        let fx = answer(&mut m, t0, 350, Some("h1"), Some(char_state()));
+        assert_eq!(sent_states(&fx).len(), 1);
+    }
+
+    #[test]
+    fn an_answer_after_the_give_up_is_dropped() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        // In flight at the 12 s mark: the release is dropped, so is its answer.
+        go_over(&mut m, t0, 200, 12_100, Some(IN_ZONE));
+        let fx = answer(&mut m, t0, 12_200, Some("h1"), Some(char_state()));
+        assert!(fx.is_empty());
+        assert!(captures(&go(&mut m, t0, 12_300, Some(IN_ZONE))).is_empty());
+        // An update flipping the runner shows no banner: nothing was answered.
+        update(&mut m, relay_info("waiting"), t0, 12_400);
+        assert!(m.item_banner().is_none());
+        // The deadline passes between two frames: the answer is late all the same.
+        let (mut m, t0) = holder_with_capture_in_flight();
+        let fx = answer(&mut m, t0, 12_050, Some("h1"), Some(char_state()));
+        assert!(fx.is_empty(), "{fx:?}");
+    }
+
+    #[test]
+    fn a_release_is_ignored_unless_the_runner_holds_a_live_relay() {
+        let t0 = Instant::now();
+        let mut unknown = relay_info("holder");
+        unknown.role = RelayRole::Unknown;
+        let mut over = relay_info_with("holder", "finished");
+        over.role = RelayRole::Holder;
+        let cases = [
+            ("waiting", relay_info("waiting")),
+            ("unknown role", unknown),
+            ("team over", over),
+        ];
+        for (name, info) in cases {
+            let mut m = relay_machine("holder", t0);
+            go(&mut m, t0, 0, Some(IN_ZONE));
+            update(&mut m, info, t0, 10);
+            release(&mut m, t0, 20, "h1");
+            let fx = go_over(&mut m, t0, 100, 3_000, Some(IN_ZONE));
+            assert!(
+                !fx.iter()
+                    .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })),
+                "{name}"
+            );
+        }
+        // No relay at all.
+        let mut m = running_machine(t0);
+        release(&mut m, t0, 20, "h1");
+        let fx = go_over(&mut m, t0, 100, 1_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+    }
+
+    #[test]
+    fn a_holder_checkpoints_at_each_zone_reveal() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        let fx = go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [None]);
+        go(&mut m, t0, 200, Some(IN_ZONE));
+        let fx = answer(&mut m, t0, 250, None, Some(char_state()));
+        assert_eq!(
+            fx,
+            [Effect::SendRelayState {
+                handoff_id: None,
+                state: char_state(),
+                igt_ms: 5_000 + 200,
+            }]
+        );
+        assert!(m.item_banner().is_none());
+        // The next zone: another checkpoint.
+        m.handle_message(zone_update("Liurnia", None), t0 + ms(300));
+        let fx = go(&mut m, t0, 400, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [None]);
+    }
+
+    #[test]
+    fn a_zone_reveal_outside_a_live_holder_asks_no_checkpoint() {
+        let t0 = Instant::now();
+        // A waiting runner, a team over, a role this build does not know.
+        let mut unknown = relay_info("holder");
+        unknown.role = RelayRole::Unknown;
+        let mut over = relay_info_with("holder", "finished");
+        over.role = RelayRole::Holder;
+        for (name, info) in [
+            ("waiting", relay_info("waiting")),
+            ("over", over),
+            ("unknown", unknown),
+        ] {
+            let mut m = relay_machine("holder", t0);
+            go(&mut m, t0, 0, Some(IN_ZONE));
+            update(&mut m, info, t0, 10);
+            m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+            let fx = go_over(&mut m, t0, 100, 1_000, Some(IN_ZONE));
+            assert!(
+                !fx.iter()
+                    .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })),
+                "{name}"
+            );
+        }
+        // A reveal while the socket is down is dropped, not sent after the
+        // reconnection: the server only wants the latest.
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        let fx = frame(&mut m, t0, 100, Some(IN_ZONE), false);
+        assert!(captures(&fx).is_empty());
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(150),
+        );
+        let fx = go_over(&mut m, t0, 200, 1_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+    }
+
+    #[test]
+    fn a_reveal_during_a_capture_asks_no_second_one() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(120));
+        let fx = go(&mut m, t0, 200, Some(IN_ZONE));
+        assert!(captures(&fx).is_empty());
+        // The release's answer goes out under its own id; the reveal's
+        // checkpoint was skipped, not queued.
+        let fx = answer(&mut m, t0, 250, Some("h1"), Some(char_state()));
+        assert_eq!(sent_states(&fx).len(), 1);
+        let fx = go_over(&mut m, t0, 300, 2_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+    }
+
+    #[test]
+    fn a_checkpoint_capture_in_flight_makes_a_release_wait_for_its_answer() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        assert_eq!(captures(&go(&mut m, t0, 100, Some(IN_ZONE))), [None]);
+        release(&mut m, t0, 150, "h1");
+        assert!(captures(&go(&mut m, t0, 200, Some(IN_ZONE))).is_empty());
+        // The checkpoint's answer goes out, then the release is asked.
+        let fx = answer(&mut m, t0, 250, None, Some(char_state()));
+        assert!(matches!(
+            sent_states(&fx)[..],
+            [Effect::SendRelayState {
+                handoff_id: None,
+                ..
+            }]
+        ));
+        let fx = go(&mut m, t0, 300, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+    }
+
+    #[test]
+    fn a_release_at_a_zone_reveal_takes_the_one_capture() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        release(&mut m, t0, 60, "h1");
+        let fx = go(&mut m, t0, 100, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        let fx = go_over(&mut m, t0, 200, 1_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+        let fx = answer(&mut m, t0, 1_100, Some("h1"), Some(char_state()));
+        assert_eq!(sent_states(&fx).len(), 1);
+    }
+
+    #[test]
+    fn a_checkpoint_capture_that_fails_is_dropped() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        assert_eq!(captures(&go(&mut m, t0, 100, Some(IN_ZONE))), [None]);
+        assert!(answer(&mut m, t0, 150, None, None).is_empty());
+        let fx = go_over(&mut m, t0, 200, 2_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+    }
+
+    #[test]
+    fn a_second_release_replaces_the_first() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        release(&mut m, t0, 200, "h2");
+        // The capture asked for h1 answers: nothing goes out under h1.
+        assert!(answer(&mut m, t0, 250, Some("h1"), Some(char_state())).is_empty());
+        let fx = go(&mut m, t0, 300, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h2".to_string())]);
+        let fx = answer(&mut m, t0, 350, Some("h2"), Some(char_state()));
+        assert!(matches!(
+            sent_states(&fx)[..],
+            [Effect::SendRelayState {
+                handoff_id: Some(id),
+                ..
+            }] if id == "h2"
+        ));
+    }
+
+    #[test]
+    fn a_repeated_release_does_not_restart_its_clock() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, None);
+        release(&mut m, t0, 0, "h1");
+        release(&mut m, t0, 8_000, "h1");
+        go(&mut m, t0, 12_000, None);
+        assert_eq!(
+            m.get_status(t0 + ms(12_000)),
+            Some("Handoff cancelled: not in game")
+        );
+    }
+
+    #[test]
+    fn the_role_changing_while_a_capture_is_pending_drops_the_answer() {
+        type Change = Box<dyn Fn(&mut RaceMachine, Instant)>;
+        let changes: Vec<(&str, Change)> = vec![
+            (
+                "waiting",
+                Box::new(|m, t0| update(m, relay_info("waiting"), t0, 120)),
+            ),
+            (
+                "team over",
+                Box::new(|m, t0| {
+                    let mut info = relay_info_with("holder", "finished");
+                    info.role = RelayRole::Holder;
+                    update(m, info, t0, 120)
+                }),
+            ),
+            (
+                "runner out",
+                Box::new(|m, t0| {
+                    let mut info = relay_info("holder");
+                    set_member_status(&mut info, "p1", ParticipantStatus::Abandoned);
+                    update(m, info, t0, 120)
+                }),
+            ),
+            (
+                "race stopped",
+                Box::new(|m, _t0| {
+                    m.race_state.race.as_mut().unwrap().status = RaceStatus::Finished;
+                }),
+            ),
+        ];
+        for (name, change) in changes {
+            let (mut m, t0) = holder_with_capture_in_flight();
+            change(&mut m, t0);
+            let fx = answer(&mut m, t0, 150, Some("h1"), Some(char_state()));
+            assert!(fx.is_empty(), "{name}: {fx:?}");
+            // And it is not asked again.
+            let fx = go_over(&mut m, t0, 200, 2_000, Some(IN_ZONE));
+            assert!(
+                !fx.iter()
+                    .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_socket_drop_cancels_the_release_and_its_answer() {
+        // Pending, not yet captured.
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, None);
+        release(&mut m, t0, 50, "h1");
+        frame(&mut m, t0, 100, None, false);
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(200),
+        );
+        let fx = go_over(&mut m, t0, 300, 2_000, Some(IN_ZONE));
+        assert!(
+            !fx.iter()
+                .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })),
+            "the server cancelled it: no stale capture after the reconnection"
+        );
+
+        // In flight when the socket drops.
+        let (mut m, t0) = holder_with_capture_in_flight();
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Reconnecting),
+            t0 + ms(120),
+        );
+        m.handle_message(
+            MachineMessage::StatusChanged(ConnectionStatus::Connected),
+            t0 + ms(140),
+        );
+        let fx = answer(&mut m, t0, 160, Some("h1"), Some(char_state()));
+        assert!(fx.is_empty(), "no stale answer: {fx:?}");
+        let fx = go_over(&mut m, t0, 200, 2_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+    }
+
+    #[test]
+    fn a_checkpoint_in_flight_when_the_socket_drops_is_not_sent() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.handle_message(zone_update("Stormveil", None), t0 + ms(50));
+        assert_eq!(captures(&go(&mut m, t0, 100, Some(IN_ZONE))), [None]);
+        // The drop is seen by a frame, without a status message.
+        frame(&mut m, t0, 150, Some(IN_ZONE), false);
+        go(&mut m, t0, 200, Some(IN_ZONE));
+        assert!(answer(&mut m, t0, 250, None, Some(char_state())).is_empty());
+    }
+
+    #[test]
+    fn a_wrong_save_asks_no_capture() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        m.wrong_save = true;
+        release(&mut m, t0, 50, "h1");
+        let fx = go_over(&mut m, t0, 100, 1_000, Some(IN_ZONE));
+        assert!(!fx
+            .iter()
+            .any(|(_, e)| matches!(e, Effect::CaptureRelayState { .. })));
+        m.wrong_save = false;
+        let fx = go(&mut m, t0, 1_100, Some(IN_ZONE));
+        assert_eq!(captures(&fx), [Some("h1".to_string())]);
+        // A save that went wrong during the capture: the answer is kept back.
+        m.wrong_save = true;
+        assert!(answer(&mut m, t0, 1_150, Some("h1"), Some(char_state())).is_empty());
+    }
+
+    #[test]
+    fn an_answer_nobody_asked_for_sends_nothing() {
+        let t0 = Instant::now();
+        let mut m = relay_machine("holder", t0);
+        go(&mut m, t0, 0, Some(IN_ZONE));
+        assert!(answer(&mut m, t0, 50, None, Some(char_state())).is_empty());
+        assert!(answer(&mut m, t0, 60, Some("h1"), Some(char_state())).is_empty());
+    }
+
+    #[test]
+    fn an_oversized_state_is_cut_to_the_wire_caps() {
+        let (mut m, t0) = holder_with_capture_in_flight();
+        let mut big = char_state();
+        big.items = (0..4_005).map(|i| 0x4000_0000 + i).rev().collect();
+        big.grace_flags = vec![2_147_483_648, 71800, 71800];
+        let fx = answer(&mut m, t0, 150, Some("h1"), Some(big));
+        let [Effect::SendRelayState { state, .. }] = &fx[..] else {
+            panic!("{fx:?}");
+        };
+        assert_eq!(state.items.len(), 4_000);
+        assert_eq!(state.items[0], 0x4000_0000);
+        assert_eq!(state.grace_flags, [71800]);
     }
 }

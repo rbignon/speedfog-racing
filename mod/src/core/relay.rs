@@ -30,6 +30,34 @@ pub const WARP_ATTEMPTS: u32 = 3;
 /// before the return is given up for good (a loading exit does not reset
 /// the count: a wrong Chapel map id would otherwise loop forever).
 pub const WARP_LANDINGS_MAX: u32 = 2;
+/// How long a `relay_release` is given to capture and answer, from its
+/// receipt. Under the server's `RELAY_RELEASE_TIMEOUT_S` (`RELEASE_WINDOW`),
+/// so an answer is never sent after the server has cancelled.
+pub const RELEASE_CAPTURE_TIMEOUT: Duration = Duration::from_secs(12);
+/// The server's wait for an answer to a release: no flip can follow an
+/// answer later than this, so a role turning `waiting` that long after one
+/// is not that handoff.
+pub const RELEASE_WINDOW: Duration = Duration::from_secs(15);
+
+/// A `relay_release` whose answer has not been sent.
+#[derive(Debug)]
+pub struct PendingRelease {
+    pub handoff_id: String,
+    /// The teammate the baton goes to, shown when the server flips.
+    pub to_name: String,
+    /// When the capture is given up.
+    pub deadline: Instant,
+}
+
+/// A capture the shell was asked for and has not answered.
+#[derive(Debug)]
+pub struct CaptureInFlight {
+    /// The release it answers; `None` for a zone checkpoint.
+    pub handoff_id: Option<String>,
+    /// The socket dropped since it was asked: its answer is stale.
+    pub link_lost: bool,
+}
+
 /// A lowered warp flag stays down this long before it is raised again.
 const WARP_RELOWER: Duration = Duration::from_millis(100);
 
