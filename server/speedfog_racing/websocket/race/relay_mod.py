@@ -62,6 +62,7 @@ from speedfog_racing.websocket.race.relay import (
     confirm_taken,
     finish_team,
     member_connection_changed,
+    relay_section,
     request_handoff,
     request_take,
     send_relay_updates,
@@ -274,9 +275,14 @@ class RelayModHandler(RaceModHandler):
             team_id = team.id
 
         if validated:
-            await send_relay_updates(
-                self.session_maker, self._race_id, team_id, graph_json=self._cached_graph_json
-            )
+            # Under the relay section, as the baton operations send: an update
+            # read before a flip's commit and sent after its relay_take would
+            # name the giver, and the receiver's mod would give the take up.
+            # The session above is closed: the room lock, then the team row.
+            async with relay_section(self._race_id):
+                await send_relay_updates(
+                    self.session_maker, self._race_id, team_id, graph_json=self._cached_graph_json
+                )
         if not holder:
             return
         self._holder_deaths = reported
@@ -605,7 +611,12 @@ class RelayModHandler(RaceModHandler):
         await manager.broadcast_player_update(
             entity.race_id, self._row(entity, graph), graph_json=graph
         )
-        await send_relay_updates(self.session_maker, entity.race_id, entity.id, graph_json=graph)
+        # Under the relay section (see ``_handle_status_update``); the kill's
+        # session is closed.
+        async with relay_section(entity.race_id):
+            await send_relay_updates(
+                self.session_maker, entity.race_id, entity.id, graph_json=graph
+            )
 
     async def _handle_finish_event(  # type: ignore[override]
         self, entity: RelayTeam, igt: int, message_id: int | None
@@ -637,10 +648,13 @@ class RelayModHandler(RaceModHandler):
 
         if became_active and entries is not None:
             await manager.broadcast_leaderboard(entity.race_id, entries, graph_json=graph)
-            # The team plays now, its holder validated.
-            await send_relay_updates(
-                self.session_maker, entity.race_id, entity.id, graph_json=graph
-            )
+            # The team plays now, its holder validated. Under the relay
+            # section (see ``_handle_status_update``); the report's session
+            # is closed.
+            async with relay_section(entity.race_id):
+                await send_relay_updates(
+                    self.session_maker, entity.race_id, entity.id, graph_json=graph
+                )
         else:
             await manager.broadcast_player_update(
                 entity.race_id, self._row(entity, graph), graph_json=graph, weapons=weapons
@@ -678,9 +692,12 @@ class RelayModHandler(RaceModHandler):
             )
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
         # The gate moved the zone a taker restarts, and may have counted one.
-        await send_relay_updates(
-            self.session_maker, entity.race_id, entity.id, graph_json=seed_graph
-        )
+        # Under the relay section (see ``_handle_status_update``); the flag's
+        # session is closed.
+        async with relay_section(entity.race_id):
+            await send_relay_updates(
+                self.session_maker, entity.race_id, entity.id, graph_json=seed_graph
+            )
 
     async def _broadcast_after_boss_kill(self, entity: RelayTeam) -> None:  # type: ignore[override]
         await manager.broadcast_zone_history(entity.race_id, entity.id, entity.zone_history or [])
