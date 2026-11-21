@@ -1442,10 +1442,6 @@ impl RaceTracker {
         self.machine.race_state.current_zone.as_ref()
     }
 
-    pub fn my_participant_id(&self) -> Option<&String> {
-        self.machine.my_participant_id.as_ref()
-    }
-
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
         self.machine.my_participant()
     }

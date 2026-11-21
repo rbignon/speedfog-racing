@@ -23,7 +23,7 @@ use crate::core::play_clock::PlayClock;
 use crate::core::protocol::{
     CameraVariant, ConditionKind, ExitInfo, ItemBanner, ItemEffectPayload, ItemReminder,
     ParticipantInfo, ParticipantStatus, RaceInfo, RaceItemEntry, RaceItemGoods, RaceStatus,
-    SeedInfo, TalismanFlag,
+    RelayInfo, RelayMember, RelayRole, SeedInfo, TalismanFlag,
 };
 use crate::core::timed_effects::TimedEffects;
 use crate::core::types::PlayerPosition;
@@ -64,6 +64,8 @@ pub enum MachineMessage {
         latest_mod_version: Option<String>,
         /// Race item key the server says the runner holds, confirmed or not.
         held_item: Option<String>,
+        /// The runner's relay team; `None` on any other race.
+        relay: Option<RelayInfo>,
     },
     AuthError(String),
     RaceStart(u32),
@@ -153,6 +155,13 @@ pub enum MachineMessage {
     /// A banner with nothing applied: a Star holder's block.
     ItemNotice {
         banner: ItemBanner,
+    },
+    /// The relay team's state, replaced whole.
+    RelayUpdate(RelayInfo),
+    /// The server refused a relay request: `message` is shown, `code` logged.
+    RelayRefused {
+        code: String,
+        message: String,
     },
 }
 
@@ -515,6 +524,11 @@ pub struct RaceMachine {
     pub race_state: RaceState,
     pub my_participant_id: Option<String>,
     pub my_participant_index: Option<usize>,
+    /// The runner's relay team and role, replaced whole by `auth_ok` and
+    /// `relay_update`; `None` on a race without relay. On a relay race the
+    /// leaderboard rows are teams, so the runner's row is `relay.team_id`
+    /// (see `my_row_id`).
+    relay: Option<RelayInfo>,
     pub event_ids: Vec<u32>,
     pub triggered_flags: HashSet<u32>,
     pub flag_buffer: FlagBuffer,
@@ -720,6 +734,7 @@ impl RaceMachine {
             race_state: RaceState::default(),
             my_participant_id: None,
             my_participant_index: None,
+            relay: None,
             event_ids: Vec::new(),
             triggered_flags: HashSet::new(),
             flag_buffer: FlagBuffer::default(),
@@ -1096,6 +1111,8 @@ impl RaceMachine {
         self.my_participant()
             .map(|p| p.status.is_out())
             .unwrap_or(false)
+            // A relay member out while its team plays on.
+            || self.relay_me().is_some_and(|m| m.status.is_out())
     }
 
     /// Whether the race staff disqualified the local player.
@@ -1103,6 +1120,86 @@ impl RaceMachine {
         self.my_participant()
             .map(|p| p.status == ParticipantStatus::Disqualified)
             .unwrap_or(false)
+    }
+
+    /// The relay team and role the server last named; `None` on a race
+    /// without relay.
+    pub fn relay(&self) -> Option<&RelayInfo> {
+        self.relay.as_ref()
+    }
+
+    /// The runner's relay role: the cached one the server named.
+    pub fn relay_role(&self) -> Option<RelayRole> {
+        self.relay.as_ref().map(|r| r.role)
+    }
+
+    /// The runner's own entry in its team. Its `status`, `zones` and
+    /// `validated` are read; its `ready` and `online` never are (the
+    /// `auth_ok` echo of them is not authoritative about the runner).
+    pub fn relay_me(&self) -> Option<&RelayMember> {
+        let me = self.my_participant_id.as_deref()?;
+        self.relay
+            .as_ref()?
+            .members
+            .iter()
+            .find(|m| m.participant_id == me)
+    }
+
+    /// Id of the runner's leaderboard row: the team's on a relay race (rows
+    /// are teams there), the participant's on any other.
+    pub fn my_row_id(&self) -> Option<&str> {
+        match &self.relay {
+            Some(relay) => Some(relay.team_id.as_str()),
+            None => self.my_participant_id.as_deref(),
+        }
+    }
+
+    /// The runner's relay is over for it: its team finished, abandoned or
+    /// was disqualified, or it is out itself while the team plays on. An
+    /// unknown status is no decision. `false` without relay.
+    pub fn relay_over(&self) -> bool {
+        let Some(relay) = &self.relay else {
+            return false;
+        };
+        matches!(
+            relay.team_status,
+            ParticipantStatus::Finished
+                | ParticipantStatus::Abandoned
+                | ParticipantStatus::Disqualified
+        ) || self.relay_me().is_some_and(|m| m.status.is_out())
+    }
+
+    /// The relay is actually being played, so locks and takes apply: the
+    /// race runs (countdown included), the team status is `ready` or
+    /// `playing` (a setup reads `registered` for everyone, the first runner
+    /// included) and the runner is not out. `false` without relay.
+    pub fn relay_live(&self) -> bool {
+        self.relay.as_ref().is_some_and(|relay| {
+            matches!(
+                relay.team_status,
+                ParticipantStatus::Ready | ParticipantStatus::Playing
+            )
+        }) && self.is_race_running()
+            && !self.relay_over()
+    }
+
+    /// Replace the relay info whole. A role turning `Waiting` drops the zone
+    /// just left (a waiting runner is not in the world its team is playing:
+    /// its exits must not stay on the panel); an unknown role changes
+    /// nothing.
+    fn set_relay(&mut self, relay: Option<RelayInfo>) {
+        let turns_waiting = relay.as_ref().is_some_and(|r| r.role == RelayRole::Waiting)
+            && self.relay_role() != Some(RelayRole::Waiting);
+        self.relay = relay;
+        if turns_waiting
+            && (self.race_state.current_zone.is_some() || self.pending_zone_update.is_some())
+        {
+            self.race_state.current_zone = None;
+            self.pending_zone_update = None;
+            self.pending_zone_received_at = None;
+            self.zone_stall_warned = false;
+            self.zone_version = self.zone_version.wrapping_add(1);
+        }
     }
 
     pub fn my_participant(&self) -> Option<&ParticipantInfo> {
@@ -1301,12 +1398,9 @@ impl RaceMachine {
     }
 
     fn refresh_my_participant_index(&mut self) {
-        self.my_participant_index = self.my_participant_id.as_ref().and_then(|id| {
-            self.race_state
-                .participants
-                .iter()
-                .position(|p| &p.id == id)
-        });
+        self.my_participant_index = self
+            .my_row_id()
+            .and_then(|id| self.race_state.participants.iter().position(|p| p.id == id));
     }
 
     fn bump_leaderboard_version(&mut self) {
@@ -1368,6 +1462,7 @@ impl RaceMachine {
                 phantom_skin,
                 latest_mod_version,
                 held_item,
+                relay,
             } => {
                 info!(race = %race.name, participant_id = %participant_id, participants = participants.len(), "[WS] Auth OK");
                 if let Some(ref name) = phantom_skin {
@@ -1426,9 +1521,10 @@ impl RaceMachine {
                     self.drop_hunter("another participant", &mut effects);
                 }
                 self.my_participant_id = Some(participant_id);
-                self.my_participant_index = participants
-                    .iter()
-                    .position(|p| Some(&p.id) == self.my_participant_id.as_ref());
+                self.set_relay(relay);
+                self.my_participant_index = self
+                    .my_row_id()
+                    .and_then(|id| participants.iter().position(|p| p.id == id));
                 self.event_ids = seed.event_ids.clone();
                 self.finish_event = seed.finish_event;
                 self.boss_flags = seed.boss_flags.clone();
@@ -1602,16 +1698,16 @@ impl RaceMachine {
                 // participants list, so the UI keeps the old X/Y and tier
                 // until the zone name is revealed.
                 if self.pre_reveal_layer.is_none() {
-                    if let Some(my_id) = &self.my_participant_id {
+                    if let Some(my_id) = self.my_row_id() {
                         let old_layer = self
                             .race_state
                             .participants
                             .iter()
-                            .find(|p| &p.id == my_id)
+                            .find(|p| p.id == my_id)
                             .map(|p| p.current_layer);
                         let new_layer = participants
                             .iter()
-                            .find(|p| &p.id == my_id)
+                            .find(|p| p.id == my_id)
                             .map(|p| p.current_layer);
                         if old_layer != new_layer {
                             self.pre_reveal_layer = old_layer;
@@ -1672,8 +1768,8 @@ impl RaceMachine {
             MachineMessage::PlayerUpdate(player) => {
                 // Snapshot current_layer on increase (same rationale as LeaderboardUpdate).
                 if self.pre_reveal_layer.is_none() {
-                    if let Some(my_id) = &self.my_participant_id {
-                        if &player.id == my_id {
+                    if let Some(my_id) = self.my_row_id() {
+                        if player.id == my_id {
                             if let Some(old_me) = self.my_participant() {
                                 if player.current_layer > old_me.current_layer {
                                     self.pre_reveal_layer = Some(old_me.current_layer);
@@ -2052,6 +2148,16 @@ impl RaceMachine {
                     );
                 }
                 self.item_feed.push_banner(banner, now);
+            }
+            MachineMessage::RelayUpdate(relay) => {
+                self.last_received_debug = Some(format!("relay_update({:?})", relay.role));
+                debug!(role = ?relay.role, team_status = ?relay.team_status, "[RELAY] Update");
+                self.set_relay(Some(relay));
+            }
+            MachineMessage::RelayRefused { code, message } => {
+                self.last_received_debug = Some(format!("relay_refused({code})"));
+                warn!(code = %code, message = %message, "[RELAY] Request refused");
+                self.set_status(message, now);
             }
             MachineMessage::ItemNotice { banner } => {
                 self.last_received_debug = Some("item_notice".to_string());
@@ -3800,6 +3906,7 @@ mod tests {
             phantom_skin: None,
             latest_mod_version: None,
             held_item: None,
+            relay: None,
         }
     }
 
@@ -3834,6 +3941,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -3857,6 +3965,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5084,6 +5193,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5185,6 +5295,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5208,6 +5319,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5233,6 +5345,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5263,6 +5376,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -5835,6 +5949,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -6106,6 +6221,7 @@ mod tests {
                 phantom_skin: None,
                 latest_mod_version: None,
                 held_item: None,
+                relay: None,
             },
             now,
         );
@@ -6322,6 +6438,7 @@ mod tests {
             phantom_skin: None,
             latest_mod_version: None,
             held_item: None,
+            relay: None,
         }
     }
 
@@ -7122,6 +7239,7 @@ mod tests {
             phantom_skin: None,
             latest_mod_version: None,
             held_item: None,
+            relay: None,
         }
     }
 
@@ -7666,6 +7784,7 @@ mod tests {
             phantom_skin: None,
             latest_mod_version: None,
             held_item: None,
+            relay: None,
         }
     }
 
@@ -11194,5 +11313,348 @@ mod tests {
                 "{end}"
             );
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Relay roles and the team row
+    // ------------------------------------------------------------------
+
+    /// A relay's `RelayInfo` in the contract's full shape: me `p1`, teammate
+    /// `p2` holding the baton, team `t1`, the team playing.
+    fn relay_info_with(role: &str, team_status: &str) -> RelayInfo {
+        serde_json::from_str(&format!(
+            r#"{{"team_id":"t1","team_name":"Red Team","team_status":"{team_status}","cap":5,
+              "holder_id":"p2","holder_online":true,"zone_name":"Stormveil Castle","baton_free_in_s":null,
+              "role":"{role}","gates_locked":false,
+              "members":[{{"participant_id":"p1","name":"Roger","zones":2,"status":"playing","online":true,"ready":true,"validated":true}},
+                         {{"participant_id":"p2","name":"Kahleeya","zones":3,"status":"playing","online":true,"ready":false,"validated":true}}],
+              "flags":{{"lock_flag":1050290500,"chapel_warp_flag":1050290501,"warp_flag_base":1050290510,"zone_flag_base":1050294000}}}}"#
+        ))
+        .unwrap()
+    }
+
+    fn relay_info(role: &str) -> RelayInfo {
+        relay_info_with(role, "playing")
+    }
+
+    /// The setup shape: nobody holds the baton yet, everyone reads `waiting`.
+    fn setup_relay_info() -> RelayInfo {
+        let mut info = relay_info_with("waiting", "registered");
+        info.holder_id = None;
+        info.holder_online = false;
+        info.zone_name = None;
+        info.baton_free_in_s = Some(0);
+        info
+    }
+
+    fn relay_auth(status: &str, relay: Option<RelayInfo>) -> MachineMessage {
+        MachineMessage::AuthOk {
+            participant_id: "p1".to_string(),
+            race: test_race(status),
+            seed: serde_json::from_str(
+                r#"{"total_layers": 3, "event_ids": [1050294007], "finish_event": null,
+                    "death_flags": {}, "boss_flags": [10000800]}"#,
+            )
+            .unwrap(),
+            participants: vec![
+                test_participant("t1", "playing", 2),
+                test_participant("t2", "playing", 1),
+            ],
+            phantom_skin: None,
+            latest_mod_version: None,
+            held_item: None,
+            relay,
+        }
+    }
+
+    fn relay_machine(role: &str, now: Instant) -> RaceMachine {
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(relay_auth("running", Some(relay_info(role))), now);
+        m
+    }
+
+    fn set_row_status(m: &mut RaceMachine, id: &str, status: &str) {
+        m.handle_message(
+            MachineMessage::PlayerUpdate(test_participant(id, status, 2)),
+            Instant::now(),
+        );
+    }
+
+    fn set_member_status(info: &mut RelayInfo, id: &str, status: ParticipantStatus) {
+        info.members
+            .iter_mut()
+            .find(|member| member.participant_id == id)
+            .unwrap()
+            .status = status;
+    }
+
+    fn zone_data() -> ZoneUpdateData {
+        ZoneUpdateData {
+            display_name: "Stormveil Castle".into(),
+            tier: Some(2),
+            original_tier: None,
+            layer: Some(2),
+            is_first_visit: true,
+            exits: Vec::new(),
+            unused_exits: None,
+            defeat_flag: None,
+        }
+    }
+
+    #[test]
+    fn a_relay_runner_reads_its_team_row() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        assert_eq!(m.my_participant().unwrap().id, "t1");
+        assert_eq!(m.my_row_id(), Some("t1"));
+        // The team row follows the runner whatever its place on the board.
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![
+                    test_participant("t2", "playing", 3),
+                    test_participant("t1", "playing", 2),
+                ],
+                leader_splits: None,
+            },
+            now,
+        );
+        assert_eq!(m.my_participant().unwrap().id, "t1");
+        m.handle_message(
+            MachineMessage::PlayerUpdate(test_participant("t1", "playing", 3)),
+            now,
+        );
+        assert_eq!(m.pre_reveal_layer, Some(2));
+    }
+
+    #[test]
+    fn a_leaderboard_update_of_the_team_row_freezes_the_layer_too() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        m.handle_message(
+            MachineMessage::LeaderboardUpdate {
+                participants: vec![
+                    test_participant("t1", "playing", 3),
+                    test_participant("t2", "playing", 1),
+                ],
+                leader_splits: None,
+            },
+            now,
+        );
+        assert_eq!(m.pre_reveal_layer, Some(2));
+    }
+
+    #[test]
+    fn a_non_relay_runner_keeps_its_own_row() {
+        let now = Instant::now();
+        let m = running_machine(now);
+        assert!(m.relay().is_none() && m.relay_role().is_none() && m.relay_me().is_none());
+        assert_eq!(m.my_row_id(), Some("p1"));
+        assert!(!m.relay_over() && !m.relay_live());
+    }
+
+    #[test]
+    fn a_finished_team_finishes_every_member() {
+        let now = Instant::now();
+        let mut m = relay_machine("waiting", now);
+        assert!(!m.am_i_finished());
+        set_row_status(&mut m, "t1", "finished");
+        assert!(m.am_i_finished());
+    }
+
+    #[test]
+    fn an_abandoned_member_is_out_while_the_team_plays() {
+        let now = Instant::now();
+        for status in [
+            ParticipantStatus::Abandoned,
+            ParticipantStatus::Disqualified,
+        ] {
+            let mut m = relay_machine("waiting", now);
+            assert!(!m.am_i_abandoned() && !m.relay_over());
+            let mut info = relay_info("waiting");
+            set_member_status(&mut info, "p1", status);
+            m.handle_message(MachineMessage::RelayUpdate(info), now);
+            assert_eq!(
+                m.my_participant().unwrap().status,
+                ParticipantStatus::Playing
+            );
+            assert!(m.am_i_abandoned(), "{status:?}");
+            assert!(m.relay_over(), "{status:?}");
+            assert!(!m.relay_live(), "{status:?}");
+        }
+    }
+
+    #[test]
+    fn a_teammate_out_does_not_end_my_relay() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        let mut info = relay_info("holder");
+        set_member_status(&mut info, "p2", ParticipantStatus::Abandoned);
+        m.handle_message(MachineMessage::RelayUpdate(info), now);
+        assert!(!m.am_i_abandoned() && !m.relay_over());
+        assert!(m.relay_live());
+    }
+
+    #[test]
+    fn a_team_over_ends_the_relay() {
+        let now = Instant::now();
+        for status in ["finished", "abandoned", "disqualified"] {
+            let mut m = relay_machine("holder", now);
+            assert!(m.relay_live());
+            m.handle_message(
+                MachineMessage::RelayUpdate(relay_info_with("holder", status)),
+                now,
+            );
+            assert!(m.relay_over(), "{status}");
+            assert!(!m.relay_live(), "{status}");
+        }
+    }
+
+    #[test]
+    fn a_setup_relay_is_not_live() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), now);
+        assert!(!m.relay_live());
+        m.handle_message(MachineMessage::RaceStart(10), now);
+        assert!(m.is_race_running());
+        assert!(!m.relay_live(), "the info still reads registered");
+        m.handle_message(
+            MachineMessage::RelayUpdate(relay_info_with("holder", "ready")),
+            now,
+        );
+        assert!(m.relay_live(), "countdown");
+        assert!(m.is_countdown_active(now));
+        assert!(m.relay_live(), "after the countdown");
+        m.handle_message(
+            MachineMessage::RelayUpdate(relay_info_with("holder", "playing")),
+            now,
+        );
+        assert!(m.relay_live());
+    }
+
+    #[test]
+    fn a_relay_is_not_live_before_the_race_runs() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(relay_auth("setup", Some(relay_info("holder"))), now);
+        assert!(!m.relay_live());
+    }
+
+    #[test]
+    fn auth_ok_without_relay_forgets_the_team() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        let mut auth = relay_auth("running", None);
+        if let MachineMessage::AuthOk { participants, .. } = &mut auth {
+            *participants = vec![test_participant("p1", "playing", 1)];
+        }
+        m.handle_message(auth, now);
+        assert!(m.relay().is_none());
+        assert_eq!(m.my_participant().unwrap().id, "p1");
+        assert_eq!(m.my_row_id(), Some("p1"));
+    }
+
+    #[test]
+    fn auth_ok_replaces_the_team_whole() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        m.handle_message(relay_auth("running", Some(relay_info("waiting"))), now);
+        assert_eq!(m.relay_role(), Some(RelayRole::Waiting));
+    }
+
+    #[test]
+    fn becoming_a_waiting_runner_clears_the_zone() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        m.race_state.current_zone = Some(zone_data());
+        m.pending_zone_update = Some(zone_data());
+        let version = m.zone_version;
+        m.handle_message(MachineMessage::RelayUpdate(relay_info("waiting")), now);
+        assert!(m.race_state.current_zone.is_none());
+        assert!(m.pending_zone_update.is_none());
+        assert_eq!(m.zone_version, version + 1);
+        // A further waiting update has nothing left to clear.
+        m.handle_message(MachineMessage::RelayUpdate(relay_info("waiting")), now);
+        assert_eq!(m.zone_version, version + 1);
+    }
+
+    #[test]
+    fn an_unknown_role_keeps_the_zone_and_decides_nothing() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        m.race_state.current_zone = Some(zone_data());
+        let version = m.zone_version;
+        let mut info = relay_info("holder");
+        info.role = RelayRole::Unknown;
+        m.handle_message(MachineMessage::RelayUpdate(info), now);
+        assert_eq!(m.relay_role(), Some(RelayRole::Unknown));
+        assert!(m.race_state.current_zone.is_some());
+        assert_eq!(m.zone_version, version);
+        assert!(m.relay_live());
+    }
+
+    #[test]
+    fn an_unknown_status_is_not_a_decision() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        let mut info = relay_info("holder");
+        info.team_status = ParticipantStatus::Unknown;
+        set_member_status(&mut info, "p1", ParticipantStatus::Unknown);
+        m.handle_message(MachineMessage::RelayUpdate(info), now);
+        // Neither over nor live: nothing is offered, nothing is ended.
+        assert!(!m.relay_over());
+        assert!(!m.relay_live());
+        assert!(!m.am_i_abandoned());
+        // An unknown member status alone leaves a live team live.
+        let mut info = relay_info("holder");
+        set_member_status(&mut info, "p1", ParticipantStatus::Unknown);
+        m.handle_message(MachineMessage::RelayUpdate(info), now);
+        assert!(!m.relay_over() && m.relay_live());
+    }
+
+    #[test]
+    fn a_refusal_shows_its_message() {
+        let now = Instant::now();
+        let mut m = relay_machine("holder", now);
+        m.handle_message(
+            MachineMessage::RelayRefused {
+                code: "target_at_cap".into(),
+                message: "This teammate has reached their zone quota".into(),
+            },
+            now,
+        );
+        assert_eq!(
+            m.get_status(now),
+            Some("This teammate has reached their zone quota")
+        );
+    }
+
+    #[test]
+    fn a_waiting_runner_reports_its_own_save_after_the_countdown() {
+        let now = Instant::now();
+        let mut m = RaceMachine::new(1, String::new(), false, now);
+        m.handle_message(relay_auth("setup", Some(setup_relay_info())), now);
+        m.handle_message(MachineMessage::RaceStart(10), now);
+        m.handle_message(
+            MachineMessage::RelayUpdate(relay_info_with("waiting", "ready")),
+            now,
+        );
+        let status_igts = |fx: &[Effect]| -> Vec<u32> {
+            fx.iter()
+                .filter_map(|e| match e {
+                    Effect::SendStatusUpdate { igt_ms, .. } => Some(*igt_ms),
+                    _ => None,
+                })
+                .collect()
+        };
+        for t in [ms(200), secs(3), secs(9)] {
+            let fx = m.tick(tick_in(snap(Some(5_000), true), true, None), now + t);
+            assert!(status_igts(&fx).is_empty(), "countdown at {t:?}");
+        }
+        let fx = m.tick(
+            tick_in(snap(Some(5_000), true), true, None),
+            now + ms(10_300),
+        );
+        assert_eq!(status_igts(&fx), [5_000]);
     }
 }
