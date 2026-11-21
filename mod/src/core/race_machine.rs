@@ -5095,7 +5095,7 @@ impl RaceMachine {
     }
 
     /// The shell's answer to `Effect::ApplyRelayItems`, delivered on the
-    /// frame thread with the `generation` the effect carried: the apply is
+    /// tracker's frame thread with the `generation` the effect carried: the apply is
     /// over, whatever part of it could not be done (the shell logs that).
     /// An answer for any other apply than the one in flight, an abandoned
     /// one included, is ignored. The answer clears the apply in flight: its
@@ -5279,7 +5279,7 @@ impl RaceMachine {
     }
 
     /// The shell's answer to `Effect::CaptureRelayState`, delivered on the
-    /// frame thread with the `generation` the effect carried (an answer for
+    /// tracker's frame thread with the `generation` the effect carried (an answer for
     /// any other capture than the one in flight, an abandoned one included,
     /// is dropped; a shell that never answers is tolerated). After a failed
     /// capture none is asked for `relay::CAPTURE_RETRY`. The answer: the captured state,
