@@ -73,12 +73,13 @@
 
   let hasSelection = $derived(selectedIds != null && selectedIds.size > 0);
 
-  // The teams a viewer unfolded, by row id: kept here, outside the row
-  // objects, so it survives their replacement and the re-ordering.
-  const unfolded = new SvelteSet<string>();
+  // A team shows its members until the viewer folds it. The folded teams, by
+  // row id: kept here, outside the row objects, so it survives their
+  // replacement and the re-ordering.
+  const folded = new SvelteSet<string>();
 
-  function toggleUnfolded(id: string) {
-    if (!unfolded.delete(id)) unfolded.add(id);
+  function toggleFolded(id: string) {
+    if (!folded.delete(id)) folded.add(id);
   }
 
   function zoneName(zone: string | null): string | null {
@@ -171,7 +172,7 @@
         {@const isPreRace =
           participant.status === "ready" || participant.status === "registered"}
         {@const isTeam = !!participant.relay_members}
-        {@const isUnfolded = isTeam && unfolded.has(participant.id)}
+        {@const isUnfolded = isTeam && !folded.has(participant.id)}
         {@const isSelected = selectedIds?.has(participant.id) ?? false}
         {@const runKind = runKinds[participant.id]}
         {@const rank = ranks ? ranks[participant.id] : index + 1}
@@ -221,7 +222,7 @@
                     title={isUnfolded ? "Fold the team" : "Show the members"}
                     onclick={(e) => {
                       e.stopPropagation();
-                      toggleUnfolded(participant.id);
+                      toggleFolded(participant.id);
                     }}
                   >
                     <span class="chevron" aria-hidden="true"

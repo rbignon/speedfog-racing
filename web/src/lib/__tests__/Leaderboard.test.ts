@@ -288,21 +288,21 @@ describe("Leaderboard: relay team rows", () => {
     expect(container.querySelector('a[href^="/user/"]')).toBeNull();
   });
 
-  it("the chevron and the name unfold the members without selecting the row", async () => {
+  it("shows a team's members until the chevron or the name folds them", async () => {
     const onToggle = vi.fn();
     render(Leaderboard, { props: props({ onToggle }) });
-    expect(screen.queryByText("3/5")).toBeNull();
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Red Team/, expanded: false }),
-    );
-    expect(onToggle).not.toHaveBeenCalled();
     expect(screen.getByText("3/5")).toBeTruthy();
     expect(screen.getByText("5/5")).toBeTruthy();
     expect(screen.getByText("waiting")).toBeTruthy();
     await fireEvent.click(
       screen.getByRole("button", { name: /Red Team/, expanded: true }),
     );
+    expect(onToggle).not.toHaveBeenCalled();
     expect(screen.queryByText("3/5")).toBeNull();
+    await fireEvent.click(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    );
+    expect(screen.getByText("3/5")).toBeTruthy();
   });
 
   it("a click elsewhere on the team row still selects it", async () => {
@@ -312,25 +312,31 @@ describe("Leaderboard: relay team rows", () => {
     expect(onToggle).toHaveBeenCalledWith("t1", false);
   });
 
-  it("an unfolded team stays unfolded when its row object is replaced", async () => {
+  it("a folded team stays folded when its row object is replaced", async () => {
     const { rerender } = render(Leaderboard, { props: props() });
     await fireEvent.click(
-      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+      screen.getByRole("button", { name: /Red Team/, expanded: true }),
     );
     await rerender(props({ participants: [teamRow({ igt_ms: 9000 })] }));
-    expect(screen.getByText("3/5")).toBeTruthy();
+    expect(screen.queryByText("3/5")).toBeNull();
   });
 
-  it("an unfolded team stays unfolded when the order changes", async () => {
+  it("a folded team stays folded when the order changes", async () => {
     const other = teamRow({ id: "t2", twitch_display_name: "Blue Team" });
     const { rerender } = render(Leaderboard, {
       props: props({ participants: [teamRow(), other] }),
     });
     await fireEvent.click(
-      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+      screen.getByRole("button", { name: /Red Team/, expanded: true }),
     );
     await rerender(props({ participants: [other, teamRow()] }));
-    expect(screen.getAllByText("3/5")).toHaveLength(1);
+    // The fold follows Red, not its old place; Blue stays open.
+    expect(
+      screen.getByRole("button", { name: /Red Team/, expanded: false }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /Blue Team/, expanded: true }),
+    ).toBeTruthy();
   });
 
   it("writes the holder and the zone on the second line", () => {
@@ -356,9 +362,6 @@ describe("Leaderboard: relay team rows", () => {
     const { container } = render(Leaderboard, {
       props: props({ onToggle, memberUsers: { m1: user } }),
     });
-    await fireEvent.click(
-      screen.getByRole("button", { name: /Red Team/, expanded: false }),
-    );
     const link = container.querySelector(
       '.team-members a[href="/user/kiofto"]',
     ) as HTMLAnchorElement;
