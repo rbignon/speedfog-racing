@@ -3,9 +3,10 @@ role, and the baton operations.
 
 The operations (``request_handoff``, ``store_state``, ``request_take``,
 ``confirm_taken``, ``set_ready``, ``holder_connection_changed``, and the take
-timer) each take ``RaceRoom.relay_lock``, so they run one at a time per race,
-and read the team through ``team_for_update``, whose row lock orders a flip
-and a progress write of the same team. See ``docs/RELAY.md`` ("Baton").
+timer) each take ``RaceRoom.relay_lock``, so they run one at a time per race.
+All but ``set_ready`` read the team through ``team_for_update``, whose row lock
+orders a flip and a progress write of the same team; ``set_ready`` reads only
+the member's team id, without a lock. See ``docs/RELAY.md`` ("Baton").
 """
 
 import asyncio
@@ -449,6 +450,7 @@ class _Flip:
 
 
 async def _flip(
+    session_maker: async_sessionmaker[AsyncSession],
     db: AsyncSession,
     room: "RaceRoom",
     team: RelayTeam,
@@ -461,8 +463,10 @@ async def _flip(
     connected gets a free baton at once (``baton_free``), and no take is
     awaited from them.
 
-    The awaited take is in the room before the commit, so no progress message
-    of the receiver is heard between the two (``awaiting_take``)."""
+    The awaited take is in the room, with its timer running, before the
+    commit: no progress message of the receiver is heard between the two
+    (``awaiting_take``), and whatever fails after the commit, the take still
+    expires and frees the baton."""
     connected = target.id in room.mods
     giver_id = team.holder_id
     team.holder_id = target.id
@@ -478,6 +482,7 @@ async def _flip(
             phase="take",
             expires_at=time.monotonic() + RELAY_TAKE_TIMEOUT_S,
         )
+        pending.timer = asyncio.create_task(_take_timeout(session_maker, room, pending, graph))
     _set_pending(room, team.id, pending)
     try:
         await db.commit()
@@ -512,11 +517,8 @@ async def _after_flip(
     flip: _Flip,
     graph: dict[str, Any],
 ) -> None:
-    """Start the take's timer, send it to the receiver and tell the team."""
+    """Send the take to the receiver (when one is awaited) and tell the team."""
     if flip.pending is not None:
-        flip.pending.timer = asyncio.create_task(
-            _take_timeout(session_maker, room, flip.pending, graph)
-        )
         await room.send_to_mod(flip.target_id, flip.take.model_dump_json())
     # The giver's mod locks and goes to the Chapel on the role this tells it.
     await send_relay_updates(session_maker, flip.race_id, flip.team_id, graph_json=graph)
@@ -529,7 +531,9 @@ async def _take_timeout(
     graph: dict[str, Any],
 ) -> None:
     """A take nobody acknowledged in time frees the baton: any teammate under
-    their cap, the giver and the nominal holder included, may take it."""
+    their cap, the giver and the nominal holder included, may take it. Only
+    while it is still this team's awaited take, its receiver still holds the
+    baton and the baton can still move (a reset or a finish stops it)."""
     await asyncio.sleep(RELAY_TAKE_TIMEOUT_S)
     try:
         async with room.relay_lock:
@@ -540,7 +544,7 @@ async def _take_timeout(
                 if loaded is None:
                     return
                 team, _ = loaded
-                if team.holder_id != pending.target_id or team.baton_free:
+                if team.holder_id != pending.target_id or team.baton_free or not _baton_moves(team):
                     return
                 team.baton_free = True
                 race_id = team.race_id
@@ -663,7 +667,13 @@ async def store_state(
                 and (answered is not None or pending.expired(time.monotonic()))
             ):
                 _set_pending(room, team.id, None)
-            holder = holds_baton(team, participant_id) and _baton_moves(team)
+            # Heard like a progress message: not before the holder's
+            # relay_taken for a baton just received (``awaiting_take``).
+            holder = (
+                holds_baton(team, participant_id)
+                and not awaiting_take(room, team.id, participant_id)
+                and _baton_moves(team)
+            )
             if holder and _store_state(team, state, igt_ms):
                 target = next(
                     (
@@ -677,7 +687,9 @@ async def store_state(
                 )
                 if target is not None:
                     assert handoff_id is not None
-                    flip = await _flip(db, room, team, target, handoff_id=handoff_id, graph=graph)
+                    flip = await _flip(
+                        session_maker, db, room, team, target, handoff_id=handoff_id, graph=graph
+                    )
                 else:
                     await db.commit()
             race_id, team_id = team.race_id, team.id
@@ -708,6 +720,17 @@ async def request_take(
             team, graph = loaded
             me = next(m for m in team.members if m.id == participant_id)
             holder_connected = team.holder_id is not None and team.holder_id in room.mods
+            if (
+                team.holder_id is not None
+                and not holder_connected
+                and not team.baton_free
+                and team.holder_offline_since is None
+                and _baton_moves(team)
+            ):
+                # Its socket is gone but its disconnect not recorded yet (or it
+                # never connected): offline since now, the whole wait ahead.
+                team.holder_offline_since = datetime.now(UTC)
+                await db.commit()
             refusal: str | None
             if not _baton_moves(team) or _in_flight(room, team.id):
                 refusal = RelayRefusal.BUSY
@@ -722,7 +745,9 @@ async def request_take(
                     asking=True,
                 )
             if refusal is None:
-                flip = await _flip(db, room, team, me, handoff_id=uuid.uuid4().hex, graph=graph)
+                flip = await _flip(
+                    session_maker, db, room, team, me, handoff_id=uuid.uuid4().hex, graph=graph
+                )
         if flip is None:
             await _refuse(room, participant_id, refusal or RelayRefusal.BUSY)
             return

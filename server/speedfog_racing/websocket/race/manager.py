@@ -109,7 +109,8 @@ class RaceRoom:
     # Serializes the baton operations of this race's relay teams.
     relay_lock: asyncio.Lock = field(default_factory=asyncio.Lock, repr=False, compare=False)
     # Relay members loaded at the Chapel with their lock raised (their last
-    # `relay_ready` was true). Used under relay_lock; dropped on disconnect.
+    # `relay_ready` was true). Used under relay_lock; dropped whenever the
+    # member's current socket goes (disconnect, eviction, replacement).
     relay_ready: set[uuid.UUID] = field(default_factory=set, repr=False, compare=False)
     # team_id -> the handoff awaiting its answer or its acknowledgement.
     relay_pending: dict[uuid.UUID, PendingHandoff] = field(
@@ -210,6 +211,7 @@ class RaceRoom:
                 # during the send may have replaced it with a newer one.
                 if self.mods.get(pid) is conn:
                     self.mods.pop(pid, None)
+                    self.relay_ready.discard(pid)
                     close_evicted(conn.websocket)
 
     async def send_to_mod(self, participant_id: uuid.UUID, message: str) -> bool:
@@ -235,6 +237,7 @@ class RaceRoom:
             # the send may have replaced it with a newer one.
             if self.mods.get(participant_id) is conn:
                 self.mods.pop(participant_id, None)
+                self.relay_ready.discard(participant_id)
                 close_evicted(conn.websocket)
             return False
 
@@ -407,6 +410,8 @@ class ConnectionManager:
             mod_version=mod_version,
         )
         if existing is not None:
+            # Readiness was the replaced socket's report: the new one sends its own.
+            room.relay_ready.discard(participant_id)
             logger.info(f"Mod replaced: race={race_id}, participant={participant_id}")
             try:
                 await existing.websocket.close(code=4000, reason="replaced by new connection")
@@ -488,10 +493,16 @@ class ConnectionManager:
                 self.rooms.pop(race_id, None)
 
     async def close_room(self, race_id: uuid.UUID, code: int = 1000, reason: str = "") -> None:
-        """Close all WebSocket connections in a room and remove it."""
+        """Close all WebSocket connections in a room and remove it, stopping its
+        relay take timers (a reset or a deletion ends every handoff in flight)."""
         room = self.rooms.pop(race_id, None)
         if not room:
             return
+
+        for pending in room.relay_pending.values():
+            if pending.timer is not None and not pending.timer.done():
+                pending.timer.cancel()
+        room.relay_pending.clear()
 
         for mod_conn in room.mods.values():
             try:

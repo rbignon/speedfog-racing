@@ -243,8 +243,10 @@ def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -
     """Seconds before the team's baton can be taken, as ``RelayInfo`` tells it.
 
     0 once it is free: ``baton_free`` is set, the team has no holder, or the
-    holder has been offline for the whole wait (or no offline stamp is known).
-    None while the holder is online and the baton not free.
+    holder has been offline for the whole wait. None while the holder is online
+    and the baton not free. A holder absent with no offline stamp yet (its
+    socket just gone, before its disconnect is recorded) is offline since now:
+    the whole wait is still ahead.
     """
     if team.baton_free or team.holder_id is None:
         return 0
@@ -252,7 +254,7 @@ def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -
         return None
     since = team.holder_offline_since
     if since is None:
-        return 0
+        return RELAY_OFFLINE_WAIT_S
     if since.tzinfo is None:
         since = since.replace(tzinfo=UTC)
     return max(0, RELAY_OFFLINE_WAIT_S - int((now - since).total_seconds()))
@@ -285,12 +287,14 @@ def relay_start_error(race: Race) -> str | None:
     return None
 
 
-def prepare_relay_start(race: Race) -> None:
+def prepare_relay_start(race: Race, *, connected: Collection[UUID], now: datetime) -> None:
     """Fix the teams at the start of a validated relay race.
 
     A member who is not ready is set ABANDONED (still attached to the team, so
     ``team_cap`` ignores them). Each team with a member becomes READY, its baton
-    held by its first runner when ready, else by its first ready member.
+    held by its first runner when ready, else by its first ready member. A
+    holder whose mod is not among ``connected`` is offline from ``now``: the
+    offline wait starts with the race.
     """
     for team, members in _members_by_team(race):
         if not members:
@@ -305,6 +309,7 @@ def prepare_relay_start(race: Race) -> None:
                 m.status = ParticipantStatus.ABANDONED
         first = next((m for m in ready if m.id == team.first_runner_id), None)
         team.holder_id = (first or ready[0]).id
+        team.holder_offline_since = None if team.holder_id in connected else now
         team.status = ParticipantStatus.READY
 
 

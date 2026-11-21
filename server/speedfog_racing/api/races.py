@@ -1867,7 +1867,8 @@ async def start_race(
         relay_error = relay_start_error(race)
         if relay_error is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=relay_error)
-        prepare_relay_start(race)
+        room = manager.get_room(race.id)
+        prepare_relay_start(race, connected=room.mods if room else (), now=datetime.now(UTC))
     elif user.role.at_least(UserRole.ADMIN):
         min_participants = 0
     elif trusted and race.late_join_window_minutes is not None:
