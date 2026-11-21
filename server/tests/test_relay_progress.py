@@ -1,6 +1,5 @@
 """Relay progress: only the baton holder is listened to, and what it does goes to its team."""
 
-import itertools
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -10,6 +9,7 @@ import pytest
 from speedfog_racing.models import Participant, ParticipantStatus, RaceStatus, RelayTeam
 from speedfog_racing.services.relay import copy_team_result, counts_zone_on_exit, relay_cap
 from speedfog_racing.websocket.handler import extract_boss_flags
+from speedfog_racing.websocket.race.relay_mod import RelayModHandler
 
 from . import test_integration as _integration
 from .relay_fixtures import (
@@ -25,6 +25,7 @@ from .relay_fixtures import (
     START_NODE,
     THIRD_FOG_FLAG,
     RelayModClient,
+    barrier,
     load_member,
     load_members,
     load_race,
@@ -43,7 +44,6 @@ PLAYING = ParticipantStatus.PLAYING
 FINISHED = ParticipantStatus.FINISHED
 CAP = relay_cap(PROGRESS_TOTAL_LAYERS, 2)
 EVENT_MAP = progress_graph()["event_map"]
-_barrier_ids = itertools.count(90_000)
 
 
 @pytest.fixture
@@ -69,14 +69,6 @@ def _zones(update: dict[str, Any], participant_id: str) -> int:
     )
 
 
-def _barrier(mod: RelayModClient) -> None:
-    """Wait until the server handled everything ``mod`` sent so far: an unknown
-    flag is acknowledged after the messages before it (one loop per socket)."""
-    message_id = next(_barrier_ids)
-    mod.send_event_flag(1, igt_ms=0, message_id=message_id)
-    mod.receive_until("event_flag_ack", lambda m: m["message_id"] == message_id)
-
-
 def _gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> None:
     """Take a fog gate; the zone_update is the handler's last word on it."""
     mod.send_event_flag(flag, igt_ms=igt_ms, message_id=message_id)
@@ -84,9 +76,12 @@ def _gate(mod: RelayModClient, flag: int, igt_ms: int, message_id: int) -> None:
 
 
 def test_a_waiting_runner_progress_is_acked_and_recorded_nowhere(relay_race, mods):
+    holder_id = _pid(relay_race, 0, 0)
     waiting = mods[_pid(relay_race, 0, 1)]
+    # The holder stands in the boss arena: a kill reported there would count.
+    _gate(mods[holder_id], FOG_FLAG, 20_000, 1)
 
-    waiting.send_event_flag(FOG_FLAG, igt_ms=30_000, message_id=7)
+    waiting.send_event_flag(SECOND_FOG_FLAG, igt_ms=30_000, message_id=7)
     assert waiting.receive_until("event_flag_ack")["message_id"] == 7
     waiting.send_event_flag(BOSS_FLAG, igt_ms=31_000, message_id=8)
     assert waiting.receive_until("event_flag_ack")["message_id"] == 8
@@ -94,10 +89,18 @@ def test_a_waiting_runner_progress_is_acked_and_recorded_nowhere(relay_race, mod
     assert waiting.receive_until("zone_query_ack")["message_id"] == 9
 
     team = load_team(relay_race)
-    assert len(team.zone_history or []) == 1  # the spawn entry only
-    assert (team.current_layer, team.entry_flag_id, team.igt_ms) == (0, None, 1_000)
+    history = team.zone_history or []
+    assert [e["node_id"] for e in history] == [START_NODE, BOSS_NODE]
+    assert not [e for e in history if "boss_kill_igt_ms" in e]
+    assert (team.current_zone, team.current_layer, team.entry_flag_id, team.igt_ms) == (
+        BOSS_NODE,
+        1,
+        FOG_FLAG,
+        20_000,
+    )
     me = load_member(relay_race, waiting.participant_id)
     assert (me.zone_history, me.relay_zones) == (None, 0)
+    assert load_member(relay_race, holder_id).relay_zones == 1  # leaving the start only
 
 
 def test_a_waiting_runner_report_broadcasts_no_row(relay_race, mods):
@@ -105,7 +108,7 @@ def test_a_waiting_runner_report_broadcasts_no_row(relay_race, mods):
     waiting = mods[_pid(relay_race, 0, 1)]
     for igt_ms in (2_000, 3_000):
         waiting.send_status_update(igt_ms=igt_ms, death_count=0, weapons=[33200000, 2000025])
-    _barrier(waiting)
+    barrier(waiting)
 
     holder.send_status_update(igt_ms=2_000, death_count=0)
 
@@ -137,7 +140,7 @@ def test_every_member_passes_the_fresh_save_gate(relay_race, mods):
 
     # Validated, a waiting runner's IGT is never judged again.
     waiting.send_status_update(igt_ms=900_000, death_count=0)
-    _barrier(waiting)
+    barrier(waiting)
     assert not [m for m in waiting.skipped if m["type"] == "error"]
 
 
@@ -188,11 +191,35 @@ def test_a_boss_kill_counts_for_the_holder_once(relay_race, mods):
     patch_team(relay_race, holder_id=UUID(other_id))
     mods[other_id].send_event_flag(BOSS_FLAG, igt_ms=50_000, message_id=5)
     mods[other_id].receive_until("event_flag_ack", lambda m: m["message_id"] == 5)
-    _barrier(mods[other_id])
+    barrier(mods[other_id])
     assert load_member(relay_race, other_id).relay_zones == 0
     assert load_member(relay_race, holder_id).relay_zones == 2
     history = load_team(relay_race).zone_history or []
     assert [e.get("boss_kill_igt_ms") for e in history] == [None, 40_000]
+
+
+def test_a_boss_kill_count_commits_with_its_stamp(monkeypatch, relay_race, mods):
+    holder_id = _pid(relay_race, 0, 0)
+    holder = mods[holder_id]
+    _gate(holder, FOG_FLAG, 20_000, 1)
+
+    async def crash(self, entity, node_id, igt_ms):
+        raise RuntimeError("lost after the stamp")
+
+    # Whatever fails after the kill's commit, the count went with it: a
+    # replay of the flag is a duplicate and would never count it again.
+    monkeypatch.setattr(RelayModHandler, "_on_boss_killed", crash)
+    holder.send_event_flag(BOSS_FLAG, igt_ms=40_000, message_id=2)
+    holder.receive_until("event_flag_ack", lambda m: m["message_id"] == 2)
+    # The crash ends the holder's socket: its teammate hears of it last.
+    teammate = mods[_pid(relay_race, 0, 1)]
+    teammate.receive_until(
+        "relay_update",
+        lambda m: m["relay"]["holder_id"] == holder_id and not m["relay"]["holder_online"],
+    )
+
+    assert load_member(relay_race, holder_id).relay_zones == 2
+    assert (load_team(relay_race).zone_history or [])[-1]["boss_kill_igt_ms"] == 40_000
 
 
 def test_exit_counts_only_for_a_zone_without_boss(relay_race, mods):
@@ -249,7 +276,7 @@ def test_the_final_boss_is_accepted_at_the_cap_and_finishes_the_team(relay_race,
     holder.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "finished")
     # The waiting runner learns it too: its race is over, it lowers its lock.
     mods[other_id].receive_until("relay_update", lambda m: m["relay"]["team_status"] == "finished")
-    _barrier(holder)  # the finish's last steps did not drop the connection
+    barrier(holder)  # the finish's last steps did not drop the connection
 
     team = load_team(relay_race)
     assert (team.status, team.igt_ms, team.current_layer) == (
@@ -275,7 +302,7 @@ def test_the_race_ends_when_every_team_has_finished(relay_race, mods):
         holder = mods[_pid(relay_race, index, 0)]
         holder.send_event_flag(FINISH_FLAG, igt_ms=30_000, message_id=9)
         holder.receive_until("relay_update", lambda m: m["relay"]["team_status"] == "finished")
-        _barrier(holder)  # the finish's last steps did not drop the connection
+        barrier(holder)  # the finish's last steps did not drop the connection
 
     assert load_race(relay_race).status == RaceStatus.FINISHED
 
@@ -309,6 +336,8 @@ def test_a_reconnecting_holder_resumes_the_team_zone(integration_client, relay_r
         # A zone to resume comes between auth_ok and the connect broadcast.
         mods[pid].receive_until("leaderboard_update")
         resumed.append([m["node_id"] for m in mods[pid].skipped if m["type"] == "zone_update"])
+        # The team hears of the arrival last.
+        mods[pid].receive_until("relay_update", lambda m: m["relay"]["holder_online"])
 
     assert resumed == [[BOSS_NODE], []]  # the holder's team zone; nothing for a waiting runner
 
@@ -318,7 +347,7 @@ def test_the_legacy_finished_message_is_ignored(relay_race, mods):
     holder = mods[holder_id]
 
     holder.send({"type": "finished", "igt_ms": 30_000})
-    _barrier(holder)
+    barrier(holder)
 
     assert load_team(relay_race).status == PLAYING
     assert load_member(relay_race, holder_id).status == PLAYING
@@ -327,7 +356,7 @@ def test_the_legacy_finished_message_is_ignored(relay_race, mods):
 def test_debug_flags_land_on_the_holder_row(relay_race, mods):
     holder_id, other_id = _pid(relay_race, 0, 0), _pid(relay_race, 0, 1)
     mods[other_id].send_status_update(igt_ms=2_000, death_count=0, debug_flags=["one_shot"])
-    _barrier(mods[other_id])
+    barrier(mods[other_id])
 
     mods[holder_id].send_status_update(
         igt_ms=2_000, death_count=0, debug_flags=["infinite_stamina"]

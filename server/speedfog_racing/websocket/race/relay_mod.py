@@ -8,18 +8,22 @@ the team's IGT. Only the baton holder is listened to (``holds_baton``). Every
 other member sends the same messages, since a mod does not know it waits: its
 ``event_flag`` and ``zone_query`` are acknowledged (the mod replays them until
 then) and recorded nowhere, and its ``status_update`` only runs its own
-fresh-save gate. See ``docs/RELAY.md`` ("Cap", "Progress and guards").
+fresh-save gate. The five baton messages (``relay_*``) go to the operations of
+``websocket/race/relay.py``. See ``docs/RELAY.md`` ("Baton", "Cap", "Progress
+and guards").
 """
 
 import logging
 import uuid
+from collections.abc import Awaitable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, TypeVar
 
 from fastapi import WebSocket
-from sqlalchemy import Select, select, update
+from pydantic import BaseModel, ValidationError
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-from sqlalchemy.orm import load_only, raiseload, selectinload
+from sqlalchemy.orm import defer, load_only, raiseload, selectinload
 
 from speedfog_racing.models import (
     TERMINAL_PARTICIPANT_STATUSES,
@@ -37,7 +41,6 @@ from speedfog_racing.services.relay import (
     counts_zone_on_exit,
     holds_baton,
     leaderboard_entries,
-    load_relay_row,
     relay_team_row,
 )
 from speedfog_racing.websocket.handler import MAX_FRESH_IGT_MS, clamp_death_count, clamp_igt
@@ -48,10 +51,29 @@ from speedfog_racing.websocket.race.mod import (
     _load_race_with_participants,
     aggregate_death_counts,
 )
-from speedfog_racing.websocket.race.relay import finish_team, send_relay_updates
-from speedfog_racing.websocket.schemas import DeathCountsMessage, ErrorCode
+from speedfog_racing.websocket.race.relay import (
+    confirm_taken,
+    finish_team,
+    holder_connection_changed,
+    request_handoff,
+    request_take,
+    send_relay_updates,
+    set_ready,
+    store_state,
+)
+from speedfog_racing.websocket.schemas import (
+    DeathCountsMessage,
+    ErrorCode,
+    RelayHandoffRequestMessage,
+    RelayReadyMessage,
+    RelayStateMessage,
+    RelayTakenMessage,
+    RelayTakeRequestMessage,
+)
 
 logger = logging.getLogger(__name__)
+
+_Message = TypeVar("_Message", bound=BaseModel)
 
 
 class RelayModHandler(RaceModHandler):
@@ -73,6 +95,144 @@ class RelayModHandler(RaceModHandler):
         # in flight: stored on their row by the commit that applies it to the
         # team (``_record_debug_flags``), so a rejected report stores nothing.
         self._holder_deaths: int | None = None
+        self._message_handlers["relay_ready"] = self._handle_relay_ready
+        self._message_handlers["relay_handoff_request"] = self._handle_relay_handoff_request
+        self._message_handlers["relay_take_request"] = self._handle_relay_take_request
+        self._message_handlers["relay_state"] = self._handle_relay_state
+        self._message_handlers["relay_taken"] = self._handle_relay_taken
+
+    # ------------------------------------------------------------------
+    # The baton (operations in websocket/race/relay.py)
+    # ------------------------------------------------------------------
+    def _parse(self, model: type[_Message], msg: dict[str, Any]) -> _Message | None:
+        """``msg`` as ``model``, or None (logged) when it does not parse."""
+        try:
+            return model.model_validate(msg)
+        except ValidationError:
+            logger.warning("Dropped malformed %s: %s", msg.get("type"), self.log_ref)
+            return None
+
+    async def _baton(self, operation: Awaitable[None]) -> None:
+        """Run a baton operation; a failure is logged and keeps the socket."""
+        try:
+            await operation
+        except Exception:
+            logger.exception("Relay baton operation failed: %s", self.log_ref)
+
+    async def _handle_relay_ready(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayReadyMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            set_ready(
+                self.session_maker,
+                room,
+                self._participant_id,
+                parsed.ready,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    async def _handle_relay_handoff_request(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayHandoffRequestMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            request_handoff(
+                self.session_maker,
+                room,
+                self._participant_id,
+                parsed.to_participant_id,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    async def _handle_relay_take_request(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayTakeRequestMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            request_take(
+                self.session_maker, room, self._participant_id, graph_json=self._cached_graph_json
+            )
+        )
+
+    async def _handle_relay_state(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayStateMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        igt_ms = clamp_igt(parsed.igt_ms)
+        if igt_ms is None:
+            logger.warning("Dropped relay_state with an invalid IGT: %s", self.log_ref)
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            store_state(
+                self.session_maker,
+                room,
+                self._participant_id,
+                parsed.handoff_id,
+                parsed.state,
+                igt_ms,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    async def _handle_relay_taken(self, msg: dict[str, Any]) -> None:
+        parsed = self._parse(RelayTakenMessage, msg)
+        if parsed is None or self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            confirm_taken(
+                self.session_maker,
+                room,
+                self._participant_id,
+                parsed.handoff_id,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Connection hooks
+    # ------------------------------------------------------------------
+    async def _on_authenticated(self) -> None:
+        """A returning holder ends the offline wait; anyone's arrival is news
+        to the team (``members[].online``). A returning ex-holder is simply
+        a waiting runner (``auth_ok.relay.role``)."""
+        await super()._on_authenticated()
+        if self._participant_id is None:
+            return
+        room = manager.get_or_create_room(self._race_id)
+        await self._baton(
+            holder_connection_changed(
+                self.session_maker,
+                room,
+                self._participant_id,
+                connected=True,
+                graph_json=self._cached_graph_json,
+            )
+        )
+
+    async def _on_disconnect(self) -> None:
+        """A leaving holder starts the 60 s wait and drops its pending release."""
+        # Read first: the manager drops a room left without connections.
+        room = manager.get_room(self._race_id)
+        await super()._on_disconnect()
+        if room is None or self._participant_id is None:
+            return
+        await self._baton(
+            holder_connection_changed(
+                self.session_maker,
+                room,
+                self._participant_id,
+                connected=False,
+                graph_json=self._cached_graph_json,
+            )
+        )
 
     # ------------------------------------------------------------------
     # The gate
@@ -166,7 +326,8 @@ class RelayModHandler(RaceModHandler):
     async def _validate_for_status_update(self, entity: RelayTeam) -> bool:  # type: ignore[override]
         if not await super()._validate_for_status_update(entity):  # type: ignore[arg-type]
             return False
-        # Again in the session that commits: the baton may have moved.
+        # Again in the session that commits, under the team's row lock (see
+        # ``_team_select``): the baton may have moved since the pre-read.
         return holds_baton(entity, self._participant_id)
 
     async def _validate_for_event_flag(  # type: ignore[override]
@@ -205,24 +366,36 @@ class RelayModHandler(RaceModHandler):
     def _team_select(self) -> Select[tuple[RelayTeam]]:
         """The runner's team with its members and their users, found through
         the runner's row at each message (placement may change in setup while
-        the mod stays connected)."""
+        the mod stays connected).
+
+        Every load of the three progress messages commits what it decides, so
+        it row-locks the team (``FOR UPDATE``, a no-op on SQLite), as the baton
+        operations do (``relay.team_for_update``): a flip waits for the
+        progress write in flight, or the write's gate sees the flip. The
+        character state, which no progress handler reads, is left out.
+        """
         return (
             select(RelayTeam)
             .join(Participant, Participant.relay_team_id == RelayTeam.id)
             .where(Participant.id == self._participant_id)
-            .options(selectinload(RelayTeam.members).selectinload(Participant.user))
+            .options(
+                selectinload(RelayTeam.members).selectinload(Participant.user),
+                defer(RelayTeam.character_state),
+            )
+            .with_for_update(of=RelayTeam)
         )
 
     async def _load_entity(self, db: AsyncSession) -> RelayTeam | None:  # type: ignore[override]
         """With the race as ``_load_participant`` loads a runner's: seed, field
         with users and teams (leaderboard broadcasts), casters. The race's
         teams are named: reached through ``RelayTeam.race``, their default
-        selectin would lead back to the team and is not followed."""
+        selectin would lead back to the team and is not followed. Their
+        character states are left out (no row reads them)."""
         race = selectinload(RelayTeam.race)
         result = await db.execute(
             self._team_select().options(
                 race.selectinload(Race.seed),
-                race.selectinload(Race.relay_teams),
+                race.selectinload(Race.relay_teams).defer(RelayTeam.character_state),
                 race.selectinload(Race.participants).selectinload(Participant.user),
                 race.selectinload(Race.casters).selectinload(Caster.user),
             )
@@ -331,23 +504,27 @@ class RelayModHandler(RaceModHandler):
         if holder is not None:
             await self._alert_debug_flags(holder, entity.race, added, self._get_graph_json(entity))
 
+    def _on_boss_kill_recorded(  # type: ignore[override]
+        self, entity: RelayTeam, node_id: str, igt_ms: int
+    ) -> None:
+        """A new kill counts its zone for the holder who made it, in the commit
+        that stamps it (a replay of the flag is a duplicate, so a count lost
+        after that commit would be lost for good); a re-report (a restart, or
+        a flag a handoff set) never reaches here. Counted even at the cap: the
+        game allowed the kill."""
+        holder = self._holder(entity)
+        if holder is not None:
+            holder.relay_zones += 1
+
     async def _on_boss_killed(  # type: ignore[override]
         self, entity: RelayTeam, node_id: str, igt_ms: int
     ) -> None:
-        """A new kill counts its zone for the holder who made it; a re-report
-        (a restart, or a flag a handoff set) never reaches here. Counted even
-        at the cap: the game allowed the kill."""
+        """The counted kill moves the team's row and its ``relay_update``
+        (``members[].zones``, ``gates_locked``)."""
         graph = self._get_graph_json(entity)
-        async with self.session_maker() as db:
-            await db.execute(
-                update(Participant)
-                .where(Participant.id == self._participant_id)
-                .values(relay_zones=Participant.relay_zones + 1)
-            )
-            await db.commit()
-            row = await load_relay_row(db, entity.id, graph)
-        if row is not None:
-            await manager.broadcast_player_update(entity.race_id, row, graph_json=graph)
+        await manager.broadcast_player_update(
+            entity.race_id, self._row(entity, graph), graph_json=graph
+        )
         await send_relay_updates(self.session_maker, entity.race_id, entity.id, graph_json=graph)
 
     async def _handle_finish_event(  # type: ignore[override]

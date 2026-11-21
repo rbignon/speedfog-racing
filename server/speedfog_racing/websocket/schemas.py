@@ -849,9 +849,9 @@ class RelayTakeMessage(BaseModel):
 
 
 class RelayRefusedMessage(BaseModel):
-    """Server to mod: a relay request was refused. Codes: ``not_holder``,
-    ``target_unavailable``, ``target_at_cap``, ``at_cap``, ``holder_online``,
-    ``not_ready``, ``not_validated``, ``busy``."""
+    """Server to mod: a relay request was refused. ``code`` is a
+    ``services.relay.RelayRefusal``, ``message`` its ``RELAY_REFUSAL_MESSAGES``
+    text."""
 
     type: Literal["relay_refused"] = "relay_refused"
     code: str
