@@ -147,6 +147,8 @@ def _team(**kwargs) -> RelayTeam:
         (None, True, True, 0),
         # Absent with no stamp yet (a socket just gone): the whole wait is ahead.
         (None, False, False, 60),
+        # Stamped at the race start, still in the countdown: never above the wait.
+        (-30, False, False, 60),
     ],
 )
 def test_baton_free_in_s(offline_for_s, baton_free, connected, expected):

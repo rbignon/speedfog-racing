@@ -2,24 +2,29 @@
 
 import asyncio
 import logging
+import uuid
+from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from speedfog_racing.models import (
     TERMINAL_PARTICIPANT_STATUSES,
     ChatChannel,
+    Participant,
     ParticipantStatus,
     Race,
     RaceStatus,
+    RelayTeam,
 )
 
 # `rewards.service` imports back into `services.stats_service`; importing it at
 # module top would re-enter `services/__init__.py` mid-load and crash anything
 # that loads `rewards.service` first (e.g. the backfill CLI). We import lazily
 # inside the two call sites instead.
-from speedfog_racing.services.relay import leaderboard_entries
+from speedfog_racing.services.relay import RelayTeamRow, abandon_team, leaderboard_entries
 from speedfog_racing.services.stats_service import recompute_traits_for_race_async
 
 logger = logging.getLogger(__name__)
@@ -88,6 +93,46 @@ async def check_race_auto_finish(db: AsyncSession, race: Race) -> bool:
     return True
 
 
+async def _put_relay_teams_out(db: AsyncSession, race: Race) -> set[uuid.UUID]:
+    """A relay race's forced end: every team neither finished nor out is out
+    (ABANDONED), its result copied onto its members (``abandon_team``).
+
+    The team rows are locked first (ascending id), then read again with the
+    members, before any member row is written: the order of every relay write
+    to both, and a team that finished since the race was loaded keeps its
+    finish. Returns the teams put out.
+    """
+    teams = (
+        (
+            await db.execute(
+                select(RelayTeam)
+                .where(RelayTeam.race_id == race.id)
+                .order_by(RelayTeam.id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    await db.execute(
+        select(Participant)
+        .where(Participant.race_id == race.id)
+        .options(selectinload(Participant.user))
+        .execution_options(populate_existing=True)
+    )
+    members: dict[uuid.UUID, list[Participant]] = defaultdict(list)
+    for p in race.participants:
+        if p.relay_team_id is not None:
+            members[p.relay_team_id].append(p)
+    out: set[uuid.UUID] = set()
+    for team in teams:
+        if team.status not in TERMINAL_PARTICIPANT_STATUSES:
+            abandon_team(team, members[team.id])
+            out.add(team.id)
+    return out
+
+
 async def finalize_race(
     db: AsyncSession,
     race: Race,
@@ -101,6 +146,8 @@ async def finalize_race(
     committed the transition.
 
     finalize_race then:
+    - on a relay race, puts every team not finished or out out (ABANDONED),
+      its result copied onto its members, and tells its mods (``relay_update``)
     - marks any non-terminal participant (REGISTERED, READY, PLAYING) as ABANDONED
     - posts the public chat "race has finished" message
     - triggers victory rewards and trait recomputation (background)
@@ -116,10 +163,13 @@ async def finalize_race(
     """
     from speedfog_racing.discord import fire_race_finished_notifications
     from speedfog_racing.websocket.race.manager import manager
+    from speedfog_racing.websocket.race.relay import send_row_relay_updates
     from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
     from speedfog_racing.websocket.schemas import persist_system_chat
 
     assert race.status == RaceStatus.FINISHED, "finalize_race: race must be FINISHED already"
+
+    teams_out = await _put_relay_teams_out(db, race) if race.is_relay else set()
 
     # Late-joiners who never connected stay REGISTERED; players who set ready but
     # never started stay READY. Both must be moved to ABANDONED so the race
@@ -159,12 +209,18 @@ async def finalize_race(
     # keep stale "playing" status for participants the hard-close just bumped
     # to ABANDONED, so the in-game overlay can't react to its own auto-abandon.
     graph_json = race.seed.graph_json if race.seed else None
+    entries = leaderboard_entries(race, graph_json)
     await manager.broadcast_leaderboard(
         race.id,
-        leaderboard_entries(race, graph_json),
+        entries,
         graph_json=graph_json,
         project_ghosts=race.projects_ghosts,
     )
+    if room is not None and graph_json is not None:
+        # The teams put out above: their mods lower their lock.
+        for row in entries:
+            if isinstance(row, RelayTeamRow) and row.id in teams_out:
+                await send_row_relay_updates(room, row, graph_json)
 
     await broadcast_race_state_update(race.id, race)
     await manager.broadcast_race_status(race.id, "finished")

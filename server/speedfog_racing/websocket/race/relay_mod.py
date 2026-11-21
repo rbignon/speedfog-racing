@@ -61,7 +61,7 @@ from speedfog_racing.websocket.race.relay import (
     awaiting_take,
     confirm_taken,
     finish_team,
-    holder_connection_changed,
+    member_connection_changed,
     request_handoff,
     request_take,
     send_relay_updates,
@@ -207,15 +207,16 @@ class RelayModHandler(RaceModHandler):
     # Connection hooks
     # ------------------------------------------------------------------
     async def _on_authenticated(self) -> None:
-        """A returning holder ends the offline wait; anyone's arrival is news
-        to the team (``members[].online``). A returning ex-holder is simply
-        a waiting runner (``auth_ok.relay.role``)."""
+        """A returning member is no longer offline (their own stamp and, for
+        the holder, the offline wait end); anyone's arrival is news to the team
+        (``members[].online``). A returning ex-holder is simply a waiting runner
+        (``auth_ok.relay.role``)."""
         await super()._on_authenticated()
         if self._participant_id is None:
             return
         room = manager.get_or_create_room(self._race_id)
         await self._baton(
-            holder_connection_changed(
+            member_connection_changed(
                 self.session_maker,
                 room,
                 self._participant_id,
@@ -225,14 +226,16 @@ class RelayModHandler(RaceModHandler):
         )
 
     async def _on_disconnect(self) -> None:
-        """A leaving holder starts the 60 s wait and drops its pending release."""
+        """A leaving member is offline from now (the 30 minute inactivity
+        rule); a leaving holder also starts the 60 s wait and drops its
+        pending release."""
         # Read first: the manager drops a room left without connections.
         room = manager.get_room(self._race_id)
         await super()._on_disconnect()
         if room is None or self._participant_id is None:
             return
         await self._baton(
-            holder_connection_changed(
+            member_connection_changed(
                 self.session_maker,
                 room,
                 self._participant_id,

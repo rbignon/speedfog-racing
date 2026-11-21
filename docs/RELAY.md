@@ -130,7 +130,7 @@ for an unknown user carries none, the invitee picks on the invite page.
 - At least 2 teams that count, otherwise `At least 2 teams are required to start a relay race`.
 - Each such team needs at least 2 READY members, otherwise `<team name> needs at least 2 ready runners`.
 
-`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline then (`holder_offline_since`): the 60 s wait starts with the race.
+`prepare_relay_start` then fixes the teams: a member who is not READY is set ABANDONED (disqualified members keep their status). They stay attached to their team, so nobody is without one, and `team_cap` computes the cap on the members present. Each started team becomes READY and its baton goes to `first_runner_id` when that member is READY, else to its first READY member by `created_at`. A holder whose mod is not connected at the start is stamped offline from the race's `started_at` (`holder_offline_since`), the countdown's end: the 60 s wait starts with the race, and reads 60 through the countdown.
 
 A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_relay_team` and every member gets `relay_zones = 0` and `relay_validated = False` (the left-out members return to REGISTERED with the other participants). Names, colors, placeholders and `first_runner_id` survive, so the setup choices are kept. A seed re-roll calls it too; it only ever happens in setup, where the teams are already fresh.
 
@@ -139,10 +139,10 @@ A reset (`reset_race`) calls `reset_relay_race`: every team goes through `reset_
 What a mod is told about its team lives in `RelayInfo` (`websocket/race/relay.py`, wire shapes in `PROTOCOL.md`, protocol 1.19). It is sent in `auth_ok` and again, one message per connected member with its own `role` and `gates_locked`, by `send_relay_updates`. A relay race refuses a mod below `RELAY_MIN_PROTOCOL` (1.19) at auth with `RELAY_OLD_MOD_MESSAGE`; other races still accept a 1.18 mod.
 
 - Role: `holder` only for the team's holder while the baton is not free. When `baton_free` is set the nominal holder reads `waiting` with `baton_free_in_s: 0`, like everyone else.
-- `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, floored at 0. A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
+- `baton_free_in_s` (`services/relay.py`): 0 when `baton_free` is set or there is no holder; null while the holder is connected; otherwise `RELAY_OFFLINE_WAIT_S` (60) minus the seconds since `holder_offline_since`, kept between 0 and 60 (a stamp at the race start is in the future during the countdown). A holder absent with no stamp yet (its socket just gone, before its disconnect is recorded) reads the whole 60: the rule is 60 seconds of absence, always.
 - `gates_locked`: a holder whose `relay_zones` reached the team's cap.
 - `zone_name`: the node of `entry_flag_id` in the graph's `event_map`, else the start node.
-- Readiness: `RaceRoom.relay_ready` holds the members loaded at the Chapel with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected); a disconnect drops the member from it.
+- Readiness: `RaceRoom.relay_ready` holds the members loaded at the Chapel with their lock raised. Leaderboard rows and `RelayInfo.members` both read it (`ready` is false for a member whose mod is not connected). It goes with the member's current socket: a disconnect, an eviction after a failed send or a replacement by a newer socket drops the member from it, and the mod sends `relay_ready` again after every `auth_ok`.
 
 ### Operations
 
@@ -186,7 +186,8 @@ then goes back to them.
 - **An absent holder with no stamp**: a take request that finds the holder's mod not
   connected and no `holder_offline_since` (the socket is gone, by a disconnect or an
   eviction, and its disconnect hook has not run yet) stamps it now, under the locks,
-  and is refused with `holder_online`.
+  and is refused with `holder_online`; the team gets a `relay_update`, so its mods
+  count the 60 s down from then.
 - **Flip**: `holder_id` is the receiver, `holder_offline_since` cleared, `baton_free`
   false; a handoff in phase `take`, its timer started with it before the commit (a
   failure after the commit still leaves a take that expires); `relay_take`
@@ -219,12 +220,14 @@ then goes back to them.
   connected) or removes it, then `relay_update` when that changed. Readiness goes with
   the member's current socket: a disconnect, an eviction after a failed send, or a
   replacement by a newer socket removes it, and the mod reports it again.
-- **Connections**: when the holder's mod disconnects, `holder_offline_since` is set to
-  now and their pending release dropped (the mods count the 60 s down from
-  `baton_free_in_s`); when it reconnects the stamp is cleared. Any member's arrival or
-  departure sends the team a `relay_update` (`online`, `holder_online`). A returning
-  ex-holder authenticates as `waiting`. The disconnect of a socket that a newer one
-  replaced changes nothing.
+- **Connections** (`member_connection_changed`): when the holder's mod disconnects,
+  `holder_offline_since` is set to now and their pending release dropped (the mods
+  count the 60 s down from `baton_free_in_s`); when it reconnects the stamp is
+  cleared. Any member still in the race gets the same stamp on their own row
+  (`last_igt_change_at`, the 30 minute offline rule of "Lifecycle"). Any member's
+  arrival or departure sends the team a `relay_update` (`online`, `holder_online`). A
+  returning ex-holder authenticates as `waiting`. The disconnect of a socket that a
+  newer one replaced changes nothing.
 
 | Duration | Constant                  | Meaning                                                        |
 | -------- | ------------------------- | -------------------------------------------------------------- |
@@ -254,6 +257,10 @@ it (`SELECT ... FOR UPDATE`, a no-op on SQLite); `set_ready` reads only the memb
 team id, without a lock. The committing loads of the progress messages take the same
 row lock ("Progress and guards"), so a flip and a progress write of one team are
 ordered by the database. The lock order is always `relay_lock`, then the team row.
+A transaction that writes a team and its members' rows (they reference each other)
+locks the team row before it writes a member: the progress commits, the baton
+operations, `finish_team`, every way out of "Lifecycle", the forced end and the
+restart all do, so two of them never wait on each other in opposite orders.
 
 ## Cap
 
@@ -349,6 +356,85 @@ carry every team's history. No progress load reads `character_state` (deferred).
   terminal and the race finishes.
 
 ## Lifecycle
+
+A member goes out alone: the team plays on without them, and is out only when nobody is
+left in it. There is no automatic reassignment of the baton, ever.
+
+| Way out                                               | Who              | The member                                                                                                      | Chat line (public unless noted)                                |
+| ----------------------------------------------------- | ---------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `POST /races/{id}/abandon`                            | the member       | REGISTERED, READY or PLAYING to ABANDONED                                                                       | `{name} has abandoned the race.`                               |
+| `DELETE /races/{id}/participants/{pid}`, race RUNNING | organizer, admin | the same, the row kept in its team (400 `Cannot remove: current status is '<status>'` for a member already out) | `{name} has been removed from the race` (participants channel) |
+| `POST /races/{id}/participants/{pid}/disqualify`      | organizer, admin | DISQUALIFIED as on a solo race; the team is out                                                                 | none                                                           |
+| Inactivity monitor, offline 30 minutes                | server           | PLAYING to ABANDONED                                                                                            | `{name} has abandoned the race due to inactivity.`             |
+| Inactivity monitor, no-show                           | server           | REGISTERED or READY (never validated) 30 minutes into the race to ABANDONED                                     | the same                                                       |
+| Inactivity monitor, team IGT stale 30 minutes         | server           | the holder to ABANDONED                                                                                         | the same                                                       |
+
+What a member going out does (`apply_member_out`, `services/relay.py`):
+
+- A baton they held is free at once: no holder, `baton_free`, no 60 s wait. The team's
+  `last_igt_change_at` restarts, so the free baton gets the whole 30 minutes before the
+  team is out for inactivity.
+- The cap is recomputed on the members still in (`team_cap`): every member's `cap` and
+  the holder's `gates_locked` can move.
+- The team is out (ABANDONED) once no member is left in. A disqualification puts it out
+  at once (DISQUALIFIED), finished or not: what a cheater obtained reached the team.
+- A team out gets `copy_team_result`: its members still in take its status, IGT, finish
+  time, deaths and layer (a disqualified team leaves them ABANDONED; a member already out
+  keeps their own row), and the public line `{team name} is out.`.
+
+Cancelling a disqualification restores the member's own row and never the team: their
+saved status comes back, but a run still going in a team that is out ends ABANDONED, as at
+the race's finish.
+
+Inactivity (`services/inactivity_monitor.py`, `INACTIVITY_TIMEOUT`, every minute):
+
+- A member's `last_igt_change_at` is unused on a relay race, so it holds since when their
+  mod is offline: set at its disconnect, cleared at its connect
+  (`member_connection_changed`). The PLAYING branch of `abandon_inactive_participants`
+  thus abandons a member offline for 30 minutes, and its no-show branch a member who never
+  validated. A connected waiting runner has no stamp and is never inactive: they wait by
+  design.
+- `abandon_stale_relay_teams` watches the team's IGT instead of the waiting runners': a
+  PLAYING team whose `last_igt_change_at` is older than 30 minutes has its holder
+  abandoned, and a team with no holder (a free baton nobody took in 30 minutes) is out
+  itself.
+- Each runner the monitor takes out is judged again under the locks (their mod may have
+  come back), and its lines are posted there, the team's after the member's.
+
+The operations are `member_out` and `take_member_out` (`websocket/race/relay.py`), for a
+REST route or the monitor, which have no mod handler. `relay_section` holds the race
+room's `relay_lock` when the race has a room; without one nobody is connected, so no
+handoff is in flight and nobody is to be told, and the team row lock alone orders the
+write (no room is created for it: nothing would drop it). The team is then read through
+`team_for_update` in a session of the operation's own, so a route never decides on rows
+its request session loaded before the lock (it reads the race again afterwards), the
+change and its chat lines are committed together, and after the commit `after_member_out`
+runs, still under the lock:
+
+- a handoff in flight naming a member out is dropped: a release whose giver or target is
+  out, a take whose receiver is out (its timer cancelled, the baton they held already
+  free), and any handoff of a team that is out;
+- the team's members who are out get the public chat (`set_participant_status`);
+- the team's mods get a `relay_update` (`holder_id` null with `baton_free_in_s` 0, `cap`,
+  `gates_locked`, `team_status`). A member out reads their own `members[].status`; a team
+  finished or out reads `team_status`, and its mods lower their lock.
+
+The routes then broadcast the leaderboard and the race state, and run the auto-finish
+check, as for a solo abandon; the monitor's loop does the same per race.
+
+**Forced end.** `finalize_race` (force-finish, hard close) first puts out every team
+neither finished nor out (`abandon_team`: ABANDONED, its result copied onto its members),
+its rows locked and read again before the participant sweep, and sends those teams' mods
+a `relay_update`.
+
+**Auto-finish** needs no rule of its own: once every team has finished or is out, every
+participant row is terminal, and the race finishes.
+
+**Restart.** No mod is connected when the server starts: `stamp_offline_runners`, called
+once in the lifespan before the loops, stamps on every running relay race the holder of a
+team still in the race with no `holder_offline_since` (the 60 s wait starts at the
+restart) and every PLAYING member with no `last_igt_change_at` (their 30 minutes too). The
+handoffs in flight lived in memory and are lost (Baton, "Before `relay_taken`").
 
 ## Exclusions
 

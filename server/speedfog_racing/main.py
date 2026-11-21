@@ -36,6 +36,7 @@ from speedfog_racing.websocket import (
     handle_training_spectator_websocket,
 )
 from speedfog_racing.websocket.race.manager import manager as ws_manager
+from speedfog_racing.websocket.race.relay import stamp_offline_runners
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +78,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "RACE_ITEMS_TIER_WEIGHTS names unknown race items, never drawn: %s",
             ", ".join(unknown_items),
         )
+
+    # No mod is connected yet: relay holders and runners are offline from now
+    # (before the inactivity monitor reads those stamps).
+    try:
+        await stamp_offline_runners(async_session_maker)
+    except Exception:
+        logger.exception("Stamping the offline relay runners failed")
 
     # Start the event-loop monitor (logs GC pauses and loop lag)
     loop_monitor_task = asyncio.create_task(EventLoopMonitor().run())

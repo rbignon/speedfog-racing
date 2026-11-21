@@ -150,6 +150,49 @@ def copy_team_result(team: RelayTeam, members: Sequence[Participant]) -> None:
         member.current_layer = team.current_layer
 
 
+def abandon_team(team: RelayTeam, members: Sequence[Participant]) -> None:
+    """Put a team out (ABANDONED) and copy that result onto its members still in."""
+    team.status = ParticipantStatus.ABANDONED
+    copy_team_result(team, members)
+
+
+def apply_member_out(
+    team: RelayTeam,
+    members: Sequence[Participant],
+    participant: Participant,
+    *,
+    disqualified: bool = False,
+) -> bool:
+    """What a member going out does to their team; True when the team went out.
+
+    ``participant`` (one of ``members``) is already ABANDONED or DISQUALIFIED.
+    While the team is in the race, a baton they held is free at once (no
+    holder, ``baton_free``): no 60 s wait, and nobody gets it automatically.
+    The team's IGT stamp restarts then, so the free baton gets the whole
+    inactivity timeout before the team is out for it. The cap follows on its
+    own (``team_cap`` counts the members still in). ``disqualified`` puts the
+    team out as DISQUALIFIED, finished or not (what a cheater obtained reached
+    the team); otherwise the team is out (ABANDONED) once no member is left
+    in. A team that goes out gets its result copied onto its members
+    (``copy_team_result``: a disqualified team leaves them abandoned).
+    """
+    if team.status not in TERMINAL_PARTICIPANT_STATUSES and team.holder_id == participant.id:
+        team.holder_id = None
+        team.holder_offline_since = None
+        team.baton_free = True
+        team.last_igt_change_at = datetime.now(UTC)
+    if disqualified:
+        if team.status == ParticipantStatus.DISQUALIFIED:
+            return False
+        team.status = ParticipantStatus.DISQUALIFIED
+        copy_team_result(team, members)
+        return True
+    if team.status in TERMINAL_PARTICIPANT_STATUSES or any(is_active_member(m) for m in members):
+        return False
+    abandon_team(team, members)
+    return True
+
+
 def default_team_name(existing: Collection[str]) -> str:
     """``Team {n}``, the lowest n at or above the team count plus one that is not taken."""
     n = len(existing) + 1
@@ -246,7 +289,8 @@ def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -
     holder has been offline for the whole wait. None while the holder is online
     and the baton not free. A holder absent with no offline stamp yet (its
     socket just gone, before its disconnect is recorded) is offline since now:
-    the whole wait is still ahead.
+    the whole wait is still ahead. So is a holder stamped at the race start
+    during the countdown (a stamp in the future): never more than the wait.
     """
     if team.baton_free or team.holder_id is None:
         return 0
@@ -257,7 +301,8 @@ def baton_free_in_s(team: RelayTeam, *, holder_connected: bool, now: datetime) -
         return RELAY_OFFLINE_WAIT_S
     if since.tzinfo is None:
         since = since.replace(tzinfo=UTC)
-    return max(0, RELAY_OFFLINE_WAIT_S - int((now - since).total_seconds()))
+    left = RELAY_OFFLINE_WAIT_S - int((now - since).total_seconds())
+    return min(RELAY_OFFLINE_WAIT_S, max(0, left))
 
 
 def _members_by_team(race: Race) -> list[tuple[RelayTeam, list[Participant]]]:
@@ -293,8 +338,9 @@ def prepare_relay_start(race: Race, *, connected: Collection[UUID], now: datetim
     A member who is not ready is set ABANDONED (still attached to the team, so
     ``team_cap`` ignores them). Each team with a member becomes READY, its baton
     held by its first runner when ready, else by its first ready member. A
-    holder whose mod is not among ``connected`` is offline from ``now``: the
-    offline wait starts with the race.
+    holder whose mod is not among ``connected`` is offline from ``now``, the
+    race's ``started_at`` (the countdown's end): the offline wait starts with
+    the race.
     """
     for team, members in _members_by_team(race):
         if not members:

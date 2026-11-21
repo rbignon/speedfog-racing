@@ -6,16 +6,19 @@ depend on the routes that build teams.
 
 The socket tests use ``setup_relay_race`` (a race ready to start, on the
 integration database of ``test_integration.py``), ``start_relay`` (every member
-connected, the race started, each holder's first report sent),
-``RelayModClient``, a mod kept connected across a test, ``barrier`` and
-``connect_spectator``.
+connected, the race started, each holder's first report sent) or
+``started_mods`` (the same as a fixture body), ``RelayModClient``, a mod kept
+connected across a test, ``barrier``, ``connect_spectator``, and the member
+steps ``validate``, ``set_ready`` and ``make_receiver``. Tests without a socket
+put a race of ``make_relay_race`` in play with ``run_relay_race``.
 """
 
 from __future__ import annotations
 
 import asyncio
 import itertools
-from collections.abc import Callable, Mapping, Sequence
+import time
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -30,11 +33,13 @@ from speedfog_racing.models import (
     Participant,
     ParticipantStatus,
     Race,
+    RaceStatus,
     RelayTeam,
     Seed,
     User,
     UserRole,
 )
+from speedfog_racing.websocket.race.manager import manager
 
 from .test_integration import ModTestClient
 
@@ -196,6 +201,25 @@ async def make_relay_race(
         .execution_options(populate_existing=True)
     )
     return loaded.scalar_one()
+
+
+async def run_relay_race(db: AsyncSession, race: Race, *, started_at: datetime) -> None:
+    """Put ``race`` (from ``make_relay_race``) in play since ``started_at``, as if
+    every team had made its first report: the race RUNNING, each team PLAYING
+    with its first runner holding the baton, every member PLAYING and validated.
+    Rows only: no mod is connected, so nobody's offline stamp is set."""
+    race.status = RaceStatus.RUNNING
+    race.started_at = started_at
+    race.seeds_released_at = started_at
+    for team in race.relay_teams:
+        team.status = ParticipantStatus.PLAYING
+        team.holder_id = team.first_runner_id
+        team.igt_ms = 60_000
+        team.last_igt_change_at = datetime.now(UTC)
+    for member in race.participants:
+        member.status = ParticipantStatus.PLAYING
+        member.relay_validated = True
+    await db.commit()
 
 
 # --- Socket tests (integration database of test_integration.py) ---
@@ -386,6 +410,63 @@ def start_relay(client: TestClient, relay_race: Mapping[str, Any]) -> dict[str, 
             mod.close()
         raise
     return mods
+
+
+def live_take_timers() -> list[Any]:
+    """The relay_take timers still running in the server's rooms."""
+    return [
+        pending
+        for room in manager.rooms.values()
+        for pending in room.relay_pending.values()
+        if pending.timer is not None and not pending.timer.done()
+    ]
+
+
+def wait_for_timers(seconds: float = 2.0) -> None:
+    """Wait until no take timer is running (each fired or was stopped)."""
+    deadline = time.monotonic() + seconds
+    while live_take_timers() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+
+def started_mods(
+    client: TestClient, relay_race: Mapping[str, Any]
+) -> Iterator[dict[str, RelayModClient]]:
+    """A fixture body: ``start_relay``'s mods, closed after the test, which must
+    not leave a relay_take timer running (it acknowledges the take or waits
+    for the timer to fire)."""
+    mods = start_relay(client, relay_race)
+    yield mods
+    left = live_take_timers()
+    for mod in mods.values():
+        mod.close()
+    assert not left, "a relay_take timer outlived its test"
+
+
+def member_view(update: Mapping[str, Any], participant_id: str) -> dict[str, Any]:
+    """One member's entry in a ``relay_update``."""
+    member: dict[str, Any] = next(
+        m for m in update["relay"]["members"] if m["participant_id"] == participant_id
+    )
+    return member
+
+
+def validate(mod: RelayModClient) -> None:
+    """The member's first report under 60 s passes its fresh-save gate."""
+    mod.send_status_update(igt_ms=2_000, death_count=0)
+    mod.receive_until("relay_update", lambda m: member_view(m, mod.participant_id)["validated"])
+
+
+def set_ready(mod: RelayModClient) -> None:
+    """The member is loaded at the Chapel with its lock raised."""
+    mod.send({"type": "relay_ready", "ready": True})
+    mod.receive_until("relay_update", lambda m: member_view(m, mod.participant_id)["ready"])
+
+
+def make_receiver(mod: RelayModClient) -> None:
+    """The member may receive the baton: validated, then ready at the Chapel."""
+    validate(mod)
+    set_ready(mod)
 
 
 def _run(relay_race: Mapping[str, Any], work: Callable[[AsyncSession], Any]) -> Any:

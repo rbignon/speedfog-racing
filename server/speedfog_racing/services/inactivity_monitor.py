@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select
@@ -16,16 +17,32 @@ from speedfog_racing.models import (
     ParticipantStatus,
     Race,
     RaceStatus,
+    RelayTeam,
     compute_late_join_deadlines,
 )
 from speedfog_racing.services.race_lifecycle import check_race_auto_finish
-from speedfog_racing.services.relay import leaderboard_entries
+from speedfog_racing.services.relay import (
+    abandon_team,
+    apply_member_out,
+    is_active_member,
+    leaderboard_entries,
+)
 from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)
 
 INACTIVITY_TIMEOUT = timedelta(minutes=30)
 POLL_INTERVAL = 60  # seconds
+
+# Public chat line of a runner abandoned for inactivity ({name}: their display name).
+INACTIVITY_LINE = "{name} has abandoned the race due to inactivity."
+
+
+def _utc(moment: datetime | None) -> datetime | None:
+    """``moment`` read as UTC (SQLite returns naive datetimes)."""
+    if moment is not None and moment.tzinfo is None:
+        return moment.replace(tzinfo=UTC)
+    return moment
 
 
 async def abandon_inactive_participants(
@@ -51,13 +68,23 @@ async def abandon_inactive_participants(
       ``Race.started_at < cutoff`` predicate stays as a coarse pre-filter
       (a necessary condition, the window close is always later).
 
+    A relay race member is judged the same way, ``last_igt_change_at``
+    holding there since when their mod is offline (a waiting runner is idle by
+    design, so a connected one is never inactive), but goes out through the
+    baton's locks (``take_member_out``): a baton they held is freed, the cap
+    recomputed, the team put out when nobody is left, and the chat lines
+    (theirs, the team's) are posted there.
+
     Returns (race_ids with abandonments, participant_ids that were just
     abandoned). Caller is responsible for the auto-finish check and
     broadcasts.
     """
+    from speedfog_racing.websocket.race.relay import take_member_out
+
     cutoff = datetime.now(UTC) - INACTIVITY_TIMEOUT
     affected_race_ids: list[uuid.UUID] = []
     abandoned_participant_ids: set[uuid.UUID] = set()
+    relay_members: list[tuple[uuid.UUID, uuid.UUID]] = []
 
     async with session_maker() as db:
         result = await db.execute(
@@ -95,6 +122,10 @@ async def abandon_inactive_participants(
                 if registration_closes_at is not None and registration_closes_at >= cutoff:
                     continue
 
+            if p.race.is_relay:
+                relay_members.append((p.race_id, p.id))
+                continue
+
             reason = (
                 f"last IGT change: {p.last_igt_change_at}"
                 if p.status == ParticipantStatus.PLAYING
@@ -109,7 +140,122 @@ async def abandon_inactive_participants(
         if abandoned_participant_ids:
             await db.commit()
 
+    # Once the session above is closed: each runs in a session of its own.
+    for race_id, participant_id in relay_members:
+        out = await take_member_out(
+            session_maker,
+            race_id,
+            participant_id,
+            _still_inactive(cutoff),
+            member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
+        )
+        if out is None:
+            continue
+        logger.info("Auto-abandoning relay member %s (offline or no-show)", participant_id)
+        abandoned_participant_ids.add(participant_id)
+        if race_id not in affected_race_ids:
+            affected_race_ids.append(race_id)
+
     return affected_race_ids, abandoned_participant_ids
+
+
+def _still_inactive(cutoff: datetime) -> Callable[[RelayTeam, Participant], bool]:
+    """A relay member found inactive, judged again on their row read under the
+    baton's locks (their mod may have come back meanwhile): offline since
+    before ``cutoff`` while PLAYING, or still a no-show. Abandons them."""
+
+    def out(team: RelayTeam, member: Participant) -> bool:
+        since = _utc(member.last_igt_change_at)
+        inactive = team.race.status == RaceStatus.RUNNING and (
+            (member.status == ParticipantStatus.PLAYING and since is not None and since < cutoff)
+            or member.status in (ParticipantStatus.REGISTERED, ParticipantStatus.READY)
+        )
+        if inactive:
+            member.status = ParticipantStatus.ABANDONED
+        return inactive
+
+    return out
+
+
+async def abandon_stale_relay_teams(
+    session_maker: async_sessionmaker[AsyncSession],
+) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
+    """Relay teams whose IGT went stale, the relay form of the PLAYING branch.
+
+    A PLAYING team whose ``last_igt_change_at`` is older than
+    ``INACTIVITY_TIMEOUT`` has its holder abandoned (through ``member_out``:
+    the baton freed, the cap recomputed, the team out when nobody is left),
+    and its stamp restarts, so a free baton gets 30 minutes of its own (as one
+    freed by any holder going out). A team without holder (a free baton nobody
+    took in that time) is out itself. Waiting runners are idle by design: only
+    the team's IGT is watched. The chat lines are posted there.
+
+    Returns (race_ids touched, holders just abandoned). Caller is responsible
+    for the auto-finish check and broadcasts.
+    """
+    from speedfog_racing.websocket.race.relay import member_out
+
+    cutoff = datetime.now(UTC) - INACTIVITY_TIMEOUT
+    async with session_maker() as db:
+        rows = (
+            await db.execute(
+                select(RelayTeam.race_id, RelayTeam.id)
+                .join(Race, Race.id == RelayTeam.race_id)
+                .where(
+                    Race.status == RaceStatus.RUNNING,
+                    RelayTeam.status == ParticipantStatus.PLAYING,
+                    RelayTeam.last_igt_change_at.isnot(None),
+                    RelayTeam.last_igt_change_at < cutoff,
+                )
+            )
+        ).all()
+
+    affected_race_ids: list[uuid.UUID] = []
+    abandoned_holder_ids: set[uuid.UUID] = set()
+    for race_id, team_id in rows:
+        out = await member_out(
+            session_maker,
+            race_id,
+            _stale_team_out(cutoff),
+            team_id=team_id,
+            member_line=(ChatChannel.PUBLIC, INACTIVITY_LINE),
+        )
+        if out is None:
+            continue
+        logger.info("Relay team %s inactive: holder %s out", team_id, out.member_id)
+        if out.member_id is not None:
+            abandoned_holder_ids.add(out.member_id)
+        if race_id not in affected_race_ids:
+            affected_race_ids.append(race_id)
+    return affected_race_ids, abandoned_holder_ids
+
+
+def _stale_team_out(
+    cutoff: datetime,
+) -> Callable[[RelayTeam], tuple[Participant | None, bool] | None]:
+    """The stale-team rule on the team read under the baton's locks (it may
+    have moved meanwhile). Freeing the holder's baton restarts the team's
+    stamp (``apply_member_out``)."""
+
+    def change(team: RelayTeam) -> tuple[Participant | None, bool] | None:
+        since = _utc(team.last_igt_change_at)
+        if (
+            team.race.status != RaceStatus.RUNNING
+            or team.status != ParticipantStatus.PLAYING
+            or since is None
+            or since >= cutoff
+        ):
+            return None
+        holder = next(
+            (m for m in team.members if m.id == team.holder_id and is_active_member(m)), None
+        )
+        if holder is None:
+            abandon_team(team, team.members)
+            return None, True
+        holder.status = ParticipantStatus.ABANDONED
+        return holder, apply_member_out(team, team.members, holder)
+
+    return change
 
 
 async def _expire_speedrun_sessions(
@@ -141,6 +287,9 @@ async def inactivity_monitor_loop(
             logger.exception("Speedrun session expiry error")
         try:
             affected, abandoned_ids = await abandon_inactive_participants(session_maker)
+            stale_races, stale_holders = await abandon_stale_relay_teams(session_maker)
+            affected += [race_id for race_id in stale_races if race_id not in affected]
+            abandoned_ids |= stale_holders
             if affected:
                 from speedfog_racing.websocket.race.manager import manager
                 from speedfog_racing.websocket.race.spectator import broadcast_race_state_update
@@ -177,12 +326,13 @@ async def inactivity_monitor_loop(
                         # Persist "abandoned due to inactivity" messages for
                         # newly abandoned participants (persist unconditionally
                         # so history replays on reconnect; broadcast only if a
-                        # room exists).
+                        # room exists). A relay race's were posted where its
+                        # members went out, with their team's.
                         abandon_messages: list[str] = []
                         for p in race.participants:
-                            if p.id in abandoned_ids:
+                            if p.id in abandoned_ids and not race.is_relay:
                                 display = p.user.twitch_display_name or p.user.twitch_username
-                                abandon_msg = f"{display} has abandoned the race due to inactivity."
+                                abandon_msg = INACTIVITY_LINE.format(name=display)
                                 sys_json = await persist_system_chat(
                                     db,
                                     race_id,

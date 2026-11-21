@@ -10,7 +10,7 @@ import sentry_sdk
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import defer, selectinload
 from starlette.responses import StreamingResponse
 
@@ -43,6 +43,7 @@ from speedfog_racing.discord import (
 )
 from speedfog_racing.download_ticket import sign_download_ticket, verify_download_ticket
 from speedfog_racing.models import (
+    TERMINAL_PARTICIPANT_STATUSES,
     Caster,
     ChatChannel,
     Invite,
@@ -132,6 +133,7 @@ from speedfog_racing.websocket import (
     broadcast_race_state_update,
 )
 from speedfog_racing.websocket.race.manager import manager
+from speedfog_racing.websocket.race.relay import take_member_out
 from speedfog_racing.websocket.schemas import persist_system_chat
 
 logger = logging.getLogger(__name__)
@@ -270,8 +272,14 @@ async def _get_race_or_404(
     load_participants: bool = False,
     load_casters: bool = False,
     load_invites: bool = False,
+    fresh: bool = False,
 ) -> Race:
-    """Get race by ID or raise 404."""
+    """Get race by ID or raise 404.
+
+    ``fresh``: the rows this session already loaded (the race, its teams and
+    participants) are read again, for a caller whose rows changed in another
+    session (a relay member going out).
+    """
     query = select(Race).where(Race.id == race_id)
     options = [selectinload(Race.organizer), selectinload(Race.seed), selectinload(Race.event)]
     if load_participants:
@@ -281,6 +289,8 @@ async def _get_race_or_404(
     if load_invites:
         options.append(selectinload(Race.invites))
     query = query.options(*options)
+    if fresh:
+        query = query.execution_options(populate_existing=True)
 
     result = await db.execute(query)
     race = result.scalar_one_or_none()
@@ -1122,9 +1132,22 @@ async def remove_participant(
     user: User = Depends(get_current_user),
     _sentry: None = Depends(sentry_race_context),
 ) -> None:
-    """Remove a participant from a race."""
+    """Remove a participant from a race (during a relay race: an abandon)."""
     race = await _get_race_or_404(db, race_id)
     _require_organizer(race, user)
+
+    if race.is_relay and race.status == RaceStatus.RUNNING:
+        # The row stays with its team, whose result it carries at the end.
+        member = await _load_participant_in_race(db, race_id, participant_id)
+        if member.relay_team_id is not None:
+            await _relay_member_out(
+                db,
+                race_id,
+                participant_id,
+                verb="remove",
+                line=(ChatChannel.PARTICIPANTS, "{name} has been removed from the race"),
+            )
+            return
 
     # Check race status
     if race.status not in (RaceStatus.SETUP,):
@@ -1199,6 +1222,73 @@ async def remove_participation(db: AsyncSession, race: Race, participant: Partic
     await broadcast_race_state_update(race_id, race)
 
 
+_IN_THE_RACE = (ParticipantStatus.REGISTERED, ParticipantStatus.READY, ParticipantStatus.PLAYING)
+
+
+def _sessions_like(db: AsyncSession) -> async_sessionmaker[AsyncSession]:
+    """Sessions on the request's database, for an operation that reads the rows
+    it decides on itself, under its own locks (a relay member going out),
+    rather than the rows this request session loaded before them."""
+    return async_sessionmaker(db.bind, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _relay_member_out(
+    db: AsyncSession,
+    race_id: UUID,
+    participant_id: UUID,
+    *,
+    verb: str,
+    line: tuple[ChatChannel, str],
+) -> Race:
+    """A relay member leaves the run on their abandon or the organizer's removal
+    (an abandon too): ``take_member_out`` frees the baton they held, recomputes
+    the cap, puts the team out when nobody is left and posts ``line`` (its
+    ``{name}`` is the member's), then the broadcasts and auto-finish check of a
+    solo abandon. ``verb`` names the action in a refusal. Returns the race,
+    read again."""
+
+    def abandon(team: RelayTeam, member: Participant) -> bool:
+        if team.race.status != RaceStatus.RUNNING:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="The race is not running"
+            )
+        if member.status not in _IN_THE_RACE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot {verb}: current status is '{member.status.value}'",
+            )
+        member.status = ParticipantStatus.ABANDONED
+        return True
+
+    out = await take_member_out(
+        _sessions_like(db), race_id, participant_id, abandon, member_line=line
+    )
+    if out is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Participant not found")
+
+    race = await _get_race_or_404(
+        db, race_id, load_participants=True, load_casters=True, fresh=True
+    )
+    graph_json = race.seed.graph_json if race.seed else None
+    await manager.broadcast_leaderboard(
+        race_id, leaderboard_entries(race, graph_json), graph_json=graph_json
+    )
+    await broadcast_race_state_update(race_id, race)
+    if await check_race_auto_finish(db, race):
+        fin_public_json = await persist_system_chat(
+            db, race_id, ChatChannel.PUBLIC, "The race has finished."
+        )
+        await db.commit()
+        race = await _get_race_or_404(db, race_id, load_participants=True, load_casters=True)
+        await broadcast_race_state_update(race_id, race)
+        await manager.broadcast_race_status(race_id, "finished")
+        room = manager.get_room(race_id)
+        if room:
+            await room.broadcast_chat_public(fin_public_json, race)
+        fire_race_finished_notifications(race)
+    return race
+
+
 async def _load_participant_in_race(
     db: AsyncSession, race_id: UUID, participant_id: UUID
 ) -> Participant:
@@ -1234,13 +1324,31 @@ async def disqualify_participant(
             detail="Only a running or finished race can have disqualifications",
         )
     participant = await _load_participant_in_race(db, race_id, participant_id)
-    try:
-        disqualify(participant, by_id=user.id, reason=request.reason, now=datetime.now(UTC))
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
-        ) from None
-    await db.commit()
+    now = datetime.now(UTC)
+    if race.is_relay and participant.relay_team_id is not None:
+        # The whole team is out: what a cheater obtained reached it.
+        by_id = user.id
+
+        def disqualify_member(team: RelayTeam, member: Participant) -> bool:
+            try:
+                disqualify(member, by_id=by_id, reason=request.reason, now=now)
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
+                ) from None
+            return True
+
+        await take_member_out(_sessions_like(db), race_id, participant_id, disqualify_member)
+        # The team and its members moved in that operation's session.
+        await _get_race_or_404(db, race_id, load_participants=True, load_casters=True, fresh=True)
+    else:
+        try:
+            disqualify(participant, by_id=user.id, reason=request.reason, now=now)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Already disqualified"
+            ) from None
+        await db.commit()
     await after_disqualification_change(db, race_id, participant, by=user, cancelled=False)
     race = await _get_race_or_404(
         db, race_id, load_participants=True, load_casters=True, load_invites=True
@@ -1272,11 +1380,15 @@ async def cancel_participant_disqualification(
             for moment in (race.started_at, race.seeds_released_at)
         )
     )
+    # A relay member's own row comes back, never their team: a run still going
+    # in a team that is out ends abandoned, as at the race's finish.
+    team = next((t for t in race.relay_teams if t.id == participant.relay_team_id), None)
+    team_out = team is not None and team.status in TERMINAL_PARTICIPANT_STATUSES
     try:
         cancel_disqualification(
             participant,
             race_restarted=race_restarted,
-            race_finished=race.status == RaceStatus.FINISHED,
+            race_finished=race.status == RaceStatus.FINISHED or team_out,
         )
     except ValueError:
         raise HTTPException(
@@ -1858,6 +1970,10 @@ async def start_race(
             detail="Seeds must be released before starting the race",
         )
 
+    # started_at is the effective gameplay start (after countdown), so
+    # race_ends_at and registration_closes_at reflect real play time.
+    started_at = datetime.now(UTC) + timedelta(seconds=settings.countdown_seconds)
+
     # Two participants make a race. A trusted organizer may start alone when a
     # late-join window lets the field join the running race; an admin, with anyone.
     # A relay race has its own rule, for every role: late join is excluded from it.
@@ -1868,7 +1984,9 @@ async def start_race(
         if relay_error is not None:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=relay_error)
         room = manager.get_room(race.id)
-        prepare_relay_start(race, connected=room.mods if room else (), now=datetime.now(UTC))
+        # A holder not connected is offline from the race start: the 60 s run
+        # from the countdown's end.
+        prepare_relay_start(race, connected=room.mods if room else (), now=started_at)
     elif user.role.at_least(UserRole.ADMIN):
         min_participants = 0
     elif trusted and race.late_join_window_minutes is not None:
@@ -1887,13 +2005,7 @@ async def start_race(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail)
 
     await _transition_status(
-        db,
-        race,
-        [RaceStatus.SETUP],
-        RaceStatus.RUNNING,
-        # started_at is the effective gameplay start (after countdown), so
-        # race_ends_at and registration_closes_at reflect real play time.
-        started_at=datetime.now(UTC) + timedelta(seconds=settings.countdown_seconds),
+        db, race, [RaceStatus.SETUP], RaceStatus.RUNNING, started_at=started_at
     )
 
     start_msg = "The race has started."
@@ -2298,15 +2410,22 @@ async def abandon_race(
             detail="You are not a participant in this race",
         )
 
-    if participant.status not in (
-        ParticipantStatus.REGISTERED,
-        ParticipantStatus.READY,
-        ParticipantStatus.PLAYING,
-    ):
+    if participant.status not in _IN_THE_RACE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot abandon: current status is '{participant.status.value}'",
         )
+
+    if race.is_relay and participant.relay_team_id is not None:
+        # Alone: the team plays on without them (a baton they held is free at once).
+        race = await _relay_member_out(
+            db,
+            race_id,
+            participant.id,
+            verb="abandon",
+            line=(ChatChannel.PUBLIC, "{name} has abandoned the race."),
+        )
+        return race_response(race, user)
 
     participant.status = ParticipantStatus.ABANDONED
 

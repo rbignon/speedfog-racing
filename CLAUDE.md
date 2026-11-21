@@ -72,7 +72,7 @@ The wire protocol carries its own version (`PROTOCOL_VERSION`, identical in `ser
 
 ### Race lifecycle
 
-`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned/disqualified. The organizer controls transitions (starting needs 2 participants, 1 for a `trusted` user on a race with a late-join window); a race also finishes on its own once every participant reaches a terminal status (deferred while a late-join window is open) or when its `race_duration_minutes` runs out (see `docs/RACE_LIFECYCLE.md`). On finish, race-win and finish-milestone rewards are granted (see `docs/REWARDS.md`) and the participants' behavioral traits are recomputed in the background (see `docs/STATS.md`). There is no ELO or player rating.
+`RaceStatus`: setup -> running -> finished. `ParticipantStatus`: registered -> ready -> playing -> finished/abandoned/disqualified. The organizer controls transitions (starting needs 2 participants, 1 for a `trusted` user on a race with a late-join window); a race also finishes on its own once every participant reaches a terminal status (deferred while a late-join window is open) or when its `race_duration_minutes` runs out (see `docs/RACE_LIFECYCLE.md`). On finish, race-win and finish-milestone rewards are granted (see `docs/REWARDS.md`) and the participants' behavioral traits are recomputed in the background (see `docs/STATS.md`). There is no ELO or player rating. A relay race (`Race.relay_team_size`) has teams as the unit of progress and a baton the server arbitrates, a member abandoning alone while the team plays on (see `docs/RELAY.md`). It finishes when every team has finished or is out.
 
 ### Dual chat
 
