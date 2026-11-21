@@ -169,11 +169,14 @@ def _participant_light_load_options() -> list[Any]:
     Sufficient for processing a single message and broadcasting a
     player_update. Handlers that need the full participant list (for
     leaderboard broadcasts or death aggregation) should call
-    _load_participant instead.
+    _load_participant instead. The race's relay teams, selectin-loaded by
+    default, stay out (``raiseload``): this runs about once a second per
+    runner, and a relay runner's team row is loaded on its own.
     """
     return [
         selectinload(Participant.user),
         selectinload(Participant.race).selectinload(Race.seed),
+        selectinload(Participant.race).raiseload(Race.relay_teams),
     ]
 
 
@@ -223,12 +226,13 @@ async def _load_participant_no_seed(
 
     Callers that already hold a cached graph_json do not need race.seed.
     This saves one selectinload chain compared to _load_participant_light.
+    The race's relay teams stay out too (``_participant_light_load_options``).
     """
     result = await db.execute(
         select(Participant)
         .options(
             selectinload(Participant.user),
-            selectinload(Participant.race),
+            selectinload(Participant.race).raiseload(Race.relay_teams),
         )
         .where(Participant.id == participant_id)
     )

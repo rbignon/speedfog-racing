@@ -52,7 +52,9 @@ enabled carry no block and never count; regenerate a pool to get relay seeds.
 A relay race has `Race.relay_team_size` (2 to 6, `RELAY_TEAM_SIZE_MIN` and
 `RELAY_TEAM_SIZE_MAX`; null on every other race, `Race.is_relay`) and
 `Race.relay_runners_create_teams` (default true). Its teams are `RelayTeam` rows
-(`Race.relay_teams`, selectin-loaded with the race, in `created_at` order). A team
+(`Race.relay_teams`, selectin-loaded with the race, in `created_at` order; the mod
+handlers' 1 Hz loads leave it out with `raiseload`, so a solo heartbeat pays no query
+for it). A team
 carries the progress a solo participant carries on its own row (zone, layer, IGT,
 deaths, zone history, layer entry IGTs), plus the baton (`holder_id`,
 `holder_offline_since`, `baton_free`), `first_runner_id`, `entry_flag_id`, the last

@@ -500,9 +500,11 @@ class Race(Base):
         back_populates="race", cascade="all, delete-orphan"
     )
     event: Mapped["Event | None"] = relationship(back_populates="races")
-    # Selectin-loaded with the race, like ``participants``, so a sync helper
-    # reads ``race.relay_teams`` on any loaded race (empty on a solo race).
-    # The members of a team are not: no loader ever adds ``RelayTeam.members``.
+    # Selectin-loaded with every race (one query, empty on a solo race), so a
+    # sync helper reads ``race.relay_teams`` on any loaded race. A hot loader
+    # that never reads it leaves it out with ``raiseload`` (the mod handlers'
+    # status_update loads). A team's ``members`` load only when named
+    # (``selectinload(RelayTeam.members)``).
     relay_teams: Mapped[list["RelayTeam"]] = relationship(
         back_populates="race",
         order_by="RelayTeam.created_at",
