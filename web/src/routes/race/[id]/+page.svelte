@@ -23,6 +23,7 @@
     ownLiveRow,
     ownRunStatus,
     relayCapacity,
+    relayRuleLine,
   } from "$lib/relay";
   import RaceItemsLegend from "$lib/components/RaceItemsLegend.svelte";
   import CheatDetectionsPanel from "$lib/components/CheatDetectionsPanel.svelte";
@@ -683,6 +684,12 @@
   let liveIgtCutoff = $derived(
     raceStore.race?.igt_cutoff_ms ?? initialRace.igt_cutoff_ms,
   );
+  // Relay races: participant id to user, for the members of an unfolded team.
+  let memberUsers = $derived(
+    isRelay
+      ? Object.fromEntries(initialRace.participants.map((p) => [p.id, p.user]))
+      : {},
+  );
   let livePrivateDag = $derived(
     raceStore.race?.private_dag ?? initialRace.private_dag,
   );
@@ -695,7 +702,17 @@
   );
   const RACE_ITEMS_RULE =
     "Race items: each boss kill gives an item if you hold none; use it from your quick item slot.";
+  let relayRule = $derived(
+    isRelay
+      ? relayRuleLine(
+          totalLayers,
+          initialRace.relay_team_size,
+          initialRace.relay_cap,
+        )
+      : null,
+  );
   let displayRuleLines = $derived([
+    ...(relayRule ? [relayRule] : []),
     ...(liveDeathless ? [DEATHLESS_RULE] : []),
     ...(liveRaceItems ? [RACE_ITEMS_RULE] : []),
     ...customRuleLines,
@@ -1224,6 +1241,7 @@
             provisionalPoints={isEventQualifier && raceStatus !== "finished"}
             {flaggedIds}
             {disqualificationReasons}
+            {memberUsers}
             selectedIds={selectedParticipantIds}
             onToggle={handleLeaderboardToggle}
             onClearSelection={clearSelection}
