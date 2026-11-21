@@ -2,8 +2,9 @@
 //! the state the take carries and the receiver's game read at apply time,
 //! then the writes paced over frames. The shell reads the game on its worker
 //! thread (the held items, the param rows, the grace flags) and hands the
-//! reads here (`plan`); the plan's writes are made on the game thread, a
-//! bounded batch per frame (`ApplyRun`), until they are done, the deadline
+//! reads here (`plan`); the plan's writes are made on the tracker's frame
+//! thread (the Present hook, not the game's own threads), a bounded batch
+//! per frame (`ApplyRun`), until they are done, the deadline
 //! passes, a loading screen comes, or the take is no longer applying. Also
 //! the layout of the stat write. Pure: nothing here reads or writes the game,
 //! or logs.
@@ -20,11 +21,18 @@ use super::relay_items::{missing_items, stats_plausible, transferable_items, PAR
 /// before the machine gives the apply up, and the take still fits the
 /// server's 30 s.
 pub const APPLY_DEADLINE: Duration = Duration::from_secs(15);
-/// Most writes (gives and flag raises) of an apply in one frame. A take of a
-/// few hundred writes is done in well under a second at 60 fps; the most a
-/// state can carry (4000 items and 1000 grace flags) takes about 5 s at
-/// 60 fps and 11 s at 30, inside `APPLY_DEADLINE`.
+/// Most writes (gives and flag raises) of an apply in one frame. At the
+/// ceiling, a take of a few hundred writes is done in well under a second at
+/// 60 fps, and the most a state can carry (4000 items and 1000 grace flags)
+/// in about 5 s at 60 fps and 11 s at 30, inside `APPLY_DEADLINE`. Like
+/// `APPLY_FRAME_BUDGET`, a provisional value until measured in game.
 pub const APPLY_WRITES_PER_FRAME: usize = 16;
+/// Wall time a frame's batch may spend writing: once it is spent the batch
+/// stops, after at least one write, so a slow give holds no frame long and
+/// an apply still moves on every frame. A give costs far more than a flag
+/// raise; gives slow enough to hit this on each write leave a large state
+/// cut by `APPLY_DEADLINE`. Provisional until measured in game.
+pub const APPLY_FRAME_BUDGET: Duration = Duration::from_micros(1500);
 
 /// Offset of the level from the first attribute (vigor) in the stats the
 /// shell writes (libeldenring `CharacterStats`: eight `i32` attributes,
@@ -342,6 +350,9 @@ pub struct ApplyRun {
     next: usize,
     written: Written,
     failed: Vec<u32>,
+    /// The step whose write is being tried: still set at the next frame, its
+    /// write never returned (a panic the shell's frame caught).
+    trying: Option<ApplyStep>,
     ended: Option<ApplyEnd>,
 }
 
@@ -372,6 +383,7 @@ impl ApplyRun {
             next: 0,
             written: Written::default(),
             failed: Vec::new(),
+            trying: None,
             ended: None,
         }
     }
@@ -407,17 +419,26 @@ impl ApplyRun {
     }
 
     /// One frame's writes through `write` (true when the write was made),
-    /// `wanted` whether the machine still waits for this apply's take. The
-    /// end is checked before the batch (a load seen, not wanted, the
-    /// deadline) and after it (nothing left). `None`: more to write, or not
-    /// planned yet (nothing written). A step counts as gone before its write
-    /// is tried, so a write that panicked is never tried again.
+    /// `wanted` whether the machine still waits for this apply's take,
+    /// `spent` the wall time the frame's batch has taken so far. A batch
+    /// stops at `APPLY_WRITES_PER_FRAME` writes or once `APPLY_FRAME_BUDGET`
+    /// is spent, whichever comes first, after at least one write. The end is
+    /// checked before the batch (a load seen, not wanted, the deadline) and
+    /// after it (nothing left). `None`: more to write, or not planned yet
+    /// (nothing written). A step counts as gone before its write is tried,
+    /// so a write that panicked is never tried again; it counts as failed.
     pub fn write_frame(
         &mut self,
         wanted: bool,
         now: Instant,
+        mut spent: impl FnMut() -> Duration,
         mut write: impl FnMut(ApplyStep) -> bool,
     ) -> Option<ApplyEnd> {
+        // A write that never returned (it panicked) is a failed one.
+        if let Some(step) = self.trying.take() {
+            self.written.count(step, false);
+            self.failed.push(step.target());
+        }
         if self.ended.is_some() {
             return self.ended;
         }
@@ -436,10 +457,15 @@ impl ApplyRun {
             while self.next < batch_end {
                 let step = steps[self.next];
                 self.next += 1;
+                self.trying = Some(step);
                 let made = write(step);
+                self.trying = None;
                 self.written.count(step, made);
                 if !made {
                     self.failed.push(step.target());
+                }
+                if spent() >= APPLY_FRAME_BUDGET {
+                    break;
                 }
             }
         }
@@ -781,6 +807,16 @@ mod tests {
         assert_eq!(none.counts.not_grace, 1);
     }
 
+    /// A batch clock for writes that cost nothing.
+    fn quick() -> Duration {
+        Duration::ZERO
+    }
+
+    /// A batch clock for writes that each take the whole frame budget.
+    fn slow() -> Duration {
+        APPLY_FRAME_BUDGET
+    }
+
     /// A run of `n` grace writes asked at `t0` at the Chapel, planned.
     fn run_of(n: u32, t0: Instant) -> ApplyRun {
         let mut run = ApplyRun::new("h1".to_string(), 7, Some(CHAPEL_MAP_ID), t0);
@@ -795,7 +831,7 @@ mod tests {
         let mut frames = Vec::new();
         for frame in 1..=5u64 {
             let mut writes = 0;
-            let end = run.write_frame(true, t0 + ms(16 * frame), |_| {
+            let end = run.write_frame(true, t0 + ms(16 * frame), quick, |_| {
                 writes += 1;
                 true
             });
@@ -829,7 +865,7 @@ mod tests {
         ];
         run.set_plan(steps.clone());
         let mut seen = Vec::new();
-        let end = run.write_frame(true, t0 + ms(20), |step| {
+        let end = run.write_frame(true, t0 + ms(20), quick, |step| {
             seen.push(step);
             // The gem and the boss flag fail; the run goes on.
             !matches!(step, ApplyStep::Item(id) if id == GEM | 10_000)
@@ -860,19 +896,85 @@ mod tests {
         let t0 = Instant::now();
         let mut run = run_of(5, t0);
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run.write_frame(true, t0 + ms(16), |step| {
+            run.write_frame(true, t0 + ms(16), quick, |step| {
                 assert_ne!(step, ApplyStep::Grace(71_002), "the frame panicked");
                 true
             })
         }));
         assert!(caught.is_err());
         let mut seen = Vec::new();
-        let end = run.write_frame(true, t0 + ms(32), |step| {
+        let end = run.write_frame(true, t0 + ms(32), quick, |step| {
             seen.push(step);
             true
         });
         assert_eq!(end, Some(ApplyEnd::Complete));
         assert_eq!(seen, [ApplyStep::Grace(71_003), ApplyStep::Grace(71_004)]);
+        // The step it panicked on counts as failed: every step is accounted.
+        let written = run.written();
+        assert_eq!((written.graces, written.graces_failed), (4, 1));
+        assert_eq!(run.failed(), [71_002]);
+        assert_eq!(run.left(), 0);
+    }
+
+    #[test]
+    fn a_slow_write_ends_the_frame_batch() {
+        let t0 = Instant::now();
+        // The first write of each frame takes the whole budget: one a frame.
+        let mut run = run_of(3, t0);
+        for (frame, want) in [(1u64, None), (2, None), (3, Some(ApplyEnd::Complete))] {
+            let mut writes = 0;
+            let end = run.write_frame(true, t0 + ms(16 * frame), slow, |_| {
+                writes += 1;
+                true
+            });
+            assert_eq!((writes, end), (1, want), "frame {frame}");
+        }
+        // Writes that never reach the budget run to the ceiling.
+        let mut run = run_of(40, t0);
+        let clock = std::cell::Cell::new(Duration::ZERO);
+        let mut writes = 0;
+        let end = run.write_frame(
+            true,
+            t0 + ms(16),
+            || clock.get(),
+            |_| {
+                writes += 1;
+                clock.set(clock.get() + APPLY_FRAME_BUDGET / (APPLY_WRITES_PER_FRAME as u32 + 1));
+                true
+            },
+        );
+        assert_eq!((writes, end), (APPLY_WRITES_PER_FRAME, None));
+        // The budget reached mid-batch ends it on that write.
+        let mut run = run_of(40, t0);
+        let clock = std::cell::Cell::new(Duration::ZERO);
+        let mut writes = 0;
+        run.write_frame(
+            true,
+            t0 + ms(16),
+            || clock.get(),
+            |_| {
+                writes += 1;
+                clock.set(clock.get() + APPLY_FRAME_BUDGET / 4);
+                true
+            },
+        );
+        assert_eq!(writes, 4);
+    }
+
+    #[test]
+    fn every_frame_writes_at_least_once() {
+        // A budget already spent before the first write still lets one
+        // through: the apply always moves on, and ends.
+        let t0 = Instant::now();
+        let mut run = run_of(5, t0);
+        let spent_already = || APPLY_FRAME_BUDGET * 10;
+        let mut ends = Vec::new();
+        for frame in 1..=5u64 {
+            ends.push(run.write_frame(true, t0 + ms(16 * frame), spent_already, |_| true));
+        }
+        assert_eq!(ends[..4], [None, None, None, None]);
+        assert_eq!(ends[4], Some(ApplyEnd::Complete));
+        assert_eq!(run.written().graces, 5);
     }
 
     #[test]
@@ -882,7 +984,7 @@ mod tests {
         let mut writes = 0;
         for frame in 1..=3u64 {
             assert_eq!(
-                run.write_frame(true, t0 + ms(16 * frame), |_| {
+                run.write_frame(true, t0 + ms(16 * frame), quick, |_| {
                     writes += 1;
                     true
                 }),
@@ -894,7 +996,7 @@ mod tests {
         // An empty plan is complete at once.
         run.set_plan(Vec::new());
         assert_eq!(
-            run.write_frame(true, t0 + ms(64), |_| panic!("nothing to write")),
+            run.write_frame(true, t0 + ms(64), quick, |_| panic!("nothing to write")),
             Some(ApplyEnd::Complete)
         );
     }
@@ -905,11 +1007,11 @@ mod tests {
         // During the writes: the map goes away, then comes back.
         let mut run = run_of(40, t0);
         run.observe(Some(CHAPEL_MAP_ID));
-        assert_eq!(run.write_frame(true, t0 + ms(16), |_| true), None);
+        assert_eq!(run.write_frame(true, t0 + ms(16), quick, |_| true), None);
         run.observe(None);
         run.observe(Some(CHAPEL_MAP_ID));
         assert_eq!(
-            run.write_frame(true, t0 + ms(32), |_| panic!("written after a load")),
+            run.write_frame(true, t0 + ms(32), quick, |_| panic!("written after a load")),
             Some(ApplyEnd::MapChanged)
         );
         assert_eq!(run.written().graces, APPLY_WRITES_PER_FRAME);
@@ -921,7 +1023,7 @@ mod tests {
         run.observe(Some(CHAPEL_MAP_ID));
         run.set_plan(vec![ApplyStep::Grace(71_190)]);
         assert_eq!(
-            run.write_frame(true, t0 + ms(16), |_| panic!("written after a load")),
+            run.write_frame(true, t0 + ms(16), quick, |_| panic!("written after a load")),
             Some(ApplyEnd::MapChanged)
         );
 
@@ -929,7 +1031,7 @@ mod tests {
         let mut run = ApplyRun::new("h1".to_string(), 7, None, t0);
         run.set_plan(vec![ApplyStep::Grace(71_190)]);
         assert_eq!(
-            run.write_frame(true, t0 + ms(16), |_| panic!("written with no map")),
+            run.write_frame(true, t0 + ms(16), quick, |_| panic!("written with no map")),
             Some(ApplyEnd::MapChanged)
         );
     }
@@ -939,11 +1041,11 @@ mod tests {
         let t0 = Instant::now();
         let mut run = run_of(40, t0);
         assert_eq!(
-            run.write_frame(true, t0 + APPLY_DEADLINE - ms(1), |_| true),
+            run.write_frame(true, t0 + APPLY_DEADLINE - ms(1), quick, |_| true),
             None
         );
         assert_eq!(
-            run.write_frame(true, t0 + APPLY_DEADLINE, |_| panic!("written late")),
+            run.write_frame(true, t0 + APPLY_DEADLINE, quick, |_| panic!("written late")),
             Some(ApplyEnd::Deadline)
         );
         assert_eq!(run.left(), 40 - APPLY_WRITES_PER_FRAME);
@@ -955,14 +1057,16 @@ mod tests {
     fn a_take_no_longer_applying_stops_the_writes() {
         let t0 = Instant::now();
         let mut run = run_of(40, t0);
-        assert_eq!(run.write_frame(true, t0 + ms(16), |_| true), None);
+        assert_eq!(run.write_frame(true, t0 + ms(16), quick, |_| true), None);
         assert_eq!(
-            run.write_frame(false, t0 + ms(32), |_| panic!("written for nobody")),
+            run.write_frame(false, t0 + ms(32), quick, |_| panic!("written for nobody")),
             Some(ApplyEnd::NotWanted)
         );
         // The end holds even if the take were wanted again.
         assert_eq!(
-            run.write_frame(true, t0 + ms(48), |_| panic!("written after the end")),
+            run.write_frame(true, t0 + ms(48), quick, |_| panic!(
+                "written after the end"
+            )),
             Some(ApplyEnd::NotWanted)
         );
     }

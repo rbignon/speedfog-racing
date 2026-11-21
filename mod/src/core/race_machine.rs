@@ -363,12 +363,14 @@ pub enum Effect {
     SetIgt {
         ms: u32,
     },
-    /// Apply a take's world on the shell's worker thread: give the `items`
-    /// the character lacks (`relay_items::missing_items`, each id checked
-    /// against its param table first), raise the boss defeat `flags` and
-    /// the `grace_flags` that are graces of this game. Contract with the
-    /// shell, as for `CaptureRelayState`: the outcome is delivered on the
-    /// game thread, as an input of the machine
+    /// Apply a take's world: give the `items` the character lacks
+    /// (`relay_items::missing_items`, each id checked against its param
+    /// table first), raise the boss defeat `flags` and the `grace_flags`
+    /// that are graces of this game. The shell plans on its worker thread
+    /// and writes on its frame thread, the one that ticks the machine, over
+    /// several frames. Contract with the shell, as for `CaptureRelayState`:
+    /// the outcome is delivered on that frame thread, as an input of the
+    /// machine
     /// (`RaceMachine::relay_state_applied`) carrying this `generation`,
     /// whatever part of it could not be done (the shell logs that). A shell
     /// that never answers is tolerated: the machine abandons the apply after
@@ -4866,8 +4868,9 @@ impl RaceMachine {
     /// Chapel, in this order: the stats (only a plausible state's), the IGT
     /// (on every take, also without a state: the runner's own IGT would
     /// fail the team's fresh-save gate or freeze the team's IGT), then the
-    /// apply on the shell's worker thread (the state's items and graces,
-    /// the defeat flags of the seed's bosses). The IGT guards are rebased on
+    /// apply (the state's items and graces, the defeat flags of the seed's
+    /// bosses), which the shell plans on its worker thread and writes over
+    /// the next frames. The IGT guards are rebased on
     /// the IGT written, so its jump reads as no reload, no wrong save and no
     /// quit-out, and the bosses written are marked reported.
     fn relay_start_take(&mut self, now: Instant, effects: &mut Vec<Effect>) {

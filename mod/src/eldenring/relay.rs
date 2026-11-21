@@ -2,9 +2,10 @@
 //! handoff carries (attributes, level and runes, the transferable items
 //! held, the graces lit), and the apply of a take (the stat write, the plan
 //! of what to give and raise, the gives and flag raises). The capture and
-//! the plan read on the shell's relay worker thread, never on the render
-//! thread nor per frame; the writes are made on the game thread (`write_stats`
-//! on the take's start frame, `step_writer` a bounded batch per frame). What
+//! the plan read on the shell's relay worker thread, never on the tracker's
+//! frame thread nor per frame; the writes are made on the tracker's frame
+//! thread (the Present hook, not the game's own threads): `write_stats` on
+//! the take's start frame, `step_writer` a bounded batch per frame. What
 //! the reads must pass, what a state holds and what an apply writes is
 //! decided in `core::relay_capture`, `core::relay_items` and
 //! `core::relay_apply`.
@@ -30,7 +31,7 @@
 //! - Gives: the game's own give function (`item_spawner::inject_one`); flag
 //!   raises: `EventFlagReader::set_flag_cached`.
 //!
-//! ### Reading off the render thread
+//! ### Reading off the frame thread
 //!
 //! Every read of game memory goes through `ReadProcessMemory` (libeldenring's
 //! `PointerChain`, `race_items::read_bytes`, the event flag reader), which
@@ -41,17 +42,21 @@
 //! writes them; one field is copied out of each row. A load starting
 //! during a capture's reads is caught by reading the loaded map before and
 //! after them (`core::relay_capture::no_load_between`); during an apply's, by
-//! the game thread's watch of every frame's map since the ask.
+//! the frame thread's watch of every frame's map since the ask.
 //!
-//! ### Writing on the game thread
+//! ### Writing on the tracker's frame thread
 //!
-//! Every write is made on the game thread, on frames the take's checks
-//! passed: the stats with libeldenring's `PointerChain::write`
-//! (`WriteProcessMemory`, which fails instead of faulting), ten `i32` at their
-//! offsets, never the whole structure; the gives through the game's own give
-//! function, called as the race items call it (the tracker's main loop, on a
-//! loaded player); the flags through the event flag reader, as the lock and
-//! the race item flags are written. An apply stops writing at the first
+//! Every write is made on the tracker's frame thread (the Present hook, not
+//! the game's own threads), on frames the take's checks passed: the stats
+//! with libeldenring's `PointerChain::write` (`WriteProcessMemory`, which
+//! fails instead of faulting), ten `i32` at their offsets, never the whole
+//! structure; the gives through the game's own give function, called as the
+//! race items call it (the tracker's main loop, on a loaded player); the
+//! flags through the event flag reader, as the lock and the race item flags
+//! are written. None of these writes is synchronised with the game's own
+//! threads, as the race items' and the lock's writes are not: a flag raise
+//! is a read-modify-write of a byte the game may write at the same moment,
+//! and nothing proves it never does. An apply stops writing at the first
 //! frame since its ask that read another map or none
 //! (`core::relay_apply::ApplyRun`).
 
@@ -122,7 +127,7 @@ pub fn held_items() -> Option<Vec<u32>> {
 /// is warned once, with its cause, and kept empty: no goods id is
 /// transferable for the session, every other category still is. Waits for
 /// the game's params to be indexed (it forces libeldenring's `PARAMS`, as
-/// `race_items::prewarm_params` does): off the render thread only.
+/// `race_items::prewarm_params` does): off the frame thread only.
 pub fn goods_types() -> &'static HashMap<u32, u8> {
     static GOODS_TYPES: OnceLock<HashMap<u32, u8>> = OnceLock::new();
     GOODS_TYPES.get_or_init(|| {
@@ -281,9 +286,10 @@ fn read_state(reader: &EventFlagReader, game: &GameState) -> Result<Read, Captur
 }
 
 /// Write the attributes (vigor to arcane, the wire order), the level and the
-/// runes held, on the game thread: the stats chain resolved once, then each
-/// value as its own `i32` at its offset (`core::relay_apply::stat_writes`),
-/// as `race_items::write_hp` writes the HP alone. Nothing else of the
+/// runes held, on the tracker's frame thread: the stats chain resolved once,
+/// then each value as its own `i32` at its offset
+/// (`core::relay_apply::stat_writes`), as `race_items::write_hp` writes the
+/// HP alone. Nothing else of the
 /// structure is written: its padding and the rune memory stay as the game
 /// has them. The stats at that address are read first, and nothing is
 /// written unless they read as a character's
@@ -319,7 +325,7 @@ pub fn write_stats(attributes: [u32; 8], level: u32, runes: u32) -> bool {
 /// `reinforceTypeId` (one field copied out of each), the other tables by row
 /// id alone. A table that does not read is warned once, with its cause, and
 /// kept empty: nothing of its category is given for the session. Waits for
-/// the game's params to be indexed: off the render thread only.
+/// the game's params to be indexed: off the frame thread only.
 pub fn item_rows() -> &'static ItemRows {
     static ITEM_ROWS: OnceLock<ItemRows> = OnceLock::new();
     ITEM_ROWS.get_or_init(|| {
@@ -372,6 +378,10 @@ pub fn item_rows() -> &'static ItemRows {
     })
 }
 
+/// Ids left out for want of a row that the warning of `plan_apply` names (the
+/// info line lists them all).
+const UNLISTED_SHOWN: usize = 8;
+
 /// What an apply writes (`core::relay_apply::plan`), on the calling (worker)
 /// thread: the receiver's inventory read now (so a second apply of the same
 /// take gives nothing it already gave), the param rows and this game's grace
@@ -403,6 +413,17 @@ pub fn plan_apply(
     if !counts.inventory_read {
         warn!(generation, "[RELAY] Inventory unreadable, no item given");
     }
+    // A state this mod built has a row for every id: a skip says a table
+    // name or the weapon rule is wrong, which must not pass unseen.
+    if counts.no_row + counts.no_level > 0 {
+        warn!(
+            generation,
+            no_row = counts.no_row,
+            no_level = counts.no_level,
+            first = ?&plan.unlisted[..plan.unlisted.len().min(UNLISTED_SHOWN)],
+            "[RELAY] Items left out for want of a param row"
+        );
+    }
     let gives: Vec<u32> = plan
         .steps
         .iter()
@@ -433,17 +454,20 @@ pub fn plan_apply(
     plan
 }
 
-/// The writer of an apply's steps for one frame, on the game thread (true
-/// when the write was made): a give is one unit through the game's own give
-/// function (`item_spawner::inject_one`; the id carries its category nibble,
-/// nothing is equipped); a flag is raised through the event flag reader, the
-/// category page resolved at the frame's first flag and reused, a flag of
-/// another category falling back to a full lookup (as `execute_effects`
-/// writes `SetGameFlag`). The gives follow the race items' precedent (the
-/// game thread, on a loaded player); the other caller of the give function,
-/// the seed's ashes of war, runs on its own thread at the first load of a
-/// fresh save, and the race items, refused on relay races, give nothing
-/// during a take.
+/// The writer of an apply's steps for one frame, on the tracker's frame
+/// thread (true when the write was made: for a give, that the game function
+/// was called, which returns nothing to check): a give is one unit through
+/// the game's own give function (`item_spawner::inject_one`; the id carries
+/// its category nibble, nothing is equipped); a flag is raised through the
+/// event flag reader, the category page resolved at the frame's first flag
+/// and reused, a flag of another category falling back to a full lookup (as
+/// `execute_effects` writes `SetGameFlag`). The gives follow the race items'
+/// precedent (the frame thread, on a loaded player); the race items, refused
+/// on relay races, give nothing during a take. The other caller of the give
+/// function, the seed's ashes of war, runs on its own thread at the first
+/// load of a fresh save, and nothing keeps it from calling the function at
+/// the same moment as a take (left as it is: the race items do not guard
+/// against it either).
 pub fn step_writer(reader: &EventFlagReader) -> impl FnMut(ApplyStep) -> bool + '_ {
     let mut page = None;
     move |step| match step {
