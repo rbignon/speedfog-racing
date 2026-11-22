@@ -17,7 +17,6 @@ DEFAULT_RACE_ITEMS_TIER_WEIGHTS: dict[str, dict[str, int]] = {
         "ink": 1,
         "vanish": 1,
         "slow_mo": 1,
-        "giant": 1,
         "camera": 1,
         "talisman_thief": 1,
         "toxic_blossom": 1,

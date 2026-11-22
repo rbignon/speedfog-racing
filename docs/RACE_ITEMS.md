@@ -57,7 +57,7 @@ Catalog keys come from the seed (`graph.json` `race_items`, read by `extract_rac
 | `vanish`                        | middle, back    | every other playing runner     | the target turns invisible (memory effect, 15 s)                                         |
 | `unseen_foes`                   | back            | every other playing runner     | the target's enemies are hidden (memory effect, 15 s)                                    |
 | `slow_mo`                       | middle, back    | the playing runner just ahead  | slowed to `race_items_slow_mo_speed_pct` (memory effect, 15 s)                           |
-| `giant`                         | front, middle   | every other playing runner     | scaled to `race_items_giant_scale_pct` (memory effect, 15 s)                             |
+| `giant`                         | front           | every other playing runner     | scaled to `race_items_giant_scale_pct` (memory effect, 15 s)                             |
 | `camera`                        | middle, back    | the playing runner just ahead  | a camera variant drawn at each use (memory effect, 15 s)                                 |
 | `talisman_thief`                | middle, back    | the playing runner just ahead  | takes one of the target's equipped talismans for the sender (permanent)                  |
 | `junk_weapon`                   | middle          | the playing runner just ahead  | forces a junk weapon into the target's right hand (permanent)                            |

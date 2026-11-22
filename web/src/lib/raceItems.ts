@@ -29,15 +29,15 @@ export const RACE_ITEMS: RaceItemInfo[] = [
     tiers: ["front"],
   },
   {
-    key: "mushroom",
-    name: "Mushroom",
-    effect: "Infinite stamina for 30 s.",
-    tiers: ["front", "middle"],
-  },
-  {
     key: "giant",
     name: "Giant",
     effect: "Everyone else grows huge for 15 s.",
+    tiers: ["front"],
+  },
+  {
+    key: "mushroom",
+    name: "Mushroom",
+    effect: "Infinite stamina for 30 s.",
     tiers: ["front", "middle"],
   },
   {
