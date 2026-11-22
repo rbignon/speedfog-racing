@@ -253,3 +253,26 @@ def test_a_leaderboard_row_reads_readiness_from_the_room(monkeypatch):
     row = RelayTeamRow(team, (a, b), cap=7)
     info = relay_team_to_info(row, connected_ids={a.id, b.id})
     assert [m.ready for m in info.relay_members or []] == [False, True]
+
+
+def test_a_setup_row_sent_to_the_mods_reads_ready_once_its_first_runner_is():
+    # The in-game overlay shows the status of its team's leaderboard row.
+    first = _member("a", status=ParticipantStatus.REGISTERED)
+    mate = _member("b", status=ParticipantStatus.READY)
+    team = _team(
+        status=ParticipantStatus.REGISTERED,
+        holder_id=None,
+        first_runner_id=first.id,
+        race_id=uuid.uuid4(),
+        current_layer=0,
+        igt_ms=0,
+        death_count=0,
+        color_index=0,
+    )
+
+    def wire_status() -> str:
+        return relay_team_to_info(RelayTeamRow(team, (first, mate), cap=7)).status
+
+    assert wire_status() == "registered"  # a ready teammate is not enough
+    first.status = ParticipantStatus.READY
+    assert wire_status() == "ready"

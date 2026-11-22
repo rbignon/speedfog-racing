@@ -940,10 +940,11 @@ def relay_team_to_info(
 ) -> ParticipantInfo:
     """A relay team as a participant-shaped leaderboard row.
 
-    The progress fields come from the team; ``mod_connected``, ``is_live`` and
-    ``stream_url`` follow the holder. Nobody plays while the baton is free
-    (its nominal holder waits like the others), so the row then names no
-    holder. No badge and no name template.
+    The progress fields come from the team, the status from the row (which
+    reads READY in setup once the first runner is); ``mod_connected``,
+    ``is_live`` and ``stream_url`` follow the holder. Nobody plays while the
+    baton is free (its nominal holder waits like the others), so the row then
+    names no holder. No badge and no name template.
     """
     team = row.team
     connected = connected_ids or set()
@@ -958,7 +959,7 @@ def relay_team_to_info(
         id=str(team.id),
         twitch_username=f"team-{str(team.id)[:8]}",
         twitch_display_name=team.name,
-        status=team.status.value,
+        status=row.status.value,
         current_zone=team.current_zone,
         current_layer=team.current_layer,
         current_layer_tier=tier,
