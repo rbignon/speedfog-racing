@@ -277,6 +277,34 @@ def test_take_waits_for_the_baton_to_be_free(bot: Bot) -> None:
     assert request_take(bot) == {"type": "relay_take_request"}
 
 
+def test_take_counts_the_wait_down_from_the_info_received(
+    bot: Bot, clock: Clock
+) -> None:
+    """No update comes when the wait runs out: the bot counts it down from the
+    RelayInfo received, as the mod does."""
+    running(bot, info("waiting", baton_free_in_s=60))
+    clock.t += 59.5
+    refusal = request_take(bot)
+    assert isinstance(refusal, str) and "free in 1 s" in refusal
+    clock.t += 0.5
+    assert request_take(bot) == {"type": "relay_take_request"}
+
+
+def test_take_counts_from_the_latest_info(bot: Bot, clock: Clock) -> None:
+    """A holder that came back then left again: the new wait counts from its
+    own receipt, even when it reads the same as the last one."""
+    running(bot, info("waiting", baton_free_in_s=60))
+    clock.t += 50
+    next_action(
+        bot, {"type": "relay_update", "relay": info("waiting", baton_free_in_s=60)}
+    )
+    clock.t += 15
+    refusal = request_take(bot)
+    assert isinstance(refusal, str) and "free in 45 s" in refusal
+    clock.t += 45
+    assert request_take(bot) == {"type": "relay_take_request"}
+
+
 def test_next_gate_steps_one_layer_then_the_final_boss() -> None:
     assert next_gate(GRAPH, "start") == ("a", 21)
     assert next_gate(GRAPH, "a") == ("b", 22)

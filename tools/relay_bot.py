@@ -153,7 +153,10 @@ class Bot:
     holder: bool = False
     validated: bool = False
     gates_locked: bool = False
+    # The wait as received at `info_at` (a reading of `clock`): each RelayInfo
+    # carries it, but no update comes when it runs out, so it is counted down.
     baton_free_in_s: int | None = None
+    info_at: float = 0.0
     members: list[dict[str, Any]] = field(default_factory=list)
     out: bool = False
     # The team's IGT at `igt_at` (a reading of `clock`): it runs from there.
@@ -182,6 +185,7 @@ def apply_info(bot: Bot, relay: dict[str, Any]) -> None:
     bot.members = relay["members"]
     bot.gates_locked = relay["gates_locked"]
     bot.baton_free_in_s = relay["baton_free_in_s"]
+    bot.info_at = bot.clock()
     bot.holder = relay["role"] == "holder"
     own = next(
         (m for m in bot.members if m["participant_id"] == bot.participant_id), None
@@ -295,8 +299,9 @@ def request_take(bot: Bot) -> dict[str, Any] | str:
         return f"{bot.name} holds the baton"
     if bot.baton_free_in_s is None:
         return "the holder is online: the baton is not free"
-    if bot.baton_free_in_s > 0:
-        return f"the baton is free in {bot.baton_free_in_s} s"
+    left = bot.baton_free_in_s - int(bot.clock() - bot.info_at)
+    if left > 0:
+        return f"the baton is free in {left} s"
     return {"type": "relay_take_request"}
 
 
