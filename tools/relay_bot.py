@@ -359,7 +359,13 @@ class Console:
         self.finish_flag: int | None = None
         self.start_node = ""
         self.tasks: list[asyncio.Task[None]] = []
-        self.message_ids: dict[str, int] = {}
+        # Numbered as a mod numbers its messages: from the launch time in ms, one
+        # more per message. The server drops a fog flag whose id is already in
+        # the team's history, which mixes its members' ids: one counter for
+        # every bot (a team's bots share its history), and never carried on
+        # from the highest recorded id, which would take the next id of the mod
+        # that recorded it and drop that mod's next flag.
+        self.message_id = time.time_ns() // 1_000_000
 
     # --- setup ---
 
@@ -609,31 +615,26 @@ class Console:
             log(f"no bot {name!r} ({', '.join(self.bots)})")
         return found
 
-    async def team_progress(self, bot: Bot) -> tuple[str, int]:
-        """The team's current zone (a node id) and its highest recorded message id."""
+    async def team_zone(self, bot: Bot) -> str:
+        """The team's current zone (a node id)."""
         from speedfog_racing.database import async_session_maker
         from speedfog_racing.models import RelayTeam
 
         async with async_session_maker() as db:
             team = await db.get(RelayTeam, uuid.UUID(bot.team_id))
         if team is None:
-            return self.start_node, 0
-        top = max(
-            (e.get("message_id") or 0 for e in team.zone_history or []), default=0
-        )
-        return team.current_zone or self.start_node, top
+            return self.start_node
+        return team.current_zone or self.start_node
 
     async def flag(self, bot: Bot, flag_id: int) -> bool:
-        _, top = await self.team_progress(bot)
-        message_id = max(top, self.message_ids.get(bot.team_id, 0)) + 1
-        self.message_ids[bot.team_id] = message_id
+        self.message_id += 1
         return await self.send(
             bot,
             {
                 "type": "event_flag",
                 "flag_id": flag_id,
                 "igt_ms": bot.igt_now(),
-                "message_id": message_id,
+                "message_id": self.message_id,
             },
         )
 
@@ -653,7 +654,7 @@ class Console:
         if refusal is not None:
             log(refusal)
             return
-        node, _ = await self.team_progress(bot)
+        node = await self.team_zone(bot)
         gate = next_gate(self.graph, node)
         if isinstance(gate, str):
             log(f"[{bot.name}] {gate}")
@@ -667,7 +668,7 @@ class Console:
         if refusal is not None:
             log(refusal)
             return
-        node, _ = await self.team_progress(bot)
+        node = await self.team_zone(bot)
         flag_id = self.graph["nodes"].get(node, {}).get("defeat_flag")
         if not isinstance(flag_id, int):
             log(f"[{bot.name}] {node} has no boss: leaving it counts the zone")
@@ -683,7 +684,7 @@ class Console:
             log(refusal)
             return
         assert self.finish_flag is not None
-        node, _ = await self.team_progress(bot)
+        node = await self.team_zone(bot)
         warning = finish_warning(self.graph, node)
         if warning is not None:
             log(f"[{bot.name}] warning: {warning}")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import time
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,10 @@ from speedfog_racing.database import Base
 from speedfog_racing.models import Participant, RelayTeam, User
 from speedfog_racing.services.relay import relay_cap
 from tests.relay_fixtures import (
+    BOSS_NODE,
     PROGRESS_TOTAL_LAYERS,
+    SECOND_FOG_FLAG,
+    START_NODE,
     make_relay_race,
     progress_graph,
     run_relay_race,
@@ -119,6 +123,50 @@ async def test_status_names_each_teams_holder_and_members(bot_session, capsys):
     assert sorted((m[0], m[2], m[-1]) for m in members) == [
         (name, f"0/{CAP}", "offline") for name in ("rb1", "rb2", "rb3", "rb4")
     ]
+
+
+@pytest.mark.parametrize(
+    "launched_ms_before_the_bot",
+    [600_000, -60_000],  # the game launched before the bot started, then after
+)
+async def test_event_flag_ids_never_take_the_next_id_of_a_recorded_mod(
+    bot_session, launched_ms_before_the_bot
+):
+    """The server drops a fog flag whose id the team already recorded: the bot's
+    flags must not take the ids a game's mod sends next (one more than its last)."""
+    mod_id = time.time_ns() // 1_000_000 - launched_ms_before_the_bot
+    async with bot_session() as db:
+        users = await _users(db, 3)
+        race = await make_relay_race(
+            db, users[0], team_size=2, teams=[users[1:3]], graph=progress_graph()
+        )
+        await run_relay_race(db, race, started_at=datetime.now(UTC))
+        race.relay_teams[0].zone_history = [
+            {"node_id": START_NODE, "igt_ms": 0, "type": "spawn"},
+            {"node_id": BOSS_NODE, "igt_ms": 70_000, "type": "fog", "message_id": mod_id},
+        ]
+        await db.commit()
+        race_id = str(race.id)
+        team_id = str(race.relay_teams[0].id)
+
+    console = rb.Console(race_id, "ws://unused", [("Team 1", ["rb1", "rb2"])], rb.FAKE_STATE)
+    await console.load()
+    for bot in console.bots.values():
+        bot.team_id = team_id  # set by the RelayInfo of auth_ok, and no socket is open
+    sent: list[int] = []
+
+    async def capture(bot, payload):
+        sent.append(payload["message_id"])
+        return True
+
+    console.send = capture
+    # Two bots of one team share its history: never the same id twice.
+    for name in ("rb1", "rb2", "rb1"):
+        await console.flag(console.bots[name], SECOND_FOG_FLAG)
+
+    assert len(set(sent)) == 3
+    # Neither the recorded id nor the ones its mod sends next.
+    assert not set(sent) & set(range(mod_id, mod_id + 1_000))
 
 
 async def test_load_creates_the_named_teams_and_places_the_bots(bot_session):
