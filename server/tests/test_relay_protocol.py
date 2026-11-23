@@ -32,7 +32,7 @@ race_with_participants = _integration.race_with_participants
 seed_folder = _integration.seed_folder
 
 NOW = datetime(2026, 11, 20, 12, 0, tzinfo=UTC)
-FLAGS = {k: v for k, v in RELAY_BLOCK.items() if k != "warp_flag_count"}
+FLAGS = {k: v for k, v in RELAY_BLOCK.items() if k not in ("warp_flag_count", "loot")}
 START_ZONE_NAME = "Chapel of Anticipation"
 GRAPH = {
     "total_layers": 12,

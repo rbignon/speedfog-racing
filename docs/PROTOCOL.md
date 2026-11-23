@@ -686,8 +686,12 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
   "flags": {
     "lock_flag": 1050290500,
     "chapel_warp_flag": 1050290501,
+    "travel_lock_flag": 1050290503,
+    "roundtable_warp_flag": 1050290504,
     "warp_flag_base": 1050290510,
-    "zone_flag_base": 1050294000
+    "zone_flag_base": 1050294000,
+    "token_flag_base": 1050297900,
+    "token_bits": 24
   }
 }
 ```
@@ -698,13 +702,13 @@ Sent only on a relay race. `RelayInfo` is the one place a mod reads relay state:
 - `role`: `holder` only for the team's holder while the baton is not free. Once the baton is free (a take nobody acknowledged), the nominal holder reads `waiting` with `baton_free_in_s: 0`, locks again, and may take the baton back like any teammate.
 - `gates_locked`: true for a holder at or over their cap.
 - `baton_free_in_s`: 0 when the baton is free (a take nobody acknowledged, or no holder), whatever the holder's connection; otherwise null while the holder is online, else the seconds before the baton can be taken (the offline wait is 60 s, counted from the holder's disconnect, from the race start for a holder not connected then (the countdown's end: 60 through the countdown), or from a server restart; the whole 60 until the absence is recorded; never above 60).
-- `flags`: the seed's `relay` block minus `warp_flag_count`.
+- `flags`: the integer keys of the seed's `relay` block but `warp_flag_count` (not `loot`).
 
 | Message         | Fields                                                                                                                                       | When                                                                                                                                               |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `relay_update`  | `relay: RelayInfo`                                                                                                                           | Anything in `RelayInfo` changed for this mod's team (each connected member gets its own `role` and `gates_locked`), the race start included        |
 | `relay_release` | `handoff_id: str`, `to_name: str`                                                                                                            | To the holder: send your state, lock, go to the Chapel                                                                                             |
-| `relay_take`    | `handoff_id: str`, `state: CharacterState \| null`, `igt_ms: int`, `defeat_flags: int[]`, `warp_flag: int \| null`, `zone_name: str \| null` | To the new holder. `state` null: no state known yet. `warp_flag` null: the team has taken no gate yet, stay at the Chapel                          |
+| `relay_take`    | `handoff_id: str`, `state: CharacterState \| null`, `igt_ms: int`, `defeat_flags: int[]`, `warp_flag: int \| null`, `zone_name: str \| null` | To the new holder. `state` null: no state known yet. Before the team's first gate `warp_flag` is the Chapel warp flag                              |
 | `relay_refused` | `code: str`, `message: str`                                                                                                                  | A request was refused. Codes: `not_holder`, `target_unavailable`, `target_at_cap`, `at_cap`, `holder_online`, `not_ready`, `not_validated`, `busy` |
 
 Handoff: `relay_handoff_request` (holder), the server checks, `relay_release` (holder), `relay_state` with the `handoff_id` (holder), the server stores the state, flips the holder, sends `relay_take` (target) and `relay_update` to the team; the giver's mod reads `role: "waiting"` in that update and only then locks and warps to the Chapel (the lock follows the server's word, so a cancelled handoff never strands a holder locked); `relay_taken` (target), then `relay_update` to the team and a leaderboard broadcast.
@@ -717,7 +721,7 @@ A `relay_state` answering a release whose target is by then at or over the cap (
 
 A member out (their abandon, the organizer's removal, a disqualification, 30 minutes offline) sends the team a `relay_update`: a baton they held is free at once (`holder_id` null, `baton_free_in_s: 0`, nobody gets it automatically), `cap` is recomputed on the members who share it (so `gates_locked` may drop), a handoff in flight that names them is dropped, and their own `members[].status` reads `abandoned` or `disqualified`: their race is over. A team with nobody left, or with a member disqualified, is out, and so is a team whose IGT stood still for 30 minutes with no holder; a team finished or out reads it in `team_status`. Server side in `docs/RELAY.md` ("Lifecycle").
 
-`relay_take`: `igt_ms` is the team's IGT; `defeat_flags` holds the defeat flag of every boss the team killed, the current zone's included; `warp_flag` is `warp_flag_base + (n - zone_flag_base)`, n being the connection flag of the last zone the team entered through a fog gate (backtracks never move it), and `zone_name` names that zone; both are null before the team's first gate. A runner at or over their cap never receives the baton (`target_at_cap` for a handoff, `at_cap` for a take), the final zone included. `relay_refused.message` is a short English text per code. The refusal order and the server side are in `docs/RELAY.md` ("Baton").
+`relay_take`: `igt_ms` is the team's IGT; `defeat_flags` holds the defeat flag of every boss the team killed, the current zone's included; `warp_flag` is `warp_flag_base + (n - zone_flag_base)`, n being the connection flag of the last zone the team entered through a fog gate (backtracks never move it), and `zone_name` names that zone; before the team's first gate `warp_flag` is `chapel_warp_flag` and `zone_name` is null. A runner at or over their cap never receives the baton (`target_at_cap` for a handoff, `at_cap` for a take), the final zone included. `relay_refused.message` is a short English text per code. The refusal order and the server side are in `docs/RELAY.md` ("Baton").
 
 Progress on a relay race: `status_update`, `event_flag` and `zone_query` are applied to the team, and only from the member whose `role` is `holder`, and only once it has sent `relay_taken` for a baton it just received (until then it is treated like a waiting runner, as below). A waiting runner sends them as usual: its `event_flag` and `zone_query` are acknowledged (`event_flag_ack`, `zone_query_ack`) and recorded nowhere, and its `status_update` only runs its own fresh-save gate (its first report once the race runs validates it, `members[].validated`, when the IGT is at most 60 s, else `error` `fresh_save_required`) and keeps the death counter of its own save, so deaths made without the baton are never counted for the team. The holder's reports go through the usual guards on the team's IGT. The legacy `finished` message is ignored; a team finishes on its holder's `finish_event` flag. A reconnecting holder gets the `zone_update` of the team's zone, a waiting runner none.
 

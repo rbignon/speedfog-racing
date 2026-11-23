@@ -50,9 +50,22 @@ from .test_integration import ModTestClient
 RELAY_BLOCK = {
     "lock_flag": 1050290500,
     "chapel_warp_flag": 1050290501,
+    "travel_lock_flag": 1050290503,
+    "roundtable_warp_flag": 1050290504,
     "warp_flag_base": 1050290510,
     "zone_flag_base": 1050294000,
     "warp_flag_count": 490,
+    "token_flag_base": 1050297900,
+    "token_bits": 24,
+    "loot": {
+        "10000800": {
+            "runes": 13000,
+            "rune_speffect": 755891000,
+            "received_flag": 1050297000,
+            "pickup_flags": [510060],
+            "items": [{"id": 536874924, "qty": 1}],
+        },
+    },
 }
 
 # The run of ``progress_graph``: the start (no boss), a boss arena on layer 1, a

@@ -11,17 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from speedfog_racing.database import Base, get_db
 from speedfog_racing.main import app
 from speedfog_racing.models import Race, Seed, SeedStatus, User, UserRole
-from speedfog_racing.services.relay import relay_flags, seed_has_relay
+from speedfog_racing.services.relay import relay_flags, relay_warp_flag, seed_has_relay
 from speedfog_racing.services.seed_service import assign_seed_to_race, get_available_seed
+from speedfog_racing.websocket.schemas import RelayFlags
 from tests import relay_fixtures as _relay_fixtures
-
-RELAY_BLOCK = {
-    "lock_flag": 1050290500,
-    "chapel_warp_flag": 1050290501,
-    "warp_flag_base": 1050290510,
-    "zone_flag_base": 1050294000,
-    "warp_flag_count": 490,
-}
+from tests.relay_fixtures import RELAY_BLOCK
 
 relay_races_on = _relay_fixtures.relay_races_on
 
@@ -42,17 +36,35 @@ def _plain_graph() -> dict:
 
 
 @pytest.mark.parametrize(
-    "block,expected", [(RELAY_BLOCK, True), ({}, False), (None, False), ("x", False)]
+    "block, expected",
+    [
+        (dict(RELAY_BLOCK), True),
+        ({k: v for k, v in RELAY_BLOCK.items() if k != "loot"}, False),  # --no-build, or 4.15
+        ({k: v for k, v in RELAY_BLOCK.items() if k != "roundtable_warp_flag"}, False),
+        ({**RELAY_BLOCK, "roundtable_warp_flag": "1050290504"}, False),
+        ({**RELAY_BLOCK, "loot": []}, False),
+        ({**RELAY_BLOCK, "loot": {}}, True),  # a seed with no boss
+        ({}, False),
+        ("x", False),
+        (None, False),
+    ],
 )
-def test_seed_has_relay_needs_a_non_empty_object(block, expected):
+def test_only_a_4_16_block_makes_a_relay_seed(block, expected):
     graph = {"nodes": {}} if block is None else {"nodes": {}, "relay": block}
     assert seed_has_relay(graph) is expected
 
 
-def test_relay_flags_drops_the_warp_count_and_is_none_for_a_plain_seed():
-    flags = relay_flags(_relay_graph())
-    assert flags == {k: v for k, v in RELAY_BLOCK.items() if k != "warp_flag_count"}
+def test_relay_flags_are_the_integers_of_the_block_without_the_count():
+    flags = relay_flags({"relay": dict(RELAY_BLOCK)})
+    assert "loot" not in flags and "warp_flag_count" not in flags
+    assert RelayFlags(**flags).travel_lock_flag == 1050290503
     assert relay_flags(_plain_graph()) is None
+
+
+def test_the_warp_before_any_gate_is_the_chapel_warp():
+    flags = relay_flags({"relay": dict(RELAY_BLOCK)})
+    assert relay_warp_flag(flags, None) == 1050290501
+    assert relay_warp_flag(flags, 1050294007) == 1050290517
 
 
 @pytest.fixture

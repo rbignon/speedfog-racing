@@ -208,14 +208,18 @@ def test_handoff_sequence(integration_client, relay_race, mods):
         spectator.close()
 
 
-def test_handoff_before_any_gate_has_no_warp(relay_race, mods):
+def test_handoff_before_any_gate_warps_to_the_chapel(relay_race, mods):
     holder, target = mods[_pid(relay_race, 0, 0)], mods[_pid(relay_race, 0, 1)]
     _make_receiver(target)
 
     take = _hand_off(holder, target)
 
-    # No gate taken yet: the receiver is unlocked at the Chapel.
-    assert (take["warp_flag"], take["zone_name"], take["defeat_flags"]) == (None, None, [])
+    # No gate taken yet: waiting runners are not at the Chapel, so the take warps there.
+    assert (take["warp_flag"], take["zone_name"], take["defeat_flags"]) == (
+        RELAY_BLOCK["chapel_warp_flag"],
+        None,
+        [],
+    )
     _taken(target, take)
 
 

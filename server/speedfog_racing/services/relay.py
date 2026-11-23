@@ -68,9 +68,15 @@ RELAY_REFUSAL_MESSAGES: dict[RelayRefusal, str] = {
 
 
 def seed_has_relay(graph_json: Mapping[str, Any]) -> bool:
-    """Whether a seed supports relay races: ``relay`` is a non-empty object."""
+    """Whether a seed supports relay races: it carries the graph.json 4.16
+    block, a ``relay`` object holding a ``loot`` object (possibly empty) and an
+    integer ``roundtable_warp_flag``. An earlier block, or a seed exported
+    without a build, is not a relay seed."""
     block = graph_json.get(RELAY_PLUGIN)
-    return isinstance(block, dict) and bool(block)
+    if not isinstance(block, dict) or not isinstance(block.get("loot"), dict):
+        return False
+    warp = block.get("roundtable_warp_flag")
+    return isinstance(warp, int) and not isinstance(warp, bool)
 
 
 def relay_seed_clause() -> ColumnElement[bool]:
@@ -81,11 +87,16 @@ def relay_seed_clause() -> ColumnElement[bool]:
 
 
 def relay_flags(graph_json: Mapping[str, Any]) -> dict[str, int] | None:
-    """The seed's relay block minus ``warp_flag_count``, or None for a plain seed."""
+    """The integer keys of the seed's relay block but ``warp_flag_count``, or
+    None for a plain seed."""
     if not seed_has_relay(graph_json):
         return None
     block: Mapping[str, Any] = graph_json[RELAY_PLUGIN]
-    return {k: v for k, v in block.items() if k != "warp_flag_count"}
+    return {
+        k: v
+        for k, v in block.items()
+        if k != "warp_flag_count" and isinstance(v, int) and not isinstance(v, bool)
+    }
 
 
 def relay_cap(total_layers: int, active_members: int) -> int:
@@ -248,12 +259,12 @@ def reset_relay_team(team: RelayTeam) -> None:
     team.baton_free = False
 
 
-def relay_warp_flag(flags: Mapping[str, int], entry_flag_id: int | None) -> int | None:
+def relay_warp_flag(flags: Mapping[str, int], entry_flag_id: int | None) -> int:
     """The flag that warps a receiver to the entrance of the connection whose
-    zone-tracking flag is ``entry_flag_id`` (``relay_flags``' bases); None
-    before the team's first gate."""
+    zone-tracking flag is ``entry_flag_id`` (``relay_flags``' bases); the Chapel
+    warp flag before the team's first gate."""
     if entry_flag_id is None:
-        return None
+        return flags["chapel_warp_flag"]
     return flags["warp_flag_base"] + (entry_flag_id - flags["zone_flag_base"])
 
 

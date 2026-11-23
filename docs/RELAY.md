@@ -29,23 +29,31 @@ created stay as they are.
 ## Seeds
 
 A relay seed carries a top-level `relay` object in its `graph.json` (generator
-version 4.15), written when the relay plugin is enabled. The pools enable it in
+version 4.16), written when the relay plugin is enabled. The pools enable it in
 `tools/pools/_base.toml`. The block holds the event flags the mod and the server
 share:
 
-| Key                | Value      | Meaning                                                                                                                                                           |
-| ------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lock_flag`        | 1050290500 | while ON, no graph warp takes the player and the Chapel map refuses fast travel                                                                                   |
-| `chapel_warp_flag` | 1050290501 | raised, it warps the player to the Chapel grace and clears itself                                                                                                 |
-| `warp_flag_base`   | 1050290510 | `warp_flag_base + n`, raised, warps the player to the entrance of connection n and clears itself; n is the connection's zone-tracking flag minus `zone_flag_base` |
-| `warp_flag_count`  | 490        | how many warp flags follow the base                                                                                                                               |
-| `zone_flag_base`   | 1050294000 | first of the zone-tracking flags                                                                                                                                  |
+| Key                    | Value      | Meaning                                                                                                                                                                   |
+| ---------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lock_flag`            | 1050290500 | while ON, no graph warp takes the player and the Chapel map refuses fast travel                                                                                           |
+| `chapel_warp_flag`     | 1050290501 | raised, it warps the player to the Chapel grace and clears itself                                                                                                         |
+| `warp_flag_base`       | 1050290510 | `warp_flag_base + n`, raised, warps the player to the entrance of connection n and clears itself; n is the connection's zone-tracking flag minus `zone_flag_base`         |
+| `warp_flag_count`      | 490        | how many warp flags follow the base                                                                                                                                       |
+| `zone_flag_base`       | 1050294000 | first of the zone-tracking flags                                                                                                                                          |
+| `travel_lock_flag`     | 1050290503 | the lock on fast travel and graph warps outside the baton's moves                                                                                                         |
+| `roundtable_warp_flag` | 1050290504 | raised, it warps the player to the Roundtable Hold grace and clears itself                                                                                                |
+| `token_flag_base`      | 1050297900 | first of the flags that carry a payload across the handoff                                                                                                                |
+| `token_bits`           | 24         | how many token flags follow the base                                                                                                                                      |
+| `loot`                 | object     | what each boss gives, keyed by the boss's defeat flag: `runes`, `rune_speffect`, `received_flag`, `pickup_flags` and `items` (`id`, `qty`); empty for a seed with no boss |
 
-`Seed.relay` is true when `relay` is a non-empty object (`seed_has_relay` in
-`services/relay.py`). The pool scan sets it when it adds a seed, and an indexed
-column serves every filter, so no query parses `graph_json`. The migration
-backfills the seeds scanned before the column existed. `relay_flags` returns the
-block without `warp_flag_count`.
+`Seed.relay` is true when `relay` is the 4.16 block: an object holding a `loot`
+object (possibly empty) and an integer `roundtable_warp_flag` (`seed_has_relay` in
+`services/relay.py`). A seed exported without a build, or with an earlier block,
+is not a relay seed. The pool scan sets it when it adds a seed, and an indexed
+column serves every filter, so no query parses `graph_json`. The migrations
+backfill the seeds scanned before the column existed and recompute it when the
+rule changes. `relay_flags` returns the block's integer keys but `warp_flag_count`
+(so not `loot`).
 
 A relay race draws only relay seeds (`get_available_seed(..., require_relay=True)`,
 the same AVAILABLE then SEEN fallback and speedrun floor as any normal draw). When
@@ -283,8 +291,9 @@ then goes back to them.
 - `warp_flag` (`relay_warp_flag`): `warp_flag_base + (entry_flag_id - zone_flag_base)`,
   the entrance of the last zone the team entered through a fog gate. Backtracks never
   move `entry_flag_id`, so a holder who went back hands over the furthest zone.
-  `zone_name` names it. Both are null before the team's first gate: the receiver is
-  unlocked at the Chapel, with no warp.
+  `zone_name` names it. Before the team's first gate `warp_flag` is `chapel_warp_flag`
+  (waiting runners are not at the Chapel, so the take brings them there) and
+  `zone_name` is null.
 - `defeat_flags` (`team_defeat_flags`): the defeat flag of every node the team's
   history marks killed, the current zone's included, sorted. On a takeover the state is
   the last checkpoint, but the flags come from the history: a boss killed after the

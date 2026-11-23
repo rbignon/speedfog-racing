@@ -207,12 +207,16 @@ class CharacterState(BaseModel):
 
 
 class RelayFlags(BaseModel):
-    """The seed's relay block minus ``warp_flag_count``."""
+    """The integer keys of the seed's relay block but ``warp_flag_count``."""
 
     lock_flag: int
     chapel_warp_flag: int
+    travel_lock_flag: int
+    roundtable_warp_flag: int
     warp_flag_base: int
     zone_flag_base: int
+    token_flag_base: int
+    token_bits: int
 
 
 class RelayInfo(BaseModel):
@@ -845,7 +849,7 @@ class RelayReleaseMessage(BaseModel):
 
 class RelayTakeMessage(BaseModel):
     """Server to mod (the new holder): the state to apply. ``state`` is null when
-    none is known yet; ``warp_flag`` is null before the team's first gate."""
+    none is known yet; ``warp_flag`` is the Chapel warp flag before the team's first gate."""
 
     type: Literal["relay_take"] = "relay_take"
     handoff_id: str
