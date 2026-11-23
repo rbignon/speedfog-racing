@@ -15,8 +15,10 @@ from relay_bot import (
     FAKE_STATE,
     FRESH_IGT_MS,
     Bot,
+    bound_reply,
     finish_warning,
     load_state,
+    loot_line,
     next_action,
     next_gate,
     parse_team,
@@ -366,3 +368,62 @@ def test_load_state_refuses_what_the_server_would_drop(tmp_path: Path) -> None:
         path.write_text(bad, encoding="utf-8")
         with pytest.raises(ValueError, match="not a valid CharacterState"):
             load_state(path)
+
+
+def token_update(token: int | None, bound: bool) -> dict[str, Any]:
+    return {"type": "relay_update", "relay": info(token=token, bound=bound)}
+
+
+def test_bot_confirms_a_token_once_per_token(bot: Bot) -> None:
+    unbound = token_update(4242, False)
+    next_action(bot, unbound)
+    assert bound_reply(bot) == {"type": "relay_bound", "token": 4242}
+    # An update that still reads unbound (before the server took the
+    # confirmation in) does not draw a second one.
+    next_action(bot, unbound)
+    assert bound_reply(bot) is None
+    next_action(bot, token_update(4242, True))
+    assert bound_reply(bot) is None
+    # A race reset clears the token; the next one drawn is confirmed again.
+    next_action(bot, token_update(None, False))
+    assert bound_reply(bot) is None
+    next_action(bot, token_update(4242, False))
+    assert bound_reply(bot) == {"type": "relay_bound", "token": 4242}
+
+
+def test_bot_confirms_a_different_token_and_stays_quiet_when_bound(bot: Bot) -> None:
+    next_action(bot, token_update(1, False))
+    assert bound_reply(bot) == {"type": "relay_bound", "token": 1}
+    next_action(bot, token_update(2, False))
+    assert bound_reply(bot) == {"type": "relay_bound", "token": 2}
+    next_action(bot, token_update(3, True))
+    assert bound_reply(bot) is None
+
+
+def test_bot_confirms_the_token_of_an_auth_ok_again_after_a_reconnection(
+    bot: Bot,
+) -> None:
+    next_action(bot, token_update(7, False))
+    assert bound_reply(bot) is not None
+    auth_ok = {
+        "type": "auth_ok",
+        "race": {"status": "setup"},
+        "participants": [{"id": "t1", "igt_ms": 0}],
+        "relay": info(token=7, bound=False),
+    }
+    next_action(bot, auth_ok)
+    assert bound_reply(bot) == {"type": "relay_bound", "token": 7}
+
+
+def test_loot_is_reported_and_answers_nothing(bot: Bot) -> None:
+    loot = {
+        "type": "relay_loot",
+        "paid": False,
+        "announce": {"runner": "Roger", "boss": "Godrick"},
+        "entries": [{"flag": 10000800, "runes": 13000}, {"flag": 10000801}],
+    }
+    assert next_action(bot, loot) is None
+    assert loot_line(loot) == "loot: 2 entries, paid=False, Roger defeated Godrick"
+    assert loot_line({**loot, "announce": None, "paid": True, "entries": []}) == (
+        "loot: 0 entries, paid=True"
+    )

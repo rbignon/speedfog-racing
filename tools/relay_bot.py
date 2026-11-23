@@ -12,8 +12,10 @@ report once the race runs, tells the server it waits at the Chapel
 a character state (a plausible default, or the file --state names, checked
 against the server's model at startup), answers a `relay_take` with
 `relay_taken` and only then reports the team's progress, starting from the team
-IGT it was given. Its role and its end (a member out, a finished team) come from
-the server.
+IGT it was given. It confirms the token it is given with `relay_bound` (it has
+no save to write it into) as soon as it reads one not yet bound, once per token,
+and prints one line for a `relay_loot` (it has no game to give anything to). Its
+role and its end (a member out, a finished team) come from the server.
 
 A console drives the bots:
 
@@ -147,6 +149,12 @@ class Bot:
     # A relay_take that was not acknowledged because the bot is muted.
     unacked_take: str | None = None
     offline: bool = False
+    # The member's own token as last read in a RelayInfo (None until its save
+    # is validated), whether the server counts it bound, and the token this
+    # bot already confirmed (a bot has no save: it confirms at once, once).
+    token: int | None = None
+    bound: bool = False
+    confirmed_token: int | None = None
 
     def igt_now(self) -> int:
         return self.igt_ms + int((self.clock() - self.igt_at) * 1000)
@@ -164,6 +172,10 @@ def apply_info(bot: Bot, relay: dict[str, Any]) -> None:
     bot.baton_free_in_s = relay["baton_free_in_s"]
     bot.info_at = bot.clock()
     bot.holder = relay["role"] == "holder"
+    bot.token = relay.get("token")
+    bot.bound = relay.get("bound", False)
+    if bot.token is None or bot.bound:
+        bot.confirmed_token = bot.token
     own = next(
         (m for m in bot.members if m["participant_id"] == bot.participant_id), None
     )
@@ -193,6 +205,9 @@ def next_action(bot: Bot, message: dict[str, Any]) -> dict[str, Any] | None:
             bot.set_igt(row["igt_ms"] if row is not None else 0)
         bot.first_report = True
         bot.ready_sent = False
+        # A new socket: a token not bound yet is confirmed again.
+        if not bot.bound:
+            bot.confirmed_token = None
         if relay is not None and not bot.holder and bot.validated and not bot.out:
             bot.ready_sent = True
             return {"type": "relay_ready", "ready": True}
@@ -229,6 +244,26 @@ def next_action(bot: Bot, message: dict[str, Any]) -> dict[str, Any] | None:
         bot.set_igt(message["igt_ms"])
         return {"type": "relay_taken", "handoff_id": message["handoff_id"]}
     return None
+
+
+def bound_reply(bot: Bot) -> dict[str, Any] | None:
+    """The token confirmation owed after a RelayInfo was taken in: a bot has no
+    save to write the token into, so it confirms a token it reads unbound, once
+    per token."""
+    if bot.token is None or bot.bound or bot.confirmed_token == bot.token:
+        return None
+    bot.confirmed_token = bot.token
+    return {"type": "relay_bound", "token": bot.token}
+
+
+def loot_line(message: dict[str, Any]) -> str:
+    """The one line a bot prints for a `relay_loot`: it has no game to give
+    anything to."""
+    line = f"loot: {len(message['entries'])} entries, paid={message['paid']}"
+    announce = message.get("announce")
+    if announce is not None:
+        line += f", {announce['runner']} defeated {announce['boss']}"
+    return line
 
 
 def tick(bot: Bot) -> list[dict[str, Any]]:
@@ -559,7 +594,13 @@ class Console:
         out = next_action(bot, msg)
         if out is not None:
             await self.send(bot, out)
-        if kind == "relay_release":
+        if kind in ("auth_ok", "relay_update"):
+            confirm = bound_reply(bot)
+            if confirm is not None:
+                await self.send(bot, confirm)
+        if kind == "relay_loot":
+            log(f"[{bot.name}] {loot_line(msg)}")
+        elif kind == "relay_release":
             log(f"[{bot.name}] released the baton (handoff {msg['handoff_id']})")
         elif kind == "relay_take":
             how = "muted: not acknowledged" if bot.muted else "took the baton"
