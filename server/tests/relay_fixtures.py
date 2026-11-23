@@ -80,6 +80,7 @@ FOG_FLAG = 1050294001  # START_NODE -> BOSS_NODE
 SECOND_FOG_FLAG = 1050294002  # BOSS_NODE -> PLAIN_NODE
 THIRD_FOG_FLAG = 1050294003  # PLAIN_NODE -> FINAL_NODE
 BOSS_FLAG = 10000800
+BOSS_NAME = "Godrick the Grafted"
 FINAL_BOSS_FLAG = 19000800
 FINISH_FLAG = 1050299000
 PROGRESS_TOTAL_LAYERS = 4
@@ -118,6 +119,7 @@ def progress_graph() -> dict[str, Any]:
                 BOSS_NODE: {
                     "type": "boss_arena",
                     "display_name": "Godrick the Grafted",
+                    "boss_name": BOSS_NAME,
                     "zones": ["stormveil_godrick"],
                     "layer": 1,
                     "tier": 2,

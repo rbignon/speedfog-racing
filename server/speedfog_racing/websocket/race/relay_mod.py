@@ -65,6 +65,7 @@ from speedfog_racing.websocket.race.relay import (
     relay_section,
     request_handoff,
     request_take,
+    send_kill_loot,
     send_relay_updates,
     set_ready,
     store_state,
@@ -639,8 +640,9 @@ class RelayModHandler(RaceModHandler):
     async def _on_boss_killed(  # type: ignore[override]
         self, entity: RelayTeam, node_id: str, igt_ms: int
     ) -> None:
-        """The counted kill moves the team's row and its ``relay_update``
-        (``members[].zones``, ``gates_locked``)."""
+        """The counted kill sends its loot to the team (``send_kill_loot``), and
+        moves the team's row and its ``relay_update`` (``members[].zones``,
+        ``gates_locked``)."""
         graph = self._get_graph_json(entity)
         await manager.broadcast_player_update(
             entity.race_id, self._row(entity, graph), graph_json=graph
@@ -648,6 +650,14 @@ class RelayModHandler(RaceModHandler):
         # Under the relay section (see ``_handle_status_update``); the kill's
         # session is closed.
         async with relay_section(entity.race_id):
+            if graph is not None and self._participant_id is not None:
+                await send_kill_loot(
+                    manager.get_room(entity.race_id),
+                    entity.members,
+                    graph,
+                    node_id,
+                    self._participant_id,
+                )
             await send_relay_updates(
                 self.session_maker, entity.race_id, entity.id, graph_json=graph
             )

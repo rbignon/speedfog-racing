@@ -279,7 +279,8 @@ then goes back to them.
   cleared. Any member still in the race gets the same stamp on their own row
   (`last_igt_change_at`, the 30 minute offline rule of "Lifecycle"). Any member's
   arrival or departure sends the team a `relay_update` (`online`, `holder_online`), and
-  a receiver whose take is awaited gets it again first (above). A returning ex-holder
+  a receiver whose take is awaited gets it again first (above). A member still in the
+  race who connects then gets the team's loot ("Boss loot"). A returning ex-holder
   authenticates as `waiting`. The disconnect of a socket that a newer one replaced
   changes nothing.
 
@@ -303,6 +304,40 @@ then goes back to them.
   checkpoint stays dead for the taker.
 - `igt_ms`: the team's IGT, which the receiver's game takes.
 - Nobody at or over their cap receives the baton, the final zone included.
+
+### Boss loot
+
+The team shares the loot of its bosses: what a boss of the run's graph gives (items
+and runes) reaches every member, each keeping their own character. The seed says what
+each boss gives (`relay.loot`, keyed by the defeat flag, "Seeds"): `loot_entry`
+(`services/relay.py`) reads one entry as a `RelayLootEntry`, and `team_loot` the entry
+of every boss the team's history marks killed, in the order of `team_defeat_flags`.
+They go out in `relay_loot` (`entries`, `paid`, `announce`; wire shapes in
+`PROTOCOL.md`):
+
+- **At a counted kill** (`send_kill_loot`, from `RelayModHandler._on_boss_killed`):
+  the boss's entry to each connected member still in the race. The member who
+  reported the kill gets `paid: true` and `announce: null`: their own game paid the
+  boss, so their mod only marks it received. Each teammate gets `paid: false` and
+  `announce` `{runner, boss}`, for a banner: the killer's name (as `members[].name`)
+  and the boss's (the node's `boss_name`, else its `display_name`, else its id). A
+  re-report or a replay of the flag is no new kill and sends nothing.
+- **After a connection** (`send_team_loot`, from `member_connection_changed`): a
+  member still in the race whose mod connects gets, after the `relay_update` of the
+  connection, one `relay_loot` with the entry of every boss the team killed,
+  `paid: false`, `announce: null`. A member who was offline at a kill, or who joins
+  the run late, catches up; one who was connected gets those entries again.
+- **Nothing** goes to a member who is out (abandoned or disqualified), to another
+  team, or before the team's first kill. The final boss has no entry: its kill is the
+  finish. A kill whose node has no usable entry (missing, or out of the wire bounds)
+  is counted and broadcast as any kill, sends no `relay_loot`, and logs a warning
+  (`loot_entry`); a catch-up leaves that boss out, with the same warning.
+
+The server stores nothing about who received what: each mod decides from its own save
+whether an entry is still to give (its `received_flag`), so an entry may reach a mod
+any number of times. The kill's sends run under `relay_section`, once the kill's
+session is closed and before its `relay_update` ("Ordering"); the catch-up runs under
+the `relay_lock` that `member_connection_changed` holds.
 
 ### Ordering
 

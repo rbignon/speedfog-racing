@@ -4,15 +4,17 @@ A relay seed is a seed whose ``graph.json`` has a top-level ``relay`` object
 (the generator writes it when its relay plugin is enabled).
 """
 
+import logging
 import math
 from collections import defaultdict
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import ColumnElement, Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -26,6 +28,11 @@ from speedfog_racing.models import (
     RelayTeam,
     Seed,
 )
+
+if TYPE_CHECKING:
+    from speedfog_racing.websocket.schemas import RelayLootEntry
+
+logger = logging.getLogger(__name__)
 
 RELAY_PLUGIN = "relay"
 
@@ -286,6 +293,39 @@ def team_defeat_flags(
         if isinstance(flag, int) and not isinstance(flag, bool) and flag > 0:
             flags.add(flag)
     return sorted(flags)
+
+
+def loot_entry(graph_json: Mapping[str, Any], flag: int) -> "RelayLootEntry | None":
+    """What the boss whose defeat flag is ``flag`` gives: the seed's relay
+    ``loot`` entry for it (keyed by the flag as a decimal string), or None.
+    It is only asked for a boss the team killed, so an entry missing, or one
+    out of the wire bounds (a mod could not read it), is logged."""
+    # Local import: websocket.schemas pulls in the services package, which
+    # imports this module.
+    from speedfog_racing.websocket.schemas import RelayLootEntry
+
+    block = graph_json.get(RELAY_PLUGIN)
+    loot = block.get("loot") if isinstance(block, Mapping) else None
+    raw = loot.get(str(flag)) if isinstance(loot, Mapping) else None
+    if raw is None:
+        logger.warning("Relay loot entry missing: flag=%s", flag)
+        return None
+    try:
+        return RelayLootEntry.model_validate(
+            {**raw, "flag": flag} if isinstance(raw, Mapping) else raw
+        )
+    except ValidationError:
+        logger.warning("Relay loot entry unusable: flag=%s", flag)
+        return None
+
+
+def team_loot(
+    graph_json: Mapping[str, Any], zone_history: Sequence[Mapping[str, Any]] | None
+) -> "list[RelayLootEntry]":
+    """The loot entry of every boss the team's history marks killed, in the
+    order of ``team_defeat_flags``; a boss without a usable entry gives none."""
+    entries = (loot_entry(graph_json, flag) for flag in team_defeat_flags(graph_json, zone_history))
+    return [entry for entry in entries if entry is not None]
 
 
 def receive_refusal(

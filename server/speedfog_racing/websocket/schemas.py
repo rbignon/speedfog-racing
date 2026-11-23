@@ -864,6 +864,53 @@ class RelayRefusedMessage(BaseModel):
     message: str
 
 
+# The wire ranges of a loot entry: what the mod's integer types hold. Event
+# flags, SpEffect ids and rune counts fit an i32; an item id is a u32 (its
+# category sits in the top bits).
+RelayLootInt = Annotated[int, Field(ge=0, le=2**31 - 1)]
+
+
+class RelayLootItem(BaseModel):
+    """One item a boss gives, as the mod's give function takes it."""
+
+    id: Annotated[int, Field(ge=0, le=2**32 - 1)]
+    qty: Annotated[int, Field(ge=1, le=999)]
+
+
+class RelayLootEntry(BaseModel):
+    """What one boss gives: the seed's ``relay.loot`` entry of its defeat flag."""
+
+    # The boss's defeat flag (the entry's key in the seed).
+    flag: RelayLootInt
+    # Raised by the mod once the entry is in its save.
+    received_flag: RelayLootInt
+    # The pickup flags of the boss's reward rows, raised with the items.
+    pickup_flags: list[RelayLootInt] = Field(max_length=16)
+    items: list[RelayLootItem] = Field(max_length=64)
+    # The SpEffect that pays the runes; null when the boss pays none.
+    rune_speffect: RelayLootInt | None
+    runes: RelayLootInt
+
+
+class RelayLootAnnounce(BaseModel):
+    """A teammate's kill, for the receiving mod's banner."""
+
+    runner: str
+    boss: str
+
+
+class RelayLootMessage(BaseModel):
+    """Server to mod: what the team's dead bosses give. ``paid``: the receiver's
+    own game paid it (the runner who made the kill), so its mod only marks the
+    entries received. ``announce`` names a teammate's kill; null for the killer
+    and for the catch-up after a connection."""
+
+    type: Literal["relay_loot"] = "relay_loot"
+    entries: list[RelayLootEntry]
+    paid: bool
+    announce: RelayLootAnnounce | None
+
+
 class RelayReadyMessage(BaseModel):
     """Mod to server: a waiting runner is (or stops being) loaded at the Roundtable Hold
     with its lock raised."""
